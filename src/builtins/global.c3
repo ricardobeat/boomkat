@@ -1,4 +1,4 @@
-/// Global built-in functions: print, parseInt, parseFloat, isNaN, isFinite, eval, URI encoding/decoding.
+// Global built-in functions: print, parseInt, parseFloat, isNaN, isFinite, eval, URI encoding/decoding.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::bytecode;
@@ -14,10 +14,10 @@ import boomkat::heap;
 import boomkat::env;
 import boomkat::vm;
 
-/// Print a single TVal using proper JS ToString coercion.
-/// For objects, looks up and calls the object's toString() method via call_fn
-/// so that Array.prototype.toString (join with commas), Date.prototype.toString,
-/// and user-defined toString() all work correctly.
+// Print a single TVal using proper JS ToString coercion.
+// For objects, looks up and calls the object's toString() method via call_fn
+// so that Array.prototype.toString (join with commas), Date.prototype.toString,
+// and user-defined toString() all work correctly.
 fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
     if (val.is_object() && val.get_heapptr() != null && ctx.vm != null && ctx.heap.call_fn != null) {
         HObject* obj = (HObject*)val.get_heapptr();
@@ -99,8 +99,8 @@ fn void builtin_console_dir(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// console.assert(expr, ...msg), if expr is falsy, emit "Assertion failed:" and
-/// the remaining args to stderr. If truthy, produce no output. Returns undefined.
+// console.assert(expr, ...msg), if expr is falsy, emit "Assertion failed:" and
+// the remaining args to stderr. If truthy, produce no output. Returns undefined.
 fn void builtin_console_assert(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         io::eprintfn("Assertion failed:");
@@ -120,7 +120,7 @@ fn void builtin_console_assert(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// Shared body for console.log/info/debug/trace (stdout) and console.warn/error (stderr).
+// Shared body for console.log/info/debug/trace (stdout) and console.warn/error (stderr).
 fn void console_print_args(BuiltinContext* ctx, bool use_stderr) {
     console_format_args(ctx, use_stderr, 0);
     if (use_stderr) {
@@ -162,9 +162,9 @@ fn void console_print_args(BuiltinContext* ctx, bool use_stderr) {
 //
 // Arguments not consumed by a specifier are appended space-separated.
 
-/// Byte sink pair for the formatter, so a single implementation serves both the
-/// stdout methods (log/info/debug/trace/dir) and the stderr ones (warn/error/
-/// assert) instead of the two near-identical mirrors this file used to carry.
+// Byte sink pair for the formatter, so a single implementation serves both the
+// stdout methods (log/info/debug/trace/dir) and the stderr ones (warn/error/
+// assert) instead of the two near-identical mirrors this file used to carry.
 struct ConsoleSink {
     bool use_stderr;
 }
@@ -177,8 +177,8 @@ fn void ConsoleSink.write(&self, char[] bytes) {
     hstring::write_cesu8_as_utf8(bytes, self.use_stderr ? &eputc : &putc_out);
 }
 
-/// Emit one value the way console renders it outside any specifier: the
-/// structured inspect form, with a top-level string emitted bare.
+// Emit one value the way console renders it outside any specifier: the
+// structured inspect form, with a top-level string emitted bare.
 fn void console_emit_value(BuiltinContext* ctx, ConsoleSink sink, TVal* val) {
     StrBuf out;
     out.init(ctx.heap);
@@ -196,9 +196,9 @@ fn void console_emit_value(BuiltinContext* ctx, ConsoleSink sink, TVal* val) {
     }
 }
 
-/// Format `ctx`'s arguments starting at `first`, applying specifier
-/// substitution when argument `first` is a string. Does not emit a trailing
-/// newline; callers own that.
+// Format `ctx`'s arguments starting at `first`, applying specifier
+// substitution when argument `first` is a string. Does not emit a trailing
+// newline; callers own that.
 fn void console_format_args(BuiltinContext* ctx, bool use_stderr, ushort first) {
     ConsoleSink sink = { use_stderr };
     if (first >= ctx.argc) return;
@@ -261,7 +261,7 @@ fn void console_format_args(BuiltinContext* ctx, bool use_stderr, ushort first) 
     }
 }
 
-/// Render a single argument under one specifier.
+// Render a single argument under one specifier.
 fn void console_emit_specifier(BuiltinContext* ctx, ConsoleSink sink, char spec, TVal* arg) {
     switch (spec) {
         case 'c':
@@ -285,8 +285,8 @@ fn void console_emit_specifier(BuiltinContext* ctx, ConsoleSink sink, char spec,
     }
 }
 
-/// %s uses String(value) semantics, not ToString: a Symbol renders as
-/// "Symbol(desc)", where ToString(Symbol) would instead throw a TypeError.
+// %s uses String(value) semantics, not ToString: a Symbol renders as
+// "Symbol(desc)", where ToString(Symbol) would instead throw a TypeError.
 fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
@@ -323,8 +323,8 @@ fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* ar
     console_emit_value(ctx, sink, arg);
 }
 
-/// %o and %O, and console.dir's single argument. Unlike a plain argument these
-/// are NOT at the root of a console call, so a string renders quoted.
+// %o and %O, and console.dir's single argument. Unlike a plain argument these
+// are NOT at the root of a console call, so a string renders quoted.
 fn void console_emit_inspect_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg) {
     StrBuf out;
     out.init(ctx.heap);
@@ -336,9 +336,9 @@ fn void console_emit_inspect_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* a
     console_emit_value(ctx, sink, arg);
 }
 
-/// Render a Symbol as "Symbol(desc)". The raw HString bytes carry the 0xFF
-/// prefix and description marker, so emitting them directly (as the generic
-/// primitive path does) would write the marker bytes into the output.
+// Render a Symbol as "Symbol(desc)". The raw HString bytes carry the 0xFF
+// prefix and description marker, so emitting them directly (as the generic
+// primitive path does) would write the marker bytes into the output.
 fn void console_emit_symbol(ConsoleSink sink, HString* sym) {
     sink.write("Symbol(");
     if (symbol_has_description(sym)) {
@@ -347,13 +347,13 @@ fn void console_emit_symbol(ConsoleSink sink, HString* sym) {
     sink.write(")");
 }
 
-/// %d, %i and %f map onto three DIFFERENT coercions, not one:
-/// %d is Number(v) (so a valueOf() is honoured), %i is parseInt(v) and %f is
-/// parseFloat(v) (so both go via the STRING form and stop at the first
-/// unparseable character — parseInt(true) is NaN, but Number(true) is 1, and
-/// parseFloat([1,2]) is 1 because the array stringifies to "1,2"). A Symbol is
-/// NaN under all three rather than the TypeError ToNumber/ToString would raise,
-/// and a BigInt keeps its own rendering.
+// %d, %i and %f map onto three DIFFERENT coercions, not one:
+// %d is Number(v) (so a valueOf() is honoured), %i is parseInt(v) and %f is
+// parseFloat(v) (so both go via the STRING form and stop at the first
+// unparseable character — parseInt(true) is NaN, but Number(true) is 1, and
+// parseFloat([1,2]) is 1 because the array stringifies to "1,2"). A Symbol is
+// NaN under all three rather than the TypeError ToNumber/ToString would raise,
+// and a BigInt keeps its own rendering.
 fn void console_emit_number_spec(BuiltinContext* ctx, ConsoleSink sink, char spec, TVal* arg) {
     if (arg.is_bigint()) {
         console_emit_value(ctx, sink, arg);
@@ -403,9 +403,9 @@ fn void console_emit_number_spec(BuiltinContext* ctx, ConsoleSink sink, char spe
     console_emit_value(ctx, sink, &num);
 }
 
-/// %j: JSON.stringify, with a cyclic structure rendering as "[Circular]"
-/// instead of the TypeError JSON.stringify itself raises. An undefined result
-/// (undefined, a function, a symbol) prints "undefined".
+// %j: JSON.stringify, with a cyclic structure rendering as "[Circular]"
+// instead of the TypeError JSON.stringify itself raises. An undefined result
+// (undefined, a function, a symbol) prints "undefined".
 fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg) {
     // json_serialize_val implements the rule for a value nested inside a
     // structure, where undefined, a function and a Symbol all become "null" (or,
@@ -460,18 +460,18 @@ fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg)
     sink.write(out.bytes());
 }
 
-/// Stdout byte sink for write_cesu8_as_utf8. The udata a PutByteFn must accept
-/// is unused here: the destination is a fixed stream, not a caller-owned buffer.
+// Stdout byte sink for write_cesu8_as_utf8. The udata a PutByteFn must accept
+// is unused here: the destination is a fixed stream, not a caller-owned buffer.
 fn void putc_out(char c, void* udata) {
     io::putchar(c);
 }
 
-/// Stderr byte sink used by write_cesu8_as_utf8.
+// Stderr byte sink used by write_cesu8_as_utf8.
 fn void eputc(char c, void* udata) {
     io::eprintf("%c", c);
 }
 
-/// Mirror of print_tval_ctx that writes to stderr instead of stdout.
+// Mirror of print_tval_ctx that writes to stderr instead of stdout.
 fn void print_tval_err_ctx(BuiltinContext* ctx, TVal* val) {
     if (val.is_object() && val.get_heapptr() != null && ctx.vm != null && ctx.heap.call_fn != null) {
         HObject* obj = (HObject*)val.get_heapptr();
@@ -501,8 +501,8 @@ fn void print_tval_err_ctx(BuiltinContext* ctx, TVal* val) {
     print_tval_err(val);
 }
 
-/// Stderr counterpart of print_tval (primitives only; objects handled by
-/// print_tval_err_ctx, which falls back here for non-string toString results).
+// Stderr counterpart of print_tval (primitives only; objects handled by
+// print_tval_err_ctx, which falls back here for non-string toString results).
 fn void print_tval_err(TVal* val) {
     switch (val.get_tag()) {
         case UNDEFINED: io::eprint("undefined");
@@ -640,9 +640,9 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
     }
 }
 
-/// Returns the UTF-8 byte length of a Unicode whitespace/BOM code point at
-/// `buf[i]`, or 0 if the code point there is not JS StrWhiteSpace. Handles the
-/// 2- and 3-byte sequences ECMAScript treats as whitespace.
+// Returns the UTF-8 byte length of a Unicode whitespace/BOM code point at
+// `buf[i]`, or 0 if the code point there is not JS StrWhiteSpace. Handles the
+// 2- and 3-byte sequences ECMAScript treats as whitespace.
 fn usz utf8_whitespace_len(char* buf, usz len, usz i) {
     char c0 = buf[i];
     // 2-byte: U+00A0 (C2 A0) NBSP.
@@ -1076,13 +1076,13 @@ fn void builtin_eval(BuiltinContext* ctx) {
     ctx.re_nargs = 0;
 }
 
-/// $262.evalScript(src), the test262 host hook that runs `src` as an
-/// independent global Script (ES2015 §18.2.1 ScriptEvaluation), NOT as an
-/// eval call. Unlike `eval`, this is never "direct" or "indirect": the
-/// compiled Program always gets a fresh top-level activation whose
-/// var_env/lex_env is the real global environment, so `var`/`function`/
-/// `let`/`const`/`class` declarations follow ordinary global-code semantics
-/// (GlobalDeclarationInstantiation) regardless of what called evalScript.
+// $262.evalScript(src), the test262 host hook that runs `src` as an
+// independent global Script (ES2015 §18.2.1 ScriptEvaluation), NOT as an
+// eval call. Unlike `eval`, this is never "direct" or "indirect": the
+// compiled Program always gets a fresh top-level activation whose
+// var_env/lex_env is the real global environment, so `var`/`function`/
+// `let`/`const`/`class` declarations follow ordinary global-code semantics
+// (GlobalDeclarationInstantiation) regardless of what called evalScript.
 fn void builtin_eval_script(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -1183,14 +1183,14 @@ fn int hex_digit_val(char c) {
 
 alias UriExtraUnreservedFn = fn bool(char);
 
-/// Shared Encode (ES §19.2.6.5) body driving both encodeURI and
-/// encodeURIComponent, they differ only in which ASCII punctuation passes
-/// through unescaped (`extra_unreserved`). Walks `str` by UTF-16 code unit
-/// (internal storage is CESU-8: every surrogate half is its own 3-byte
-/// sequence, see hstring's CESU-8 utilities), pairs surrogates back into
-/// astral codepoints, UTF-8-encodes each codepoint's bytes as %XX triplets,
-/// and throws URIError on any lone (unpaired) surrogate, Encode is defined
-/// over Unicode code points, and a lone surrogate is not one.
+// Shared Encode (ES §19.2.6.5) body driving both encodeURI and
+// encodeURIComponent, they differ only in which ASCII punctuation passes
+// through unescaped (`extra_unreserved`). Walks `str` by UTF-16 code unit
+// (internal storage is CESU-8: every surrogate half is its own 3-byte
+// sequence, see hstring's CESU-8 utilities), pairs surrogates back into
+// astral codepoints, UTF-8-encodes each codepoint's bytes as %XX triplets,
+// and throws URIError on any lone (unpaired) surrogate, Encode is defined
+// over Unicode code points, and a lone surrogate is not one.
 fn void uri_encode(BuiltinContext* ctx, HString* str, UriExtraUnreservedFn extra_unreserved) {
     char[] data = str.get_data();
     uint len = str.blen;
@@ -1244,7 +1244,7 @@ fn bool uri_extra_none(char c) {
     return false;
 }
 
-/// encodeURI (ES §19.2.6.5)
+// encodeURI (ES §19.2.6.5)
 fn void builtin_encode_uri(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
@@ -1259,7 +1259,7 @@ fn void builtin_encode_uri(BuiltinContext* ctx) {
     uri_encode(ctx, str, &uri_extra_reserved);
 }
 
-/// encodeURIComponent (ES §19.2.6.5)
+// encodeURIComponent (ES §19.2.6.5)
 fn void builtin_encode_uri_component(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
@@ -1274,14 +1274,14 @@ fn void builtin_encode_uri_component(BuiltinContext* ctx) {
     uri_encode(ctx, str, &uri_extra_none);
 }
 
-/// Decode a single %XX-escaped UTF-8 sequence starting at `data[i]` (which
-/// must be '%') into a Unicode code point. Validates continuation bytes,
-/// rejects overlong encodings, out-of-range code points (> U+10FFFF), and
-/// lone surrogates (a valid code point can never be a surrogate half, RFC
-/// 3629 / ES §19.2.6.6 Decode step 7.f-g). On success, sets `*cp` and
-/// `*consumed` (number of source bytes eaten, i.e. 3 * byte-sequence-length)
-/// and returns true. On any malformed input returns false and leaves the
-/// outputs unspecified, the caller throws URIError.
+// Decode a single %XX-escaped UTF-8 sequence starting at `data[i]` (which
+// must be '%') into a Unicode code point. Validates continuation bytes,
+// rejects overlong encodings, out-of-range code points (> U+10FFFF), and
+// lone surrogates (a valid code point can never be a surrogate half, RFC
+// 3629 / ES §19.2.6.6 Decode step 7.f-g). On success, sets `*cp` and
+// `*consumed` (number of source bytes eaten, i.e. 3 * byte-sequence-length)
+// and returns true. On any malformed input returns false and leaves the
+// outputs unspecified, the caller throws URIError.
 fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consumed) {
     if (i + 2 >= len) return false;
     int d1 = hex_digit_val(data[i + 1]);
@@ -1328,19 +1328,19 @@ fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consu
     return true;
 }
 
-/// Write `cp` into `out` at `*offset` as a CESU-8-canonical UTF-16 code-unit
-/// sequence: astral code points split into a surrogate pair (each half its
-/// own 3-byte sequence), everything else via plain UTF-8, matching the
-/// storage format every interned HString must be in.
+// Write `cp` into `out` at `*offset` as a CESU-8-canonical UTF-16 code-unit
+// sequence: astral code points split into a surrogate pair (each half its
+// own 3-byte sequence), everything else via plain UTF-8, matching the
+// storage format every interned HString must be in.
 fn void uri_decode_emit(char* out, usz* offset, uint cp) {
     char[6] buf;
     uint n = hstring::encode_codepoint_cesu8(cp, buf[:6]);
     for (uint k = 0; k < n; k++) out[(*offset)++] = buf[k];
 }
 
-/// Shared Decode (ES §19.2.6.6) body for decodeURI/decodeURIComponent. They
-/// differ only in which percent-triplets are left un-decoded (reserved URI
-/// characters, decodeURI only).
+// Shared Decode (ES §19.2.6.6) body for decodeURI/decodeURIComponent. They
+// differ only in which percent-triplets are left un-decoded (reserved URI
+// characters, decodeURI only).
 fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
     char[] data = str.get_data();
     uint len = str.blen;
@@ -1387,7 +1387,7 @@ fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
     ctx.result.set_string(result);
 }
 
-/// decodeURI (ES §19.2.6.6)
+// decodeURI (ES §19.2.6.6)
 fn void builtin_decode_uri(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
@@ -1402,7 +1402,7 @@ fn void builtin_decode_uri(BuiltinContext* ctx) {
     uri_decode(ctx, str, true);
 }
 
-/// decodeURIComponent (ES §19.2.6.6)
+// decodeURIComponent (ES §19.2.6.6)
 fn void builtin_decode_uri_component(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
@@ -1417,9 +1417,9 @@ fn void builtin_decode_uri_component(BuiltinContext* ctx) {
     uri_decode(ctx, str, false);
 }
 
-/// The unescaped set of Annex B §B.2.1.1 `escape`: `A-Za-z0-9@*_+-./`. Note it
-/// is neither encodeURI's nor encodeURIComponent's set — `@ * _ + - . /` pass
-/// through, but `! ~ ' ( )` do not.
+// The unescaped set of Annex B §B.2.1.1 `escape`: `A-Za-z0-9@*_+-./`. Note it
+// is neither encodeURI's nor encodeURIComponent's set — `@ * _ + - . /` pass
+// through, but `! ~ ' ( )` do not.
 fn bool escape_is_unescaped(uint unit) {
     if (unit >= 'A' && unit <= 'Z') return true;
     if (unit >= 'a' && unit <= 'z') return true;
@@ -1434,12 +1434,12 @@ fn void escape_emit_hex(char* out, usz* offset, uint value, uint digits) {
     }
 }
 
-/// escape (Annex B §B.2.1.1). Operates per UTF-16 code unit, so — unlike
-/// encodeURI — surrogate pairs are never recombined: each half is emitted on
-/// its own as `%uD83D%uDE00`, and a lone surrogate is legal rather than a
-/// URIError. Internal storage is CESU-8, where every code unit (surrogate
-/// halves included) is already its own byte sequence, so a plain walk of the
-/// sequences yields exactly the code units the spec iterates.
+// escape (Annex B §B.2.1.1). Operates per UTF-16 code unit, so — unlike
+// encodeURI — surrogate pairs are never recombined: each half is emitted on
+// its own as `%uD83D%uDE00`, and a lone surrogate is legal rather than a
+// URIError. Internal storage is CESU-8, where every code unit (surrogate
+// halves included) is already its own byte sequence, so a plain walk of the
+// sequences yields exactly the code units the spec iterates.
 fn void builtin_escape(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
@@ -1474,9 +1474,9 @@ fn void builtin_escape(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, out[:offset]));
 }
 
-/// unescape (Annex B §B.2.1.2). Recognises `%uXXXX` and `%XX`; any `%` not
-/// starting a complete, well-formed escape is copied through verbatim (the
-/// spec's algorithm simply advances one code unit).
+// unescape (Annex B §B.2.1.2). Recognises `%uXXXX` and `%XX`; any `%` not
+// starting a complete, well-formed escape is copied through verbatim (the
+// spec's algorithm simply advances one code unit).
 fn void builtin_unescape(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));

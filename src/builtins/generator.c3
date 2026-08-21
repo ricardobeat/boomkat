@@ -1,4 +1,4 @@
-/// GeneratorFunction and Generator.prototype methods.
+// GeneratorFunction and Generator.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::bytecode;
@@ -15,10 +15,10 @@ import std::io;
 // GeneratorFunction constructor (ES6 §25.2.1)
 // ============================================================================
 
-/// Build a dynamic generator/async function from param + body strings, per
-/// ES2019 §19.2.1.1.1 CreateDynamicFunction.  is_generator / is_async select
-/// which keyword prefix appears in the retained source text and which compile
-/// flags are set on the CompilerContext.
+// Build a dynamic generator/async function from param + body strings, per
+// ES2019 §19.2.1.1.1 CreateDynamicFunction.  is_generator / is_async select
+// which keyword prefix appears in the retained source text and which compile
+// flags are set on the CompilerContext.
 fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_async) {
     char* body_str = "";
     usz body_len = 0;

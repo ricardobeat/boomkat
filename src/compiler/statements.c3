@@ -27,13 +27,13 @@ struct CompExportEntry {
     bool   is_indirect;
     uint   req_module_idx;
     bool   is_lexical;      // true for a local `let`/`const`/`class` export
-    /// True when the export came from an `export`-PREFIXED declaration
-    /// (`export var x = 1`, `export function f(){}`, `export class C {}`,
-    /// `export var {a, b} = o`) rather than an `export { x }` clause. Such an
-    /// export declares its own binding in the same statement, so it trivially
-    /// satisfies the §16.2.1.1 ExportedBindings rule and
-    /// check_module_exports_resolvable skips it — the binding may be a
-    /// destructuring leaf that no name pre-scan reconstructs.
+    // True when the export came from an `export`-PREFIXED declaration
+    // (`export var x = 1`, `export function f(){}`, `export class C {}`,
+    // `export var {a, b} = o`) rather than an `export { x }` clause. Such an
+    // export declares its own binding in the same statement, so it trivially
+    // satisfies the §16.2.1.1 ExportedBindings rule and
+    // check_module_exports_resolvable skips it — the binding may be a
+    // destructuring leaf that no name pre-scan reconstructs.
     bool   declares_binding;
 }
 
@@ -54,12 +54,12 @@ struct CompReqModuleEntry {
     bool   type_only;
 }
 
-/// Full lexer + compiler-pushback snapshot, used to re-parse a source
-/// span (e.g. a for-of/for-in member-expression LHS) fresh on every
-/// loop iteration. A bare byte offset isn't enough to resume from: by
-/// the time the offset is captured, self.lexer.pos may already sit
-/// past a cached lookahead token, so the whole lexer/pushback state
-/// must be captured and restored together.
+// Full lexer + compiler-pushback snapshot, used to re-parse a source
+// span (e.g. a for-of/for-in member-expression LHS) fresh on every
+// loop iteration. A bare byte offset isn't enough to resume from: by
+// the time the offset is captured, self.lexer.pos may already sit
+// past a cached lookahead token, so the whole lexer/pushback state
+// must be captured and restored together.
 struct ForLhsSnapshot {
     uint pos;
     uint line;
@@ -118,15 +118,15 @@ struct ForOfHead {
     ForLhsSnapshot lhs_snap;
 }
 
-/// Layout must match module::FuncDeclEntry.
+// Layout must match module::FuncDeclEntry.
 struct CompFuncDeclEntry {
     char[] name;
     uint   inner_func_idx;
 }
 
-/// Compiler-side view of ModuleDef, field layout must match module::ModuleDef.
-/// The metadata lists are growable (see ModuleDef's note) and come
-/// pre-initialized by the module loader; the compiler only pushes into them.
+// Compiler-side view of ModuleDef, field layout must match module::ModuleDef.
+// The metadata lists are growable (see ModuleDef's note) and come
+// pre-initialized by the module loader; the compiler only pushes into them.
 struct CompModuleDef {
     char[]                                module_name;
     char                                  status;
@@ -137,9 +137,9 @@ struct CompModuleDef {
     List{CompFuncDeclEntry}               func_decls;
 }
 
-/// Register a top-level module function declaration for eager link-time
-/// instantiation (deduplicates by name, a later declaration of the same
-/// name replaces the earlier inner_func_idx, mirroring last-wins hoisting).
+// Register a top-level module function declaration for eager link-time
+// instantiation (deduplicates by name, a later declaration of the same
+// name replaces the earlier inner_func_idx, mirroring last-wins hoisting).
 fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_idx) {
     for (uint i = 0; i < (uint)mod.func_decls.len(); i++) {
         if (str_eq(mod.func_decls[i].name, name)) {
@@ -150,7 +150,7 @@ fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_
     mod.func_decls.push({ name, inner_func_idx });
 }
 
-/// Register a required module specifier, returning its index (deduplicates).
+// Register a required module specifier, returning its index (deduplicates).
 fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants_json = false) {
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         // A JSON import and an ECMAScript import of the same specifier are
@@ -166,24 +166,24 @@ fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants
     return idx;
 }
 
-/// Register an import entry in the module.
+// Register an import entry in the module.
 fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import_name, uint req_idx, bool is_star, bool is_default) {
     mod.imports.push({ local_name, import_name, req_idx, is_star, is_default });
 }
 
-/// True when `export_name` is already an ExportedName of this module.
-///
-/// ES2024 §16.2.3.1: "It is a Syntax Error if the ExportedNames of ModuleItemList
-/// contains any duplicate entries." Every named export funnels through
-/// mod_register_export, so testing here catches all the spellings that can
-/// collide -- `export {x}` twice, two `as z` aliases, an `export default` paired
-/// with `{y as default}`, two same-named `export function` declarations, and
-/// `export * as z` against a local `{x as z}`.
-///
-/// `export * from` is exempt: it contributes no ExportedName of its own (a name
-/// it would have re-exported is instead dropped when ambiguous), which is why
-/// star exports are registered through mod_register_star_export and never reach
-/// this path.
+// True when `export_name` is already an ExportedName of this module.
+//
+// ES2024 §16.2.3.1: "It is a Syntax Error if the ExportedNames of ModuleItemList
+// contains any duplicate entries." Every named export funnels through
+// mod_register_export, so testing here catches all the spellings that can
+// collide -- `export {x}` twice, two `as z` aliases, an `export default` paired
+// with `{y as default}`, two same-named `export function` declarations, and
+// `export * as z` against a local `{x as z}`.
+//
+// `export * from` is exempt: it contributes no ExportedName of its own (a name
+// it would have re-exported is instead dropped when ambiguous), which is why
+// star exports are registered through mod_register_star_export and never reach
+// this path.
 fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         if (str_eq(mod.exports[i].export_name, export_name)) return true;
@@ -191,12 +191,12 @@ fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
     return false;
 }
 
-/// Register a named export, rejecting a duplicate ExportedName (§16.2.3.1).
-///
-/// Wraps mod_register_export at the one point every named export passes
-/// through, so the duplicate rule cannot be missed by a new export form:
-/// mod_register_export itself is a plain function with no compiler context to
-/// raise a SyntaxError from.
+// Register a named export, rejecting a duplicate ExportedName (§16.2.3.1).
+//
+// Wraps mod_register_export at the one point every named export passes
+// through, so the duplicate rule cannot be missed by a new export form:
+// mod_register_export itself is a plain function with no compiler context to
+// raise a SyntaxError from.
 fn void? CompilerContext.register_export(&self, CompModuleDef* mod, char[] local_name,
     char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false,
     bool declares_binding = false)
@@ -208,17 +208,17 @@ fn void? CompilerContext.register_export(&self, CompModuleDef* mod, char[] local
                         declares_binding);
 }
 
-/// Register an export entry in the module.
+// Register an export entry in the module.
 fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false, bool declares_binding = false) {
     mod.exports.push({ local_name, export_name, is_indirect, req_idx, is_lexical, declares_binding });
 }
 
-/// Find the ImportEntry (if any) whose local binding name is `local_name`.
-/// Used by `export { x }` (no `from` clause) to implement ECMA-262
-/// §16.2.1.7.1 ParseModule step 10.1: an export whose LocalName matches an
-/// already-imported binding is NOT a local export, it becomes an indirect
-/// re-export sourced from the ImportEntry's own module/import name, per
-/// Table 59. Returns null when `local_name` names an ordinary local binding.
+// Find the ImportEntry (if any) whose local binding name is `local_name`.
+// Used by `export { x }` (no `from` clause) to implement ECMA-262
+// §16.2.1.7.1 ParseModule step 10.1: an export whose LocalName matches an
+// already-imported binding is NOT a local export, it becomes an indirect
+// re-export sourced from the ImportEntry's own module/import name, per
+// Table 59. Returns null when `local_name` names an ordinary local binding.
 fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_name) {
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
         if (str_eq(mod.imports[i].local_name, local_name)) return &mod.imports[i];
@@ -226,7 +226,7 @@ fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_na
     return null;
 }
 
-/// Register a star export entry in the module.
+// Register a star export entry in the module.
 fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
     mod.star_exports.push({ req_idx });
 }
@@ -235,33 +235,33 @@ fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
 // Statement parsing
 // ============================================================================
 
-/// Parse and compile a single `Statement` in a position where the grammar
-/// admits `Statement` but not `StatementListItem`, so the body of `if` or `else`,
-/// a loop, or a label.
-///
-/// Only a StatementList (a block, a function body, a case clause, the top
-/// level) may contain a Declaration. `if (x) let y = 1;`, `while (0) class C
-/// {}` and `for (;;) function f(){}` are therefore early SyntaxErrors, even
-/// though each body is a perfectly good StatementListItem. The engine has one
-/// `statement()` for both positions, so without this guard every declaration
-/// form was silently accepted as a bare body.
-///
-/// `let` is only treated as a declaration here when a binding actually
-/// follows, so the guard reports the accurate "declaration in body position"
-/// error for `if (x) let y = 1;` rather than a generic parse failure. Bare
-/// `let` as an identifier reference (`if (x) let;`) is rejected either way,
-/// `statement()` routes every LET token to var_declaration(), so this engine
-/// does not support `let` as an IdentifierReference at all.
-///
-/// `async function` cannot be recognised from the leading token: `async` is a
-/// contextual keyword that lexes as a plain IDENTIFIER, and distinguishing the
-/// declaration from an `async` identifier reference needs the two-token
-/// lookahead that statement() already performs. Rather than duplicate that
-/// lookahead here (doing it before statement() runs desynchronises
-/// `lexer.token_start`, which statement() refreshes to fix the
-/// Function.prototype.toString span of exactly this declaration form), the
-/// flag below tells statement() that it is parsing a Statement position, and
-/// it raises the error once it has classified the tokens.
+// Parse and compile a single `Statement` in a position where the grammar
+// admits `Statement` but not `StatementListItem`, so the body of `if` or `else`,
+// a loop, or a label.
+//
+// Only a StatementList (a block, a function body, a case clause, the top
+// level) may contain a Declaration. `if (x) let y = 1;`, `while (0) class C
+// {}` and `for (;;) function f(){}` are therefore early SyntaxErrors, even
+// though each body is a perfectly good StatementListItem. The engine has one
+// `statement()` for both positions, so without this guard every declaration
+// form was silently accepted as a bare body.
+//
+// `let` is only treated as a declaration here when a binding actually
+// follows, so the guard reports the accurate "declaration in body position"
+// error for `if (x) let y = 1;` rather than a generic parse failure. Bare
+// `let` as an identifier reference (`if (x) let;`) is rejected either way,
+// `statement()` routes every LET token to var_declaration(), so this engine
+// does not support `let` as an IdentifierReference at all.
+//
+// `async function` cannot be recognised from the leading token: `async` is a
+// contextual keyword that lexes as a plain IDENTIFIER, and distinguishing the
+// declaration from an `async` identifier reference needs the two-token
+// lookahead that statement() already performs. Rather than duplicate that
+// lookahead here (doing it before statement() runs desynchronises
+// `lexer.token_start`, which statement() refreshes to fix the
+// Function.prototype.toString span of exactly this declaration form), the
+// flag below tells statement() that it is parsing a Statement position, and
+// it raises the error once it has classified the tokens.
 fn void? CompilerContext.statement_body(&self) {
     switch (self.peek_type()) {
         case TokenType.CONST:
@@ -283,10 +283,10 @@ fn void? CompilerContext.statement_body(&self) {
     return self.statement();
 }
 
-/// Two-token lookahead for `let` in a single-statement body: true when the
-/// token after `let` can begin a BindingList, which is what makes the `let` a
-/// LexicalDeclaration rather than an identifier reference. Non-destructive:
-/// the consumed token is pushed back before returning.
+// Two-token lookahead for `let` in a single-statement body: true when the
+// token after `let` can begin a BindingList, which is what makes the `let` a
+// LexicalDeclaration rather than an identifier reference. Non-destructive:
+// the consumed token is pushed back before returning.
 fn bool CompilerContext.peek2_starts_binding(&self) {
     Token? cur_opt = self.advance();
     if (catch _e = cur_opt) return false;
@@ -298,10 +298,10 @@ fn bool CompilerContext.peek2_starts_binding(&self) {
            next_tt == TokenType.YIELD || next_tt == TokenType.AWAIT;
 }
 
-/// Parse and compile a single statement, dispatching on token type.
-/// After the statement completes, reclaim_stmt_regs releases any temporaries
-/// stranded above the statement's base watermark by non-LIFO free patterns
-/// (see reclaim_stmt_regs).
+// Parse and compile a single statement, dispatching on token type.
+// After the statement completes, reclaim_stmt_regs releases any temporaries
+// stranded above the statement's base watermark by non-LIFO free patterns
+// (see reclaim_stmt_regs).
 fn void? CompilerContext.statement(&self) {
     ushort stmt_base = self.next_reg;
     TokenType tt = self.peek_type();
@@ -615,23 +615,23 @@ fn void? CompilerContext.statement(&self) {
     self.reclaim_stmt_regs(stmt_base);
 }
 
-/// Check if a name is restricted in strict mode (ES5 §11.6.2.2, ES2024 §13.3.1).
-/// The engine is strict-only, there is no non-strict context in which these
-/// may appear in a binding position, so we always reject:
-///   - `eval`, `arguments`, ES5 strict-only identifiers (§11.6.2.2).
-///   - `null`, `true`, `false`, NullLiteral / BooleanLiteral sources; never
-///     valid as an IdentifierName in binding position. Lexed as IDENTIFIER
-///     with `str_value` matching the literal name (no dedicated token type
-///     in this engine), so a post-advance check is the only way to catch
-///     `var true = 1` while still allowing property access `obj.true` etc.
-///   - `yield`, `await`, `let`, `static`, `implements`, `interface`, `package`,
-///     `private`, `protected`, `public`, strict-mode reserved words. Most
-///     already come through this path via the lexer's KEYWORDS table
-///     (which would deliver a keyword token instead of IDENTIFIER), but
-///     `yield` and `await` slip through in non-generator / non-module
-///     contexts where the lexer still returns the keyword token, and
-///     var_declaration deliberately accepts them. The strict-only engine
-///     must always reject.
+// Check if a name is restricted in strict mode (ES5 §11.6.2.2, ES2024 §13.3.1).
+// The engine is strict-only, there is no non-strict context in which these
+// may appear in a binding position, so we always reject:
+//   - `eval`, `arguments`, ES5 strict-only identifiers (§11.6.2.2).
+//   - `null`, `true`, `false`, NullLiteral / BooleanLiteral sources; never
+//     valid as an IdentifierName in binding position. Lexed as IDENTIFIER
+//     with `str_value` matching the literal name (no dedicated token type
+//     in this engine), so a post-advance check is the only way to catch
+//     `var true = 1` while still allowing property access `obj.true` etc.
+//   - `yield`, `await`, `let`, `static`, `implements`, `interface`, `package`,
+//     `private`, `protected`, `public`, strict-mode reserved words. Most
+//     already come through this path via the lexer's KEYWORDS table
+//     (which would deliver a keyword token instead of IDENTIFIER), but
+//     `yield` and `await` slip through in non-generator / non-module
+//     contexts where the lexer still returns the keyword token, and
+//     var_declaration deliberately accepts them. The strict-only engine
+//     must always reject.
 fn bool is_restricted_name(char[] name,
                            bool in_async_or_module = true,
                            bool in_generator_or_blocked_yield = true) @inline {
@@ -703,17 +703,17 @@ fn bool is_restricted_name(char[] name,
     return false;
 }
 
-/// IsSimpleParameterList (ES2024 §15.1.3) for the FormalParameters of the
-/// function currently being compiled.
-///
-/// A list is simple only when every parameter is a plain BindingIdentifier: a
-/// rest element, any initializer (`=`), or a destructuring pattern makes it
-/// non-simple. Each of the three parameter-parsing loops (function, method,
-/// arrow) records those three signals on the context, so this reads them
-/// rather than re-deriving the answer per call site.
-///
-/// Trivially true outside a function body — a program, eval or module has no
-/// formals and leaves all three signals at their zero values.
+// IsSimpleParameterList (ES2024 §15.1.3) for the FormalParameters of the
+// function currently being compiled.
+//
+// A list is simple only when every parameter is a plain BindingIdentifier: a
+// rest element, any initializer (`=`), or a destructuring pattern makes it
+// non-simple. Each of the three parameter-parsing loops (function, method,
+// arrow) records those three signals on the context, so this reads them
+// rather than re-deriving the answer per call site.
+//
+// Trivially true outside a function body — a program, eval or module has no
+// formals and leaves all three signals at their zero values.
 fn bool CompilerContext.params_are_simple(&self) {
     return !self.has_rest
         && self.default_count == 0
@@ -721,8 +721,8 @@ fn bool CompilerContext.params_are_simple(&self) {
         && !self.has_destructured_param;
 }
 
-/// Parse directive prologue statements at the start of a function body or program.
-/// Detects "use strict" and enables strict mode if found (ES5 §14.1).
+// Parse directive prologue statements at the start of a function body or program.
+// Detects "use strict" and enables strict mode if found (ES5 §14.1).
 fn void? CompilerContext.parse_directives(&self) {
     while (true) {
         if (!self.check(TokenType.STRING)) {
@@ -795,18 +795,18 @@ fn void? CompilerContext.parse_directives(&self) {
     }
 }
 
-/// Pre-scan tokens in the current block to find all `let`/`const` variable
-/// declarations at the top level of the block (brace depth 0, excluding nested
-/// blocks).  Saves and restores the lexer state so normal parsing can proceed
-/// afterwards.
-///
-/// Returns the number of variable names found (0 to MAX_PRESCAN_NAMES).
-/// Record a prescanned binding name into `spans[idx]`. A plain identifier's
-/// str_value points into the source buffer, so it is stored as a (pos, len)
-/// span reconstructed later from `lexer.source`. An identifier that contained
-/// a unicode escape (`\uXXXX`) is decoded by the lexer into a reused scratch
-/// buffer whose contents don't survive the next token, so its bytes are
-/// interned to stable storage and kept directly in the span instead.
+// Pre-scan tokens in the current block to find all `let`/`const` variable
+// declarations at the top level of the block (brace depth 0, excluding nested
+// blocks).  Saves and restores the lexer state so normal parsing can proceed
+// afterwards.
+//
+// Returns the number of variable names found (0 to MAX_PRESCAN_NAMES).
+// Record a prescanned binding name into `spans[idx]`. A plain identifier's
+// str_value points into the source buffer, so it is stored as a (pos, len)
+// span reconstructed later from `lexer.source`. An identifier that contained
+// a unicode escape (`\uXXXX`) is decoded by the lexer into a reused scratch
+// buffer whose contents don't survive the next token, so its bytes are
+// interned to stable storage and kept directly in the span instead.
 fn void CompilerContext.record_name_span(&self, NameSpan* span, Token name_tok, char* source_base) {
     char* end = &self.lexer.source[self.lexer.source.len - 1];
     if (name_tok.str_value.ptr >= source_base && name_tok.str_value.ptr <= end) {
@@ -824,19 +824,19 @@ fn void CompilerContext.record_name_span(&self, NameSpan* span, Token name_tok, 
     span.is_fn = false;
 }
 
-/// Reconstruct a prescanned binding name from a NameSpan, either its
-/// interned decoded bytes (escaped identifiers) or a slice of the source.
+// Reconstruct a prescanned binding name from a NameSpan, either its
+// interned decoded bytes (escaped identifiers) or a slice of the source.
 fn char[] CompilerContext.name_span_text(&self, NameSpan span) {
     if (span.name.len > 0) return span.name;
     return self.lexer.source[span.pos..span.pos + span.len - 1];
 }
 
-/// True when a `class` following `prev_tt` is a ClassDeclaration (statement
-/// position, its BindingIdentifier is a block-scoped lexical binding),
-/// rather than a ClassExpression (`x = class C {}`, `f(class C {})`, etc.,
-/// where `C` binds only inside the class body). A declaration only begins a
-/// Statement, so the token before it is a statement boundary; an expression
-/// `class` follows an operator, `=`, `(`, `,`, `return`, `[`, `:`, etc.
+// True when a `class` following `prev_tt` is a ClassDeclaration (statement
+// position, its BindingIdentifier is a block-scoped lexical binding),
+// rather than a ClassExpression (`x = class C {}`, `f(class C {})`, etc.,
+// where `C` binds only inside the class body). A declaration only begins a
+// Statement, so the token before it is a statement boundary; an expression
+// `class` follows an operator, `=`, `(`, `,`, `return`, `[`, `:`, etc.
 fn bool class_is_declaration(TokenType prev_tt) {
     switch (prev_tt) {
         case TokenType.SEMICOLON:
@@ -848,9 +848,9 @@ fn bool class_is_declaration(TokenType prev_tt) {
     }
 }
 
-/// TDZ-initialize top-level let/const declarations at program/eval scope so
-/// that accessing or assigning to them before their declaration throws a
-/// ReferenceError, matching block scope. Mirrors the INITTZ pass in block().
+// TDZ-initialize top-level let/const declarations at program/eval scope so
+// that accessing or assigning to them before their declaration throws a
+// ReferenceError, matching block scope. Mirrors the INITTZ pass in block().
 fn void CompilerContext.hoist_lexical_tdz(&self) {
     NameSpan[MAX_PRESCAN_NAMES] spans;
     uint n = self.pre_scan_lexical_decls(&spans, MAX_PRESCAN_NAMES);
@@ -861,12 +861,12 @@ fn void CompilerContext.hoist_lexical_tdz(&self) {
     }
 }
 
-/// Reject a module-scope lexical binding named `name` that already exists, for
-/// the one declaration form check_module_duplicate_lexical_names cannot
-/// pre-scan: `export default function F(){}`, whose `F` is not in statement
-/// position and so is never recorded by hoist_global_fn_decls. By the time the
-/// declaration is parsed, any colliding `class`/`let`/`const` is already on
-/// scope_stack.
+// Reject a module-scope lexical binding named `name` that already exists, for
+// the one declaration form check_module_duplicate_lexical_names cannot
+// pre-scan: `export default function F(){}`, whose `F` is not in statement
+// position and so is never recorded by hoist_global_fn_decls. By the time the
+// declaration is parsed, any colliding `class`/`let`/`const` is already on
+// scope_stack.
 fn void? CompilerContext.check_module_lexical_collision(&self, char[] name) {
     if (!self.is_module) return;
     for (uint i = 0; i < self.scope_depth; i++) {
@@ -877,17 +877,17 @@ fn void? CompilerContext.check_module_lexical_collision(&self, char[] name) {
     }
 }
 
-/// ES2024 §16.2.1.1: a MODULE body's LexicallyDeclaredNames must contain no
-/// duplicates. Unlike a Script's, a module's top-level FunctionDeclarations are
-/// lexical, so `class F {} function F(){}` is a SyntaxError where the same pair
-/// is legal at Script top level (there the function is var-scoped and simply
-/// wins).
-///
-/// Runs over the two name sets the module prologue has already collected: the
-/// let/const/class spans from pre_scan_lexical_decls, and the function names
-/// hoist_global_fn_decls recorded in hoisted_fn_names. Function-vs-function
-/// duplicates are already rejected inside that pre-scan, so this adds the
-/// lex-vs-lex and lex-vs-function pairings.
+// ES2024 §16.2.1.1: a MODULE body's LexicallyDeclaredNames must contain no
+// duplicates. Unlike a Script's, a module's top-level FunctionDeclarations are
+// lexical, so `class F {} function F(){}` is a SyntaxError where the same pair
+// is legal at Script top level (there the function is var-scoped and simply
+// wins).
+//
+// Runs over the two name sets the module prologue has already collected: the
+// let/const/class spans from pre_scan_lexical_decls, and the function names
+// hoist_global_fn_decls recorded in hoisted_fn_names. Function-vs-function
+// duplicates are already rejected inside that pre-scan, so this adds the
+// lex-vs-lex and lex-vs-function pairings.
 fn void? CompilerContext.check_module_duplicate_lexical_names(&self) {
     if (!self.is_module) return;
     NameSpan[MAX_PRESCAN_NAMES] spans;
@@ -903,29 +903,29 @@ fn void? CompilerContext.check_module_duplicate_lexical_names(&self) {
     }
 }
 
-/// §16.2.1.1: "It is a Syntax Error if any element of the ExportedBindings of
-/// ModuleItemList does not also occur in either the VarDeclaredNames of
-/// ModuleItemList, or the LexicallyDeclaredNames of ModuleItemList."
-///
-/// So `export { unresolvable };` is a SyntaxError, and so is
-/// `export { Number };` — a global is not a module-level declaration. Only a
-/// LOCAL export has an ExportedBinding: `export { x } from './m'` names `x`
-/// in the OTHER module, and a star export names nothing here.
-///
-/// Runs after the whole body is parsed, because the rule is about the module
-/// item LIST: `export { later }; var later = 1;` is legal, the declaration
-/// need not precede the export. The four sources of a module-level declared
-/// name at that point are:
-///   - top-level `let`/`const`/`class`, still on scope_stack (the caller runs
-///     this before pop_scope_to(0));
-///   - top-level `function`, in hoisted_fn_names, or in the module's
-///     func_decls when the declaration carried its own `export` prefix
-///     (`export function g(){}`), which the hoisting pre-scan does not see;
-///   - top-level `var`, which at module scope is never pushed to scope_stack
-///     (declare_var's is_global path), hence the pre-scan;
-///   - imported bindings, which are LexicallyDeclaredNames of the module.
-/// The pre-scan rewinds and restores the lexer itself, so calling it here,
-/// with the lexer parked at EOF, is safe.
+// §16.2.1.1: "It is a Syntax Error if any element of the ExportedBindings of
+// ModuleItemList does not also occur in either the VarDeclaredNames of
+// ModuleItemList, or the LexicallyDeclaredNames of ModuleItemList."
+//
+// So `export { unresolvable };` is a SyntaxError, and so is
+// `export { Number };` — a global is not a module-level declaration. Only a
+// LOCAL export has an ExportedBinding: `export { x } from './m'` names `x`
+// in the OTHER module, and a star export names nothing here.
+//
+// Runs after the whole body is parsed, because the rule is about the module
+// item LIST: `export { later }; var later = 1;` is legal, the declaration
+// need not precede the export. The four sources of a module-level declared
+// name at that point are:
+//   - top-level `let`/`const`/`class`, still on scope_stack (the caller runs
+//     this before pop_scope_to(0));
+//   - top-level `function`, in hoisted_fn_names, or in the module's
+//     func_decls when the declaration carried its own `export` prefix
+//     (`export function g(){}`), which the hoisting pre-scan does not see;
+//   - top-level `var`, which at module scope is never pushed to scope_stack
+//     (declare_var's is_global path), hence the pre-scan;
+//   - imported bindings, which are LexicallyDeclaredNames of the module.
+// The pre-scan rewinds and restores the lexer itself, so calling it here,
+// with the lexer parked at EOF, is safe.
 fn void? CompilerContext.check_module_exports_resolvable(&self) {
     if (!self.is_module || self.current_module == null) return;
     CompModuleDef* mod = self.get_module_def();
@@ -976,13 +976,13 @@ fn void? CompilerContext.check_module_exports_resolvable(&self) {
     }
 }
 
-/// Emit the GlobalDeclarationInstantiation lexName collision checks
-/// (ES2015 §15.1.11 step 5) for the top-level `let`/`const`/`class` names.
-/// Part of the check prologue that must precede every binding instantiation,
-/// so a SyntaxError (existing var/lex binding or restricted global property)
-/// throws with no observable side effects. Module top-level lexicals live in
-/// the Module Environment Record, which has no such restriction, so this is
-/// Script/eval only.
+// Emit the GlobalDeclarationInstantiation lexName collision checks
+// (ES2015 §15.1.11 step 5) for the top-level `let`/`const`/`class` names.
+// Part of the check prologue that must precede every binding instantiation,
+// so a SyntaxError (existing var/lex binding or restricted global property)
+// throws with no observable side effects. Module top-level lexicals live in
+// the Module Environment Record, which has no such restriction, so this is
+// Script/eval only.
 fn void? CompilerContext.hoist_lexical_tdz_checks(&self) {
     if (self.is_module) return;
     self.check_script_duplicate_lexical_names()!;
@@ -995,8 +995,8 @@ fn void? CompilerContext.hoist_lexical_tdz_checks(&self) {
     }
 }
 
-/// Each name's position in the source text is stored in `spans` so the
-/// caller can reconstruct the `char[]` slice from `lexer.source`.
+// Each name's position in the source text is stored in `spans` so the
+// caller can reconstruct the `char[]` slice from `lexer.source`.
 fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capacity) {
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
@@ -1161,16 +1161,16 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     return count;
 }
 
-/// Pre-scan tokens in the current block body to find all `var` declarators
-/// at any brace_depth (excluding nested function/class bodies, which are
-/// separate VarDeclaredNames scopes per ES2024 §13.2.13 / §14.5 / §13.15.1).
-/// Together with pre_scan_lexical_decls this feeds the
-/// BlockDeclarationInstantiation conflict check in block()
-/// (ES2024 §13.2.1 / §15.7.11: a name cannot be both LexicallyDeclaredNames
-/// and VarDeclaredNames). VarDeclaredNames recursively descends into nested
-/// BlockStatements per §13.2.5, so var names at any brace_depth inside the
-/// block contribute. Saves/restores lexer state so normal parsing can
-/// proceed afterwards.
+// Pre-scan tokens in the current block body to find all `var` declarators
+// at any brace_depth (excluding nested function/class bodies, which are
+// separate VarDeclaredNames scopes per ES2024 §13.2.13 / §14.5 / §13.15.1).
+// Together with pre_scan_lexical_decls this feeds the
+// BlockDeclarationInstantiation conflict check in block()
+// (ES2024 §13.2.1 / §15.7.11: a name cannot be both LexicallyDeclaredNames
+// and VarDeclaredNames). VarDeclaredNames recursively descends into nested
+// BlockStatements per §13.2.5, so var names at any brace_depth inside the
+// block contribute. Saves/restores lexer state so normal parsing can
+// proceed afterwards.
 fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity) {
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
@@ -1328,19 +1328,19 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
     return count;
 }
 
-/// Pre-scan tokens in the current switch CaseBlock to find all lexically
-/// scoped declarations directly inside case/default clauses: `let`/`const`
-/// bindings, `class` declarations, and (non-strict-hoisted) `function`/
-/// `function*`/`async function` declarations at the top level of the
-/// CaseBlock (brace depth 0, excluding nested blocks).
-///
-/// ES2015 §14.12 CaseBlock has its own lexical scope (BlockDeclarationInstantiation),
-/// so all of these names must be TDZ-initialized/scoped to the switch, exactly
-/// like block()'s treatment of let/const, this just widens the name set to
-/// match everything CaseBlockEvaluation's BlockDeclarationInstantiation collects.
-///
-/// Saves and restores the lexer state so normal parsing can proceed afterwards.
-/// Returns the number of names found (0 to MAX_PRESCAN_NAMES).
+// Pre-scan tokens in the current switch CaseBlock to find all lexically
+// scoped declarations directly inside case/default clauses: `let`/`const`
+// bindings, `class` declarations, and (non-strict-hoisted) `function`/
+// `function*`/`async function` declarations at the top level of the
+// CaseBlock (brace depth 0, excluding nested blocks).
+//
+// ES2015 §14.12 CaseBlock has its own lexical scope (BlockDeclarationInstantiation),
+// so all of these names must be TDZ-initialized/scoped to the switch, exactly
+// like block()'s treatment of let/const, this just widens the name set to
+// match everything CaseBlockEvaluation's BlockDeclarationInstantiation collects.
+//
+// Saves and restores the lexer state so normal parsing can proceed afterwards.
+// Returns the number of names found (0 to MAX_PRESCAN_NAMES).
 fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, uint capacity) {
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
@@ -1581,23 +1581,23 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     return count;
 }
 
-/// ES2024 §13.2.1: "It is a Syntax Error if the LexicallyDeclaredNames of
-/// StatementList contains any duplicate entries." `{ let x; class x {} }`,
-/// `{ function f(){} class f{} }` and `{ function f(){} let f; }` are all
-/// SyntaxErrors. The same rule is §14.12.1 for a switch's CaseBlock, whose
-/// clauses share one StatementList, so both call sites use this.
-///
-/// Annex B's relaxation for two plain FunctionDeclarations sharing a name in
-/// one block is sloppy-mode only, so it never applies here: this engine is
-/// strict-only (see AGENTS.md). test262 states the split directly — the
-/// generated pair for `{ function f(){} function f(){} }` and its switch
-/// counterpart come from the `redeclare-allow-sloppy-function` templates and
-/// carry `flags: [onlyStrict]` with `negative: phase: parse`, i.e. strict code
-/// must reject exactly what sloppy code accepts.
-///
-/// This applies only to a genuine BlockStatement or CaseBlock. A function
-/// BODY's top-level FunctionDeclarations are var-scoped rather than lexical,
-/// so they are not LexicallyDeclaredNames at all and never reach this check.
+// ES2024 §13.2.1: "It is a Syntax Error if the LexicallyDeclaredNames of
+// StatementList contains any duplicate entries." `{ let x; class x {} }`,
+// `{ function f(){} class f{} }` and `{ function f(){} let f; }` are all
+// SyntaxErrors. The same rule is §14.12.1 for a switch's CaseBlock, whose
+// clauses share one StatementList, so both call sites use this.
+//
+// Annex B's relaxation for two plain FunctionDeclarations sharing a name in
+// one block is sloppy-mode only, so it never applies here: this engine is
+// strict-only (see AGENTS.md). test262 states the split directly — the
+// generated pair for `{ function f(){} function f(){} }` and its switch
+// counterpart come from the `redeclare-allow-sloppy-function` templates and
+// carry `flags: [onlyStrict]` with `negative: phase: parse`, i.e. strict code
+// must reject exactly what sloppy code accepts.
+//
+// This applies only to a genuine BlockStatement or CaseBlock. A function
+// BODY's top-level FunctionDeclarations are var-scoped rather than lexical,
+// so they are not LexicallyDeclaredNames at all and never reach this check.
 fn void? CompilerContext.check_duplicate_lexical_names(&self, NameSpan* spans, uint count) {
     for (uint ai = 0; ai < count; ai++) {
         for (uint bi = ai + 1; bi < count; bi++) {
@@ -1609,12 +1609,12 @@ fn void? CompilerContext.check_duplicate_lexical_names(&self, NameSpan* spans, u
     }
 }
 
-/// ES2024 §16.1.1: a ScriptBody's LexicallyDeclaredNames must contain no
-/// duplicates, and §19.2.1.1 applies the same rule to an eval body. Colliding
-/// `let`/`const` are already caught at their declaration site by declare_var's
-/// scope walk, but two top-level `class` bindings never meet there, so the
-/// whole pre-scanned set is compared up front. Modules have their own,
-/// stricter check (check_module_duplicate_lexical_names).
+// ES2024 §16.1.1: a ScriptBody's LexicallyDeclaredNames must contain no
+// duplicates, and §19.2.1.1 applies the same rule to an eval body. Colliding
+// `let`/`const` are already caught at their declaration site by declare_var's
+// scope walk, but two top-level `class` bindings never meet there, so the
+// whole pre-scanned set is compared up front. Modules have their own,
+// stricter check (check_module_duplicate_lexical_names).
 fn void? CompilerContext.check_script_duplicate_lexical_names(&self) {
     if (self.is_module) return;
     NameSpan[MAX_PRESCAN_NAMES] spans;
@@ -1622,11 +1622,11 @@ fn void? CompilerContext.check_script_duplicate_lexical_names(&self) {
     self.check_duplicate_lexical_names(&spans[0], n)!;
 }
 
-/// ES2024 §13.2.1 / §14.12.1: the LexicallyDeclaredNames and VarDeclaredNames
-/// of a StatementList must not intersect, so `let x; var x;` (either order) at
-/// the same level is a SyntaxError. Scans forward from the current lexer
-/// position for the `var` names, so it must be called with the lexer parked
-/// just inside the body's opening brace, like the lexical pre-scans.
+// ES2024 §13.2.1 / §14.12.1: the LexicallyDeclaredNames and VarDeclaredNames
+// of a StatementList must not intersect, so `let x; var x;` (either order) at
+// the same level is a SyntaxError. Scans forward from the current lexer
+// position for the `var` names, so it must be called with the lexer parked
+// just inside the body's opening brace, like the lexical pre-scans.
 fn void? CompilerContext.check_lexical_var_conflicts(&self, NameSpan* lex_spans, uint num_lex) {
     if (num_lex == 0) return;
     NameSpan[MAX_PRESCAN_NAMES] var_spans;
@@ -1641,28 +1641,28 @@ fn void? CompilerContext.check_lexical_var_conflicts(&self, NameSpan* lex_spans,
     }
 }
 
-/// Instantiate every top-level FunctionDeclaration of a block (or switch
-/// CaseBlock) at the block's entry, per ES2024 §14.2.11
-/// BlockDeclarationInstantiation step 3(a)(ii): unlike a `let`/`const`/`class`
-/// binding, which step 3(d) leaves uninitialized (the TDZ sentinel INITTZ
-/// writes), a FunctionDeclaration runs InstantiateFunctionObject right here,
-/// so the binding already holds its closure before the block's first statement
-/// executes. `{ f(); function f(){} }` therefore works, and papaparse's
-/// mutually-recursive block-scoped helpers resolve.
-///
-/// Each declaration is compiled by re-entering the ordinary statement path
-/// with the lexer parked at its `function` / `async` keyword (the snapshot
-/// pre_scan_switch_lexical_decls stored in NameSpan.fn_lexer), so generators,
-/// async functions and Function.prototype.toString source retention all behave
-/// exactly as they do at the textual position. force_lexical_fn_decl is already
-/// set by the caller, so each one binds via PUTLEX into the lex_env PUSH_LEX
-/// just installed — late enough to capture this block's own lexical bindings,
-/// early enough that no statement has run.
-///
-/// The names are left in `block_fn_spans` for function_declaration to skip when
-/// the textual pass reaches them again.
-///
-/// Must be called after PUSH_LEX and the INITTZ loop, and before any statement.
+// Instantiate every top-level FunctionDeclaration of a block (or switch
+// CaseBlock) at the block's entry, per ES2024 §14.2.11
+// BlockDeclarationInstantiation step 3(a)(ii): unlike a `let`/`const`/`class`
+// binding, which step 3(d) leaves uninitialized (the TDZ sentinel INITTZ
+// writes), a FunctionDeclaration runs InstantiateFunctionObject right here,
+// so the binding already holds its closure before the block's first statement
+// executes. `{ f(); function f(){} }` therefore works, and papaparse's
+// mutually-recursive block-scoped helpers resolve.
+//
+// Each declaration is compiled by re-entering the ordinary statement path
+// with the lexer parked at its `function` / `async` keyword (the snapshot
+// pre_scan_switch_lexical_decls stored in NameSpan.fn_lexer), so generators,
+// async functions and Function.prototype.toString source retention all behave
+// exactly as they do at the textual position. force_lexical_fn_decl is already
+// set by the caller, so each one binds via PUTLEX into the lex_env PUSH_LEX
+// just installed — late enough to capture this block's own lexical bindings,
+// early enough that no statement has run.
+//
+// The names are left in `block_fn_spans` for function_declaration to skip when
+// the textual pass reaches them again.
+//
+// Must be called after PUSH_LEX and the INITTZ loop, and before any statement.
 fn void? CompilerContext.emit_block_scoped_fn_decls(&self, NameSpan* lex_spans, uint num_lex) {
     // The scan position to come back to: the block's first statement.
     LexerPos resume_pos = self.capture_lexer_pos();
@@ -1695,13 +1695,13 @@ fn void? CompilerContext.emit_block_scoped_fn_decls(&self, NameSpan* lex_spans, 
     self.pushback_count = 0;
 }
 
-/// Parse a block: { statement* }
-/// If `check_directives` is true, checks for "use strict" directive prologue at the start.
-/// `is_param_body` marks a block that is the body scope of an enclosing
-/// parameter list, so a top-level `let`/`const` in it may not redeclare a
-/// parameter name. True for a function body (implied by `check_directives`,
-/// which only the function-body call sites pass) and for a `catch` block,
-/// whose relationship to its CatchParameter is the same one (§14.15.1).
+// Parse a block: { statement* }
+// If `check_directives` is true, checks for "use strict" directive prologue at the start.
+// `is_param_body` marks a block that is the body scope of an enclosing
+// parameter list, so a top-level `let`/`const` in it may not redeclare a
+// parameter name. True for a function body (implied by `check_directives`,
+// which only the function-body call sites pass) and for a `catch` block,
+// whose relationship to its CatchParameter is the same one (§14.15.1).
 fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex_hint = false,
                                bool is_param_body = false) {
     self.expect(TokenType.LBRACE)!;
@@ -1880,7 +1880,7 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     self.free_regs_to(saved_reg);
 }
 
-/// Emit the environment store for a declared variable (PUTVAR or PUTLEX/PUTLEX_C).
+// Emit the environment store for a declared variable (PUTVAR or PUTLEX/PUTLEX_C).
 fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is_lexical, bool is_const) {
     if (is_lexical) {
         if (is_const) {
@@ -1914,7 +1914,7 @@ fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is
     }
 }
 
-/// Parse var/let/const declaration.
+// Parse var/let/const declaration.
 fn void? CompilerContext.var_declaration(&self) {
     Token decl_tok = self.advance()!;
     bool is_const = (decl_tok.type == TokenType.CONST);
@@ -2087,7 +2087,7 @@ fn void? CompilerContext.var_declaration(&self) {
     self.expect_semicolon_or_asi()!;
 }
 
-/// Parse if/else statement.
+// Parse if/else statement.
 fn void? CompilerContext.if_statement(&self) {
     self.expect(TokenType.IF)!;
     self.expect(TokenType.LPAREN)!;
@@ -2132,7 +2132,7 @@ fn void? CompilerContext.if_statement(&self) {
     }
 }
 
-/// Parse while statement.
+// Parse while statement.
 fn void? CompilerContext.while_statement(&self) {
     self.expect(TokenType.WHILE)!;
     self.expect(TokenType.LPAREN)!;
@@ -2374,10 +2374,10 @@ fn void? CompilerContext.while_statement(&self) {
     self.match(TokenType.SEMICOLON);
 }
 
-/// Copy a classic for-loop's lexical head bindings into a fresh environment
-/// (ES2015 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
-/// before the old environment is popped: after the pop, later bindings in a
-/// multi-declarator head are no longer reachable.
+// Copy a classic for-loop's lexical head bindings into a fresh environment
+// (ES2015 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
+// before the old environment is popped: after the pop, later bindings in a
+// multi-declarator head are no longer reachable.
 fn void CompilerContext.emit_create_per_iteration_env(&self,
     uint[] name_idxs, bool[] is_const, uint count)
 {
@@ -2397,7 +2397,7 @@ fn void CompilerContext.emit_create_per_iteration_env(&self,
     }
 }
 
-/// Parse for statement (basic for, for-in, for-of, for-await-of).
+// Parse for statement (basic for, for-in, for-of, for-await-of).
 fn void? CompilerContext.for_statement(&self) {
     self.expect(TokenType.FOR)!;
 
@@ -3834,9 +3834,9 @@ fn void? CompilerContext.for_statement(&self) {
     self.free_regs_to(saved_reg);
 }
 
-/// Capture the full lexer + compiler-pushback state for later replay
-/// via restore_lhs_snapshot. See ForLhsSnapshot for why this must be
-/// the whole state, not just a byte offset.
+// Capture the full lexer + compiler-pushback state for later replay
+// via restore_lhs_snapshot. See ForLhsSnapshot for why this must be
+// the whole state, not just a byte offset.
 fn ForLhsSnapshot CompilerContext.save_lhs_snapshot(&self) {
     ForLhsSnapshot s;
     s.pos    = self.lexer.pos;
@@ -3853,7 +3853,7 @@ fn ForLhsSnapshot CompilerContext.save_lhs_snapshot(&self) {
     return s;
 }
 
-/// Restore a snapshot captured by save_lhs_snapshot.
+// Restore a snapshot captured by save_lhs_snapshot.
 fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
     self.lexer.pos             = s.pos;
     self.lexer.line            = s.line;
@@ -3868,28 +3868,28 @@ fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
     self.pushback_stack        = s.pbs;
 }
 
-/// Drop the compiler side effects of a for-in/of member head parse whose
-/// code has just been rewound. member_expr() leaves behind state that later
-/// expressions consult as if it described the most recent instruction:
-///
-///  - call_prop_obj_reg records the receiver of a method call. A discarded
-///    `o.p` head leaves it set, which makes the next call in the function
-///    take the method-call path: `undef_this` is false, so the callee's
-///    speculatively stripped GETVAR/GETGLOBAL is never restored and the call
-///    dispatches on a register nothing ever wrote ("X is not a function").
-///  - last_was_getvar/last_was_getglobal anchor the CALL_VAR/CALL_GLOBAL
-///    fusion to `last_getvar_code_pos + 1 == code_count`. After a rewind that
-///    equality can hold for an unrelated instruction.
+// Drop the compiler side effects of a for-in/of member head parse whose
+// code has just been rewound. member_expr() leaves behind state that later
+// expressions consult as if it described the most recent instruction:
+//
+//  - call_prop_obj_reg records the receiver of a method call. A discarded
+//    `o.p` head leaves it set, which makes the next call in the function
+//    take the method-call path: `undef_this` is false, so the callee's
+//    speculatively stripped GETVAR/GETGLOBAL is never restored and the call
+//    dispatches on a register nothing ever wrote ("X is not a function").
+//  - last_was_getvar/last_was_getglobal anchor the CALL_VAR/CALL_GLOBAL
+//    fusion to `last_getvar_code_pos + 1 == code_count`. After a rewind that
+//    equality can hold for an unrelated instruction.
 fn void CompilerContext.discard_member_head_state(&self) {
     self.call_prop_obj_reg = REG_NONE;
     self.last_was_getvar = false;
     self.last_was_getglobal = false;
 }
 
-/// Emit a bare for-in loop whose LHS is a plain identifier with no
-/// declaration keyword: `for (x in obj) { ... }`. Mirrors the
-/// `var`/`let`/`const` for-in path but stores each key via PUTVAR
-/// against an existing binding instead of declaring a new one.
+// Emit a bare for-in loop whose LHS is a plain identifier with no
+// declaration keyword: `for (x in obj) { ... }`. Mirrors the
+// `var`/`let`/`const` for-in path but stores each key via PUTVAR
+// against an existing binding instead of declaring a new one.
 fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj_reg, uint saved_scope, ushort saved_reg) {
     uint name_idx = self.add_string_constant(var_name);
     ushort iter_var = self.alloc_reg();
@@ -3962,24 +3962,24 @@ struct IterRec {
     ushort callee_reg;  // per-iteration callee slot (reloaded each step)
     ushort callee_this_reg;
     bool   is_await;
-    /// Address of the fused fast path's done-branch, valid while
-    /// has_fast_exit. Lives here rather than on the context because for-of
-    /// loops nest: a shared field would be overwritten by the inner loop and
-    /// the outer branch would never be patched, leaving it jumping to offset
-    /// zero -- an infinite loop.
+    // Address of the fused fast path's done-branch, valid while
+    // has_fast_exit. Lives here rather than on the context because for-of
+    // loops nest: a shared field would be overwritten by the inner loop and
+    // the outer branch would never be patched, leaving it jumping to offset
+    // zero -- an infinite loop.
     uint   fast_exit;
     bool   has_fast_exit;
 }
 
-/// GetIterator(src, hint): look up the iterator method, call it, fetch .next.
-/// For sync (hint=sync) this is Symbol.iterator. For async (hint=async,
-/// for-await) this is GET_ITER_ASYNC, which does the spec GetIterator(obj,async):
-/// prefer Symbol.asyncIterator; if absent, wrap Symbol.iterator() in an
-/// %AsyncFromSyncIterator% adapter so a plain sync iterable (array, generator)
-/// works under `for await`. Either way the iterator lands in method_reg (below
-/// the callee window) and .next in next_reg, with the callee/this window ABOVE
-/// them, so a generator source overlaying the sliding window on resume cannot
-/// clobber them (see plan 042/043).
+// GetIterator(src, hint): look up the iterator method, call it, fetch .next.
+// For sync (hint=sync) this is Symbol.iterator. For async (hint=async,
+// for-await) this is GET_ITER_ASYNC, which does the spec GetIterator(obj,async):
+// prefer Symbol.asyncIterator; if absent, wrap Symbol.iterator() in an
+// %AsyncFromSyncIterator% adapter so a plain sync iterable (array, generator)
+// works under `for await`. Either way the iterator lands in method_reg (below
+// the callee window) and .next in next_reg, with the callee/this window ABOVE
+// them, so a generator source overlaying the sliding window on resume cannot
+// clobber them (see plan 042/043).
 fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await) {
     ushort method_reg;
     if (is_await) {
@@ -4037,11 +4037,11 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
     return rec;
 }
 
-/// One iteration step: reload callee/this (healing a generator source that
-/// overwrote the callee window last iteration), call .next(), require an object
-/// result, unpack .done/.value. Writes the value into val_slot (which the caller
-/// allocated below the callee window) and returns the exit jump to patch at the
-/// done=true target. Leaves no live temps above val_slot.
+// One iteration step: reload callee/this (healing a generator source that
+// overwrote the callee window last iteration), call .next(), require an object
+// result, unpack .done/.value. Writes the value into val_slot (which the caller
+// allocated below the callee window) and returns the exit jump to patch at the
+// done=true target. Leaves no live temps above val_slot.
 fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot, uint* out_fast_exit) {
     // Fused fast step for a built-in array iterator, laid out as the opcode
     // documents: refusal falls through to the first JUMP (into the generic
@@ -4125,10 +4125,10 @@ fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot, uin
     return exit_jump;
 }
 
-/// IteratorClose on the loop iterator. throw_variant=true suppresses errors from
-/// .return access/call (the original throw takes precedence, §7.4.6 steps 6,8).
-/// For for-await this is AsyncIteratorClose (§7.4.11): the .return() result is
-/// awaited before the completion propagates.
+// IteratorClose on the loop iterator. throw_variant=true suppresses errors from
+// .return access/call (the original throw takes precedence, §7.4.6 steps 6,8).
+// For for-await this is AsyncIteratorClose (§7.4.11): the .return() result is
+// awaited before the completion propagates.
 fn void CompilerContext.emit_iter_close(&self, IterRec rec, bool throw_variant) {
     if (rec.is_await) {
         // ITER_CLOSE_ASYNC leaves the .return() result in method_reg (or
@@ -4149,7 +4149,7 @@ fn void CompilerContext.emit_iter_close(&self, IterRec rec, bool throw_variant) 
     self.emit_abc(Opcode.ITER_CLOSE, (uint)rec.method_reg, throw_variant ? 1 : 0, 0);
 }
 
-/// Free the four iterator-record registers (reverse allocation order).
+// Free the four iterator-record registers (reverse allocation order).
 fn void CompilerContext.free_iter_rec(&self, IterRec rec) {
     self.free_reg(rec.callee_this_reg);
     self.free_reg(rec.callee_reg);
@@ -4157,12 +4157,12 @@ fn void CompilerContext.free_iter_rec(&self, IterRec rec) {
     self.free_reg(rec.method_reg);
 }
 
-/// The single for-of loop skeleton. The RHS has already been evaluated into
-/// src_reg; head describes the per-iteration value binding. On entry the loop
-/// variable / pattern (per head) is already declared in the current scope.
-/// Emits the full ForIn/OfBodyEvaluation loop (§14.7.5.6): GetIterator → loop
-/// { per-iter env, .next, done? exit, bind, body } → IteratorClose. Frees
-/// src_reg and restores scope/regs to saved_scope/saved_reg on exit.
+// The single for-of loop skeleton. The RHS has already been evaluated into
+// src_reg; head describes the per-iteration value binding. On entry the loop
+// variable / pattern (per head) is already declared in the current scope.
+// Emits the full ForIn/OfBodyEvaluation loop (§14.7.5.6): GetIterator → loop
+// { per-iter env, .next, done? exit, bind, body } → IteratorClose. Frees
+// src_reg and restores scope/regs to saved_scope/saved_reg on exit.
 fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint saved_scope, ushort saved_reg, bool is_await) {
     IterRec rec = self.emit_iter_open(src_reg, is_await)!;
 
@@ -4260,7 +4260,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     self.free_regs_to(saved_reg);
 }
 
-/// Per-iteration TDZ init for lexical head bindings (fresh env each iteration).
+// Per-iteration TDZ init for lexical head bindings (fresh env each iteration).
 fn void CompilerContext.emit_head_inittz(&self, ForOfHead head) {
     switch (head.kind) {
         case IDENT:
@@ -4277,8 +4277,8 @@ fn void CompilerContext.emit_head_inittz(&self, ForOfHead head) {
     }
 }
 
-/// The per-value step: bind val_slot to the loop target (§14.7.5.6). Runs inside
-/// the IteratorClose-on-throw guard.
+// The per-value step: bind val_slot to the loop target (§14.7.5.6). Runs inside
+// the IteratorClose-on-throw guard.
 fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) {
     switch (head.kind) {
         case IDENT:
@@ -4320,10 +4320,10 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
     }
 }
 
-/// Emit a for-of loop with a bare destructuring pattern LHS:
-/// `for ([a, b] of arr) { ... }` or `for ({x, y} of arr) { ... }`.
-/// Bindings are VAR-scoped and persist across iterations (no per-iter
-/// block scope). The '[' or '{' has NOT been consumed on entry.
+// Emit a for-of loop with a bare destructuring pattern LHS:
+// `for ([a, b] of arr) { ... }` or `for ({x, y} of arr) { ... }`.
+// Bindings are VAR-scoped and persist across iterations (no per-iter
+// block scope). The '[' or '{' has NOT been consumed on entry.
 fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_pattern, uint saved_scope, ushort saved_reg, bool is_await = false) {
     // Collect the assignment pattern with the shared collectors.
     // Bare for-of (`for ([a] of ...)` / `for ({x} of ...)`) assigns to existing
@@ -4391,9 +4391,9 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
     self.emit_forof(head, iter_reg, saved_scope, saved_reg, is_await)!;
 }
 
-/// Emit a for-in loop with a bare destructuring pattern LHS:
-/// `for ([a, b] in obj) { ... }` or `for ({x, y} in obj) { ... }`.
-/// The '[' or '{' has NOT been consumed.
+// Emit a for-in loop with a bare destructuring pattern LHS:
+// `for ([a, b] in obj) { ... }` or `for ({x, y} in obj) { ... }`.
+// The '[' or '{' has NOT been consumed.
 fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_pattern, uint saved_scope, ushort saved_reg) {
     // A bare pattern in a for-in head is an AssignmentPattern (ES2024
     // §14.7.5.1, same as the for-of form): it assigns to existing lvalues
@@ -4486,13 +4486,13 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
     self.free_regs_to(saved_reg);
 }
 
-/// Emit a for-of loop whose head LHS is a member expression, e.g.
-/// `for (obj.prop of arr) { ... }` (ES2015 §13.7.5.1: the head's
-/// AssignmentExpression may be any valid assignment target, not just
-/// an identifier). The LHS is re-parsed from source and re-compiled
-/// fresh at the top of every iteration (right before the body), which
-/// gives correct per-iteration re-evaluation of the member base per
-/// spec, reusing the same PUTPROP path normal assignment uses.
+// Emit a for-of loop whose head LHS is a member expression, e.g.
+// `for (obj.prop of arr) { ... }` (ES2015 §13.7.5.1: the head's
+// AssignmentExpression may be any valid assignment target, not just
+// an identifier). The LHS is re-parsed from source and re-compiled
+// fresh at the top of every iteration (right before the body), which
+// gives correct per-iteration re-evaluation of the member base per
+// spec, reusing the same PUTPROP path normal assignment uses.
 fn void? CompilerContext.emit_forof_loop_member(&self, ForLhsSnapshot lhs_snap, ushort iter_reg, uint saved_scope, ushort saved_reg, bool is_await = false) {
     ForOfHead head;
     head.kind = MEMBER;
@@ -4500,9 +4500,9 @@ fn void? CompilerContext.emit_forof_loop_member(&self, ForLhsSnapshot lhs_snap, 
     self.emit_forof(head, iter_reg, saved_scope, saved_reg, is_await)!;
 }
 
-/// Emit a for-in loop whose head LHS is a member expression, e.g.
-/// `for (obj.prop in x) { ... }`. Same re-parse-per-iteration strategy
-/// as emit_forof_loop_member.
+// Emit a for-in loop whose head LHS is a member expression, e.g.
+// `for (obj.prop in x) { ... }`. Same re-parse-per-iteration strategy
+// as emit_forof_loop_member.
 fn void? CompilerContext.emit_forin_loop_member(&self, ForLhsSnapshot lhs_snap, ushort obj_reg, uint saved_scope, ushort saved_reg) {
     ushort key_reg = self.alloc_reg();
 
@@ -4541,11 +4541,11 @@ fn void? CompilerContext.emit_forin_loop_member(&self, ForLhsSnapshot lhs_snap, 
     self.free_regs_to(saved_reg);
 }
 
-/// Re-parse a member-expression LHS from a saved lexer snapshot and
-/// emit `<lhs> = val_reg` via PUTPROP. Used by the for-of/for-in
-/// member-LHS loops to re-evaluate the assignment target fresh each
-/// iteration (ES2015 §13.7.5.13 ForIn/OfBodyEvaluation: the reference
-/// is (re-)resolved every iteration for non-declaration LHS forms).
+// Re-parse a member-expression LHS from a saved lexer snapshot and
+// emit `<lhs> = val_reg` via PUTPROP. Used by the for-of/for-in
+// member-LHS loops to re-evaluate the assignment target fresh each
+// iteration (ES2015 §13.7.5.13 ForIn/OfBodyEvaluation: the reference
+// is (re-)resolved every iteration for non-declaration LHS forms).
 fn void? CompilerContext.emit_member_lhs_store(&self, ForLhsSnapshot lhs_snap, ushort val_reg) {
     ForLhsSnapshot resume_snap = self.save_lhs_snapshot();
 
@@ -4566,7 +4566,7 @@ fn void? CompilerContext.emit_member_lhs_store(&self, ForLhsSnapshot lhs_snap, u
     self.discard_member_head_state();
 }
 
-/// Parse do-while statement.
+// Parse do-while statement.
 fn void? CompilerContext.do_while_statement(&self) {
     self.expect(TokenType.DO)!;
 
@@ -4605,11 +4605,11 @@ fn void? CompilerContext.do_while_statement(&self) {
     self.pop_loop();
 }
 
-/// Emit the non-throw IteratorClose for the loop at loop_stack[li] during an
-/// abrupt-exit unwind (break/return/labeled break). For a for-await loop this is
-/// AsyncIteratorClose (§7.4.11): the .return() result must be awaited. Clobbering
-/// the iterator register with the awaited result is safe here, the loop is being
-/// abandoned. Assumes loop_stack[li].iter_close_reg >= 0.
+// Emit the non-throw IteratorClose for the loop at loop_stack[li] during an
+// abrupt-exit unwind (break/return/labeled break). For a for-await loop this is
+// AsyncIteratorClose (§7.4.11): the .return() result must be awaited. Clobbering
+// the iterator register with the awaited result is safe here, the loop is being
+// abandoned. Assumes loop_stack[li].iter_close_reg >= 0.
 fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     uint reg = (uint)self.loop_stack[li].iter_close_reg;
     // Pop the loop body's IteratorClose-on-throw catcher (the TRY emitted
@@ -4629,10 +4629,10 @@ fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     }
 }
 
-/// Parse return statement.
-/// Emit ITER_CLOSE for every enclosing for-of loop, innermost first.
-/// A return exits all loops in the function, so each loop's iterator must be
-/// closed (§14.7.5.7, abrupt loop completions call IteratorClose).
+// Parse return statement.
+// Emit ITER_CLOSE for every enclosing for-of loop, innermost first.
+// A return exits all loops in the function, so each loop's iterator must be
+// closed (§14.7.5.7, abrupt loop completions call IteratorClose).
 fn void CompilerContext.emit_return_iter_closes(&self) {
     for (int li = (int)self.loop_depth - 1; li >= 0; li--) {
         if (self.loop_stack[li].iter_close_reg >= 0) {
@@ -4691,7 +4691,7 @@ fn void? CompilerContext.return_statement(&self) {
     self.expect_semicolon_or_asi()!;
 }
 
-/// Parse throw statement.
+// Parse throw statement.
 fn void? CompilerContext.throw_statement(&self) {
     self.expect(TokenType.THROW)!;
 
@@ -4712,19 +4712,19 @@ fn void? CompilerContext.throw_statement(&self) {
     self.expect_semicolon_or_asi()!;
 }
 
-/// Parse try/catch/finally statement.
-///
-/// Bytecode layout:
-///   TRY A=flags, BC=catch_offset    , A bit0=catch, bit1=finally
-///   NOP A=0,    BC=finally_offset   , jump slot (0 if no finally)
-///   <try block>
-///   ENDTRY
-///   JUMP -> finally_or_after
-///   [CATCH rX , at try_addr + catch_offset]
-///   [<catch block>]
-///   [FINALLY  , at try_addr + finally_offset (if has_finally)]
-///   [<finally block>]
-///   [ENDFINALLY]
+// Parse try/catch/finally statement.
+//
+// Bytecode layout:
+//   TRY A=flags, BC=catch_offset    , A bit0=catch, bit1=finally
+//   NOP A=0,    BC=finally_offset   , jump slot (0 if no finally)
+//   <try block>
+//   ENDTRY
+//   JUMP -> finally_or_after
+//   [CATCH rX , at try_addr + catch_offset]
+//   [<catch block>]
+//   [FINALLY  , at try_addr + finally_offset (if has_finally)]
+//   [<finally block>]
+//   [ENDFINALLY]
 fn void? CompilerContext.try_statement(&self) {
     self.expect(TokenType.TRY)!;
 
@@ -4959,14 +4959,14 @@ fn void? CompilerContext.try_statement(&self) {
     }
 }
 
-/// Parse switch statement with correct fall-through (ES5 §12.11).
-///
-/// Each case body ends with a fall-through redirect JUMP patched after all
-/// case clauses are parsed, so that when a matched case body completes (without
-/// break) execution continues to the next case body rather than re-checking
-/// the next case's comparison preamble. The `default` clause is handled with
-/// a preamble JUMP when it is not the last clause, allowing subsequent cases
-/// to be checked before falling through to default on no match.
+// Parse switch statement with correct fall-through (ES5 §12.11).
+//
+// Each case body ends with a fall-through redirect JUMP patched after all
+// case clauses are parsed, so that when a matched case body completes (without
+// break) execution continues to the next case body rather than re-checking
+// the next case's comparison preamble. The `default` clause is handled with
+// a preamble JUMP when it is not the last clause, allowing subsequent cases
+// to be checked before falling through to default on no match.
 fn void? CompilerContext.switch_statement(&self) {
     self.expect(TokenType.SWITCH)!;
     self.expect(TokenType.LPAREN)!;
@@ -5274,8 +5274,8 @@ fn void? CompilerContext.switch_statement(&self) {
     }
 }
 
-/// Parse a labeled statement: `identifier : statement`.
-/// Supports labeled break and continue (ES5 §12.12).
+// Parse a labeled statement: `identifier : statement`.
+// Supports labeled break and continue (ES5 §12.12).
 fn void? CompilerContext.labeled_statement(&self, char[] name) {
     uint saved_label_count = self.label_count;
 
@@ -5338,9 +5338,9 @@ fn void? CompilerContext.labeled_statement(&self, char[] name) {
     self.label_count = saved_label_count;
 }
 
-/// Parse break statement.
-/// If an identifier follows `break`, it's a labeled break (ES5 §12.12).
-/// A line terminator between `break` and the identifier means unlabeled break.
+// Parse break statement.
+// If an identifier follows `break`, it's a labeled break (ES5 §12.12).
+// A line terminator between `break` and the identifier means unlabeled break.
 fn void? CompilerContext.break_statement(&self) {
     self.expect(TokenType.BREAK)!;
 
@@ -5414,9 +5414,9 @@ fn void? CompilerContext.break_statement(&self) {
     self.expect_semicolon_or_asi()!;
 }
 
-/// Parse continue statement.
-/// If an identifier follows `continue`, it's a labeled continue (ES5 §12.12).
-/// A line terminator between `continue` and the identifier means unlabeled continue.
+// Parse continue statement.
+// If an identifier follows `continue`, it's a labeled continue (ES5 §12.12).
+// A line terminator between `continue` and the identifier means unlabeled continue.
 fn void? CompilerContext.continue_statement(&self) {
     self.expect(TokenType.CONTINUE)!;
 
@@ -5484,7 +5484,7 @@ fn void? CompilerContext.continue_statement(&self) {
     self.expect_semicolon_or_asi()!;
 }
 
-/// Parse expression statement.
+// Parse expression statement.
 fn void? CompilerContext.expression_statement(&self) {
     // The statement's value is discarded, except in eval, where the last
     // expression statement supplies the implicit completion value. Signal the
@@ -5510,9 +5510,9 @@ fn void? CompilerContext.expression_statement(&self) {
     self.expect_semicolon_or_asi()!;
 }
 
-/// Parse a function declaration (hoisted).
-/// This is called during normal statement parsing for function declarations
-/// that were NOT hoisted during the pre-scan phase.
+// Parse a function declaration (hoisted).
+// This is called during normal statement parsing for function declarations
+// that were NOT hoisted during the pre-scan phase.
 fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false, uint async_kw_start = 0xFFFFFFFF) {
     self.expect(TokenType.FUNCTION)!;
     // Capture the byte offset of the `function` keyword before any subsequent
@@ -5761,28 +5761,28 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
 // ESM Import/Export declarations
 // ============================================================================
 
-/// True when `tok` is the contextual keyword `of` that heads a for-of loop.
-///
-/// `of` is not a reserved word, so it arrives as a plain IDENTIFIER and has to
-/// be matched on its text. An escaped spelling is never the keyword (ES2024
-/// §12.6.1), so `for (var x of [])` is a SyntaxError rather than a for-of
-/// loop -- the same rule expect_as / expect_from apply to `as` and `from`.
+// True when `tok` is the contextual keyword `of` that heads a for-of loop.
+//
+// `of` is not a reserved word, so it arrives as a plain IDENTIFIER and has to
+// be matched on its text. An escaped spelling is never the keyword (ES2024
+// §12.6.1), so `for (var x of [])` is a SyntaxError rather than a for-of
+// loop -- the same rule expect_as / expect_from apply to `as` and `from`.
 fn bool token_is_of(Token tok) {
     return tok.type == TokenType.IDENTIFIER && !tok.has_escape && str_eq(tok.str_value, "of");
 }
 
-/// Get the CompModuleDef* from the opaque current_module pointer.
-/// Returns null if not in module mode.
+// Get the CompModuleDef* from the opaque current_module pointer.
+// Returns null if not in module mode.
 fn CompModuleDef* CompilerContext.get_module_def(&self) {
     return (CompModuleDef*)self.current_module;
 }
 
-/// Expect the contextual keyword `from` (not a reserved word, must be
-/// checked as an identifier with value "from").
-///
-/// An escaped spelling is never the keyword (ES2024 §12.6.1: a
-/// ReservedWord/contextual keyword must be written with no UnicodeEscape-
-/// Sequence), so `\u0066rom` is a plain identifier here and a SyntaxError.
+// Expect the contextual keyword `from` (not a reserved word, must be
+// checked as an identifier with value "from").
+//
+// An escaped spelling is never the keyword (ES2024 §12.6.1: a
+// ReservedWord/contextual keyword must be written with no UnicodeEscape-
+// Sequence), so `\u0066rom` is a plain identifier here and a SyntaxError.
 fn void? CompilerContext.expect_from(&self) {
     Token tok = self.expect(TokenType.IDENTIFIER)!;
     if (tok.has_escape || !str_eq(tok.str_value, "from")) {
@@ -5790,8 +5790,8 @@ fn void? CompilerContext.expect_from(&self) {
     }
 }
 
-/// Match the contextual keyword `from`, consumes and returns true if the
-/// current token is the identifier "from".
+// Match the contextual keyword `from`, consumes and returns true if the
+// current token is the identifier "from".
 fn bool CompilerContext.match_from(&self) {
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
     // Peek at the actual token to check the string value
@@ -5807,8 +5807,8 @@ fn bool CompilerContext.match_from(&self) {
     return false;
 }
 
-/// Expect the contextual keyword `as`. An escaped spelling is never the
-/// keyword (§12.6.1), so `\u0061s` is a SyntaxError here.
+// Expect the contextual keyword `as`. An escaped spelling is never the
+// keyword (§12.6.1), so `\u0061s` is a SyntaxError here.
 fn void? CompilerContext.expect_as(&self) {
     Token tok = self.expect(TokenType.IDENTIFIER)!;
     if (tok.has_escape || !str_eq(tok.str_value, "as")) {
@@ -5816,7 +5816,7 @@ fn void? CompilerContext.expect_as(&self) {
     }
 }
 
-/// Match the contextual keyword `as`.
+// Match the contextual keyword `as`.
 fn bool CompilerContext.match_as(&self) {
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
     Token? tok_opt = self.lexer.next_token();
@@ -5829,21 +5829,21 @@ fn bool CompilerContext.match_as(&self) {
     return false;
 }
 
-/// Parse an optional WithClause (ES2025 import attributes) after a module
-/// specifier, e.g. `with { type: "json" }`. Returns true when a `type: "json"`
-/// attribute was present so the caller can register a JSON module request.
-///
-///   WithClause : with { }
-///              | with { WithEntries ,opt }
-///   WithEntries : AttributeKey : StringLiteral
-///               | AttributeKey : StringLiteral , WithEntries
-///   AttributeKey : IdentifierName | StringLiteral
-///
-/// Syntax errors (early / parse phase): a non-string attribute value, a
-/// missing `:`, and duplicate attribute keys (compared after escape decoding).
-/// Unknown keys and unknown `type` values are NOT parse errors, they are left
-/// for the host load step, matching the spec and the test262 corpus (the
-/// resolution-phase tests rely on the syntax being accepted).
+// Parse an optional WithClause (ES2025 import attributes) after a module
+// specifier, e.g. `with { type: "json" }`. Returns true when a `type: "json"`
+// attribute was present so the caller can register a JSON module request.
+//
+//   WithClause : with { }
+//              | with { WithEntries ,opt }
+//   WithEntries : AttributeKey : StringLiteral
+//               | AttributeKey : StringLiteral , WithEntries
+//   AttributeKey : IdentifierName | StringLiteral
+//
+// Syntax errors (early / parse phase): a non-string attribute value, a
+// missing `:`, and duplicate attribute keys (compared after escape decoding).
+// Unknown keys and unknown `type` values are NOT parse errors, they are left
+// for the host load step, matching the spec and the test262 corpus (the
+// resolution-phase tests rely on the syntax being accepted).
 fn bool? CompilerContext.parse_with_clause(&self) {
     // No WithClause present.
     if (self.peek_type() != TokenType.WITH) return false;
@@ -5894,12 +5894,12 @@ fn bool? CompilerContext.parse_with_clause(&self) {
     return wants_json;
 }
 
-/// Parse a `ModuleExportName : IdentifierName | StringLiteral` (§16.2.3).
-///
-/// `was_string`, when non-null, receives whether the StringLiteral form was
-/// taken. Callers need it for the two places the grammar treats the forms
-/// differently: a string ModuleExportName must be well-formed Unicode, and a
-/// `NamedExports` with no `from` clause may not use one at all (both below).
+// Parse a `ModuleExportName : IdentifierName | StringLiteral` (§16.2.3).
+//
+// `was_string`, when non-null, receives whether the StringLiteral form was
+// taken. Callers need it for the two places the grammar treats the forms
+// differently: a string ModuleExportName must be well-formed Unicode, and a
+// `NamedExports` with no `from` clause may not use one at all (both below).
 fn char[]? CompilerContext.parse_module_export_name(&self, bool* was_string = null) {
     Token tok = self.lexer.next_token()!;
     if (was_string != null) *was_string = (tok.type == TokenType.STRING);
@@ -5922,15 +5922,15 @@ fn char[]? CompilerContext.parse_module_export_name(&self, bool* was_string = nu
     return COMPILE_ERROR~;
 }
 
-/// Parse an ESM import declaration (ES6 §15.2.2).
-///
-/// Forms:
-///   import 'module'
-///   import defaultName from 'module'
-///   import { a, b as c } from 'module'
-///   import * as ns from 'module'
-///   import defaultName, { a } from 'module'
-///   import defaultName, * as ns from 'module'
+// Parse an ESM import declaration (ES6 §15.2.2).
+//
+// Forms:
+//   import 'module'
+//   import defaultName from 'module'
+//   import { a, b as c } from 'module'
+//   import * as ns from 'module'
+//   import defaultName, { a } from 'module'
+//   import defaultName, * as ns from 'module'
 fn void? CompilerContext.import_declaration(&self) {
     if (!self.is_module) {
         io::eprintfn("import declarations are only allowed in modules");
@@ -6085,19 +6085,19 @@ fn void? CompilerContext.import_declaration(&self) {
     return COMPILE_ERROR~;
 }
 
-/// Parse an ESM export declaration (ES6 §15.2.3).
-///
-/// Forms:
-///   export function foo() {}
-///   export class Foo {}
-///   export const/let/var x = ...
-///   export { a, b as c }
-///   export { a } from './other'
-///   export * from './other'
-///   export * as ns from './other'
-///   export default function() {}
-///   export default <expr>
-///   export default class {}
+// Parse an ESM export declaration (ES6 §15.2.3).
+//
+// Forms:
+//   export function foo() {}
+//   export class Foo {}
+//   export const/let/var x = ...
+//   export { a, b as c }
+//   export { a } from './other'
+//   export * from './other'
+//   export * as ns from './other'
+//   export default function() {}
+//   export default <expr>
+//   export default class {}
 fn void? CompilerContext.export_declaration(&self) {
     if (!self.is_module) {
         io::eprintfn("export declarations are only allowed in modules");
@@ -6607,12 +6607,12 @@ fn void? CompilerContext.export_declaration(&self) {
 // extractions from that register, with default-value support.
 // ============================================================================
 
-/// Array catch pattern. The '[' has already been consumed.
-/// Uses the iterator protocol on catch_val_reg to extract elements.
-/// Array catch pattern (`catch ([a, b]) {}`). The '[' has already been consumed.
-/// Collects via the shared collector, declares each leaf LET-scoped in the catch
-/// scope, and extracts through emit_destruct_bindings (iterator protocol,
-/// defaults, rest, IteratorClose), the single destructuring algorithm.
+// Array catch pattern. The '[' has already been consumed.
+// Uses the iterator protocol on catch_val_reg to extract elements.
+// Array catch pattern (`catch ([a, b]) {}`). The '[' has already been consumed.
+// Collects via the shared collector, declares each leaf LET-scoped in the catch
+// scope, and extracts through emit_destruct_bindings (iterator protocol,
+// defaults, rest, IteratorClose), the single destructuring algorithm.
 fn void? CompilerContext.compile_catch_array_pattern(&self, ushort catch_val_reg) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;
@@ -6620,20 +6620,20 @@ fn void? CompilerContext.compile_catch_array_pattern(&self, ushort catch_val_reg
     self.emit_catch_pattern(binds[..], count, catch_val_reg)!;
 }
 
-/// The BoundNames of a destructuring pattern must contain no duplicates
-/// wherever the pattern introduces LEXICAL bindings: a CatchParameter
-/// (§14.15.1) and a `let`/`const` ForDeclaration (§14.7.5.1). A `var` pattern
-/// is exempt, its repeated names all denote the same var binding, so
-/// `for (var [x, x] of ...)` is legal.
-///
-/// SeenParams already implements exactly this check for FormalParameters, so
-/// this reuses it rather than growing a second duplicate-name walk.
+// The BoundNames of a destructuring pattern must contain no duplicates
+// wherever the pattern introduces LEXICAL bindings: a CatchParameter
+// (§14.15.1) and a `let`/`const` ForDeclaration (§14.7.5.1). A `var` pattern
+// is exempt, its repeated names all denote the same var binding, so
+// `for (var [x, x] of ...)` is legal.
+//
+// SeenParams already implements exactly this check for FormalParameters, so
+// this reuses it rather than growing a second duplicate-name walk.
 fn void? CompilerContext.check_pattern_bound_names_unique(&self, DestructBind[] binds, uint count) {
     SeenParams seen;
     seen.declare_destructured(binds, count)!;
 }
 
-/// Shared tail for both catch patterns: declare LET leaves, then emit.
+// Shared tail for both catch patterns: declare LET leaves, then emit.
 fn void? CompilerContext.emit_catch_pattern(&self, DestructBind[] binds, uint count, ushort src_reg) {
     self.check_pattern_bound_names_unique(binds, count)!;
     ushort[MAX_DESTRUCT_BINDS] group_regs;
@@ -6653,9 +6653,9 @@ fn void? CompilerContext.emit_catch_pattern(&self, DestructBind[] binds, uint co
                                 DestructStoreMode.DECLARE, true, false);
 }
 
-/// Object catch pattern (`catch ({e}) {}`). The '{' has already been consumed.
-/// The caller emits RequireObjectCoercible on catch_val_reg. Collects via the
-/// shared collector and extracts through emit_destruct_bindings.
+// Object catch pattern (`catch ({e}) {}`). The '{' has already been consumed.
+// The caller emits RequireObjectCoercible on catch_val_reg. Collects via the
+// shared collector and extracts through emit_destruct_bindings.
 fn void? CompilerContext.compile_catch_object_pattern(&self, ushort catch_val_reg) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
     uint count = 0;

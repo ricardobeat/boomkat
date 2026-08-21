@@ -1,10 +1,10 @@
-/// Lexer module for the boomkat JavaScript engine.
-///
-/// Tokenizes ECMAScript source code (ES2015+ subset) into a stream of
-/// tokens.  Handles UTF-8 source, numeric literals (decimal, hex, octal,
-/// binary, float, exponent), string literals with full escape sequence
-/// support, template literals, regular expression literals, and all
-/// ES2015+ punctuators and keywords.
+// Lexer module for the boomkat JavaScript engine.
+//
+// Tokenizes ECMAScript source code (ES2015+ subset) into a stream of
+// tokens.  Handles UTF-8 source, numeric literals (decimal, hex, octal,
+// binary, float, exponent), string literals with full escape sequence
+// support, template literals, regular expression literals, and all
+// ES2015+ punctuators and keywords.
 module boomkat::lexer;
 
 import boomkat::types;
@@ -18,34 +18,34 @@ import std::io;
 // Fault codes
 // ============================================================================
 
-/// Raised when the lexer encounters invalid or unexpected input.
+// Raised when the lexer encounters invalid or unexpected input.
 faultdef LEX_ERROR;
 
-/// Returned when a keyword lookup does not match.
+// Returned when a keyword lookup does not match.
 faultdef NOT_A_KEYWORD;
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-/// Maximum size for the string escape-processing buffer.
+// Maximum size for the string escape-processing buffer.
 const uint STRING_BUF_SIZE = 65536;
 
-/// Default payload size of a token-string arena block. Escape-decoded string
-/// and template bodies are copied here so their `char[]` slices point at
-/// stable heap memory that outlives the lexer's stack frames (a token's
-/// `str_value`/`raw_value` must stay valid while `current`, `lookahead`, and
-/// `pushed_back` are simultaneously alive, and while pre-scan helpers re-lex a
-/// region). Requests larger than this get a dedicated right-sized block.
+// Default payload size of a token-string arena block. Escape-decoded string
+// and template bodies are copied here so their `char[]` slices point at
+// stable heap memory that outlives the lexer's stack frames (a token's
+// `str_value`/`raw_value` must stay valid while `current`, `lookahead`, and
+// `pushed_back` are simultaneously alive, and while pre-scan helpers re-lex a
+// region). Requests larger than this get a dedicated right-sized block.
 const usz LEX_ARENA_BLOCK_SIZE = 8192;
 
 // ============================================================================
 // Token-string arena
 // ============================================================================
 
-/// A single heap-allocated block in the lexer's decoded-string arena. Blocks
-/// form a singly-linked chain owned (indirectly) by the Lexer; they only ever
-/// grow during a compilation and are all freed together by `free_arena()`.
+// A single heap-allocated block in the lexer's decoded-string arena. Blocks
+// form a singly-linked chain owned (indirectly) by the Lexer; they only ever
+// grow during a compilation and are all freed together by `free_arena()`.
 struct LexArenaBlock {
     LexArenaBlock* next;
     usz used;
@@ -58,12 +58,12 @@ fn char* LexArenaBlock.data(&self) {
     return (char*)((char*)self + LexArenaBlock::size);
 }
 
-/// Heap-allocated holder for the arena's block chain. The Lexer references this
-/// through a pointer (`Lexer.arena`), NOT by value, so that speculative lexer
-/// copies made during parsing (destructuring.c3's `Lexer scan = *self.lexer`,
-/// deferred-target snapshots, etc.) all share ONE arena: a block allocated by
-/// any copy is visible to, and freed by, the original. A by-value `arena_head`
-/// field would be reverted on `*self.lexer = saved`, orphaning blocks.
+// Heap-allocated holder for the arena's block chain. The Lexer references this
+// through a pointer (`Lexer.arena`), NOT by value, so that speculative lexer
+// copies made during parsing (destructuring.c3's `Lexer scan = *self.lexer`,
+// deferred-target snapshots, etc.) all share ONE arena: a block allocated by
+// any copy is visible to, and freed by, the original. A by-value `arena_head`
+// field would be reverted on `*self.lexer = saved`, orphaning blocks.
 struct LexArena {
     LexArenaBlock* head;
 }
@@ -142,7 +142,7 @@ struct Token {
     bool has_escape;
 }
 
-/// Create a simple token with no value payload.
+// Create a simple token with no value payload.
 fn Token make_token(TokenType tt, uint line, uint col) {
     Token t;
     t.type = tt;
@@ -213,10 +213,10 @@ const KeywordEntry[*] KEYWORDS = {
     { "public",      TokenType.PUBLIC,      true  },
 };
 
-/// Look up an identifier to see if it is a keyword.
-/// Returns the keyword token type, or NOT_A_KEYWORD fault if not a keyword.
-/// Dispatches on the identifier's first character for faster lookup, then
-/// compares length before full byte comparison within candidates.
+// Look up an identifier to see if it is a keyword.
+// Returns the keyword token type, or NOT_A_KEYWORD fault if not a keyword.
+// Dispatches on the identifier's first character for faster lookup, then
+// compares length before full byte comparison within candidates.
 fn TokenType? lookup_keyword(char[] name, bool strict_mode) {
     if (name.len == 0) {
         return NOT_A_KEYWORD~;
@@ -245,8 +245,8 @@ fn TokenType? lookup_keyword(char[] name, bool strict_mode) {
     return NOT_A_KEYWORD~;
 }
 
-/// Reverse lookup: given a keyword TokenType, return its string representation.
-/// Returns an empty string if the token type is not a keyword.
+// Reverse lookup: given a keyword TokenType, return its string representation.
+// Returns an empty string if the token type is not a keyword.
 fn char[] keyword_to_string(TokenType tt) {
     foreach (&kw : KEYWORDS) {
         if (kw.type == tt) return kw.name;
@@ -254,7 +254,7 @@ fn char[] keyword_to_string(TokenType tt) {
     return "";
 }
 
-/// Return a human-readable name for a token type (for error messages).
+// Return a human-readable name for a token type (for error messages).
 fn char[] token_type_name(TokenType tt) {
     // Try keyword table first
     char[] kw = keyword_to_string(tt);
@@ -365,28 +365,28 @@ fn bool is_line_terminator(char c) {
     return c == '\n' || c == '\r';
 }
 
-/// Check if a Unicode codepoint is a valid identifier start character.
-///
-/// Backed by libregexp's vendored ID_Start property tables (per Unicode
-/// 15.1 / ES2024 spec), so it covers the full ID_Start set including
-/// Other_ID_Start grandfathered characters (U+2118 ℘, U+212E ℮, etc.)
-/// and astral-plane ID_Start. ASCII path is fast; >= 128 goes through
-/// the full Unicode table.
+// Check if a Unicode codepoint is a valid identifier start character.
+//
+// Backed by libregexp's vendored ID_Start property tables (per Unicode
+// 15.1 / ES2024 spec), so it covers the full ID_Start set including
+// Other_ID_Start grandfathered characters (U+2118 ℘, U+212E ℮, etc.)
+// and astral-plane ID_Start. ASCII path is fast; >= 128 goes through
+// the full Unicode table.
 fn bool is_identifier_start(uint cp) @inline {
     return unicode_bindings::unicode_is_identifier_start(cp) != 0;
 }
 
-/// Check if a Unicode codepoint is a valid identifier continuation character.
-///
-/// Per Unicode 15.1 / ES2024: includes ID_Start + digits + Other_ID_Continue
-/// grandfathered characters (e.g. U+00B7 ·, U+0387 ·, U+1369-1371 Ethiopic
-/// digits, U+19DA ᧚) + combining marks (U+0300-036F) + ZWNJ (U+200C) +
-/// ZWJ (U+200D).  ASCII path is fast; >= 128 goes through the table.
+// Check if a Unicode codepoint is a valid identifier continuation character.
+//
+// Per Unicode 15.1 / ES2024: includes ID_Start + digits + Other_ID_Continue
+// grandfathered characters (e.g. U+00B7 ·, U+0387 ·, U+1369-1371 Ethiopic
+// digits, U+19DA ᧚) + combining marks (U+0300-036F) + ZWNJ (U+200C) +
+// ZWJ (U+200D).  ASCII path is fast; >= 128 goes through the table.
 fn bool is_identifier_part(uint cp) @inline {
     return unicode_bindings::unicode_is_identifier_continue(cp) != 0;
 }
 
-/// Check if a character is ASCII whitespace (space, tab, VT, FF, NBSP).
+// Check if a character is ASCII whitespace (space, tab, VT, FF, NBSP).
 fn bool is_whitespace(char c) {
     // Single-byte ASCII WhiteSpace (ES §12.2): TAB, VT, FF, SP. Multi-byte
     // whitespace (NBSP U+00A0, BOM U+FEFF, U+2028/U+2029) is handled by
@@ -398,8 +398,8 @@ fn bool is_whitespace(char c) {
 // UTF-8 encoding helper
 // ============================================================================
 
-/// Encode a Unicode codepoint as UTF-8 into the buffer at the given offset.
-/// Returns the new offset.
+// Encode a Unicode codepoint as UTF-8 into the buffer at the given offset.
+// Returns the new offset.
 fn uint encode_utf8_to_buf(char[STRING_BUF_SIZE]* buf, uint offset, uint cp) {
     if (cp < 0x80) {
         (*buf)[offset] = (char)cp;
@@ -438,10 +438,10 @@ fn uint encode_utf8_to_buf(char[STRING_BUF_SIZE]* buf, uint offset, uint cp) {
 
 struct Lexer {
     char[] source;
-    /// Source name the script was compiled under (a file path, a module
-    /// specifier, or "<eval>"). Borrowed for the lifetime of the compile: the
-    /// compiler copies it into the CompiledFunction in finish(), so the slice
-    /// need not outlive this Lexer. Empty when the source has no name.
+    // Source name the script was compiled under (a file path, a module
+    // specifier, or "<eval>"). Borrowed for the lifetime of the compile: the
+    // compiler copies it into the CompiledFunction in finish(), so the slice
+    // need not outlive this Lexer. Empty when the source has no name.
     char[] source_name;
     uint pos;
     uint line;
@@ -449,67 +449,67 @@ struct Lexer {
     Token current;
     Token lookahead;
     bool has_lookahead;
-    /// Byte position at the start of the most recently produced token.
-    /// Updated on each `next_token()` call so callers can capture the source
-    /// span of a just-consumed token by reading `source[token_start..pos-1]`.
-    /// Used by Function.prototype.toString source-text retention.
+    // Byte position at the start of the most recently produced token.
+    // Updated on each `next_token()` call so callers can capture the source
+    // span of a just-consumed token by reading `source[token_start..pos-1]`.
+    // Used by Function.prototype.toString source-text retention.
     uint token_start;
-    /// Byte position at the start of the token stored in `lookahead`, when
-    /// the lookahead was created by `peek()`. Set inside peek, used inside
-    /// next_token's lookahead-consume path to keep `token_start` correct
-    /// when a peek-then-advance sequence consumes the lookahead.
+    // Byte position at the start of the token stored in `lookahead`, when
+    // the lookahead was created by `peek()`. Set inside peek, used inside
+    // next_token's lookahead-consume path to keep `token_start` correct
+    // when a peek-then-advance sequence consumes the lookahead.
     uint lookahead_token_start;
-    /// Single-token pushback buffer for limited backtracking (e.g. label detection).
+    // Single-token pushback buffer for limited backtracking (e.g. label detection).
     Token pushed_back;
     bool has_pushed_back;
     bool strict_mode;
-    /// True if a line terminator was skipped between the previous and next token.
+    // True if a line terminator was skipped between the previous and next token.
     bool seen_line_term;
-    /// Set by the parser after consuming a `}` that closes a Block/function/
-    /// class body in statement position; makes the next `/` a RegExp literal
-    /// (not division). Cleared by the next `next_token()`.
+    // Set by the parser after consuming a `}` that closes a Block/function/
+    // class body in statement position; makes the next `/` a RegExp literal
+    // (not division). Cleared by the next `next_token()`.
     bool force_regex_after_brace;
-    /// True when, since the start of source or the most recent real line
-    /// terminator, only whitespace and/or comments have been produced (i.e.
-    /// no real token has appeared yet on the current line). Persists across
-    /// `skip_whitespace_and_comments` calls so it correctly reflects
-    /// same-line token history; used to gate AnnexB `-->` HTMLCloseComment,
-    /// which is only a comment-starter at the beginning of a line.
+    // True when, since the start of source or the most recent real line
+    // terminator, only whitespace and/or comments have been produced (i.e.
+    // no real token has appeared yet on the current line). Persists across
+    // `skip_whitespace_and_comments` calls so it correctly reflects
+    // same-line token history; used to gate AnnexB `-->` HTMLCloseComment,
+    // which is only a comment-starter at the beginning of a line.
     bool at_line_start;
-    /// True when `<!--` and `-->` are comment starters. This is the AnnexB
-    /// §B.1.1 HTML-like comment grammar, which ES2024 §12.5 makes available in
-    /// Script code only: in a Module they must stay real tokens so the source
-    /// is a SyntaxError. Defaults to true (script) and is cleared for a module
-    /// compilation; there is nothing to gate at runtime, `eval` in a module is
-    /// still eval of a Script.
+    // True when `<!--` and `-->` are comment starters. This is the AnnexB
+    // §B.1.1 HTML-like comment grammar, which ES2024 §12.5 makes available in
+    // Script code only: in a Module they must stay real tokens so the source
+    // is a SyntaxError. Defaults to true (script) and is cleared for a module
+    // compilation; there is nothing to gate at runtime, `eval` in a module is
+    // still eval of a Script.
     bool html_comments;
-    /// Set when a `/*` comment ran to end-of-input with no closing `*/`.
-    /// ES2024 §12.4 gives no production for an unterminated MultiLineComment,
-    /// so it is a SyntaxError; without this the trailing text was silently
-    /// swallowed and the source compiled as if it ended before the `/*`.
-    /// skip_whitespace_and_comments cannot fail (it returns void and runs from
-    /// several non-failing paths), so it latches this and next_token raises.
+    // Set when a `/*` comment ran to end-of-input with no closing `*/`.
+    // ES2024 §12.4 gives no production for an unterminated MultiLineComment,
+    // so it is a SyntaxError; without this the trailing text was silently
+    // swallowed and the source compiled as if it ended before the `/*`.
+    // skip_whitespace_and_comments cannot fail (it returns void and runs from
+    // several non-failing paths), so it latches this and next_token raises.
     bool unterminated_comment;
-    /// True when tokenizing a TypeScript source (`.ts`/`.mts`/`.cts`).
-    /// The lexer itself does not treat any bytes differently; this flag lets the
-    /// parser recognize TS-only contextual keywords (`type`, `as`, `satisfies`,
-    /// `declare`, `readonly`, `abstract`, `override`, `keyof`, `infer`, `is`,
-    /// `asserts`, `namespace`) and skip type annotations.
+    // True when tokenizing a TypeScript source (`.ts`/`.mts`/`.cts`).
+    // The lexer itself does not treat any bytes differently; this flag lets the
+    // parser recognize TS-only contextual keywords (`type`, `as`, `satisfies`,
+    // `declare`, `readonly`, `abstract`, `override`, `keyof`, `infer`, `is`,
+    // `asserts`, `namespace`) and skip type annotations.
     bool ts_mode;
     void* heap;
 
-    /// Compile-error state for the compilation owning this lexer. First
-    /// writer wins; the top-level compile entries clear it at the start of
-    /// each compilation. Lives on the caller's Lexer rather than in module
-    /// globals because a process can compile on several runtimes in
-    /// parallel, one per thread, and a shared buffer would race.
+    // Compile-error state for the compilation owning this lexer. First
+    // writer wins; the top-level compile entries clear it at the start of
+    // each compilation. Lives on the caller's Lexer rather than in module
+    // globals because a process can compile on several runtimes in
+    // parallel, one per thread, and a shared buffer would race.
     char[512] err_msg;
     uint      err_line;
     uint      err_col;
 
-    /// Shared decoded-string arena holder (see LexArena). Allocated lazily on
-    /// the first escape-bearing string/template literal, shared across lexer
-    /// copies, freed by `free_arena()` at the end of the owning compilation.
+    // Shared decoded-string arena holder (see LexArena). Allocated lazily on
+    // the first escape-bearing string/template literal, shared across lexer
+    // copies, freed by `free_arena()` at the end of the owning compilation.
     LexArena* arena;
 
     char[4096] ident_buf;
@@ -519,12 +519,12 @@ struct Lexer {
 // Lexer, initialisation
 // ============================================================================
 
-/// Create a new lexer for the given source text.
-///
-/// `source_name` is the name recorded against the compiled functions so
-/// `error.stack` can report a file. It is borrowed, not copied: the compiler
-/// copies it into each CompiledFunction during finish(), so the slice only has
-/// to stay valid for the compile itself.
+// Create a new lexer for the given source text.
+//
+// `source_name` is the name recorded against the compiled functions so
+// `error.stack` can report a file. It is borrowed, not copied: the compiler
+// copies it into each CompiledFunction during finish(), so the slice only has
+// to stay valid for the compile itself.
 fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     Lexer lex;
     lex.source = source;
@@ -565,14 +565,14 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     return lex;
 }
 
-/// Allocate `n` bytes of stable storage from the token-string arena and copy
-/// `src[0..n-1]` into it, returning a slice over the copy. The slice outlives
-/// the lexer's stack frames and stays valid until `free_arena()` is called at
-/// the end of the owning compilation. `n` must be > 0.
-///
-/// Falls back to returning the source slice directly only if the heap or its
-/// allocator is unavailable (should not happen in practice); this keeps the
-/// lexer usable in degenerate init paths without crashing.
+// Allocate `n` bytes of stable storage from the token-string arena and copy
+// `src[0..n-1]` into it, returning a slice over the copy. The slice outlives
+// the lexer's stack frames and stays valid until `free_arena()` is called at
+// the end of the owning compilation. `n` must be > 0.
+//
+// Falls back to returning the source slice directly only if the heap or its
+// allocator is unavailable (should not happen in practice); this keeps the
+// lexer usable in degenerate init paths without crashing.
 fn char[] Lexer.arena_dup(&self, char* src, usz n) {
     Heap* h = (Heap*)self.heap;
     if (h == null || h.alloc_func == null || self.arena == null) {
@@ -614,11 +614,11 @@ fn char[] Lexer.arena_dup(&self, char* src, usz n) {
     return dst[:n];
 }
 
-/// Free the token-string arena (all blocks plus the holder). Call once at the
-/// end of the compilation that owns this lexer, after all tokens (and thus all
-/// decoded `str_value`/`raw_value` slices) have been consumed/interned.
-/// Idempotent. Safe to call on any lexer copy that shares the arena, but must
-/// be called exactly once per compilation, call it on the owning lexer.
+// Free the token-string arena (all blocks plus the holder). Call once at the
+// end of the compilation that owns this lexer, after all tokens (and thus all
+// decoded `str_value`/`raw_value` slices) have been consumed/interned.
+// Idempotent. Safe to call on any lexer copy that shares the arena, but must
+// be called exactly once per compilation, call it on the owning lexer.
 fn void Lexer.free_arena(&self) {
     Heap* h = (Heap*)self.heap;
     LexArena* arena = self.arena;
@@ -634,14 +634,14 @@ fn void Lexer.free_arena(&self) {
     h.free_func(h.heap_udata, (void*)arena);
 }
 
-/// Skip a leading HashbangComment (`#!` up to but not including the first
-/// LineTerminator) per ECMAScript §12.5. Must be called, if at all, before
-/// any tokens are produced, so it only matches when `pos == 0` and the first
-/// two bytes are the literal ASCII characters `#` and `!` (escape sequences
-/// like `#!` must NOT match, since they are not the literal source
-/// characters). Callers opt into this for Script, Module, and eval source
-/// text; it must never be applied to Function-constructor bodies or nested
-/// function/class bodies, which is why it is not folded into `lexer_init`.
+// Skip a leading HashbangComment (`#!` up to but not including the first
+// LineTerminator) per ECMAScript §12.5. Must be called, if at all, before
+// any tokens are produced, so it only matches when `pos == 0` and the first
+// two bytes are the literal ASCII characters `#` and `!` (escape sequences
+// like `#!` must NOT match, since they are not the literal source
+// characters). Callers opt into this for Script, Module, and eval source
+// text; it must never be applied to Function-constructor bodies or nested
+// function/class bodies, which is why it is not folded into `lexer_init`.
 fn void Lexer.skip_hashbang(&self) {
     if (self.pos != 0) return;
     if (self.source.len < 2) return;
@@ -663,7 +663,7 @@ fn void Lexer.skip_hashbang(&self) {
     }
 }
 
-/// Reinitialize a lexer with new source text.
+// Reinitialize a lexer with new source text.
 fn void Lexer.reset(&self, char[] source) {
     self.source = source;
     self.pos = 0;
@@ -683,28 +683,28 @@ fn void Lexer.reset(&self, char[] source) {
 // Lexer, low-level source reading
 // ============================================================================
 
-/// Peek at the current character without advancing.  Returns 0 at EOF.
+// Peek at the current character without advancing.  Returns 0 at EOF.
 fn char Lexer.peek_char(&self) {
     if (self.pos >= (uint)self.source.len) return 0;
     return self.source[self.pos];
 }
 
-/// Peek at the character at offset `n` from the current position.
+// Peek at the character at offset `n` from the current position.
 fn char Lexer.peek_char_at(&self, uint n) {
     uint idx = self.pos + n;
     if (idx >= (uint)self.source.len) return 0;
     return self.source[idx];
 }
 
-/// Check whether the current position starts the 3-byte UTF-8 encoding of
-/// LINE SEPARATOR (U+2028) or PARAGRAPH SEPARATOR (U+2029), the two
-/// LineTerminator code points not representable as a single `char`.
+// Check whether the current position starts the 3-byte UTF-8 encoding of
+// LINE SEPARATOR (U+2028) or PARAGRAPH SEPARATOR (U+2029), the two
+// LineTerminator code points not representable as a single `char`.
 fn bool Lexer.peek_is_ls_ps(&self) {
     return self.peek_char() == 0xE2 && self.peek_char_at(1) == 0x80
         && (self.peek_char_at(2) == 0xA8 || self.peek_char_at(2) == 0xA9);
 }
 
-/// Advance one byte and return the consumed character.
+// Advance one byte and return the consumed character.
 fn char Lexer.advance_char(&self) {
     if (self.pos >= (uint)self.source.len) return 0;
     char c = self.source[self.pos];
@@ -718,8 +718,8 @@ fn char Lexer.advance_char(&self) {
     return c;
 }
 
-/// Decode a UTF-8 codepoint at the current position.
-/// Returns the codepoint and advances past it.
+// Decode a UTF-8 codepoint at the current position.
+// Returns the codepoint and advances past it.
 fn uint Lexer.read_codepoint(&self) {
     if (self.pos >= (uint)self.source.len) return 0;
     char b0 = self.source[self.pos];
@@ -768,7 +768,7 @@ fn uint Lexer.read_codepoint(&self) {
     return cp;
 }
 
-/// Peek at the current UTF-8 codepoint without advancing.
+// Peek at the current UTF-8 codepoint without advancing.
 fn uint Lexer.peek_codepoint(&self) {
     uint saved_pos = self.pos;
     uint saved_line = self.line;
@@ -780,12 +780,12 @@ fn uint Lexer.peek_codepoint(&self) {
     return cp;
 }
 
-/// Returns true if the lexer has reached the end of source.
+// Returns true if the lexer has reached the end of source.
 fn bool Lexer.at_end(&self) {
     return self.pos >= (uint)self.source.len;
 }
 
-/// Returns the number of source bytes remaining.
+// Returns the number of source bytes remaining.
 fn uint Lexer.remaining(&self) {
     if (self.pos >= (uint)self.source.len) return 0;
     return (uint)self.source.len - self.pos;
@@ -795,12 +795,12 @@ fn uint Lexer.remaining(&self) {
 // Lexer, skip whitespace and comments
 // ============================================================================
 
-/// Skip whitespace, line terminators, single-line comments (//),
-/// multi-line comments (/* ... */), and AnnexB §B.1.3 HTML-like comments
-/// (`<!--` and `-->`).
-///
-/// HTML-like comments are Script-only (ES2024 §12.5), so they are gated on
-/// `html_comments`, which a module compilation clears.
+// Skip whitespace, line terminators, single-line comments (//),
+// multi-line comments (/* ... */), and AnnexB §B.1.3 HTML-like comments
+// (`<!--` and `-->`).
+//
+// HTML-like comments are Script-only (ES2024 §12.5), so they are gated on
+// `html_comments`, which a module compilation clears.
 fn void Lexer.skip_whitespace_and_comments(&self) {
     self.seen_line_term = false;
     // `self.at_line_start` persists across calls: it reflects whether, since
@@ -1023,9 +1023,9 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
 // Lexer, scan numeric literal
 // ============================================================================
 
-/// Parse a numeric literal token.
-/// Supports: decimal, hex (0x/0X), octal (0o/0O), binary (0b/0B),
-/// floating point with optional exponent.
+// Parse a numeric literal token.
+// Supports: decimal, hex (0x/0X), octal (0o/0O), binary (0b/0B),
+// floating point with optional exponent.
 fn Token? Lexer.scan_number(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
@@ -1322,9 +1322,9 @@ fn Token? Lexer.scan_number(&self) {
 // Lexer, scan string literal
 // ============================================================================
 
-/// Parse a string literal ('...' or "...").
-/// Handles escape sequences: \n \r \t \b \f \v \\ \' \" \0
-/// \xHH  \uHHHH  \u{H..H}  line continuation (\<newline>)
+// Parse a string literal ('...' or "...").
+// Handles escape sequences: \n \r \t \b \f \v \\ \' \" \0
+// \xHH  \uHHHH  \u{H..H}  line continuation (\<newline>)
 fn Token? Lexer.scan_string(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
@@ -1508,9 +1508,9 @@ fn Token? Lexer.scan_string(&self) {
 // Lexer, scan identifier or keyword
 // ============================================================================
 
-/// Parse an identifier or keyword.
-/// Unicode escapes (\uXXXX, \u{H+}) are decoded. Escaped identifiers
-/// are never recognised as keywords.
+// Parse an identifier or keyword.
+// Unicode escapes (\uXXXX, \u{H+}) are decoded. Escaped identifiers
+// are never recognised as keywords.
 fn Token? Lexer.scan_identifier(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
@@ -1564,12 +1564,12 @@ fn Token? Lexer.scan_identifier(&self) {
     return tok;
 }
 
-/// Decode an identifier body (possibly containing \uXXXX / \u{H+} escapes)
-/// from the current lexer position into `ident_buf`, re-encoding each
-/// escaped or literal codepoint as UTF-8. Used by both plain identifiers
-/// and private names (`#name`) since both allow Unicode escapes per spec.
-/// Every codepoint (escaped or not) is validated against
-/// is_identifier_start/is_identifier_part as it is decoded.
+// Decode an identifier body (possibly containing \uXXXX / \u{H+} escapes)
+// from the current lexer position into `ident_buf`, re-encoding each
+// escaped or literal codepoint as UTF-8. Used by both plain identifiers
+// and private names (`#name`) since both allow Unicode escapes per spec.
+// Every codepoint (escaped or not) is validated against
+// is_identifier_start/is_identifier_part as it is decoded.
 fn char[]? Lexer.scan_ident_body_decoded(&self) {
     uint buf_len = 0;
     bool first = true;
@@ -1640,8 +1640,8 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
 // Lexer, scan punctuator
 // ============================================================================
 
-/// Parse a punctuator (operator or delimiter).
-/// Handles all single, double, triple, and quad-character operators.
+// Parse a punctuator (operator or delimiter).
+// Handles all single, double, triple, and quad-character operators.
 fn Token? Lexer.scan_punctuator(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
@@ -1862,9 +1862,9 @@ fn Token? Lexer.scan_punctuator(&self) {
 // Lexer, scan regular expression literal
 // ============================================================================
 
-/// Parse a regular expression literal: /pattern/flags
-/// This should be called when the parser context indicates a regexp is
-/// expected (i.e., not a division operator).
+// Parse a regular expression literal: /pattern/flags
+// This should be called when the parser context indicates a regexp is
+// expected (i.e., not a division operator).
 fn Token? Lexer.scan_regexp(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
@@ -1937,15 +1937,15 @@ fn Token? Lexer.scan_regexp(&self) {
 // Lexer, scan template literal
 // ============================================================================
 
-/// Scan the content of a template string part (between delimiters).
-/// Processes escape sequences and returns the decoded ("cooked") string.
-/// Reads until it encounters `, $, or the end of input.
-/// Returns the decoded text (may be empty) and sets `end_char` to the
-/// character that terminated the scan: '`' for backtick, '$' for "${",
-/// or 0 for end-of-input (error).
-/// For tagged templates, invalid escape sequences are allowed; in that
-/// case `has_invalid_escape` is set and the returned string is the raw
-/// (uncooked) source text of the part.
+// Scan the content of a template string part (between delimiters).
+// Processes escape sequences and returns the decoded ("cooked") string.
+// Reads until it encounters `, $, or the end of input.
+// Returns the decoded text (may be empty) and sets `end_char` to the
+// character that terminated the scan: '`' for backtick, '$' for "${",
+// or 0 for end-of-input (error).
+// For tagged templates, invalid escape sequences are allowed; in that
+// case `has_invalid_escape` is set and the returned string is the raw
+// (uncooked) source text of the part.
 fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes, bool* has_invalid_escape, char[]* raw_out) {
     uint start_pos = self.pos;
     *has_invalid_escape = false;
@@ -2262,8 +2262,8 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     return {};
 }
 
-/// Parse a template literal heading (opening backtick to first "${" or closing backtick).
-/// Returns TEMPLATE_HEAD if we found "${", or STRING if no substitutions (simple template).
+// Parse a template literal heading (opening backtick to first "${" or closing backtick).
+// Returns TEMPLATE_HEAD if we found "${", or STRING if no substitutions (simple template).
 fn Token? Lexer.scan_template_head(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
@@ -2308,8 +2308,8 @@ fn Token? Lexer.scan_template_head(&self) {
     return LEX_ERROR~;
 }
 
-/// Scan the part of a template literal after a closing "}" of an expression.
-/// Produces TEMPLATE_MIDDLE or TEMPLATE_TAIL.
+// Scan the part of a template literal after a closing "}" of an expression.
+// Produces TEMPLATE_MIDDLE or TEMPLATE_TAIL.
 fn Token? Lexer.scan_template_after_expr(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
@@ -2351,26 +2351,26 @@ fn Token? Lexer.scan_template_after_expr(&self) {
     return LEX_ERROR~;
 }
 
-/// Called by the parser immediately after consuming a `}` that closes a
-/// BlockStatement, function body, or class body in statement position,
-/// contexts where a following `/` must be read as a RegularExpressionLiteral
-/// rather than division.
+// Called by the parser immediately after consuming a `}` that closes a
+// BlockStatement, function body, or class body in statement position,
+// contexts where a following `/` must be read as a RegularExpressionLiteral
+// rather than division.
 fn void Lexer.note_block_close(&self) {
     self.force_regex_after_brace = true;
 }
 
-/// Check if the previous token was an operand, meaning `/` should be
-/// treated as division rather than the start of a regexp literal.
-/// Follows the ECMAScript lexical grammar: after identifiers, literals,
-/// closing brackets, `this`, `true`, `false`, `null`, the `/` is
-/// division; otherwise it starts a regexp.
-/// Postfix `++`/`--` end an operand (unlike prefix `++`/`--`, which is an
-/// operator applied to a following operand), `x++ / 2` must lex `/` as
-/// division, not the start of a regexp literal. The lexer has no syntactic
-/// distinction between prefix and postfix INC/DEC at this point, but a
-/// `++`/`--` immediately after an operand can only be the postfix form
-/// (prefix would have been consumed before the operand), so treating
-/// INC/DEC as operand-ending here is always correct.
+// Check if the previous token was an operand, meaning `/` should be
+// treated as division rather than the start of a regexp literal.
+// Follows the ECMAScript lexical grammar: after identifiers, literals,
+// closing brackets, `this`, `true`, `false`, `null`, the `/` is
+// division; otherwise it starts a regexp.
+// Postfix `++`/`--` end an operand (unlike prefix `++`/`--`, which is an
+// operator applied to a following operand), `x++ / 2` must lex `/` as
+// division, not the start of a regexp literal. The lexer has no syntactic
+// distinction between prefix and postfix INC/DEC at this point, but a
+// `++`/`--` immediately after an operand can only be the postfix form
+// (prefix would have been consumed before the operand), so treating
+// INC/DEC as operand-ending here is always correct.
 fn bool Lexer.prev_was_operand(&self) {
     switch (self.current.type) {
         case TokenType.RPAREN:
@@ -2399,7 +2399,7 @@ fn bool Lexer.prev_was_operand(&self) {
 // Lexer, main tokenisation entry point
 // ============================================================================
 
-/// Advance to the next token and return it.
+// Advance to the next token and return it.
 fn Token? Lexer.next_token(&self) {
     // Check pushback buffer first
     if (self.has_pushed_back) {
@@ -2488,7 +2488,7 @@ fn Token? Lexer.next_token(&self) {
     return tok;
 }
 
-/// Peek at the next token without consuming it.
+// Peek at the next token without consuming it.
 fn Token? Lexer.peek(&self) {
     // Check pushback buffer first
     if (self.has_pushed_back) {
@@ -2524,9 +2524,9 @@ fn Token? Lexer.peek(&self) {
     return tok;
 }
 
-/// Expect the next token to be of the given type.
-/// If it matches, advance past it and return the consumed token.
-/// Otherwise return LEX_ERROR.
+// Expect the next token to be of the given type.
+// If it matches, advance past it and return the consumed token.
+// Otherwise return LEX_ERROR.
 fn Token? Lexer.expect(&self, TokenType expected) {
     Token tok = self.next_token()!;
     if (tok.type != expected) {
@@ -2535,15 +2535,15 @@ fn Token? Lexer.expect(&self, TokenType expected) {
     return tok;
 }
 
-/// Refresh `token_start` to point at the start of the next-to-be-consumed
-/// token. Call when the caller wants to remember the source position of the
-/// next token without committing the consume; subsequent calls to
-/// `next_token` will return that same token unchanged.
-///
-/// Use case: class-body loops where each iteration needs to remember the
-/// offset of its *first* token (e.g. for Function.prototype.toString), but
-/// `token_start` may be stale from the previous iteration (reflects the last
-/// consumed token's position).
+// Refresh `token_start` to point at the start of the next-to-be-consumed
+// token. Call when the caller wants to remember the source position of the
+// next token without committing the consume; subsequent calls to
+// `next_token` will return that same token unchanged.
+//
+// Use case: class-body loops where each iteration needs to remember the
+// offset of its *first* token (e.g. for Function.prototype.toString), but
+// `token_start` may be stale from the previous iteration (reflects the last
+// consumed token's position).
 fn void Lexer.refresh_token_start(&self) {
     if (self.has_pushed_back) return;
     if (self.has_lookahead) {
@@ -2564,7 +2564,7 @@ fn void Lexer.refresh_token_start(&self) {
     // anyway.
 }
 
-/// Check if the next token is of the given type without consuming it.
+// Check if the next token is of the given type without consuming it.
 fn bool Lexer.check(&self, TokenType tt) {
     if (try tok = self.peek()) {
         return tok.type == tt;
@@ -2572,8 +2572,8 @@ fn bool Lexer.check(&self, TokenType tt) {
     return false;
 }
 
-/// If the next token matches the given type, consume it and return true.
-/// Otherwise leave the lexer state unchanged and return false.
+// If the next token matches the given type, consume it and return true.
+// Otherwise leave the lexer state unchanged and return false.
 fn bool Lexer.match_token(&self, TokenType tt) {
     if (self.check(tt)) {
         if (try _tok = self.next_token()) {
@@ -2583,16 +2583,16 @@ fn bool Lexer.match_token(&self, TokenType tt) {
     return false;
 }
 
-/// Push a token back into the input stream for limited backtracking.
-/// The next call to next_token() will return this token.
+// Push a token back into the input stream for limited backtracking.
+// The next call to next_token() will return this token.
 fn void Lexer.pushback(&self, Token tok) {
     self.pushed_back = tok;
     self.has_pushed_back = true;
 }
 
-/// Enable or disable strict-mode keyword recognition.
-/// When enabled, FutureReservedWords (implements, interface, package,
-/// private, protected, public) are recognised as keywords.
+// Enable or disable strict-mode keyword recognition.
+// When enabled, FutureReservedWords (implements, interface, package,
+// private, protected, public) are recognised as keywords.
 fn void Lexer.set_strict(&self, bool s) {
     self.strict_mode = s;
 }

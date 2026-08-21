@@ -1,6 +1,6 @@
-/// ArrayBuffer constructor and prototype (ES2015 §24.1), Stage 1 of plan 049.
-/// TypedArray/DataView element access is out of scope here; this file only
-/// implements the byte-buffer backing store and its public surface.
+// ArrayBuffer constructor and prototype (ES2015 §24.1), Stage 1 of plan 049.
+// TypedArray/DataView element access is out of scope here; this file only
+// implements the byte-buffer backing store and its public surface.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -10,9 +10,9 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::env;
 
-/// ES2022 §7.1.22 ToIndex, specialized to the [0, INT32_MAX] range this
-/// engine caps buffer lengths at (mirrors QuickJS's int cap).
-/// Returns false (and sets ctx.should_throw) on failure.
+// ES2022 §7.1.22 ToIndex, specialized to the [0, INT32_MAX] range this
+// engine caps buffer lengths at (mirrors QuickJS's int cap).
+// Returns false (and sets ctx.should_throw) on failure.
 fn bool arraybuffer_to_index(BuiltinContext* ctx, TVal* val, uint* out_len) {
     *out_len = 0;
     if (val.is_fastint()) {
@@ -44,17 +44,17 @@ fn bool arraybuffer_to_index(BuiltinContext* ctx, TVal* val, uint* out_len) {
     return true;
 }
 
-/// ES2022 §7.1.22 ToIndex proper (range [0, 2^53-1], no engine-specific cap).
-/// Used by the ArrayBuffer(length) constructor, which must perform ToIndex
-/// (steps 1-5 of the runtime semantics) before AllocateArrayBuffer's
-/// OrdinaryCreateFromConstructor (step 6 -> §24.1.1.1 step 1), while the
-/// engine's own too-large-to-allocate uint32 cap plays the role of
-/// CreateByteDataBlock's allocation failure and must be checked only *after*
-/// the instance prototype has been resolved (see
-/// data-allocation-after-object-creation.js: a throwing new.target.prototype
-/// getter must win over the RangeError from an unrepresentable length).
-/// Returns false (and sets ctx.should_throw) only for genuine ToIndex
-/// failures (negative or >2^53-1); NaN coerces to 0.
+// ES2022 §7.1.22 ToIndex proper (range [0, 2^53-1], no engine-specific cap).
+// Used by the ArrayBuffer(length) constructor, which must perform ToIndex
+// (steps 1-5 of the runtime semantics) before AllocateArrayBuffer's
+// OrdinaryCreateFromConstructor (step 6 -> §24.1.1.1 step 1), while the
+// engine's own too-large-to-allocate uint32 cap plays the role of
+// CreateByteDataBlock's allocation failure and must be checked only *after*
+// the instance prototype has been resolved (see
+// data-allocation-after-object-creation.js: a throwing new.target.prototype
+// getter must win over the RangeError from an unrepresentable length).
+// Returns false (and sets ctx.should_throw) only for genuine ToIndex
+// failures (negative or >2^53-1); NaN coerces to 0.
 fn bool arraybuffer_to_index_wide(BuiltinContext* ctx, TVal* val, double* out_len) {
     *out_len = 0.0;
     if (val.is_fastint()) {
@@ -90,10 +90,10 @@ fn void arraybuffer_throw_range_error(BuiltinContext* ctx, char[] msg) {
     builtin_throw_no_result_change(ctx, ctx.heap.range_err_proto, msg);
 }
 
-/// Formats "<label>: <suffix>" (optionally with one %s substitution in
-/// suffix) and throws a TypeError with the result. Used by code paths shared
-/// between ArrayBuffer and SharedArrayBuffer, where only the leading label
-/// differs between the two call sites.
+// Formats "<label>: <suffix>" (optionally with one %s substitution in
+// suffix) and throws a TypeError with the result. Used by code paths shared
+// between ArrayBuffer and SharedArrayBuffer, where only the leading label
+// differs between the two call sites.
 fn void arraybuffer_throw_type_error_label(BuiltinContext* ctx, char[] label, char[] suffix) {
     char[192] buf;
     usz len = (usz)(io::bprintf(&buf, "%s: %s", (String)label, (String)suffix) ?? buf[:0]).len;
@@ -106,41 +106,41 @@ fn void arraybuffer_throw_type_error_label2(BuiltinContext* ctx, char[] label, c
     arraybuffer_throw_type_error(ctx, buf[:len]);
 }
 
-/// Formats a message with one %s substitution and throws a RangeError. Used
-/// by the shared ArrayBuffer/SharedArrayBuffer constructor body, where the
-/// buffer-kind name is the only piece that varies between call sites.
+// Formats a message with one %s substitution and throws a RangeError. Used
+// by the shared ArrayBuffer/SharedArrayBuffer constructor body, where the
+// buffer-kind name is the only piece that varies between call sites.
 fn void arraybuffer_throw_range_error_pct(BuiltinContext* ctx, char[] fmt, char[] arg) {
     char[96] buf;
     usz len = (usz)(io::bprintf(&buf, (String)fmt, (String)arg) ?? buf[:0]).len;
     arraybuffer_throw_range_error(ctx, buf[:len]);
 }
 
-/// Formats a message with one %s substitution and throws a TypeError. Sibling
-/// of arraybuffer_throw_range_error_pct.
+// Formats a message with one %s substitution and throws a TypeError. Sibling
+// of arraybuffer_throw_range_error_pct.
 fn void arraybuffer_throw_type_error_pct(BuiltinContext* ctx, char[] fmt, char[] arg) {
     char[96] buf;
     usz len = (usz)(io::bprintf(&buf, (String)fmt, (String)arg) ?? buf[:0]).len;
     arraybuffer_throw_type_error(ctx, buf[:len]);
 }
 
-/// True iff obj is a non-shared ArrayBuffer instance. ArrayBuffer.prototype
-/// methods (byteLength/slice/resize/detach/…) require this, a SharedArrayBuffer
-/// receiver must throw (it shares ObjClass.ARRAYBUFFER but has is_shared set).
+// True iff obj is a non-shared ArrayBuffer instance. ArrayBuffer.prototype
+// methods (byteLength/slice/resize/detach/…) require this, a SharedArrayBuffer
+// receiver must throw (it shares ObjClass.ARRAYBUFFER but has is_shared set).
 fn bool is_arraybuffer_obj(HObject* obj) {
     return obj != null
         && obj.flags.obj_class == hobject::ObjClass.ARRAYBUFFER
         && !(*obj.extra_ptr()).ab.is_shared;
 }
 
-/// True iff obj is any ArrayBuffer instance, shared or not. Used by TypedArray
-/// and DataView backing-store validation, which accept both.
+// True iff obj is any ArrayBuffer instance, shared or not. Used by TypedArray
+// and DataView backing-store validation, which accept both.
 fn bool is_any_arraybuffer_obj(HObject* obj) {
     return obj != null && obj.flags.obj_class == hobject::ObjClass.ARRAYBUFFER;
 }
 
-/// Receiver validation for ArrayBuffer.prototype methods/getters, mirroring
-/// sab_this's shape for SharedArrayBuffer.prototype. Returns null (having
-/// already thrown) if `ctx.this_val` is not a non-shared ArrayBuffer.
+// Receiver validation for ArrayBuffer.prototype methods/getters, mirroring
+// sab_this's shape for SharedArrayBuffer.prototype. Returns null (having
+// already thrown) if `ctx.this_val` is not a non-shared ArrayBuffer.
 fn HObject* ab_this(BuiltinContext* ctx, char[] method) {
     TVal this_val = ctx.this_val;
     if (!this_val.is_object() || this_val.get_heapptr() == null) {
@@ -155,11 +155,11 @@ fn HObject* ab_this(BuiltinContext* ctx, char[] method) {
     return obj;
 }
 
-/// DetachArrayBuffer (ES2024 §25.1.3.5): free the backing store and mark the
-/// buffer detached (engine convention: data==null, byte_length==0xFFFFFFFF).
-/// A detached buffer reports byteLength 0 and every view sees it as detached.
-/// The single detach primitive, ArrayBuffer.prototype.transfer and the
-/// $262.detachArrayBuffer host hook both route through here.
+// DetachArrayBuffer (ES2024 §25.1.3.5): free the backing store and mark the
+// buffer detached (engine convention: data==null, byte_length==0xFFFFFFFF).
+// A detached buffer reports byteLength 0 and every view sees it as detached.
+// The single detach primitive, ArrayBuffer.prototype.transfer and the
+// $262.detachArrayBuffer host hook both route through here.
 fn void arraybuffer_detach(Heap* heap, HObject* obj) {
     if ((*obj.extra_ptr()).ab.data != null) {
         heap.free_func(heap.heap_udata, (*obj.extra_ptr()).ab.data);
@@ -168,18 +168,18 @@ fn void arraybuffer_detach(Heap* heap, HObject* obj) {
     (*obj.extra_ptr()).ab.byte_length = 0xFFFFFFFFu;
 }
 
-/// True iff cls is one of the buffer-view classes (TypedArray or DataView).
+// True iff cls is one of the buffer-view classes (TypedArray or DataView).
 fn bool is_bufferview_class(hobject::ObjClass cls) {
     return cls == hobject::ObjClass.DATAVIEW
         || is_typed_array_class(cls);
 }
 
-/// GetPrototypeFromConstructor (ES2022 §9.1.15) for ArrayBuffer's
-/// OrdinaryCreateFromConstructor (§24.1.1.1 AllocateArrayBuffer step 1). Unlike
-/// the general-purpose builtin_proto_from_new_target (which silently treats a
-/// throwing "prototype" getter as absent), this must propagate the throw.
-/// AllocateArrayBuffer's ReturnIfAbrupt(obj) happens before the Data Block is
-/// allocated. Sets ctx.should_throw and returns null on error.
+// GetPrototypeFromConstructor (ES2022 §9.1.15) for ArrayBuffer's
+// OrdinaryCreateFromConstructor (§24.1.1.1 AllocateArrayBuffer step 1). Unlike
+// the general-purpose builtin_proto_from_new_target (which silently treats a
+// throwing "prototype" getter as absent), this must propagate the throw.
+// AllocateArrayBuffer's ReturnIfAbrupt(obj) happens before the Data Block is
+// allocated. Sets ctx.should_throw and returns null on error.
 fn HObject* arraybuffer_instance_proto(BuiltinContext* ctx, HObject* fallback_proto) {
     HObject* nt = ctx.new_target;
     if (nt == null) return fallback_proto;
@@ -199,14 +199,14 @@ fn HObject* arraybuffer_instance_proto(BuiltinContext* ctx, HObject* fallback_pr
 // ArrayBuffer(length) constructor, ES2015 §24.1.2.1
 // ============================================================================
 
-/// Shared body for the ArrayBuffer(length[, options]) and
-/// SharedArrayBuffer(length[, options]) constructors (ES2024 §25.1.3.1 /
-/// §25.2.2.1 AllocateSharedArrayBuffer): ToIndex the length, read the
-/// {maxByteLength} option (resizable/growable), resolve new.target.prototype,
-/// and allocate the backing store. `is_shared` selects the fallback
-/// prototype, the ObjClass.ARRAYBUFFER `is_shared` flag, and, because
-/// growable SABs grow in place while resizable ABs realloc on resize(),
-/// whether the initial allocation is sized to maxByteLength up front.
+// Shared body for the ArrayBuffer(length[, options]) and
+// SharedArrayBuffer(length[, options]) constructors (ES2024 §25.1.3.1 /
+// §25.2.2.1 AllocateSharedArrayBuffer): ToIndex the length, read the
+// {maxByteLength} option (resizable/growable), resolve new.target.prototype,
+// and allocate the backing store. `is_shared` selects the fallback
+// prototype, the ObjClass.ARRAYBUFFER `is_shared` flag, and, because
+// growable SABs grow in place while resizable ABs realloc on resize(),
+// whether the initial allocation is sized to maxByteLength up front.
 fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
     char[] ctor_name = is_shared ? "SharedArrayBuffer" : "ArrayBuffer";
     char[] kind = is_shared ? "shared array buffer" : "array buffer";
@@ -356,11 +356,11 @@ fn void builtin_arraybuffer_proto_resizable_get(BuiltinContext* ctx) {
 // ArrayBuffer.prototype.maxByteLength getter, ES2024 §25.1.6.3
 // ============================================================================
 
-/// Shared body for ArrayBuffer.prototype.maxByteLength (ES2024 §25.1.6.3) and
-/// SharedArrayBuffer.prototype.maxByteLength (§25.2.4.4): non-resizable/
-/// non-growable buffers report their fixed byteLength; resizable/growable
-/// buffers report max_byte_length. AB additionally reports 0 once detached,
-/// a state SAB can never be in, so callers there skip straight to this body.
+// Shared body for ArrayBuffer.prototype.maxByteLength (ES2024 §25.1.6.3) and
+// SharedArrayBuffer.prototype.maxByteLength (§25.2.4.4): non-resizable/
+// non-growable buffers report their fixed byteLength; resizable/growable
+// buffers report max_byte_length. AB additionally reports 0 once detached,
+// a state SAB can never be in, so callers there skip straight to this body.
 fn void arraybuffer_maxbytelength_body(BuiltinContext* ctx, HObject* obj) {
     if ((*obj.extra_ptr()).ab.resizable) {
         ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.max_byte_length);
@@ -776,19 +776,19 @@ fn void builtin_detach_arraybuffer(BuiltinContext* ctx) {
 // never be detached, and "growable" SABs grow in place and never shrink.
 // ============================================================================
 
-/// True iff obj is a SharedArrayBuffer instance.
+// True iff obj is a SharedArrayBuffer instance.
 fn bool is_shared_arraybuffer_obj(HObject* obj) {
     return obj != null
         && obj.flags.obj_class == hobject::ObjClass.ARRAYBUFFER
         && (*obj.extra_ptr()).ab.is_shared;
 }
 
-/// SharedArrayBuffer(length [, options]) constructor, ES2024 §25.2.2.1.
+// SharedArrayBuffer(length [, options]) constructor, ES2024 §25.2.2.1.
 fn void builtin_sharedarraybuffer(BuiltinContext* ctx) {
     arraybuffer_construct_impl(ctx, true);
 }
 
-/// Shared receiver validation for SharedArrayBuffer.prototype methods.
+// Shared receiver validation for SharedArrayBuffer.prototype methods.
 fn HObject* sab_this(BuiltinContext* ctx, char[] method) {
     TVal this_val = ctx.this_val;
     if (!this_val.is_object() || this_val.get_heapptr() == null) {
@@ -803,30 +803,30 @@ fn HObject* sab_this(BuiltinContext* ctx, char[] method) {
     return obj;
 }
 
-/// SharedArrayBuffer.prototype.byteLength getter, ES2024 §25.2.4.1.
+// SharedArrayBuffer.prototype.byteLength getter, ES2024 §25.2.4.1.
 fn void builtin_sharedarraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "byteLength");
     if (obj == null) return;
     ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.byte_length);
 }
 
-/// SharedArrayBuffer.prototype.growable getter, ES2024 §25.2.4.2.
+// SharedArrayBuffer.prototype.growable getter, ES2024 §25.2.4.2.
 fn void builtin_sharedarraybuffer_proto_growable_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "growable");
     if (obj == null) return;
     ctx.result.set_boolean((*obj.extra_ptr()).ab.resizable);
 }
 
-/// SharedArrayBuffer.prototype.maxByteLength getter, ES2024 §25.2.4.4.
+// SharedArrayBuffer.prototype.maxByteLength getter, ES2024 §25.2.4.4.
 fn void builtin_sharedarraybuffer_proto_maxbytelength_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "maxByteLength");
     if (obj == null) return;
     arraybuffer_maxbytelength_body(ctx, obj);
 }
 
-/// SharedArrayBuffer.prototype.grow(newLength), ES2024 §25.2.4.3.
-/// Growable SABs grow in place (backing store pre-allocated to maxByteLength)
-/// and never shrink.
+// SharedArrayBuffer.prototype.grow(newLength), ES2024 §25.2.4.3.
+// Growable SABs grow in place (backing store pre-allocated to maxByteLength)
+// and never shrink.
 fn void builtin_sharedarraybuffer_proto_grow(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "grow");
     if (obj == null) return;
@@ -855,7 +855,7 @@ fn void builtin_sharedarraybuffer_proto_grow(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// SharedArrayBuffer[Symbol.species] getter, returns `this`.
+// SharedArrayBuffer[Symbol.species] getter, returns `this`.
 fn void builtin_sharedarraybuffer_species_get(BuiltinContext* ctx) {
     *ctx.result = ctx.this_val;
 }
@@ -864,7 +864,7 @@ fn void builtin_sharedarraybuffer_species_get(BuiltinContext* ctx) {
 // Registration
 // ============================================================================
 
-/// Register an ArrayBuffer.prototype accessor getter (byteLength/detached).
+// Register an ArrayBuffer.prototype accessor getter (byteLength/detached).
 fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
@@ -906,7 +906,7 @@ fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, u
     return true;
 }
 
-/// Create ArrayBuffer.prototype and register the ArrayBuffer constructor globally.
+// Create ArrayBuffer.prototype and register the ArrayBuffer constructor globally.
 fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
@@ -1003,7 +1003,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     return true;
 }
 
-/// Create SharedArrayBuffer.prototype and register the constructor globally.
+// Create SharedArrayBuffer.prototype and register the constructor globally.
 fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;

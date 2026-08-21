@@ -12,11 +12,11 @@ import boomkat::re_bindings;
 import std::io;
 import std::math;
 
-/// Relocate a saved frame snapshot after a nested Vm.run() may have
-/// reallocated the valstack. The snapshot holds absolute pointers taken
-/// before the nested run and is not covered by ensure_valstack_grow's own
-/// relocation pass, so it has to be shifted by the same delta here.
-/// No-op when the valstack did not move.
+// Relocate a saved frame snapshot after a nested Vm.run() may have
+// reallocated the valstack. The snapshot holds absolute pointers taken
+// before the nested run and is not covered by ensure_valstack_grow's own
+// relocation pass, so it has to be shifted by the same delta here.
+// No-op when the valstack did not move.
 fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
                               TVal** saved_top, Activation* saved_acts,
                               uint saved_act_count) {
@@ -35,13 +35,13 @@ fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
     }
 }
 
-/// Set up a named-function-expression's name binding environment.
-/// Returns a fresh declarative env with `name_hstr` bound immutably to
-/// `func_obj`, chained above `parent`. Per ES2015 §14.1.20/§9.2.13, the
-/// name binding lives in an environment OUTER to the function's own body
-/// scope, so a body `var`, `let`, or parameter of the same name shadows it, and
-/// callers splice this env onto the body scope's parent chain rather than
-/// making it the search head directly.
+// Set up a named-function-expression's name binding environment.
+// Returns a fresh declarative env with `name_hstr` bound immutably to
+// `func_obj`, chained above `parent`. Per ES2015 §14.1.20/§9.2.13, the
+// name binding lives in an environment OUTER to the function's own body
+// scope, so a body `var`, `let`, or parameter of the same name shadows it, and
+// callers splice this env onto the body scope's parent chain rather than
+// making it the search head directly.
 fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
                                               HString* name_hstr,
                                               HObject* func_obj) {
@@ -54,12 +54,12 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
     return name_env;
 }
 
-/// Resolve the lexical environment for entering a compiled-function call frame.
-/// Closures created inside a PUSH_LEX block scope capture that declarative env
-/// in func.lex_env; the frame must enter with it as lex_env so the block's
-/// let/const bindings stay visible (GETVAR walks lex_env, then var_env).
-/// Named function expressions additionally get a fresh declarative env binding
-/// their own name (ES2015 §14.1.20), chained above the captured scope.
+// Resolve the lexical environment for entering a compiled-function call frame.
+// Closures created inside a PUSH_LEX block scope capture that declarative env
+// in func.lex_env; the frame must enter with it as lex_env so the block's
+// let/const bindings stay visible (GETVAR walks lex_env, then var_env).
+// Named function expressions additionally get a fresh declarative env binding
+// their own name (ES2015 §14.1.20), chained above the captured scope.
 fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
                                    CompiledFunction* target, EnvRecord* var_env) {
     EnvRecord* base = var_env;
@@ -140,11 +140,11 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
     return base;
 }
 
-/// Heap.call_fn's implementation: call a JS function with N arguments.
-/// OrdinaryHasInstance chain walk, routing prototype hops through the
-/// [[GetPrototypeOf]] trap when a Proxy appears on the chain.
-/// Sets ra to true on match. Returns false when an uncaught error unwinds
-/// (caller must `return VM_ERROR~`).
+// Heap.call_fn's implementation: call a JS function with N arguments.
+// OrdinaryHasInstance chain walk, routing prototype hops through the
+// [[GetPrototypeOf]] trap when a Proxy appears on the chain.
+// Sets ra to true on match. Returns false when an uncaught error unwinds
+// (caller must `return VM_ERROR~`).
 fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* probe, TVal* ra) {
     HObject* cur = start;
     uint depth = 0;
@@ -172,70 +172,70 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
     return true;
 }
 
-/// True when another nested Vm.run would exceed MAX_RUN_DEPTH; raises a
-/// RangeError on the has_error channel when it does.
-///
-/// Recursion that bounces through a native builtin (a Proxy trap, a sort
-/// comparator, a Symbol.toPrimitive) re-enters the VM here rather than pushing
-/// an activation, so MAX_CALLS never sees it. Every level still consumes native
-/// stack, for the save area and for the builtin's own frame, so without this
-/// the stack faults before anything throws.
-///
-/// Only vm.has_error / heap.has_error / heap.error_value are set, the channel
-/// every native caller of vm_call_fn_impl polls after the call returns. Setting
-/// vm.throw_pending as well would survive the unwind: the native callers clear
-/// heap.has_error when they convert it into their own throw, but nothing clears
-/// throw_pending, so the next arithmetic coercion re-fires the same RangeError
-/// after the user's catch has already handled it.
-/// Minimum result size at which an `acc = acc + chunk` concat is born as a
-/// non-interned accumulator with spare capacity, and below which the in-place
-/// append path refuses to engage. Deliberately lower than
-/// `heap::MAX_INTERN_BYTES`: a string-building loop crosses 32 bytes within a
-/// few iterations, and interning every intermediate until 256 bytes piles
-/// dead strings into the string table. A non-interned accumulator is
-/// refcounted, so the intermediates die with the loop variable instead.
+// True when another nested Vm.run would exceed MAX_RUN_DEPTH; raises a
+// RangeError on the has_error channel when it does.
+//
+// Recursion that bounces through a native builtin (a Proxy trap, a sort
+// comparator, a Symbol.toPrimitive) re-enters the VM here rather than pushing
+// an activation, so MAX_CALLS never sees it. Every level still consumes native
+// stack, for the save area and for the builtin's own frame, so without this
+// the stack faults before anything throws.
+//
+// Only vm.has_error / heap.has_error / heap.error_value are set, the channel
+// every native caller of vm_call_fn_impl polls after the call returns. Setting
+// vm.throw_pending as well would survive the unwind: the native callers clear
+// heap.has_error when they convert it into their own throw, but nothing clears
+// throw_pending, so the next arithmetic coercion re-fires the same RangeError
+// after the user's catch has already handled it.
+// Minimum result size at which an `acc = acc + chunk` concat is born as a
+// non-interned accumulator with spare capacity, and below which the in-place
+// append path refuses to engage. Deliberately lower than
+// `heap::MAX_INTERN_BYTES`: a string-building loop crosses 32 bytes within a
+// few iterations, and interning every intermediate until 256 bytes piles
+// dead strings into the string table. A non-interned accumulator is
+// refcounted, so the intermediates die with the loop variable instead.
 const uint CONCAT_ACCUM_MIN = 32;
 
-/// Fast path for `acc = acc + chunk`, the shape every `acc += chunk` loop
-/// compiles to. Appends `rs` onto `ls` in place and leaves the result in `ra`,
-/// returning true when it applied.
-///
-/// Mutating a live HString is only sound because every way the string could be
-/// observed elsewhere is excluded first:
-///
-///   - `!ls.flags.is_interned` — an interned string is in the string table,
-///     where any equal literal or property key can alias it, and mutating it
-///     would corrupt unrelated values. Interning also means the table holds a
-///     reference, so the refcount test below would fail anyway.
-///   - `!ls.is_symbol()` — symbol identity is its bytes; never extend one.
-///   - `refcount == 1`, or `2` when the next instruction stores `ra` straight
-///     back into the binding it was just loaded from (see below). One owner,
-///     combined with `ra` being that owner (checked next), means no other
-///     register, property slot, environment binding, or native local can see
-///     this string.
-///   - `ra` holds `ls` and `ra == rb` — the destination register IS the sole
-///     owner, so the append cannot change any value other than the one being
-///     assigned. This is precisely the `acc = acc + chunk` shape; `x = y + z`
-///     with a distinct destination does not qualify and falls through.
-///   - not a temproot — a temproot is anchored by a native C3 local that can
-///     still read it after this opcode.
-///
-/// The refcount-2 case covers `s += chunk` on a variable rather than a
-/// temporary, which compiles to GETGLOBAL/GETVAR, ADD, PUT*: the load leaves the
-/// binding slot and the register holding the same pointer, so the second
-/// reference is the very slot the following PUT overwrites with this same
-/// string. Requiring that PUT to be the next instruction, and to name this
-/// register, is what makes "the other owner is that binding" a certainty rather
-/// than an inference — no other opcode can observe the old bytes in between.
-///
-/// `tail` is the bytes to append. It is a slice rather than an HString so the
-/// STRING + FASTINT paths can append a stack-formatted integer without
-/// allocating an HString for it first. It must not alias `ls`'s own buffer;
-/// the overlap check below enforces that.
-///
-/// The result stays non-interned, the standing contract for any concat
-/// result at or over `CONCAT_ACCUM_MIN`: `ensure_interned` canonicalizes it
-/// at every point where identity matters.
+// Fast path for `acc = acc + chunk`, the shape every `acc += chunk` loop
+// compiles to. Appends `rs` onto `ls` in place and leaves the result in `ra`,
+// returning true when it applied.
+//
+// Mutating a live HString is only sound because every way the string could be
+// observed elsewhere is excluded first:
+//
+//   - `!ls.flags.is_interned` — an interned string is in the string table,
+//     where any equal literal or property key can alias it, and mutating it
+//     would corrupt unrelated values. Interning also means the table holds a
+//     reference, so the refcount test below would fail anyway.
+//   - `!ls.is_symbol()` — symbol identity is its bytes; never extend one.
+//   - `refcount == 1`, or `2` when the next instruction stores `ra` straight
+//     back into the binding it was just loaded from (see below). One owner,
+//     combined with `ra` being that owner (checked next), means no other
+//     register, property slot, environment binding, or native local can see
+//     this string.
+//   - `ra` holds `ls` and `ra == rb` — the destination register IS the sole
+//     owner, so the append cannot change any value other than the one being
+//     assigned. This is precisely the `acc = acc + chunk` shape; `x = y + z`
+//     with a distinct destination does not qualify and falls through.
+//   - not a temproot — a temproot is anchored by a native C3 local that can
+//     still read it after this opcode.
+//
+// The refcount-2 case covers `s += chunk` on a variable rather than a
+// temporary, which compiles to GETGLOBAL/GETVAR, ADD, PUT*: the load leaves the
+// binding slot and the register holding the same pointer, so the second
+// reference is the very slot the following PUT overwrites with this same
+// string. Requiring that PUT to be the next instruction, and to name this
+// register, is what makes "the other owner is that binding" a certainty rather
+// than an inference — no other opcode can observe the old bytes in between.
+//
+// `tail` is the bytes to append. It is a slice rather than an HString so the
+// STRING + FASTINT paths can append a stack-formatted integer without
+// allocating an HString for it first. It must not alias `ls`'s own buffer;
+// the overlap check below enforces that.
+//
+// The result stays non-interned, the standing contract for any concat
+// result at or over `CONCAT_ACCUM_MIN`: `ensure_interned` canonicalizes it
+// at every point where identity matters.
 fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
                              HString* ls, char[] tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
@@ -291,14 +291,14 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     return true;
 }
 
-/// Birth a concat result as a non-interned accumulator with spare capacity,
-/// so the next iteration of an `acc = acc + chunk` loop can append in place
-/// via vm_concat_accumulate. Qualifies only on that exact shape (ra == rb)
-/// with a result of at least CONCAT_ACCUM_MIN bytes; anything else returns
-/// null and the caller interns the result as usual. Birthing only allocates:
-/// nothing shared is mutated, so none of vm_concat_accumulate's aliasing
-/// guards apply. Capacity starts at twice the content so a growing loop
-/// reaches its final size in O(log n) reallocations.
+// Birth a concat result as a non-interned accumulator with spare capacity,
+// so the next iteration of an `acc = acc + chunk` loop can append in place
+// via vm_concat_accumulate. Qualifies only on that exact shape (ra == rb)
+// with a result of at least CONCAT_ACCUM_MIN bytes; anything else returns
+// null and the caller interns the result as usual. Birthing only allocates:
+// nothing shared is mutated, so none of vm_concat_accumulate's aliasing
+// guards apply. Capacity starts at twice the content so a growing loop
+// reaches its final size in O(log n) reallocations.
 fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data) {
     if (ra != rb) return null;
     if (data.len < CONCAT_ACCUM_MIN) return null;
@@ -985,7 +985,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
 // trace_print_tval and trace_instruction are now in vm_trace.c3.
 
-/// Heap.call_handler_fn's implementation, which delegates to vm_call_fn_impl.
+// Heap.call_handler_fn's implementation, which delegates to vm_call_fn_impl.
 fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     TVal undef;
     undef.set_undefined();
@@ -1014,10 +1014,10 @@ fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     return vm_call_fn_impl(vm_ptr, handler, arg, 1, undef);
 }
 
-/// Heap.construct_fn's implementation: `new Fn(args)` semantics.
-/// Allocates a fresh this, runs the constructor with ACT_FLAG_CONSTRUCT,
-/// and returns the resulting instance.  Used by Promise combinators for
-/// NewPromiseCapability(C).
+// Heap.construct_fn's implementation: `new Fn(args)` semantics.
+// Allocates a fresh this, runs the constructor with ACT_FLAG_CONSTRUCT,
+// and returns the resulting instance.  Used by Promise combinators for
+// NewPromiseCapability(C).
 fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal new_target) {
     Vm* vm = (Vm*)vm_ptr;
     TVal undef;
@@ -1488,9 +1488,9 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
     return result;
 }
 
-/// Execute a compiled function with a specific environment (for ESM modules).
-/// Same as execute() but uses the provided env for var_env/lex_env instead
-/// of the global environment.
+// Execute a compiled function with a specific environment (for ESM modules).
+// Same as execute() but uses the provided env for var_env/lex_env instead
+// of the global environment.
 fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     Activation* entry_act = &vm.activations[0];
     vm.activation_count = 1;
@@ -1559,17 +1559,17 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     return result;
 }
 
-/// Execute a module body that may contain top-level await, as an async
-/// activation. Allocates the module's evaluation Promise, marks the entry
-/// activation ACT_FLAG_ASYNC, runs the body (which suspends on top-level
-/// `await` via the same machinery as async functions), then drives the
-/// microtask queue until the promise settles.
-///
-/// Returns true if the module evaluated to completion (promise fulfilled or
-/// still pending with an empty queue, which counts as success). Returns false if
-/// the module's evaluation promise REJECTED; in that case the rejection reason
-/// is left in heap.error_value so the caller surfaces it as the module's
-/// uncaught error. Returns a fault only on hard setup failure.
+// Execute a module body that may contain top-level await, as an async
+// activation. Allocates the module's evaluation Promise, marks the entry
+// activation ACT_FLAG_ASYNC, runs the body (which suspends on top-level
+// `await` via the same machinery as async functions), then drives the
+// microtask queue until the promise settles.
+//
+// Returns true if the module evaluated to completion (promise fulfilled or
+// still pending with an empty queue, which counts as success). Returns false if
+// the module's evaluation promise REJECTED; in that case the rejection reason
+// is left in heap.error_value so the caller surfaces it as the module's
+// uncaught error. Returns a fault only on hard setup failure.
 fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env, HObject** out_pending) {
     // Allocate the module evaluation Promise up front so top-level await can
     // suspend into it and RET can settle it.
@@ -1678,24 +1678,24 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     return !rejected;
 }
 
-/// Execute a module body while the VM is already mid-dispatch (dynamic
-/// import from a running module or script). Unlike execute_in_env /
-/// execute_module_async, which take over activations[0] and valstack[0] and so
-/// destroy the caller's live frame. This saves the entire
-/// activation stack and runs the module in a fresh frame above the live
-/// registers, mirroring vm_call_fn_impl, then restores the caller's state.
-///
-/// Returns true when the module body evaluated to completion; false when it
-/// threw, for a sync body, or its evaluation promise rejected, for an async or
-/// TLA body.
-/// in that case the thrown value / rejection reason is left in
-/// heap.error_value. Faults only on hard setup failure. For an async/TLA
-/// body that is still pending once this call returns (top-level await
-/// suspended and cannot be polled to completion here, since this is reached from
-/// inside a microtask drain such as a dynamic import job),
-/// `*out_pending` is set to the pinned per-evaluation promise so the caller
-/// can chain onto it instead; `true` is returned in that case too (not yet
-/// known to have failed).
+// Execute a module body while the VM is already mid-dispatch (dynamic
+// import from a running module or script). Unlike execute_in_env /
+// execute_module_async, which take over activations[0] and valstack[0] and so
+// destroy the caller's live frame. This saves the entire
+// activation stack and runs the module in a fresh frame above the live
+// registers, mirroring vm_call_fn_impl, then restores the caller's state.
+//
+// Returns true when the module body evaluated to completion; false when it
+// threw, for a sync body, or its evaluation promise rejected, for an async or
+// TLA body.
+// in that case the thrown value / rejection reason is left in
+// heap.error_value. Faults only on hard setup failure. For an async/TLA
+// body that is still pending once this call returns (top-level await
+// suspended and cannot be polled to completion here, since this is reached from
+// inside a microtask drain such as a dynamic import job),
+// `*out_pending` is set to the pinned per-evaluation promise so the caller
+// can chain onto it instead; `true` is returned in that case too (not yet
+// known to have failed).
 fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env, HObject** out_pending) {
     uint nregs = func.num_regs;
 
@@ -1902,22 +1902,22 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     return !run_faulted;
 }
 
-/// Poll the C-API interrupt handler at a VM safepoint (a backward branch or
-/// the restart-loop top). Returns true when the dispatch loop must stop: the
-/// handler aborted, and either a finally catcher consumed the "interrupted"
-/// error (needs_restart set, outer loop resumes) or no catcher existed
-/// anywhere (the uncaught error is recorded; caller returns VM_ERROR~).
-///
-/// No handler installed is the cost of one null compare. With one installed
-/// the budget is drawn down at the same cadence the GC already pays, and the
-/// handler runs at most once per INTERRUPT_BUDGET_INIT poll points, so
-/// uninterrupted execution is unaffected beyond the poll itself. The handler
-/// runs on the engine thread and must not re-enter the engine.
-/// Charge one interrupt poll point. Called from the switch sites and from the
-/// threaded burst, which share the budget, so decrements overlap harmlessly:
-/// at zero the budget resets to INIT and interrupt_due latches, and resetting
-/// in the same step keeps the budget from ever sitting at zero where a second
-/// decrement would underflow.
+// Poll the C-API interrupt handler at a VM safepoint (a backward branch or
+// the restart-loop top). Returns true when the dispatch loop must stop: the
+// handler aborted, and either a finally catcher consumed the "interrupted"
+// error (needs_restart set, outer loop resumes) or no catcher existed
+// anywhere (the uncaught error is recorded; caller returns VM_ERROR~).
+//
+// No handler installed is the cost of one null compare. With one installed
+// the budget is drawn down at the same cadence the GC already pays, and the
+// handler runs at most once per INTERRUPT_BUDGET_INIT poll points, so
+// uninterrupted execution is unaffected beyond the poll itself. The handler
+// runs on the engine thread and must not re-enter the engine.
+// Charge one interrupt poll point. Called from the switch sites and from the
+// threaded burst, which share the budget, so decrements overlap harmlessly:
+// at zero the budget resets to INIT and interrupt_due latches, and resetting
+// in the same step keeps the budget from ever sitting at zero where a second
+// decrement would underflow.
 fn void vm_charge_interrupt(Heap* h) @inline {
     if (h.capi_interrupt_fn != null && --h.interrupt_budget == 0) {
         h.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
@@ -1925,13 +1925,13 @@ fn void vm_charge_interrupt(Heap* h) @inline {
     }
 }
 
-/// Poll the C-API interrupt handler at a VM safepoint (a backward branch or
-/// the restart-loop top). Fire only when a charge latched interrupt_due; with
-/// no handler installed or no charge pending, this is a null compare. Returns
-/// true when the dispatch loop must stop: the handler aborted, and either a
-/// finally catcher consumed the "interrupted" error (needs_restart set, outer
-/// loop resumes) or no catcher existed anywhere (the uncaught error is
-/// recorded; caller returns VM_ERROR~).
+// Poll the C-API interrupt handler at a VM safepoint (a backward branch or
+// the restart-loop top). Fire only when a charge latched interrupt_due; with
+// no handler installed or no charge pending, this is a null compare. Returns
+// true when the dispatch loop must stop: the handler aborted, and either a
+// finally catcher consumed the "interrupted" error (needs_restart set, outer
+// loop resumes) or no catcher existed anywhere (the uncaught error is
+// recorded; caller returns VM_ERROR~).
 fn bool vm_poll_interrupt(Vm* vm, Activation* act, Instruction** curr_pc, bool* needs_restart) {
     Heap* h = vm.heap;
     if (h.capi_interrupt_fn == null) return false;
@@ -1947,8 +1947,8 @@ fn bool vm_poll_interrupt(Vm* vm, Activation* act, Instruction** curr_pc, bool* 
     return true;
 }
 
-/// Run the bytecode dispatch loop over an activation stack and registers the
-/// caller has already set up.
+// Run the bytecode dispatch loop over an activation stack and registers the
+// caller has already set up.
 fn TVal? Vm.run(Vm* vm) {
     vm.run_depth++;
     defer vm.run_depth--;

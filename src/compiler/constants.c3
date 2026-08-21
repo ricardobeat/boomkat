@@ -13,7 +13,7 @@ import std::io;
 // Constant pool
 // ============================================================================
 
-/// Look up a constant in the hash table and return its index, or const_count if not found.
+// Look up a constant in the hash table and return its index, or const_count if not found.
 fn uint CompilerContext.lookup_constant_hash(&self, ulong val_bits) {
     if (self.const_hash == null || self.const_hash_cap == 0) return self.const_count;
     // Use the low bits of the TVal as initial hash probe
@@ -35,11 +35,11 @@ fn uint CompilerContext.lookup_constant_hash(&self, ulong val_bits) {
     return self.const_count;
 }
 
-/// Insert a constant into the hash table.
-///
-/// Skipped once the table reaches its fill cap (later constants are then
-/// appended without dedup) and for all-zero bits, which are
-/// indistinguishable from an empty slot.
+// Insert a constant into the hash table.
+//
+// Skipped once the table reaches its fill cap (later constants are then
+// appended without dedup) and for all-zero bits, which are
+// indistinguishable from an empty slot.
 fn void CompilerContext.insert_constant_hash(&self, ulong val_bits, uint idx) {
     if (self.const_hash == null || self.const_hash_count >= self.const_hash_fill || val_bits == 0) {
         return;
@@ -58,7 +58,7 @@ fn void CompilerContext.insert_constant_hash(&self, ulong val_bits, uint idx) {
     }
 }
 
-/// Add a TVal to the constant pool and return its index.
+// Add a TVal to the constant pool and return its index.
 fn uint CompilerContext.add_constant(&self, TVal val) {
     ulong val_bits = val.get_raw_bits();
     TValTag tag = val.get_tag();
@@ -88,7 +88,7 @@ fn uint CompilerContext.add_constant(&self, TVal val) {
     return idx;
 }
 
-/// Add a string constant: intern the string and add a STRING TVal to the pool.
+// Add a string constant: intern the string and add a STRING TVal to the pool.
 fn uint CompilerContext.add_string_constant(&self, char[] str) {
     // Intern via Heap.str_intern (not a hand-rolled lookup/alloc) so raw
     // 4-byte UTF-8 astral sequences in source literals get normalized to
@@ -130,19 +130,19 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     return idx;
 }
 
-/// Add a number constant and return its index.
+// Add a number constant and return its index.
 fn uint CompilerContext.add_number_constant(&self, double val) {
     TVal tv;
     tv.set_number(val);
     return self.add_constant(tv);
 }
 
-/// Add a BigInt constant and return its index.
-///
-/// `digits` is the lexer's literal text (possibly carrying a `0x`/`0o`/`0b`
-/// radix prefix and `_` separators).  It is parsed into a native int128 and
-/// boxed as an HBigInt. A literal beyond this engine's fixed-width BigInt range
-/// is a compile error.
+// Add a BigInt constant and return its index.
+//
+// `digits` is the lexer's literal text (possibly carrying a `0x`/`0o`/`0b`
+// radix prefix and `_` separators).  It is parsed into a native int128 and
+// boxed as an HBigInt. A literal beyond this engine's fixed-width BigInt range
+// is a compile error.
 fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     Heap* hp = (Heap*)self.heap;
 

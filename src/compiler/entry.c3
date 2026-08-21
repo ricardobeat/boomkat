@@ -12,8 +12,8 @@ import std::io;
 // Top-level entry points
 // ============================================================================
 
-/// Compile a complete program (sequence of statements).
-/// Returns the top-level CompiledFunction or a fault on error.
+// Compile a complete program (sequence of statements).
+// Returns the top-level CompiledFunction or a fault on error.
 fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // Reset error state for this top-level compilation.
     lex.err_msg[0] = 0;
@@ -124,54 +124,54 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     return ctx.finish()!;;
 }
 
-/// Compile source as eval code (Program, returns last expression value).
-/// Eval code differs from a regular program in that the value of the last
-/// expression statement is returned (not undefined).
-///
-/// `allow_super`: true for a direct eval whose calling context may have a
-/// super binding (§12.3.5 MakeSuperPropertyReference / §13.3.7.1
-/// MakeSuperPropertyReference read `env.HasSuperBinding()` off the *running*
-/// execution context, which for direct eval is the caller's). The eval code
-/// is compiled as an independent unit and has no static knowledge of the
-/// caller's class/method context, so this just permits the `super.x`/
-/// `super[x]` syntax to compile; the `__super__` hidden binding lookup it
-/// emits (GETVAR) still walks the real environment chain at runtime, for
-/// direct eval that chain IS the caller's, so a genuinely absent binding
-/// still throws ReferenceError there, same as the spec's HasSuperBinding
-/// check would.
-///
-/// `parent_super_name`/`parent_static_super_name`: when the caller is inside
-/// a class body with a numbered __super__ binding (e.g. "__super__0"), these
-/// pass the binding name so the eval context re-interns it into its own
-/// constant pool. Without this, eval("super.x") would GETVAR the literal
-/// "__super__" instead of the numbered name in the environment chain.
-///
-/// `parent_private_names`/`parent_private_name_count`: ES2022 §8.7.1 says
-/// direct eval inherits the calling execution context's PrivateEnvironment.
-/// `parent_private_names` is a heap-tracked snapshot of the caller's
-/// CompilerContext's private-names table (populated when the caller's
-/// CompiledFunction was finished and stashed in `eval_private_names`). When
-/// non-null, the eval CompilerContext adopts this table, so subsequent
-/// `#name` references resolve through it (so `this.#m` inside a class
-/// method's eval body finds the class's `#m`). Indirect eval (no caller
-/// activation or `ACT_FLAG_DIRECT_EVAL` not set on the caller) leaves the
-/// parameter null; `#name` references then correctly throw SyntaxError
-/// (no enclosing PrivateEnvironment).
-///
-/// `direct_in_function`: true iff this eval source is being compiled
-/// inside a direct-eval call from a non-ArrowFunction's FunctionBody, so
-/// the ONLY context that legally permits `new.target` per ES2015 Annex
-/// B / §14.2.1 (ScriptedTasks: "It is a Syntax Error if StatementList
-/// Contains NewTarget unless the source code containing NewTarget is
-/// eval code that is being processed by a direct eval that is contained
-/// in function code that is not the function code of an ArrowFunction").
-/// Pass false (the default) for indirect eval, eval from script top
-/// level, or eval from an arrow function, `new_expr()` then rejects
-/// new.target as a SyntaxError.  `allow_super` and
-/// `direct_in_function` track the same call-site conditions, so the two
-/// are usually equal; they're kept as separate parameters to avoid
-/// silently coupling super-reference permission to new.target permission
-/// (either can be added independently in the future).
+// Compile source as eval code (Program, returns last expression value).
+// Eval code differs from a regular program in that the value of the last
+// expression statement is returned (not undefined).
+//
+// `allow_super`: true for a direct eval whose calling context may have a
+// super binding (§12.3.5 MakeSuperPropertyReference / §13.3.7.1
+// MakeSuperPropertyReference read `env.HasSuperBinding()` off the *running*
+// execution context, which for direct eval is the caller's). The eval code
+// is compiled as an independent unit and has no static knowledge of the
+// caller's class/method context, so this just permits the `super.x`/
+// `super[x]` syntax to compile; the `__super__` hidden binding lookup it
+// emits (GETVAR) still walks the real environment chain at runtime, for
+// direct eval that chain IS the caller's, so a genuinely absent binding
+// still throws ReferenceError there, same as the spec's HasSuperBinding
+// check would.
+//
+// `parent_super_name`/`parent_static_super_name`: when the caller is inside
+// a class body with a numbered __super__ binding (e.g. "__super__0"), these
+// pass the binding name so the eval context re-interns it into its own
+// constant pool. Without this, eval("super.x") would GETVAR the literal
+// "__super__" instead of the numbered name in the environment chain.
+//
+// `parent_private_names`/`parent_private_name_count`: ES2022 §8.7.1 says
+// direct eval inherits the calling execution context's PrivateEnvironment.
+// `parent_private_names` is a heap-tracked snapshot of the caller's
+// CompilerContext's private-names table (populated when the caller's
+// CompiledFunction was finished and stashed in `eval_private_names`). When
+// non-null, the eval CompilerContext adopts this table, so subsequent
+// `#name` references resolve through it (so `this.#m` inside a class
+// method's eval body finds the class's `#m`). Indirect eval (no caller
+// activation or `ACT_FLAG_DIRECT_EVAL` not set on the caller) leaves the
+// parameter null; `#name` references then correctly throw SyntaxError
+// (no enclosing PrivateEnvironment).
+//
+// `direct_in_function`: true iff this eval source is being compiled
+// inside a direct-eval call from a non-ArrowFunction's FunctionBody, so
+// the ONLY context that legally permits `new.target` per ES2015 Annex
+// B / §14.2.1 (ScriptedTasks: "It is a Syntax Error if StatementList
+// Contains NewTarget unless the source code containing NewTarget is
+// eval code that is being processed by a direct eval that is contained
+// in function code that is not the function code of an ArrowFunction").
+// Pass false (the default) for indirect eval, eval from script top
+// level, or eval from an arrow function, `new_expr()` then rejects
+// new.target as a SyntaxError.  `allow_super` and
+// `direct_in_function` track the same call-site conditions, so the two
+// are usually equal; they're kept as separate parameters to avoid
+// silently coupling super-reference permission to new.target permission
+// (either can be added independently in the future).
 fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = false,
                                     bool direct_in_function = false,
                                     void* parent_private_names = null,
@@ -356,11 +356,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     return result;
 }
 
-/// Compile a function expression or declaration.
-/// `is_expr` is true for function expressions, false for declarations.
-/// `dynamic` marks a body built by the Function constructor, whose receiver
-/// coerces to globalThis unless the body carries its own "use strict".
-/// See FuncFlags.subst_global_this.
+// Compile a function expression or declaration.
+// `is_expr` is true for function expressions, false for declarations.
+// `dynamic` marks a body built by the Function constructor, whose receiver
+// coerces to globalThis unless the body carries its own "use strict".
+// See FuncFlags.subst_global_this.
 fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, bool dynamic = false) {
     // Reset error state for this compilation; see `compile`'s matching
     // reset. Without it, a stale `err_msg` left by a PREVIOUS
@@ -382,8 +382,8 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     return ctx.finish()!;
 }
 
-/// Like compile_function but with generator/async flags set for dynamic
-/// GeneratorFunction / AsyncFunction constructor (ES2019 §19.2.1.1.1).
+// Like compile_function but with generator/async flags set for dynamic
+// GeneratorFunction / AsyncFunction constructor (ES2019 §19.2.1.1.1).
 fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr, bool is_generator, bool is_async, bool dynamic = false) {
     // See compile_function's matching reset, which has the same stale-flag hazard.
     lex.err_msg[0] = 0;
@@ -406,11 +406,11 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     return ctx.finish()!;
 }
 
-/// Compile an ESM module body. Parses import/export declarations and
-/// emits RETUNDEF (modules return undefined, not the last expression).
-/// `module_name` is used for error messages and relative path resolution.
-/// `module_def` is an opaque ModuleDef*, the compiler writes import/export
-/// metadata into it via the void* current_module field.
+// Compile an ESM module body. Parses import/export declarations and
+// emits RETUNDEF (modules return undefined, not the last expression).
+// `module_name` is used for error messages and relative path resolution.
+// `module_def` is an opaque ModuleDef*, the compiler writes import/export
+// metadata into it via the void* current_module field.
 fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name, void* module_def) {
     lex.err_msg[0] = 0;
     lex.err_line = 0;

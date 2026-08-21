@@ -17,7 +17,7 @@ import std::io;
 // full instruction trace.
 // ============================================================================
 
-/// Print a TVal to stderr (for --trace-vm debugging).
+// Print a TVal to stderr (for --trace-vm debugging).
 fn void trace_print_tval(TVal* v) {
 $if $feature(TRACE_VM):
     switch (v.get_tag()) {
@@ -50,8 +50,8 @@ $else
 $endif
 }
 
-/// Trace a single instruction before dispatch (for --trace-vm).
-/// Writes to stderr so it doesn't interfere with program output.
+// Trace a single instruction before dispatch (for --trace-vm).
+// Writes to stderr so it doesn't interfere with program output.
 fn void trace_instruction(Vm* vm, Instruction* ip, uint offset, DecodedInsn* di,
                           TVal* ra, TVal* rb, TVal* rc,
                           TVal* regs_base, Activation* act) {

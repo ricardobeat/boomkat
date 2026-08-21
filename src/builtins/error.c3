@@ -1,4 +1,4 @@
-/// Error constructors: Error, TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError.
+// Error constructors: Error, TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::env;
@@ -14,23 +14,23 @@ import boomkat::bytecode;
 // Error constructor builtins
 // ============================================================================
 
-/// Capture `stack_str` on `err` (an ERROR-class instance) in the object's
-/// HObjectError.captured_stack field, NOT a property-table entry, so it is
-/// invisible to hasOwnProperty/getOwnPropertyNames/Reflect.ownKeys/for-in.
-/// The error-stack-accessor proposal exposes "stack" only via the inherited
-/// get/set accessor pair on Error.prototype, never as an own property (see
-/// instance-no-own-stack.js). Read back by builtin_error_proto_stack_get.
+// Capture `stack_str` on `err` (an ERROR-class instance) in the object's
+// HObjectError.captured_stack field, NOT a property-table entry, so it is
+// invisible to hasOwnProperty/getOwnPropertyNames/Reflect.ownKeys/for-in.
+// The error-stack-accessor proposal exposes "stack" only via the inherited
+// get/set accessor pair on Error.prototype, never as an own property (see
+// instance-no-own-stack.js). Read back by builtin_error_proto_stack_get.
 fn void error_set_captured_stack(HObject* err, Heap* heap, HString* stack_str) {
     TVal tv;
     tv.set_string(stack_str);
     heap.tval_copy_ref(&(*err.extra_ptr()).err.captured_stack, &tv);
 }
 
-/// Append one `    at <name> (<file>:<line>)` frame line to `out`.
-///
-/// `file` and `line` are omitted when the compiled function carries neither,
-/// which is the case whenever the source was not compiled from a named script
-/// or no line table was emitted for it.
+// Append one `    at <name> (<file>:<line>)` frame line to `out`.
+//
+// `file` and `line` are omitted when the compiled function carries neither,
+// which is the case whenever the source was not compiled from a named script
+// or no line table was emitted for it.
 fn void error_append_frame(StrBuf* out, char[] name, char[] file, uint line) {
     out.append_bytes("\n    at ");
     out.append_bytes(name.len > 0 ? name : "<anonymous>");
@@ -49,12 +49,12 @@ fn void error_append_frame(StrBuf* out, char[] name, char[] file, uint line) {
     }
 }
 
-/// Append the current JS call stack to `out`, innermost frame first.
-///
-/// Walks Vm.activations from the top down. The topmost activations belong to
-/// the Error constructor itself (a native builtin, which has no
-/// CompiledFunction), so frames without a compiled function are skipped
-/// rather than emitted as placeholders.
+// Append the current JS call stack to `out`, innermost frame first.
+//
+// Walks Vm.activations from the top down. The topmost activations belong to
+// the Error constructor itself (a native builtin, which has no
+// CompiledFunction), so frames without a compiled function are skipped
+// rather than emitted as placeholders.
 fn void error_append_stack_frames(StrBuf* out, void* vm_ptr) {
     if (vm_ptr == null) return;
     Vm* vm = (Vm*)vm_ptr;
@@ -73,11 +73,11 @@ fn void error_append_stack_frames(StrBuf* out, void* vm_ptr) {
     }
 }
 
-/// Build the `.stack` payload for a freshly constructed error: the
-/// `"name: message"` header followed by one line per live JS call frame.
-///
-/// Heap-backed (StrBuf) rather than a fixed buffer: a deep stack runs to
-/// kilobytes and a fixed buffer would silently truncate it.
+// Build the `.stack` payload for a freshly constructed error: the
+// `"name: message"` header followed by one line per live JS call frame.
+//
+// Heap-backed (StrBuf) rather than a fixed buffer: a deep stack runs to
+// kilobytes and a fixed buffer would silently truncate it.
 fn HString* error_build_stack_string(BuiltinContext* ctx, HString* name_str, HString* msg_str) {
     StrBuf out;
     out.init(ctx.heap);
@@ -96,15 +96,15 @@ fn HString* error_build_stack_string(BuiltinContext* ctx, HString* name_str, HSt
     return builtin_intern_string(ctx.heap, out.bytes());
 }
 
-/// Capture `.stack` on an error the ENGINE threw (a TypeError from a bad
-/// property access, a ReferenceError from an unresolvable name, ...) rather
-/// than one `new Error()` built.
-///
-/// Same payload as error_build_stack_string, but reachable from the VM, which
-/// has no BuiltinContext: the error's name is read off its prototype's `name`
-/// property instead of being passed in. Without this an engine-thrown error
-/// reached a catch block with an empty `.stack`, so a bundle's own error
-/// reporting -- and anyone debugging one -- had nothing to work from.
+// Capture `.stack` on an error the ENGINE threw (a TypeError from a bad
+// property access, a ReferenceError from an unresolvable name, ...) rather
+// than one `new Error()` built.
+//
+// Same payload as error_build_stack_string, but reachable from the VM, which
+// has no BuiltinContext: the error's name is read off its prototype's `name`
+// property instead of being passed in. Without this an engine-thrown error
+// reached a catch block with an empty `.stack`, so a bundle's own error
+// reporting -- and anyone debugging one -- had nothing to work from.
 fn void error_capture_vm_stack(HObject* err, Heap* heap, void* vm_ptr, char[] msg) {
     StrBuf out;
     out.init(heap);
@@ -130,9 +130,9 @@ fn void error_capture_vm_stack(HObject* err, Heap* heap, void* vm_ptr, char[] ms
     if (s != null) error_set_captured_stack(err, heap, s);
 }
 
-/// Shared constructor: create an error object with ObjClass.ERROR,
-/// set prototype to `proto`, and set .message from args[0] if provided.
-/// Also handles the ES2022 `options.cause` install (step 4 of the spec).
+// Shared constructor: create an error object with ObjClass.ERROR,
+// set prototype to `proto`, and set .message from args[0] if provided.
+// Also handles the ES2022 `options.cause` install (step 4 of the spec).
 fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (catch err = err_raw) {
@@ -251,12 +251,12 @@ fn void builtin_uri_error(BuiltinContext* ctx) {
 // AggregateError constructor, ES2021 §28.1.1.1
 // ============================================================================
 
-/// IterableToList(items), ES2022 §7.4.11 (used by AggregateError's
-/// `errors` argument per §20.5.7.1.1 step 3). GetIterator(items, sync),
-/// then IteratorStep/IteratorValue in a loop, appending each value to a
-/// fresh Array. Any abrupt completion propagates directly (there is no
-/// partial result to close over since the caller hasn't seen `values` yet).
-/// Returns the array HObject, or null with ctx.should_throw set on failure.
+// IterableToList(items), ES2022 §7.4.11 (used by AggregateError's
+// `errors` argument per §20.5.7.1.1 step 3). GetIterator(items, sync),
+// then IteratorStep/IteratorValue in a loop, appending each value to a
+// fresh Array. Any abrupt completion propagates directly (there is no
+// partial result to close over since the caller hasn't seen `values` yet).
+// Returns the array HObject, or null with ctx.should_throw set on failure.
 fn HObject* aggregate_error_iterable_to_list(BuiltinContext* ctx, TVal items) {
     Heap* heap = ctx.heap;
 
@@ -601,13 +601,13 @@ fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
     ctx.result.set_string(empty);
 }
 
-/// set Error.prototype.stack, error-stack-accessor proposal:
-///   1. Let E be the this value.
-///   2. If E is not an Object, throw a TypeError exception.
-///   3. If v is not a String, throw a TypeError exception.
-///   4. Perform ? SetterThatIgnoresPrototypeProperties(this value,
-///      %Error.prototype%, "stack", v).
-///   5. Return undefined.
+// set Error.prototype.stack, error-stack-accessor proposal:
+//   1. Let E be the this value.
+//   2. If E is not an Object, throw a TypeError exception.
+//   3. If v is not a String, throw a TypeError exception.
+//   4. Perform ? SetterThatIgnoresPrototypeProperties(this value,
+//      %Error.prototype%, "stack", v).
+//   5. Return undefined.
 fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
     TVal this_val = ctx.this_val;
     if (!this_val.is_object() || this_val.get_heapptr() == null) {
@@ -629,18 +629,18 @@ fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value),
-/// ES2025 §7.3.37, specialised for "stack" on Error.prototype.
-///   1. If thisValue is not an Object, throw a TypeError exception.
-///   2. If SameValue(thisValue, home) is true, throw a TypeError exception
-///      (emulates assignment to a non-writable data property on home).
-///   3. Let desc be ? thisValue.[[GetOwnProperty]](propertyKey).
-///   4. If desc is undefined, perform ? CreateDataPropertyOrThrow(thisValue,
-///      propertyKey, value), a plain WEC data property.
-///   5. Else, perform ? Set(thisValue, propertyKey, value, true), routes
-///      through the own accessor's setter, or overwrites the own data
-///      property (throwing if non-writable).
-/// thisValue was already confirmed to be an Object by the caller.
+// SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value),
+// ES2025 §7.3.37, specialised for "stack" on Error.prototype.
+//   1. If thisValue is not an Object, throw a TypeError exception.
+//   2. If SameValue(thisValue, home) is true, throw a TypeError exception
+//      (emulates assignment to a non-writable data property on home).
+//   3. Let desc be ? thisValue.[[GetOwnProperty]](propertyKey).
+//   4. If desc is undefined, perform ? CreateDataPropertyOrThrow(thisValue,
+//      propertyKey, value), a plain WEC data property.
+//   5. Else, perform ? Set(thisValue, propertyKey, value, true), routes
+//      through the own accessor's setter, or overwrites the own data
+//      property (throwing if non-writable).
+// thisValue was already confirmed to be an Object by the caller.
 fn void error_setter_ignores_prototype_properties(BuiltinContext* ctx, HObject* home, HString* key, TVal value) {
     Heap* heap = ctx.heap;
     HObject* this_obj = (HObject*)ctx.this_val.get_heapptr();
@@ -692,11 +692,11 @@ fn void error_setter_ignores_prototype_properties(BuiltinContext* ctx, HObject* 
 // Error.isError, ES2026 §20.5.2.2
 // ============================================================================
 
-/// Error.isError(arg), true iff arg is an object carrying the [[ErrorData]]
-/// internal slot. We key this on ObjClass.ERROR (the tag every Error/NativeError
-/// constructor allocates its instances with) rather than the prototype chain,
-/// so it's cross-realm safe and returns false for objects that merely look
-/// like errors (e.g. `{ __proto__: Error.prototype }`).
+// Error.isError(arg), true iff arg is an object carrying the [[ErrorData]]
+// internal slot. We key this on ObjClass.ERROR (the tag every Error/NativeError
+// constructor allocates its instances with) rather than the prototype chain,
+// so it's cross-realm safe and returns false for objects that merely look
+// like errors (e.g. `{ __proto__: Error.prototype }`).
 fn void builtin_error_isError(BuiltinContext* ctx) {
     TVal arg;
     arg.set_undefined();
@@ -711,10 +711,10 @@ fn void builtin_error_isError(BuiltinContext* ctx) {
 // Error built-in registration
 // ============================================================================
 
-/// Helper: create a prototype object for an error type.
-/// proto_parent is the [[Prototype]] (e.g. Error.prototype for subclasses).
-/// The prototype is an ordinary object (ObjClass.OBJECT) per ES2015 §19.5.6.3,
-/// so it must not be an Error instance itself.
+// Helper: create a prototype object for an error type.
+// proto_parent is the [[Prototype]] (e.g. Error.prototype for subclasses).
+// The prototype is an ordinary object (ObjClass.OBJECT) per ES2015 §19.5.6.3,
+// so it must not be an Error instance itself.
 fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] name_str) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return null;
@@ -738,7 +738,7 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
     return proto;
 }
 
-/// Register all Error constructors and prototypes.
+// Register all Error constructors and prototypes.
 fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     // --- Create Error.prototype ---
     HObject* err_proto = register_error_prototype(heap, null, "Error");
@@ -866,10 +866,10 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     return true;
 }
 
-/// Create and register a NativeError constructor as a real HObject.
-/// Sets [[Prototype]] = err_ctor (Error constructor HObject) per §19.5.6.1,
-/// wires own "prototype" property (NWC) to native_proto, and updates
-/// native_proto.constructor to point at the new ctor HObject.
+// Create and register a NativeError constructor as a real HObject.
+// Sets [[Prototype]] = err_ctor (Error constructor HObject) per §19.5.6.1,
+// wires own "prototype" property (NWC) to native_proto, and updates
+// native_proto.constructor to point at the new ctor HObject.
 fn bool register_native_error_ctor(EnvRecord* global_env, Heap* heap, char[] name,
                                    uint fn_index, HObject* native_proto, HObject* err_ctor,
                                    int ctor_length = 1) {

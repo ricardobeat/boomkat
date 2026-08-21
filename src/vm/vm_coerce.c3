@@ -17,13 +17,13 @@ import std::math;
 // Helpers
 // ============================================================================
 
-/// Convert a value known to be numeric (FASTINT or NUMBER) to double.
+// Convert a value known to be numeric (FASTINT or NUMBER) to double.
 fn double tval_numeric_to_double(TVal* val) @inline {
     return val.is_fastint() ? (double)val.get_fastint() : val.get_number();
 }
 
-/// ECMAScript ToNumber: convert any TVal to a double.
-/// Handles BOOLEAN→0/1, OBJECT→ToPrimitive→number, STRING→parse, etc.
+// ECMAScript ToNumber: convert any TVal to a double.
+// Handles BOOLEAN→0/1, OBJECT→ToPrimitive→number, STRING→parse, etc.
 fn double vm_to_number(Vm* vm, TVal* val) {
     switch (val.get_tag()) {
         case FASTINT: return (double)val.get_fastint();
@@ -56,9 +56,9 @@ fn double vm_to_number(Vm* vm, TVal* val) {
     }
 }
 
-/// ECMAScript ToInt32 (ES5 §9.5).
-/// Converts a double to int32 using modular arithmetic (mod 2^32).
-/// Handles NaN → 0, Infinity → 0, and large values via floor-then-mod.
+// ECMAScript ToInt32 (ES5 §9.5).
+// Converts a double to int32 using modular arithmetic (mod 2^32).
+// Handles NaN → 0, Infinity → 0, and large values via floor-then-mod.
 fn int toint32(double d) @inline {
     // Fast path: value already fits in int32. The range check MUST come before
     // the cast: (int)d for a d outside int32 range is undefined behavior, and
@@ -82,11 +82,11 @@ fn int toint32(double d) @inline {
     return (int)r;
 }
 
-/// Abstract Relational Comparison (ES2015 §7.2.11).
-/// Returns tri-state: -1 = px < py, +1 = px > py, 0 = equal, and *is_undef=true
-/// if either operand is NaN (undefined per spec). Coerces objects via
-/// ToPrimitive("number") and, if both results are strings, uses lex compare.
-/// Sets vm.throw_pending on ToPrimitive failure (caller must check + break).
+// Abstract Relational Comparison (ES2015 §7.2.11).
+// Returns tri-state: -1 = px < py, +1 = px > py, 0 = equal, and *is_undef=true
+// if either operand is NaN (undefined per spec). Coerces objects via
+// ToPrimitive("number") and, if both results are strings, uses lex compare.
+// Sets vm.throw_pending on ToPrimitive failure (caller must check + break).
 fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
     *is_undef = false;
     TVal px = *x;
@@ -127,7 +127,7 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
     return 0;
 }
 
-/// ECMAScript truthiness.
+// ECMAScript truthiness.
 macro bool is_truthy(TVal* val) {
     // BigInt: false iff the mathematical value is 0n (ES2020 §7.1.2).
     // get_bigint() reads via get_heapptr(), which works the same whether or
@@ -176,12 +176,12 @@ $else
 $endif
 }
 
-/// Ensure the value stack has at least `needed` slots from its base, an
-/// absolute watermark (the frame being entered ends at that index). Callers
-/// computing the end of a register window as `(ptr - vm.valstack) + nregs`
-/// hand in the index directly, so the fast path compares the watermark
-/// against the allocated size, not the current top.
-/// Fast path uses pointer comparison (no division).
+// Ensure the value stack has at least `needed` slots from its base, an
+// absolute watermark (the frame being entered ends at that index). Callers
+// computing the end of a register window as `(ptr - vm.valstack) + nregs`
+// hand in the index directly, so the fast path compares the watermark
+// against the allocated size, not the current top.
+// Fast path uses pointer comparison (no division).
 fn bool ensure_valstack(Vm* vm, uint needed) @inline {
     // Fast path: check if the watermark fits within the allocated slots
     if (needed <= (uint)(vm.valstack_end - vm.valstack)) {
@@ -190,7 +190,7 @@ fn bool ensure_valstack(Vm* vm, uint needed) @inline {
     return ensure_valstack_grow(vm, needed);
 }
 
-/// Slow path: grow the value stack.
+// Slow path: grow the value stack.
 fn bool ensure_valstack_grow(Vm* vm, uint needed) {
     TVal* old_base = vm.valstack;
     uint new_size = vm.valstack_size;
@@ -240,16 +240,16 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
     return true;
 }
 
-/// Get the current activation. Returns null if no activations.
+// Get the current activation. Returns null if no activations.
 fn Activation* curr_act(Vm* vm) @inline {
     if (vm.activation_count == 0) return null;
     assert(vm.activation_count <= MAX_CALLS);
     return &vm.activations[vm.activation_count - 1];
 }
 
-/// Convert a TVal to an interned string key for property access.
-/// Uses a single tag extraction via switch to avoid redundant checks.
-/// ToPropertyKey (ES5 §11.8.7, ES7 §12.2.1), which unwraps wrapper objects.
+// Convert a TVal to an interned string key for property access.
+// Uses a single tag extraction via switch to avoid redundant checks.
+// ToPropertyKey (ES5 §11.8.7, ES7 §12.2.1), which unwraps wrapper objects.
 fn void* get_prop_key(Vm* vm, TVal* val) {
     Heap* h = vm.heap;
     switch (val.get_tag()) {
@@ -288,8 +288,8 @@ fn void* get_prop_key(Vm* vm, TVal* val) {
     }
 }
 
-/// Look up a property on an object, walking the prototype chain.
-/// Returns the .prototype object for a constructor lightfunc, or null for non-constructor lightfuncs.
+// Look up a property on an object, walking the prototype chain.
+// Returns the .prototype object for a constructor lightfunc, or null for non-constructor lightfuncs.
 fn HObject* lightfunc_get_proto(Vm* vm, uint fn_idx) {
     switch (fn_idx) {
         case builtins::Builtin.ERROR.ordinal:           return vm.heap.err_proto;
@@ -321,12 +321,12 @@ fn HObject* lightfunc_get_proto(Vm* vm, uint fn_idx) {
     }
 }
 
-/// True when the builtin behind `fn_idx` is a constructor. Builtin FUNCTION
-/// objects are allocated with flags.constructable=true by default, so the flag
-/// cannot distinguish `new DataView(...)` from `new String.prototype.charAt`, so
-/// classify by function index instead: the lightfunc constructor table plus the
-/// constructors installed as full HObjects (typed arrays, ArrayBuffer,
-/// DataView, Proxy).
+// True when the builtin behind `fn_idx` is a constructor. Builtin FUNCTION
+// objects are allocated with flags.constructable=true by default, so the flag
+// cannot distinguish `new DataView(...)` from `new String.prototype.charAt`, so
+// classify by function index instead: the lightfunc constructor table plus the
+// constructors installed as full HObjects (typed arrays, ArrayBuffer,
+// DataView, Proxy).
 fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
     // Host functions carry their own constructable flag. Tested before
     // lightfunc_get_proto, which would index its table with a host index.
@@ -384,12 +384,12 @@ fn TVal get_prop_with_proto(HObject* obj, void* key, Heap* h) {
 // String helpers
 // ============================================================================
 
-/// Intern a raw byte slice into the VM's string table.
+// Intern a raw byte slice into the VM's string table.
 fn HString* intern_string(Vm* vm, char[] data) {
     return vm.heap.str_intern(data);
 }
 
-/// Return the interned typeof string for a TVal per ES spec.
+// Return the interned typeof string for a TVal per ES spec.
 fn HString* typeof_string(Vm* vm, TVal* val) {
     Heap* h = vm.heap;
     switch (val.get_tag()) {
@@ -416,10 +416,10 @@ fn HString* typeof_string(Vm* vm, TVal* val) {
     }
 }
 
-/// How to name a value in a "X is not iterable" TypeError.  This is the
-/// typeof name for everything except null, which typeof reports as "object":
-/// "object is not iterable" would point at the wrong mistake for a value that
-/// is simply absent, so null names itself, as it does in node's message.
+// How to name a value in a "X is not iterable" TypeError.  This is the
+// typeof name for everything except null, which typeof reports as "object":
+// "object is not iterable" would point at the wrong mistake for a value that
+// is simply absent, so null names itself, as it does in node's message.
 fn HString* iterable_value_desc(Vm* vm, TVal* val) {
     if (val.is_null()) return (HString*)vm.heap.strs[heap::BuiltinStr.NULL_STR];
     return typeof_string(vm, val);
@@ -427,7 +427,7 @@ fn HString* iterable_value_desc(Vm* vm, TVal* val) {
 
 // int_to_buf is defined in boomkat::hstring and available via the module import.
 
-/// Convert a double to an interned HString* using shortest round-trip formatting.
+// Convert a double to an interned HString* using shortest round-trip formatting.
 fn HString*? vm_number_to_string(Vm* vm, double val) {
     // ES5 §9.8.1: ToString(Infinity) = "Infinity", ToString(NaN) = "NaN"
     if (math::is_nan(val)) {
@@ -467,23 +467,23 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
     return vm.heap.str_intern(buf[:len]);
 }
 
-/// Convert a BigInt's int128 value to an interned decimal HString*.
-/// (BigInt.prototype.toString handles non-decimal radices separately.)
+// Convert a BigInt's int128 value to an interned decimal HString*.
+// (BigInt.prototype.toString handles non-decimal radices separately.)
 fn HString*? vm_bigint_to_string(Vm* vm, int128 val) {
     char[48] buf;
     char[] s = hbigint::int128_to_decimal(val, buf[..]);
     return vm.heap.str_intern(s);
 }
 
-/// Convert a FASTINT to an interned HString* using the small-integer cache
-/// for values 0 to 255, and a fast int-to-string conversion above that.
+// Convert a FASTINT to an interned HString* using the small-integer cache
+// for values 0 to 255, and a fast int-to-string conversion above that.
 fn HString*? vm_fastint_to_string(Vm* vm, long val) {
     HString* s = vm.heap.int_to_hstring(val);
     if (s == null) return null;
     return s;
 }
 
-/// Convert a TVal to an interned HString*.
+// Convert a TVal to an interned HString*.
 fn HString*? vm_to_string(Vm* vm, TVal* val) {
     Heap* h = vm.heap;
     switch (val.get_tag()) {
@@ -561,19 +561,19 @@ fn HString*? vm_to_string(Vm* vm, TVal* val) {
     }
 }
 
-/// Returns true for ECMAScript white-space and line-terminator characters
-/// (ASCII subset: Tab, VT, FF, Space, NBSP, LF, CR).
+// Returns true for ECMAScript white-space and line-terminator characters
+// (ASCII subset: Tab, VT, FF, Space, NBSP, LF, CR).
 fn bool is_ecma_whitespace(char c) @inline {
     return c == 0x09 || c == 0x0B || c == 0x0C
         || c == 0x20 || c == 0xA0
         || c == 0x0A || c == 0x0D;
 }
 
-/// ECMAScript ToNumber for strings (§7.1.3.1).
-///
-/// Converts an HString* to a double, trimming ECMAScript whitespace and
-/// parsing numeric literals (decimal, hex, Infinity).  Returns NaN when
-/// the string does not represent a valid numeric literal.
+// ECMAScript ToNumber for strings (§7.1.3.1).
+//
+// Converts an HString* to a double, trimming ECMAScript whitespace and
+// parsing numeric literals (decimal, hex, Infinity).  Returns NaN when
+// the string does not represent a valid numeric literal.
 fn double hstring_to_number(HString* hstr) {
     char* cstr = hstr.get_cstr();
     uint blen = hstr.blen;
@@ -655,9 +655,9 @@ fn double hstring_to_number(HString* hstr) {
     return result;
 }
 
-/// Extract [[PrimitiveValue]] from Boolean/Number/String wrapper objects.
-/// After calling vm_to_number, check and throw if ToPrimitive failed.
-/// Returns false if a throw was initiated (caller should break out of handler).
+// Extract [[PrimitiveValue]] from Boolean/Number/String wrapper objects.
+// After calling vm_to_number, check and throw if ToPrimitive failed.
+// Returns false if a throw was initiated (caller should break out of handler).
 fn bool vm_check_to_number_throw(Vm* vm, Activation* act, Instruction** curr_pc, bool* needs_restart) {
     if (vm.throw_pending) {
         vm.throw_pending = false;
@@ -666,8 +666,8 @@ fn bool vm_check_to_number_throw(Vm* vm, Activation* act, Instruction** curr_pc,
     return true;
 }
 
-/// Helper: create a TypeError and set vm.throw_pending for deferred throw.
-/// The opcode handler must check vm.throw_pending and call vm_throw_value.
+// Helper: create a TypeError and set vm.throw_pending for deferred throw.
+// The opcode handler must check vm.throw_pending and call vm_throw_value.
 fn void vm_set_toprimitive_error(Vm* vm) {
     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
@@ -688,7 +688,7 @@ fn void vm_set_toprimitive_error(Vm* vm) {
     vm.throw_pending = true;
 }
 
-/// Helper: create a TypeError with a custom message and set vm.throw_pending.
+// Helper: create a TypeError with a custom message and set vm.throw_pending.
 fn void vm_set_type_error(Vm* vm, char[] msg) {
     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
@@ -709,7 +709,7 @@ fn void vm_set_type_error(Vm* vm, char[] msg) {
     vm.throw_pending = true;
 }
 
-/// Helper: create a RangeError with a custom message and set vm.throw_pending.
+// Helper: create a RangeError with a custom message and set vm.throw_pending.
 fn void vm_set_range_error(Vm* vm, char[] msg) {
     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
@@ -730,12 +730,12 @@ fn void vm_set_range_error(Vm* vm, char[] msg) {
     vm.throw_pending = true;
 }
 
-/// Check if call_fn caused an unhandled throw inside the called function.
-/// When call_fn invokes a compiled JS function that throws and no catcher
-/// is found, vm.has_error is set and vm.return_val contains the thrown error.
-/// This helper propagates that error into the deferred throw mechanism so
-/// the outer opcode handler can properly propagate it.
-/// Returns true if an error was detected (caller should return early).
+// Check if call_fn caused an unhandled throw inside the called function.
+// When call_fn invokes a compiled JS function that throws and no catcher
+// is found, vm.has_error is set and vm.return_val contains the thrown error.
+// This helper propagates that error into the deferred throw mechanism so
+// the outer opcode handler can properly propagate it.
+// Returns true if an error was detected (caller should return early).
 fn bool vm_check_call_fn_error(Vm* vm) @inline {
     // vm.has_error is cleared at the call_fn/construct_fn boundary (to keep
     // it from leaking across into the caller's own VM opcode dispatch);
@@ -750,10 +750,10 @@ fn bool vm_check_call_fn_error(Vm* vm) @inline {
     return false;
 }
 
-/// ES5 §9.1 ToPrimitive, with hint "string" for + and "number" for arithmetic.
-/// Calls Symbol.toPrimitive first (ES6 §7.1.1), then valueOf/toString.
-/// Sets vm.throw_pending if both valueOf and toString return non-primitives.
-/// hint: 0 = default, 1 = string, 2 = number
+// ES5 §9.1 ToPrimitive, with hint "string" for + and "number" for arithmetic.
+// Calls Symbol.toPrimitive first (ES6 §7.1.1), then valueOf/toString.
+// Sets vm.throw_pending if both valueOf and toString return non-primitives.
+// hint: 0 = default, 1 = string, 2 = number
 fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
@@ -942,37 +942,37 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
     return *val;
 }
 
-/// ToNumeric(hint number) on both operands of a bitwise or shift op. ES2020
-/// §12.12.3/§12.9.4 etc. all begin "Let lnum be ? ToNumeric(lval)" / "Let
-/// rnum be ? ToNumeric(rval)", and each ToNumeric is itself ToPrimitive followed
-/// immediately by the BigInt-or-ToNumber dispatch (ES2020 §7.1.3). Both steps
-/// for lval must fully complete, including a Symbol-typed primitive throwing
-/// TypeError before rval's ToPrimitive runs at all, so this resolves
-/// lval all the way to numeric first, then rval, rather than ToPrimitive'ing
-/// both up front. The opcode handlers in vm_execute.c3 previously checked
-/// `rb.is_bigint() || rc.is_bigint()` on the RAW operands, which misses an
-/// object whose valueOf/toString/Symbol.toPrimitive produces a BigInt (e.g.
-/// `Object(1n) << 1n`), that object is neither a BigInt nor a number, so
-/// it fell through to the plain-numeric path and threw or coerced wrongly
-/// instead of being recognized as BigInt-typed.
-///
-/// Writes the ToNumeric'd results (BIGINT pass-through, everything else
-/// converted to NUMBER) into *out_b/*out_c and returns true on success.
-/// Returns false if either step threw (vm.throw_pending is set; caller must
-/// check/propagate exactly like any other coercion). Non-object operands
-/// still go through the BigInt-or-ToNumber dispatch (a bare Symbol operand
-/// must also throw here), so this is safe to call unconditionally before the
-/// is_bigint() dispatch.
+// ToNumeric(hint number) on both operands of a bitwise or shift op. ES2020
+// §12.12.3/§12.9.4 etc. all begin "Let lnum be ? ToNumeric(lval)" / "Let
+// rnum be ? ToNumeric(rval)", and each ToNumeric is itself ToPrimitive followed
+// immediately by the BigInt-or-ToNumber dispatch (ES2020 §7.1.3). Both steps
+// for lval must fully complete, including a Symbol-typed primitive throwing
+// TypeError before rval's ToPrimitive runs at all, so this resolves
+// lval all the way to numeric first, then rval, rather than ToPrimitive'ing
+// both up front. The opcode handlers in vm_execute.c3 previously checked
+// `rb.is_bigint() || rc.is_bigint()` on the RAW operands, which misses an
+// object whose valueOf/toString/Symbol.toPrimitive produces a BigInt (e.g.
+// `Object(1n) << 1n`), that object is neither a BigInt nor a number, so
+// it fell through to the plain-numeric path and threw or coerced wrongly
+// instead of being recognized as BigInt-typed.
+//
+// Writes the ToNumeric'd results (BIGINT pass-through, everything else
+// converted to NUMBER) into *out_b/*out_c and returns true on success.
+// Returns false if either step threw (vm.throw_pending is set; caller must
+// check/propagate exactly like any other coercion). Non-object operands
+// still go through the BigInt-or-ToNumber dispatch (a bare Symbol operand
+// must also throw here), so this is safe to call unconditionally before the
+// is_bigint() dispatch.
 fn bool vm_bitwise_to_primitive(Vm* vm, TVal* rb, TVal* rc, TVal* out_b, TVal* out_c) {
     if (!vm_to_numeric_bitwise(vm, rb, out_b)) return false;
     if (!vm_to_numeric_bitwise(vm, rc, out_c)) return false;
     return true;
 }
 
-/// ES2020 §7.1.3 ToNumeric: ToPrimitive(hint number), then pass BigInt
-/// through unchanged or ToNumber everything else (including throwing on a
-/// Symbol primitive). Used by vm_bitwise_to_primitive to resolve one operand
-/// completely before touching the other.
+// ES2020 §7.1.3 ToNumeric: ToPrimitive(hint number), then pass BigInt
+// through unchanged or ToNumber everything else (including throwing on a
+// Symbol primitive). Used by vm_bitwise_to_primitive to resolve one operand
+// completely before touching the other.
 fn bool vm_to_numeric_bitwise(Vm* vm, TVal* val, TVal* out) {
     TVal prim = *val;
     if (val.get_tag() == OBJECT) {

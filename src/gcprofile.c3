@@ -1,25 +1,25 @@
-/// Collection-pressure counters (feature GC_PROFILE).
-///
-/// `sample` tells you time is going into mark_tval; it cannot tell you whether
-/// that is the cost of a large live heap or of collecting far too often. Those
-/// need opposite fixes, and the ratio that separates them is not visible in a
-/// profile.
-///
-/// A `for (const x of arr)` over a 200k array ran 629x slower than QuickJS with
-/// over 90% of samples in mark_tval. The array was not the problem and neither
-/// was the iterator: the collection budget between cycles was scaled at 1x the
-/// live object count, so a program holding N live objects collected every N
-/// allocations and re-marked all N each time. Quadratic in the live set. An
-/// index loop over the same array was fine, because it allocates nothing per
-/// step while the iterator protocol allocates a result object per step.
-///
-/// marked_per_alloc is the number that makes that visible. Marking many objects
-/// per allocation means the collector is re-scanning a live heap that is not
-/// changing, and the budget wants raising -- no amount of staring at a sampled
-/// profile says so directly.
-///
-/// Gated on GC_PROFILE, which no shipping target enables, so the default build
-/// carries neither the counters nor their increments.
+// Collection-pressure counters (feature GC_PROFILE).
+//
+// `sample` tells you time is going into mark_tval; it cannot tell you whether
+// that is the cost of a large live heap or of collecting far too often. Those
+// need opposite fixes, and the ratio that separates them is not visible in a
+// profile.
+//
+// A `for (const x of arr)` over a 200k array ran 629x slower than QuickJS with
+// over 90% of samples in mark_tval. The array was not the problem and neither
+// was the iterator: the collection budget between cycles was scaled at 1x the
+// live object count, so a program holding N live objects collected every N
+// allocations and re-marked all N each time. Quadratic in the live set. An
+// index loop over the same array was fine, because it allocates nothing per
+// step while the iterator protocol allocates a result object per step.
+//
+// marked_per_alloc is the number that makes that visible. Marking many objects
+// per allocation means the collector is re-scanning a live heap that is not
+// changing, and the budget wants raising -- no amount of staring at a sampled
+// profile says so directly.
+//
+// Gated on GC_PROFILE, which no shipping target enables, so the default build
+// carries neither the counters nor their increments.
 module boomkat::gcprofile;
 
 import std::io;
@@ -37,8 +37,8 @@ macro void gcprof_alloc() @builtin {
     $endif
 }
 
-/// Count a realloc. It decrements the same GC trigger an allocation does, so
-/// leaving it out understates what is actually driving collections.
+// Count a realloc. It decrements the same GC trigger an allocation does, so
+// leaving it out understates what is actually driving collections.
 macro void gcprof_realloc() @builtin {
     $if $feature(GC_PROFILE):
     gcprof_reallocs++;
@@ -59,7 +59,7 @@ macro void gcprof_cycle(ulong swept) @builtin {
     $endif
 }
 
-/// Dump collection pressure to stderr. Call once at interpreter shutdown.
+// Dump collection pressure to stderr. Call once at interpreter shutdown.
 fn void gcprof_dump() {
 $if $feature(GC_PROFILE):
     io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",

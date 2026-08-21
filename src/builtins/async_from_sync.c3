@@ -1,43 +1,43 @@
-/// %AsyncFromSyncIteratorPrototype%, ES2018 §27.1.4.
-///
-/// Wraps a synchronous iterator so `for await` can drive it: `next`/`return`/
-/// `throw` all return Promises, and per §27.1.4.4 AsyncFromSyncIteratorContinuation
-/// the *value* half of the sync `{value, done}` result is itself Promise-resolved
-/// (awaited) before the caller sees it, so a synchronously-thenable value
-/// still gets unwrapped like it would from a real async iterator.
+// %AsyncFromSyncIteratorPrototype%, ES2018 §27.1.4.
+//
+// Wraps a synchronous iterator so `for await` can drive it: `next`/`return`/
+// `throw` all return Promises, and per §27.1.4.4 AsyncFromSyncIteratorContinuation
+// the *value* half of the sync `{value, done}` result is itself Promise-resolved
+// (awaited) before the caller sees it, so a synchronously-thenable value
+// still gets unwrapped like it would from a real async iterator.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::hstring;
 import boomkat::heap;
 import boomkat::hobject;
 
-/// Internal-slot key holding the wrapped [[SyncIteratorRecord]]'s iterator
-/// object. There is no dedicated ObjClass/HObjectExtra member for this
-/// adapter (it would need a new union member + GC-mark case for a single
-/// TVal), so, following the same convention as Promise capability state
-/// and Promise.all element callbacks (see promise.c3's "\xFFcap_*" /
-/// "\xFFstate" hidden props), the sync iterator is stashed as a TVal behind
-/// a hidden, unprintable-prefixed property key that user code cannot spell.
+// Internal-slot key holding the wrapped [[SyncIteratorRecord]]'s iterator
+// object. There is no dedicated ObjClass/HObjectExtra member for this
+// adapter (it would need a new union member + GC-mark case for a single
+// TVal), so, following the same convention as Promise capability state
+// and Promise.all element callbacks (see promise.c3's "\xFFcap_*" /
+// "\xFFstate" hidden props), the sync iterator is stashed as a TVal behind
+// a hidden, unprintable-prefixed property key that user code cannot spell.
 const char[] ASYNC_FROM_SYNC_ITERATOR_SLOT = "\xFFsyncIterator";
 // Cached sync [[NextMethod]] (§27.1.4.1: the wrapped syncIteratorRecord caches
 // `next` once; every %AsyncFromSyncIteratorPrototype%.next reuses it rather than
 // re-reading iterator.next, an accessor `next` getter fires exactly once).
 const char[] ASYNC_FROM_SYNC_NEXT_SLOT = "\xFFsyncNext";
 
-/// Hidden-prop keys on the native value-unwrap/reject-forward reaction
-/// closures (mirrors promise.c3's promise_create_element_callback pattern).
+// Hidden-prop keys on the native value-unwrap/reject-forward reaction
+// closures (mirrors promise.c3's promise_create_element_callback pattern).
 const char[] ASYNC_FROM_SYNC_DONE_SLOT  = "\xFFdone";
 const char[] ASYNC_FROM_SYNC_OUTER_SLOT = "\xFFouter";
 
-/// Slots on the reject-forward closure carrying the sync iterator to close and
-/// a flag marking whether it should be closed (§27.1.4.4 step 13: the onRejected
-/// reaction closes the iterator when the yielded "value" is a rejected promise
-/// and `done` is false).
+// Slots on the reject-forward closure carrying the sync iterator to close and
+// a flag marking whether it should be closed (§27.1.4.4 step 13: the onRejected
+// reaction closes the iterator when the yielded "value" is a rejected promise
+// and `done` is false).
 const char[] ASYNC_FROM_SYNC_CLOSEITER_SLOT = "\xFFcloseIter";
 
-/// Create %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4): a plain object
-/// (inherits directly from %ObjectPrototype%, not %IteratorPrototype%) with
-/// next/return/throw methods.
+// Create %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4): a plain object
+// (inherits directly from %ObjectPrototype%, not %IteratorPrototype%) with
+// next/return/throw methods.
 fn bool register_async_from_sync_iterator_prototype(Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
@@ -52,10 +52,10 @@ fn bool register_async_from_sync_iterator_prototype(Heap* heap) {
     return true;
 }
 
-/// Allocate an %AsyncFromSyncIteratorPrototype% instance wrapping `syncIter`
-/// (ES2018 §27.1.4.1 CreateAsyncFromSyncIterator). Called from the
-/// GET_ITER_ASYNC opcode handler once it has obtained a sync iterator via
-/// @@iterator.
+// Allocate an %AsyncFromSyncIteratorPrototype% instance wrapping `syncIter`
+// (ES2018 §27.1.4.1 CreateAsyncFromSyncIterator). Called from the
+// GET_ITER_ASYNC opcode handler once it has obtained a sync iterator via
+// @@iterator.
 fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
     HObject*? adapter_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = adapter_raw) return null;
@@ -91,8 +91,8 @@ fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
     return adapter;
 }
 
-/// Read the wrapped sync iterator off an adapter object, or null if `this`
-/// isn't one (guards against `AsyncFromSyncIteratorPrototype.next.call(x)`).
+// Read the wrapped sync iterator off an adapter object, or null if `this`
+// isn't one (guards against `AsyncFromSyncIteratorPrototype.next.call(x)`).
 fn HObject* async_from_sync_get_wrapped(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object()) return null;
     HObject* adapter = (HObject*)ctx.this_val.get_heapptr();
@@ -106,11 +106,11 @@ fn HObject* async_from_sync_get_wrapped(BuiltinContext* ctx) {
     return null;
 }
 
-/// Build the promise-fulfill / promise-reject pair of native reaction
-/// closures used to finish AsyncFromSyncIteratorContinuation, and attach
-/// them to `value_promise`. `done` is baked into the fulfill closure so it
-/// can build `{value, done}` once the (possibly-thenable) value settles.
-/// Returns the outer promise the caller should hand back to `for await`.
+// Build the promise-fulfill / promise-reject pair of native reaction
+// closures used to finish AsyncFromSyncIteratorContinuation, and attach
+// them to `value_promise`. `done` is baked into the fulfill closure so it
+// can build `{value, done}` once the (possibly-thenable) value settles.
+// Returns the outer promise the caller should hand back to `for await`.
 fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_iter, TVal result_value, bool done, bool close_on_rejection) {
     HObject*? outer_raw = promise_create(heap);
     if (catch err = outer_raw) return null;
@@ -183,9 +183,9 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
     return outer;
 }
 
-/// Native fulfill reaction for the internal value-promise: builds
-/// `{value, done}` and fulfills the outer (returned) promise with it
-/// (ES2018 §27.1.4.4 steps 9-11, "onFulfilled" closure).
+// Native fulfill reaction for the internal value-promise: builds
+// `{value, done}` and fulfills the outer (returned) promise with it
+// (ES2018 §27.1.4.4 steps 9-11, "onFulfilled" closure).
 fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
     ctx.result.set_undefined();
     if (ctx.callee_obj == null) return;
@@ -232,9 +232,9 @@ fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
     promise_trigger_reactions(outer, heap, ctx.vm);
 }
 
-/// Native reject reaction for the internal value-promise: forwards the
-/// rejection reason straight to the outer promise (ES2018 §27.1.4.4 step 9,
-/// "onRejected" is `promiseCapability.[[Reject]]`).
+// Native reject reaction for the internal value-promise: forwards the
+// rejection reason straight to the outer promise (ES2018 §27.1.4.4 step 9,
+// "onRejected" is `promiseCapability.[[Reject]]`).
 fn void builtin_async_from_sync_reject_forward(BuiltinContext* ctx) {
     ctx.result.set_undefined();
     if (ctx.callee_obj == null) return;
@@ -271,8 +271,8 @@ fn void builtin_async_from_sync_reject_forward(BuiltinContext* ctx) {
     promise_trigger_reactions(outer, heap, ctx.vm);
 }
 
-/// Build a TypeError value (without touching heap.has_error) for use as a
-/// promise rejection reason, e.g. "Iterator result is not an object".
+// Build a TypeError value (without touching heap.has_error) for use as a
+// promise rejection reason, e.g. "Iterator result is not an object".
 fn TVal async_from_sync_type_error(Heap* heap, char[] msg) {
     TVal out;
     out.set_undefined();
@@ -290,9 +290,9 @@ fn TVal async_from_sync_type_error(Heap* heap, char[] msg) {
     return out;
 }
 
-/// Reject a freshly-created promise with `reason` and return it. Shared by
-/// next/return/throw's early-exit error paths (e.g. sync method threw, or
-/// its result wasn't an object).
+// Reject a freshly-created promise with `reason` and return it. Shared by
+// next/return/throw's early-exit error paths (e.g. sync method threw, or
+// its result wasn't an object).
 fn HObject*? async_from_sync_rejected_promise(Heap* heap, void* vm, TVal reason) {
     HObject*? p_raw = promise_create(heap);
     if (catch err = p_raw) return null;
@@ -302,19 +302,19 @@ fn HObject*? async_from_sync_rejected_promise(Heap* heap, void* vm, TVal reason)
     return p;
 }
 
-/// Result of running IteratorClose on the wrapped sync iterator.
+// Result of running IteratorClose on the wrapped sync iterator.
 struct AsyncFromSyncCloseResult {
     bool threw;   // the close operation produced an abrupt (throw) completion
     TVal error;   // the thrown value, valid only when `threw` is true
 }
 
-/// IteratorClose(syncIteratorRecord, NormalCompletion), used when the sync
-/// iterator lacks a `throw` method (§27.1.4.5 step 7c) so it gets a chance to
-/// clean up before we reject. Gets the `return` method; a throwing getter or a
-/// throwing/`return`-non-object result yields an abrupt completion whose value
-/// is reported back so the caller can reject with it. A missing/nullish
-/// `return`, or a normal object result, yields a normal completion (threw =
-/// false); the result value is ignored per spec.
+// IteratorClose(syncIteratorRecord, NormalCompletion), used when the sync
+// iterator lacks a `throw` method (§27.1.4.5 step 7c) so it gets a chance to
+// clean up before we reject. Gets the `return` method; a throwing getter or a
+// throwing/`return`-non-object result yields an abrupt completion whose value
+// is reported back so the caller can reject with it. A missing/nullish
+// `return`, or a normal object result, yields a normal completion (threw =
+// false); the result value is ignored per spec.
 fn AsyncFromSyncCloseResult async_from_sync_iterator_close_normal(Heap* heap, void* vm, HObject* sync_iter) {
     AsyncFromSyncCloseResult out;
     out.threw = false;
@@ -363,12 +363,12 @@ fn AsyncFromSyncCloseResult async_from_sync_iterator_close_normal(Heap* heap, vo
     return out;
 }
 
-/// Shared tail of next/return/throw once the sync method has returned an object
-/// `result_obj`: run AsyncFromSyncIteratorContinuation (§27.1.4.4). Extracts
-/// `done` (IteratorComplete) and `value` (IteratorValue); a poisoned getter on
-/// either rejects the returned promise (IfAbruptRejectPromise) rather than
-/// throwing synchronously. `close_on_rejection` is true for next/throw and
-/// false for return.
+// Shared tail of next/return/throw once the sync method has returned an object
+// `result_obj`: run AsyncFromSyncIteratorContinuation (§27.1.4.4). Extracts
+// `done` (IteratorComplete) and `value` (IteratorValue); a poisoned getter on
+// either rejects the returned promise (IfAbruptRejectPromise) rather than
+// throwing synchronously. `close_on_rejection` is true for next/throw and
+// false for return.
 fn void async_from_sync_finish_continuation(BuiltinContext* ctx, HObject* sync_iter, HObject* result_obj, bool close_on_rejection) {
     Heap* heap = ctx.heap;
 
@@ -402,7 +402,7 @@ fn void async_from_sync_finish_continuation(BuiltinContext* ctx, HObject* sync_i
     ctx.result.set_object(outer);
 }
 
-/// %AsyncFromSyncIteratorPrototype%.next(value), ES2018 §27.1.4.2.
+// %AsyncFromSyncIteratorPrototype%.next(value), ES2018 §27.1.4.2.
 fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     ctx.result.set_undefined();
@@ -456,7 +456,7 @@ fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
     async_from_sync_finish_continuation(ctx, sync_iter, result_obj, true);
 }
 
-/// %AsyncFromSyncIteratorPrototype%.return(value), ES2018 §27.1.4.3.
+// %AsyncFromSyncIteratorPrototype%.return(value), ES2018 §27.1.4.3.
 fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     ctx.result.set_undefined();
@@ -539,7 +539,7 @@ fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
     async_from_sync_finish_continuation(ctx, sync_iter, result_obj, false);
 }
 
-/// %AsyncFromSyncIteratorPrototype%.throw(value), ES2018 §27.1.4.5.
+// %AsyncFromSyncIteratorPrototype%.throw(value), ES2018 §27.1.4.5.
 fn void builtin_async_from_sync_throw(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     ctx.result.set_undefined();

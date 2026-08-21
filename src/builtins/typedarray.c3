@@ -1,6 +1,6 @@
-/// TypedArray constructors and element access (ES2015 §22.2), Stage 2 of
-/// plan 049. Buffer allocation reuses the ArrayBuffer primitives from
-/// arraybuffer.c3; element read/write conversion lives in vm_property.c3.
+// TypedArray constructors and element access (ES2015 §22.2), Stage 2 of
+// plan 049. Buffer allocation reuses the ArrayBuffer primitives from
+// arraybuffer.c3; element read/write conversion lives in vm_property.c3.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -52,7 +52,7 @@ const TAInfo[12] TA_INFO = {
 // getFloat16/setFloat16. Do NOT replace with a truncating (float)cast.
 // ============================================================================
 
-/// binary16 bit pattern -> double (exact; half is a subset of double).
+// binary16 bit pattern -> double (exact; half is a subset of double).
 fn double f16_to_double(ushort v) {
     uint v1 = (uint)v & 0x7fff;
     if (v1 >= 0x7c00) v1 += 0x1f8000; // NaN or infinity
@@ -62,7 +62,7 @@ fn double f16_to_double(ushort v) {
     return d * 0x1p1008;
 }
 
-/// double -> binary16 bit pattern, round-to-nearest-even (§ NumberToRawBytes).
+// double -> binary16 bit pattern, round-to-nearest-even (§ NumberToRawBytes).
 fn ushort double_to_f16(double d) {
     ulong a;
     mem::copy(&a, &d, (sz)(8));
@@ -94,13 +94,13 @@ fn ushort double_to_f16(double d) {
     return (ushort)(v | (sgn << 15));
 }
 
-/// True iff `cls` is any of the TypedArray element kinds.
+// True iff `cls` is any of the TypedArray element kinds.
 fn bool is_typed_array_class(hobject::ObjClass cls) {
     return cls >= hobject::ObjClass.INT8ARRAY && cls <= hobject::ObjClass.BIGUINT64ARRAY;
 }
 
-/// True iff `cls` is a BigInt-backed TypedArray (content type "BigInt").
-/// Mixing BigInt and non-BigInt arrays in set()/construction throws TypeError.
+// True iff `cls` is a BigInt-backed TypedArray (content type "BigInt").
+// Mixing BigInt and non-BigInt arrays in set()/construction throws TypeError.
 fn bool is_bigint_typed_array_class(hobject::ObjClass cls) {
     return cls == hobject::ObjClass.BIGINT64ARRAY || cls == hobject::ObjClass.BIGUINT64ARRAY;
 }
@@ -118,10 +118,10 @@ fn char[] ta_class_name(hobject::ObjClass cls) {
     return TA_INFO[(int)cls - (int)hobject::ObjClass.INT8ARRAY].name;
 }
 
-/// ES2022 §7.1.21 CanonicalNumericIndexString, true iff `s` is "-0" or the
-/// ToString of some number that round-trips back to the same text (e.g.
-/// "1.5", "NaN", "Infinity"). Plain array-index integer strings ("0", "1",
-/// ...) are handled separately via HString.is_arridx() and never reach here.
+// ES2022 §7.1.21 CanonicalNumericIndexString, true iff `s` is "-0" or the
+// ToString of some number that round-trips back to the same text (e.g.
+// "1.5", "NaN", "Infinity"). Plain array-index integer strings ("0", "1",
+// ...) are handled separately via HString.is_arridx() and never reach here.
 fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
     char[] bytes = s.get_data();
     if (bytes.len == 2 && bytes[0] == '-' && bytes[1] == '0') {
@@ -149,9 +149,9 @@ fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
 // Buffer allocation helper (shared with ArrayBuffer construction)
 // ============================================================================
 
-/// Allocate a fresh, zeroed ArrayBuffer object of `byte_length` bytes.
-/// Returns null (without throwing) on allocation failure so the caller can
-/// decide the exact error to raise.
+// Allocate a fresh, zeroed ArrayBuffer object of `byte_length` bytes.
+// Returns null (without throwing) on allocation failure so the caller can
+// decide the exact error to raise.
 fn HObject* typedarray_alloc_buffer(BuiltinContext* ctx, uint byte_length) {
     char* data = null;
     if (byte_length > 0) {
@@ -172,22 +172,22 @@ fn HObject* typedarray_alloc_buffer(BuiltinContext* ctx, uint byte_length) {
     return buf;
 }
 
-/// Link a freshly created view object into its buffer's views_head chain.
+// Link a freshly created view object into its buffer's views_head chain.
 fn void typedarray_link_view(HObject* buf, HObject* view) {
     (*view.extra_ptr()).view.buffer = buf;
     (*view.extra_ptr()).view.next_view = (*buf.extra_ptr()).ab.views_head;
     (*buf.extra_ptr()).ab.views_head = view;
 }
 
-/// Resolve the constructor's `.prototype` (falling back to the shared
-/// %TypedArray%.prototype-derived per-class prototype) for `new.target`-style
-/// prototype inheritance.
-///
-/// Unlike the general-purpose builtin_proto_from_new_target (which silently
-/// treats an inaccessible/throwing "prototype" getter as absent), TypedArray
-/// construction's GetPrototypeFromConstructor (ES2022 §9.1.15 step 3, via
-/// AllocateTypedArray step 1) must propagate a thrown Get(constructor,
-/// "prototype") abruptly. Sets ctx.should_throw and returns null on error.
+// Resolve the constructor's `.prototype` (falling back to the shared
+// %TypedArray%.prototype-derived per-class prototype) for `new.target`-style
+// prototype inheritance.
+//
+// Unlike the general-purpose builtin_proto_from_new_target (which silently
+// treats an inaccessible/throwing "prototype" getter as absent), TypedArray
+// construction's GetPrototypeFromConstructor (ES2022 §9.1.15 step 3, via
+// AllocateTypedArray step 1) must propagate a thrown Get(constructor,
+// "prototype") abruptly. Sets ctx.should_throw and returns null on error.
 fn HObject* typedarray_instance_proto(BuiltinContext* ctx, HObject* fallback_proto) {
     HObject* nt = ctx.new_target;
     if (nt == null) return fallback_proto;
@@ -203,15 +203,15 @@ fn HObject* typedarray_instance_proto(BuiltinContext* ctx, HObject* fallback_pro
     return fallback_proto;
 }
 
-/// Resolve the instance prototype for the per-class TypedArray() constructor
-/// (ES2022 §22.2.5.1 step 3 AllocateTypedArray -> GetPrototypeFromConstructor).
-///
-/// This MUST be called only after all argument-processing steps that can
-/// throw (ToIndex on a non-object first argument, ArrayBuffer/TypedArray/
-/// iterable source validation, etc.) have already succeeded, AllocateTypedArray
-/// runs strictly after argument processing in the spec, so a throwing/
-/// observable custom `new.target.prototype` getter must never be invoked
-/// before an earlier abrupt completion from argument processing.
+// Resolve the instance prototype for the per-class TypedArray() constructor
+// (ES2022 §22.2.5.1 step 3 AllocateTypedArray -> GetPrototypeFromConstructor).
+//
+// This MUST be called only after all argument-processing steps that can
+// throw (ToIndex on a non-object first argument, ArrayBuffer/TypedArray/
+// iterable source validation, etc.) have already succeeded, AllocateTypedArray
+// runs strictly after argument processing in the spec, so a throwing/
+// observable custom `new.target.prototype` getter must never be invoked
+// before an earlier abrupt completion from argument processing.
 fn HObject* typed_array_resolve_instance_proto(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     // AllocateTypedArray's defaultProto (ES2022 §22.2.5.1 per-class TypedArray()
@@ -233,10 +233,10 @@ fn HObject* typed_array_resolve_instance_proto(BuiltinContext* ctx) {
     return typedarray_instance_proto(ctx, default_proto);
 }
 
-/// Store one converted element into `buf`'s backing store at element index
-/// `idx` for typed array class `cls`. Assumes bounds have already been
-/// validated (used during construction, where the buffer freshly allocated
-/// is always large enough).
+// Store one converted element into `buf`'s backing store at element index
+// `idx` for typed array class `cls`. Assumes bounds have already been
+// validated (used during construction, where the buffer freshly allocated
+// is always large enough).
 fn void typedarray_store_converted(HObject* buf, uint byte_offset, hobject::ObjClass cls, uint idx, TVal* val, BuiltinContext* ctx) {
     char* base = (*buf.extra_ptr()).ab.data;
     if (base == null) return;
@@ -245,12 +245,12 @@ fn void typedarray_store_converted(HObject* buf, uint byte_offset, hobject::ObjC
     ta_write_element(p, cls, val, ctx);
 }
 
-/// Read element `idx` of a live TypedArray, re-deriving the backing pointer
-/// from the buffer's CURRENT data (a resizable-buffer resize between calls may
-/// have realloc'd it) and returning undefined when `idx` is not a valid integer
-/// index (detached, out of bounds, or beyond the current length). Use this in
-/// any loop that runs user code between element reads, instead of caching a
-/// raw `base` pointer across the callback.
+// Read element `idx` of a live TypedArray, re-deriving the backing pointer
+// from the buffer's CURRENT data (a resizable-buffer resize between calls may
+// have realloc'd it) and returning undefined when `idx` is not a valid integer
+// index (detached, out of bounds, or beyond the current length). Use this in
+// any loop that runs user code between element reads, instead of caching a
+// raw `base` pointer across the callback.
 fn TVal ta_read_element_checked(Heap* heap, HObject* obj, uint idx) {
     TVal v;
     if (!ta_is_valid_integer_index(obj, (double)idx)) {
@@ -267,9 +267,9 @@ fn TVal ta_read_element_checked(Heap* heap, HObject* obj, uint idx) {
 // GETPROP/PUTPROP fast paths (vm_property.c3).
 // ============================================================================
 
-/// Load one element at byte pointer `p` (already offset into the backing
-/// store) for typed array class `cls`, converting to a TVal per §22.2 read
-/// rules (small int kinds -> fastint, wide/float kinds -> number).
+// Load one element at byte pointer `p` (already offset into the backing
+// store) for typed array class `cls`, converting to a TVal per §22.2 read
+// rules (small int kinds -> fastint, wide/float kinds -> number).
 fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
     TVal out;
     uint shift = ta_elem_shift(cls);
@@ -355,8 +355,8 @@ fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
     return out;
 }
 
-/// ES2022 §7.1.11 ToUint8Clamp, NaN -> 0, clamp to [0,255], banker's
-/// rounding (round half to even) on ties. Matches QuickJS JS_ToUint8ClampFree.
+// ES2022 §7.1.11 ToUint8Clamp, NaN -> 0, clamp to [0,255], banker's
+// rounding (round half to even) on ties. Matches QuickJS JS_ToUint8ClampFree.
 fn char ta_to_uint8_clamped(double d) {
     if (d != d) return 0; // NaN
     if (d <= 0.0) return 0;
@@ -371,18 +371,18 @@ fn char ta_to_uint8_clamped(double d) {
     return (char)(fli + 1);
 }
 
-/// Convert `val` (already-available TVal) to a JS double per ToNumber,
-/// using the VM when the value is an object. Used for element writes.
+// Convert `val` (already-available TVal) to a JS double per ToNumber,
+// using the VM when the value is an object. Used for element writes.
 fn double ta_val_to_number(TVal* val, BuiltinContext* ctx) {
     if (val.is_fastint()) return (double)val.get_fastint();
     if (val.is_number()) return val.get_number();
     return builtin_to_number_vm(ctx, val);
 }
 
-/// Write one converted element at byte pointer `p` for class `cls`. Performs
-/// the ToNumber/ToInt32/ToUint32/clamp conversion first (per spec, this may
-/// run user code that detaches the buffer); the caller is responsible for
-/// bounds/detach checking AFTER conversion and for skipping the store if so.
+// Write one converted element at byte pointer `p` for class `cls`. Performs
+// the ToNumber/ToInt32/ToUint32/clamp conversion first (per spec, this may
+// run user code that detaches the buffer); the caller is responsible for
+// bounds/detach checking AFTER conversion and for skipping the store if so.
 fn void ta_write_element(char* p, hobject::ObjClass cls, TVal* val, BuiltinContext* ctx) {
     switch (cls) {
         case hobject::ObjClass.INT8ARRAY:
@@ -466,8 +466,8 @@ struct TAScalar {
     long   big64;
 }
 
-/// Coerce `val` to the element type of `cls`, ToBigInt for BigInt kinds,
-/// ToNumber for the rest. May run user code and set ctx.should_throw.
+// Coerce `val` to the element type of `cls`, ToBigInt for BigInt kinds,
+// ToNumber for the rest. May run user code and set ctx.should_throw.
 fn TAScalar ta_coerce_element(hobject::ObjClass cls, TVal* val, BuiltinContext* ctx) {
     TAScalar s;
     if (is_bigint_typed_array_class(cls)) {
@@ -483,8 +483,8 @@ fn TAScalar ta_coerce_element(hobject::ObjClass cls, TVal* val, BuiltinContext* 
     return s;
 }
 
-/// Store a already-coerced scalar at byte pointer `p`. Never runs user code or
-/// throws, safe to call after a post-coercion detach re-check.
+// Store a already-coerced scalar at byte pointer `p`. Never runs user code or
+// throws, safe to call after a post-coercion detach re-check.
 fn void ta_store_scalar(char* p, hobject::ObjClass cls, TAScalar* s) {
     if (s.is_bigint) {
         mem::copy(p, &s.big64, (sz)(8));
@@ -523,9 +523,9 @@ fn void ta_store_scalar(char* p, hobject::ObjClass cls, TAScalar* s) {
     }
 }
 
-/// ES2022 §7.1.6 ToInt32 core, applied to an already-computed double.
-/// NaN/Infinity -> 0; otherwise truncate toward zero mod 2^32, reinterpreted
-/// as signed 32-bit (sign bit set -> negative).
+// ES2022 §7.1.6 ToInt32 core, applied to an already-computed double.
+// NaN/Infinity -> 0; otherwise truncate toward zero mod 2^32, reinterpreted
+// as signed 32-bit (sign bit set -> negative).
 fn long double_to_int32(double d) {
     if (d != d) return 0; // NaN
     if (d == 1.0 / 0.0 || d == -1.0 / 0.0) return 0;
@@ -899,7 +899,7 @@ fn void builtin_biguint64array(BuiltinContext* ctx) {
 // %TypedArray%.prototype accessors, length / byteLength / byteOffset / buffer
 // ============================================================================
 
-/// Resolve `ctx.this_val` as a TypedArray instance, or return null.
+// Resolve `ctx.this_val` as a TypedArray instance, or return null.
 fn HObject* ta_this_receiver(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object() || ctx.this_val.get_heapptr() == null) return null;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
@@ -953,8 +953,8 @@ fn void builtin_typedarray_proto_buffer_get(BuiltinContext* ctx) {
     ctx.result.set_object(buf);
 }
 
-/// [Symbol.toStringTag] getter, returns the class name for TA receivers,
-/// undefined otherwise (per spec, this getter never throws).
+// [Symbol.toStringTag] getter, returns the class name for TA receivers,
+// undefined otherwise (per spec, this getter never throws).
 fn void builtin_typedarray_proto_tostringtag_get(BuiltinContext* ctx) {
     HObject* obj = ta_this_receiver(ctx);
     if (obj == null) {
@@ -973,8 +973,8 @@ fn void builtin_typedarray_proto_tostringtag_get(BuiltinContext* ctx) {
 // Wave A: %TypedArray%.prototype methods (plan 049 stage 4)
 // ============================================================================
 
-/// Validate that ctx.this_val is a live (non-detached) TypedArray.
-/// Returns the object on success, null + sets should_throw on failure.
+// Validate that ctx.this_val is a live (non-detached) TypedArray.
+// Returns the object on success, null + sets should_throw on failure.
 fn HObject* ta_validate(BuiltinContext* ctx) {
     HObject* obj = ta_this_receiver(ctx);
     if (obj == null) {
@@ -990,10 +990,10 @@ fn HObject* ta_validate(BuiltinContext* ctx) {
     return obj;
 }
 
-/// IsViewOutOfBounds (ES2024 §10.4.5): a view over a resizable buffer goes
-/// out of bounds when the buffer shrinks past it. Covers both TypedArray and
-/// DataView. Returns true if detached or out of bounds. Fixed (non-resizable)
-/// buffers can never be OOB while live, so this collapses to a detach check.
+// IsViewOutOfBounds (ES2024 §10.4.5): a view over a resizable buffer goes
+// out of bounds when the buffer shrinks past it. Covers both TypedArray and
+// DataView. Returns true if detached or out of bounds. Fixed (non-resizable)
+// buffers can never be OOB while live, so this collapses to a detach check.
 fn bool view_is_out_of_bounds(HObject* obj) {
     HObject* buf = (*obj.extra_ptr()).view.buffer;
     if (buf == null) return true;
@@ -1006,12 +1006,12 @@ fn bool view_is_out_of_bounds(HObject* obj) {
     return off + (*obj.extra_ptr()).view.byte_length > buf_len;
 }
 
-/// IsTypedArrayFixedLength (ES2024 §10.4.5.15): false iff the view is
-/// length-tracking, or its backing buffer is a resizable (non-shared)
-/// ArrayBuffer. A non-fixed-length TypedArray cannot be made non-extensible,
-/// its [[PreventExtensions]] returns false, so Object.freeze/seal on it (and
-/// on any view over a resizable buffer, even a currently zero-length one)
-/// fails and throws TypeError.
+// IsTypedArrayFixedLength (ES2024 §10.4.5.15): false iff the view is
+// length-tracking, or its backing buffer is a resizable (non-shared)
+// ArrayBuffer. A non-fixed-length TypedArray cannot be made non-extensible,
+// its [[PreventExtensions]] returns false, so Object.freeze/seal on it (and
+// on any view over a resizable buffer, even a currently zero-length one)
+// fails and throws TypeError.
 fn bool ta_is_fixed_length(HObject* obj) {
     if ((*obj.extra_ptr()).view.length_tracking) return false;
     HObject* buf = (*obj.extra_ptr()).view.buffer;
@@ -1020,10 +1020,10 @@ fn bool ta_is_fixed_length(HObject* obj) {
     return true;
 }
 
-/// Effective byte length of a view given the CURRENT backing buffer length.
-/// For length-tracking views this is recomputed from the buffer; for fixed
-/// views it is the stored byte_length (0 when out of bounds). For TypedArrays
-/// the tracking length is floored to a whole number of elements.
+// Effective byte length of a view given the CURRENT backing buffer length.
+// For length-tracking views this is recomputed from the buffer; for fixed
+// views it is the stored byte_length (0 when out of bounds). For TypedArrays
+// the tracking length is floored to a whole number of elements.
 fn uint view_effective_byte_length(HObject* obj) {
     if (view_is_out_of_bounds(obj)) return 0;
     if (!(*obj.extra_ptr()).view.length_tracking) {
@@ -1041,32 +1041,32 @@ fn uint view_effective_byte_length(HObject* obj) {
     return avail;
 }
 
-/// Check detach status without throwing, inline guard after user-code calls.
-/// Also true when a view over a resizable buffer has gone out of bounds, since
-/// callers use this to reject element access on a no-longer-valid view.
+// Check detach status without throwing, inline guard after user-code calls.
+// Also true when a view over a resizable buffer has gone out of bounds, since
+// callers use this to reject element access on a no-longer-valid view.
 fn bool ta_is_detached(HObject* obj) {
     return view_is_out_of_bounds(obj);
 }
 
-/// True only when the backing buffer is genuinely detached (freed), NOT merely
-/// out of bounds after a shrink. Some spec algorithms (indexOf/lastIndexOf/
-/// includes after fromIndex coercion) short-circuit on real detach but keep
-/// iterating an OOB view, reading each index as undefined.
+// True only when the backing buffer is genuinely detached (freed), NOT merely
+// out of bounds after a shrink. Some spec algorithms (indexOf/lastIndexOf/
+// includes after fromIndex coercion) short-circuit on real detach but keep
+// iterating an OOB view, reading each index as undefined.
 fn bool ta_buffer_truly_detached(HObject* obj) {
     HObject* buf = (*obj.extra_ptr()).view.buffer;
     if (buf == null) return true;
     return (*buf.extra_ptr()).ab.byte_length == 0xFFFFFFFFu;
 }
 
-/// Element count ([[ArrayLength]]) of a live TypedArray, 0 when detached
-/// or out of bounds.
+// Element count ([[ArrayLength]]) of a live TypedArray, 0 when detached
+// or out of bounds.
 fn uint ta_element_count(HObject* obj) {
     uint shift = ta_elem_shift(obj.flags.obj_class);
     return view_effective_byte_length(obj) >> shift;
 }
 
-/// IsValidIntegerIndex (ES2022 §10.4.5.9): true iff `idx` is a non-negative
-/// integer, the buffer is not detached, and idx < [[ArrayLength]].
+// IsValidIntegerIndex (ES2022 §10.4.5.9): true iff `idx` is a non-negative
+// integer, the buffer is not detached, and idx < [[ArrayLength]].
 fn bool ta_is_valid_integer_index(HObject* obj, double idx) {
     if (ta_is_detached(obj)) return false;
     if (idx != idx || idx < 0.0) return false;
@@ -1075,13 +1075,13 @@ fn bool ta_is_valid_integer_index(HObject* obj, double idx) {
     return idx < (double)ta_element_count(obj);
 }
 
-/// CanonicalNumericIndexString + integer-index classification for a String
-/// property key on a TypedArray (ES2022 §10.4.5 IntegerIndexedObject match).
-/// Returns true when `key` is a canonical numeric index string, with
-/// `*out_num` set to the numeric value (any finite or infinite double,
-/// possibly non-integer or negative) for further checks by the caller.
-/// Returns false when `key` is not numeric-index-like at all (ordinary
-/// property lookup should proceed as usual).
+// CanonicalNumericIndexString + integer-index classification for a String
+// property key on a TypedArray (ES2022 §10.4.5 IntegerIndexedObject match).
+// Returns true when `key` is a canonical numeric index string, with
+// `*out_num` set to the numeric value (any finite or infinite double,
+// possibly non-integer or negative) for further checks by the caller.
+// Returns false when `key` is not numeric-index-like at all (ordinary
+// property lookup should proceed as usual).
 fn bool ta_key_numeric_index(Heap* heap, HString* key, double* out_num) {
     if (key.is_symbol()) return false;
     if (key.is_arridx()) {
@@ -1091,11 +1091,11 @@ fn bool ta_key_numeric_index(Heap* heap, HString* key, double* out_num) {
     return is_canonical_numeric_index(heap, key, out_num);
 }
 
-/// Integer-Indexed exotic [[GetOwnProperty]] (ES2022 §10.4.5.1) for a String
-/// key already known to be a canonical numeric index (`num`). Populates
-/// `out` with a data-property descriptor (WEC) when the index is valid;
-/// leaves `out.found = false` otherwise (still consumed the key, caller
-/// must not fall back to ordinary lookup).
+// Integer-Indexed exotic [[GetOwnProperty]] (ES2022 §10.4.5.1) for a String
+// key already known to be a canonical numeric index (`num`). Populates
+// `out` with a data-property descriptor (WEC) when the index is valid;
+// leaves `out.found = false` otherwise (still consumed the key, caller
+// must not fall back to ordinary lookup).
 fn void ta_own_index_desc(Heap* heap, HObject* obj, double num, ProxyDesc* out) {
     *out = (ProxyDesc){};
     if (!ta_is_valid_integer_index(obj, num)) return;
@@ -1110,9 +1110,9 @@ fn void ta_own_index_desc(Heap* heap, HObject* obj, double num, ProxyDesc* out) 
     out.has_configurable = true; out.configurable = true;
 }
 
-/// IntegerIndexedElementSet (ES2022 §10.4.5.10): ToNumber(value) first (may
-/// run user code / throw), then silently no-op if OOB/detached afterwards.
-/// `ctx` carries should_throw/throw_value for propagating ToNumber errors.
+// IntegerIndexedElementSet (ES2022 §10.4.5.10): ToNumber(value) first (may
+// run user code / throw), then silently no-op if OOB/detached afterwards.
+// `ctx` carries should_throw/throw_value for propagating ToNumber errors.
 fn void ta_integer_indexed_element_set(BuiltinContext* ctx, HObject* obj, double num, TVal value) {
     hobject::ObjClass cls = obj.flags.obj_class;
     char[8] scratch;
@@ -1127,7 +1127,7 @@ fn void ta_integer_indexed_element_set(BuiltinContext* ctx, HObject* obj, double
     ta_write_element(p, cls, &converted, ctx);
 }
 
-/// Normalize a relative index (ES2022 §23.2.4.1 ToIntegerOrInfinity + clamp).
+// Normalize a relative index (ES2022 §23.2.4.1 ToIntegerOrInfinity + clamp).
 fn uint ta_norm_index(double d, uint len) {
     if (d != d || d == 0.0) return 0;
     if (d < 0.0) {
@@ -1140,21 +1140,21 @@ fn uint ta_norm_index(double d, uint len) {
 
 // ---- Iterator forwarders ----
 
-/// %TypedArray%.prototype.values(), §23.2.3.32. Returns array iterator kind=0.
+// %TypedArray%.prototype.values(), §23.2.3.32. Returns array iterator kind=0.
 fn void builtin_ta_proto_values(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
     create_array_iterator(ctx, 0);
 }
 
-/// %TypedArray%.prototype.keys(), §23.2.3.16. Returns array iterator kind=1.
+// %TypedArray%.prototype.keys(), §23.2.3.16. Returns array iterator kind=1.
 fn void builtin_ta_proto_keys(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
     create_array_iterator(ctx, 1);
 }
 
-/// %TypedArray%.prototype.entries(), §23.2.3.6. Returns array iterator kind=2.
+// %TypedArray%.prototype.entries(), §23.2.3.6. Returns array iterator kind=2.
 fn void builtin_ta_proto_entries(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -1163,7 +1163,7 @@ fn void builtin_ta_proto_entries(BuiltinContext* ctx) {
 
 // ---- set ----
 
-/// %TypedArray%.prototype.set(source [, offset]), §23.2.3.24.
+// %TypedArray%.prototype.set(source [, offset]), §23.2.3.24.
 fn void builtin_ta_proto_set(BuiltinContext* ctx) {
     HObject* dst = ta_validate(ctx);
     if (dst == null) return;
@@ -1348,8 +1348,8 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
 
 // ---- subarray ----
 
-/// %TypedArray%.prototype.subarray(begin, end), §23.2.3.27.
-/// Returns a new TA of the same class sharing the same ArrayBuffer.
+// %TypedArray%.prototype.subarray(begin, end), §23.2.3.27.
+// Returns a new TA of the same class sharing the same ArrayBuffer.
 fn void builtin_ta_proto_subarray(BuiltinContext* ctx) {
     // Spec §23.2.3.27: subarray validates receiver type but does NOT check detach
     // before ToInteger(begin)/ToInteger(end), detach is only checked by the new
@@ -1477,7 +1477,7 @@ fn void builtin_ta_proto_subarray(BuiltinContext* ctx) {
 
 // ---- fill ----
 
-/// %TypedArray%.prototype.fill(value, start, end), §23.2.3.9.
+// %TypedArray%.prototype.fill(value, start, end), §23.2.3.9.
 fn void builtin_ta_proto_fill(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -1555,7 +1555,7 @@ fn void builtin_ta_proto_fill(BuiltinContext* ctx) {
 
 // ---- copyWithin ----
 
-/// %TypedArray%.prototype.copyWithin(target, start [, end]), §23.2.3.6.
+// %TypedArray%.prototype.copyWithin(target, start [, end]), §23.2.3.6.
 fn void builtin_ta_proto_copyWithin(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -1622,8 +1622,8 @@ fn void builtin_ta_proto_copyWithin(BuiltinContext* ctx) {
 
 // ---- slice ----
 
-/// %TypedArray%.prototype.slice(start, end), §23.2.3.25.
-/// Returns a new same-class TA with a fresh copy of the slice.
+// %TypedArray%.prototype.slice(start, end), §23.2.3.25.
+// Returns a new same-class TA with a fresh copy of the slice.
 fn void builtin_ta_proto_slice(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -1707,7 +1707,7 @@ fn void builtin_ta_proto_slice(BuiltinContext* ctx) {
 // Wave B: %TypedArray%.prototype methods (plan 049 stage 5)
 // ============================================================================
 
-/// Check that val is callable (object with callable flag). Throws TypeError if not.
+// Check that val is callable (object with callable flag). Throws TypeError if not.
 fn bool ta_check_callback(TVal val, BuiltinContext* ctx) {
     if (val.is_object() && val.get_heapptr() != null && ((HObject*)val.get_heapptr()).is_callable()) {
         return true;
@@ -1716,7 +1716,7 @@ fn bool ta_check_callback(TVal val, BuiltinContext* ctx) {
     return false;
 }
 
-/// Call callback(element, index, ta) with thisArg. Sets ctx.should_throw on error.
+// Call callback(element, index, ta) with thisArg. Sets ctx.should_throw on error.
 fn TVal ta_call_callback(BuiltinContext* ctx, TVal callback, TVal thisArg, TVal v, uint k, HObject* ta) {
     TVal[3] args;
     args[0] = v;
@@ -1732,10 +1732,10 @@ fn TVal ta_call_callback(BuiltinContext* ctx, TVal callback, TVal thisArg, TVal 
     return res;
 }
 
-/// TypedArraySpeciesCreate (ES §22.2.4.7): allocate a TypedArray for use as
-/// the result of slice/map/filter/subarray, honouring `constructor[@@species]`
-/// if present. Falls back to same-class allocation when species is absent.
-/// Returns null and sets ctx.should_throw on error.
+// TypedArraySpeciesCreate (ES §22.2.4.7): allocate a TypedArray for use as
+// the result of slice/map/filter/subarray, honouring `constructor[@@species]`
+// if present. Falls back to same-class allocation when species is absent.
+// Returns null and sets ctx.should_throw on error.
 fn HObject* ta_species_create(BuiltinContext* ctx, HObject* exemplar, uint count) {
     hobject::ObjClass cls = exemplar.flags.obj_class;
     Heap* heap = ctx.heap;
@@ -1829,10 +1829,10 @@ fn HObject* ta_species_create(BuiltinContext* ctx, HObject* exemplar, uint count
     return result_obj;
 }
 
-/// Allocate a new same-class TA of `length` elements (fresh zeroed buffer).
-/// `src_proto` is the prototype of the source TA (so the result inherits the
-/// same per-ctor prototype and instanceof checks work). Pass null to fall back
-/// to the shared %TypedArray%.prototype.
+// Allocate a new same-class TA of `length` elements (fresh zeroed buffer).
+// `src_proto` is the prototype of the source TA (so the result inherits the
+// same per-ctor prototype and instanceof checks work). Pass null to fall back
+// to the shared %TypedArray%.prototype.
 fn HObject* ta_alloc_same_class(BuiltinContext* ctx, hobject::ObjClass cls, uint length) {
     uint shift = ta_elem_shift(cls);
     uint new_bytes = length << shift;
@@ -1854,8 +1854,8 @@ fn HObject* ta_alloc_same_class(BuiltinContext* ctx, hobject::ObjClass cls, uint
     return result;
 }
 
-/// Allocate same-class TA, inheriting the source object's prototype chain
-/// so instanceof checks work (e.g., map on Uint8Array returns Uint8Array).
+// Allocate same-class TA, inheriting the source object's prototype chain
+// so instanceof checks work (e.g., map on Uint8Array returns Uint8Array).
 fn HObject* ta_alloc_same_class_from(BuiltinContext* ctx, HObject* src, uint length) {
     hobject::ObjClass cls = src.flags.obj_class;
     HObject* result = ta_alloc_same_class(ctx, cls, length);
@@ -1865,8 +1865,8 @@ fn HObject* ta_alloc_same_class_from(BuiltinContext* ctx, HObject* src, uint len
     return result;
 }
 
-/// %TypedArray%.prototype.indexOf(searchElement, fromIndex=0), §23.2.3.14.
-/// NaN search always returns -1 (strict equality, NaN !== NaN).
+// %TypedArray%.prototype.indexOf(searchElement, fromIndex=0), §23.2.3.14.
+// NaN search always returns -1 (strict equality, NaN !== NaN).
 fn void builtin_ta_proto_indexOf(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -1922,7 +1922,7 @@ fn void builtin_ta_proto_indexOf(BuiltinContext* ctx) {
     ctx.result.set_fastint(-1);
 }
 
-/// %TypedArray%.prototype.lastIndexOf(searchElement, fromIndex=length-1), §23.2.3.18.
+// %TypedArray%.prototype.lastIndexOf(searchElement, fromIndex=length-1), §23.2.3.18.
 fn void builtin_ta_proto_lastIndexOf(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -1980,8 +1980,8 @@ fn void builtin_ta_proto_lastIndexOf(BuiltinContext* ctx) {
     ctx.result.set_fastint(-1);
 }
 
-/// %TypedArray%.prototype.includes(searchElement, fromIndex=0), §23.2.3.13.
-/// SameValueZero: NaN matches NaN, +0 matches -0.
+// %TypedArray%.prototype.includes(searchElement, fromIndex=0), §23.2.3.13.
+// SameValueZero: NaN matches NaN, +0 matches -0.
 fn void builtin_ta_proto_includes(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2029,7 +2029,7 @@ fn void builtin_ta_proto_includes(BuiltinContext* ctx) {
     ctx.result.set_boolean(false);
 }
 
-/// %TypedArray%.prototype.join(separator=","), §23.2.3.15.
+// %TypedArray%.prototype.join(separator=","), §23.2.3.15.
 fn void builtin_ta_proto_join(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2139,7 +2139,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
     ctx.result.set_string(hs);
 }
 
-/// %TypedArray%.prototype.forEach(callbackFn, thisArg?), §23.2.3.12.
+// %TypedArray%.prototype.forEach(callbackFn, thisArg?), §23.2.3.12.
 fn void builtin_ta_proto_forEach(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2169,7 +2169,7 @@ fn void builtin_ta_proto_forEach(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// %TypedArray%.prototype.every(callbackFn, thisArg?), §23.2.3.7.
+// %TypedArray%.prototype.every(callbackFn, thisArg?), §23.2.3.7.
 fn void builtin_ta_proto_every(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2200,7 +2200,7 @@ fn void builtin_ta_proto_every(BuiltinContext* ctx) {
     ctx.result.set_boolean(true);
 }
 
-/// %TypedArray%.prototype.some(callbackFn, thisArg?), §23.2.3.28.
+// %TypedArray%.prototype.some(callbackFn, thisArg?), §23.2.3.28.
 fn void builtin_ta_proto_some(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2231,7 +2231,7 @@ fn void builtin_ta_proto_some(BuiltinContext* ctx) {
     ctx.result.set_boolean(false);
 }
 
-/// %TypedArray%.prototype.reduce(callbackFn, initialValue?), §23.2.3.22.
+// %TypedArray%.prototype.reduce(callbackFn, initialValue?), §23.2.3.22.
 fn void builtin_ta_proto_reduce(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2282,7 +2282,7 @@ fn void builtin_ta_proto_reduce(BuiltinContext* ctx) {
     (*ctx.result) = acc;
 }
 
-/// %TypedArray%.prototype.reduceRight(callbackFn, initialValue?), §23.2.3.23.
+// %TypedArray%.prototype.reduceRight(callbackFn, initialValue?), §23.2.3.23.
 fn void builtin_ta_proto_reduceRight(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2335,8 +2335,8 @@ fn void builtin_ta_proto_reduceRight(BuiltinContext* ctx) {
     (*ctx.result) = acc;
 }
 
-/// %TypedArray%.prototype.map(callbackFn, thisArg?), §23.2.3.19.
-/// Allocates a fresh same-class TA; species is deferred.
+// %TypedArray%.prototype.map(callbackFn, thisArg?), §23.2.3.19.
+// Allocates a fresh same-class TA; species is deferred.
 fn void builtin_ta_proto_map(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2376,8 +2376,8 @@ fn void builtin_ta_proto_map(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// %TypedArray%.prototype.filter(callbackFn, thisArg?), §23.2.3.9.
-/// Collects matching values, then allocates same-class TA of that size.
+// %TypedArray%.prototype.filter(callbackFn, thisArg?), §23.2.3.9.
+// Collects matching values, then allocates same-class TA of that size.
 fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2448,7 +2448,7 @@ fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// %TypedArray%.prototype.find(predicate, thisArg?), §23.2.3.10.
+// %TypedArray%.prototype.find(predicate, thisArg?), §23.2.3.10.
 fn void builtin_ta_proto_find(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2478,7 +2478,7 @@ fn void builtin_ta_proto_find(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// %TypedArray%.prototype.findIndex(predicate, thisArg?), §23.2.3.11.
+// %TypedArray%.prototype.findIndex(predicate, thisArg?), §23.2.3.11.
 fn void builtin_ta_proto_findIndex(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2508,7 +2508,7 @@ fn void builtin_ta_proto_findIndex(BuiltinContext* ctx) {
     ctx.result.set_fastint(-1);
 }
 
-/// %TypedArray%.prototype.findLast(predicate, thisArg?), §23.2.3.12.
+// %TypedArray%.prototype.findLast(predicate, thisArg?), §23.2.3.12.
 fn void builtin_ta_proto_findLast(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2538,7 +2538,7 @@ fn void builtin_ta_proto_findLast(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// %TypedArray%.prototype.findLastIndex(predicate, thisArg?), §23.2.3.13.
+// %TypedArray%.prototype.findLastIndex(predicate, thisArg?), §23.2.3.13.
 fn void builtin_ta_proto_findLastIndex(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2568,7 +2568,7 @@ fn void builtin_ta_proto_findLastIndex(BuiltinContext* ctx) {
     ctx.result.set_fastint(-1);
 }
 
-/// %TypedArray%.prototype.reverse(), §23.2.3.23. Mutates in place.
+// %TypedArray%.prototype.reverse(), §23.2.3.23. Mutates in place.
 fn void builtin_ta_proto_reverse(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2595,7 +2595,7 @@ fn void builtin_ta_proto_reverse(BuiltinContext* ctx) {
     (*ctx.result) = ctx.this_val;
 }
 
-/// %TypedArray%.prototype.toReversed(), §23.2.3.30. Returns new reversed TA.
+// %TypedArray%.prototype.toReversed(), §23.2.3.30. Returns new reversed TA.
 fn void builtin_ta_proto_toReversed(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2619,7 +2619,7 @@ fn void builtin_ta_proto_toReversed(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// %TypedArray%.prototype.at(index), §23.2.3.1.
+// %TypedArray%.prototype.at(index), §23.2.3.1.
 fn void builtin_ta_proto_at(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2654,8 +2654,8 @@ fn void builtin_ta_proto_at(BuiltinContext* ctx) {
     (*ctx.result) = ta_read_element_checked(ctx.heap, obj, (uint)idx);
 }
 
-/// Numeric comparator for TA sort (spec §23.2.3.29.1).
-/// NaN sorts after finite values; -0 sorts before +0.
+// Numeric comparator for TA sort (spec §23.2.3.29.1).
+// NaN sorts after finite values; -0 sorts before +0.
 fn int ta_numeric_compare(double a, double b) {
     bool a_nan = (a != a);
     bool b_nan = (b != b);
@@ -2675,9 +2675,9 @@ fn int ta_numeric_compare(double a, double b) {
     return 0;
 }
 
-/// Default TypedArray sort comparator (§23.2.3.29 CompareTypedArrayElements with
-/// comparefn = undefined). Operates on element TVals so it is exact for numeric
-/// and BigInt arrays alike (BigInt values never lose precision through a double).
+// Default TypedArray sort comparator (§23.2.3.29 CompareTypedArrayElements with
+// comparefn = undefined). Operates on element TVals so it is exact for numeric
+// and BigInt arrays alike (BigInt values never lose precision through a double).
 fn int ta_default_compare(TVal* a, TVal* b) {
     if (a.is_bigint() && b.is_bigint()) {
         int128 av = a.get_bigint();
@@ -2691,9 +2691,9 @@ fn int ta_default_compare(TVal* a, TVal* b) {
     return ta_numeric_compare(ad, bd);
 }
 
-/// Insertion sort on a TVal[] slice, O(n²) but correct and stable for small n.
-/// Elements are element TVals (BigInt kinds already boxed), so the algorithm is
-/// element-type agnostic; only the leaf comparators know numeric vs BigInt.
+// Insertion sort on a TVal[] slice, O(n²) but correct and stable for small n.
+// Elements are element TVals (BigInt kinds already boxed), so the algorithm is
+// element-type agnostic; only the leaf comparators know numeric vs BigInt.
 fn void ta_insertion_sort(TVal[] arr, BuiltinContext* ctx, TVal comparefn, bool has_comparefn) {
     uint n = (uint)arr.len;
     for (uint i = 1; i < n; i++) {
@@ -2731,7 +2731,7 @@ fn void ta_insertion_sort(TVal[] arr, BuiltinContext* ctx, TVal comparefn, bool 
     }
 }
 
-/// %TypedArray%.prototype.sort(compareFn?), §23.2.3.29.
+// %TypedArray%.prototype.sort(compareFn?), §23.2.3.29.
 fn void builtin_ta_proto_sort(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2803,7 +2803,7 @@ fn void builtin_ta_proto_sort(BuiltinContext* ctx) {
     (*ctx.result) = ctx.this_val;
 }
 
-/// %TypedArray%.prototype.toSorted(compareFn?), §23.2.3.32. Returns new sorted TA.
+// %TypedArray%.prototype.toSorted(compareFn?), §23.2.3.32. Returns new sorted TA.
 fn void builtin_ta_proto_toSorted(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2875,8 +2875,8 @@ fn void builtin_ta_proto_toSorted(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// %TypedArray%.prototype.with(index, value), §23.2.3.33.
-/// Returns a copy with a single element replaced.
+// %TypedArray%.prototype.with(index, value), §23.2.3.33.
+// Returns a copy with a single element replaced.
 fn void builtin_ta_proto_with(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -2964,15 +2964,15 @@ fn void builtin_ta_proto_with(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// %TypedArray%.prototype.toString(), delegates to join with ",".
+// %TypedArray%.prototype.toString(), delegates to join with ",".
 fn void builtin_ta_proto_toString(BuiltinContext* ctx) {
     // Reuse join with default comma separator (argc=0).
     builtin_ta_proto_join(ctx);
 }
 
-/// %TypedArray%.prototype.toLocaleString(), §23.2.3.28.
-/// Calls toLocaleString() on each element (as a number object) and joins with
-/// the locale-specific separator (defaults to ",").
+// %TypedArray%.prototype.toLocaleString(), §23.2.3.28.
+// Calls toLocaleString() on each element (as a number object) and joins with
+// the locale-specific separator (defaults to ",").
 fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
@@ -3115,12 +3115,12 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
 
 // ---- %TypedArray% intrinsic abstract constructor ----
 
-/// %TypedArray% abstract constructor (§22.2.1), always throws TypeError.
+// %TypedArray% abstract constructor (§22.2.1), always throws TypeError.
 fn void builtin_typedarray_intrinsic(BuiltinContext* ctx) {
     arraybuffer_throw_type_error(ctx, "Abstract class TypedArray not directly constructable");
 }
 
-/// get %TypedArray%[@@species], §22.2.2.4. Returns `this`.
+// get %TypedArray%[@@species], §22.2.2.4. Returns `this`.
 fn void builtin_ta_species_get(BuiltinContext* ctx) {
     *ctx.result = ctx.this_val;
 }
@@ -3128,8 +3128,8 @@ fn void builtin_ta_species_get(BuiltinContext* ctx) {
 // ---- Static: %TypedArray%.of / %TypedArray%.from ----
 // Installed on the %TypedArray% intrinsic; inherited by all 9 per-class ctors.
 
-/// Helper: call `construct_fn(C, args, nargs)` and validate result is a TypedArray.
-/// Sets ctx.should_throw on failure and returns null. On success returns the HObject*.
+// Helper: call `construct_fn(C, args, nargs)` and validate result is a TypedArray.
+// Sets ctx.should_throw on failure and returns null. On success returns the HObject*.
 fn HObject* ta_typed_array_create(BuiltinContext* ctx, TVal* args, uint nargs) {
     Heap* heap = ctx.heap;
     if (heap.construct_fn == null || ctx.vm == null) {
@@ -3171,7 +3171,7 @@ fn HObject* ta_typed_array_create(BuiltinContext* ctx, TVal* args, uint nargs) {
     return result_obj;
 }
 
-/// Helper: check that ctx.this_val is a constructor; throw TypeError if not.
+// Helper: check that ctx.this_val is a constructor; throw TypeError if not.
 fn bool ta_require_constructor(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object() || ctx.this_val.get_heapptr() == null ||
         !((HObject*)ctx.this_val.get_heapptr()).is_constructable()) {
@@ -3181,8 +3181,8 @@ fn bool ta_require_constructor(BuiltinContext* ctx) {
     return true;
 }
 
-/// %TypedArray%.of(...items), §23.2.2.2.
-/// Installed on %TypedArray% intrinsic; inherited by all 9 per-class ctors.
+// %TypedArray%.of(...items), §23.2.2.2.
+// Installed on %TypedArray% intrinsic; inherited by all 9 per-class ctors.
 fn void builtin_ta_of(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 
@@ -3217,8 +3217,8 @@ fn void builtin_ta_of(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// %TypedArray%.from(source, mapFn?, thisArg?), §23.2.2.1.
-/// Installed on %TypedArray% intrinsic; inherited by all 9 per-class ctors.
+// %TypedArray%.from(source, mapFn?, thisArg?), §23.2.2.1.
+// Installed on %TypedArray% intrinsic; inherited by all 9 per-class ctors.
 fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
     Heap* heap = ctx.heap;
 
@@ -3526,9 +3526,9 @@ const char[64] B64_ENC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01
 const char[64] B64URL_ENC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const char[16] HEX_DIGITS = "0123456789abcdef";
 
-/// Map a Unicode codepoint to its base64 sextet value, or B64_K_WS for ASCII
-/// whitespace, or B64_K_ER for any illegal character. Only ASCII codepoints
-/// can be valid; any codepoint >= 128 is illegal (multi-byte input chars).
+// Map a Unicode codepoint to its base64 sextet value, or B64_K_WS for ASCII
+// whitespace, or B64_K_ER for any illegal character. Only ASCII codepoints
+// can be valid; any codepoint >= 128 is illegal (multi-byte input chars).
 fn char b64_decode_char(uint cp, char alphabet) {
     if (cp >= 128) return B64_K_ER;
     // ECMAScript "ASCII whitespace": tab, LF, FF, CR, space.
@@ -3546,7 +3546,7 @@ fn char b64_decode_char(uint cp, char alphabet) {
     return B64_K_ER;
 }
 
-/// hex nibble value for an ASCII codepoint, or -1 if not a hex digit.
+// hex nibble value for an ASCII codepoint, or -1 if not a hex digit.
 fn int hex_decode_char(uint cp) {
     if (cp >= '0' && cp <= '9') return (int)(cp - '0');
     if (cp >= 'a' && cp <= 'f') return (int)(cp - 'a' + 10);
@@ -3554,18 +3554,18 @@ fn int hex_decode_char(uint cp) {
     return -1;
 }
 
-/// Result of a base64/hex decode: bytes written to dst, chars read from src,
-/// and whether an error occurred.
+// Result of a base64/hex decode: bytes written to dst, chars read from src,
+// and whether an error occurred.
 struct B64DecodeResult {
     uint read;
     uint written;
     bool err;
 }
 
-/// FromBase64 abstract operation (proposal-arraybuffer-base64). Decodes the
-/// codepoint-indexed string `src` (length `src_len` in codepoints, equal to
-/// UTF-16 units for the ASCII prefix that any valid input consists of) into
-/// `dst` (capacity `max_len`). Faithful port of quickjs's from_base64.
+// FromBase64 abstract operation (proposal-arraybuffer-base64). Decodes the
+// codepoint-indexed string `src` (length `src_len` in codepoints, equal to
+// UTF-16 units for the ASCII prefix that any valid input consists of) into
+// `dst` (capacity `max_len`). Faithful port of quickjs's from_base64.
 fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_len,
                                char alphabet, char last_chunk) {
     B64DecodeResult r;
@@ -3673,9 +3673,9 @@ fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_l
     r.read = src_len; r.written = written; return r;
 }
 
-/// FromHex abstract operation. Decodes hex pairs from `src` into `dst`
-/// (capacity `max_len`), writing bytes up to the first error. Odd total
-/// length is an error (with no bytes written for the trailing odd char).
+// FromHex abstract operation. Decodes hex pairs from `src` into `dst`
+// (capacity `max_len`), writing bytes up to the first error. Odd total
+// length is an error (with no bytes written for the trailing odd char).
 fn B64DecodeResult from_hex(HString* src, uint src_len, char* dst, uint max_len) {
     B64DecodeResult r;
     r.read = 0; r.written = 0; r.err = false;
@@ -3695,9 +3695,9 @@ fn B64DecodeResult from_hex(HString* src, uint src_len, char* dst, uint max_len)
     return r;
 }
 
-/// GetOptionsObject (proposal): undefined -> null (treat as empty), object ->
-/// itself, otherwise throw TypeError. Returns the options object (or null for
-/// undefined). Sets should_throw on error.
+// GetOptionsObject (proposal): undefined -> null (treat as empty), object ->
+// itself, otherwise throw TypeError. Returns the options object (or null for
+// undefined). Sets should_throw on error.
 fn HObject* b64_get_options_object(BuiltinContext* ctx, TVal opt) {
     if (opt.is_undefined()) return null;
     if (opt.is_object() && opt.get_heapptr() != null) return (HObject*)opt.get_heapptr();
@@ -3705,8 +3705,8 @@ fn HObject* b64_get_options_object(BuiltinContext* ctx, TVal opt) {
     return null;
 }
 
-/// Read the "alphabet" option (default "base64"). Sets should_throw on error;
-/// returns 0xFF sentinel then. Only genuine string primitives are accepted.
+// Read the "alphabet" option (default "base64"). Sets should_throw on error;
+// returns 0xFF sentinel then. Only genuine string primitives are accepted.
 fn char b64_get_alphabet_option(BuiltinContext* ctx, HObject* opts) {
     if (opts == null) return B64_ALPHABET_BASE64;
     HString* key = builtin_intern_string(ctx.heap, "alphabet");
@@ -3726,8 +3726,8 @@ fn char b64_get_alphabet_option(BuiltinContext* ctx, HObject* opts) {
     return 0xFF;
 }
 
-/// Read the "lastChunkHandling" option (default "loose"). Sets should_throw on
-/// error; returns 0xFF sentinel then.
+// Read the "lastChunkHandling" option (default "loose"). Sets should_throw on
+// error; returns 0xFF sentinel then.
 fn char b64_get_last_chunk_option(BuiltinContext* ctx, HObject* opts) {
     if (opts == null) return B64_LAST_LOOSE;
     HString* key = builtin_intern_string(ctx.heap, "lastChunkHandling");
@@ -3748,8 +3748,8 @@ fn char b64_get_last_chunk_option(BuiltinContext* ctx, HObject* opts) {
     return 0xFF;
 }
 
-/// ValidateUint8Array: receiver must be a (possibly detached) Uint8Array.
-/// Returns the object, or null + TypeError.
+// ValidateUint8Array: receiver must be a (possibly detached) Uint8Array.
+// Returns the object, or null + TypeError.
 fn HObject* b64_validate_uint8array(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object() || ctx.this_val.get_heapptr() == null) {
         arraybuffer_throw_type_error(ctx, "receiver is not a Uint8Array");
@@ -3763,8 +3763,8 @@ fn HObject* b64_validate_uint8array(BuiltinContext* ctx) {
     return obj;
 }
 
-/// Read the string argument, requiring a genuine String primitive (no
-/// coercion). Sets should_throw + returns null on non-string.
+// Read the string argument, requiring a genuine String primitive (no
+// coercion). Sets should_throw + returns null on non-string.
 fn HString* b64_require_string_arg(BuiltinContext* ctx) {
     TVal arg;
     if (ctx.argc >= 1) { arg = ctx.regs[ctx.base_reg]; } else { arg.set_undefined(); }
@@ -3775,8 +3775,8 @@ fn HString* b64_require_string_arg(BuiltinContext* ctx) {
     return (HString*)arg.get_heapptr();
 }
 
-/// Allocate a fresh Uint8Array of `length` bytes whose [[Prototype]] is
-/// %Uint8Array.prototype% (used by fromBase64/fromHex, receiver is ignored).
+// Allocate a fresh Uint8Array of `length` bytes whose [[Prototype]] is
+// %Uint8Array.prototype% (used by fromBase64/fromHex, receiver is ignored).
 fn HObject* b64_alloc_uint8array(BuiltinContext* ctx, uint length) {
     HObject* result = ta_alloc_same_class(ctx, hobject::ObjClass.UINT8ARRAY, length);
     if (result != null && ctx.heap.uint8array_proto != null) {
@@ -3785,7 +3785,7 @@ fn HObject* b64_alloc_uint8array(BuiltinContext* ctx, uint length) {
     return result;
 }
 
-/// Build a { read, written } result object with C_W_E data properties.
+// Build a { read, written } result object with C_W_E data properties.
 fn void b64_make_read_written(BuiltinContext* ctx, uint read, uint written) {
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
@@ -3800,7 +3800,7 @@ fn void b64_make_read_written(BuiltinContext* ctx, uint read, uint written) {
     ctx.result.set_object(obj);
 }
 
-/// Uint8Array.fromBase64(string [, options]), receiver ignored.
+// Uint8Array.fromBase64(string [, options]), receiver ignored.
 fn void builtin_uint8array_from_base64(BuiltinContext* ctx) {
     HString* str = b64_require_string_arg(ctx);
     if (str == null) return;
@@ -3834,7 +3834,7 @@ fn void builtin_uint8array_from_base64(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// Uint8Array.fromHex(string), receiver ignored.
+// Uint8Array.fromHex(string), receiver ignored.
 fn void builtin_uint8array_from_hex(BuiltinContext* ctx) {
     HString* str = b64_require_string_arg(ctx);
     if (str == null) return;
@@ -3861,7 +3861,7 @@ fn void builtin_uint8array_from_hex(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// Uint8Array.prototype.toBase64([options])
+// Uint8Array.prototype.toBase64([options])
 fn void builtin_uint8array_proto_to_base64(BuiltinContext* ctx) {
     HObject* obj = b64_validate_uint8array(ctx);
     if (obj == null) return;
@@ -3925,7 +3925,7 @@ fn void builtin_uint8array_proto_to_base64(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Uint8Array.prototype.toHex()
+// Uint8Array.prototype.toHex()
 fn void builtin_uint8array_proto_to_hex(BuiltinContext* ctx) {
     HObject* obj = b64_validate_uint8array(ctx);
     if (obj == null) return;
@@ -3951,7 +3951,7 @@ fn void builtin_uint8array_proto_to_hex(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Uint8Array.prototype.setFromBase64(string [, options])
+// Uint8Array.prototype.setFromBase64(string [, options])
 fn void builtin_uint8array_proto_set_from_base64(BuiltinContext* ctx) {
     HObject* obj = b64_validate_uint8array(ctx);
     if (obj == null) return;
@@ -3982,7 +3982,7 @@ fn void builtin_uint8array_proto_set_from_base64(BuiltinContext* ctx) {
     b64_make_read_written(ctx, res.read, res.written);
 }
 
-/// Uint8Array.prototype.setFromHex(string)
+// Uint8Array.prototype.setFromHex(string)
 fn void builtin_uint8array_proto_set_from_hex(BuiltinContext* ctx) {
     HObject* obj = b64_validate_uint8array(ctx);
     if (obj == null) return;
@@ -4010,8 +4010,8 @@ fn void builtin_uint8array_proto_set_from_hex(BuiltinContext* ctx) {
 // Registration
 // ============================================================================
 
-/// Register a %TypedArray%.prototype accessor getter (shared implementation
-/// pattern with register_arraybuffer_accessor in arraybuffer.c3).
+// Register a %TypedArray%.prototype accessor getter (shared implementation
+// pattern with register_arraybuffer_accessor in arraybuffer.c3).
 fn bool register_typedarray_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
@@ -4053,7 +4053,7 @@ fn bool register_typedarray_accessor(HObject* proto, Heap* heap, char[] name, ui
     return true;
 }
 
-/// Register a %TypedArray%.prototype Symbol-keyed accessor getter.
+// Register a %TypedArray%.prototype Symbol-keyed accessor getter.
 fn bool register_typedarray_symbol_accessor(HObject* proto, Heap* heap, HString* key, uint getter_index) {
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_raw) return false;
@@ -4089,7 +4089,7 @@ fn bool register_typedarray_symbol_accessor(HObject* proto, Heap* heap, HString*
     return true;
 }
 
-/// Register a single typed array constructor globally.
+// Register a single typed array constructor globally.
 fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn_index, HObject* proto, uint bpe) {
     // Create constructor as a proper HObject (not lightfunc) so it's constructable
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -4179,7 +4179,7 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     return true;
 }
 
-/// Register all TypedArray constructors.
+// Register all TypedArray constructors.
 fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
     // Create a shared %TypedArray%.prototype
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);

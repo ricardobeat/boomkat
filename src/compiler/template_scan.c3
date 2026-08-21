@@ -25,27 +25,27 @@ import boomkat::lexer;
 // own depth and region logic sees them exactly like braces outside a template,
 // they always come in balanced pairs, so caller-side counters net to zero.
 
-/// Substitution nesting beyond this depth shares the last slot, so behavior
-/// degrades to a per-32-levels shared counter instead of failing. Real code
-/// never nests 32 template substitutions.
+// Substitution nesting beyond this depth shares the last slot, so behavior
+// degrades to a per-32-levels shared counter instead of failing. Real code
+// never nests 32 template substitutions.
 const uint TEMPLATE_SCAN_MAX_DEPTH = 32;
 
 struct TemplateScan {
-    /// Open `${` substitution levels.
+    // Open `${` substitution levels.
     uint depth;
-    /// Per-level count of JS `{` opened inside the substitution expression.
+    // Per-level count of JS `{` opened inside the substitution expression.
     uint[TEMPLATE_SCAN_MAX_DEPTH] expr_braces;
 }
 
 enum TemplateBrace : char {
-    /// Ordinary JS brace (outside any substitution, or expression-internal):
-    /// the caller applies its own block/depth logic.
+    // Ordinary JS brace (outside any substitution, or expression-internal):
+    // the caller applies its own block/depth logic.
     BLOCK,
-    /// The `}` closed a template substitution; the following template part
-    /// (middle or tail) has been consumed. The caller skips its block logic.
+    // The `}` closed a template substitution; the following template part
+    // (middle or tail) has been consumed. The caller skips its block logic.
     SUBST,
-    /// The lexer failed while consuming the template part; the caller should
-    /// bail out the same way it does for any other lex error.
+    // The lexer failed while consuming the template part; the caller should
+    // bail out the same way it does for any other lex error.
     LEX_ERROR,
 }
 
@@ -53,8 +53,8 @@ macro uint TemplateScan.level_idx(&self) {
     return (self.depth < TEMPLATE_SCAN_MAX_DEPTH ? self.depth : TEMPLATE_SCAN_MAX_DEPTH) - 1;
 }
 
-/// TEMPLATE_HEAD token: the lexer consumed `` `...${ `` and substitution
-/// expression tokens follow.
+// TEMPLATE_HEAD token: the lexer consumed `` `...${ `` and substitution
+// expression tokens follow.
 fn void TemplateScan.on_template_head(&self) {
     self.depth++;
     if (self.depth <= TEMPLATE_SCAN_MAX_DEPTH) {
@@ -62,16 +62,16 @@ fn void TemplateScan.on_template_head(&self) {
     }
 }
 
-/// LBRACE token. Callers still run their own brace logic afterwards, since this
-/// only records expression-internal opens so classify_rbrace can match them.
+// LBRACE token. Callers still run their own brace logic afterwards, since this
+// only records expression-internal opens so classify_rbrace can match them.
 fn void TemplateScan.on_lbrace(&self) {
     if (self.depth > 0) {
         self.expr_braces[self.level_idx()]++;
     }
 }
 
-/// RBRACE token: classify it, consuming the next template part when it
-/// closes a substitution.
+// RBRACE token: classify it, consuming the next template part when it
+// closes a substitution.
 fn TemplateBrace TemplateScan.classify_rbrace(&self, Lexer* lex) {
     if (self.depth == 0) return TemplateBrace.BLOCK;
     uint li = self.level_idx();

@@ -29,9 +29,9 @@ import std::io;
 // `=>` at depth 0 handled by caller.
 // ============================================================================
 
-/// Returns true if the token type can appear inside a TypeScript type expression
-/// at any depth. Delimiters like `,` `)` `]` `}` `;` `=` are the type
-/// terminators — see skip_type() for stop logic.
+// Returns true if the token type can appear inside a TypeScript type expression
+// at any depth. Delimiters like `,` `)` `]` `}` `;` `=` are the type
+// terminators — see skip_type() for stop logic.
 fn bool token_can_start_or_continue_type(TokenType tt) {
     switch (tt) {
         case TokenType.IDENTIFIER:
@@ -63,13 +63,13 @@ fn bool token_can_start_or_continue_type(TokenType tt) {
     }
 }
 
-/// True if `tt` can end a TypeScript type expression, i.e. a `{` following
-/// it at depth 0 opens the enclosing function/class/interface body rather
-/// than an object type. Operator-ish tokens (`extends`, `|`, `&`, `?`, `:`,
-/// `,`, `(`, `[`, `=`) expect a type to FOLLOW, so a `{` there is an object
-/// type. Identifier-keyword prefixes (`keyof`, `infer`, `readonly`, ...) lex
-/// as IDENTIFIER and are misclassified as completing; they are rare enough
-/// before a literal `{` that the mis-stop is acceptable.
+// True if `tt` can end a TypeScript type expression, i.e. a `{` following
+// it at depth 0 opens the enclosing function/class/interface body rather
+// than an object type. Operator-ish tokens (`extends`, `|`, `&`, `?`, `:`,
+// `,`, `(`, `[`, `=`) expect a type to FOLLOW, so a `{` there is an object
+// type. Identifier-keyword prefixes (`keyof`, `infer`, `readonly`, ...) lex
+// as IDENTIFIER and are misclassified as completing; they are rare enough
+// before a literal `{` that the mis-stop is acceptable.
 fn bool ts_token_completes_type(TokenType tt) @inline {
     switch (tt) {
         case TokenType.IDENTIFIER:
@@ -92,10 +92,10 @@ fn bool ts_token_completes_type(TokenType tt) @inline {
     }
 }
 
-/// Contextual TypeScript operator keywords are lexed as plain IDENTIFIERs
-/// but never END a type: `keyof`, `typeof`, `infer` and friends are always
-/// followed by more type (`keyof { [k: string]: number }`), so a `{` or a
-/// line break after one of them continues the type instead of ending it.
+// Contextual TypeScript operator keywords are lexed as plain IDENTIFIERs
+// but never END a type: `keyof`, `typeof`, `infer` and friends are always
+// followed by more type (`keyof { [k: string]: number }`), so a `{` or a
+// line break after one of them continues the type instead of ending it.
 fn bool ts_ident_is_type_operator(char[] name) @inline {
     return ident_is(name, "keyof") || ident_is(name, "typeof")
         || ident_is(name, "infer") || ident_is(name, "as")
@@ -104,13 +104,13 @@ fn bool ts_ident_is_type_operator(char[] name) @inline {
         || ident_is(name, "abstract");
 }
 
-/// True if `tt` is a reserved word that can never appear inside a TypeScript
-/// type expression (statement keywords like `enum`, `class`, `function`,
-/// `if`). skip_type must stop on these: consuming one would swallow the
-/// following statement (`type Meters = number\nenum E {...}` would eat
-/// `enum E` and orphan the `{ x = 10 }` block). Type keywords (`new`,
-/// `typeof`, `void`, `this`, `extends`) and `in` (mapped types) are
-/// deliberately absent.
+// True if `tt` is a reserved word that can never appear inside a TypeScript
+// type expression (statement keywords like `enum`, `class`, `function`,
+// `if`). skip_type must stop on these: consuming one would swallow the
+// following statement (`type Meters = number\nenum E {...}` would eat
+// `enum E` and orphan the `{ x = 10 }` block). Type keywords (`new`,
+// `typeof`, `void`, `this`, `extends`) and `in` (mapped types) are
+// deliberately absent.
 fn bool ts_token_stops_type(TokenType tt) {
     switch (tt) {
         case TokenType.FUNCTION:
@@ -155,19 +155,19 @@ fn bool ts_token_stops_type(TokenType tt) {
     }
 }
 
-/// Consume a full TypeScript type expression by bracket balancing.
-///
-/// Precondition: caller has verified we are at the start of a type context
-/// (e.g. just consumed a `:` in an annotation, or `<` opening a generic).
-/// Postcondition: cursor is positioned at the first delimiter that ends the
-/// type — that delimiter is NOT consumed.
-///
-/// Depth is tracked for `<>`, `[]`, `{}`, `()`. At depth 0 the skipper stops
-/// at `,` `)` `]` `}` `;` `=` `EOF` or an `ARROW` that is not part of a
-/// function-type production (function-type `=>` occurs only inside a `(...)`
-/// group, so it never appears at depth 0 unless the caller invoked us
-/// inside a paren list — in which case the outer skipper counts it as
-/// intra-type when a paren depth is open).
+// Consume a full TypeScript type expression by bracket balancing.
+//
+// Precondition: caller has verified we are at the start of a type context
+// (e.g. just consumed a `:` in an annotation, or `<` opening a generic).
+// Postcondition: cursor is positioned at the first delimiter that ends the
+// type — that delimiter is NOT consumed.
+//
+// Depth is tracked for `<>`, `[]`, `{}`, `()`. At depth 0 the skipper stops
+// at `,` `)` `]` `}` `;` `=` `EOF` or an `ARROW` that is not part of a
+// function-type production (function-type `=>` occurs only inside a `(...)`
+// group, so it never appears at depth 0 unless the caller invoked us
+// inside a paren list — in which case the outer skipper counts it as
+// intra-type when a paren depth is open).
 fn void? CompilerContext.skip_type(&self) {
     int paren   = 0;
     int bracket = 0;
@@ -349,10 +349,10 @@ fn void? CompilerContext.skip_type(&self) {
     }
 }
 
-/// Skip a TypeScript generic type-parameter list `<T, U extends V, const W>`.
-/// Precondition: the current token is `<`.
-/// Postcondition: the `>` (or `>>`, `>>>`) closing the outermost generic
-/// group has been consumed.
+// Skip a TypeScript generic type-parameter list `<T, U extends V, const W>`.
+// Precondition: the current token is `<`.
+// Postcondition: the `>` (or `>>`, `>>>`) closing the outermost generic
+// group has been consumed.
 fn void? CompilerContext.skip_generic_params(&self) {
     Token _skip_open = self.expect(TokenType.LT)!;
     int angle = 1;
@@ -393,12 +393,12 @@ fn void? CompilerContext.skip_generic_params(&self) {
     }
 }
 
-/// Consume a template literal type `` `text${T}text${U}...` `` starting at
-/// the TEMPLATE_HEAD token. Each substitution is skipped as a type, its
-/// `${` is closed, and the tail re-scanned, exactly like the expression
-/// parser's template handling (which the lexer's substitution state machine
-/// requires: the tail is only lexable after the substitution's `}` is
-/// consumed).
+// Consume a template literal type `` `text${T}text${U}...` `` starting at
+// the TEMPLATE_HEAD token. Each substitution is skipped as a type, its
+// `${` is closed, and the tail re-scanned, exactly like the expression
+// parser's template handling (which the lexer's substitution state machine
+// requires: the tail is only lexable after the substitution's `}` is
+// consumed).
 fn void? CompilerContext.skip_template_literal_type(&self) {
     for (;;) {
         Token _head = self.advance()!;
@@ -414,13 +414,13 @@ fn void? CompilerContext.skip_template_literal_type(&self) {
     }
 }
 
-/// Skip a TypeScript object/interface body `{ ... }`.
-/// Precondition: current token is `{`.
-/// Postcondition: matching `}` has been consumed.
-///
-/// Template-aware: an interface member can carry a template literal type
-/// (`(): `text${T}``) whose substitution `}` must not close the body, and
-/// the substitution's tail is only lexable once that `}` is consumed.
+// Skip a TypeScript object/interface body `{ ... }`.
+// Precondition: current token is `{`.
+// Postcondition: matching `}` has been consumed.
+//
+// Template-aware: an interface member can carry a template literal type
+// (`(): `text${T}``) whose substitution `}` must not close the body, and
+// the substitution's tail is only lexable once that `}` is consumed.
 fn void? CompilerContext.skip_braced_body(&self) {
     Token _skip_open = self.expect(TokenType.LBRACE)!;
     int brace = 1;
@@ -446,10 +446,10 @@ fn void? CompilerContext.skip_braced_body(&self) {
     }
 }
 
-/// True when `name` matches the given ASCII keyword. Used for contextual
-/// TypeScript keywords (`type`, `as`, `satisfies`, `declare`, `readonly`,
-/// `abstract`, `override`, `keyof`, `infer`, `is`, `asserts`, `namespace`,
-/// `module`) that the lexer tokenizes as plain IDENTIFIERs.
+// True when `name` matches the given ASCII keyword. Used for contextual
+// TypeScript keywords (`type`, `as`, `satisfies`, `declare`, `readonly`,
+// `abstract`, `override`, `keyof`, `infer`, `is`, `asserts`, `namespace`,
+// `module`) that the lexer tokenizes as plain IDENTIFIERs.
 fn bool ident_is(char[] name, char[] kw) @inline {
     if (name.len != kw.len) return false;
     for (usz i = 0; i < name.len; i++) {
@@ -458,8 +458,8 @@ fn bool ident_is(char[] name, char[] kw) @inline {
     return true;
 }
 
-/// If in ts_mode and the next token is `:`, consume it and skip the type.
-/// No-op otherwise. Used at binding sites (variable, parameter, field).
+// If in ts_mode and the next token is `:`, consume it and skip the type.
+// No-op otherwise. Used at binding sites (variable, parameter, field).
 fn void? CompilerContext.try_skip_ts_type_annotation(&self) {
     if (!self.lexer.ts_mode) return;
     if (self.peek_type() != TokenType.COLON) return;
@@ -467,8 +467,8 @@ fn void? CompilerContext.try_skip_ts_type_annotation(&self) {
     self.skip_type()!;
 }
 
-/// If in ts_mode and the next token is `?` followed by `:`, `,`, `)`, `=`, or `]`,
-/// consume the `?` (optional binding marker in params/fields). No-op otherwise.
+// If in ts_mode and the next token is `?` followed by `:`, `,`, `)`, `=`, or `]`,
+// consume the `?` (optional binding marker in params/fields). No-op otherwise.
 fn void? CompilerContext.try_skip_ts_optional_marker(&self) {
     if (!self.lexer.ts_mode) return;
     if (self.peek_type() != TokenType.QUESTION) return;
@@ -483,8 +483,8 @@ fn void? CompilerContext.try_skip_ts_optional_marker(&self) {
     self.pushback(q);
 }
 
-/// If in ts_mode and the next token is `!` (definite-assignment marker on
-/// a field or non-null postfix on a name), consume it.
+// If in ts_mode and the next token is `!` (definite-assignment marker on
+// a field or non-null postfix on a name), consume it.
 fn void? CompilerContext.try_skip_ts_definite_marker(&self) {
     if (!self.lexer.ts_mode) return;
     if (self.peek_type() != TokenType.LOG_NOT) return;
@@ -498,9 +498,9 @@ fn void? CompilerContext.try_skip_ts_definite_marker(&self) {
     self.pushback(bang);
 }
 
-/// If the current token is an IDENTIFIER with the given contextual-keyword
-/// spelling, consume it and return true. Otherwise leave input untouched
-/// and return false. Only active in `ts_mode`.
+// If the current token is an IDENTIFIER with the given contextual-keyword
+// spelling, consume it and return true. Otherwise leave input untouched
+// and return false. Only active in `ts_mode`.
 fn bool CompilerContext.match_ts_ident(&self, char[] kw) {
     if (!self.lexer.ts_mode) return false;
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
@@ -513,10 +513,10 @@ fn bool CompilerContext.match_ts_ident(&self, char[] kw) {
     return false;
 }
 
-/// Consume a `declare namespace X { ... }` / `declare module "m" { ... }`
-/// nested inside an already-open namespace body (erasable, unlike `declare
-/// var`/`function`/`class`/`enum`). Non-destructive. Precondition: the
-/// current token is the IDENTIFIER `declare`.
+// Consume a `declare namespace X { ... }` / `declare module "m" { ... }`
+// nested inside an already-open namespace body (erasable, unlike `declare
+// var`/`function`/`class`/`enum`). Non-destructive. Precondition: the
+// current token is the IDENTIFIER `declare`.
 fn bool CompilerContext.ts_try_declare_namespace(&self) {
     if (!self.lexer.ts_mode) return false;
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
@@ -550,8 +550,8 @@ fn bool CompilerContext.ts_try_declare_namespace(&self) {
     return false;
 }
 
-/// Skip a TypeScript `interface Foo<T> extends Bar { ... }` statement.
-/// Precondition: current token is INTERFACE.
+// Skip a TypeScript `interface Foo<T> extends Bar { ... }` statement.
+// Precondition: current token is INTERFACE.
 fn void? CompilerContext.ts_interface_declaration(&self) {
     Token _iface = self.advance()!;
     Token _name = self.expect(TokenType.IDENTIFIER)!;
@@ -568,10 +568,10 @@ fn void? CompilerContext.ts_interface_declaration(&self) {
     self.match(TokenType.SEMICOLON);
 }
 
-/// Try to parse a TypeScript `type X = ...;` alias.
-/// Precondition: peek is the IDENTIFIER `type`.
-/// Returns true if a type alias was consumed. Returns false if `type` was
-/// used as an ordinary identifier (leaves input untouched).
+// Try to parse a TypeScript `type X = ...;` alias.
+// Precondition: peek is the IDENTIFIER `type`.
+// Returns true if a type alias was consumed. Returns false if `type` was
+// used as an ordinary identifier (leaves input untouched).
 fn bool CompilerContext.ts_try_type_alias(&self) {
     if (!self.lexer.ts_mode) return false;
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
@@ -601,9 +601,9 @@ fn bool CompilerContext.ts_try_type_alias(&self) {
     return true;
 }
 
-/// Try to parse a TypeScript `declare ...` ambient declaration.
-/// Precondition: peek is the IDENTIFIER `declare`.
-/// Returns true if consumed.
+// Try to parse a TypeScript `declare ...` ambient declaration.
+// Precondition: peek is the IDENTIFIER `declare`.
+// Returns true if consumed.
 fn bool CompilerContext.ts_try_declare_statement(&self) {
     if (!self.lexer.ts_mode) return false;
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
@@ -710,14 +710,14 @@ fn bool CompilerContext.ts_try_declare_statement(&self) {
     }
 }
 
-/// Try to consume a TypeScript `namespace`/`module` declaration whose body
-/// holds only type declarations (interfaces, type aliases, `declare`
-/// statements, nested type-only namespaces, empty statements). tsc's
-/// `--erasableSyntaxOnly` allows such namespaces, they emit no runtime code,
-/// so the engine erases them. Returns true when consumed; false when the
-/// construct is not a type-only namespace (caller reports the
-/// erasable-syntax error) or is not a namespace at all.
-/// Precondition: peek is the IDENTIFIER `namespace` or `module`.
+// Try to consume a TypeScript `namespace`/`module` declaration whose body
+// holds only type declarations (interfaces, type aliases, `declare`
+// statements, nested type-only namespaces, empty statements). tsc's
+// `--erasableSyntaxOnly` allows such namespaces, they emit no runtime code,
+// so the engine erases them. Returns true when consumed; false when the
+// construct is not a type-only namespace (caller reports the
+// erasable-syntax error) or is not a namespace at all.
+// Precondition: peek is the IDENTIFIER `namespace` or `module`.
 fn bool CompilerContext.ts_try_type_only_namespace(&self) {
     if (!self.lexer.ts_mode) return false;
     Token kw_tok = self.advance()!!;
@@ -776,7 +776,7 @@ fn bool CompilerContext.ts_try_type_only_namespace(&self) {
     }
 }
 
-/// Non-consuming version of match_ts_ident.
+// Non-consuming version of match_ts_ident.
 fn bool CompilerContext.check_ts_ident(&self, char[] kw) {
     if (!self.lexer.ts_mode) return false;
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
@@ -795,9 +795,9 @@ fn bool CompilerContext.check_ts_ident(&self, char[] kw) {
     return ident_is(peek_opt.str_value, kw);
 }
 
-/// Swallow all tokens until (and including) the terminating semicolon at
-/// depth 0. Used to erase `import type ...` and `export type ...` forms which
-/// have no runtime effect but may span multiple tokens including braces.
+// Swallow all tokens until (and including) the terminating semicolon at
+// depth 0. Used to erase `import type ...` and `export type ...` forms which
+// have no runtime effect but may span multiple tokens including braces.
 fn void? CompilerContext.ts_swallow_to_semi(&self) {
     int paren = 0;
     int bracket = 0;
@@ -846,10 +846,10 @@ fn void? CompilerContext.ts_swallow_to_semi(&self) {
     }
 }
 
-/// `import type ...` — consume and discard.
-/// Also handles the mixed form `import { type Foo, bar } from "x"` by
-/// only erasing the pure `import type` variant (leaves the mixed form for
-/// the normal import_declaration path).
+// `import type ...` — consume and discard.
+// Also handles the mixed form `import { type Foo, bar } from "x"` by
+// only erasing the pure `import type` variant (leaves the mixed form for
+// the normal import_declaration path).
 fn bool? CompilerContext.ts_try_skip_type_only_import(&self) {
     if (!self.lexer.ts_mode) return false;
     // We're positioned at `import`. Peek the next token *without consuming*
@@ -870,10 +870,10 @@ fn bool? CompilerContext.ts_try_skip_type_only_import(&self) {
     return true;
 }
 
-/// `export interface I { }`, `export declare var x;`, `export namespace N { }`
-/// — erased type-only declarations that, like `export type`, are valid
-/// without a module scope. Consume the `export` then hand off to the
-/// per-declaration skipper. Non-destructive on failure.
+// `export interface I { }`, `export declare var x;`, `export namespace N { }`
+// — erased type-only declarations that, like `export type`, are valid
+// without a module scope. Consume the `export` then hand off to the
+// per-declaration skipper. Non-destructive on failure.
 fn bool? CompilerContext.ts_try_skip_type_only_export_decl(&self) {
     if (!self.lexer.ts_mode) return false;
     Token export_tok = self.advance()!;
@@ -890,11 +890,11 @@ fn bool? CompilerContext.ts_try_skip_type_only_export_decl(&self) {
     return false;
 }
 
-/// `export type X = T;` and `export type { A, B } from "x"` — consume and
-/// discard. The alias form goes through skip_generic_params + skip_type so
-/// multi-line generic parameter lists and multi-line conditional bodies
-/// parse structurally; the brace-list re-export form is a flat token run
-/// and stays with ts_swallow_to_semi.
+// `export type X = T;` and `export type { A, B } from "x"` — consume and
+// discard. The alias form goes through skip_generic_params + skip_type so
+// multi-line generic parameter lists and multi-line conditional bodies
+// parse structurally; the brace-list re-export form is a flat token run
+// and stays with ts_swallow_to_semi.
 fn bool? CompilerContext.ts_try_skip_type_only_export(&self) {
     if (!self.lexer.ts_mode) return false;
     Token export_tok = self.advance()!;

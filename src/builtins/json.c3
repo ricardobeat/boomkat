@@ -1,4 +1,4 @@
-/// JSON.parse and JSON.stringify.
+// JSON.parse and JSON.stringify.
 module boomkat::builtins;
 import boomkat::types;
 import std::math;
@@ -44,7 +44,7 @@ struct JsonParseCtx {
     bool record; // when true, parse functions build a JsonParseRecord tree
 }
 
-/// Allocate a zeroed JsonParseRecord.
+// Allocate a zeroed JsonParseRecord.
 fn JsonParseRecord* json_record_alloc(JsonParseCtx* jctx) {
     JsonParseRecord* r = (JsonParseRecord*)jctx.heap.alloc_func(jctx.heap.heap_udata, JsonParseRecord::size);
     if (r == null) return null;
@@ -52,7 +52,7 @@ fn JsonParseRecord* json_record_alloc(JsonParseCtx* jctx) {
     return r;
 }
 
-/// Recursively free a JsonParseRecord tree.
+// Recursively free a JsonParseRecord tree.
 fn void json_record_free(Heap* heap, JsonParseRecord* r) {
     if (r == null) return;
     if (r.elements != null) {
@@ -66,7 +66,7 @@ fn void json_record_free(Heap* heap, JsonParseRecord* r) {
     heap.free_func(heap.heap_udata, r);
 }
 
-/// Free an array of object entries and their child records.
+// Free an array of object entries and their child records.
 fn void json_entries_free(Heap* heap, JsonEntry* entries, uint count) {
     if (entries == null) return;
     for (uint i = 0; i < count; i++) json_record_free(heap, entries[i].record);
@@ -84,7 +84,7 @@ fn void json_skip_ws(JsonParseCtx* jctx) {
     }
 }
 
-/// Parse a 4-digit hex escape (\uXXXX).
+// Parse a 4-digit hex escape (\uXXXX).
 fn uint json_parse_hex4(JsonParseCtx* jctx) {
     uint val = 0;
     for (int i = 0; i < 4; i++) {
@@ -106,8 +106,8 @@ fn uint json_parse_hex4(JsonParseCtx* jctx) {
     return val;
 }
 
-/// Parse a JSON string (between quotes).
-/// Returns null on parse error (unterminated string, invalid escape, etc.).
+// Parse a JSON string (between quotes).
+// Returns null on parse error (unterminated string, invalid escape, etc.).
 fn HString*? json_parse_string(JsonParseCtx* jctx) {
     if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != '\"') {
         return null;
@@ -175,7 +175,7 @@ fn HString*? json_parse_string(JsonParseCtx* jctx) {
     return null; // unterminated string
 }
 
-/// Parse a JSON number.
+// Parse a JSON number.
 fn TVal json_parse_number(JsonParseCtx* jctx) {
     uint start = jctx.pos;
 
@@ -247,7 +247,7 @@ fn TVal json_parse_number(JsonParseCtx* jctx) {
     TVal r; r.set_number(d); return r;
 }
 
-/// Parse a JSON array: [value, ...]
+// Parse a JSON array: [value, ...]
 fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
     uint span_start = jctx.pos;
     jctx.pos++; // skip '['
@@ -358,7 +358,7 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
     return result;
 }
 
-/// Parse a JSON object: {key: value, ...}
+// Parse a JSON object: {key: value, ...}
 fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
     uint span_start = jctx.pos;
     jctx.pos++; // skip '{'
@@ -494,10 +494,10 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
     return result;
 }
 
-/// Parse a JSON value. Returns undefined on error; callers must also check
-/// jctx.error to distinguish "valid undefined" from parse failure.
-/// When out_rec is non-null and jctx.record is set, *out_rec receives a
-/// JsonParseRecord capturing this value's source span (json-parse-with-source).
+// Parse a JSON value. Returns undefined on error; callers must also check
+// jctx.error to distinguish "valid undefined" from parse failure.
+// When out_rec is non-null and jctx.record is set, *out_rec receives a
+// JsonParseRecord capturing this value's source span (json-parse-with-source).
 fn TVal json_parse_value(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
     json_skip_ws(jctx);
     if (jctx.pos >= jctx.len) {
@@ -575,7 +575,7 @@ fn TVal json_parse_value(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
     }
 }
 
-/// Record a primitive value's source span [start, jctx.pos) into *out_rec.
+// Record a primitive value's source span [start, jctx.pos) into *out_rec.
 fn void json_record_primitive(JsonParseCtx* jctx, JsonParseRecord** out_rec, TVal val, uint start) {
     if (out_rec == null || !jctx.record) return;
     JsonParseRecord* rec = json_record_alloc(jctx);
@@ -587,10 +587,10 @@ fn void json_record_primitive(JsonParseCtx* jctx, JsonParseRecord** out_rec, TVa
     *out_rec = rec;
 }
 
-/// Reads and ToLength-coerces an array-like's "length" via full [[Get]]
-/// (invokes accessor getters and Proxy "get" traps), then ToNumber-coerces
-/// a non-numeric result (invokes valueOf/toString or Proxy traps in turn).
-/// Errors are signalled via heap.has_error; check after return.
+// Reads and ToLength-coerces an array-like's "length" via full [[Get]]
+// (invokes accessor getters and Proxy "get" traps), then ToNumber-coerces
+// a non-numeric result (invokes valueOf/toString or Proxy traps in turn).
+// Errors are signalled via heap.has_error; check after return.
 fn uint json_walk_array_length(void* vm, Heap* heap, HObject* obj) {
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal len_val;
@@ -612,13 +612,13 @@ fn uint json_walk_array_length(void* vm, Heap* heap, HObject* obj) {
     return 0;
 }
 
-/// InternalizeJSONProperty, ES2023 §25.5.1.
-/// Implements the spec algorithm: Get(holder,name) via full [[Get]] (invokes
-/// accessors and Proxy traps), recurse into object/array children in
-/// integer-ascending + insertion order (using [[OwnPropertyKeys]] for Proxy
-/// targets), then call the reviver.  Errors (from getters, Proxy traps, or
-/// the reviver) are signalled via heap.has_error; the caller must check
-/// after return.
+// InternalizeJSONProperty, ES2023 §25.5.1.
+// Implements the spec algorithm: Get(holder,name) via full [[Get]] (invokes
+// accessors and Proxy traps), recurse into object/array children in
+// integer-ascending + insertion order (using [[OwnPropertyKeys]] for Proxy
+// targets), then call the reviver.  Errors (from getters, Proxy traps, or
+// the reviver) are signalled via heap.has_error; the caller must check
+// after return.
 fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name, char* src = null, JsonParseRecord* rec = null) {
     TVal val;
     // Step 1: val = ? Get(holder, name), must invoke accessor getters and
@@ -798,7 +798,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
     return val;
 }
 
-/// Helper: throw a SyntaxError from a JSON builtin.
+// Helper: throw a SyntaxError from a JSON builtin.
 fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
@@ -815,15 +815,15 @@ fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
     ctx.should_throw = true;
 }
 
-/// JSON.parse(text [, reviver]), ES5 §15.12.2
+// JSON.parse(text [, reviver]), ES5 §15.12.2
 faultdef JSON_MODULE_PARSE_ERROR;
 
-/// Parse a whole JSON document (a JSON-module's file contents) into a TVal,
-/// mirroring `JSON.parse(source)` with no reviver (ECMA-262 ParseJSONModule /
-/// AbstractOperation §1.4). Returns JSON_MODULE_PARSE_ERROR on any syntax
-/// error (the module loader converts this into a resolution-phase SyntaxError).
-/// The returned value carries no extra reference, object results are freshly
-/// allocated with their prototype installed, exactly as JSON.parse yields.
+// Parse a whole JSON document (a JSON-module's file contents) into a TVal,
+// mirroring `JSON.parse(source)` with no reviver (ECMA-262 ParseJSONModule /
+// AbstractOperation §1.4). Returns JSON_MODULE_PARSE_ERROR on any syntax
+// error (the module loader converts this into a resolution-phase SyntaxError).
+// The returned value carries no extra reference, object results are freshly
+// allocated with their prototype installed, exactly as JSON.parse yields.
 fn TVal? json_parse_module_source(Heap* heap, char[] source) {
     JsonParseCtx jctx;
     jctx.src = source.ptr;
@@ -993,9 +993,9 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
 // JSON.stringify (ES5 §15.12.3)
 // ============================================================================
 
-/// Helper: append a JSON-escaped string to a buffer.
-/// Handles well-formed JSON stringify (ES2019): lone surrogates are escaped
-/// as \uXXXX rather than passed through as broken UTF-8.
+// Helper: append a JSON-escaped string to a buffer.
+// Handles well-formed JSON stringify (ES2019): lone surrogates are escaped
+// as \uXXXX rather than passed through as broken UTF-8.
 fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
     usz pos = 0;
     if (pos < buf_size) buf[pos++] = '\"';
@@ -1103,14 +1103,14 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
     return pos;
 }
 
-/// Append a JSON-escaped string to `out`, growing it to fit.
-///
-/// json_escape_string stops at its buffer end, so the destination is reserved
-/// at the worst case first: every input byte can become at most 6 output bytes
-/// (a control character or lone surrogate becoming \uXXXX), plus the two
-/// quotes. Reserving up front is what keeps a long key or value from being
-/// silently clipped, which the fixed 1024- and 4096-byte scratch buffers used
-/// to do.
+// Append a JSON-escaped string to `out`, growing it to fit.
+//
+// json_escape_string stops at its buffer end, so the destination is reserved
+// at the worst case first: every input byte can become at most 6 output bytes
+// (a control character or lone surrogate becoming \uXXXX), plus the two
+// quotes. Reserving up front is what keeps a long key or value from being
+// silently clipped, which the fixed 1024- and 4096-byte scratch buffers used
+// to do.
 fn bool json_escape_string_to(StrBuf* out, char* src, uint len) {
     usz worst = (usz)len * 6 + 2;
     if (!out.reserve(worst)) return false;
@@ -1122,11 +1122,11 @@ fn bool json_escape_string_to(StrBuf* out, char* src, uint len) {
     return true;
 }
 
-/// Serialize a JSON value (internal recursive helper).
-/// Returns 0 on success, non-zero on error.
-/// Appends to `out`, which grows to fit: the serializer must never return
-/// success carrying truncated JSON, since the caller cannot tell the two
-/// apart and a partial document parses as garbage or not at all.
+// Serialize a JSON value (internal recursive helper).
+// Returns 0 on success, non-zero on error.
+// Appends to `out`, which grows to fit: the serializer must never return
+// success carrying truncated JSON, since the caller cannot tell the two
+// apart and a partial document parses as garbage or not at all.
 struct JsonSerializeCtx {
     Heap* heap;
     void* vm;                    // VM pointer for calling JS functions
@@ -1134,25 +1134,25 @@ struct JsonSerializeCtx {
     usz indent_level;
     char* gap;
     usz gap_len;
-    /// Current stack depth for cycle detection
+    // Current stack depth for cycle detection
     uint depth;
-    /// Replacer function (undefined if none)
+    // Replacer function (undefined if none)
     TVal replacer_func;
-    /// Property list from replacer array (null if none)
+    // Property list from replacer array (null if none)
     HString** prop_keys;
     uint prop_key_count;
-    /// True when a replacer array was provided (even if empty)
+    // True when a replacer array was provided (even if empty)
     bool has_replacer_array;
-    /// Set when a call_fn error occurred (toJSON/replacer threw)
+    // Set when a call_fn error occurred (toJSON/replacer threw)
     bool error;
-    /// Stack of object pointers for circular reference detection
+    // Stack of object pointers for circular reference detection
     HObject*[128] visited_stack;
     uint visited_count;
 }
 
 const uint JSON_MAX_DEPTH = 128;
 
-/// Helper: throw a TypeError from the serialization context.
+// Helper: throw a TypeError from the serialization context.
 fn void json_throw_type_error(JsonSerializeCtx* jctx, char[] msg) {
     HObject*? err_raw = jctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
@@ -1170,7 +1170,7 @@ fn void json_throw_type_error(JsonSerializeCtx* jctx, char[] msg) {
     jctx.error = true;
 }
 
-/// Check if object is already on the serialization stack (circular reference detection).
+// Check if object is already on the serialization stack (circular reference detection).
 fn bool json_stack_has(JsonSerializeCtx* jctx, HObject* obj) {
     for (uint i = 0; i < jctx.visited_count; i++) {
         if (jctx.visited_stack[i] == obj) return true;
@@ -1178,21 +1178,21 @@ fn bool json_stack_has(JsonSerializeCtx* jctx, HObject* obj) {
     return false;
 }
 
-/// Push an object onto the serialization stack.
+// Push an object onto the serialization stack.
 fn void json_stack_push(JsonSerializeCtx* jctx, HObject* obj) {
     if (jctx.visited_count < JSON_MAX_DEPTH) {
         jctx.visited_stack[jctx.visited_count++] = obj;
     }
 }
 
-/// Pop the last object from the serialization stack.
+// Pop the last object from the serialization stack.
 fn void json_stack_pop(JsonSerializeCtx* jctx) {
     if (jctx.visited_count > 0) jctx.visited_count--;
 }
 
-/// ES5 §9.8.1 ToString for Number values, produces the shortest string that
-/// uniquely identifies the IEEE 754 double.  Writes into `buf` and returns the
-/// number of characters written.
+// ES5 §9.8.1 ToString for Number values, produces the shortest string that
+// uniquely identifies the IEEE 754 double.  Writes into `buf` and returns the
+// number of characters written.
 fn usz json_number_to_string(double d, char* buf, usz buf_size) {
     // NaN → "NaN"
     if (math::is_nan(d)) {
@@ -1230,11 +1230,11 @@ fn usz json_number_to_string(double d, char* buf, usz buf_size) {
     return (flen > 0) ? (usz)flen : 0;
 }
 
-/// ES5 §15.12.3 step 5: Type unwrapping via ToString/ToNumber/ToBoolean.
-/// For String/Number wrapper objects, calls toString()/valueOf() (per spec)
-/// rather than reading the cached primitive_value (which ignores overrides).
-/// Returns the unwrapped TVal. Sets *had_error=true if the method threw.
-/// For non-wrapper objects, returns the value unchanged.
+// ES5 §15.12.3 step 5: Type unwrapping via ToString/ToNumber/ToBoolean.
+// For String/Number wrapper objects, calls toString()/valueOf() (per spec)
+// rather than reading the cached primitive_value (which ignores overrides).
+// Returns the unwrapped TVal. Sets *had_error=true if the method threw.
+// For non-wrapper objects, returns the value unchanged.
 fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
     *had_error = false;
     if (!val.is_object() || val.get_heapptr() == null) return val;
@@ -1313,9 +1313,9 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
     return val;
 }
 
-/// Apply toJSON + replacer function + type unwrapping per ES5 §15.12.3
-/// SerializeJSONProperty steps 1-4. Returns the processed value.
-/// If the result should be omitted (undefined/functions), sets *omit=true.
+// Apply toJSON + replacer function + type unwrapping per ES5 §15.12.3
+// SerializeJSONProperty steps 1-4. Returns the processed value.
+// If the result should be omitted (undefined/functions), sets *omit=true.
 fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal holder, bool* omit) {
     *omit = false;
 
@@ -1439,7 +1439,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
     return val;
 }
 
-/// Serialize an object's properties
+// Serialize an object's properties
 fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     if (jctx.error) return -1;
 
@@ -1683,7 +1683,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     return 0;
 }
 
-/// Serialize an array
+// Serialize an array
 fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     if (jctx.error) return -1;
 
@@ -1845,7 +1845,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     return 0;
 }
 
-/// Serialize a value to JSON
+// Serialize a value to JSON
 fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
     switch (val.get_tag()) {
         case NULL_VAL: {
@@ -1947,7 +1947,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
     }
 }
 
-/// JSON.stringify(value [, replacer [, space]]), ES5 §15.12.3
+// JSON.stringify(value [, replacer [, space]]), ES5 §15.12.3
 fn void builtin_json_stringify(BuiltinContext* ctx) {
     // Clear any stale error flag and value
     ctx.heap.has_error = false;
@@ -2365,9 +2365,9 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 // JSON.rawJSON / JSON.isRawJSON (json-parse-with-source, ES2026)
 // ============================================================================
 
-/// JSON.rawJSON(text), sec-json.rawjson.
-/// Returns a frozen null-prototype object with an [[IsRawJSON]] slot and a
-/// "rawJSON" data property holding the verbatim JSON text.
+// JSON.rawJSON(text), sec-json.rawjson.
+// Returns a frozen null-prototype object with an [[IsRawJSON]] slot and a
+// "rawJSON" data property holding the verbatim JSON text.
 fn void builtin_json_raw_json(BuiltinContext* ctx) {
     // Step 1: jsonString = ? ToString(text).
     TVal text_arg;
@@ -2445,7 +2445,7 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// JSON.isRawJSON(O), sec-json.israwjson.
+// JSON.isRawJSON(O), sec-json.israwjson.
 fn void builtin_json_is_raw_json(BuiltinContext* ctx) {
     bool res = false;
     if (ctx.argc >= 1) {
@@ -2457,7 +2457,7 @@ fn void builtin_json_is_raw_json(BuiltinContext* ctx) {
     ctx.result.set_boolean(res);
 }
 
-/// True for the four JSON whitespace code units.
+// True for the four JSON whitespace code units.
 fn bool json_is_ws_char(char c) {
     return c == 0x09 || c == 0x0A || c == 0x0D || c == 0x20;
 }

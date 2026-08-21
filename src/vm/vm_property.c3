@@ -14,8 +14,8 @@ import std::math;
 // ============================================================================
 // GETPROP, PUTPROP, DELPROP, and the inline-cache paths
 // ============================================================================
-/// Rethrow a pending proxy-op error (heap.error_value) in the current frame.
-/// Returns the opcode-handler result: {} when a catcher was found, VM_ERROR~ otherwise.
+// Rethrow a pending proxy-op error (heap.error_value) in the current frame.
+// Returns the opcode-handler result: {} when a catcher was found, VM_ERROR~ otherwise.
 fn TVal? vm_proxy_rethrow(Vm* vm, Dispatch* ds) {
     TVal errv = vm.heap.error_value;
     vm.heap.has_error = false;
@@ -25,14 +25,14 @@ fn TVal? vm_proxy_rethrow(Vm* vm, Dispatch* ds) {
     return (TVal){};
 }
 
-/// Resolve `key` on a primitive receiver with full [[Get]] semantics: walk
-/// the boxed prototype chain, and when an accessor is found, invoke its
-/// getter with `this` = the primitive itself. The engine is strict-only, so
-/// the receiver is never ToObject-coerced for the getter call (ES5 §10.4.3:
-/// a strict-mode function keeps a primitive thisArg); node behaves the same.
-/// The boxed wrapper is only the lookup start, not the receiver. Writes the
-/// result into `*dst` (register `dst_reg`) and sets `ds.needs_restart` if a
-/// JS-defined getter needs a call-frame restart.
+// Resolve `key` on a primitive receiver with full [[Get]] semantics: walk
+// the boxed prototype chain, and when an accessor is found, invoke its
+// getter with `this` = the primitive itself. The engine is strict-only, so
+// the receiver is never ToObject-coerced for the getter call (ES5 §10.4.3:
+// a strict-mode function keeps a primitive thisArg); node behaves the same.
+// The boxed wrapper is only the lookup start, not the receiver. Writes the
+// result into `*dst` (register `dst_reg`) and sets `ds.needs_restart` if a
+// JS-defined getter needs a call-frame restart.
 fn void primitive_getprop(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void* key,
                           TVal* dst, uint dst_reg) {
     hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap);
@@ -48,13 +48,13 @@ fn void primitive_getprop(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void
     }
 }
 
-/// Synchronous variant of primitive_getprop for the fused GETPROPC2 hop paths:
-/// a frame-based invoke_getter would resume past the fused pair and skip hop 2
-/// entirely (same constraint as the object hop accessor cases), so the getter
-/// runs through the reentrant call_fn path with `this` = the primitive. A
-/// throwing getter is routed through vm_throw_value (catcher found: sets
-/// needs_restart) or leaves vm.has_error set (uncaught); the caller checks
-/// both after the call, exactly like the object hop-2 accessor case.
+// Synchronous variant of primitive_getprop for the fused GETPROPC2 hop paths:
+// a frame-based invoke_getter would resume past the fused pair and skip hop 2
+// entirely (same constraint as the object hop accessor cases), so the getter
+// runs through the reentrant call_fn path with `this` = the primitive. A
+// throwing getter is routed through vm_throw_value (catcher found: sets
+// needs_restart) or leaves vm.has_error set (uncaught); the caller checks
+// both after the call, exactly like the object hop-2 accessor case.
 fn void primitive_getprop_sync(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void* key,
                                TVal* dst, uint dst_reg, bool track = true) {
     hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap);
@@ -92,13 +92,13 @@ fn void primitive_getprop_sync(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto,
     }
 }
 
-/// Auto-box a Symbol primitive (`sym_val`) and resolve `key` on it, invoking
-/// an accessor getter (e.g. Symbol.prototype.description) if one is found.
-/// Used by the GETPROPC2 fused-hop paths. The getter receives the symbol
-/// primitive itself as `this` (strict-only, no wrapper), same as the
-/// single-hop GETPROPC symbol handling.
-/// Writes the result into `*dst` (register `dst_reg`) and sets
-/// `ds.needs_restart` if a JS-defined getter needs a call-frame restart.
+// Auto-box a Symbol primitive (`sym_val`) and resolve `key` on it, invoking
+// an accessor getter (e.g. Symbol.prototype.description) if one is found.
+// Used by the GETPROPC2 fused-hop paths. The getter receives the symbol
+// primitive itself as `this` (strict-only, no wrapper), same as the
+// single-hop GETPROPC symbol handling.
+// Writes the result into `*dst` (register `dst_reg`) and sets
+// `ds.needs_restart` if a JS-defined getter needs a call-frame restart.
 fn void getprop2_symbol_hop(Vm* vm, Dispatch* ds, TVal sym_val, HString* key, TVal* dst, uint dst_reg) {
     if (vm.heap.symbol_proto == null) {
         dst.set_undefined();
@@ -107,7 +107,7 @@ fn void getprop2_symbol_hop(Vm* vm, Dispatch* ds, TVal sym_val, HString* key, TV
     primitive_getprop(vm, ds, &sym_val, vm.heap.symbol_proto, key, dst, dst_reg);
 }
 
-/// Sub-dispatch for GETPROP, GETPROPC, GETPROPC_CACHED, GETPROPC2, PUTPROP, DELPROP opcodes.
+// Sub-dispatch for GETPROP, GETPROPC, GETPROPC_CACHED, GETPROPC2, PUTPROP, DELPROP opcodes.
 fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {

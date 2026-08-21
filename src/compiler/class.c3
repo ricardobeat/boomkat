@@ -15,12 +15,12 @@ import std::math;
 // Class parsing (ES6)
 // ============================================================================
 
-/// Lazily initialise a hidden field-init context (__field_init__ /
-/// __static_init__): a fresh CompilerContext sharing the lexer and heap,
-/// wired to see the class's private-name scope, with initializers forbidden
-/// from using `arguments` or `super()` (ES2022 §15.7.10). Public and private
-/// field initializers share one context per class (per static-ness) so
-/// initialization order matches source order.
+// Lazily initialise a hidden field-init context (__field_init__ /
+// __static_init__): a fresh CompilerContext sharing the lexer and heap,
+// wired to see the class's private-name scope, with initializers forbidden
+// from using `arguments` or `super()` (ES2022 §15.7.10). Public and private
+// field initializers share one context per class (per static-ness) so
+// initialization order matches source order.
 fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx, bool is_static) {
     target_ctx.init(self.lexer, self.heap);
     target_ctx.lexer.set_strict(true);
@@ -48,16 +48,16 @@ fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx
     target_ctx.emit_simple(Opcode.PUSH_LEX);
 }
 
-/// Mint and declare a fresh hidden lexical slot name
-/// ("#priv:<class-id>:<tag><index>") for stashing a private instance
-/// method/accessor closure past the member-install loop, see the
-/// PrivateNameEntry.method_closure_slot_name / getter_closure_slot_name /
-/// setter_closure_slot_name doc comments (context.c3) for why this is
-/// needed. `index` should be unique per private name in the class body
-/// (e.g. its offset into private_name_table); `tag` distinguishes plain
-/// method ("mclo") from getter ("gclo") / setter ("sclo") slots. Same
-/// source-illegal "#priv:" prefix as declare_class_brand, so it can never
-/// collide with or be resolved via resolve_private_name.
+// Mint and declare a fresh hidden lexical slot name
+// ("#priv:<class-id>:<tag><index>") for stashing a private instance
+// method/accessor closure past the member-install loop, see the
+// PrivateNameEntry.method_closure_slot_name / getter_closure_slot_name /
+// setter_closure_slot_name doc comments (context.c3) for why this is
+// needed. `index` should be unique per private name in the class body
+// (e.g. its offset into private_name_table); `tag` distinguishes plain
+// method ("mclo") from getter ("gclo") / setter ("sclo") slots. Same
+// source-illegal "#priv:" prefix as declare_class_brand, so it can never
+// collide with or be resolved via resolve_private_name.
 fn char[] CompilerContext.mint_priv_closure_slot(&self, usz index, char[] tag) {
     uint class_id = self.private_scope_depth > 0
         ? self.private_class_id[self.private_scope_depth - 1] : 0;
@@ -86,10 +86,10 @@ fn char[] CompilerContext.mint_priv_closure_slot(&self, usz index, char[] tag) {
     return name;
 }
 
-/// Format a numeric literal's canonical property-key text (ES2015 §7.1.12.1
-/// ToString applied to the NumericValue) into `buf`. Numeric literal tokens
-/// are always finite. Used for field-name inference on numeric keys
-/// (`class C { 0x10 = fn }` → fn.name "16").
+// Format a numeric literal's canonical property-key text (ES2015 §7.1.12.1
+// ToString applied to the NumericValue) into `buf`. Numeric literal tokens
+// are always finite. Used for field-name inference on numeric keys
+// (`class C { 0x10 = fn }` → fn.name "16").
 fn char[] format_field_number_key(double val, char[] buf) {
     if (val == 0.0) {
         if (buf.len > 0) { buf[0] = '0'; return buf[:1]; }
@@ -111,12 +111,12 @@ fn char[] format_field_number_key(double val, char[] buf) {
     return buf[..n];
 }
 
-/// Create a default constructor CompiledFunction without using the lexer.
-/// has_super: if true, creates `constructor(...args) { super(...args); }`
-/// otherwise creates `constructor() {}`.
-/// class_name: when non-empty, used as the constructor's name property
-/// (per ES2015 §14.5.14 step 17 + SetFunctionName, a class declaration's
-/// default constructor inherits the class name as its .name).
+// Create a default constructor CompiledFunction without using the lexer.
+// has_super: if true, creates `constructor(...args) { super(...args); }`
+// otherwise creates `constructor() {}`.
+// class_name: when non-empty, used as the constructor's name property
+// (per ES2015 §14.5.14 step 17 + SetFunctionName, a class declaration's
+// default constructor inherits the class name as its .name).
 fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] class_name, char[] super_name) {
     void* raw = hp.alloc_func(hp.heap_udata, CompiledFunction::size);
     if (raw == null) return COMPILE_ERROR~;
@@ -220,7 +220,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
     return func;
 }
 
-/// Parse a class declaration: `class Name [extends Base] { body }`
+// Parse a class declaration: `class Name [extends Base] { body }`
 fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool allow_anonymous = false) {
     // Capture class source start before consuming `class` keyword.
     self.lexer.refresh_token_start();
@@ -314,8 +314,8 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     self.free_reg(ctor_reg);
 }
 
-/// Parse a class expression: `class [Name] [extends Base] { body }`
-/// Returns the register holding the constructor.
+// Parse a class expression: `class [Name] [extends Base] { body }`
+// Returns the register holding the constructor.
 fn ushort? CompilerContext.class_expression(&self) {
     // Capture class source start before consuming `class` keyword.
     self.lexer.refresh_token_start();
@@ -397,30 +397,30 @@ fn ushort? CompilerContext.class_expression(&self) {
     return ctor_reg;
 }
 
-/// Parse the tail of a class: optional `extends` clause + class body.
-/// Returns the register holding the constructor function.
-/// `class_name`: when non-empty, the default constructor inherits this name
-/// as its `.name` property (ES2015 §14.5.14 + SetFunctionName).
-/// `class_name_reg`/`class_name_str_idx`: when supplied (non-zero), the
-/// compiler-emitted classScope binding for the class name is initialized with
-/// the constructor AND the matching POP_LEX is emitted BEFORE the static
-/// initializer runs.  This satisfies ES2022 §15.7.14 ClassDefinitionEvaluation:
-/// the class name binding must be live by the time static field initializers
-/// run (so e.g. `(Object.preventExtensions(C), "Test262")` inside a static
-/// initializer can refer to `C`).  When zero, the caller is responsible for
-/// the PUTLEX_C/POP_LEX, pass through to the previous single-mode behaviour.
-///
-/// `is_default_export`: when true, the class is the anonymous body of
-/// `export default class { ... }`. The runtime-visible `.name` must be the
-/// literal string "default" (ES2024 §16.2.3.7), distinct from the binding
-/// name "*default*" the compiler uses for the declared-export machinery.
+// Parse the tail of a class: optional `extends` clause + class body.
+// Returns the register holding the constructor function.
+// `class_name`: when non-empty, the default constructor inherits this name
+// as its `.name` property (ES2015 §14.5.14 + SetFunctionName).
+// `class_name_reg`/`class_name_str_idx`: when supplied (non-zero), the
+// compiler-emitted classScope binding for the class name is initialized with
+// the constructor AND the matching POP_LEX is emitted BEFORE the static
+// initializer runs.  This satisfies ES2022 §15.7.14 ClassDefinitionEvaluation:
+// the class name binding must be live by the time static field initializers
+// run (so e.g. `(Object.preventExtensions(C), "Test262")` inside a static
+// initializer can refer to `C`).  When zero, the caller is responsible for
+// the PUTLEX_C/POP_LEX, pass through to the previous single-mode behaviour.
+//
+// `is_default_export`: when true, the class is the anonymous body of
+// `export default class { ... }`. The runtime-visible `.name` must be the
+// literal string "default" (ES2024 §16.2.3.7), distinct from the binding
+// name "*default*" the compiler uses for the declared-export machinery.
 
-/// True when the current token is a TypeScript generic head: `<T, U>`
-/// directly followed by `(`. Non-destructive (the lexer is copied and
-/// restored), so the class-body loop can classify `m<T>(...)` as a method
-/// before the field branch sees the `<`, and call_expr can consume call-site
-/// type arguments `f<T>(x)`. The generics themselves are skipped later by
-/// compile_inner_function / the caller.
+// True when the current token is a TypeScript generic head: `<T, U>`
+// directly followed by `(`. Non-destructive (the lexer is copied and
+// restored), so the class-body loop can classify `m<T>(...)` as a method
+// before the field branch sees the `<`, and call_expr can consume call-site
+// type arguments `f<T>(x)`. The generics themselves are skipped later by
+// compile_inner_function / the caller.
 fn bool CompilerContext.ts_peek_generics_lparen(&self) {
     if (!self.lexer.ts_mode) return false;
     if (!self.check(TokenType.LT)) return false;
@@ -437,14 +437,14 @@ fn bool CompilerContext.ts_peek_generics_lparen(&self) {
     return ok;
 }
 
-/// Reject the auto-accessor modifier `accessor x` / `static accessor y`
-/// (ES2025 proposal): real runtime syntax, not erasable type syntax, and out
-/// of scope for this engine. `accessor` is only the modifier when a member
-/// name follows on the same line; as a bare field/method name
-/// (`accessor = 1`, `accessor()`, `accessor: T`) it is ordinary and must be
-/// left alone, so the caller continues with `accessor` as the element name.
-/// Returns true when a modifier was consumed (compile error already
-/// recorded), false when `accessor` is not the modifier.
+// Reject the auto-accessor modifier `accessor x` / `static accessor y`
+// (ES2025 proposal): real runtime syntax, not erasable type syntax, and out
+// of scope for this engine. `accessor` is only the modifier when a member
+// name follows on the same line; as a bare field/method name
+// (`accessor = 1`, `accessor()`, `accessor: T`) it is ordinary and must be
+// left alone, so the caller continues with `accessor` as the element name.
+// Returns true when a modifier was consumed (compile error already
+// recorded), false when `accessor` is not the modifier.
 fn bool? CompilerContext.ts_check_accessor_modifier(&self) {
     if (!self.lexer.ts_mode) return false;
     if (!self.check_ts_ident("accessor")) return false;
@@ -471,10 +471,10 @@ fn bool? CompilerContext.ts_check_accessor_modifier(&self) {
     return self.fail("auto-accessors ('accessor') are not supported (not erasable)")~;
 }
 
-/// Consume a TypeScript class index signature `[k: string]: T;` and return
-/// true. Non-destructive on failure, so the computed-key field path can
-/// proceed when this is an ordinary `[expr]` key. The `readonly`/`static`
-/// modifiers are stripped earlier in the class-body loop.
+// Consume a TypeScript class index signature `[k: string]: T;` and return
+// true. Non-destructive on failure, so the computed-key field path can
+// proceed when this is an ordinary `[expr]` key. The `readonly`/`static`
+// modifiers are stripped earlier in the class-body loop.
 fn bool CompilerContext.ts_try_index_signature(&self) {
     if (!self.lexer.ts_mode) return false;
     if (!self.check(TokenType.LBRACKET)) return false;
@@ -494,18 +494,18 @@ fn bool CompilerContext.ts_try_index_signature(&self) {
     return true;
 }
 
-/// Consume a TypeScript overload signature `name(params);` /
-/// `name<T>(params): R;` and return true. A signature declares no
-/// implementation, so the whole class element is type-only (erasable) and
-/// emits nothing. Non-destructive: a method with a body
-/// (`name(params) { ... }`) or any other shape returns false with input
-/// untouched. Callers exclude getters/setters, which cannot be overloaded.
-///
-/// The terminating `;` is optional: a constructor (or ASI'd method)
-/// signature may be followed directly by the next overload or the
-/// implementation on a new line (`constructor(a: any)` newline
-/// `constructor(b: number) { }`). A `{` is always the method body, even
-/// when it sits on the next line.
+// Consume a TypeScript overload signature `name(params);` /
+// `name<T>(params): R;` and return true. A signature declares no
+// implementation, so the whole class element is type-only (erasable) and
+// emits nothing. Non-destructive: a method with a body
+// (`name(params) { ... }`) or any other shape returns false with input
+// untouched. Callers exclude getters/setters, which cannot be overloaded.
+//
+// The terminating `;` is optional: a constructor (or ASI'd method)
+// signature may be followed directly by the next overload or the
+// implementation on a new line (`constructor(a: any)` newline
+// `constructor(b: number) { }`). A `{` is always the method body, even
+// when it sits on the next line.
 fn bool CompilerContext.ts_try_skip_overload_signature(&self) {
     if (!self.lexer.ts_mode) return false;
     Lexer saved_lexer = *self.lexer;

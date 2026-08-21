@@ -1,4 +1,4 @@
-/// Map constructor and Map.prototype methods.
+// Map constructor and Map.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import std::math;
@@ -60,8 +60,8 @@ fn HObject* check_map(BuiltinContext* ctx) {
     return check_collection_class(ctx, hobject::ObjClass.MAP, "Map.prototype method called on incompatible value");
 }
 
-/// Find the index in array_part where a key matches. Returns -1 if not found.
-/// Map entries are stored as [k0, v0, k1, v1, ...] in array_part.
+// Find the index in array_part where a key matches. Returns -1 if not found.
+// Map entries are stored as [k0, v0, k1, v1, ...] in array_part.
 fn int map_find_key(HObject* map, TVal key, heap::Heap* h) {
     return coll_find(map, key, 2, h);
 }

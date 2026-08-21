@@ -13,43 +13,43 @@ import std::math;
 
 const uint FORIN_INITIAL_CAP = 64;
 
-/// Membership count above which the seen set switches from a linear array
-/// scan to an open-addressed hash index.  Below it the array is a couple of
-/// cache lines of pointers and scanning beats hashing.
+// Membership count above which the seen set switches from a linear array
+// scan to an open-addressed hash index.  Below it the array is a couple of
+// cache lines of pointers and scanning beats hashing.
 const uint FORIN_SEEN_HASH_THRESHOLD = 12;
 
-/// Slot count of the index built at promotion, which must be a power of two, since
-/// ForInSeen probes with `& index_mask` and relies on the walk visiting every
-/// slot, so a non-power-of-two mask makes a miss loop forever.  Sized to keep
-/// the load factor at or below 1/2 at the promotion threshold.
+// Slot count of the index built at promotion, which must be a power of two, since
+// ForInSeen probes with `& index_mask` and relies on the walk visiting every
+// slot, so a non-power-of-two mask makes a miss loop forever.  Sized to keep
+// the load factor at or below 1/2 at the promotion threshold.
 const uint FORIN_SEEN_INDEX_CAP = 64;
 
-/// Chain levels probed lazily for shadowing before falling back to eager
-/// recording.  Sized to cover any realistic prototype chain while keeping
-/// ForInSeen small enough to live on the stack.
+// Chain levels probed lazily for shadowing before falling back to eager
+// recording.  Sized to cover any realistic prototype chain while keeping
+// ForInSeen small enough to live on the stack.
 const uint FORIN_NEARER_MAX = 16;
 
-/// De-duplication state for for-in enumeration.
-///
-/// `entries` is the set of keys already yielded, keyed on interned-HString
-/// pointer identity (string equality is pointer identity engine-wide).  Two
-/// representations behind one interface: while `count` stays at or below
-/// FORIN_SEEN_HASH_THRESHOLD, `entries` is scanned linearly; past that, a
-/// power-of-two open-addressing table of indices into `entries` is built and
-/// kept in sync, making membership O(1) instead of quadratic in the number of
-/// keys the chain yields.
-///
-/// `nearer` holds the ordinary (non-proxy) chain levels already walked, so a
-/// key about to be yielded from a farther level can be tested for an own
-/// property, enumerable or not, on a nearer one. ES
-/// EnumerateObjectProperties records EVERY own key it visits as already-seen,
-/// so a non-enumerable own property shadows a same-named enumerable prototype
-/// property (plan 062 group F).  Probing lazily via find_prop_idx keeps that
-/// rule off the hot path: eagerly recording every non-enumerable own key
-/// instead costs O(own props in the whole chain) per enumeration, and
-/// prototypes are almost entirely non-enumerable methods that are never
-/// yielded.  Chains longer than FORIN_NEARER_MAX fall back to that eager
-/// recording for the overflowing levels (see forin_record_non_enumerable).
+// De-duplication state for for-in enumeration.
+//
+// `entries` is the set of keys already yielded, keyed on interned-HString
+// pointer identity (string equality is pointer identity engine-wide).  Two
+// representations behind one interface: while `count` stays at or below
+// FORIN_SEEN_HASH_THRESHOLD, `entries` is scanned linearly; past that, a
+// power-of-two open-addressing table of indices into `entries` is built and
+// kept in sync, making membership O(1) instead of quadratic in the number of
+// keys the chain yields.
+//
+// `nearer` holds the ordinary (non-proxy) chain levels already walked, so a
+// key about to be yielded from a farther level can be tested for an own
+// property, enumerable or not, on a nearer one. ES
+// EnumerateObjectProperties records EVERY own key it visits as already-seen,
+// so a non-enumerable own property shadows a same-named enumerable prototype
+// property (plan 062 group F).  Probing lazily via find_prop_idx keeps that
+// rule off the hot path: eagerly recording every non-enumerable own key
+// instead costs O(own props in the whole chain) per enumeration, and
+// prototypes are almost entirely non-enumerable methods that are never
+// yielded.  Chains longer than FORIN_NEARER_MAX fall back to that eager
+// recording for the overflowing levels (see forin_record_non_enumerable).
 struct ForInSeen {
     HString** entries;   /// Dense insertion-ordered list of yielded keys; null until the first insert
     uint count;
@@ -60,8 +60,8 @@ struct ForInSeen {
     uint nearer_count;
 }
 
-/// Grow an HString** array if needed, allocating it on first use when `*arr`
-/// is still null.
+// Grow an HString** array if needed, allocating it on first use when `*arr`
+// is still null.
 fn bool forin_ensure_cap(Heap* h, HString*** arr, uint* cap, uint need) {
     if (*arr == null) {
         HString** new_arr = (HString**)h.alloc_func(h.heap_udata, *cap * HString*::size);
@@ -78,15 +78,15 @@ fn bool forin_ensure_cap(Heap* h, HString*** arr, uint* cap, uint need) {
     return true;
 }
 
-/// Probe start for `key`. The interned string's precomputed content hash is
-/// already well mixed, so it is used directly rather than hashing the pointer.
+// Probe start for `key`. The interned string's precomputed content hash is
+// already well mixed, so it is used directly rather than hashing the pointer.
 macro uint forin_seen_slot(ForInSeen* s, HString* key) => key.hash & s.index_mask;
 
-/// (Re)build the open-addressing index at `index_cap` slots, which MUST be a
-/// power of two.  Callers keep the load factor at or below 1/2 so a probe
-/// always terminates on an empty slot.  Returns false only on allocation
-/// failure, in which case the set stays valid and simply keeps scanning
-/// linearly.
+// (Re)build the open-addressing index at `index_cap` slots, which MUST be a
+// power of two.  Callers keep the load factor at or below 1/2 so a probe
+// always terminates on an empty slot.  Returns false only on allocation
+// failure, in which case the set stays valid and simply keeps scanning
+// linearly.
 fn bool ForInSeen.reindex(&self, Heap* h, uint index_cap) {
     uint* tbl = (uint*)h.alloc_func(h.heap_udata, (usz)index_cap * uint::size);
     if (tbl == null) return false;
@@ -117,7 +117,7 @@ fn bool ForInSeen.contains(&self, HString* key) {
     return false;
 }
 
-/// Append a known-absent key.  Callers must have checked `contains` first.
+// Append a known-absent key.  Callers must have checked `contains` first.
 fn bool ForInSeen.append(&self, Heap* h, HString* key) {
     if (!forin_ensure_cap(h, &self.entries, &self.cap, self.count + 1)) return false;
     self.entries[self.count] = key;
@@ -138,9 +138,9 @@ fn bool ForInSeen.append(&self, Heap* h, HString* key) {
     return true;
 }
 
-/// Record `level` as walked so keys yielded from farther levels can be probed
-/// against its own properties.  Returns false when the list is full, in which
-/// case the caller must record the level's non-enumerable keys eagerly.
+// Record `level` as walked so keys yielded from farther levels can be probed
+// against its own properties.  Returns false when the list is full, in which
+// case the caller must record the level's non-enumerable keys eagerly.
 fn bool ForInSeen.push_level(&self, HObject* level) {
     if (self.nearer_count >= FORIN_NEARER_MAX) return false;
     self.nearer[self.nearer_count] = level;
@@ -148,13 +148,13 @@ fn bool ForInSeen.push_level(&self, HObject* level) {
     return true;
 }
 
-/// True iff `key` is an own named property of an already-walked level.
-///
-/// Symbols are exempt: they are yielded by their own phase and never
-/// participate in shadowing. A String object's own `length` is not exempt:
-/// it is non-enumerable, so EnumerateObjectProperties still records it as
-/// visited and it suppresses a same-named enumerable property inherited from
-/// the prototype chain.
+// True iff `key` is an own named property of an already-walked level.
+//
+// Symbols are exempt: they are yielded by their own phase and never
+// participate in shadowing. A String object's own `length` is not exempt:
+// it is non-enumerable, so EnumerateObjectProperties still records it as
+// visited and it suppresses a same-named enumerable property inherited from
+// the prototype chain.
 fn bool ForInSeen.shadowed(&self, Heap* h, HString* key) {
     if (key.is_symbol()) return false;
     for (uint i = 0; i < self.nearer_count; i++) {
@@ -170,10 +170,10 @@ fn void ForInSeen.free(&self, Heap* h) {
     if (self.index != null) h.free_func(h.heap_udata, self.index);
 }
 
-/// Eager fallback for chain levels beyond FORIN_NEARER_MAX: copy `level`'s own
-/// non-enumerable string keys straight into the seen set, giving the same
-/// shadowing effect as a lazy `shadowed` probe would.  The `is_symbol`
-/// exemption mirrors `shadowed`.
+// Eager fallback for chain levels beyond FORIN_NEARER_MAX: copy `level`'s own
+// non-enumerable string keys straight into the seen set, giving the same
+// shadowing effect as a lazy `shadowed` probe would.  The `is_symbol`
+// exemption mirrors `shadowed`.
 fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
     for (uint i = 0; i < level.prop_count; i++) {
         void* pk = level.prop_key_at(i, h);
@@ -187,18 +187,18 @@ fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
     return true;
 }
 
-/// Yield `key` unless a nearer chain level already produced or shadowed it.
-///
-/// `keys` and `seen.entries` grow in lockstep (every yield appends to both)
-/// but MUST use separate capacity trackers: forin_ensure_cap mutates *cap in
-/// place when it grows, so reusing one `cap` for both calls made the second
-/// call's growth check see the already-doubled capacity and wrongly skip
-/// reallocating the seen array, leaving it permanently undersized relative to
-/// `keys`, a heap buffer overflow on every subsequent write once it fell
-/// behind.
-///
-/// `track` is false on the final chain level: nothing above is left to
-/// shadow, so the key is yielded without paying for the insert.
+// Yield `key` unless a nearer chain level already produced or shadowed it.
+//
+// `keys` and `seen.entries` grow in lockstep (every yield appends to both)
+// but MUST use separate capacity trackers: forin_ensure_cap mutates *cap in
+// place when it grows, so reusing one `cap` for both calls made the second
+// call's growth check see the already-doubled capacity and wrongly skip
+// reallocating the seen array, leaving it permanently undersized relative to
+// `keys`, a heap buffer overflow on every subsequent write once it fell
+// behind.
+//
+// `track` is false on the final chain level: nothing above is left to
+// shadow, so the key is yielded without paying for the insert.
 fn bool forin_add_key(Heap* h, HString*** keys, uint* count, uint* keys_cap,
                       ForInSeen* seen, bool track, HString* key) {
     if (seen.count != 0 && seen.contains(key)) return true;
@@ -210,30 +210,30 @@ fn bool forin_add_key(Heap* h, HString*** keys, uint* count, uint* keys_cap,
     return true;
 }
 
-/// Record `key` as seen without yielding it.
-///
-/// Ordinary chain levels get this rule for free from the lazy `shadowed`
-/// probe, which reads their own properties directly. A proxy's keys are
-/// virtual, existing only as trap results, so a non-enumerable own key of
-/// a proxy has to be inserted here to suppress a same-named enumerable key
-/// further up the chain (EnumerateObjectProperties).
+// Record `key` as seen without yielding it.
+//
+// Ordinary chain levels get this rule for free from the lazy `shadowed`
+// probe, which reads their own properties directly. A proxy's keys are
+// virtual, existing only as trap results, so a non-enumerable own key of
+// a proxy has to be inserted here to suppress a same-named enumerable key
+// further up the chain (EnumerateObjectProperties).
 fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
     if (seen.count != 0 && seen.contains(key)) return true;
     return seen.append(h, key);
 }
 
-/// Returns true iff `key` still resolves to a property on `target` (own or
-/// inherited) at the moment of the call.  Used by NEXTFOR to honour the
-/// EnumerateObjectProperties liveness rule (plan 062 group N): a property
-/// deleted from the target before its turn is skipped, never yielded as
-/// undefined. This is a re-check; the snapshot itself is fixed at INITFOR time.
-///
-/// Exotic-keyed targets get a dedicated branch because their integer-indexed
-/// properties are served by the exotic handler, not via the named-prop table
-/// or dense part that `has_prop_proto` consults.  Proxies bypass the check
-/// entirely, since their keys are virtual, added and removed through traps, and re-
-/// invoking [[HasProperty]] could yield inconsistent results, matching
-/// Duktape's `check_existence = !IS_PROXY(enum_target)` bypass.
+// Returns true iff `key` still resolves to a property on `target` (own or
+// inherited) at the moment of the call.  Used by NEXTFOR to honour the
+// EnumerateObjectProperties liveness rule (plan 062 group N): a property
+// deleted from the target before its turn is skipped, never yielded as
+// undefined. This is a re-check; the snapshot itself is fixed at INITFOR time.
+//
+// Exotic-keyed targets get a dedicated branch because their integer-indexed
+// properties are served by the exotic handler, not via the named-prop table
+// or dense part that `has_prop_proto` consults.  Proxies bypass the check
+// entirely, since their keys are virtual, added and removed through traps, and re-
+// invoking [[HasProperty]] could yield inconsistent results, matching
+// Duktape's `check_existence = !IS_PROXY(enum_target)` bypass.
 fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
     if (target == null || key == null) return false;
     if (target.flags.exotic_proxyobj) return true;
@@ -265,11 +265,11 @@ fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
     return false;
 }
 
-/// Collect all enumerable property keys from an object and its prototype
-/// chain, de-duplicated (own keys shadow prototype keys).
-///
-/// Returns a malloc'd ForInState, or null if allocation fails.
-/// The caller (NEXTFOR) is responsible for freeing via `heap.free_func`.
+// Collect all enumerable property keys from an object and its prototype
+// chain, de-duplicated (own keys shadow prototype keys).
+//
+// Returns a malloc'd ForInState, or null if allocation fails.
+// The caller (NEXTFOR) is responsible for freeing via `heap.free_func`.
 fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
 
     uint keys_cap = FORIN_INITIAL_CAP;

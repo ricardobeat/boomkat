@@ -38,7 +38,7 @@ fn bool is_control_paren_kw(TokenType tt) {
         || tt == TokenType.SWITCH || tt == TokenType.CATCH;
 }
 
-/// Record a name referenced inside a nested callable body.
+// Record a name referenced inside a nested callable body.
 fn void CompilerContext.add_captured_name(&self, char[] name) {
     if (self.capture_all) return;
     if (name.len == 0) return;
@@ -58,7 +58,7 @@ fn void CompilerContext.add_captured_name(&self, char[] name) {
     self.captured_count++;
 }
 
-/// Is this local name captured by a nested callable (or is everything)?
+// Is this local name captured by a nested callable (or is everything)?
 fn bool CompilerContext.is_captured_name(&self, char[] name) {
     if (self.capture_all) return true;
     for (uint i = 0; i < self.captured_count; i++) {
@@ -73,12 +73,12 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
     return false;
 }
 
-/// Token pre-scan collecting captured names for the function body that the
-/// lexer is currently positioned at. Mirrors hoist_decls' conventions:
-/// for a block body, call with the lexer BEFORE the body's `{`; the scan
-/// stops at the matching `}`. For an expression body (`expr_mode`, arrows),
-/// the scan stops when the expression ends (a closer below the entry depth,
-/// or a top-level `,` / `;`). The lexer state is fully restored on return.
+// Token pre-scan collecting captured names for the function body that the
+// lexer is currently positioned at. Mirrors hoist_decls' conventions:
+// for a block body, call with the lexer BEFORE the body's `{`; the scan
+// stops at the matching `}`. For an expression body (`expr_mode`, arrows),
+// the scan stops when the expression ends (a closer below the entry depth,
+// or a top-level `,` / `;`). The lexer state is fully restored on return.
 fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool global_mode = false) {
     // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;

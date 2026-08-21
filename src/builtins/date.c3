@@ -1,4 +1,4 @@
-/// Date constructor and Date.prototype methods.
+// Date constructor and Date.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import std::math;
@@ -11,41 +11,41 @@ import boomkat::hstring;
 import boomkat::hobject;
 import std::time;
 
-/// ES2015+ §21.4.1.14 MakeTime: ((h*msPerHour + m*msPerMinute) + s*msPerSecond) + milli,
-/// evaluated in exact left-to-right IEEE-754 order. Implemented in a separate
-/// C translation unit so it isn't affected by the engine-wide relaxed
-/// fp-math build setting (which otherwise lets the optimizer reassociate
-/// this chain and produce different rounding for huge operands).
+// ES2015+ §21.4.1.14 MakeTime: ((h*msPerHour + m*msPerMinute) + s*msPerSecond) + milli,
+// evaluated in exact left-to-right IEEE-754 order. Implemented in a separate
+// C translation unit so it isn't affected by the engine-wide relaxed
+// fp-math build setting (which otherwise lets the optimizer reassociate
+// this chain and produce different rounding for huge operands).
 extern fn double boomkat_date_make_time(double hour, double minute, double second, double ms);
 
-/// ES2015+ §21.4.1.15 MakeDate: day * msPerDay + timeWithinDay. Same
-/// separate-translation-unit trick as boomkat_date_make_time, otherwise the
-/// multiply+add gets fused into a single-rounding FMA under relaxed fp-math.
+// ES2015+ §21.4.1.15 MakeDate: day * msPerDay + timeWithinDay. Same
+// separate-translation-unit trick as boomkat_date_make_time, otherwise the
+// multiply+add gets fused into a single-rounding FMA under relaxed fp-math.
 extern fn double boomkat_date_make_date(double day, double time_within_day);
 
 // ============================================================================
 // Date constructor and methods (ES5 §15.9)
 // ============================================================================
 
-/// Helper: get current time in milliseconds since epoch.
+// Helper: get current time in milliseconds since epoch.
 fn double date_now_ms() {
     // time::now() is microseconds since the Unix epoch.
     return (double)((long)time::now()) / 1000.0;
 }
 
-/// Convert an epoch time value in milliseconds to whole seconds, flooring
-/// toward -infinity (not truncating toward zero) so negative time values
-/// land on the correct second, e.g. -1ms is second -1, not second 0.
+// Convert an epoch time value in milliseconds to whole seconds, flooring
+// toward -infinity (not truncating toward zero) so negative time values
+// land on the correct second, e.g. -1ms is second -1, not second 0.
 fn long date_ms_to_sec(double time_val) {
     return (long)math::floor(time_val / 1000.0);
 }
 
-/// Floor-divide an epoch ms time value by `unit_ms` and reduce modulo
-/// `modulus`, both flooring toward -infinity, e.g. extracting the
-/// seconds-of-minute or minutes-of-hour field from a (possibly negative)
-/// time value. Plain C `/` and `%` truncate toward zero, which silently
-/// skips the "was this negative" fixup for values like -1ms (truncates to
-/// 0 instead of flooring to -1).
+// Floor-divide an epoch ms time value by `unit_ms` and reduce modulo
+// `modulus`, both flooring toward -infinity, e.g. extracting the
+// seconds-of-minute or minutes-of-hour field from a (possibly negative)
+// time value. Plain C `/` and `%` truncate toward zero, which silently
+// skips the "was this negative" fixup for values like -1ms (truncates to
+// 0 instead of flooring to -1).
 fn long date_floor_mod_field(double time_val, long unit_ms, long modulus) {
     long q = (long)math::floor(time_val / (double)unit_ms);
     long r = q % modulus;
@@ -53,14 +53,14 @@ fn long date_floor_mod_field(double time_val, long unit_ms, long modulus) {
     return r;
 }
 
-/// Convert a Unix time (seconds since 1970-01-01 UTC, may be negative) into
-/// proleptic-Gregorian UTC broken-down fields. Pure integer calendar math
-/// (Howard Hinnant's days-from-civil), so it is reliable across the full
-/// ECMAScript date range without relying on libc's historical tzdata, the
-/// same rationale the surrounding code already applied to gmtime_r.
-///
-/// Outputs match the previous gmtime_r usage: `year` is the full year,
-/// `month` is 0-based (0=January), `wday` is 0-based with 0=Sunday.
+// Convert a Unix time (seconds since 1970-01-01 UTC, may be negative) into
+// proleptic-Gregorian UTC broken-down fields. Pure integer calendar math
+// (Howard Hinnant's days-from-civil), so it is reliable across the full
+// ECMAScript date range without relying on libc's historical tzdata, the
+// same rationale the surrounding code already applied to gmtime_r.
+//
+// Outputs match the previous gmtime_r usage: `year` is the full year,
+// `month` is 0-based (0=January), `wday` is 0-based with 0=Sunday.
 fn void civil_from_seconds(long secs, long* year, long* month, long* day,
                            long* wday, long* hour, long* minute, long* second) {
     // Split into whole days and the second-of-day, flooring toward -inf so
@@ -94,10 +94,10 @@ fn void civil_from_seconds(long secs, long* year, long* month, long* day,
     *day   = d;
 }
 
-/// ES5 §15.9.1.1 thisTimeValue(value): throw TypeError if not a Date object.
-/// A Date instance always has a [[DateValue]] internal slot; Date.prototype
-/// is a DATE object but does NOT have the slot, so the engine flags it via
-/// the `is_date_proto` ObjClass flag below.
+// ES5 §15.9.1.1 thisTimeValue(value): throw TypeError if not a Date object.
+// A Date instance always has a [[DateValue]] internal slot; Date.prototype
+// is a DATE object but does NOT have the slot, so the engine flags it via
+// the `is_date_proto` ObjClass flag below.
 fn double date_this_time_value(BuiltinContext* ctx, TVal* val) {
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
@@ -122,17 +122,17 @@ fn double date_this_time_value(BuiltinContext* ctx, TVal* val) {
     return double::nan;  // caller should return after this
 }
 
-/// Helper: convert local time components to epoch ms.
-/// Treats the fields as a UTC civil date/time first (which is reliable for
-/// any year via the days-from-civil algorithm), then subtracts the local
-/// timezone offset sampled at that instant. The offset lookup uses a
-/// truncating (not floored) ms->sec conversion to match the reference
-/// engine's getTimezoneOffset input exactly: this value is only a lookup
-/// key into localtime_r, and truncation vs. floor can select opposite
-/// sides of a sub-minute historical Local-Mean-Time transition boundary
-/// for ancient dates. The spec leaves pre-Unix-epoch timezone behavior
-/// implementation-defined, so matching the reference engine's choice here
-/// (rather than "more correct" flooring) is what parity requires.
+// Helper: convert local time components to epoch ms.
+// Treats the fields as a UTC civil date/time first (which is reliable for
+// any year via the days-from-civil algorithm), then subtracts the local
+// timezone offset sampled at that instant. The offset lookup uses a
+// truncating (not floored) ms->sec conversion to match the reference
+// engine's getTimezoneOffset input exactly: this value is only a lookup
+// key into localtime_r, and truncation vs. floor can select opposite
+// sides of a sub-minute historical Local-Mean-Time transition boundary
+// for ancient dates. The spec leaves pre-Unix-epoch timezone behavior
+// implementation-defined, so matching the reference engine's choice here
+// (rather than "more correct" flooring) is what parity requires.
 fn double date_local_to_ms(long year, long month, long day,
                            long hour, long minute, long second, long ms) {
     double utc_ms = date_utc_to_ms(year, month, day, hour, minute, second, ms);
@@ -141,27 +141,27 @@ fn double date_local_to_ms(long year, long month, long day,
     return utc_ms - (double)offset * 1000.0;
 }
 
-/// Compute the local timezone offset (in seconds, UTC minus local) for the
-/// given epoch time, i.e. how far local time is ahead of UTC. Reads
-/// tm_gmtoff (exposed as TzDateTime.gmt_offset) directly off a single
-/// localtime_r lookup at the UTC instant, the same single-call approach
-/// as the reference engine's getTimezoneOffset. Earlier revisions
-/// reinterpreted the local broken-down fields through the engine's own
-/// civil-day math to get a second offset estimate; that round trip is
-/// unstable for historical Local-Mean-Time offsets that aren't a whole
-/// number of seconds; whichever side of the LMT transition boundary the
-/// re-encoded instant happened to land on, gave a different answer for
-/// the same input.
+// Compute the local timezone offset (in seconds, UTC minus local) for the
+// given epoch time, i.e. how far local time is ahead of UTC. Reads
+// tm_gmtoff (exposed as TzDateTime.gmt_offset) directly off a single
+// localtime_r lookup at the UTC instant, the same single-call approach
+// as the reference engine's getTimezoneOffset. Earlier revisions
+// reinterpreted the local broken-down fields through the engine's own
+// civil-day math to get a second offset estimate; that round trip is
+// unstable for historical Local-Mean-Time offsets that aren't a whole
+// number of seconds; whichever side of the LMT transition boundary the
+// re-encoded instant happened to land on, gave a different answer for
+// the same input.
 fn long date_tz_offset_seconds(long t_sec) {
     TzDateTime local = datetime::from_time((Time)(t_sec * 1_000_000)).to_local();
     return local.gmt_offset;
 }
 
-/// Break a time value into local wall-clock components, applying the
-/// timezone offset arithmetically via gmtime_r rather than relying on
-/// localtime_r's tzdata lookup directly. gmtime_r's proleptic Gregorian
-/// calendar is reliable across the full date range, unlike localtime_r's
-/// historical DST database.
+// Break a time value into local wall-clock components, applying the
+// timezone offset arithmetically via gmtime_r rather than relying on
+// localtime_r's tzdata lookup directly. gmtime_r's proleptic Gregorian
+// calendar is reliable across the full date range, unlike localtime_r's
+// historical DST database.
 fn void date_break_time_local_fields(double time_val, long* year, long* month, long* day,
                                      long* wday, long* hour, long* minute, long* second) {
     // The offset lookup key is truncated (not floored) to match the
@@ -175,7 +175,7 @@ fn void date_break_time_local_fields(double time_val, long* year, long* month, l
     civil_from_seconds(local_sec, year, month, day, wday, hour, minute, second);
 }
 
-/// Format a Date as a string like "Mon Jan 01 2024 12:00:00 GMT+0000".
+// Format a Date as a string like "Mon Jan 01 2024 12:00:00 GMT+0000".
 fn usz date_format_to_string(double time_val, char* buf, usz buf_size) {
     // For NaN, return "Invalid Date"
     if (math::is_nan(time_val)) {
@@ -243,10 +243,10 @@ fn usz date_format_to_string(double time_val, char* buf, usz buf_size) {
         tz_sign, offs_hours, offs_mins) ?? buf[:0]).len;
 }
 
-/// Parse an ISO 8601 date string into milliseconds since epoch.
-/// Supported formats: "YYYY-MM-DDTHH:mm:ss.sssZ", "YYYY-MM-DDTHH:mm:ssZ",
-/// "YYYY-MM-DDTHH:mm:ss.sss", "YYYY-MM-DDTHH:mm:ss", "YYYY-MM-DDTHH:mm",
-/// "YYYY-MM-DD", "YYYY-MM", "YYYY". Returns NaN on parse failure.
+// Parse an ISO 8601 date string into milliseconds since epoch.
+// Supported formats: "YYYY-MM-DDTHH:mm:ss.sssZ", "YYYY-MM-DDTHH:mm:ssZ",
+// "YYYY-MM-DDTHH:mm:ss.sss", "YYYY-MM-DDTHH:mm:ss", "YYYY-MM-DDTHH:mm",
+// "YYYY-MM-DD", "YYYY-MM", "YYYY". Returns NaN on parse failure.
 fn double date_parse_iso_str(char* str, usz len) {
     // Minimum: "YYYY" = 4 chars
     if (len < 4) return double::nan;
@@ -394,7 +394,7 @@ fn double date_parse_iso_str(char* str, usz len) {
     return date_time_clip(date_utc_to_ms(year, month - 1, day, hour, minute, second, millis));
 }
 
-/// Helper: match a 3-letter month name, return 0-based month index or -1.
+// Helper: match a 3-letter month name, return 0-based month index or -1.
 fn long date_parse_month_name(char* s, usz len, usz pos) {
     if (pos + 3 > len) return -1;
     if (s[pos] == 'J' && s[pos+1] == 'a' && s[pos+2] == 'n') return 0;
@@ -412,10 +412,10 @@ fn long date_parse_month_name(char* s, usz len, usz pos) {
     return -1;
 }
 
-/// Parse a toString/toUTCString format date string.
-/// Formats: "Thu Jan 01 1970 01:00:00 GMT+0000" (toString)
-///          "Thu, 01 Jan 1970 00:00:00 GMT" (toUTCString)
-/// Returns NaN on failure.
+// Parse a toString/toUTCString format date string.
+// Formats: "Thu Jan 01 1970 01:00:00 GMT+0000" (toString)
+//          "Thu, 01 Jan 1970 00:00:00 GMT" (toUTCString)
+// Returns NaN on failure.
 fn double date_parse_locale_str(char* str, usz len) {
     if (len < 20) return double::nan;
     usz pos = 0;
@@ -522,7 +522,7 @@ fn double date_parse_locale_str(char* str, usz len) {
     return utc_ms;
 }
 
-/// Date() as function, returns current date-time string (ES5 §15.9.2.1).
+// Date() as function, returns current date-time string (ES5 §15.9.2.1).
 fn void builtin_date(BuiltinContext* ctx) {
     double now = date_now_ms();
     if (ctx.is_constructor) {
@@ -708,15 +708,15 @@ fn void builtin_date(BuiltinContext* ctx) {
     }
 }
 
-/// Date.now(), ES5 §15.9.4.4
+// Date.now(), ES5 §15.9.4.4
 fn void builtin_date_now(BuiltinContext* ctx) {
     ctx.result.set_number(date_now_ms());
 }
 
-/// Date.UTC(year[, month[, day, hour, minute, second, ms]]), ES2017+ §20.3.3.4
-/// (month and later arguments default to 0/1 like the Date constructor;
-/// pre-ES2017 engines coerced a missing month to NaN, but that was fixed by
-/// https://github.com/tc39/ecma262/pull/642).
+// Date.UTC(year[, month[, day, hour, minute, second, ms]]), ES2017+ §20.3.3.4
+// (month and later arguments default to 0/1 like the Date constructor;
+// pre-ES2017 engines coerced a missing month to NaN, but that was fixed by
+// https://github.com/tc39/ecma262/pull/642).
 fn void builtin_date_utc(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_number(double::nan);
@@ -846,7 +846,7 @@ fn void builtin_date_utc(BuiltinContext* ctx) {
     ctx.result.set_number(date_time_clip(t));
 }
 
-/// Date.parse(string), ES5 §15.9.4.2
+// Date.parse(string), ES5 §15.9.4.2
 fn void builtin_date_parse(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_number(double::nan);
@@ -878,7 +878,7 @@ fn void builtin_date_parse(BuiltinContext* ctx) {
     ctx.result.set_number(date_val);
 }
 
-/// Date.prototype.toString(), ES5 §15.9.5.2
+// Date.prototype.toString(), ES5 §15.9.5.2
 fn void builtin_date_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -889,13 +889,13 @@ fn void builtin_date_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// True when neither argument was passed, or both are undefined.
-///
-/// ES5 §15.9.5.5 leaves the result of the toLocale* methods
-/// implementation-defined, and the strings this engine returns for an
-/// argument-free call predate any options handling. That output is kept
-/// exactly as it was, so a call that names nothing is answered without
-/// building a format at all.
+// True when neither argument was passed, or both are undefined.
+//
+// ES5 §15.9.5.5 leaves the result of the toLocale* methods
+// implementation-defined, and the strings this engine returns for an
+// argument-free call predate any options handling. That output is kept
+// exactly as it was, so a call that names nothing is answered without
+// building a format at all.
 fn bool date_locale_args_absent(BuiltinContext* ctx) {
     for (ushort i = 0; i < ctx.argc && i < 2; i++) {
         if (!ctx.regs[ctx.base_reg + i].is_undefined()) return false;
@@ -903,8 +903,8 @@ fn bool date_locale_args_absent(BuiltinContext* ctx) {
     return true;
 }
 
-/// Read the `locales` and `options` arguments out of the register window,
-/// treating a missing argument as undefined.
+// Read the `locales` and `options` arguments out of the register window,
+// treating a missing argument as undefined.
 fn void date_locale_args(BuiltinContext* ctx, TVal* locales, TVal* options) {
     locales.set_undefined();
     options.set_undefined();
@@ -912,13 +912,13 @@ fn void date_locale_args(BuiltinContext* ctx, TVal* locales, TVal* options) {
     if (ctx.argc > 1) *options = ctx.regs[ctx.base_reg + 1];
 }
 
-/// Shared body of the three toLocale* methods.
-///
-/// Resolves the arguments into a format per ECMA-402 §11.1.2 (see
-/// date_resolve_options for how much of that is actually honoured), breaks
-/// the time value down in the resolved zone, and renders the components the
-/// format asks for. `required` says which half the calling method is about,
-/// which decides the defaults and which styles it will accept.
+// Shared body of the three toLocale* methods.
+//
+// Resolves the arguments into a format per ECMA-402 §11.1.2 (see
+// date_resolve_options for how much of that is actually honoured), breaks
+// the time value down in the resolved zone, and renders the components the
+// format asks for. `required` says which half the calling method is about,
+// which decides the defaults and which styles it will accept.
 fn void date_locale_format(BuiltinContext* ctx, int required) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -982,9 +982,9 @@ fn void date_locale_format(BuiltinContext* ctx, int required) {
     ctx.result.set_string(result);
 }
 
-/// Date.prototype.toLocaleString(), ES5 §15.9.5.5
-/// With no arguments this is toString(). With a locales or options argument
-/// it resolves the bag per ECMA-402 §11.1.2 against the engine's one locale.
+// Date.prototype.toLocaleString(), ES5 §15.9.5.5
+// With no arguments this is toString(). With a locales or options argument
+// it resolves the bag per ECMA-402 §11.1.2 against the engine's one locale.
 fn void builtin_date_proto_toLocaleString(BuiltinContext* ctx) {
     if (date_locale_args_absent(ctx)) {
         builtin_date_proto_toString(ctx);
@@ -993,11 +993,11 @@ fn void builtin_date_proto_toLocaleString(BuiltinContext* ctx) {
     date_locale_format(ctx, DTF_REQ_ANY);
 }
 
-/// Date.prototype.toLocaleDateString(), ES5 §15.9.5.6
-/// With no arguments this is the date portion in YYYY-MM-DD form. With an
-/// options bag the date components are the ones that default in, but an
-/// explicitly named time component still renders; a timeStyle is a TypeError,
-/// per ECMA-402 §11.1.2.
+// Date.prototype.toLocaleDateString(), ES5 §15.9.5.6
+// With no arguments this is the date portion in YYYY-MM-DD form. With an
+// options bag the date components are the ones that default in, but an
+// explicitly named time component still renders; a timeStyle is a TypeError,
+// per ECMA-402 §11.1.2.
 fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
     if (date_locale_args_absent(ctx)) {
         TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -1019,11 +1019,11 @@ fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
     date_locale_format(ctx, DTF_REQ_DATE);
 }
 
-/// Date.prototype.toLocaleTimeString(), ES5 §15.9.5.7
-/// With no arguments this is the time portion in HH:MM:SS form. With an
-/// options bag the time components are the ones that default in, but an
-/// explicitly named date component still renders; a dateStyle is a TypeError,
-/// per ECMA-402 §11.1.2.
+// Date.prototype.toLocaleTimeString(), ES5 §15.9.5.7
+// With no arguments this is the time portion in HH:MM:SS form. With an
+// options bag the time components are the ones that default in, but an
+// explicitly named date component still renders; a dateStyle is a TypeError,
+// per ECMA-402 §11.1.2.
 fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
     if (date_locale_args_absent(ctx)) {
         TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -1045,8 +1045,8 @@ fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
     date_locale_format(ctx, DTF_REQ_TIME);
 }
 
-/// Date.prototype.toDateString(), ES5 §15.9.5.3
-/// Returns the date portion: "Mon Jan 01 2024"
+// Date.prototype.toDateString(), ES5 §15.9.5.3
+// Returns the date portion: "Mon Jan 01 2024"
 fn void builtin_date_proto_toDateString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -1104,8 +1104,8 @@ fn void builtin_date_proto_toDateString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Date.prototype.toTimeString(), ES5 §15.9.5.4
-/// Returns the time portion: "12:00:00 GMT+0000"
+// Date.prototype.toTimeString(), ES5 §15.9.5.4
+// Returns the time portion: "12:00:00 GMT+0000"
 fn void builtin_date_proto_toTimeString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -1137,18 +1137,18 @@ fn void builtin_date_proto_toTimeString(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Date.prototype.toJSON(key), ES5 §15.9.5.44
-///
-/// ES2015 §20.4.4.28:
-/// 1. Let O be ? ToObject(this value).
-/// 2. Let tv be ? ToPrimitive(O, hint Number).
-/// 3. If Type(tv) is Number and tv is not finite, return null.
-/// 4. Return ? Invoke(O, "toISOString").
-///
-/// For Date objects, ToPrimitive returns the internal [[DateValue]] (a Number).
-/// For plain objects, ToPrimitive calls valueOf/toString and returns a String
-/// (e.g. "[object Object]"), so Type(tv) is NOT Number → step 3 is skipped →
-/// step 4 calls toISOString.
+// Date.prototype.toJSON(key), ES5 §15.9.5.44
+//
+// ES2015 §20.4.4.28:
+// 1. Let O be ? ToObject(this value).
+// 2. Let tv be ? ToPrimitive(O, hint Number).
+// 3. If Type(tv) is Number and tv is not finite, return null.
+// 4. Return ? Invoke(O, "toISOString").
+//
+// For Date objects, ToPrimitive returns the internal [[DateValue]] (a Number).
+// For plain objects, ToPrimitive calls valueOf/toString and returns a String
+// (e.g. "[object Object]"), so Type(tv) is NOT Number → step 3 is skipped →
+// step 4 calls toISOString.
 fn void builtin_date_proto_toJSON(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
 
@@ -1278,7 +1278,7 @@ fn void builtin_date_proto_toJSON(BuiltinContext* ctx) {
     builtin_throw(ctx, ctx.heap.type_err_proto, "toISOString is not a function");
 }
 
-/// Date.prototype.data.valueOf(), ES5 §15.9.5.8
+// Date.prototype.data.valueOf(), ES5 §15.9.5.8
 fn void builtin_date_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -1286,9 +1286,9 @@ fn void builtin_date_proto_valueOf(BuiltinContext* ctx) {
     ctx.result.set_number(time_val);
 }
 
-/// Date.prototype[Symbol.toPrimitive](hint), ES2023 §21.4.4.45
-/// Converts a Date to a primitive. hint "string"/"default" → try toString first;
-/// hint "number" → try valueOf first. Non-object this or unknown hint → TypeError.
+// Date.prototype[Symbol.toPrimitive](hint), ES2023 §21.4.4.45
+// Converts a Date to a primitive. hint "string"/"default" → try toString first;
+// hint "number" → try valueOf first. Non-object this or unknown hint → TypeError.
 fn void builtin_date_proto_toPrimitive(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
 
@@ -1394,7 +1394,7 @@ fn void builtin_date_proto_toPrimitive(BuiltinContext* ctx) {
         "Cannot convert Date to primitive");
 }
 
-/// Date.prototype.getTime(), ES5 §15.9.5.9
+// Date.prototype.getTime(), ES5 §15.9.5.9
 fn void builtin_date_proto_getTime(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);
@@ -1402,7 +1402,7 @@ fn void builtin_date_proto_getTime(BuiltinContext* ctx) {
     ctx.result.set_number(time_val);
 }
 
-/// Helper: break a time value into local time components via localtime_r.
+// Helper: break a time value into local time components via localtime_r.
 fn void date_break_time(double time_val, long* year, long* month, long* day,
                         long* wday, long* hour, long* minute, long* second) {
     if (math::is_nan(time_val)) {
@@ -1424,9 +1424,9 @@ const int DATE_FIELD_MIN   = 5;
 const int DATE_FIELD_SEC   = 6;
 const int DATE_FIELD_MS    = 7;
 
-/// Shared body for Date.prototype.get{,UTC}{FullYear,Month,Date,Day,Hours,
-/// Minutes,Seconds,Milliseconds}: coerce this to a time value, propagate a
-/// NaN clock as NaN, then return the requested field (local or UTC).
+// Shared body for Date.prototype.get{,UTC}{FullYear,Month,Date,Day,Hours,
+// Minutes,Seconds,Milliseconds}: coerce this to a time value, propagate a
+// NaN clock as NaN, then return the requested field (local or UTC).
 fn void date_get_field(BuiltinContext* ctx, int field, bool utc) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1447,31 +1447,31 @@ fn void date_get_field(BuiltinContext* ctx, int field, bool utc) {
     ctx.result.set_fastint(parts[field]);
 }
 
-/// Date.prototype.getFullYear(), ES5 §15.9.5.10
+// Date.prototype.getFullYear(), ES5 §15.9.5.10
 fn void builtin_date_proto_getFullYear(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_YEAR, false);
 
-/// Date.prototype.getMonth(), ES5 §15.9.5.12
+// Date.prototype.getMonth(), ES5 §15.9.5.12
 fn void builtin_date_proto_getMonth(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MONTH, false);
 
-/// Date.prototype.getDate(), ES5 §15.9.5.14
+// Date.prototype.getDate(), ES5 §15.9.5.14
 fn void builtin_date_proto_getDate(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_DAY, false);
 
-/// Date.prototype.getDay(), ES5 §15.9.5.16
+// Date.prototype.getDay(), ES5 §15.9.5.16
 fn void builtin_date_proto_getDay(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_WDAY, false);
 
-/// Date.prototype.getHours(), ES5 §15.9.5.18
+// Date.prototype.getHours(), ES5 §15.9.5.18
 fn void builtin_date_proto_getHours(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_HOUR, false);
 
-/// Date.prototype.getMinutes(), ES5 §15.9.5.20
+// Date.prototype.getMinutes(), ES5 §15.9.5.20
 fn void builtin_date_proto_getMinutes(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MIN, false);
 
-/// Date.prototype.getSeconds(), ES5 §15.9.5.22
+// Date.prototype.getSeconds(), ES5 §15.9.5.22
 fn void builtin_date_proto_getSeconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_SEC, false);
 
-/// Date.prototype.getMilliseconds(), ES5 §15.9.5.24
+// Date.prototype.getMilliseconds(), ES5 §15.9.5.24
 fn void builtin_date_proto_getMilliseconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MS, false);
 
-/// Helper: break a time value into UTC time components via gmtime_r.
+// Helper: break a time value into UTC time components via gmtime_r.
 fn void date_break_time_utc(double time_val, long* year, long* month, long* day,
                             long* wday, long* hour, long* minute, long* second) {
     if (math::is_nan(time_val)) {
@@ -1482,9 +1482,9 @@ fn void date_break_time_utc(double time_val, long* year, long* month, long* day,
     civil_from_seconds(t_sec, year, month, day, wday, hour, minute, second);
 }
 
-/// Helper: convert UTC time components to epoch ms (no timezone adjustment).
-/// month may be any integer (not just [0,11]); overflow/underflow carries
-/// into year first, per MakeDay's YearFromTime/MonthFromTime semantics.
+// Helper: convert UTC time components to epoch ms (no timezone adjustment).
+// month may be any integer (not just [0,11]); overflow/underflow carries
+// into year first, per MakeDay's YearFromTime/MonthFromTime semantics.
 fn double date_utc_to_ms(long year, long month, long day,
                          long hour, long minute, long second, long ms) {
     // floor(month / 12), computed via truncating division (C3's default for
@@ -1504,7 +1504,7 @@ fn double date_utc_to_ms(long year, long month, long day,
     return boomkat_date_make_date((double)epoch_day, maketime);
 }
 
-/// Helper: TimeClip, clamp time value to ±8.64e15 ms per ES5 §15.9.1.14.
+// Helper: TimeClip, clamp time value to ±8.64e15 ms per ES5 §15.9.1.14.
 fn double date_time_clip(double t) {
     if (!math::is_finite(t)) return double::nan;
     if (math::abs(t) > 8.64e15) return double::nan;
@@ -1513,12 +1513,12 @@ fn double date_time_clip(double t) {
     return clipped + 0.0;  // converts -0 to +0
 }
 
-/// Helper: set the ms value on a Date object.
+// Helper: set the ms value on a Date object.
 fn void date_set_ms(HObject* obj, double new_ms) {
     (*obj.extra_ptr()).prim.primitive_value.set_number(new_ms);
 }
 
-/// Date.prototype.getTimezoneOffset(), ES5 §15.9.5.26
+// Date.prototype.getTimezoneOffset(), ES5 §15.9.5.26
 fn void builtin_date_proto_getTimezoneOffset(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1529,31 +1529,31 @@ fn void builtin_date_proto_getTimezoneOffset(BuiltinContext* ctx) {
     ctx.result.set_fastint(-offset / 60);
 }
 
-/// Date.prototype.getUTCFullYear(), ES5 §15.9.5.41
+// Date.prototype.getUTCFullYear(), ES5 §15.9.5.41
 fn void builtin_date_proto_getUTCFullYear(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_YEAR, true);
 
-/// Date.prototype.getUTCMonth(), ES5 §15.9.5.42
+// Date.prototype.getUTCMonth(), ES5 §15.9.5.42
 fn void builtin_date_proto_getUTCMonth(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MONTH, true);
 
-/// Date.prototype.getUTCDate(), ES5 §15.9.5.43
+// Date.prototype.getUTCDate(), ES5 §15.9.5.43
 fn void builtin_date_proto_getUTCDate(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_DAY, true);
 
-/// Date.prototype.getUTCDay(), ES5 §15.9.5.44
+// Date.prototype.getUTCDay(), ES5 §15.9.5.44
 fn void builtin_date_proto_getUTCDay(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_WDAY, true);
 
-/// Date.prototype.getUTCHours(), ES5 §15.9.5.45
+// Date.prototype.getUTCHours(), ES5 §15.9.5.45
 fn void builtin_date_proto_getUTCHours(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_HOUR, true);
 
-/// Date.prototype.getUTCMinutes(), ES5 §15.9.5.46
+// Date.prototype.getUTCMinutes(), ES5 §15.9.5.46
 fn void builtin_date_proto_getUTCMinutes(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MIN, true);
 
-/// Date.prototype.getUTCSeconds(), ES5 §15.9.5.47
+// Date.prototype.getUTCSeconds(), ES5 §15.9.5.47
 fn void builtin_date_proto_getUTCSeconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_SEC, true);
 
-/// Date.prototype.getUTCMilliseconds(), ES5 §15.9.5.48
+// Date.prototype.getUTCMilliseconds(), ES5 §15.9.5.48
 fn void builtin_date_proto_getUTCMilliseconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MS, true);
 
-/// Date.prototype.setTime(time), ES5 §15.9.5.27
+// Date.prototype.setTime(time), ES5 §15.9.5.27
 fn void builtin_date_proto_setTime(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1576,7 +1576,7 @@ fn void builtin_date_proto_setTime(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setMilliseconds(ms), ES5 §15.9.5.28
+// Date.prototype.setMilliseconds(ms), ES5 §15.9.5.28
 fn void builtin_date_proto_setMilliseconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1604,7 +1604,7 @@ fn void builtin_date_proto_setMilliseconds(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setSeconds(sec[, ms]), ES5 §15.9.5.29
+// Date.prototype.setSeconds(sec[, ms]), ES5 §15.9.5.29
 fn void builtin_date_proto_setSeconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1646,7 +1646,7 @@ fn void builtin_date_proto_setSeconds(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setMinutes(min[, sec[, ms]]), ES5 §15.9.5.30
+// Date.prototype.setMinutes(min[, sec[, ms]]), ES5 §15.9.5.30
 fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1702,7 +1702,7 @@ fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.31
+// Date.prototype.setHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.31
 fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1771,7 +1771,7 @@ fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setDate(date), ES5 §15.9.5.32
+// Date.prototype.setDate(date), ES5 §15.9.5.32
 fn void builtin_date_proto_setDate(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1799,7 +1799,7 @@ fn void builtin_date_proto_setDate(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setMonth(month[, date]), ES5 §15.9.5.33
+// Date.prototype.setMonth(month[, date]), ES5 §15.9.5.33
 fn void builtin_date_proto_setMonth(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1842,7 +1842,7 @@ fn void builtin_date_proto_setMonth(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setFullYear(year[, month[, date]]), ES5 §15.9.5.40
+// Date.prototype.setFullYear(year[, month[, date]]), ES5 §15.9.5.40
 fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1896,7 +1896,7 @@ fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCMilliseconds(ms), ES5 §15.9.5.49
+// Date.prototype.setUTCMilliseconds(ms), ES5 §15.9.5.49
 fn void builtin_date_proto_setUTCMilliseconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1924,7 +1924,7 @@ fn void builtin_date_proto_setUTCMilliseconds(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCSeconds(sec[, ms]), ES5 §15.9.5.50
+// Date.prototype.setUTCSeconds(sec[, ms]), ES5 §15.9.5.50
 fn void builtin_date_proto_setUTCSeconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -1966,7 +1966,7 @@ fn void builtin_date_proto_setUTCSeconds(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCMinutes(min[, sec[, ms]]), ES5 §15.9.5.51
+// Date.prototype.setUTCMinutes(min[, sec[, ms]]), ES5 §15.9.5.51
 fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2022,7 +2022,7 @@ fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.52
+// Date.prototype.setUTCHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.52
 fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2091,7 +2091,7 @@ fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCDate(date), ES5 §15.9.5.53
+// Date.prototype.setUTCDate(date), ES5 §15.9.5.53
 fn void builtin_date_proto_setUTCDate(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2119,7 +2119,7 @@ fn void builtin_date_proto_setUTCDate(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCMonth(month[, date]), ES5 §15.9.5.54
+// Date.prototype.setUTCMonth(month[, date]), ES5 §15.9.5.54
 fn void builtin_date_proto_setUTCMonth(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2162,7 +2162,7 @@ fn void builtin_date_proto_setUTCMonth(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Date.prototype.setUTCFullYear(year[, month[, date]]), ES5 §15.9.5.55
+// Date.prototype.setUTCFullYear(year[, month[, date]]), ES5 §15.9.5.55
 fn void builtin_date_proto_setUTCFullYear(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2216,14 +2216,14 @@ fn void builtin_date_proto_setUTCFullYear(BuiltinContext* ctx) {
     ctx.result.set_number(clipped);
 }
 
-/// Helper: pad integer to 2 digits
+// Helper: pad integer to 2 digits
 fn void date_pad2(char* buf, long val) {
     if (val < 10) { buf[0] = '0'; buf[1] = (char)(val + 48); }
     else { buf[0] = (char)(val / 10 + 48); buf[1] = (char)(val % 10 + 48); }
 }
 
-/// Helper: pad |val| (positive) to 4 digits, buf[0..3].
-/// Callers handle sign separately. For dates, val is always 0..9999 here.
+// Helper: pad |val| (positive) to 4 digits, buf[0..3].
+// Callers handle sign separately. For dates, val is always 0..9999 here.
 fn void date_pad4(char* buf, long val) {
     buf[0] = (char)(val / 1000 % 10 + 48);
     buf[1] = (char)(val / 100 % 10 + 48);
@@ -2231,9 +2231,9 @@ fn void date_pad4(char* buf, long val) {
     buf[3] = (char)(val % 10 + 48);
 }
 
-/// Date.prototype.toISOString(), ES5 §15.9.5.43
-/// Returns a string in ISO 8601 format: "YYYY-MM-DDTHH:mm:ss.sssZ".
-/// Throws RangeError if the date value is NaN.
+// Date.prototype.toISOString(), ES5 §15.9.5.43
+// Returns a string in ISO 8601 format: "YYYY-MM-DDTHH:mm:ss.sssZ".
+// Throws RangeError if the date value is NaN.
 fn void builtin_date_proto_toISOString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2322,7 +2322,7 @@ fn void builtin_date_proto_toISOString(BuiltinContext* ctx) {
     }
 }
 
-/// Date.prototype.toUTCString(), ES5 §15.9.5.44
+// Date.prototype.toUTCString(), ES5 §15.9.5.44
 fn void builtin_date_proto_toUTCString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double tv = date_this_time_value(ctx, &this_val);
@@ -2354,7 +2354,7 @@ fn void builtin_date_proto_toUTCString(BuiltinContext* ctx) {
 // Date constructor registration
 // ============================================================================
 
-/// Create Date.prototype and register the Date constructor globally.
+// Create Date.prototype and register the Date constructor globally.
 fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // Create Date.prototype
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.DATE);

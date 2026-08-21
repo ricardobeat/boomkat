@@ -83,9 +83,9 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
     return false;
 }
 
-/// Compare a BigInt value against a string via StringToBigInt (ES2020
-/// §7.1.14).  Returns true iff the string parses to a BigInt equal to `big`.
-/// A string that fails to parse compares unequal (StringToBigInt → NaN).
+// Compare a BigInt value against a string via StringToBigInt (ES2020
+// §7.1.14).  Returns true iff the string parses to a BigInt equal to `big`.
+// A string that fails to parse compares unequal (StringToBigInt → NaN).
 fn bool bigint_string_eq(int128 big, HString* s) {
     if (s == null) return false;
     int128? parsed = string_to_bigint(s.get_data());
@@ -93,9 +93,9 @@ fn bool bigint_string_eq(int128 big, HString* s) {
     return parsed == big;
 }
 
-/// StringToBigInt: trim ECMAScript whitespace, accept an optional leading
-/// sign for decimal, or a `0x`/`0o`/`0b` prefix (no sign).  The empty (or
-/// all-whitespace) string is 0n.  Faults on any invalid character or overflow.
+// StringToBigInt: trim ECMAScript whitespace, accept an optional leading
+// sign for decimal, or a `0x`/`0o`/`0b` prefix (no sign).  The empty (or
+// all-whitespace) string is 0n.  Faults on any invalid character or overflow.
 fn int128? string_to_bigint(char[] raw) {
     usz lo = 0;
     usz hi = raw.len;
@@ -126,7 +126,7 @@ fn int128? string_to_bigint(char[] raw) {
     return neg ? hbigint::bigint_neg(mag)! : mag;
 }
 
-/// Strict equality check (same as SEQ).
+// Strict equality check (same as SEQ).
 fn bool strict_eq(TVal* a, TVal* b) @inline {
     if (a.get_tag() == b.get_tag()) {
         switch (a.get_tag()) {

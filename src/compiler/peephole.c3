@@ -10,40 +10,40 @@ import boomkat::compiler;
 // GETPROPC2 chain fusion
 // ============================================================================
 
-/// Fuse consecutive GETPROPC pairs where output of first is input of second.
-/// Pattern: GETPROPC r_tmp, r_src, key1  /  GETPROPC r_dst, r_tmp, key2
-/// → GETPROPC2 r_tmp, r_src, key1  /  (data: r_dst, key2) in next slot
-///
-/// This pass turns slot i+1 into a DATA WORD: the VM reads the second hop's
-/// destination register and key index out of it and skips past, so it is no
-/// longer a decodable instruction. Two invariants make that legal, and both are
-/// enforced here rather than assumed:
-///
-///  1. THE DATA SLOT MUST NOT BE A JUMP TARGET. Control arriving at i+1 from a
-///     branch never executed the GETPROPC2 at i, so it would decode a data word
-///     as an instruction. `jump_targets` is the shared bitset from
-///     `build_jump_targets` — the same predicate every other fusion pass uses.
-///     Measured over the test262 corpus this rejects nothing (33399 fusions
-///     fire, zero data slots are branch destinations), because the compiler
-///     emits both hops of a member expression as one unit with no statement
-///     boundary between them. The check is kept anyway: it costs no fusion, and
-///     the alternative is a silent miscompile the day a codegen change puts a
-///     label, loop head or join between the hops. Three bugs of exactly this
-///     shape (a pass rewriting i+1 while reasoning only about position) have
-///     been found in this file's neighbours.
-///
-///  2. THE INTERMEDIATE TEMP MAY BE READ LATER, and usually is. This pass does
-///     NOT check liveness of r_tmp and does not have to, because the GETPROPC2
-///     handler writes the hop-1 result back into r_tmp on EVERY exit path (see
-///     vm_property.c3, "store the intermediate result in ra"). That write-back
-///     is the invariant that makes ignoring liveness legal — it is not an
-///     optimization detail and must not be removed. It was once missing on the
-///     hop-2 Proxy path, which made `o.m.z()` with a proxied `o.m` invoke `z`
-///     with a stale `this`; test/getpropc2_proxy_chain.js pins that.
-///
-/// It runs AFTER NOP compaction, on final code, so slot indices here are the
-/// ones the VM will see; there is no later pass to invalidate them, and the
-/// bitset is built from that same final code.
+// Fuse consecutive GETPROPC pairs where output of first is input of second.
+// Pattern: GETPROPC r_tmp, r_src, key1  /  GETPROPC r_dst, r_tmp, key2
+// → GETPROPC2 r_tmp, r_src, key1  /  (data: r_dst, key2) in next slot
+//
+// This pass turns slot i+1 into a DATA WORD: the VM reads the second hop's
+// destination register and key index out of it and skips past, so it is no
+// longer a decodable instruction. Two invariants make that legal, and both are
+// enforced here rather than assumed:
+//
+//  1. THE DATA SLOT MUST NOT BE A JUMP TARGET. Control arriving at i+1 from a
+//     branch never executed the GETPROPC2 at i, so it would decode a data word
+//     as an instruction. `jump_targets` is the shared bitset from
+//     `build_jump_targets` — the same predicate every other fusion pass uses.
+//     Measured over the test262 corpus this rejects nothing (33399 fusions
+//     fire, zero data slots are branch destinations), because the compiler
+//     emits both hops of a member expression as one unit with no statement
+//     boundary between them. The check is kept anyway: it costs no fusion, and
+//     the alternative is a silent miscompile the day a codegen change puts a
+//     label, loop head or join between the hops. Three bugs of exactly this
+//     shape (a pass rewriting i+1 while reasoning only about position) have
+//     been found in this file's neighbours.
+//
+//  2. THE INTERMEDIATE TEMP MAY BE READ LATER, and usually is. This pass does
+//     NOT check liveness of r_tmp and does not have to, because the GETPROPC2
+//     handler writes the hop-1 result back into r_tmp on EVERY exit path (see
+//     vm_property.c3, "store the intermediate result in ra"). That write-back
+//     is the invariant that makes ignoring liveness legal — it is not an
+//     optimization detail and must not be removed. It was once missing on the
+//     hop-2 Proxy path, which made `o.m.z()` with a proxied `o.m` invoke `z`
+//     with a stale `this`; test/getpropc2_proxy_chain.js pins that.
+//
+// It runs AFTER NOP compaction, on final code, so slot indices here are the
+// ones the VM will see; there is no later pass to invalidate them, and the
+// bitset is built from that same final code.
 fn void fuse_getpropc_chains(CompiledFunction* f, bool* jump_targets) {
     if (f == null || f.code_count < 2) return;
 
@@ -82,8 +82,8 @@ fn void fuse_getpropc_chains(CompiledFunction* f, bool* jump_targets) {
 // Main peephole scan entry point
 // ============================================================================
 
-/// Run bytecode peephole optimizations on a compiled function.
-/// Called after compilation and before first execution.
+// Run bytecode peephole optimizations on a compiled function.
+// Called after compilation and before first execution.
 fn void peephole_scan(CompiledFunction* f, Heap* h) {
     if (f == null || f.code_count < 2) return;
 

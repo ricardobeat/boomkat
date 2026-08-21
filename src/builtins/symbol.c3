@@ -1,4 +1,4 @@
-/// Symbol constructor, global registry, and well-known symbols.
+// Symbol constructor, global registry, and well-known symbols.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::env;
@@ -11,19 +11,19 @@ import boomkat::hobject;
 // Symbol helpers
 // ============================================================================
 
-/// Symbol creation counter, incremented for each unique symbol to guarantee
-/// uniqueness even with identical descriptions.
+// Symbol creation counter, incremented for each unique symbol to guarantee
+// uniqueness even with identical descriptions.
 
-/// Create a new Symbol HString with 0xFF prefix byte.
-/// Symbols are NOT inserted into the string table (they are unique).
-///
-/// `has_desc` distinguishes `Symbol()` (no description, ES2019 §19.4.3.5
-/// returns undefined) from `Symbol("")` (an explicit empty-string
-/// description), both would otherwise encode identically as a bare 0xFF
-/// byte. When true, a 0x01 marker byte follows the 0xFF prefix, ahead of
-/// the (possibly zero-length) description bytes; symbol_description/
-/// symbol_has_description read it back. 0x01 can never collide with the
-/// 0xFF second byte that marks hidden symbols.
+// Create a new Symbol HString with 0xFF prefix byte.
+// Symbols are NOT inserted into the string table (they are unique).
+//
+// `has_desc` distinguishes `Symbol()` (no description, ES2019 §19.4.3.5
+// returns undefined) from `Symbol("")` (an explicit empty-string
+// description), both would otherwise encode identically as a bare 0xFF
+// byte. When true, a 0x01 marker byte follows the 0xFF prefix, ahead of
+// the (possibly zero-length) description bytes; symbol_description/
+// symbol_has_description read it back. 0x01 can never collide with the
+// 0xFF second byte that marks hidden symbols.
 fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) {
     // Build internal representation: 0xFF [0x01 marker if has_desc] + description
     // We add a counter suffix for uniqueness when description is empty
@@ -57,10 +57,10 @@ fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) 
     return null;
 }
 
-/// Create a new hidden Symbol HString with 0xFF 0xFF prefix.
-/// Hidden symbols back private class members: hstring_alloc's prefix
-/// detection sets is_symbol + is_hidden automatically, and enumeration
-/// paths filter them out. NOT inserted into the string table (unique).
+// Create a new hidden Symbol HString with 0xFF 0xFF prefix.
+// Hidden symbols back private class members: hstring_alloc's prefix
+// detection sets is_symbol + is_hidden automatically, and enumeration
+// paths filter them out. NOT inserted into the string table (unique).
 fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
     uint counter = heap.symbol_counter;
     heap.symbol_counter++;
@@ -87,24 +87,24 @@ fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
     return null;
 }
 
-/// Check if a TVal is a Symbol (STRING tag with is_symbol flag)
+// Check if a TVal is a Symbol (STRING tag with is_symbol flag)
 fn bool is_symbol_val(TVal val) {
     if (!val.is_string()) return false;
     HString* s = (HString*)val.get_heapptr();
     return s != null && s.is_symbol();
 }
 
-/// True if the Symbol was created with an explicit description (even an
-/// empty string), as opposed to `Symbol()` / `Symbol(undefined)` which has
-/// no description at all. See create_symbol_string for the encoding.
+// True if the Symbol was created with an explicit description (even an
+// empty string), as opposed to `Symbol()` / `Symbol(undefined)` which has
+// no description at all. See create_symbol_string for the encoding.
 fn bool symbol_has_description(HString* sym) {
     if (sym.blen <= 1) return false;
     char* ptr = sym.get_cstr();
     return (uint)(char)ptr[1] == 0x01;
 }
 
-/// Get the description bytes of a Symbol (everything after the 0xFF prefix
-/// and, if present, the has-description marker byte).
+// Get the description bytes of a Symbol (everything after the 0xFF prefix
+// and, if present, the has-description marker byte).
 fn char[] symbol_description(HString* sym) {
     if (sym.blen <= 1) return "";
     char* ptr = sym.get_cstr();
@@ -119,8 +119,8 @@ fn char[] symbol_description(HString* sym) {
 // Symbol global registry (Symbol.for / Symbol.keyFor)
 // ============================================================================
 
-/// Look up a key in the global symbol registry.
-/// Returns the registered symbol HString*, or null if not found.
+// Look up a key in the global symbol registry.
+// Returns the registered symbol HString*, or null if not found.
 fn HString* symbol_registry_get(Heap* heap, char[] key) {
     for (uint i = 0; i < heap.symbol_registry_count; i++) {
         HString* reg_key = heap.symbol_registry_keys[i];
@@ -136,7 +136,7 @@ fn HString* symbol_registry_get(Heap* heap, char[] key) {
     return null;
 }
 
-/// Register a key→symbol pair in the global registry.
+// Register a key→symbol pair in the global registry.
 fn bool symbol_registry_put(Heap* heap, char[] key, HString* sym) {
     uint count = heap.symbol_registry_count;
     uint cap = heap.symbol_registry_cap;
@@ -181,7 +181,7 @@ fn bool symbol_registry_put(Heap* heap, char[] key, HString* sym) {
     return true;
 }
 
-/// Reverse lookup: find key for a symbol in the registry.
+// Reverse lookup: find key for a symbol in the registry.
 fn HString* symbol_registry_get_key(Heap* heap, HString* sym) {
     for (uint i = 0; i < heap.symbol_registry_count; i++) {
         if (heap.symbol_registry_syms[i] == sym) {
@@ -191,11 +191,11 @@ fn HString* symbol_registry_get_key(Heap* heap, HString* sym) {
     return null;
 }
 
-/// Ensure the well-known @@toStringTag symbol exists.
-/// Returns the symbol HString* (usable as a property key).
-/// Well-known symbols are NOT in the global symbol registry per ES2020 §19.4,
-/// only symbols created by Symbol.for live there. Heap-level cache keeps it
-/// unique across the engine.
+// Ensure the well-known @@toStringTag symbol exists.
+// Returns the symbol HString* (usable as a property key).
+// Well-known symbols are NOT in the global symbol registry per ES2020 §19.4,
+// only symbols created by Symbol.for live there. Heap-level cache keeps it
+// unique across the engine.
 fn HString* ensure_tostringtag_symbol(Heap* heap) {
     if (heap.tostringtag_symbol != null) return heap.tostringtag_symbol;
     char[] desc = "Symbol.toStringTag";
@@ -206,11 +206,11 @@ fn HString* ensure_tostringtag_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@iterator symbol exists.
-/// Returns the symbol HString* (usable as a property key).
-/// Well-known symbols are NOT added to the global symbol registry per ES2020
-/// §19.4 (the registry only contains symbols created by Symbol.for); the
-/// heap-level cache (heap.iterator_symbol) is sufficient to keep them unique.
+// Ensure the well-known @@iterator symbol exists.
+// Returns the symbol HString* (usable as a property key).
+// Well-known symbols are NOT added to the global symbol registry per ES2020
+// §19.4 (the registry only contains symbols created by Symbol.for); the
+// heap-level cache (heap.iterator_symbol) is sufficient to keep them unique.
 fn HString* ensure_iterator_symbol(Heap* heap) {
     // Fast path: already cached on the heap
     if (heap.iterator_symbol != null) return heap.iterator_symbol;
@@ -222,8 +222,8 @@ fn HString* ensure_iterator_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@toPrimitive symbol exists.
-/// Returns the symbol HString* (usable as a property key).
+// Ensure the well-known @@toPrimitive symbol exists.
+// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_toprimitive_symbol(Heap* heap) {
     if (heap.toprimitive_symbol != null) return heap.toprimitive_symbol;
     char[] desc = "Symbol.toPrimitive";
@@ -234,8 +234,8 @@ fn HString* ensure_toprimitive_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@isConcatSpreadable symbol exists.
-/// Returns the symbol HString* (usable as a property key).
+// Ensure the well-known @@isConcatSpreadable symbol exists.
+// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_concatspreadable_symbol(Heap* heap) {
     if (heap.concatspreadable_symbol != null) return heap.concatspreadable_symbol;
     char[] desc = "Symbol.isConcatSpreadable";
@@ -246,8 +246,8 @@ fn HString* ensure_concatspreadable_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@hasInstance symbol exists.
-/// Returns the symbol HString* (usable as a property key).
+// Ensure the well-known @@hasInstance symbol exists.
+// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_hasinstance_symbol(Heap* heap) {
     if (heap.hasinstance_symbol != null) return heap.hasinstance_symbol;
     char[] desc = "Symbol.hasInstance";
@@ -258,8 +258,8 @@ fn HString* ensure_hasinstance_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@match symbol exists.
-/// Returns the symbol HString* (usable as a property key).
+// Ensure the well-known @@match symbol exists.
+// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_match_symbol(Heap* heap) {
     if (heap.match_symbol != null) return heap.match_symbol;
     char[] desc = "Symbol.match";
@@ -270,7 +270,7 @@ fn HString* ensure_match_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@search symbol exists.
+// Ensure the well-known @@search symbol exists.
 fn HString* ensure_search_symbol(Heap* heap) {
     if (heap.search_symbol != null) return heap.search_symbol;
     char[] desc = "Symbol.search";
@@ -281,7 +281,7 @@ fn HString* ensure_search_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@replace symbol exists.
+// Ensure the well-known @@replace symbol exists.
 fn HString* ensure_replace_symbol(Heap* heap) {
     if (heap.replace_symbol != null) return heap.replace_symbol;
     char[] desc = "Symbol.replace";
@@ -292,7 +292,7 @@ fn HString* ensure_replace_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@split symbol exists.
+// Ensure the well-known @@split symbol exists.
 fn HString* ensure_split_symbol(Heap* heap) {
     if (heap.split_symbol != null) return heap.split_symbol;
     char[] desc = "Symbol.split";
@@ -303,8 +303,8 @@ fn HString* ensure_split_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@species symbol exists.
-/// Returns the symbol HString* (usable as a property key).
+// Ensure the well-known @@species symbol exists.
+// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_species_symbol(Heap* heap) {
     if (heap.species_symbol != null) return heap.species_symbol;
     char[] desc = "Symbol.species";
@@ -315,8 +315,8 @@ fn HString* ensure_species_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@unscopables symbol exists.
-/// Returns the symbol HString* (usable as a property key).
+// Ensure the well-known @@unscopables symbol exists.
+// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_unscopables_symbol(Heap* heap) {
     if (heap.unscopables_symbol != null) return heap.unscopables_symbol;
     char[] desc = "Symbol.unscopables";
@@ -327,8 +327,8 @@ fn HString* ensure_unscopables_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@matchAll symbol exists.
-/// Returns the symbol HString* (usable as a property key).
+// Ensure the well-known @@matchAll symbol exists.
+// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_matchall_symbol(Heap* heap) {
     if (heap.matchall_symbol != null) return heap.matchall_symbol;
     char[] desc = "Symbol.matchAll";
@@ -339,8 +339,8 @@ fn HString* ensure_matchall_symbol(Heap* heap) {
     return sym;
 }
 
-/// Ensure the well-known @@asyncIterator symbol exists.
-/// Returns the symbol HString* (usable as a property key).
+// Ensure the well-known @@asyncIterator symbol exists.
+// Returns the symbol HString* (usable as a property key).
 fn HString* ensure_asynciterator_symbol(Heap* heap) {
     if (heap.asynciterator_symbol != null) return heap.asynciterator_symbol;
     char[] desc = "Symbol.asyncIterator";
@@ -451,8 +451,8 @@ fn void builtin_symbol_keyfor(BuiltinContext* ctx) {
     }
 }
 
-/// Symbol.prototype.description getter, ES2019 §19.4.3.5
-/// Returns the description string of the Symbol, or undefined.
+// Symbol.prototype.description getter, ES2019 §19.4.3.5
+// Returns the description string of the Symbol, or undefined.
 fn void builtin_symbol_proto_description_get(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HString* sym = null;
@@ -578,11 +578,11 @@ fn void builtin_symbol_proto_valueOf(BuiltinContext* ctx) {
     builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Symbol.prototype.valueOf called on non-Symbol");
 }
 
-/// True if Symbol.prototype[Symbol.toPrimitive] is still the original
-/// built-in method (not redefined/removed). Lets to_primitive_value's
-/// Symbol-wrapper fast path (which unwraps directly, matching what this
-/// method always does regardless of hint) confirm it's actually safe to
-/// skip the call rather than assuming so unconditionally.
+// True if Symbol.prototype[Symbol.toPrimitive] is still the original
+// built-in method (not redefined/removed). Lets to_primitive_value's
+// Symbol-wrapper fast path (which unwraps directly, matching what this
+// method always does regardless of hint) confirm it's actually safe to
+// skip the call rather than assuming so unconditionally.
 fn bool symbol_proto_toprimitive_is_original(Heap* heap) {
     if (heap.symbol_proto == null || heap.toprimitive_symbol == null) return false;
     TVal? val = heap.symbol_proto.get_prop_proto(heap.toprimitive_symbol, heap);

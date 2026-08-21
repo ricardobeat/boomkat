@@ -12,7 +12,7 @@ import std::io;
 // Helpers
 // ============================================================================
 
-/// Compare two char slices for equality.
+// Compare two char slices for equality.
 fn bool str_eq(char[] a, char[] b) {
     if (a.len != b.len) {
         return false;
@@ -28,7 +28,7 @@ fn bool str_eq(char[] a, char[] b) {
     return true;
 }
 
-/// True for `=` and every compound assignment operator (`+=` … `??=`).
+// True for `=` and every compound assignment operator (`+=` … `??=`).
 fn bool token_is_assignment_op(TokenType tt) {
     switch (tt) {
         case TokenType.ASSIGN:
@@ -84,7 +84,7 @@ fn int get_binary_precedence(TokenType tt) {
     }
 }
 
-/// Map a binary operator token type to the corresponding bytecode opcode.
+// Map a binary operator token type to the corresponding bytecode opcode.
 fn Opcode token_to_binary_opcode(TokenType tt) {
     switch (tt) {
         case TokenType.PLUS:        return Opcode.ADD;

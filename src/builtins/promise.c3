@@ -1,4 +1,4 @@
-/// Promise constructor, Promise.prototype methods, and microtask integration.
+// Promise constructor, Promise.prototype methods, and microtask integration.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::hstring;
@@ -14,20 +14,20 @@ import boomkat::vm;
 // Promise helpers (ES6 §25.4)
 // ============================================================================
 
-/// The [[PromiseState]] values, declared alongside the field they occupy in
-/// hobject.c3 so heap.c3's rejection tracking can name them too.
+// The [[PromiseState]] values, declared alongside the field they occupy in
+// hobject.c3 so heap.c3's rejection tracking can name them too.
 const uint PROMISE_PENDING   = hobject::PROMISE_PENDING;
 const uint PROMISE_FULFILLED = hobject::PROMISE_FULFILLED;
 const uint PROMISE_REJECTED  = hobject::PROMISE_REJECTED;
 
-/// Hidden property keys for Promise internals.
-/// Leading \xFF makes them inaccessible to user code (no way to spell that
-/// byte in ECMAScript string literals).
+// Hidden property keys for Promise internals.
+// Leading \xFF makes them inaccessible to user code (no way to spell that
+// byte in ECMAScript string literals).
 const char[] PROMISE_REACTION_NEXT_KEY = "\xFFpromise_reaction_next";
 
-/// Initialize the HObjectPromise extra fields for a freshly-allocated
-/// Promise object.  Called once on allocation (covers both user-facing
-/// Promise instances and Promise.prototype itself).
+// Initialize the HObjectPromise extra fields for a freshly-allocated
+// Promise object.  Called once on allocation (covers both user-facing
+// Promise instances and Promise.prototype itself).
 fn void promise_init(HObject* promise) {
     if (promise == null) return;
     (*promise.extra_ptr()).promise.state = PROMISE_PENDING;
@@ -38,19 +38,19 @@ fn void promise_init(HObject* promise) {
     (*promise.extra_ptr()).promise.in_reject_list = false;
 }
 
-/// Get the promise state from HObjectExtra.promise.state.
+// Get the promise state from HObjectExtra.promise.state.
 fn uint promise_get_state(HObject* promise, uint default_state) {
     if (promise == null) return default_state;
     return (*promise.extra_ptr()).promise.state;
 }
 
-/// Settle a Promise in one shot: state + result + refcounting.
-/// No-op if the promise is already settled.
-///
-/// A rejection with no reaction attached yet is recorded on the heap's
-/// unhandled list. Recording is not reporting: a handler attached later in the
-/// same tick still un-marks it, and only what survives to the end of the
-/// microtask drain reaches the host's tracker.
+// Settle a Promise in one shot: state + result + refcounting.
+// No-op if the promise is already settled.
+//
+// A rejection with no reaction attached yet is recorded on the heap's
+// unhandled list. Recording is not reporting: a handler attached later in the
+// same tick still un-marks it, and only what survives to the end of the
+// microtask drain reaches the host's tracker.
 fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
     if (promise == null) return;
     if ((*promise.extra_ptr()).promise.state != PROMISE_PENDING) return;
@@ -61,12 +61,12 @@ fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
     }
 }
 
-/// Get the promise's resolved value / rejection reason.
+// Get the promise's resolved value / rejection reason.
 fn TVal promise_get_result(HObject* promise) {
     return (*promise.extra_ptr()).promise.result;
 }
 
-/// Get the "next" pointer in the reaction linked list.
+// Get the "next" pointer in the reaction linked list.
 fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
     if (reaction == null) return null;
     HString* key = builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY);
@@ -79,7 +79,7 @@ fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
     return null;
 }
 
-/// Set the "next" pointer in the reaction linked list.
+// Set the "next" pointer in the reaction linked list.
 fn void reaction_set_next(HObject* reaction, HObject* next, Heap* heap) {
     if (reaction == null) return;
     HString* key = builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY);
@@ -93,7 +93,7 @@ fn void reaction_set_next(HObject* reaction, HObject* next, Heap* heap) {
     reaction.put_prop(key, nv, hobject::PROP_FLAGS_WEC, heap);
 }
 
-/// Check that `this` is a Promise object.
+// Check that `this` is a Promise object.
 fn HObject* check_promise(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_object() && this_val.get_heapptr() != null) {
@@ -104,8 +104,8 @@ fn HObject* check_promise(BuiltinContext* ctx) {
     return null;
 }
 
-/// Call a capability resolve or reject function with a single value.
-/// Used for custom-constructor then() chains.
+// Call a capability resolve or reject function with a single value.
+// Used for custom-constructor then() chains.
 fn void promise_call_cap_fn(Heap* heap, void* vm, TVal cap_fn, TVal val) {
     if (heap.call_fn == null || vm == null) return;
     bool callable = cap_fn.is_lightfunc() ||
@@ -120,10 +120,10 @@ fn void promise_call_cap_fn(Heap* heap, void* vm, TVal cap_fn, TVal val) {
     if (heap.has_error) promise_clear_error_channels(heap, vm);
 }
 
-/// Build a capability-wrapper object for use as the `downstream` slot of a
-/// microtask queue entry.  The wrapper carries cap_resolve and cap_reject so
-/// promise_microtask_after can call them instead of directly settling a PROMISE.
-/// The plain `promise` field records the result-promise for reference.
+// Build a capability-wrapper object for use as the `downstream` slot of a
+// microtask queue entry.  The wrapper carries cap_resolve and cap_reject so
+// promise_microtask_after can call them instead of directly settling a PROMISE.
+// The plain `promise` field records the result-promise for reference.
 fn HObject*? promise_make_cap_wrapper(Heap* heap, TVal cap_resolve, TVal cap_reject, TVal cap_promise) {
     HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) return null;
@@ -138,9 +138,9 @@ fn HObject*? promise_make_cap_wrapper(Heap* heap, TVal cap_resolve, TVal cap_rej
     return w;
 }
 
-/// Trigger all pending reactions for a settled promise.  Reactions are
-/// detached from the promise's linked list before invocation, so new
-/// reactions added during a handler call don't re-trigger this promise.
+// Trigger all pending reactions for a settled promise.  Reactions are
+// detached from the promise's linked list before invocation, so new
+// reactions added during a handler call don't re-trigger this promise.
 fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
     uint state = promise_get_state(promise, PROMISE_PENDING);
     if (state == PROMISE_PENDING) return;
@@ -247,19 +247,19 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
     }
 }
 
-/// PromiseReactionJob's Identity closure, the substitute handler for a
-/// fulfilled reaction with no onFulfilled: returns the argument unchanged,
-/// so the downstream is fulfilled with the same value (ES2015+ §27.2.2.1).
+// PromiseReactionJob's Identity closure, the substitute handler for a
+// fulfilled reaction with no onFulfilled: returns the argument unchanged,
+// so the downstream is fulfilled with the same value (ES2015+ §27.2.2.1).
 fn void builtin_promise_identity(BuiltinContext* ctx) {
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
     *ctx.result = arg;
 }
 
-/// PromiseReactionJob's Thrower closure, the substitute handler for a
-/// rejected reaction with no onRejected: re-throws the argument, so
-/// promise_microtask_after sees heap.has_error and rejects the downstream
-/// with the same reason (ES2015+ §27.2.2.1).
+// PromiseReactionJob's Thrower closure, the substitute handler for a
+// rejected reaction with no onRejected: re-throws the argument, so
+// promise_microtask_after sees heap.has_error and rejects the downstream
+// with the same reason (ES2015+ §27.2.2.1).
 fn void builtin_promise_thrower(BuiltinContext* ctx) {
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
@@ -267,12 +267,12 @@ fn void builtin_promise_thrower(BuiltinContext* ctx) {
     ctx.throw_value = arg;
 }
 
-/// Microtask completion callback, resolves the downstream promise with the
-/// Make `downstream` adopt the state of native Promise `source` (Promise
-/// Resolution Procedure for a native promise). If `source` is already settled,
-/// settle `downstream` with the same state/result now. If still pending, attach
-/// a handler-less pass-through reaction so `downstream` settles when `source`
-/// does. Both promises must be ObjClass.PROMISE.
+// Microtask completion callback, resolves the downstream promise with the
+// Make `downstream` adopt the state of native Promise `source` (Promise
+// Resolution Procedure for a native promise). If `source` is already settled,
+// settle `downstream` with the same state/result now. If still pending, attach
+// a handler-less pass-through reaction so `downstream` settles when `source`
+// does. Both promises must be ObjClass.PROMISE.
 fn void promise_adopt_native(Heap* heap, void* vm, HObject* source, HObject* downstream) {
     if (source == null || downstream == null) return;
     if (promise_get_state(downstream, PROMISE_PENDING) != PROMISE_PENDING) return;
@@ -305,12 +305,12 @@ fn void promise_adopt_native(Heap* heap, void* vm, HObject* source, HObject* dow
     promise_add_reaction(source, rxn, heap);
 }
 
-/// handler's return value.  Registered as heap.microtask_after_fn during init.
-///
-/// `downstream` is either:
-///  - A PROMISE object (default path): directly settled.
-///  - A capability wrapper OBJECT (custom-constructor path): has
-///    \xFFcap_resolve_tv / \xFFcap_reject_tv, call them instead.
+// handler's return value.  Registered as heap.microtask_after_fn during init.
+//
+// `downstream` is either:
+//  - A PROMISE object (default path): directly settled.
+//  - A capability wrapper OBJECT (custom-constructor path): has
+//    \xFFcap_resolve_tv / \xFFcap_reject_tv, call them instead.
 fn void promise_microtask_after(void* heap_raw, void* vm, TVal result, TVal downstream) {
     Heap* heap = (Heap*)heap_raw;
     if (!downstream.is_object() || downstream.get_heapptr() == null) return;
@@ -365,18 +365,18 @@ fn void promise_microtask_after(void* heap_raw, void* vm, TVal result, TVal down
     promise_resolve_with_value(ds, result, heap, vm);
 }
 
-/// Resolve `promise` with `value` per the Promise Resolve Function's
-/// [[Resolve]] procedure, ES6 §25.4.1.3.2 steps 7-13:
-///   7. If SameValue(resolution, promise) → reject with a self-resolution
-///      TypeError.
-///   8. If Type(resolution) is not Object → fulfill with resolution.
-///   9-12. Look up resolution.then; if that throw, reject with the error.
-///   10. If not callable → fulfill with resolution.
-///   12. Otherwise enqueue a resolve-thenable job that calls
-///       then.call(resolution, resolve, reject).
-/// Per spec, even a native Promise `resolution` goes through the generic
-/// `.then` lookup (its `.then` may have been overridden by user code) rather
-/// than being fast-path adopted.
+// Resolve `promise` with `value` per the Promise Resolve Function's
+// [[Resolve]] procedure, ES6 §25.4.1.3.2 steps 7-13:
+//   7. If SameValue(resolution, promise) → reject with a self-resolution
+//      TypeError.
+//   8. If Type(resolution) is not Object → fulfill with resolution.
+//   9-12. Look up resolution.then; if that throw, reject with the error.
+//   10. If not callable → fulfill with resolution.
+//   12. Otherwise enqueue a resolve-thenable job that calls
+//       then.call(resolution, resolve, reject).
+// Per spec, even a native Promise `resolution` goes through the generic
+// `.then` lookup (its `.then` may have been overridden by user code) rather
+// than being fast-path adopted.
 fn void promise_resolve_with_value(HObject* promise, TVal value, Heap* heap, void* vm) {
     if (promise == null) return;
     // Guard: this reads/writes the HObjectExtra.promise union member, which is
@@ -426,14 +426,14 @@ fn void promise_resolve_with_value(HObject* promise, TVal value, Heap* heap, voi
     promise_trigger_reactions(promise, heap, vm);
 }
 
-/// PromiseResolve(%Promise%, value), ES2017 §25.4.4.5, specialised for the
-/// default Promise constructor (the only constructor Await ever uses, per
-/// §27.7.5.3 Await). Performs the observable `Get(value, "constructor")`
-/// lookup when value is already a Promise (returning it unchanged if the
-/// constructor is %Promise%), otherwise creates a fresh Promise and resolves
-/// it with value via the ordinary Resolve procedure. Errors (a throwing
-/// `constructor` getter) are reported through heap.has_error/heap.error_value,
-/// matching the other heap-error-channel helpers in this file.
+// PromiseResolve(%Promise%, value), ES2017 §25.4.4.5, specialised for the
+// default Promise constructor (the only constructor Await ever uses, per
+// §27.7.5.3 Await). Performs the observable `Get(value, "constructor")`
+// lookup when value is already a Promise (returning it unchanged if the
+// constructor is %Promise%), otherwise creates a fresh Promise and resolves
+// it with value via the ordinary Resolve procedure. Errors (a throwing
+// `constructor` getter) are reported through heap.has_error/heap.error_value,
+// matching the other heap-error-channel helpers in this file.
 fn HObject*? promise_resolve_default_ctor(Heap* heap, void* vm, TVal value) {
     if (value.is_object() && value.get_heapptr() != null) {
         HObject* value_obj = (HObject*)value.get_heapptr();
@@ -545,8 +545,8 @@ struct PromiseCapability {
     HObject* promise;
 }
 
-/// Allocate a tiny "cell" object used to share [[AlreadyCalled]] between
-/// resolve and reject.  The cell carries one boolean property.
+// Allocate a tiny "cell" object used to share [[AlreadyCalled]] between
+// resolve and reject.  The cell carries one boolean property.
 fn HObject* promise_new_already_cell(Heap* heap) {
     HObject*? cell_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = cell_raw) return null;
@@ -559,7 +559,7 @@ fn HObject* promise_new_already_cell(Heap* heap) {
     return cell;
 }
 
-/// Read the [[AlreadyCalled]] flag.
+// Read the [[AlreadyCalled]] flag.
 fn bool promise_already_called(HObject* cell, Heap* heap) {
     if (cell == null) return false;
     HString* k = builtin_intern_string(heap, "\xFFalreadyResolved");
@@ -570,8 +570,8 @@ fn bool promise_already_called(HObject* cell, Heap* heap) {
     return false;
 }
 
-/// Mark the capability as having been used, once any of resolve/reject
-/// fires, subsequent calls must be ignored per ES6 §25.4.1.6.
+// Mark the capability as having been used, once any of resolve/reject
+// fires, subsequent calls must be ignored per ES6 §25.4.1.6.
 fn void promise_mark_already_called(HObject* cell, Heap* heap) {
     if (cell == null) return;
     HString* k = builtin_intern_string(heap, "\xFFalreadyResolved");
@@ -581,12 +581,12 @@ fn void promise_mark_already_called(HObject* cell, Heap* heap) {
     cell.put_prop(k, v, hobject::PROP_FLAGS_WEC, heap);
 }
 
-/// Build the resolve/reject callback pair for a freshly created Promise.
-/// Per ES2015 §25.4.1.5 / §25.6.1.x: resolve and reject are JS functions
-/// with length=1, name="", and an internal reference back to `promise` via
-/// the hidden \xFFpromise property.  They share a single [[AlreadyCalled]]
-/// flag so the executor calling resolve(x); reject(y) is a no-op per spec.
-/// Returns null fields on allocation failure.
+// Build the resolve/reject callback pair for a freshly created Promise.
+// Per ES2015 §25.4.1.5 / §25.6.1.x: resolve and reject are JS functions
+// with length=1, name="", and an internal reference back to `promise` via
+// the hidden \xFFpromise property.  They share a single [[AlreadyCalled]]
+// flag so the executor calling resolve(x); reject(y) is a no-op per spec.
+// Returns null fields on allocation failure.
 fn PromiseCapability promise_new_capability(Heap* heap, HObject* promise) {
     HObject* cell = promise_new_already_cell(heap);
     if (cell == null) {
@@ -645,7 +645,7 @@ fn PromiseCapability promise_new_capability(Heap* heap, HObject* promise) {
     return { .resolve_func = resolve_func, .reject_func = reject_func, .promise = promise };
 }
 
-/// Create a new pending Promise.
+// Create a new pending Promise.
 fn HObject*? promise_create(Heap* heap) {
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = prom_raw) return null;
@@ -655,10 +655,10 @@ fn HObject*? promise_create(Heap* heap) {
     return prom;
 }
 
-/// Allocate a synthetic-executor function object.  The executor carries the
-/// given `hole` object via its \xFFhole hidden prop.  When called as
-/// `executor(resolve, reject)`, builtin_promise_synthetic_executor copies
-/// resolve/reject into the hole under \xFFcap_resolve_tv / \xFFcap_reject_tv.
+// Allocate a synthetic-executor function object.  The executor carries the
+// given `hole` object via its \xFFhole hidden prop.  When called as
+// `executor(resolve, reject)`, builtin_promise_synthetic_executor copies
+// resolve/reject into the hole under \xFFcap_resolve_tv / \xFFcap_reject_tv.
 fn HObject*? promise_create_synthetic_executor(Heap* heap, HObject* hole) {
     HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = fn_raw) return null;
@@ -686,11 +686,11 @@ fn HObject*? promise_create_synthetic_executor(Heap* heap, HObject* hole) {
     return fn_obj;
 }
 
-/// NewPromiseCapability(C), ES6 §25.4.1.6.  Returns {resolve_tv, reject_tv}
-/// where resolve_tv is the resolve function passed to `new C(executor)`.  When
-/// C is the default Promise or construct_fn is unavailable we fall back to
-/// builtin resolve/reject.  Hole is mutated to receive cap_resolve_tv and
-/// cap_reject_tv after the construct call.  Returns false if any step fails.
+// NewPromiseCapability(C), ES6 §25.4.1.6.  Returns {resolve_tv, reject_tv}
+// where resolve_tv is the resolve function passed to `new C(executor)`.  When
+// C is the default Promise or construct_fn is unavailable we fall back to
+// builtin resolve/reject.  Hole is mutated to receive cap_resolve_tv and
+// cap_reject_tv after the construct call.  Returns false if any step fails.
 fn bool promise_new_capability_full(Heap* heap, void* vm, TVal c_tv, HObject* hole) {
     TVal undef; undef.set_undefined();
     // Default Promise constructor: build internal capability.
@@ -777,8 +777,8 @@ fn bool promise_new_capability_full(Heap* heap, void* vm, TVal c_tv, HObject* ho
     return true;
 }
 
-/// Read back the promise TVal stored by NewPromiseCapability (the object
-/// returned by Construct(C, [executor]) or by promise_create for default C).
+// Read back the promise TVal stored by NewPromiseCapability (the object
+// returned by Construct(C, [executor]) or by promise_create for default C).
 fn TVal promise_hole_get_promise(Heap* heap, HObject* hole) {
     TVal p; p.set_undefined();
     if (hole == null) return p;
@@ -788,7 +788,7 @@ fn TVal promise_hole_get_promise(Heap* heap, HObject* hole) {
     return p;
 }
 
-/// Read back the resolve TVal stored by NewPromiseCapability.
+// Read back the resolve TVal stored by NewPromiseCapability.
 fn TVal promise_hole_get_resolve(Heap* heap, HObject* hole) {
     TVal r; r.set_undefined();
     if (hole == null) return r;
@@ -798,7 +798,7 @@ fn TVal promise_hole_get_resolve(Heap* heap, HObject* hole) {
     return r;
 }
 
-/// Read back the reject TVal stored by NewPromiseCapability.
+// Read back the reject TVal stored by NewPromiseCapability.
 fn TVal promise_hole_get_reject(Heap* heap, HObject* hole) {
     TVal j; j.set_undefined();
     if (hole == null) return j;
@@ -808,18 +808,18 @@ fn TVal promise_hole_get_reject(Heap* heap, HObject* hole) {
     return j;
 }
 
-/// Throw a TypeError into a builtin's ctx for an incomplete PromiseCapability.
-/// Used by combinators (Promise.all, Promise.race, Promise.any, …
-/// Promise.allSettled) when NewPromiseCapability fails, per ES6 §25.4.4.x
-/// the algorithm returns IfAbrupt (TypeError) when the capability is invalid.
+// Throw a TypeError into a builtin's ctx for an incomplete PromiseCapability.
+// Used by combinators (Promise.all, Promise.race, Promise.any, …
+// Promise.allSettled) when NewPromiseCapability fails, per ES6 §25.4.4.x
+// the algorithm returns IfAbrupt (TypeError) when the capability is invalid.
 fn void promise_capability_incomplete_throw(BuiltinContext* ctx) {
     builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Promise capability not initialized by constructor");
 }
 
-/// Re-throw an abrupt error stashed on a PromiseCapability hole from
-/// `promise_new_capability_full`'s Construct() path. Used by combinator-style
-/// call sites (Promise.resolve.call, etc.) that need to surface the user's
-/// actual exception instead of a generic TypeError.
+// Re-throw an abrupt error stashed on a PromiseCapability hole from
+// `promise_new_capability_full`'s Construct() path. Used by combinator-style
+// call sites (Promise.resolve.call, etc.) that need to surface the user's
+// actual exception instead of a generic TypeError.
 fn bool promise_rethrow_stored_abort(BuiltinContext* ctx, HObject* hole) {
     if (hole == null) return false;
     HString* err_key = builtin_intern_string(ctx.heap, "\xFFcap_aborterror");
@@ -834,16 +834,16 @@ fn bool promise_rethrow_stored_abort(BuiltinContext* ctx, HObject* hole) {
     return true;
 }
 
-/// Throw the right error for an incomplete PromiseCapability, prefer the
-/// user's actual exception (stashed on the hole by `promise_new_capability_full`)
-/// over the generic TypeError. Returns true once the throw flag is set.
+// Throw the right error for an incomplete PromiseCapability, prefer the
+// user's actual exception (stashed on the hole by `promise_new_capability_full`)
+// over the generic TypeError. Returns true once the throw flag is set.
 fn bool promise_throw_capability_failure(BuiltinContext* ctx, HObject* hole) {
     if (promise_rethrow_stored_abort(ctx, hole)) return true;
     promise_capability_incomplete_throw(ctx);
     return true;
 }
 
-/// Append a reaction HObject to the promise's reaction linked list.
+// Append a reaction HObject to the promise's reaction linked list.
 fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
     if (promise == null || reaction == null) return;
     // Every route that observes a promise lands here: then/catch/finally, the
@@ -950,7 +950,7 @@ fn void builtin_promise(BuiltinContext* ctx) {
 // Promise[Symbol.species] getter, ES6 §27.2.4.6
 // ============================================================================
 
-/// Promise[Symbol.species] getter: returns `this` (the constructor).
+// Promise[Symbol.species] getter: returns `this` (the constructor).
 fn void builtin_promise_species_getter(BuiltinContext* ctx) {
     *ctx.result = ctx.regs[ctx.base_reg - 1];
 }
@@ -959,8 +959,8 @@ fn void builtin_promise_species_getter(BuiltinContext* ctx) {
 // Promise.prototype.then(onFulfilled, onRejected), ES6 §25.4.5.3
 // ============================================================================
 
-/// Set heap.has_error to a new TypeError with the given message.
-/// Used by SpeciesConstructor to signal abrupt completions.
+// Set heap.has_error to a new TypeError with the given message.
+// Used by SpeciesConstructor to signal abrupt completions.
 fn void species_throw_typeerror(Heap* heap, char[] msg) {
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
@@ -976,10 +976,10 @@ fn void species_throw_typeerror(Heap* heap, char[] msg) {
     }
 }
 
-/// SpeciesConstructor helper, ES6 §7.3.22
-/// Returns the constructor to use when creating derived objects.
-/// On TypeError (steps 5, 10), sets heap.has_error and returns null.
-/// On normal fallback-to-default, returns fallback_ctor without error.
+// SpeciesConstructor helper, ES6 §7.3.22
+// Returns the constructor to use when creating derived objects.
+// On TypeError (steps 5, 10), sets heap.has_error and returns null.
+// On normal fallback-to-default, returns fallback_ctor without error.
 fn HObject*? species_constructor(Heap* heap, void* vm, TVal o, HObject* fallback_ctor, HObject* fallback_proto) {
     // 1. Assert: Type(O) is Object.
     // 2. Let C = O.[[Get]]("constructor"), full Get semantics: an accessor
@@ -1028,18 +1028,18 @@ fn HObject*? species_constructor(Heap* heap, void* vm, TVal o, HObject* fallback
     return null;  // heap.has_error = true
 }
 
-/// Synthetic executor used by NewPromiseCapability(C) when C is a custom
-/// constructor.  The combinator passes a state HObject via the function's
-/// \xFFhole hidden prop; we copy resolve/reject (the args) into that state
-/// so the combinator can read them via cap_resolve/cap_reject later.  Per
-/// ES6 §25.4.1.6 the executor may call resolve/reject at any time, even
-/// after the function returns, we don't synchronously invoke anything here.
-///
-/// Implements ES6 §25.4.1.5.1 GetCapabilitiesExecutor Functions:
-///   1. If promiseCapability.[[Resolve]] is not undefined → throw TypeError.
-///   2. If promiseCapability.[[Reject]] is not undefined → throw TypeError.
-///   3. If resolve/reject non-callable → throw TypeError.
-///   4. Otherwise copy resolve/reject into the hole and return.
+// Synthetic executor used by NewPromiseCapability(C) when C is a custom
+// constructor.  The combinator passes a state HObject via the function's
+// \xFFhole hidden prop; we copy resolve/reject (the args) into that state
+// so the combinator can read them via cap_resolve/cap_reject later.  Per
+// ES6 §25.4.1.6 the executor may call resolve/reject at any time, even
+// after the function returns, we don't synchronously invoke anything here.
+//
+// Implements ES6 §25.4.1.5.1 GetCapabilitiesExecutor Functions:
+//   1. If promiseCapability.[[Resolve]] is not undefined → throw TypeError.
+//   2. If promiseCapability.[[Reject]] is not undefined → throw TypeError.
+//   3. If resolve/reject non-callable → throw TypeError.
+//   4. Otherwise copy resolve/reject into the hole and return.
 fn bool is_callable_tval(TVal v) {
     if (v.is_lightfunc()) return true;
     if (v.is_object() && v.get_heapptr() != null) {
@@ -1332,10 +1332,10 @@ fn void builtin_promise_proto_catch(BuiltinContext* ctx) {
 // Promise.prototype.finally(onFinally), ES2018 §25.4.5.3
 // ============================================================================
 
-/// Build a ThenFinally or CatchFinally wrapper function (ES2018 §27.2.5.3
-/// steps 4.a/4.b). Stores onFinally and the SpeciesConstructor C as hidden
-/// props so the wrapper handler can call onFinally() and, once its result
-/// settles, pass the original fulfillment value / rejection reason through.
+// Build a ThenFinally or CatchFinally wrapper function (ES2018 §27.2.5.3
+// steps 4.a/4.b). Stores onFinally and the SpeciesConstructor C as hidden
+// props so the wrapper handler can call onFinally() and, once its result
+// settles, pass the original fulfillment value / rejection reason through.
 fn HObject*? promise_make_finally_wrapper(Heap* heap, uint builtin_index, TVal on_finally, HObject* ctor) {
     HObject*? wrap_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = wrap_raw) return null;
@@ -1359,10 +1359,10 @@ fn HObject*? promise_make_finally_wrapper(Heap* heap, uint builtin_index, TVal o
     return wrap_fn;
 }
 
-/// PromiseResolve(C, x) abstract operation used by ThenFinally/CatchFinally.
-/// Unlike Promise.resolve(), this does not Get(C, "resolve").  In particular,
-/// when x is already a Promise whose constructor is C, it returns x directly
-/// without observably creating an extra PromiseCapability.
+// PromiseResolve(C, x) abstract operation used by ThenFinally/CatchFinally.
+// Unlike Promise.resolve(), this does not Get(C, "resolve").  In particular,
+// when x is already a Promise whose constructor is C, it returns x directly
+// without observably creating an extra PromiseCapability.
 fn bool promise_resolve_abstract(BuiltinContext* ctx, HObject* ctor, TVal value, TVal* out) {
     Heap* heap = ctx.heap;
     out.set_undefined();
@@ -1419,11 +1419,11 @@ fn bool promise_resolve_abstract(BuiltinContext* ctx, HObject* ctor, TVal value,
     return true;
 }
 
-/// Shared body for ThenFinally/CatchFinally (ES2018 §27.2.5.3 steps 4.a.i-4.a.vii):
-/// call onFinally() with no args; if it throws, propagate that throw as the
-/// wrapper's own completion. Otherwise PromiseResolve(C, result), and
-/// .then() a passthrough handler that returns `passthrough_value` (for
-/// ThenFinally) or re-throws it (for CatchFinally, is_reject=true).
+// Shared body for ThenFinally/CatchFinally (ES2018 §27.2.5.3 steps 4.a.i-4.a.vii):
+// call onFinally() with no args; if it throws, propagate that throw as the
+// wrapper's own completion. Otherwise PromiseResolve(C, result), and
+// .then() a passthrough handler that returns `passthrough_value` (for
+// ThenFinally) or re-throws it (for CatchFinally, is_reject=true).
 fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
     Heap* heap = ctx.heap;
     ctx.result.set_undefined();
@@ -1963,10 +1963,10 @@ fn void builtin_promise_try(BuiltinContext* ctx) {
 // Thenable coercion, ES6 Promise Resolution Procedure
 // ============================================================================
 
-/// Read `key` off `obj`, invoking an accessor getter (via heap.call_fn) if
-/// the property is one. Sets heap.has_error/heap.error_value and returns
-/// undefined if the getter throws, callers must check heap.has_error after
-/// calling this. Mirrors the pattern in object.c3's desc_get.
+// Read `key` off `obj`, invoking an accessor getter (via heap.call_fn) if
+// the property is one. Sets heap.has_error/heap.error_value and returns
+// undefined if the getter throws, callers must check heap.has_error after
+// calling this. Mirrors the pattern in object.c3's desc_get.
 fn TVal promise_get_prop_thru_accessor(Heap* heap, void* vm, HObject* obj, HString* key) {
     TVal out;
     out.set_undefined();
@@ -1985,11 +1985,11 @@ fn TVal promise_get_prop_thru_accessor(Heap* heap, void* vm, HObject* obj, HStri
     return heap.call_fn(vm, getter, null, 0, this_tv);
 }
 
-/// If `val` is an object with a callable `.then` method, enqueue a
-/// PromiseResolveThenableJob targeting `promise`. Returns true when a job was
-/// queued, or false for non-thenables / allocation failure. If reading `.then`
-/// throws (poisoned accessor), heap.has_error is set and false is returned;
-/// callers must check heap.has_error to distinguish that from "not thenable".
+// If `val` is an object with a callable `.then` method, enqueue a
+// PromiseResolveThenableJob targeting `promise`. Returns true when a job was
+// queued, or false for non-thenables / allocation failure. If reading `.then`
+// throws (poisoned accessor), heap.has_error is set and false is returned;
+// callers must check heap.has_error to distinguish that from "not thenable".
 fn bool promise_enqueue_thenable_job(Heap* heap, HObject* promise, TVal val, void* vm) {
     if (!val.is_object() || val.get_heapptr() == null) return false;
     HObject* obj = (HObject*)val.get_heapptr();
@@ -2043,11 +2043,11 @@ fn bool promise_enqueue_thenable_job(Heap* heap, HObject* promise, TVal val, voi
     return true;
 }
 
-/// Microtask handler for PromiseResolveThenableJob (ES6 §25.4.2.2). Reads
-/// the deferred then/resolution/resolve/reject off ctx.callee_obj's hidden
-/// slots and performs `then.call(resolution, resolve, reject)`. If that call
-/// throws, invokes `reject(error)`; the resolve/reject callbacks enforce their
-/// shared [[AlreadyResolved]] cell, so a throw after resolution is ignored.
+// Microtask handler for PromiseResolveThenableJob (ES6 §25.4.2.2). Reads
+// the deferred then/resolution/resolve/reject off ctx.callee_obj's hidden
+// slots and performs `then.call(resolution, resolve, reject)`. If that call
+// throws, invokes `reject(error)`; the resolve/reject callbacks enforce their
+// shared [[AlreadyResolved]] cell, so a throw after resolution is ignored.
 fn void builtin_promise_resolve_thenable_job(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     ctx.result.set_undefined();
@@ -2106,12 +2106,12 @@ fn void builtin_promise_resolve_thenable_job(BuiltinContext* ctx) {
 //   \xFFidx    , index in the result array (for all)
 // ============================================================================
 
-/// Create the shared state object for Promise.all / Promise.race tracking.
-/// `cap_resolve` and `cap_reject` are the capability's resolve/reject TVals;
+// Create the shared state object for Promise.all / Promise.race tracking.
+// `cap_resolve` and `cap_reject` are the capability's resolve/reject TVals;
 
-/// Invoke the capability's resolve or reject via call_fn if it is callable.
-/// Used by per-element callbacks after settling the outer promise to meet
-/// the spec's promiseCapability.[[Resolve]](valuesArray) requirement.
+// Invoke the capability's resolve or reject via call_fn if it is callable.
+// Used by per-element callbacks after settling the outer promise to meet
+// the spec's promiseCapability.[[Resolve]](valuesArray) requirement.
 fn void capability_invoke(Heap* heap, void* vm, HObject* state, TVal* val, bool is_resolve, TVal this_val) {
     if (state == null || heap.call_fn == null || vm == null) return;
     char[] key_name = is_resolve ? "\xFFcap_resolve" : "\xFFcap_reject";
@@ -2148,13 +2148,13 @@ fn void capability_invoke(Heap* heap, void* vm, HObject* state, TVal* val, bool 
     }
 }
 
-/// Create the shared state object for Promise.all / Promise.race tracking.
-/// `cap_resolve` and `cap_reject` are the capability's resolve/reject TVals;
-/// they are stored on the state so element callbacks can invoke the spec's
-/// promiseCapability.[[Resolve]](valuesArray) step when the outer promise
-/// settles.  Either may be the JS undefined when no constructor's resolve
-/// was looked up, in that case element callbacks just settle the outer
-/// directly without going through a callable.
+// Create the shared state object for Promise.all / Promise.race tracking.
+// `cap_resolve` and `cap_reject` are the capability's resolve/reject TVals;
+// they are stored on the state so element callbacks can invoke the spec's
+// promiseCapability.[[Resolve]](valuesArray) step when the outer promise
+// settles.  Either may be the JS undefined when no constructor's resolve
+// was looked up, in that case element callbacks just settle the outer
+// directly without going through a callable.
 fn HObject*? promise_create_all_state(Heap* heap, HObject* outer_promise, HObject* arr, usz initial_remaining,
                                       TVal cap_resolve, TVal cap_reject) {
     HObject*? state_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -2194,8 +2194,8 @@ fn HObject*? promise_create_all_state(Heap* heap, HObject* outer_promise, HObjec
     return state;
 }
 
-/// Create a per-element fulfill/reject callback function.  Carries the shared
-/// state and index via hidden properties.
+// Create a per-element fulfill/reject callback function.  Carries the shared
+// state and index via hidden properties.
 fn HObject*? promise_create_element_callback(Heap* heap, uint builtin_index, HObject* state, usz idx) {
     HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = fn_raw) return null;
@@ -2228,9 +2228,9 @@ fn HObject*? promise_create_element_callback(Heap* heap, uint builtin_index, HOb
     return cb;
 }
 
-/// Promise.all per-element fulfill handler (called via microtask).
-/// Stores the value at result[idx] and decrements the remaining counter;
-/// when it reaches zero, fulfills the outer promise with the result array.
+// Promise.all per-element fulfill handler (called via microtask).
+// Stores the value at result[idx] and decrements the remaining counter;
+// when it reaches zero, fulfills the outer promise with the result array.
 fn void builtin_promise_all_resolve_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
@@ -2342,9 +2342,9 @@ fn void builtin_promise_all_resolve_element(BuiltinContext* ctx) {
     }
 }
 
-/// Promise.all per-element reject handler (called via microtask).
-/// Rejects the outer promise on the first rejection (subsequent rejections
-/// are ignored per ES6 §25.4.4.1).
+// Promise.all per-element reject handler (called via microtask).
+// Rejects the outer promise on the first rejection (subsequent rejections
+// are ignored per ES6 §25.4.4.1).
 fn void builtin_promise_all_reject_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
@@ -2396,9 +2396,9 @@ fn void builtin_promise_all_reject_element(BuiltinContext* ctx) {
     }
 }
 
-/// Attach fulfill/reject element callbacks to a pending promise.  Used by
-/// Promise.all / Promise.race.  If the promise is already settled, fire
-/// the appropriate callback immediately.
+// Attach fulfill/reject element callbacks to a pending promise.  Used by
+// Promise.all / Promise.race.  If the promise is already settled, fire
+// the appropriate callback immediately.
 fn void promise_attach_element_callbacks(HObject* promise, HObject* fulfill_fn, HObject* reject_fn, Heap* heap, void* vm) {
     if (promise == null) return;
 
@@ -2449,9 +2449,9 @@ fn void promise_attach_element_callbacks(HObject* promise, HObject* fulfill_fn, 
 //   \xFFidx    , index in the result array
 // ============================================================================
 
-/// Promise.allSettled per-element fulfill handler.
-/// Creates {status: "fulfilled", value: x} at result[idx], decrements
-/// remaining, settles outer with the full array when remaining reaches 0.
+// Promise.allSettled per-element fulfill handler.
+// Creates {status: "fulfilled", value: x} at result[idx], decrements
+// remaining, settles outer with the full array when remaining reaches 0.
 fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
@@ -2559,9 +2559,9 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
     }
 }
 
-/// Promise.allSettled per-element reject handler.
-/// Creates {status: "rejected", reason: x} at result[idx], decrements
-/// remaining, settles outer when remaining reaches 0.
+// Promise.allSettled per-element reject handler.
+// Creates {status: "rejected", reason: x} at result[idx], decrements
+// remaining, settles outer when remaining reaches 0.
 fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
@@ -2677,8 +2677,8 @@ fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
 //   \xFFrejected   , "settled" flag (any fulfill wins immediately)
 // ============================================================================
 
-/// Promise.any per-element fulfill handler (first-fulfill-wins).
-/// Settles the outer promise with the value, ignoring subsequent events.
+// Promise.any per-element fulfill handler (first-fulfill-wins).
+// Settles the outer promise with the value, ignoring subsequent events.
 fn void builtin_promise_any_resolve_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
@@ -2728,9 +2728,9 @@ fn void builtin_promise_any_resolve_element(BuiltinContext* ctx) {
     }
 }
 
-/// Promise.any per-element reject handler.
-/// Stores reason in errors[idx], decrements remaining. If remaining hits 0,
-/// settle outer with an AggregateError(errors).
+// Promise.any per-element reject handler.
+// Stores reason in errors[idx], decrements remaining. If remaining hits 0,
+// settle outer with an AggregateError(errors).
 fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
@@ -2867,11 +2867,11 @@ fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
 // can propagate abrupt completions and close the iterator as required.
 // ============================================================================
 
-/// ES2021 §10.1.8 OrdinaryGet, Get(O, P) with full accessor-getter invocation.
-/// On success: *out is the property value and the function returns true.
-/// On failure (getter throws, allocation error): heap.has_error is set and
-/// the function returns false.  If the property does not exist, *out is set
-/// to undefined and the function returns true.
+// ES2021 §10.1.8 OrdinaryGet, Get(O, P) with full accessor-getter invocation.
+// On success: *out is the property value and the function returns true.
+// On failure (getter throws, allocation error): heap.has_error is set and
+// the function returns false.  If the property does not exist, *out is set
+// to undefined and the function returns true.
 fn bool promise_object_get(Heap* heap, void* vm, HObject* obj, HString* key, TVal* out) {
     out.set_undefined();
     if (obj == null || key == null) return true;
@@ -2901,9 +2901,9 @@ fn bool promise_object_get(Heap* heap, void* vm, HObject* obj, HString* key, TVa
     return true;
 }
 
-/// Call iterable[Symbol.iterator]() and return the resulting iterator object.
-/// On success *out_iter is the iterator and the function returns true.
-/// On failure heap.has_error is set and the function returns false.
+// Call iterable[Symbol.iterator]() and return the resulting iterator object.
+// On success *out_iter is the iterator and the function returns true.
+// On failure heap.has_error is set and the function returns false.
 fn bool promise_get_iterator(Heap* heap, void* vm, TVal iterable, TVal* out_iter) {
     HString* iter_sym = ensure_iterator_symbol(heap);
     if (iter_sym == null) return false;
@@ -2987,14 +2987,14 @@ fn bool promise_get_iterator(Heap* heap, void* vm, TVal iterable, TVal* out_iter
     return true;
 }
 
-/// Clear all error-propagation channels after a caller has captured
-/// `heap.error_value` into its own local completion. `heap.call_fn`
-/// propagates a callee's uncaught throw on three channels simultaneously
-/// (heap.has_error/heap.error_value, vm.throw_pending/vm.throw_value, and
-/// vm.has_error, see vm_call_fn_impl); clearing only some of them leaves
-/// the others to resurface as a spurious exception (e.g. the CALL opcode
-/// checking vm.has_error) the next time the interpreter or another
-/// reentrant heap.call_fn call runs after this builtin returns.
+// Clear all error-propagation channels after a caller has captured
+// `heap.error_value` into its own local completion. `heap.call_fn`
+// propagates a callee's uncaught throw on three channels simultaneously
+// (heap.has_error/heap.error_value, vm.throw_pending/vm.throw_value, and
+// vm.has_error, see vm_call_fn_impl); clearing only some of them leaves
+// the others to resurface as a spurious exception (e.g. the CALL opcode
+// checking vm.has_error) the next time the interpreter or another
+// reentrant heap.call_fn call runs after this builtin returns.
 fn void promise_clear_error_channels(Heap* heap, void* vm) {
     heap.has_error = false;
     Vm* v = (Vm*)vm;
@@ -3004,9 +3004,9 @@ fn void promise_clear_error_channels(Heap* heap, void* vm) {
     }
 }
 
-/// Call iterator.next() and return the result record.
-/// On success *out_result is the {done,value} object and the function returns true.
-/// On failure heap.has_error is set and the function returns false.
+// Call iterator.next() and return the result record.
+// On success *out_result is the {done,value} object and the function returns true.
+// On failure heap.has_error is set and the function returns false.
 fn bool promise_iterator_step(Heap* heap, void* vm, TVal iterator, TVal* out_result) {
     if (!iterator.is_object() || iterator.get_heapptr() == null) return false;
     HObject* iter_obj = (HObject*)iterator.get_heapptr();
@@ -3028,16 +3028,16 @@ fn bool promise_iterator_step(Heap* heap, void* vm, TVal iterator, TVal* out_res
     return true;
 }
 
-/// Call iterator.return() if present, swallowing any error (IteratorClose).
-/// The completion passed as argument is the abrupt completion to eventually
-/// surface, the iterator.return() result is ignored per spec.
-/// IteratorClose(iteratorRecord, completion), ES2022 §7.4.11.
-/// `completion` is the in-flight abrupt completion that triggered the close;
-/// when non-null it is updated in place if GetMethod(iterator, "return")
-/// itself throws (step 3/5: "if innerResult is a throw completion, return ?
-/// innerResult", replacing, not just accompanying, the original completion).
-/// A successful or non-existent return() leaves `completion` untouched and
-/// its own result/error is otherwise discarded, per spec.
+// Call iterator.return() if present, swallowing any error (IteratorClose).
+// The completion passed as argument is the abrupt completion to eventually
+// surface, the iterator.return() result is ignored per spec.
+// IteratorClose(iteratorRecord, completion), ES2022 §7.4.11.
+// `completion` is the in-flight abrupt completion that triggered the close;
+// when non-null it is updated in place if GetMethod(iterator, "return")
+// itself throws (step 3/5: "if innerResult is a throw completion, return ?
+// innerResult", replacing, not just accompanying, the original completion).
+// A successful or non-existent return() leaves `completion` untouched and
+// its own result/error is otherwise discarded, per spec.
 fn void promise_iterator_close(Heap* heap, void* vm, TVal iterator, TVal* completion = null) {
     if (!iterator.is_object() || iterator.get_heapptr() == null) return;
     HObject* iter_obj = (HObject*)iterator.get_heapptr();
@@ -3066,8 +3066,8 @@ fn void promise_iterator_close(Heap* heap, void* vm, TVal iterator, TVal* comple
     promise_clear_error_channels(heap, vm);
 }
 
-/// Reject the promise capability identified by `cap_reject_tv` with `reason`.
-/// Used by combinators to handle IfAbruptRejectPromise.
+// Reject the promise capability identified by `cap_reject_tv` with `reason`.
+// Used by combinators to handle IfAbruptRejectPromise.
 fn void promise_combinator_reject(Heap* heap, void* vm, TVal cap_reject_tv, TVal* reason) {
     if (cap_reject_tv.is_undefined()) return;
     bool callable = cap_reject_tv.is_lightfunc() ||
@@ -3080,16 +3080,16 @@ fn void promise_combinator_reject(Heap* heap, void* vm, TVal cap_reject_tv, TVal
     promise_clear_error_channels(heap, vm);
 }
 
-/// Invoke nextPromise.then(onFulfilled, onRejected) per spec step. When
-/// `single_argument` is true, omit onRejected entirely (used by finally's
-/// Invoke(promise, "then", « valueThunk/thrower »), where arguments.length is
-/// observable).
-/// Returns true on success; on failure sets heap.has_error. When `out_result`
-/// is non-null, receives the value returned by the `.then()` call itself
-/// (the newly created downstream promise), needed by callers whose own
-/// return value must be that promise (e.g. ThenFinally/CatchFinallyFunctions
-/// returning `? Invoke(promise, "then", « valueThunk »)` verbatim), as
-/// opposed to combinator callers that only care about success/failure.
+// Invoke nextPromise.then(onFulfilled, onRejected) per spec step. When
+// `single_argument` is true, omit onRejected entirely (used by finally's
+// Invoke(promise, "then", « valueThunk/thrower »), where arguments.length is
+// observable).
+// Returns true on success; on failure sets heap.has_error. When `out_result`
+// is non-null, receives the value returned by the `.then()` call itself
+// (the newly created downstream promise), needed by callers whose own
+// return value must be that promise (e.g. ThenFinally/CatchFinallyFunctions
+// returning `? Invoke(promise, "then", « valueThunk »)` verbatim), as
+// opposed to combinator callers that only care about success/failure.
 fn bool promise_invoke_then(Heap* heap, void* vm, TVal next_promise,
                              TVal on_fulfilled, TVal on_rejected, TVal* out_result = null,
                              bool single_argument = false) {
@@ -4172,19 +4172,19 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
 // Async/await resume and reject callbacks
 // ============================================================================
 
-/// Get the callable wrapper used to re-enter a suspended async body, creating
-/// it on first use and caching it on the GeneratorState.
-///
-/// The wrapper MUST NOT be a bare local: both callers hand control to a full VM
-/// execution and drop native_frame_depth to 0 first (correctly, the resumed
-/// body is not a nested builtin frame, and leaving the depth raised would
-/// suppress temproot clearing and string sweeping for the whole body). At depth
-/// 0 a safepoint GC inside the call clears temproots, so a wrapper protected
-/// only by its temproot is swept while the call is still dispatching through
-/// it. Caching on the gs makes it a real root, mark_generator_state marks it,
-/// and drops one allocation per resume.
-///
-/// Returns null only on allocation failure.
+// Get the callable wrapper used to re-enter a suspended async body, creating
+// it on first use and caching it on the GeneratorState.
+//
+// The wrapper MUST NOT be a bare local: both callers hand control to a full VM
+// execution and drop native_frame_depth to 0 first (correctly, the resumed
+// body is not a nested builtin frame, and leaving the depth raised would
+// suppress temproot clearing and string sweeping for the whole body). At depth
+// 0 a safepoint GC inside the call clears temproots, so a wrapper protected
+// only by its temproot is swept while the call is still dispatching through
+// it. Caching on the gs makes it a real root, mark_generator_state marks it,
+// and drops one allocation per resume.
+//
+// Returns null only on allocation failure.
 fn HObject* async_resume_wrapper(Heap* heap, GeneratorState* gs) {
     HObject* func_obj;
     if (gs.resume_wrapper != null) {
@@ -4204,9 +4204,9 @@ fn HObject* async_resume_wrapper(Heap* heap, GeneratorState* gs) {
     return func_obj;
 }
 
-/// Resume callback for async/await. Called as a microtask when a pending
-/// Promise settles with a fulfilled value.  Re-enters the suspended async
-/// function at the AWAIT point via the generator resume mechanism.
+// Resume callback for async/await. Called as a microtask when a pending
+// Promise settles with a fulfilled value.  Re-enters the suspended async
+// function at the AWAIT point via the generator resume mechanism.
 fn void builtin_async_resume(BuiltinContext* ctx) {
     // The GeneratorState was stashed in the function object's var_env field
     // by the AWAIT opcode handler.
@@ -4251,8 +4251,8 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
     *ctx.result = result;
 }
 
-/// Reject callback for async/await. Called when a pending Promise rejects.
-/// Injects the rejection reason as an exception into the suspended async function.
+// Reject callback for async/await. Called when a pending Promise rejects.
+// Injects the rejection reason as an exception into the suspended async function.
 fn void builtin_async_reject(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
     if (gs == null) { ctx.result.set_undefined(); return; }

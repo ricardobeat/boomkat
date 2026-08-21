@@ -1,24 +1,24 @@
-/// Array.fromAsync ( asyncItems [ , mapfn [ , thisArg ] ] ), from
-/// proposal-array-from-async, ratified for ES2026.
-///
-/// Returns a Promise that fulfills with a new array. Because this engine has
-/// no async generator functions (deferred, plan 060), the spec's async-function
-/// driver loop is implemented here as a *native promise state machine*: the
-/// synchronous prologue (validate mapfn, obtain the iterator, construct the
-/// result array) runs in `builtin_array_from_async`, which then kicks off the
-/// loop and returns the outer promise immediately. Every `Await` in the spec
-/// becomes a `PromiseResolve` + a pair of native reaction closures
-/// (`..._step_fulfill` / `..._map_fulfill` on fulfillment, `..._reject` on
-/// rejection) attached via `promise_attach_element_callbacks`. All loop state
-/// lives on a hidden "state" object referenced from each closure.
-///
-/// Two source shapes share one driver:
-///   * iterator path , @@asyncIterator, or @@iterator wrapped with
-///     CreateAsyncFromSyncIterator (the AsyncFromSync adapter already
-///     await-unwraps the value half, so the driver awaits only the next()
-///     result and the mapped value, never the raw value).
-///   * array-like path, per-index Get + Await of the element, then optional
-///     mapfn + Await, then CreateDataPropertyOrThrow.
+// Array.fromAsync ( asyncItems [ , mapfn [ , thisArg ] ] ), from
+// proposal-array-from-async, ratified for ES2026.
+//
+// Returns a Promise that fulfills with a new array. Because this engine has
+// no async generator functions (deferred, plan 060), the spec's async-function
+// driver loop is implemented here as a *native promise state machine*: the
+// synchronous prologue (validate mapfn, obtain the iterator, construct the
+// result array) runs in `builtin_array_from_async`, which then kicks off the
+// loop and returns the outer promise immediately. Every `Await` in the spec
+// becomes a `PromiseResolve` + a pair of native reaction closures
+// (`..._step_fulfill` / `..._map_fulfill` on fulfillment, `..._reject` on
+// rejection) attached via `promise_attach_element_callbacks`. All loop state
+// lives on a hidden "state" object referenced from each closure.
+//
+// Two source shapes share one driver:
+//   * iterator path , @@asyncIterator, or @@iterator wrapped with
+//     CreateAsyncFromSyncIterator (the AsyncFromSync adapter already
+//     await-unwraps the value half, so the driver awaits only the next()
+//     result and the mapped value, never the raw value).
+//   * array-like path, per-index Get + Await of the element, then optional
+//     mapfn + Await, then CreateDataPropertyOrThrow.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::hstring;
@@ -98,25 +98,25 @@ fn long afa_get_int(HObject* state, Heap* heap, char[] key) {
     return 0;
 }
 
-/// Read the driver state object off a reaction closure's callee.
+// Read the driver state object off a reaction closure's callee.
 fn HObject* afa_state_of(BuiltinContext* ctx) {
     if (ctx.callee_obj == null) return null;
     return afa_get_obj(ctx.callee_obj, ctx.heap, AFA_STATE_SLOT);
 }
 
-/// Clear any stale error channels on entry to a reaction closure.
-///
-/// These closures are attached in fulfill/reject pairs via
-/// promise_attach_element_callbacks. When the awaited promise is already
-/// *rejected*, promise_trigger_reactions still enqueues the fulfill reaction
-/// with the PROMISE_THROWER substitute handler; that thrower runs (as a
-/// microtask with an undefined downstream, so promise_microtask_after never
-/// consumes its abrupt completion) immediately before our reject reaction and
-/// leaves heap.has_error / vm.throw_pending set. Left uncleared, that stale
-/// channel resurfaces inside the *next* user handler drained from the queue
-/// (e.g. the caller's .then rejection handler), which then spuriously throws
-/// the reason. Clearing all three channels here absorbs the thrower's leak;
-/// our reactions communicate outcomes solely through the outer promise.
+// Clear any stale error channels on entry to a reaction closure.
+//
+// These closures are attached in fulfill/reject pairs via
+// promise_attach_element_callbacks. When the awaited promise is already
+// *rejected*, promise_trigger_reactions still enqueues the fulfill reaction
+// with the PROMISE_THROWER substitute handler; that thrower runs (as a
+// microtask with an undefined downstream, so promise_microtask_after never
+// consumes its abrupt completion) immediately before our reject reaction and
+// leaves heap.has_error / vm.throw_pending set. Left uncleared, that stale
+// channel resurfaces inside the *next* user handler drained from the queue
+// (e.g. the caller's .then rejection handler), which then spuriously throws
+// the reason. Clearing all three channels here absorbs the thrower's leak;
+// our reactions communicate outcomes solely through the outer promise.
 fn void afa_clear_stale_error(BuiltinContext* ctx) {
     promise_clear_error_channels(ctx.heap, ctx.vm);
 }
@@ -125,7 +125,7 @@ fn void afa_clear_stale_error(BuiltinContext* ctx) {
 // Closure construction
 // ---------------------------------------------------------------------------
 
-/// Allocate a native FUNCTION closure for builtin `idx`, carrying `state`.
+// Allocate a native FUNCTION closure for builtin `idx`, carrying `state`.
 fn HObject* afa_make_closure(Heap* heap, uint idx, HObject* state) {
     HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = fn_raw) return null;
@@ -138,9 +138,9 @@ fn HObject* afa_make_closure(Heap* heap, uint idx, HObject* state) {
     return cb;
 }
 
-/// Await(value): PromiseResolve(%Promise%, value) then attach the given
-/// fulfill/reject reaction closures. Models one spec `Await` step.
-/// On allocation failure, rejects the outer promise with a generic error.
+// Await(value): PromiseResolve(%Promise%, value) then attach the given
+// fulfill/reject reaction closures. Models one spec `Await` step.
+// On allocation failure, rejects the outer promise with a generic error.
 fn void afa_await(Heap* heap, void* vm, HObject* state, TVal value, uint fulfill_idx) {
     HObject* fulfill = afa_make_closure(heap, fulfill_idx, state);
     HObject* reject  = afa_make_closure(heap, Builtin.ARRAY_FROM_ASYNC_REJECT.ordinal, state);
@@ -183,8 +183,8 @@ fn void afa_reject_outer_alloc(Heap* heap, void* vm, HObject* state) {
     afa_reject_outer(heap, vm, state, te);
 }
 
-/// Build a RangeError value (without touching heap.has_error) for use as a
-/// rejection reason. Mirrors async_from_sync_type_error but for RangeError.
+// Build a RangeError value (without touching heap.has_error) for use as a
+// rejection reason. Mirrors async_from_sync_type_error but for RangeError.
 fn TVal afa_range_error(Heap* heap, char[] msg) {
     TVal out; out.set_undefined();
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
@@ -205,11 +205,11 @@ fn TVal afa_range_error(Heap* heap, char[] msg) {
 // Iterator close (on abrupt completion)
 // ---------------------------------------------------------------------------
 
-/// Best-effort IteratorClose / AsyncIteratorClose: call iterator.return() and
-/// discard its result. For the async path the adapter's return() yields a
-/// promise; we don't await it (the original rejection reason is what the outer
-/// promise settles with, and swallowing return()'s own errors matches the
-/// pragmatic behaviour of the sync close helper).
+// Best-effort IteratorClose / AsyncIteratorClose: call iterator.return() and
+// discard its result. For the async path the adapter's return() yields a
+// promise; we don't await it (the original rejection reason is what the outer
+// promise settles with, and swallowing return()'s own errors matches the
+// pragmatic behaviour of the sync close helper).
 fn void afa_close_iterator(Heap* heap, void* vm, HObject* state) {
     HObject* iter = afa_get_obj(state, heap, AFA_ITER_SLOT);
     if (iter == null) return;
@@ -470,8 +470,8 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
     afa_arraylike_step(heap, ctx.vm, state);
 }
 
-/// Move a ctx-recorded abrupt completion (ctx.should_throw/throw_value) onto
-/// the outer promise as a rejection. Used by the synchronous prologue.
+// Move a ctx-recorded abrupt completion (ctx.should_throw/throw_value) onto
+// the outer promise as a rejection. Used by the synchronous prologue.
 fn void afa_flush_ctx_throw_to_outer(BuiltinContext* ctx, HObject* outer) {
     TVal reason = ctx.throw_value;
     ctx.should_throw = false;
@@ -480,18 +480,18 @@ fn void afa_flush_ctx_throw_to_outer(BuiltinContext* ctx, HObject* outer) {
     promise_trigger_reactions(outer, ctx.heap, ctx.vm);
 }
 
-/// Prologue variant: builtin_throw (which set should_throw) also clobbered
-/// ctx.result to undefined, restore the outer promise so fromAsync still
-/// RETURNS the (now rejected) promise instead of undefined. Only valid for
-/// the real fromAsync BuiltinContext, not the driver's stack-local lctx.
+// Prologue variant: builtin_throw (which set should_throw) also clobbered
+// ctx.result to undefined, restore the outer promise so fromAsync still
+// RETURNS the (now rejected) promise instead of undefined. Only valid for
+// the real fromAsync BuiltinContext, not the driver's stack-local lctx.
 fn void afa_flush_prologue_throw(BuiltinContext* ctx, HObject* outer) {
     afa_flush_ctx_throw_to_outer(ctx, outer);
     ctx.result.set_object(outer);
 }
 
-/// Construct the result array A. When `with_len`, IsConstructor(C) receives
-/// «len». Returns null on allocation failure; sets ctx.should_throw if the
-/// constructor threw.
+// Construct the result array A. When `with_len`, IsConstructor(C) receives
+// «len». Returns null on allocation failure; sets ctx.should_throw if the
+// constructor threw.
 fn HObject* afa_construct_result(BuiltinContext* ctx, TVal c_val, bool with_len, ulong len) {
     Heap* heap = ctx.heap;
     HObject* arr = null;
@@ -527,9 +527,9 @@ fn HObject* afa_construct_result(BuiltinContext* ctx, TVal c_val, bool with_len,
 // Iterator-path driver
 // ---------------------------------------------------------------------------
 
-/// Call iterator.next() and Await its result (which lands in
-/// builtin_array_from_async_step_fulfill). On a synchronous throw from next(),
-/// reject the outer promise directly (no iterator to close, the step failed).
+// Call iterator.next() and Await its result (which lands in
+// builtin_array_from_async_step_fulfill). On a synchronous throw from next(),
+// reject the outer promise directly (no iterator to close, the step failed).
 fn void afa_iterator_step(Heap* heap, void* vm, HObject* state) {
     HObject* iter = afa_get_obj(state, heap, AFA_ITER_SLOT);
     TVal next_method = afa_get_tval(state, heap, AFA_NEXT_SLOT);
@@ -555,9 +555,9 @@ fn void afa_iterator_step(Heap* heap, void* vm, HObject* state) {
     afa_await(heap, vm, state, step_result, Builtin.ARRAY_FROM_ASYNC_STEP_FULFILL.ordinal);
 }
 
-/// Fulfill reaction for an awaited iterator step. The argument is the resolved
-/// iterator result object {value, done}. Reads done/value; if done, finalize
-/// (set length, resolve outer); else await the value's mapping/storage.
+// Fulfill reaction for an awaited iterator step. The argument is the resolved
+// iterator result object {value, done}. Reads done/value; if done, finalize
+// (set length, resolve outer); else await the value's mapping/storage.
 fn void builtin_array_from_async_step_fulfill(BuiltinContext* ctx) {
     ctx.result.set_undefined();
     afa_clear_stale_error(ctx);
@@ -607,8 +607,8 @@ fn void builtin_array_from_async_step_fulfill(BuiltinContext* ctx) {
     afa_process_value(ctx, state, value);
 }
 
-/// Given a (already-awaited, for the iterator path) value: apply mapfn if
-/// mapping (and await the mapped result), else store directly and advance.
+// Given a (already-awaited, for the iterator path) value: apply mapfn if
+// mapping (and await the mapped result), else store directly and advance.
 fn void afa_process_value(BuiltinContext* ctx, HObject* state, TVal value) {
     Heap* heap = ctx.heap;
     bool mapping = afa_get_bool(state, heap, "\xFFafa_mapping");
@@ -641,7 +641,7 @@ fn void afa_process_value(BuiltinContext* ctx, HObject* state, TVal value) {
     }
 }
 
-/// Fulfill reaction for an awaited mapped value. Store it, advance, loop.
+// Fulfill reaction for an awaited mapped value. Store it, advance, loop.
 fn void builtin_array_from_async_map_fulfill(BuiltinContext* ctx) {
     ctx.result.set_undefined();
     afa_clear_stale_error(ctx);
@@ -661,8 +661,8 @@ fn void builtin_array_from_async_map_fulfill(BuiltinContext* ctx) {
     }
 }
 
-/// CreateDataPropertyOrThrow(A, k, value); k++. Returns false (and rejects the
-/// outer promise, closing the iterator when async) on a store failure.
+// CreateDataPropertyOrThrow(A, k, value); k++. Returns false (and rejects the
+// outer promise, closing the iterator when async) on a store failure.
 fn bool afa_store_and_advance(BuiltinContext* ctx, HObject* state, TVal value) {
     Heap* heap = ctx.heap;
     HObject* arr = afa_get_obj(state, heap, AFA_ARR_SLOT);
@@ -677,15 +677,15 @@ fn bool afa_store_and_advance(BuiltinContext* ctx, HObject* state, TVal value) {
     return true;
 }
 
-/// CreateDataPropertyOrThrow(arr, key, value), ES2022 §7.3.5.
-///
-/// Routes through the full [[DefineOwnProperty]] MOP (object_define_own): a
-/// Proxy result fires its `defineProperty` trap (order-of-operations tests
-/// observe this) and any ordinary result gets correct ValidateAndApply
-/// semantics, so redefining a pre-existing non-configurable own index (e.g. a
-/// custom constructor whose instances predefine a read-only element) yields
-/// res=false → a rejecting TypeError, which the simpler put_prop-only path
-/// misses. On failure closes the iterator (async path) and rejects outer.
+// CreateDataPropertyOrThrow(arr, key, value), ES2022 §7.3.5.
+//
+// Routes through the full [[DefineOwnProperty]] MOP (object_define_own): a
+// Proxy result fires its `defineProperty` trap (order-of-operations tests
+// observe this) and any ordinary result gets correct ValidateAndApply
+// semantics, so redefining a pre-existing non-configurable own index (e.g. a
+// custom constructor whose instances predefine a read-only element) yields
+// res=false → a rejecting TypeError, which the simpler put_prop-only path
+// misses. On failure closes the iterator (async path) and rejects outer.
 fn bool afa_create_data_property(BuiltinContext* ctx, Heap* heap, HObject* state, HObject* arr, HString* key, TVal value) {
     ProxyDesc nd = {};
     nd.found = true;
@@ -709,7 +709,7 @@ fn bool afa_create_data_property(BuiltinContext* ctx, Heap* heap, HObject* state
     return true;
 }
 
-/// Finalize the iterator path: Set(A, "length", k) then resolve outer with A.
+// Finalize the iterator path: Set(A, "length", k) then resolve outer with A.
 fn void afa_finalize(Heap* heap, void* vm, HObject* state) {
     HObject* arr = afa_get_obj(state, heap, AFA_ARR_SLOT);
     if (arr == null) { afa_reject_outer_alloc(heap, vm, state); return; }
@@ -734,9 +734,9 @@ fn void afa_finalize(Heap* heap, void* vm, HObject* state) {
 // Array-like driver
 // ---------------------------------------------------------------------------
 
-/// One array-like iteration: if k >= len finalize; else Get(arrayLike, k) and
-/// Await it (landing in the shared step_fulfill, which routes to
-/// afa_arraylike_value_ready for the non-async path).
+// One array-like iteration: if k >= len finalize; else Get(arrayLike, k) and
+// Await it (landing in the shared step_fulfill, which routes to
+// afa_arraylike_value_ready for the non-async path).
 fn void afa_arraylike_step(Heap* heap, void* vm, HObject* state) {
     long k = afa_get_int(state, heap, AFA_K_SLOT);
     long len = afa_get_int(state, heap, AFA_LEN_SLOT);
@@ -777,8 +777,8 @@ fn void afa_arraylike_step(Heap* heap, void* vm, HObject* state) {
     afa_await(heap, vm, state, kvalue, Builtin.ARRAY_FROM_ASYNC_STEP_FULFILL.ordinal);
 }
 
-/// Array-like path: the awaited element value is ready. Apply mapfn (+await) or
-/// store directly, then advance.
+// Array-like path: the awaited element value is ready. Apply mapfn (+await) or
+// store directly, then advance.
 fn void afa_arraylike_value_ready(BuiltinContext* ctx, HObject* state) {
     TVal value; value.set_undefined();
     if (ctx.argc >= 1) value = ctx.regs[ctx.base_reg];
@@ -789,8 +789,8 @@ fn void afa_arraylike_value_ready(BuiltinContext* ctx, HObject* state) {
 // Rejection reaction + close helpers
 // ---------------------------------------------------------------------------
 
-/// Generic reject reaction: an awaited value/next-result/mapped-value rejected.
-/// Close the iterator (if any) and reject the outer promise with the reason.
+// Generic reject reaction: an awaited value/next-result/mapped-value rejected.
+// Close the iterator (if any) and reject the outer promise with the reason.
 fn void builtin_array_from_async_reject(BuiltinContext* ctx) {
     ctx.result.set_undefined();
     // Capture the reason BEFORE clearing channels, the reject reason lives in
@@ -805,18 +805,18 @@ fn void builtin_array_from_async_reject(BuiltinContext* ctx) {
     afa_close_and_reject(heap, ctx.vm, state, reason);
 }
 
-/// Close the iterator (if async path) and reject outer with `reason`.
-/// The reason may be a borrowed reference from a caller's register/microtask
-/// slot; closing the iterator can run arbitrary JS (iterator.return) that
-/// triggers GC and would free a solely-borrowed reason string before we settle
-/// with it. Anchor a strong reference across the close, then release it.
+// Close the iterator (if async path) and reject outer with `reason`.
+// The reason may be a borrowed reference from a caller's register/microtask
+// slot; closing the iterator can run arbitrary JS (iterator.return) that
+// triggers GC and would free a solely-borrowed reason string before we settle
+// with it. Anchor a strong reference across the close, then release it.
 fn void afa_close_and_reject(Heap* heap, void* vm, HObject* state, TVal reason) {
     bool is_async = afa_get_bool(state, heap, AFA_ISASYNC_SLOT);
     if (is_async) afa_close_iterator(heap, vm, state);
     afa_reject_outer(heap, vm, state, reason);
 }
 
-/// Same, taking the reason from ctx.throw_value (after a ctx-recorded throw).
+// Same, taking the reason from ctx.throw_value (after a ctx-recorded throw).
 fn void afa_close_and_reject_ctx(BuiltinContext* ctx, HObject* state) {
     TVal reason = ctx.throw_value;
     ctx.should_throw = false;

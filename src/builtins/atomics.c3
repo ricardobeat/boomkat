@@ -1,12 +1,12 @@
-/// Atomics built-in object (ES2024 §25.4), single-agent variant.
-///
-/// This engine runs a single agent with no worker threads, so every atomic
-/// read-modify-write is a plain (uncontended) memory operation. Atomics work on
-/// both SharedArrayBuffer- and (per ES2024) ArrayBuffer-backed integer
-/// TypedArrays. `wait`/`notify`/`waitAsync` degrade to their single-agent
-/// no-waiter behaviour: `notify` always reports 0, `wait` returns "not-equal"
-/// or "timed-out" without ever blocking, and `waitAsync` returns a synchronous
-/// {async:false, value:...} result.
+// Atomics built-in object (ES2024 §25.4), single-agent variant.
+//
+// This engine runs a single agent with no worker threads, so every atomic
+// read-modify-write is a plain (uncontended) memory operation. Atomics work on
+// both SharedArrayBuffer- and (per ES2024) ArrayBuffer-backed integer
+// TypedArrays. `wait`/`notify`/`waitAsync` degrade to their single-agent
+// no-waiter behaviour: `notify` always reports 0, `wait` returns "not-equal"
+// or "timed-out" without ever blocking, and `waitAsync` returns a synchronous
+// {async:false, value:...} result.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -34,9 +34,9 @@ fn void atomics_throw_range_error(BuiltinContext* ctx, char[] msg) {
 // ValidateIntegerTypedArray (§25.4.3.2) + ValidateAtomicAccess (§25.4.3.4)
 // ============================================================================
 
-/// True iff `cls` is an integer TypedArray kind valid for Atomics operations
-/// (Int8/Uint8/Int16/Uint16/Int32/Uint32/BigInt64/BigUint64). Excludes
-/// Uint8ClampedArray and the float kinds.
+// True iff `cls` is an integer TypedArray kind valid for Atomics operations
+// (Int8/Uint8/Int16/Uint16/Int32/Uint32/BigInt64/BigUint64). Excludes
+// Uint8ClampedArray and the float kinds.
 fn bool atomics_is_valid_int_class(hobject::ObjClass cls) {
     switch (cls) {
         case hobject::ObjClass.INT8ARRAY:
@@ -53,9 +53,9 @@ fn bool atomics_is_valid_int_class(hobject::ObjClass cls) {
     }
 }
 
-/// ValidateIntegerTypedArray(typedArray, waitable): returns the view HObject
-/// (validated as an integer TypedArray) or null (with a thrown TypeError).
-/// When `waitable` is true, only Int32Array / BigInt64Array are accepted.
+// ValidateIntegerTypedArray(typedArray, waitable): returns the view HObject
+// (validated as an integer TypedArray) or null (with a thrown TypeError).
+// When `waitable` is true, only Int32Array / BigInt64Array are accepted.
 fn HObject* atomics_validate_int_ta(BuiltinContext* ctx, TVal arg, bool waitable) {
     if (!arg.is_object() || arg.get_heapptr() == null) {
         atomics_throw_type_error(ctx, "Atomics operation requires a TypedArray");
@@ -88,10 +88,10 @@ fn HObject* atomics_validate_int_ta(BuiltinContext* ctx, TVal arg, bool waitable
     return obj;
 }
 
-/// ValidateAtomicAccess(taRecord, requestIndex): ToIndex(requestIndex) then
-/// bounds-check against the CURRENT element count. Returns false (with a thrown
-/// RangeError or a propagated ToIndex throw) on failure; otherwise writes the
-/// validated element index to *out_idx.
+// ValidateAtomicAccess(taRecord, requestIndex): ToIndex(requestIndex) then
+// bounds-check against the CURRENT element count. Returns false (with a thrown
+// RangeError or a propagated ToIndex throw) on failure; otherwise writes the
+// validated element index to *out_idx.
 fn bool atomics_validate_access(BuiltinContext* ctx, HObject* ta, TVal idx_arg, uint* out_idx) {
     *out_idx = 0;
     // §25.4.3.4 ValidateAtomicAccess: capture length (step 1) BEFORE ToIndex
@@ -118,7 +118,7 @@ fn bool atomics_validate_access(BuiltinContext* ctx, HObject* ta, TVal idx_arg, 
     return true;
 }
 
-/// True when the view's backing buffer is detached or the view is out of bounds.
+// True when the view's backing buffer is detached or the view is out of bounds.
 fn bool atomics_revalidate(HObject* ta) {
     return ta_is_detached(ta);
 }
@@ -135,8 +135,8 @@ fn char* atomics_elem_ptr(HObject* ta, uint idx) {
     return base + (idx << shift);
 }
 
-/// Read the current element as a TVal (used by load/exchange/etc. to return the
-/// "previous" value).
+// Read the current element as a TVal (used by load/exchange/etc. to return the
+// "previous" value).
 fn TVal atomics_read(Heap* heap, HObject* ta, uint idx) {
     HObject* buf = (*ta.extra_ptr()).view.buffer;
     char* base = (*buf.extra_ptr()).ab.data + (*ta.extra_ptr()).view.byte_offset;
@@ -150,9 +150,9 @@ fn TVal atomics_read(Heap* heap, HObject* ta, uint idx) {
 // through ToBigInt.
 // ============================================================================
 
-/// Coerce a value argument for a non-BigInt integer TypedArray. Produces the
-/// ToIntegerOrInfinity result as a double (store truncates to width). Returns
-/// false on a propagated throw.
+// Coerce a value argument for a non-BigInt integer TypedArray. Produces the
+// ToIntegerOrInfinity result as a double (store truncates to width). Returns
+// false on a propagated throw.
 fn bool atomics_coerce_number(BuiltinContext* ctx, TVal* val, double* out) {
     *out = 0.0;
     if (val.is_fastint()) { *out = (double)val.get_fastint(); return true; }
@@ -162,8 +162,8 @@ fn bool atomics_coerce_number(BuiltinContext* ctx, TVal* val, double* out) {
     return true;
 }
 
-/// Coerce a value argument for a BigInt TypedArray (ToBigInt). Returns false on
-/// a propagated throw.
+// Coerce a value argument for a BigInt TypedArray (ToBigInt). Returns false on
+// a propagated throw.
 fn bool atomics_coerce_bigint(BuiltinContext* ctx, TVal* val, int128* out) {
     *out = 0;
     bool ok;
@@ -178,11 +178,11 @@ enum AtomicOp : char {
     ADD, AND, OR, SUB, XOR, EXCHANGE, COMPARE_EXCHANGE, STORE,
 }
 
-/// Perform the read-modify-write for a non-BigInt integer element. `p` points
-/// at the element; `width` is the byte width; `signed_kind` selects sign
-/// extension for the returned old value. `operand` is the ToInteger'd argument,
-/// `expected` is only used for COMPARE_EXCHANGE. Writes the returned "old value"
-/// into *old_out (as a double so both int32 and uint32 fit).
+// Perform the read-modify-write for a non-BigInt integer element. `p` points
+// at the element; `width` is the byte width; `signed_kind` selects sign
+// extension for the returned old value. `operand` is the ToInteger'd argument,
+// `expected` is only used for COMPARE_EXCHANGE. Writes the returned "old value"
+// into *old_out (as a double so both int32 and uint32 fit).
 fn void atomics_rmw_int(char* p, hobject::ObjClass cls, AtomicOp op, double operand, double expected, double* old_out) {
     uint width = ta_elem_size(cls);
     bool is_signed = (cls == hobject::ObjClass.INT8ARRAY
@@ -244,8 +244,8 @@ fn ulong atomics_width_mask(uint width) {
     }
 }
 
-/// Convert a raw zero-extended value of `width` bytes to a double, applying sign
-/// extension when `is_signed`.
+// Convert a raw zero-extended value of `width` bytes to a double, applying sign
+// extension when `is_signed`.
 fn double atomics_raw_to_double(ulong raw, uint width, bool is_signed) {
     switch (width) {
         case 1:
@@ -262,7 +262,7 @@ fn double atomics_raw_to_double(ulong raw, uint width, bool is_signed) {
     }
 }
 
-/// ToInteger'd double -> a long, truncating toward zero and wrapping mod 2^64.
+// ToInteger'd double -> a long, truncating toward zero and wrapping mod 2^64.
 fn long double_to_int_wrap(double d) {
     if (d != d) return 0;
     // Reduce mod 2^64 in a way that matches two's-complement store truncation.
@@ -366,8 +366,8 @@ fn void atomics_rmw_op(BuiltinContext* ctx, AtomicOp op) {
     }
 }
 
-/// Store the "old value" of a non-BigInt RMW as the builtin result (fastint or
-/// number, matching the element kind's read semantics).
+// Store the "old value" of a non-BigInt RMW as the builtin result (fastint or
+// number, matching the element kind's read semantics).
 fn void atomics_set_num_result(BuiltinContext* ctx, hobject::ObjClass cls, double old) {
     if (cls == hobject::ObjClass.UINT32ARRAY) {
         if (old >= 2147483648.0) { ctx.result.set_number(old); return; }
@@ -376,7 +376,7 @@ fn void atomics_set_num_result(BuiltinContext* ctx, hobject::ObjClass cls, doubl
     ctx.result.set_fastint((long)old);
 }
 
-/// Store the "old value" of a BigInt RMW as a BigInt result.
+// Store the "old value" of a BigInt RMW as a BigInt result.
 fn void atomics_set_bigint_result(BuiltinContext* ctx, hobject::ObjClass cls, int128 old) {
     int128 v = old;
     if (cls == hobject::ObjClass.BIGUINT64ARRAY) {
@@ -396,8 +396,8 @@ fn void builtin_atomics_sub(BuiltinContext* ctx)  { atomics_rmw_op(ctx, AtomicOp
 fn void builtin_atomics_xor(BuiltinContext* ctx)  { atomics_rmw_op(ctx, AtomicOp.XOR); }
 fn void builtin_atomics_exchange(BuiltinContext* ctx) { atomics_rmw_op(ctx, AtomicOp.EXCHANGE); }
 
-/// Atomics.store(ta, index, value), §25.4.3.13. Unlike the RMW ops, store
-/// returns the *stored* value (after coercion), not the old value.
+// Atomics.store(ta, index, value), §25.4.3.13. Unlike the RMW ops, store
+// returns the *stored* value (after coercion), not the old value.
 fn void builtin_atomics_store(BuiltinContext* ctx) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
@@ -447,8 +447,8 @@ fn void builtin_atomics_store(BuiltinContext* ctx) {
     }
 }
 
-/// Atomics.store returns the ToInteger'd value as a Number (not truncated to
-/// the element width) per §25.4.3.13 step 8 (returns `v`, the ToInteger result).
+// Atomics.store returns the ToInteger'd value as a Number (not truncated to
+// the element width) per §25.4.3.13 step 8 (returns `v`, the ToInteger result).
 fn void atomics_store_num_result(BuiltinContext* ctx, double v) {
     // The returned value is the ToIntegerOrInfinity result. For finite integers
     // that fit in a fastint use it, else use a number.
@@ -460,7 +460,7 @@ fn void atomics_store_num_result(BuiltinContext* ctx, double v) {
     }
 }
 
-/// Atomics.compareExchange(ta, index, expected, replacement), §25.4.3.9.
+// Atomics.compareExchange(ta, index, expected, replacement), §25.4.3.9.
 fn void builtin_atomics_compareexchange(BuiltinContext* ctx) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
@@ -511,7 +511,7 @@ fn void builtin_atomics_compareexchange(BuiltinContext* ctx) {
     }
 }
 
-/// Atomics.load(ta, index), §25.4.3.12.
+// Atomics.load(ta, index), §25.4.3.12.
 fn void builtin_atomics_load(BuiltinContext* ctx) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
@@ -536,8 +536,8 @@ fn void builtin_atomics_load(BuiltinContext* ctx) {
     *ctx.result = atomics_read(ctx.heap, ta, idx);
 }
 
-/// Atomics.isLockFree(size), §25.4.3.15. Returns whether an atomic op on a
-/// value of the given byte size is lock-free. Per QuickJS: 1,2,4,8 are lock-free.
+// Atomics.isLockFree(size), §25.4.3.15. Returns whether an atomic op on a
+// value of the given byte size is lock-free. Per QuickJS: 1,2,4,8 are lock-free.
 fn void builtin_atomics_islockfree(BuiltinContext* ctx) {
     TVal size_arg; size_arg.set_undefined();
     if (ctx.argc >= 1) size_arg = ctx.regs[ctx.base_reg];
@@ -551,15 +551,15 @@ fn void builtin_atomics_islockfree(BuiltinContext* ctx) {
 // wait / notify / waitAsync, single-agent degenerate behaviour.
 // ============================================================================
 
-/// Atomics.wait(ta, index, value, timeout), §25.4.13.
-/// This engine's single main agent has AgentCanSuspend = true, but with no
-/// other agents there is never a notifier, so wait never actually blocks: it
-/// returns "not-equal" when the cell differs from `value`, and "timed-out"
-/// otherwise (any finite/zero/negative timeout elapses instantly; an infinite
-/// timeout with no possible notifier likewise cannot make progress and would
-/// deadlock, so we conservatively return "timed-out" too). Argument validation
-/// (ValidateIntegerTypedArray waitable, ValidateAtomicAccess, ToInteger of
-/// value, ToNumber of timeout) runs first and may throw.
+// Atomics.wait(ta, index, value, timeout), §25.4.13.
+// This engine's single main agent has AgentCanSuspend = true, but with no
+// other agents there is never a notifier, so wait never actually blocks: it
+// returns "not-equal" when the cell differs from `value`, and "timed-out"
+// otherwise (any finite/zero/negative timeout elapses instantly; an infinite
+// timeout with no possible notifier likewise cannot make progress and would
+// deadlock, so we conservatively return "timed-out" too). Argument validation
+// (ValidateIntegerTypedArray waitable, ValidateAtomicAccess, ToInteger of
+// value, ToNumber of timeout) runs first and may throw.
 fn void builtin_atomics_wait(BuiltinContext* ctx) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
@@ -609,12 +609,12 @@ fn void builtin_atomics_wait(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, verdict));
 }
 
-/// Atomics.notify(ta, index, count), §25.4.14.
-/// With no other agents ever waiting, always returns 0.
-/// Atomics.pause([iterationNumber]), ES2025 §25.4.6 (microwait). A spin-wait
-/// hint to the CPU; observably a no-op. iterationNumber, when present and not
-/// undefined, must already BE an integral Number (no coercion), else
-/// TypeError. Negative integers are allowed. Length is 0.
+// Atomics.notify(ta, index, count), §25.4.14.
+// With no other agents ever waiting, always returns 0.
+// Atomics.pause([iterationNumber]), ES2025 §25.4.6 (microwait). A spin-wait
+// hint to the CPU; observably a no-op. iterationNumber, when present and not
+// undefined, must already BE an integral Number (no coercion), else
+// TypeError. Negative integers are allowed. Length is 0.
 fn void builtin_atomics_pause(BuiltinContext* ctx) {
     if (ctx.argc >= 1) {
         TVal n = ctx.regs[ctx.base_reg];
@@ -668,8 +668,8 @@ fn void builtin_atomics_notify(BuiltinContext* ctx) {
     ctx.result.set_fastint(notified);
 }
 
-/// Resolve up to `count` parked waitAsync promises on (buffer, byte_index) with
-/// "ok" (FIFO). Returns the number resolved.
+// Resolve up to `count` parked waitAsync promises on (buffer, byte_index) with
+// "ok" (FIFO). Returns the number resolved.
 fn long atomics_notify_waiters(BuiltinContext* ctx, HObject* buffer, uint byte_index, double count) {
     Heap* heap = ctx.heap;
     long resolved = 0;
@@ -690,15 +690,15 @@ fn long atomics_notify_waiters(BuiltinContext* ctx, HObject* buffer, uint byte_i
     return resolved;
 }
 
-/// Drop trailing inactive waiter slots so the count stays small.
+// Drop trailing inactive waiter slots so the count stays small.
 fn void atomics_compact_waiters(Heap* heap) {
     while (heap.async_waiter_count > 0 && !heap.async_waiters[heap.async_waiter_count - 1].active) {
         heap.async_waiter_count--;
     }
 }
 
-/// Park a pending Promise on (buffer, byte_index). Returns the promise HObject,
-/// or null if no slot is free.
+// Park a pending Promise on (buffer, byte_index). Returns the promise HObject,
+// or null if no slot is free.
 fn HObject* atomics_park_waiter(BuiltinContext* ctx, HObject* buffer, uint byte_index) {
     Heap* heap = ctx.heap;
     // Reuse an inactive slot if one exists.
@@ -720,10 +720,10 @@ fn HObject* atomics_park_waiter(BuiltinContext* ctx, HObject* buffer, uint byte_
     return promise;
 }
 
-/// Atomics.waitAsync(ta, index, value, timeout), ES2024 §25.4.15.
-/// Single-agent: no other agent can ever notify, so this resolves synchronously
-/// to {async:false, value:"not-equal"} (when the cell differs) or
-/// {async:false, value:"timed-out"} (when it matches; there is no way to block).
+// Atomics.waitAsync(ta, index, value, timeout), ES2024 §25.4.15.
+// Single-agent: no other agent can ever notify, so this resolves synchronously
+// to {async:false, value:"not-equal"} (when the cell differs) or
+// {async:false, value:"timed-out"} (when it matches; there is no way to block).
 fn void builtin_atomics_waitasync(BuiltinContext* ctx) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
@@ -796,13 +796,13 @@ fn void builtin_atomics_waitasync(BuiltinContext* ctx) {
     atomics_make_wait_result_val(ctx, true, prom_tv);
 }
 
-/// Build {async, value:<string>} for waitAsync's synchronous outcomes.
+// Build {async, value:<string>} for waitAsync's synchronous outcomes.
 fn void atomics_make_wait_result_str(BuiltinContext* ctx, bool is_async, char[] value_str) {
     TVal v; v.set_string(builtin_intern_string(ctx.heap, value_str));
     atomics_make_wait_result_val(ctx, is_async, v);
 }
 
-/// Build the {async, value} object returned by waitAsync.
+// Build the {async, value} object returned by waitAsync.
 fn void atomics_make_wait_result_val(BuiltinContext* ctx, bool is_async, TVal value_tv) {
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) { ctx.result.set_undefined(); return; }
@@ -823,8 +823,8 @@ fn void atomics_make_wait_result_val(BuiltinContext* ctx, bool is_async, TVal va
 // Registration
 // ============================================================================
 
-/// Register an Atomics method as a lightfunc property with .name/.length set on
-/// a proper HObject function (Atomics methods have observable name/length).
+// Register an Atomics method as a lightfunc property with .name/.length set on
+// a proper HObject function (Atomics methods have observable name/length).
 fn bool register_atomics_method(HObject* atomics, Heap* heap, char[] name, uint fn_index, int length) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;

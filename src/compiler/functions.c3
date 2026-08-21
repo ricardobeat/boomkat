@@ -12,10 +12,10 @@ import std::io;
 // Function compilation
 // ============================================================================
 
-/// Maximum number of bindings collected from destructuring function parameters.
+// Maximum number of bindings collected from destructuring function parameters.
 const uint MAX_DESTRUCT_BINDS = 64;
 
-/// Iterator state for a source register used in array destructuring.
+// Iterator state for a source register used in array destructuring.
 struct DestructIterState {
     ushort src_reg;       // the source register this iterator is for
     ushort method_reg;    // register holding the iterator object (result of @@iterator call)
@@ -27,24 +27,24 @@ struct DestructIterState {
                           // must skip IteratorClose per §7.4.6/§7.4.7)
 }
 
-/// How emit_destruct_bindings syncs each leaf binding to the environment.
-/// PARAM_SYNC: function parameters, already declared in the env at call entry;
-///   PUTVAR + GETVAR reload (PUTVAR clears the source register). The adjacent
-///   same-reg/same-name pair is elided by the register-locals pass when the
-///   function needs no runtime env.
-/// DECLARE: statement declarations (var/let/const [pattern] = rhs), declare
-///   the binding via emit_var_store (DECLVAR / PUTLEX / PUTLEX_C).
-/// ASSIGN_TARGET: destructuring assignment ([a, b] = rhs), register-resident
-///   locals are written directly by the extraction (no env op); everything
-///   else gets a bare PUTVAR (no GETVAR reload, the pair would be
-///   misidentified as loop-var sync and elided, dropping genuine env stores).
+// How emit_destruct_bindings syncs each leaf binding to the environment.
+// PARAM_SYNC: function parameters, already declared in the env at call entry;
+//   PUTVAR + GETVAR reload (PUTVAR clears the source register). The adjacent
+//   same-reg/same-name pair is elided by the register-locals pass when the
+//   function needs no runtime env.
+// DECLARE: statement declarations (var/let/const [pattern] = rhs), declare
+//   the binding via emit_var_store (DECLVAR / PUTLEX / PUTLEX_C).
+// ASSIGN_TARGET: destructuring assignment ([a, b] = rhs), register-resident
+//   locals are written directly by the extraction (no env op); everything
+//   else gets a bare PUTVAR (no GETVAR reload, the pair would be
+//   misidentified as loop-var sync and elided, dropping genuine env stores).
 enum DestructStoreMode {
     PARAM_SYNC,
     DECLARE,
     ASSIGN_TARGET,
 }
 
-/// Collected info for a single destructured binding from a function parameter.
+// Collected info for a single destructured binding from a function parameter.
 struct DestructBind {
     uint name_idx;       // constant index of the binding name (0xFFFFFFFF for synthetic)
     uint key_idx;        // constant index of the property key (for object patterns)
@@ -112,32 +112,32 @@ struct DestructBind {
     // an arbitrary earlier temp.
 }
 
-/// Lexer position captured by collect_assign_target for a deferred member
-/// target, restored into the same Lexer object by emit_deferred_target.
-/// (Restoring in place keeps token str_value slices into ident_buf valid.)
+// Lexer position captured by collect_assign_target for a deferred member
+// target, restored into the same Lexer object by emit_deferred_target.
+// (Restoring in place keeps token str_value slices into ident_buf valid.)
 struct DeferredTarget {
     Lexer lexer;
     Token[4] pushback;
     uint pushback_count;
 }
 
-/// The set of BoundNames seen so far in one FormalParameters list, plus the
-/// early-error checks every parameter must pass.
-///
-/// Owned by each parameter-list parser (`parse_function_body`,
-/// `compile_inner_function`, `compile_arrow_inner_reparse`) as a local. The
-/// three used to hand-roll the same restricted-name / duplicate-name /
-/// append-to-table sequence inline; the arrow copy simply omitted it, so
-/// `(a, a) => a` and `(eval) => 1` compiled cleanly. Keeping the table and the
-/// checks together in one type means a prologue cannot record a name without
-/// also validating it.
+// The set of BoundNames seen so far in one FormalParameters list, plus the
+// early-error checks every parameter must pass.
+//
+// Owned by each parameter-list parser (`parse_function_body`,
+// `compile_inner_function`, `compile_arrow_inner_reparse`) as a local. The
+// three used to hand-roll the same restricted-name / duplicate-name /
+// append-to-table sequence inline; the arrow copy simply omitted it, so
+// `(a, a) => a` and `(eval) => 1` compiled cleanly. Keeping the table and the
+// checks together in one type means a prologue cannot record a name without
+// also validating it.
 struct SeenParams {
     char[64][MAX_PARAMS] names;
     ushort[MAX_PARAMS]   lens;
     uint count;
 }
 
-/// True if `name` is already a BoundName of this parameter list.
+// True if `name` is already a BoundName of this parameter list.
 fn bool SeenParams.contains(&self, char[] name) {
     for (uint i = 0; i < self.count; i++) {
         if (self.lens[i] == name.len) {
@@ -154,19 +154,19 @@ fn bool SeenParams.contains(&self, char[] name) {
     return false;
 }
 
-/// Apply the FormalParameters early errors to one bound name and record it.
-///
-/// Rejects ES5 §13.1 restricted names (`eval`, `arguments`, `let`, ...) and
-/// ES2015 §14.1.2 duplicate BoundNames. This engine is strict-only, so both
-/// are unconditional SyntaxErrors. `allow_restricted` is set when the token
-/// was a contextual keyword (`await`/`yield` accepted as an identifier by
-/// `expect_binding_identifier`), where the enclosing-grammar check has already
-/// decided the name is legal here.
-///
-/// Names longer than 63 chars or beyond MAX_PARAMS entries are checked but not
-/// recorded: the table is a fixed-size fast path, and overflow only weakens
-/// duplicate detection for pathological parameter lists, never accepts a
-/// restricted name.
+// Apply the FormalParameters early errors to one bound name and record it.
+//
+// Rejects ES5 §13.1 restricted names (`eval`, `arguments`, `let`, ...) and
+// ES2015 §14.1.2 duplicate BoundNames. This engine is strict-only, so both
+// are unconditional SyntaxErrors. `allow_restricted` is set when the token
+// was a contextual keyword (`await`/`yield` accepted as an identifier by
+// `expect_binding_identifier`), where the enclosing-grammar check has already
+// decided the name is legal here.
+//
+// Names longer than 63 chars or beyond MAX_PARAMS entries are checked but not
+// recorded: the table is a fixed-size fast path, and overflow only weakens
+// duplicate detection for pathological parameter lists, never accepts a
+// restricted name.
 fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
     if (!allow_restricted && is_restricted_name(name)) return COMPILE_ERROR~;
     if (self.contains(name)) return COMPILE_ERROR~;
@@ -179,16 +179,16 @@ fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
     }
 }
 
-/// Apply the same early errors to the BoundNames produced by destructuring
-/// patterns in a parameter list: `([a], {a}) => 1` and `function f([a], {a})`
-/// are duplicate-BoundName SyntaxErrors just like `(a, a)`.
-///
-/// Destructured binds are collected into a flat DestructBind array as the list
-/// is parsed, so they cannot be validated at the point the pattern is consumed
-/// (a later simple parameter may collide with an earlier pattern's leaf, and
-/// vice versa). Instead every prologue calls this once, after the whole list is
-/// parsed, with the same SeenParams the simple parameters populated. Synthetic
-/// binds (intermediate extraction points) and elision holes are not BoundNames.
+// Apply the same early errors to the BoundNames produced by destructuring
+// patterns in a parameter list: `([a], {a}) => 1` and `function f([a], {a})`
+// are duplicate-BoundName SyntaxErrors just like `(a, a)`.
+//
+// Destructured binds are collected into a flat DestructBind array as the list
+// is parsed, so they cannot be validated at the point the pattern is consumed
+// (a later simple parameter may collide with an earlier pattern's leaf, and
+// vice versa). Instead every prologue calls this once, after the whole list is
+// parsed, with the same SeenParams the simple parameters populated. Synthetic
+// binds (intermediate extraction points) and elision holes are not BoundNames.
 fn void? SeenParams.declare_destructured(&self, DestructBind[] binds, uint count) {
     for (uint i = 0; i < count; i++) {
         if (binds[i].is_synthetic || binds[i].is_hole || binds[i].is_member_target) continue;
@@ -196,9 +196,9 @@ fn void? SeenParams.declare_destructured(&self, DestructBind[] binds, uint count
     }
 }
 
-/// Parse an object destructuring pattern within a function parameter list.
-/// The '{' token has already been consumed.
-/// Collects all leaf-level binding names into the provided arrays.
+// Parse an object destructuring pattern within a function parameter list.
+// The '{' token has already been consumed.
+// Collects all leaf-level binding names into the provided arrays.
 fn void? CompilerContext.collect_obj_param_binds(&self,
     DestructBind[] binds, uint* count, ushort src_reg, ushort parent_idx)
 {
@@ -424,12 +424,12 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
     return;
 }
 
-/// Parse an array destructuring pattern. The '[' token has already been
-/// consumed. Collects all leaf-level binding names into the provided arrays.
-///
-/// Shared between formal-parameter destructuring and statement destructuring,
-/// the caller is responsible for setting `in_formal_params` correctly before
-/// invoking us (see `collect_obj_param_binds` for the rationale).
+// Parse an array destructuring pattern. The '[' token has already been
+// consumed. Collects all leaf-level binding names into the provided arrays.
+//
+// Shared between formal-parameter destructuring and statement destructuring,
+// the caller is responsible for setting `in_formal_params` correctly before
+// invoking us (see `collect_obj_param_binds` for the rationale).
 fn void? CompilerContext.collect_arr_param_binds(&self,
     DestructBind[] binds, uint* count, ushort src_reg, ushort parent_idx)
 {
@@ -575,9 +575,9 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
 // Iterator protocol helpers for array destructuring
 // ---------------------------------------------------------------------------
 
-/// Emit the full iterator protocol setup for a source register.
-/// Sets up: src[Symbol.iterator]() → iterator, iterator.next → next method.
-/// Populates the DestructIterState with the register numbers.
+// Emit the full iterator protocol setup for a source register.
+// Sets up: src[Symbol.iterator]() → iterator, iterator.next → next method.
+// Populates the DestructIterState with the register numbers.
 fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, DestructIterState* state) {
     // A null/undefined source is not iterable; reject it before the
     // @@iterator read, which would otherwise fail as a property access.
@@ -640,8 +640,8 @@ fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, Destruct
     state.save_reg = save_reg;
 }
 
-/// Advance the iterator by calling .next(), extract .value into dest_reg.
-/// Must be preceded by emit_destruct_iter_setup for the same iterator state.
+// Advance the iterator by calling .next(), extract .value into dest_reg.
+// Must be preceded by emit_destruct_iter_setup for the same iterator state.
 fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state, ushort dest_reg) {
     // IteratorBindingInitialization §13.3.3: once the iterator has reported
     // done:true, [[done]] is latched, later elements bind undefined without
@@ -721,7 +721,7 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     self.patch_jump(fast_cont_jump);
 }
 
-/// Free registers held by an iterator state.
+// Free registers held by an iterator state.
 fn void CompilerContext.free_destruct_iter(&self, DestructIterState* state) {
     self.free_reg(state.callee_this_reg);
     self.free_reg(state.callee_reg);
@@ -730,7 +730,7 @@ fn void CompilerContext.free_destruct_iter(&self, DestructIterState* state) {
     self.free_reg(state.method_reg);
 }
 
-/// Find or create iterator state for a source register.
+// Find or create iterator state for a source register.
 fn ushort find_destruct_iter(ushort src_reg, DestructIterState[] states, uint* count) {
     for (uint i = 0; i < *count; i++) {
         if (states[i].src_reg == src_reg) return (ushort)i;
@@ -738,13 +738,13 @@ fn ushort find_destruct_iter(ushort src_reg, DestructIterState[] states, uint* c
     return 0xFFFF;
 }
 
-/// Shared emission helper for function-parameter destructuring bindings.
-/// Emit object-rest collection into dest_reg: `dest = CopyDataProperties(src,
-/// excludedNames)` where excludedNames names every sibling explicit key (own
-/// key list minus the rest target), per ES2018 §13.3.3 RestBindingInitialization
-/// / DestructuringAssignment §7.3.24 CopyDataProperties. `binds`/`count`
-/// describe the full pattern; `rest_di` is the rest bind whose siblings (same
-/// parent_idx) name the properties to exclude.
+// Shared emission helper for function-parameter destructuring bindings.
+// Emit object-rest collection into dest_reg: `dest = CopyDataProperties(src,
+// excludedNames)` where excludedNames names every sibling explicit key (own
+// key list minus the rest target), per ES2018 §13.3.3 RestBindingInitialization
+// / DestructuringAssignment §7.3.24 CopyDataProperties. `binds`/`count`
+// describe the full pattern; `rest_di` is the rest bind whose siblings (same
+// parent_idx) name the properties to exclude.
 fn void CompilerContext.emit_object_rest(&self,
     ushort dest_reg, ushort src_reg,
     DestructBind[] binds, uint count, uint rest_di)
@@ -791,9 +791,9 @@ fn void CompilerContext.emit_object_rest(&self,
     self.free_reg(excl_reg);
 }
 
-/// Force GetIterator(src) + immediate IteratorClose. Used for an empty array
-/// assignment pattern `[] = rhs`: per DestructuringAssignmentEvaluation the
-/// pattern still performs GetIterator, so `[] = undefined` must throw TypeError.
+// Force GetIterator(src) + immediate IteratorClose. Used for an empty array
+// assignment pattern `[] = rhs`: per DestructuringAssignmentEvaluation the
+// pattern still performs GetIterator, so `[] = undefined` must throw TypeError.
 fn void CompilerContext.emit_empty_array_iter(&self, ushort src_reg) {
     DestructIterState state;
     self.emit_destruct_iter_setup(src_reg, &state);
@@ -801,9 +801,9 @@ fn void CompilerContext.emit_empty_array_iter(&self, ushort src_reg) {
     self.free_destruct_iter(&state);
 }
 
-/// Walks binds in declaration order, resolving source registers from arg slots
-/// or parent group temps, and emits GETPROP (object patterns) or iterator
-/// protocol (array patterns) to extract values into group_regs / binding_regs.
+// Walks binds in declaration order, resolving source registers from arg slots
+// or parent group temps, and emits GETPROP (object patterns) or iterator
+// protocol (array patterns) to extract values into group_regs / binding_regs.
 fn void CompilerContext.emit_destruct_bindings(&self,
     DestructBind[] binds, uint count,
     ushort[] group_regs, ushort[] binding_regs,
@@ -1343,10 +1343,10 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     }
 }
 
-/// Skip past a braced block in the lexer without compiling.
-/// Assumes the lexer is positioned just after '{'. Advances past matching '}'.
-/// Template-aware: a '}' that closes a template substitution is consumed via
-/// scan_template_after_expr() and never counted as a plain RBRACE.
+// Skip past a braced block in the lexer without compiling.
+// Assumes the lexer is positioned just after '{'. Advances past matching '}'.
+// Template-aware: a '}' that closes a template substitution is consumed via
+// scan_template_after_expr() and never counted as a plain RBRACE.
 fn void CompilerContext.skip_braced_block(&self) {
     uint brace_depth = 1;
     TemplateScan tscan;
@@ -1368,14 +1368,14 @@ fn void CompilerContext.skip_braced_block(&self) {
     }
 }
 
-/// Skip past a full class declaration/expression, starting with the lexer
-/// positioned just after the `class` keyword. Consumes the optional binding
-/// name, an optional `extends <LeftHandSideExpression>`, and the class body
-/// `{ ... }`. A class body is its own scope for VarDeclaredNames, none of
-/// its element bodies (methods, accessors, static blocks, field
-/// initializers) contribute `var`/`function` declarations to the enclosing
-/// function or Program scope, so hoist_decls must skip it wholesale rather
-/// than brace-walk into a method and mis-hoist that method's locals.
+// Skip past a full class declaration/expression, starting with the lexer
+// positioned just after the `class` keyword. Consumes the optional binding
+// name, an optional `extends <LeftHandSideExpression>`, and the class body
+// `{ ... }`. A class body is its own scope for VarDeclaredNames, none of
+// its element bodies (methods, accessors, static blocks, field
+// initializers) contribute `var`/`function` declarations to the enclosing
+// function or Program scope, so hoist_decls must skip it wholesale rather
+// than brace-walk into a method and mis-hoist that method's locals.
 fn void CompilerContext.skip_class_body(&self) {
     // Advance to the class body's opening '{', which is the first LBRACE at
     // paren/bracket depth 0. The heading before it (name, `extends expr`)
@@ -1412,10 +1412,10 @@ fn void CompilerContext.skip_class_body(&self) {
     }
 }
 
-/// Skip past a full function declaration body starting from '('.
-/// Consumes '(' params ')' '{' body '}'.
-/// Template-aware: a '}' that closes a template substitution is consumed via
-/// scan_template_after_expr() and never counted as a plain RBRACE.
+// Skip past a full function declaration body starting from '('.
+// Consumes '(' params ')' '{' body '}'.
+// Template-aware: a '}' that closes a template substitution is consumed via
+// scan_template_after_expr() and never counted as a plain RBRACE.
 fn void CompilerContext.skip_function_body(&self) {
     // Skip '(' ... ')'
     // Template-aware: parameter DEFAULT values can contain templates
@@ -1479,10 +1479,10 @@ fn void CompilerContext.skip_function_body(&self) {
     }
 }
 
-/// Skip past a single destructuring pattern (`{...}` or `[...]`), handling
-/// arbitrarily nested `{}`/`[]` of either kind. The opening token has
-/// already been consumed by the caller; this advances the lexer to just
-/// past the matching closing token.
+// Skip past a single destructuring pattern (`{...}` or `[...]`), handling
+// arbitrarily nested `{}`/`[]` of either kind. The opening token has
+// already been consumed by the caller; this advances the lexer to just
+// past the matching closing token.
 fn void CompilerContext.skip_destructure_pattern(&self) {
     int depth = 1;
     // Template-aware: default values can contain templates whose `${...}`
@@ -1514,11 +1514,11 @@ fn void CompilerContext.skip_destructure_pattern(&self) {
     }
 }
 
-/// Scan forward through a destructured parameter pattern from the current
-/// lexer position to find the matching closing ')' and check if '=>' follows.
-/// Returns true if this is an arrow function with destructured params.
-/// Assumes the outer '(' has already been consumed and the lexer is positioned
-/// at the start of the destructuring pattern ({ or [).
+// Scan forward through a destructured parameter pattern from the current
+// lexer position to find the matching closing ')' and check if '=>' follows.
+// Returns true if this is an arrow function with destructured params.
+// Assumes the outer '(' has already been consumed and the lexer is positioned
+// at the start of the destructuring pattern ({ or [).
 fn bool CompilerContext.scan_destruct_param_to_arrow(&self) {
     int paren_d = 1;   // outer '(' already consumed
     int brace_d = 0;
@@ -1556,8 +1556,8 @@ fn bool CompilerContext.scan_destruct_param_to_arrow(&self) {
     return false;
 }
 
-/// Skip past an arbitrary expression in the lexer without compiling.
-/// Tracks paren, brace, and bracket depth.
+// Skip past an arbitrary expression in the lexer without compiling.
+// Tracks paren, brace, and bracket depth.
 fn void CompilerContext.skip_expression(&self) {
     uint paren_depth = 0;
     uint brace_depth = 0;
@@ -1620,10 +1620,10 @@ fn void CompilerContext.skip_expression(&self) {
     }
 }
 
-/// Create the hoisted binding for one `var` name found by the pre-scan:
-/// a register slot, an `undefined` initial value, and the env declaration.
-/// Shared by the plain-identifier declarator path and the binding-pattern
-/// walker, which must produce byte-identical bindings for their leaf names.
+// Create the hoisted binding for one `var` name found by the pre-scan:
+// a register slot, an `undefined` initial value, and the env declaration.
+// Shared by the plain-identifier declarator path and the binding-pattern
+// walker, which must produce byte-identical bindings for their leaf names.
 fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global) {
     // Intern now: raw_name may borrow the lexer's shared ident_buf scratch
     // (escaped identifier), which the next declarator in this statement (or a
@@ -1669,33 +1669,33 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     if (is_global && !self.is_slot_global_name(var_name)) { self.free_reg(var_reg); }
 }
 
-/// Token-walk a `var` binding pattern and hoist every leaf BoundName in it.
-/// The opening '[' or '{' has already been consumed; this consumes through the
-/// matching close.
-///
-/// A pattern declarator (`var [a] = ...`, `var {p: b} = ...`, and above all a
-/// for-head `for (var [a] of ...)`) declares var-scoped names exactly like a
-/// plain declarator does, but the pre-scan used to stop at the non-IDENTIFIER
-/// first token and hoist nothing. For a plain statement that is masked, because
-/// var_declaration declares the names as it parses them. A for-head is not
-/// masked: emit_forof/the for-in epilogue pop the head's scope entries at
-/// pop_scope_to, so with no hoisted binding to fall back on the name is gone
-/// after the loop and reads throw "x is not defined".
-///
-/// `checks_only` mirrors the identifier path: emit the global CanDeclareGlobalVar
-/// check and no binding.
-///
-/// Leaf recognition: an IDENTIFIER is a bound name unless a ':' follows it, in
-/// which case it is an object pattern's property KEY and the bound name is
-/// whatever the value side holds. Two constructs contain expressions rather
-/// than bindings and are skipped wholesale:
-///   - a default value (`= expr`), whose identifiers are references;
-///   - a computed property key (`{[expr]: v}`), likewise. A '[' is a computed
-///     key only at a PROPERTY START inside an object pattern, that is directly
-///     after that pattern's '{' or after a ',' at its level. The same '[' in a
-///     property's value position (`{b: [c]}`) is an ordinary sub-pattern, so
-///     the walk tracks both the enclosing bracket kind and whether it is
-///     currently at a property start.
+// Token-walk a `var` binding pattern and hoist every leaf BoundName in it.
+// The opening '[' or '{' has already been consumed; this consumes through the
+// matching close.
+//
+// A pattern declarator (`var [a] = ...`, `var {p: b} = ...`, and above all a
+// for-head `for (var [a] of ...)`) declares var-scoped names exactly like a
+// plain declarator does, but the pre-scan used to stop at the non-IDENTIFIER
+// first token and hoist nothing. For a plain statement that is masked, because
+// var_declaration declares the names as it parses them. A for-head is not
+// masked: emit_forof/the for-in epilogue pop the head's scope entries at
+// pop_scope_to, so with no hoisted binding to fall back on the name is gone
+// after the loop and reads throw "x is not defined".
+//
+// `checks_only` mirrors the identifier path: emit the global CanDeclareGlobalVar
+// check and no binding.
+//
+// Leaf recognition: an IDENTIFIER is a bound name unless a ':' follows it, in
+// which case it is an object pattern's property KEY and the bound name is
+// whatever the value side holds. Two constructs contain expressions rather
+// than bindings and are skipped wholesale:
+//   - a default value (`= expr`), whose identifiers are references;
+//   - a computed property key (`{[expr]: v}`), likewise. A '[' is a computed
+//     key only at a PROPERTY START inside an object pattern, that is directly
+//     after that pattern's '{' or after a ',' at its level. The same '[' in a
+//     property's value position (`{b: [c]}`) is an ordinary sub-pattern, so
+//     the walk tracks both the enclosing bracket kind and whether it is
+//     currently at a property start.
 fn void? CompilerContext.hoist_var_pattern(&self, bool is_global, bool checks_only, bool opened_with_brace) {
     // is_obj[i] is true when nesting level i was opened by '{'. Level 0 is the
     // caller-consumed opening bracket. Patterns deeper than this are
@@ -1766,10 +1766,10 @@ fn void? CompilerContext.hoist_var_pattern(&self, bool is_global, bool checks_on
     }
 }
 
-/// Consume a computed property key's tokens through its closing ']'. The
-/// opening '[' has already been consumed. Bracket-counting rather than
-/// skip_expression, because the key expression ends at a ']' that
-/// skip_expression would treat as a stray closer.
+// Consume a computed property key's tokens through its closing ']'. The
+// opening '[' has already been consumed. Bracket-counting rather than
+// skip_expression, because the key expression ends at a ']' that
+// skip_expression would treat as a stray closer.
 fn void CompilerContext.skip_bracketed_key(&self) {
     uint depth = 1;
     for (;;) {
@@ -1785,14 +1785,14 @@ fn void CompilerContext.skip_bracketed_key(&self) {
     }
 }
 
-/// Consume a pattern element's default value (`= expr`) and STOP at the token
-/// that ends it, pushing that token back for the pattern walk to see.
-///
-/// skip_expression cannot be used here: it stops on a ',' or ';' but treats a
-/// ']' or '}' that closes the ENCLOSING pattern as its own to consume, so the
-/// walk would lose the pattern's closing bracket and run on into the
-/// initializer, hoisting names out of it (`var {w: [x] = [4]} = ...` bound
-/// `w`). The default ends at a ',', ']' or '}' seen at nesting depth 0.
+// Consume a pattern element's default value (`= expr`) and STOP at the token
+// that ends it, pushing that token back for the pattern walk to see.
+//
+// skip_expression cannot be used here: it stops on a ',' or ';' but treats a
+// ']' or '}' that closes the ENCLOSING pattern as its own to consume, so the
+// walk would lose the pattern's closing bracket and run on into the
+// initializer, hoisting names out of it (`var {w: [x] = [4]} = ...` bound
+// `w`). The default ends at a ',', ']' or '}' seen at nesting depth 0.
 fn void CompilerContext.skip_pattern_default(&self) {
     uint paren_depth = 0;
     uint brace_depth = 0;
@@ -1836,16 +1836,16 @@ fn void CompilerContext.skip_pattern_default(&self) {
     }
 }
 
-/// Pre-scan function body for var and function declarations and emit hoisted
-/// bytecode so they are available before any statements run.
-/// Emit CLOSURE+DECLVAR for every function declaration the body-scope hoist
-/// pass deferred (see hoisted_defer_names), then clear the list so a nested
-/// block never re-emits them.
-///
-/// Called at the top of the body, after the lexical scope for the body's own
-/// let/const is pushed and before any statement runs. Every body shape has to
-/// reach this exactly once: ordinary function bodies go through block(), while
-/// arrow ConciseBodies run their own statement loop and call it directly.
+// Pre-scan function body for var and function declarations and emit hoisted
+// bytecode so they are available before any statements run.
+// Emit CLOSURE+DECLVAR for every function declaration the body-scope hoist
+// pass deferred (see hoisted_defer_names), then clear the list so a nested
+// block never re-emits them.
+//
+// Called at the top of the body, after the lexical scope for the body's own
+// let/const is pushed and before any statement runs. Every body shape has to
+// reach this exactly once: ordinary function bodies go through block(), while
+// arrow ConciseBodies run their own statement loop and call it directly.
 fn void CompilerContext.emit_hoisted_fn_decls(&self) {
     if (self.hoisted_defer_count == 0 || self.hoisted_defer_emitted) return;
     // The list is NOT cleared: function_declaration reads it to recognise the
@@ -1861,24 +1861,24 @@ fn void CompilerContext.emit_hoisted_fn_decls(&self) {
     }
 }
 
-/// Whether a new Statement can begin immediately after a token of type `tt`,
-/// for the raw-token hoist pre-scan. Used to tell a FunctionDeclaration from a
-/// FunctionExpression (ES2024 §14.1): only the former is hoisted, and only the
-/// former's name binds in the enclosing scope.
-///
-/// A statement can follow a `;`, a `{`/`}` (a block boundary), a `:` (a
-/// LabelledStatement's colon, and — harmlessly for this use — an
-/// object-literal or conditional colon, where a `function` after it is an
-/// expression whose name the scan already leaves alone because it sits past
-/// `own_depth`), a `case`/`default` clause colon, or one of the keywords whose
-/// body is a Statement rather than an expression (`else`, `do`, `try`,
-/// `finally`). Everything else means an expression is still in progress, so a
-/// `function` there is a FunctionExpression.
-///
-/// A `function` immediately after an `if (...)`/`for (...)`/`while (...)`
-/// header is not covered (RPAREN is not listed): a FunctionDeclaration is not a
-/// legal body for those (§14.1 forbids it outside a Block), so the only
-/// `function` reachable there is an expression.
+// Whether a new Statement can begin immediately after a token of type `tt`,
+// for the raw-token hoist pre-scan. Used to tell a FunctionDeclaration from a
+// FunctionExpression (ES2024 §14.1): only the former is hoisted, and only the
+// former's name binds in the enclosing scope.
+//
+// A statement can follow a `;`, a `{`/`}` (a block boundary), a `:` (a
+// LabelledStatement's colon, and — harmlessly for this use — an
+// object-literal or conditional colon, where a `function` after it is an
+// expression whose name the scan already leaves alone because it sits past
+// `own_depth`), a `case`/`default` clause colon, or one of the keywords whose
+// body is a Statement rather than an expression (`else`, `do`, `try`,
+// `finally`). Everything else means an expression is still in progress, so a
+// `function` there is a FunctionExpression.
+//
+// A `function` immediately after an `if (...)`/`for (...)`/`while (...)`
+// header is not covered (RPAREN is not listed): a FunctionDeclaration is not a
+// legal body for those (§14.1 forbids it outside a Block), so the only
+// `function` reachable there is an expression.
 fn bool stmt_start_after(TokenType tt) {
     switch (tt) {
         case TokenType.SEMICOLON:
@@ -1897,27 +1897,27 @@ fn bool stmt_start_after(TokenType tt) {
     }
 }
 
-/// Whether the `class` token the raw-token pre-scan just consumed really opens
-/// a ClassDeclaration/ClassExpression, as opposed to being an IdentifierName in
-/// property position (`{ class: 86 }`, `{ class() {} }`, `o.class`, `{ class }`).
-///
-/// `class` is a reserved word, but a PropertyName and a MemberExpression's name
-/// are IdentifierNames, so both accept it. Treating those as a real class made
-/// skip_class_body() hunt forward for a `{` and skip a balanced block that
-/// belongs to the enclosing code, silently swallowing every declaration after
-/// it (typescript 5.4.5's keyword table, `{ class: 86, ... }`, ate the rest of
-/// its module and the `var`s past it were never hoisted).
-///
-/// Positive test rather than a blacklist of property contexts: after the `class`
-/// keyword the grammar allows only a BindingIdentifier, `extends`, or the body's
-/// `{`. `await` is its own TokenType, not IDENTIFIER, but `class await {}` is
-/// legal in non-async/non-module code (BindingIdentifier reuses the contextual
-/// await_is_identifier decision), so it must be recognized here too: missing it
-/// skipped the class-body skip and the body's `var`s leaked into the enclosing
-/// scope's hoist list. `yield` is always reserved in this strict-only engine,
-/// as are `static`, `let`, `package`, `implements`, etc., so they fall through
-/// to the parser's SyntaxError before this pre-scan's output matters. The lexer
-/// is restored either way, this is pure lookahead.
+// Whether the `class` token the raw-token pre-scan just consumed really opens
+// a ClassDeclaration/ClassExpression, as opposed to being an IdentifierName in
+// property position (`{ class: 86 }`, `{ class() {} }`, `o.class`, `{ class }`).
+//
+// `class` is a reserved word, but a PropertyName and a MemberExpression's name
+// are IdentifierNames, so both accept it. Treating those as a real class made
+// skip_class_body() hunt forward for a `{` and skip a balanced block that
+// belongs to the enclosing code, silently swallowing every declaration after
+// it (typescript 5.4.5's keyword table, `{ class: 86, ... }`, ate the rest of
+// its module and the `var`s past it were never hoisted).
+//
+// Positive test rather than a blacklist of property contexts: after the `class`
+// keyword the grammar allows only a BindingIdentifier, `extends`, or the body's
+// `{`. `await` is its own TokenType, not IDENTIFIER, but `class await {}` is
+// legal in non-async/non-module code (BindingIdentifier reuses the contextual
+// await_is_identifier decision), so it must be recognized here too: missing it
+// skipped the class-body skip and the body's `var`s leaked into the enclosing
+// scope's hoist list. `yield` is always reserved in this strict-only engine,
+// as are `static`, `let`, `package`, `implements`, etc., so they fall through
+// to the parser's SyntaxError before this pre-scan's output matters. The lexer
+// is restored either way, this is pure lookahead.
 fn bool CompilerContext.class_kw_starts_class(&self) {
     TokenType nt = self.peek_type();
     return nt == TokenType.IDENTIFIER || self.await_is_identifier(nt)
@@ -2544,15 +2544,15 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     self.lexer.seen_line_term  = saved_slt;
 }
 
-/// True when `tt` can end an ExpressionStatement, so a LineTerminator after
-/// it starts a new statement (ASI): `function` cannot continue an expression
-/// after these tokens. FUNCTION itself is here because the expression-skip
-/// path records the skipped `function` as the previous token, and a function
-/// expression cannot be followed by another `function` (`var g = function
-/// named() {}\nfunction f() {}` ends the variable statement at the `}`).
-/// Operators and the restricted-production keywords (`return`, `throw`,
-/// `break`, `continue`) can take a function expression on the next line, so
-/// they are deliberately absent.
+// True when `tt` can end an ExpressionStatement, so a LineTerminator after
+// it starts a new statement (ASI): `function` cannot continue an expression
+// after these tokens. FUNCTION itself is here because the expression-skip
+// path records the skipped `function` as the previous token, and a function
+// expression cannot be followed by another `function` (`var g = function
+// named() {}\nfunction f() {}` ends the variable statement at the `}`).
+// Operators and the restricted-production keywords (`return`, `throw`,
+// `break`, `continue`) can take a function expression on the next line, so
+// they are deliberately absent.
 fn bool token_completes_statement(TokenType tt) @inline {
     switch (tt) {
         case TokenType.IDENTIFIER:
@@ -2576,15 +2576,15 @@ fn bool token_completes_statement(TokenType tt) @inline {
     }
 }
 
-/// Pre-scan function declarations at the top level (global scope) and hoist them
-/// before any statements are compiled. This implements function declaration
-/// hoisting as per ES5 §10.2.1.1.
-///
-/// `checks_only`: emit just the GlobalDeclarationInstantiation CanDeclare
-/// checks (CHKGLOBALFUNC) for each top-level function name and skip all
-/// binding instantiation / inner compilation. Used for a Script's up-front
-/// check prologue, which must precede every var/function/lexical binding so a
-/// collision throws with no observable side effects (ES2015 §15.1.11).
+// Pre-scan function declarations at the top level (global scope) and hoist them
+// before any statements are compiled. This implements function declaration
+// hoisting as per ES5 §10.2.1.1.
+//
+// `checks_only`: emit just the GlobalDeclarationInstantiation CanDeclare
+// checks (CHKGLOBALFUNC) for each top-level function name and skip all
+// binding instantiation / inner compilation. Used for a Script's up-front
+// check prologue, which must precede every var/function/lexical binding so a
+// collision throws with no observable side effects (ES2015 §15.1.11).
 fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) {
     // See hoist_decls: self.is_async is the between-iteration `async function`
     // latch; start it clear and restore the enclosing value (e.g. a module
@@ -3007,21 +3007,21 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
     self.lexer.seen_line_term  = saved_slt;
 }
 
-/// Emit the parameter prologue: the function-level lexical scope, the TDZ
-/// sentinels, the default-value checks, and the PUTLEXes that make each param
-/// visible. Runs after the parameter list is parsed and every param has a
-/// register, and before the body, including before `emit_destruct_bindings`,
-/// since destructuring patterns may reference earlier params.
-///
-/// Shared by all four compilation entry points (`parse_function_body`,
-/// `compile_inner_function`, `compile_arrow_inner_reparse`, and the arrow
-/// bodies) because they must emit byte-identical prologues: each one that
-/// hand-rolled its own copy is a place the next parameter-scope fix has to be
-/// applied again, and historically was not.
-///
-/// `param_name_indices` holds each param's string-constant index in
-/// declaration order; `first_default_idx` is the 0-based arg index of the
-/// first defaulted param, or 0xFFFF when none has a default.
+// Emit the parameter prologue: the function-level lexical scope, the TDZ
+// sentinels, the default-value checks, and the PUTLEXes that make each param
+// visible. Runs after the parameter list is parsed and every param has a
+// register, and before the body, including before `emit_destruct_bindings`,
+// since destructuring patterns may reference earlier params.
+//
+// Shared by all four compilation entry points (`parse_function_body`,
+// `compile_inner_function`, `compile_arrow_inner_reparse`, and the arrow
+// bodies) because they must emit byte-identical prologues: each one that
+// hand-rolled its own copy is a place the next parameter-scope fix has to be
+// applied again, and historically was not.
+//
+// `param_name_indices` holds each param's string-constant index in
+// declaration order; `first_default_idx` is the 0-based arg index of the
+// first defaulted param, or 0xFFFF when none has a default.
 fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
                                              ushort first_default_idx,
                                              uint[] param_name_indices) {
@@ -3128,7 +3128,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
     }
 }
 
-/// Parse function body (parameters and block) and compile into a nested context.
+// Parse function body (parameters and block) and compile into a nested context.
 fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // We're inside FormalParameters; destructured patterns collect via
     // collect_*_param_binds and rely on in_formal_params being true so the
@@ -3427,11 +3427,11 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     }
 }
 
-/// Whether any branch instruction in the freshly compiled body targets the
-/// fall-off-end position (code_count). Such a branch would advance curr_pc to
-/// code_end, which the VM no longer guards against per-instruction, so the
-/// caller must append a terminating RETUNDEF to catch that path. Offset
-/// decoding mirrors moveelim's jump-target scan (the authoritative branch set).
+// Whether any branch instruction in the freshly compiled body targets the
+// fall-off-end position (code_count). Such a branch would advance curr_pc to
+// code_end, which the VM no longer guards against per-instruction, so the
+// caller must append a terminating RETUNDEF to catch that path. Offset
+// decoding mirrors moveelim's jump-target scan (the authoritative branch set).
 fn bool CompilerContext.branch_targets_fall_off_end(&self) {
     uint n = self.code_count;
     for (uint i = 0; i < n; i++) {
@@ -3464,9 +3464,9 @@ fn bool CompilerContext.branch_targets_fall_off_end(&self) {
     return false;
 }
 
-/// Compile a default parameter expression as a zero-argument inner function.
-/// Free variables in the expression are resolved at runtime via GETVAR
-/// against the outer scope's environment chain.
+// Compile a default parameter expression as a zero-argument inner function.
+// Free variables in the expression are resolved at runtime via GETVAR
+// against the outer scope's environment chain.
 fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferred_name = {}) {
     // Create a new CompilerContext for the default expression
     CompilerContext def_ctx;
@@ -3595,9 +3595,9 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     return func;
 }
 
-/// Compile a computed property key expression into a 0-arg inner function.
-/// The caller must have already consumed the `[` token.
-/// This function compiles the expression and `]` is consumed by the caller after.
+// Compile a computed property key expression into a 0-arg inner function.
+// The caller must have already consumed the `[` token.
+// This function compiles the expression and `]` is consumed by the caller after.
 fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     CompilerContext key_ctx;
     key_ctx.init(self.lexer, self.heap);
@@ -3648,17 +3648,17 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     return func;
 }
 
-/// Compile a class static initialization block (`static { ... }`, ES2022
-/// §15.7.11) into a zero-arg CompiledFunction. The caller must position the
-/// lexer right at the block's own opening `{` (i.e. `static` already
-/// consumed) and pass a class-enclosing `self`, a fresh CompilerContext is
-/// created here, propagating the class/private-name context the same way
-/// ensure_field_init_ctx does for static field initializers, but each block
-/// gets its OWN function (own var/lex scope, own break/continue/label
-/// space): per test262 static-init-scope-var-*, a `var` declared in one
-/// block is invisible to sibling blocks and the enclosing scope, unlike the
-/// single shared __static_init__ that static field initializers install
-/// into.
+// Compile a class static initialization block (`static { ... }`, ES2022
+// §15.7.11) into a zero-arg CompiledFunction. The caller must position the
+// lexer right at the block's own opening `{` (i.e. `static` already
+// consumed) and pass a class-enclosing `self`, a fresh CompilerContext is
+// created here, propagating the class/private-name context the same way
+// ensure_field_init_ctx does for static field initializers, but each block
+// gets its OWN function (own var/lex scope, own break/continue/label
+// space): per test262 static-init-scope-var-*, a `var` declared in one
+// block is invisible to sibling blocks and the enclosing scope, unlike the
+// single shared __static_init__ that static field initializers install
+// into.
 fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     CompilerContext block_ctx;
     block_ctx.init(self.lexer, self.heap);
@@ -3720,11 +3720,11 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     return func;
 }
 
-/// Compile an inner function (parameters + body) into a sub-CompiledFunction.
-/// If `is_named_expr` is true and `name` is non-empty, the resulting function
-/// is tagged with `is_namebinding`, signalling the VM to bind `name` to the
-/// function object in a fresh lexical environment at call time (per ES2015
-/// §14.1.20 NamedEvaluation).
+// Compile an inner function (parameters + body) into a sub-CompiledFunction.
+// If `is_named_expr` is true and `name` is non-empty, the resulting function
+// is tagged with `is_namebinding`, signalling the VM to bind `name` to the
+// function object in a fresh lexical environment at call time (per ES2015
+// §14.1.20 NamedEvaluation).
 fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false) {
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
@@ -4163,7 +4163,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     return func;
 }
 
-/// Parse a function expression: function name?(...) { ... }
+// Parse a function expression: function name?(...) { ... }
 fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     self.expect(TokenType.FUNCTION)!;
     // Capture the byte offset of `function`, used by Function.prototype.toString
@@ -4287,20 +4287,20 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     return result;
 }
 
-/// Parse a function expression body (parameters + block) without the `function` keyword.
-/// Used for method shorthand in object literals.
-/// The MethodDefinition form being compiled, for the §14.3 accessor arity
-/// rule. A plain method has no restriction; the two accessor forms fix their
-/// parameter list in the grammar itself:
-///
-///   get PropertyName ( ) { FunctionBody }
-///   set PropertyName ( PropertySetParameterList ) { FunctionBody }
-///   PropertySetParameterList : FormalParameter
-///
-/// so a getter takes no parameter at all and a setter takes exactly one, which
-/// (being a FormalParameter, not a FormalParameterList) may not be a rest
-/// parameter. Defaults and destructuring patterns ARE FormalParameters and
-/// stay legal.
+// Parse a function expression body (parameters + block) without the `function` keyword.
+// Used for method shorthand in object literals.
+// The MethodDefinition form being compiled, for the §14.3 accessor arity
+// rule. A plain method has no restriction; the two accessor forms fix their
+// parameter list in the grammar itself:
+//
+//   get PropertyName ( ) { FunctionBody }
+//   set PropertyName ( PropertySetParameterList ) { FunctionBody }
+//   PropertySetParameterList : FormalParameter
+//
+// so a getter takes no parameter at all and a setter takes exactly one, which
+// (being a FormalParameter, not a FormalParameterList) may not be a rest
+// parameter. Defaults and destructuring patterns ARE FormalParameters and
+// stay legal.
 enum AccessorKind : int {
     NOT_ACCESSOR,
     GETTER,
@@ -4345,10 +4345,10 @@ fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF
     return result;
 }
 
-/// Parse an arrow function by re-parsing the parameter list from source.
-/// The lexer is positioned right after '(' when called. This function
-/// re-parses params (including defaults, rest params, etc.) and compiles the body.
-/// Called from primary_expr after the arrow detection scan confirms '=>' follows.
+// Parse an arrow function by re-parsing the parameter list from source.
+// The lexer is positioned right after '(' when called. This function
+// re-parses params (including defaults, rest params, etc.) and compiles the body.
+// Called from primary_expr after the arrow detection scan confirms '=>' follows.
 fn ushort? CompilerContext.parse_arrow_function_reparse(&self, uint src_start = 0xFFFFFFFF) {
     // Apply inferred name (from enclosing `var f = ...`) per ES2015 §14.1.20.
     char[] arrow_name;
@@ -4391,9 +4391,9 @@ fn ushort? CompilerContext.parse_arrow_function_reparse(&self, uint src_start = 
     return result;
 }
 
-/// Compile an inner arrow function by re-parsing params from source.
-/// The lexer is positioned right after '(' when called. This function
-/// parses '(params) => body', handling defaults, rest params, etc.
+// Compile an inner arrow function by re-parsing params from source.
+// The lexer is positioned right after '(' when called. This function
+// parses '(params) => body', handling defaults, rest params, etc.
 fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint src_start = 0xFFFFFFFF, bool is_async_arrow = false) {
     // Create a new CompilerContext for the arrow function
     CompilerContext arrow_ctx;
@@ -4887,12 +4887,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     return func;
 }
 
-/// Parse an arrow function: `(params) => expr` or `(params) => { body }`
-/// or `param => expr`.  The caller has already consumed the leading `(`
-/// or the single identifier.
-///
-/// `params`: pre-parsed parameter name slices (pointer to first element).
-/// `param_count`: number of parameters.
+// Parse an arrow function: `(params) => expr` or `(params) => { body }`
+// or `param => expr`.  The caller has already consumed the leading `(`
+// or the single identifier.
+//
+// `params`: pre-parsed parameter name slices (pointer to first element).
+// `param_count`: number of parameters.
 fn ushort? CompilerContext.parse_arrow_function(&self, char[]* params, ushort param_count, bool has_rest, uint src_start = 0xFFFFFFFF) {
     // Consume the ARROW token
     self.expect(TokenType.ARROW)!;
@@ -4938,8 +4938,8 @@ fn ushort? CompilerContext.parse_arrow_function(&self, char[]* params, ushort pa
     return result;
 }
 
-/// Compile an inner arrow function given its parameter names.
-/// Arrow functions have `is_arrow = true`, lexical `this`, and no `.prototype`.
+// Compile an inner arrow function given its parameter names.
+// Arrow functions have `is_arrow = true`, lexical `this`, and no `.prototype`.
 fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params, ushort param_count, bool has_rest, uint src_start = 0xFFFFFFFF, bool is_async_arrow = false) {
     // Create a new CompilerContext for the arrow function
     CompilerContext arrow_ctx;

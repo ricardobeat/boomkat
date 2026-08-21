@@ -1,9 +1,9 @@
-/// BigInt constructor, static methods (asIntN / asUintN), and
-/// BigInt.prototype methods (toString / valueOf / toLocaleString).
-///
-/// See plan 056.  BigInt values are fixed-width int128 boxes (see hbigint.c3);
-/// results outside ±(2^127 − 1) raise RangeError rather than wrapping, except
-/// asIntN / asUintN whose modular reduction is their specified behaviour.
+// BigInt constructor, static methods (asIntN / asUintN), and
+// BigInt.prototype methods (toString / valueOf / toLocaleString).
+//
+// See plan 056.  BigInt values are fixed-width int128 boxes (see hbigint.c3);
+// results outside ±(2^127 − 1) raise RangeError rather than wrapping, except
+// asIntN / asUintN whose modular reduction is their specified behaviour.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -20,11 +20,11 @@ import libc;
 // Result helper
 // ============================================================================
 
-/// Box an int128 and store it into ctx.result.  Mirrors the object-result
-/// ownership pattern: hbigint_alloc yields refcount 1 (+temproot); set_bigint
-/// increfs; we drop the alloc's initial reference so the value is anchored
-/// solely by the result slot (which the CALL handler copies out with incref).
-/// On allocation failure, raises a RangeError.
+// Box an int128 and store it into ctx.result.  Mirrors the object-result
+// ownership pattern: hbigint_alloc yields refcount 1 (+temproot); set_bigint
+// increfs; we drop the alloc's initial reference so the value is anchored
+// solely by the result slot (which the CALL handler copies out with incref).
+// On allocation failure, raises a RangeError.
 fn void builtin_set_bigint_result(BuiltinContext* ctx, int128 value) {
     hbigint::HBigInt*? box_r = hbigint::hbigint_alloc(ctx.heap, value);
     if (catch box_r) {
@@ -40,9 +40,9 @@ fn void builtin_set_bigint_result(BuiltinContext* ctx, int128 value) {
 // ToBigInt (ES2020 §7.1.13)
 // ============================================================================
 
-/// Convert a value to an int128 BigInt per ToBigInt.  On failure sets
-/// ctx.should_throw (TypeError / SyntaxError / RangeError) and returns 0.
-/// `ok` is set false on any thrown path.
+// Convert a value to an int128 BigInt per ToBigInt.  On failure sets
+// ctx.should_throw (TypeError / SyntaxError / RangeError) and returns 0.
+// `ok` is set false on any thrown path.
 fn int128 builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok) {
     *ok = true;
     switch (val.get_tag()) {
@@ -100,9 +100,9 @@ fn int128 builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok) {
     }
 }
 
-/// NumberToBigInt (ES2020 §7.1.13 step for Number): the number must be an
-/// integer; faults BIGINT_SYNTAX for non-integral, BIGINT_OVERFLOW for
-/// magnitudes beyond int128 range.
+// NumberToBigInt (ES2020 §7.1.13 step for Number): the number must be an
+// integer; faults BIGINT_SYNTAX for non-integral, BIGINT_OVERFLOW for
+// magnitudes beyond int128 range.
 fn int128? number_to_bigint(double d) {
     if (math::is_nan(d) || math::is_inf(d)) return hbigint::BIGINT_SYNTAX~;
     if (d != math::trunc(d)) return hbigint::BIGINT_SYNTAX~;
@@ -171,8 +171,8 @@ fn void builtin_bigint(BuiltinContext* ctx) {
 // BigInt.asIntN(bits, value) / BigInt.asUintN(bits, value), ES2020 §20.2.2
 // ============================================================================
 
-/// Parse the `bits` argument: ToIndex (a non-negative integer).  On failure
-/// sets ctx.should_throw and returns false.
+// Parse the `bits` argument: ToIndex (a non-negative integer).  On failure
+// sets ctx.should_throw and returns false.
 fn bool bigint_read_bits(BuiltinContext* ctx, uint* out_bits) {
     TVal undef; undef.set_undefined();
     TVal* bits_arg = ctx.argc > 0 ? &ctx.regs[ctx.base_reg] : &undef;
@@ -186,7 +186,7 @@ fn bool bigint_read_bits(BuiltinContext* ctx, uint* out_bits) {
     return true;
 }
 
-/// asUintN(bits, x): x modulo 2^bits, interpreted in [0, 2^bits).
+// asUintN(bits, x): x modulo 2^bits, interpreted in [0, 2^bits).
 fn void builtin_bigint_as_uintn(BuiltinContext* ctx) {
     uint bits;
     if (!bigint_read_bits(ctx, &bits)) return;
@@ -212,7 +212,7 @@ fn void builtin_bigint_as_uintn(BuiltinContext* ctx) {
     builtin_set_bigint_result(ctx, r);
 }
 
-/// asIntN(bits, x): x modulo 2^bits, interpreted in [-2^(bits-1), 2^(bits-1)).
+// asIntN(bits, x): x modulo 2^bits, interpreted in [-2^(bits-1), 2^(bits-1)).
 fn void builtin_bigint_as_intn(BuiltinContext* ctx) {
     uint bits;
     if (!bigint_read_bits(ctx, &bits)) return;
@@ -242,8 +242,8 @@ fn void builtin_bigint_as_intn(BuiltinContext* ctx) {
 // BigInt.prototype.toString([radix]) / valueOf(), ES2020 §20.2.3
 // ============================================================================
 
-/// thisBigIntValue (ES2020 §20.2.3.4): unwrap a BigInt primitive.  On failure
-/// sets ctx.should_throw and returns false.
+// thisBigIntValue (ES2020 §20.2.3.4): unwrap a BigInt primitive.  On failure
+// sets ctx.should_throw and returns false.
 fn bool bigint_this_value(BuiltinContext* ctx, int128* out_val) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_bigint()) {

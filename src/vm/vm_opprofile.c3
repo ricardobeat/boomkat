@@ -1,14 +1,14 @@
-/// Execution-weighted opcode-pair profiler (feature OP_PROFILE).
-///
-/// Static disasm histograms rank a sequence by how often it is COMPILED,
-/// which says nothing about how often it runs: a pair in a hot loop body is
-/// worth thousands of times one in top-level setup code. Fusion only pays
-/// back on executed sequences, so candidate ranking needs the dynamic count.
-///
-/// The counters are a dense [LAST_OP][LAST_OP] matrix of the (previous op,
-/// current op) pair, incremented once per dispatch and dumped at exit. Both
-/// the counters and the dispatch-loop hook are gated on OP_PROFILE, which no
-/// shipping target enables, so the default build carries neither.
+// Execution-weighted opcode-pair profiler (feature OP_PROFILE).
+//
+// Static disasm histograms rank a sequence by how often it is COMPILED,
+// which says nothing about how often it runs: a pair in a hot loop body is
+// worth thousands of times one in top-level setup code. Fusion only pays
+// back on executed sequences, so candidate ranking needs the dynamic count.
+//
+// The counters are a dense [LAST_OP][LAST_OP] matrix of the (previous op,
+// current op) pair, incremented once per dispatch and dumped at exit. Both
+// the counters and the dispatch-loop hook are gated on OP_PROFILE, which no
+// shipping target enables, so the default build carries neither.
 module boomkat::vm;
 
 import boomkat::bytecode;
@@ -17,11 +17,11 @@ import std::sort;
 
 const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 
-/// opprof_pairs[prev][cur] over every dispatched instruction. Pairs are
-/// counted across a call boundary too (the callee's first op follows the
-/// caller's CALL). A fusion pass only ever rewrites within one function
-/// body, so those cross-frame pairs are noise to be ignored when reading
-/// the dump rather than candidates.
+// opprof_pairs[prev][cur] over every dispatched instruction. Pairs are
+// counted across a call boundary too (the callee's first op follows the
+// caller's CALL). A fusion pass only ever rewrites within one function
+// body, so those cross-frame pairs are noise to be ignored when reading
+// the dump rather than candidates.
 ulong[OPPROF_N][OPPROF_N] opprof_pairs;
 ulong[OPPROF_N] opprof_singles;
 uint opprof_prev = OPPROF_N - 1;
@@ -45,7 +45,7 @@ fn int opprof_row_cmp(OpprofRow a, OpprofRow b) {
     return 0;
 }
 
-/// Dump the hottest executed singles and pairs to stderr.
+// Dump the hottest executed singles and pairs to stderr.
 fn void opprof_dump() {
 $if $feature(OP_PROFILE):
     ulong total = 0;

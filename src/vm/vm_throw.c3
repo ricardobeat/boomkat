@@ -11,10 +11,10 @@ import boomkat::builtins;
 // Catcher chain helpers
 // ============================================================================
 
-/// If the activation being unwound is a generator/async body, transition its
-/// GeneratorState to GEN_COMPLETED (ES6 §25.3.3.2: a generator whose body
-/// throws is completed). Without this a later .next()/.throw()/.return() sees a
-/// stale GEN_EXECUTING state and wrongly reports "Generator is executing".
+// If the activation being unwound is a generator/async body, transition its
+// GeneratorState to GEN_COMPLETED (ES6 §25.3.3.2: a generator whose body
+// throws is completed). Without this a later .next()/.throw()/.return() sees a
+// stale GEN_EXECUTING state and wrongly reports "Generator is executing".
 fn void vm_complete_gen_on_unwind(Vm* vm, Activation* act) {
     if (act.async_gen_state == null) return;
     // Async functions settle their Promise (reject) via their own throw path;
@@ -28,17 +28,17 @@ fn void vm_complete_gen_on_unwind(Vm* vm, Activation* act) {
     act.async_gen_state = null;
 }
 
-/// Walk the catcher chain and throw a value.
-/// Searches the full activation chain, unwinding intermediate activations
-/// when a catcher is found in a parent activation.
-///
-/// If `local_only` is true, only searches the current activation (does not
-/// walk parent activations). Used by generator LOAD_RESUME THROW to determine
-/// whether the generator itself has a catcher without finding the caller's.
-///
-/// Returns true if a catcher was found (execution continues after restart).
-/// Returns false if no catcher was found anywhere in the call stack
-/// (caller should return VM_ERROR~).
+// Walk the catcher chain and throw a value.
+// Searches the full activation chain, unwinding intermediate activations
+// when a catcher is found in a parent activation.
+//
+// If `local_only` is true, only searches the current activation (does not
+// walk parent activations). Used by generator LOAD_RESUME THROW to determine
+// whether the generator itself has a catcher without finding the caller's.
+//
+// Returns true if a catcher was found (execution continues after restart).
+// Returns false if no catcher was found anywhere in the call stack
+// (caller should return VM_ERROR~).
 fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                        Instruction** curr_pc, bool* needs_restart,
                        bool local_only = false) {
@@ -189,13 +189,13 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
     return false;
 }
 
-/// Record an uncaught exception in the VM and return the VM_ERROR~ sentinel.
-///
-/// When an opcode allocates an error and calls vm_throw_value but no catcher
-/// is found, the VM must surface the error to the embedder (CLI, batch
-/// runner, host app) rather than silently swallowing it. This helper mirrors
-/// the THROW opcode's uncaught-exception handling (vm.c3:8098-8107) so every
-/// opcode that can fail vm_throw_value behaves consistently.
+// Record an uncaught exception in the VM and return the VM_ERROR~ sentinel.
+//
+// When an opcode allocates an error and calls vm_throw_value but no catcher
+// is found, the VM must surface the error to the embedder (CLI, batch
+// runner, host app) rather than silently swallowing it. This helper mirrors
+// the THROW opcode's uncaught-exception handling (vm.c3:8098-8107) so every
+// opcode that can fail vm_throw_value behaves consistently.
 fn TVal? vm_uncaught_error(Vm* vm, TVal* err_val) {
     vm.has_error = true;
     vm.heap.has_error = true;
@@ -204,10 +204,10 @@ fn TVal? vm_uncaught_error(Vm* vm, TVal* err_val) {
     return VM_ERROR~;
 }
 
-/// Create and throw an error object with the given prototype and message.
-/// Returns true if a catcher caught the error (caller continues execution).
-/// Returns false if uncaught (caller should `return VM_ERROR~`).
-/// On allocation failure, also returns false.
+// Create and throw an error object with the given prototype and message.
+// Returns true if a catcher caught the error (caller continues execution).
+// Returns false if uncaught (caller should `return VM_ERROR~`).
+// On allocation failure, also returns false.
 fn bool vm_throw_error(Vm* vm, HObject* proto, char[] msg, Activation* act,
                        Instruction** curr_pc, bool* needs_restart) {
     HObject*? err_obj = vm.heap.alloc_object(hobject::ObjClass.ERROR);
@@ -235,10 +235,10 @@ fn bool vm_throw_error(Vm* vm, HObject* proto, char[] msg, Activation* act,
     return false;
 }
 
-/// Splice a format string containing `%s` placeholders and NUL-terminated
-/// `char*` args into `buf`, returning the bytes written (truncated to fit).
-/// All error-message formats used here are `%s`-only, so this fully replaces
-/// the previous snprintf without pulling in a printf implementation.
+// Splice a format string containing `%s` placeholders and NUL-terminated
+// `char*` args into `buf`, returning the bytes written (truncated to fit).
+// All error-message formats used here are `%s`-only, so this fully replaces
+// the previous snprintf without pulling in a printf implementation.
 fn int splice_fmt(char[] buf, char* fmt, char*[] args) @local {
     int out = 0;
     int cap = (int)buf.len;
@@ -261,7 +261,7 @@ fn int splice_fmt(char[] buf, char* fmt, char*[] args) @local {
     return out;
 }
 
-/// Create and throw an error with a single %s formatted message.
+// Create and throw an error with a single %s formatted message.
 fn bool vm_throw_error_fmt(Vm* vm, HObject* proto, char* fmt, char* arg,
                            Activation* act, Instruction** curr_pc, bool* needs_restart) {
     char[types::ERROR_MSG_BUF] buf;
@@ -270,7 +270,7 @@ fn bool vm_throw_error_fmt(Vm* vm, HObject* proto, char* fmt, char* arg,
     return vm_throw_error(vm, proto, buf[:len], act, curr_pc, needs_restart);
 }
 
-/// Helper to get index from valstack base to a pointer
+// Helper to get index from valstack base to a pointer
 fn uint byte_offset(TVal* base, TVal* ptr) @inline {
     return (uint)(ptr - base);
 }

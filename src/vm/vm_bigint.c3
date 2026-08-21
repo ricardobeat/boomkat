@@ -1,11 +1,11 @@
-/// BigInt operand handling for the arithmetic, bitwise, and
-/// comparison opcodes.
-///
-/// The hot number paths in Vm.run call into these helpers only after checking
-/// that at least one operand is a BigInt, so the common numeric case pays
-/// nothing.  Arithmetic on two BigInts is done in native int128 (fixed width);
-/// out-of-range results and division/modulo by zero raise the appropriate
-/// error via the deferred-throw mechanism (vm.throw_pending).
+// BigInt operand handling for the arithmetic, bitwise, and
+// comparison opcodes.
+//
+// The hot number paths in Vm.run call into these helpers only after checking
+// that at least one operand is a BigInt, so the common numeric case pays
+// nothing.  Arithmetic on two BigInts is done in native int128 (fixed width);
+// out-of-range results and division/modulo by zero raise the appropriate
+// error via the deferred-throw mechanism (vm.throw_pending).
 module boomkat::vm;
 
 import boomkat::types;
@@ -18,7 +18,7 @@ import boomkat::hbigint;
 // Result of a BigInt binary-op attempt.
 // ============================================================================
 
-/// Outcome of vm_bigint_binop / vm_bigint_relcompare.
+// Outcome of vm_bigint_binop / vm_bigint_relcompare.
 enum BigIntOpResult : char {
     NOT_BIGINT,   // Neither operand was a BigInt, so the caller falls through.
     HANDLED,      // The result is in the destination register; continue.
@@ -29,9 +29,9 @@ enum BigIntOpResult : char {
 // Register store
 // ============================================================================
 
-/// Store a freshly computed int128 into destination register `ra` as a boxed
-/// BigInt, with correct refcounting.  On allocation failure raises a RangeError
-/// (out of memory is surfaced the same as overflow here) and returns false.
+// Store a freshly computed int128 into destination register `ra` as a boxed
+// BigInt, with correct refcounting.  On allocation failure raises a RangeError
+// (out of memory is surfaced the same as overflow here) and returns false.
 fn bool vm_set_reg_bigint(Vm* vm, TVal* ra, int128 value) {
     hbigint::HBigInt*? box_r = hbigint::hbigint_alloc(vm.heap, value);
     if (catch box_r) {
@@ -52,14 +52,14 @@ fn bool vm_set_reg_bigint(Vm* vm, TVal* ra, int128 value) {
 // Arithmetic / bitwise binary ops
 // ============================================================================
 
-/// Attempt a BigInt binary arithmetic / bitwise op.
-///
-/// Contract (ES2020 §12 numeric operations):
-///   - Both operands BigInt → compute in int128; overflow / divide-by-zero
-///     raise RangeError.
-///   - Exactly one operand BigInt (the other Number/anything) → TypeError
-///     ("Cannot mix BigInt and other types").
-///   - Neither operand BigInt → NOT_BIGINT (caller handles the numeric path).
+// Attempt a BigInt binary arithmetic / bitwise op.
+//
+// Contract (ES2020 §12 numeric operations):
+//   - Both operands BigInt → compute in int128; overflow / divide-by-zero
+//     raise RangeError.
+//   - Exactly one operand BigInt (the other Number/anything) → TypeError
+//     ("Cannot mix BigInt and other types").
+//   - Neither operand BigInt → NOT_BIGINT (caller handles the numeric path).
 fn BigIntOpResult vm_bigint_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* rc) {
     // ES2020 §13.15.3: ToPrimitive(hint number) both operands first, so a
     // wrapper / @@toPrimitive that yields a BigInt participates as a BigInt.
@@ -125,9 +125,9 @@ fn BigIntOpResult vm_bigint_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* r
     return BigIntOpResult.HANDLED;
 }
 
-/// BigInt left shift with overflow checking (fixed-width int128).  A negative
-/// count shifts right (arithmetic).  Shifting a nonzero value out of the
-/// 128-bit range is an overflow (RangeError at the caller).
+// BigInt left shift with overflow checking (fixed-width int128).  A negative
+// count shifts right (arithmetic).  Shifting a nonzero value out of the
+// 128-bit range is an overflow (RangeError at the caller).
 fn int128? vm_bigint_shl(int128 v, int128 count) {
     if (count == 0) return v;
     if (count < 0) {
@@ -149,10 +149,10 @@ fn int128? vm_bigint_shl(int128 v, int128 count) {
     return r;
 }
 
-/// BigInt `>>` (v >> count). Positive count is an arithmetic right shift
-/// (saturating toward 0 / -1 at ≥128); a negative count is a left shift by
-/// |count|. Mirror of `vm_bigint_shl` with the sign flipped, testing the
-/// magnitude against +128 directly so `count == BIGINT_MIN` never negates.
+// BigInt `>>` (v >> count). Positive count is an arithmetic right shift
+// (saturating toward 0 / -1 at ≥128); a negative count is a left shift by
+// |count|. Mirror of `vm_bigint_shl` with the sign flipped, testing the
+// magnitude against +128 directly so `count == BIGINT_MIN` never negates.
 fn int128? vm_bigint_shr(int128 v, int128 count) {
     if (count == 0) return v;
     if (count > 0) {
@@ -170,7 +170,7 @@ fn int128? vm_bigint_shr(int128 v, int128 count) {
     return r;
 }
 
-/// Compute BigInt increment/decrement of `v`.  Overflow faults.
+// Compute BigInt increment/decrement of `v`.  Overflow faults.
 fn int128? bigint_step(int128 v, bool inc) {
     return inc ? hbigint::bigint_add(v, (int128)1) : hbigint::bigint_sub(v, (int128)1);
 }
@@ -179,9 +179,9 @@ fn int128? bigint_step(int128 v, bool inc) {
 // Unary
 // ============================================================================
 
-/// Increment or decrement an owned BigInt register in place.  `slot` must
-/// currently hold a BigInt (its box reference is released and replaced).
-/// Overflow raises RangeError.
+// Increment or decrement an owned BigInt register in place.  `slot` must
+// currently hold a BigInt (its box reference is released and replaced).
+// Overflow raises RangeError.
 fn BigIntOpResult vm_bigint_incdec(Vm* vm, TVal* slot, bool inc) {
     int128? r = bigint_step(slot.get_bigint(), inc);
     if (catch r) {
@@ -192,8 +192,8 @@ fn BigIntOpResult vm_bigint_incdec(Vm* vm, TVal* slot, bool inc) {
     return BigIntOpResult.HANDLED;
 }
 
-/// Attempt a BigInt unary negation (UNM) or bitwise-not (BNOT).  Returns
-/// NOT_BIGINT when the operand is not a BigInt.
+// Attempt a BigInt unary negation (UNM) or bitwise-not (BNOT).  Returns
+// NOT_BIGINT when the operand is not a BigInt.
 fn BigIntOpResult vm_bigint_unary(Vm* vm, Opcode op, TVal* ra, TVal* operand) {
     if (!operand.is_bigint()) return BigIntOpResult.NOT_BIGINT;
     int128 a = operand.get_bigint();
@@ -221,9 +221,9 @@ fn BigIntOpResult vm_bigint_unary(Vm* vm, Opcode op, TVal* ra, TVal* operand) {
 // Relational comparison (mathematical value; mixes BigInt with Number)
 // ============================================================================
 
-/// Relational comparison where at least one primitive operand is a BigInt.
-/// Returns -1 / 0 / 1 (x < y / == / >).  Sets *is_undef when the result is
-/// undefined (a NaN number operand, or a string that is not a valid BigInt).
+// Relational comparison where at least one primitive operand is a BigInt.
+// Returns -1 / 0 / 1 (x < y / == / >).  Sets *is_undef when the result is
+// undefined (a NaN number operand, or a string that is not a valid BigInt).
 fn int vm_bigint_relational(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
     *is_undef = false;
     bool x_big = x.is_bigint();
@@ -282,10 +282,10 @@ fn int vm_bigint_relational(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
     return -c;
 }
 
-/// Compare a BigInt against a Number by mathematical value.  `big` is the
-/// BigInt's int128; `num` is the numeric operand.  Returns -1 / 0 / 1
-/// (big < num / == / >), or 2 when the comparison is "undefined" because
-/// `num` is NaN.
+// Compare a BigInt against a Number by mathematical value.  `big` is the
+// BigInt's int128; `num` is the numeric operand.  Returns -1 / 0 / 1
+// (big < num / == / >), or 2 when the comparison is "undefined" because
+// `num` is NaN.
 fn int vm_bigint_cmp_number(int128 big, double num) {
     if (num != num) return 2;   // NaN
     // Compare int128 (big) against a double (num) without precision loss for

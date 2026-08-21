@@ -104,25 +104,25 @@ macro Instruction* th_next(Instruction* pc, Instruction* code_end, TVal* regs, C
     return g_threaded_handlers[next.op.ordinal](pc, code_end, regs, cold);
 }
 
-/// Charge one backward jump against the GC safepoint budget, reporting whether
-/// the caller must bail to the switch.
-///
-/// Running the safepoint here instead would put a call in every branch handler,
-/// which is what makes them non-leaf: LLVM then wraps each one in a four-pair
-/// stp/ldp frame that every taken back-edge pays, on handlers whose fast path
-/// is a compare and a pc add. The budget expires once per BWD_GC_INTERVAL
-/// back-edges, so handing that iteration to the switch (which charges the
-/// budget itself and runs the safepoint) is far cheaper than framing the
-/// common case. The budget is left untouched on a bail so the switch's own
-/// decrement is the one that fires.
-///
-/// The interrupt budget is charged here for the same reason: threaded dispatch
-/// consumes the vast majority of back-edges, so a poll that only ran at switch
-/// sites would fire roughly BWD_GC_INTERVAL times too rarely, and a runaway
-/// loop could run tens of millions of iterations before the host's abort
-/// landed. No handler is the one-compare fast path; with one installed, a bail
-/// hands the due poll to the switch site, whose decrement is the one that
-/// fires.
+// Charge one backward jump against the GC safepoint budget, reporting whether
+// the caller must bail to the switch.
+//
+// Running the safepoint here instead would put a call in every branch handler,
+// which is what makes them non-leaf: LLVM then wraps each one in a four-pair
+// stp/ldp frame that every taken back-edge pays, on handlers whose fast path
+// is a compare and a pc add. The budget expires once per BWD_GC_INTERVAL
+// back-edges, so handing that iteration to the switch (which charges the
+// budget itself and runs the safepoint) is far cheaper than framing the
+// common case. The budget is left untouched on a bail so the switch's own
+// decrement is the one that fires.
+//
+// The interrupt budget is charged here for the same reason: threaded dispatch
+// consumes the vast majority of back-edges, so a poll that only ran at switch
+// sites would fire roughly BWD_GC_INTERVAL times too rarely, and a runaway
+// loop could run tens of millions of iterations before the host's abort
+// landed. No handler is the one-compare fast path; with one installed, a bail
+// hands the due poll to the switch site, whose decrement is the one that
+// fires.
 macro bool th_bwd_edge_needs_safepoint(ColdCtx* cold) {
     vm_charge_interrupt(cold.vm.heap);
     // The interrupt budget runs down inside the burst too. Threaded dispatch
@@ -158,9 +158,9 @@ fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
 // inlinable before mutating either, or a bail after a completed retain leaks
 // the reference it took.
 
-/// True when `v` can be retained with a plain increment: every heap value
-/// except a pinned header (builtin strings, well-known symbols, the small-int
-/// cache), whose fixed refcount the switch is left to handle.
+// True when `v` can be retained with a plain increment: every heap value
+// except a pinned header (builtin strings, well-known symbols, the small-int
+// cache), whose fixed refcount the switch is left to handle.
 macro bool th_can_retain(TVal* v) @private {
     if (!v.is_heap_allocated()) return true;
     void* p = v.get_heapptr();
@@ -175,12 +175,12 @@ macro void th_do_retain(TVal* v) @private {
     ((types::HeapHeader*)p).refcount++;
 }
 
-/// True when the reference `slot` holds can be dropped with a plain decrement.
-///
-/// Mirrors the fast half of Heap.decref: everything except the refcount
-/// reaching zero, which is where the free path -- and its call -- lives. A
-/// header that would hit zero, a pinned one, and any release during a sweep
-/// (where decref applies extra reachability rules) all go to the switch.
+// True when the reference `slot` holds can be dropped with a plain decrement.
+//
+// Mirrors the fast half of Heap.decref: everything except the refcount
+// reaching zero, which is where the free path -- and its call -- lives. A
+// header that would hit zero, a pinned one, and any release during a sweep
+// (where decref applies extra reachability rules) all go to the switch.
 macro bool th_can_release(TVal* slot, ColdCtx* cold) @private {
     if (!slot.is_heap_allocated()) return true;
     void* p = slot.get_heapptr();
@@ -655,8 +655,8 @@ fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs,
 // transitions all stay behind one bail to the switch, which re-decodes the
 // instruction and runs the full handler.
 
-/// The ICEntry for the instruction at `pc`, or null when the function carries
-/// no IC array.
+// The ICEntry for the instruction at `pc`, or null when the function carries
+// no IC array.
 macro hobject::ICEntry* th_ic_at(Vm* vm, ColdCtx* cold, Instruction* pc) {
     hobject::ICEntry* base = (hobject::ICEntry*)vm.current_func.ic_entries;
     return base == null ? null : base + (uint)(pc - cold.code_base);
@@ -698,9 +698,9 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     return th_next(pc, code_end, regs, cold);
 }
 
-/// GETPROPC_CACHED, the warm form GETPROPC rewrites itself into. The key is
-/// implied by the site, so only the shape and the storage pointer are checked;
-/// a miss bails so the switch performs the downgrade back to GETPROPC.
+// GETPROPC_CACHED, the warm form GETPROPC rewrites itself into. The key is
+// implied by the site, so only the shape and the storage pointer are checked;
+// a miss bails so the switch performs the downgrade back to GETPROPC.
 fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;

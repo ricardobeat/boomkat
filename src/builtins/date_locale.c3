@@ -1,18 +1,18 @@
-/// Options-bag handling for Date.prototype.toLocaleString and its date-only
-/// and time-only siblings.
-///
-/// This is not ECMA-402. There is no locale database, no CLDR and no Intl
-/// object, because a locale database is far more data than an engine aimed at
-/// small devices can carry. What is here is the part of ECMA-402 §11.1.2
-/// CreateDateTimeFormat that does not need one: the argument validation, the
-/// order of the property Gets, and the resolution of components into a
-/// concrete format. Everything then renders through a single fixed locale,
-/// the en-US-like one the engine already produced before options existed.
-///
-/// So a caller gets real, checkable option semantics (a bad option value
-/// throws, a getter observes the documented Get order, `timeZone: "UTC"`
-/// shifts the clock) against one locale's spelling of the month names. What a
-/// caller does not get is a different locale's spelling.
+// Options-bag handling for Date.prototype.toLocaleString and its date-only
+// and time-only siblings.
+//
+// This is not ECMA-402. There is no locale database, no CLDR and no Intl
+// object, because a locale database is far more data than an engine aimed at
+// small devices can carry. What is here is the part of ECMA-402 §11.1.2
+// CreateDateTimeFormat that does not need one: the argument validation, the
+// order of the property Gets, and the resolution of components into a
+// concrete format. Everything then renders through a single fixed locale,
+// the en-US-like one the engine already produced before options existed.
+//
+// So a caller gets real, checkable option semantics (a bad option value
+// throws, a getter observes the documented Get order, `timeZone: "UTC"`
+// shifts the clock) against one locale's spelling of the month names. What a
+// caller does not get is a different locale's spelling.
 module boomkat::builtins;
 import boomkat::types;
 import std::math;
@@ -21,17 +21,17 @@ import boomkat::heap;
 import boomkat::hstring;
 import boomkat::hobject;
 
-/// Room for the widest format this file can produce: a full weekday name, a
-/// full month name, a year past the four-digit range with an era suffix, a
-/// full time and a zone label.
+// Room for the widest format this file can produce: a full weekday name, a
+// full month name, a year past the four-digit range with an era suffix, a
+// full time and a zone label.
 const int DATE_LOCALE_BUF = 128;
 
 // ============================================================================
 // Option value encodings
 // ============================================================================
 
-/// A component's requested width. NONE means the caller did not ask for the
-/// component, which is distinct from asking for it in its default width.
+// A component's requested width. NONE means the caller did not ask for the
+// component, which is distinct from asking for it in its default width.
 const int DTF_NONE    = 0;
 const int DTF_NUMERIC = 1;
 const int DTF_2DIGIT  = 2;
@@ -39,21 +39,21 @@ const int DTF_LONG    = 3;
 const int DTF_SHORT   = 4;
 const int DTF_NARROW  = 5;
 
-/// dateStyle / timeStyle. NONE means absent.
+// dateStyle / timeStyle. NONE means absent.
 const int DTS_NONE   = 0;
 const int DTS_FULL   = 1;
 const int DTS_LONG   = 2;
 const int DTS_MEDIUM = 3;
 const int DTS_SHORT  = 4;
 
-/// `required` in ECMA-402 §11.1.2: which half of the format the calling method
-/// is about. It governs the defaults and which of dateStyle/timeStyle the
-/// method will accept, not which components a caller may name.
+// `required` in ECMA-402 §11.1.2: which half of the format the calling method
+// is about. It governs the defaults and which of dateStyle/timeStyle the
+// method will accept, not which components a caller may name.
 const int DTF_REQ_DATE = 0;
 const int DTF_REQ_TIME = 1;
 const int DTF_REQ_ANY  = 2;
 
-/// The resolved format, the engine's stand-in for a DateTime Format Record.
+// The resolved format, the engine's stand-in for a DateTime Format Record.
 struct DateTimeFormatOpts {
     int weekday;
     int era;
@@ -63,23 +63,23 @@ struct DateTimeFormatOpts {
     int hour;
     int minute;
     int second;
-    /// Digits of sub-second precision to show, 1 to 3, or 0 for none.
+    // Digits of sub-second precision to show, 1 to 3, or 0 for none.
     int frac_digits;
     int time_zone_name;
     int date_style;
     int time_style;
-    /// Tri-state hour12: -1 absent, 0 false, 1 true. Absent means the fixed
-    /// locale's own preference, which is the 12-hour clock.
+    // Tri-state hour12: -1 absent, 0 false, 1 true. Absent means the fixed
+    // locale's own preference, which is the 12-hour clock.
     int hour12;
-    /// Offset from UTC in seconds for the requested zone. When
-    /// `tz_is_explicit` is false this is the host zone sampled at the instant
-    /// being formatted, which is what the no-options output has always used.
+    // Offset from UTC in seconds for the requested zone. When
+    // `tz_is_explicit` is false this is the host zone sampled at the instant
+    // being formatted, which is what the no-options output has always used.
     long tz_offset_sec;
     bool tz_is_explicit;
-    /// Label for `timeZoneName`: "UTC" for the UTC zone, else a GMT+HHMM
-    /// rendering of the offset. The long widths spell the UTC zone out in
-    /// full and leave every other zone on its offset, which is all an engine
-    /// without a zone database can name it.
+    // Label for `timeZoneName`: "UTC" for the UTC zone, else a GMT+HHMM
+    // rendering of the offset. The long widths spell the UTC zone out in
+    // full and leave every other zone on its offset, which is all an engine
+    // without a zone database can name it.
     char[8] tz_label;
     usz tz_label_len;
     bool tz_is_utc;
@@ -89,36 +89,36 @@ struct DateTimeFormatOpts {
 // Language tag validation (ECMA-402 §6.2.1 IsWellFormedLanguageTag)
 // ============================================================================
 
-/// True for an ASCII letter.
+// True for an ASCII letter.
 fn bool locale_is_alpha(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
-/// True for an ASCII digit.
+// True for an ASCII digit.
 fn bool locale_is_digit(char c) {
     return c >= '0' && c <= '9';
 }
 
-/// True when every character of `s` is an ASCII letter.
+// True when every character of `s` is an ASCII letter.
 fn bool locale_all_alpha(char[] s) {
     foreach (c : s) if (!locale_is_alpha(c)) return false;
     return s.len > 0;
 }
 
-/// True when every character of `s` is an ASCII digit.
+// True when every character of `s` is an ASCII digit.
 fn bool locale_all_digit(char[] s) {
     foreach (c : s) if (!locale_is_digit(c)) return false;
     return s.len > 0;
 }
 
-/// True when every character of `s` is an ASCII letter or digit.
+// True when every character of `s` is an ASCII letter or digit.
 fn bool locale_all_alnum(char[] s) {
     foreach (c : s) if (!locale_is_alpha(c) && !locale_is_digit(c)) return false;
     return s.len > 0;
 }
 
-/// Split `s` on '-' into subtags. Returns the count, or -1 if any subtag is
-/// empty, which catches a leading, trailing or doubled separator.
+// Split `s` on '-' into subtags. Returns the count, or -1 if any subtag is
+// empty, which catches a leading, trailing or doubled separator.
 fn int locale_split(char[] s, char[][] out_parts) {
     int n = 0;
     usz start = 0;
@@ -134,7 +134,7 @@ fn int locale_split(char[] s, char[][] out_parts) {
     return n;
 }
 
-/// Case-insensitive ASCII compare of a subtag against a lowercase literal.
+// Case-insensitive ASCII compare of a subtag against a lowercase literal.
 fn bool locale_eq_ci(char[] s, char[] lit) {
     if (s.len != lit.len) return false;
     for (usz i = 0; i < s.len; i++) {
@@ -145,15 +145,15 @@ fn bool locale_eq_ci(char[] s, char[] lit) {
     return true;
 }
 
-/// ECMA-402 §6.2.1 IsWellFormedLanguageTag, checking the `unicode_locale_id`
-/// nonterminal of UTS #35 Part 1 Annex C.
-///
-/// Accepts a `unicode_language_id` (language, optional script, optional
-/// region, any number of variants) followed by any number of singleton
-/// extensions and an optional "-x-" private use sequence. Rejects the
-/// backwards-compatibility grandfathered and "i-" tags, duplicate variant
-/// subtags, and duplicate extension singletons, all of which §6.2.1 calls out
-/// by name.
+// ECMA-402 §6.2.1 IsWellFormedLanguageTag, checking the `unicode_locale_id`
+// nonterminal of UTS #35 Part 1 Annex C.
+//
+// Accepts a `unicode_language_id` (language, optional script, optional
+// region, any number of variants) followed by any number of singleton
+// extensions and an optional "-x-" private use sequence. Rejects the
+// backwards-compatibility grandfathered and "i-" tags, duplicate variant
+// subtags, and duplicate extension singletons, all of which §6.2.1 calls out
+// by name.
 fn bool locale_is_well_formed(char[] tag) {
     if (tag.len == 0 || tag.len > 120) return false;
     char[][40] parts_buf;
@@ -236,13 +236,13 @@ fn bool locale_is_well_formed(char[] tag) {
 // locales argument (ECMA-402 §9.2.1 CanonicalizeLocaleList)
 // ============================================================================
 
-/// ECMA-402 §9.2.1 CanonicalizeLocaleList, run for its effects and its throws.
-///
-/// The resulting list is discarded: with one built-in locale there is nothing
-/// to match against, and §9.2.7 ResolveLocale is free to fall back to the
-/// default locale for any request. Validation still has to happen, because a
-/// structurally invalid tag is a RangeError that callers do observe, and the
-/// element Gets are visible to a Proxy or an accessor.
+// ECMA-402 §9.2.1 CanonicalizeLocaleList, run for its effects and its throws.
+//
+// The resulting list is discarded: with one built-in locale there is nothing
+// to match against, and §9.2.7 ResolveLocale is free to fall back to the
+// default locale for any request. Validation still has to happen, because a
+// structurally invalid tag is a RangeError that callers do observe, and the
+// element Gets are visible to a Proxy or an accessor.
 fn void date_canonicalize_locale_list(BuiltinContext* ctx, TVal* locales) {
     if (locales.is_undefined()) return;
 
@@ -316,18 +316,18 @@ fn void date_canonicalize_locale_list(BuiltinContext* ctx, TVal* locales) {
 // Reading the options bag (ECMA-402 §9.2.11 GetOption)
 // ============================================================================
 
-/// One row of the option tables: the property name and the values it accepts,
-/// each paired with the code it resolves to.
+// One row of the option tables: the property name and the values it accepts,
+// each paired with the code it resolves to.
 struct DateOptionValue {
     char[] name;
     int code;
 }
 
-/// ECMA-402 §9.2.11 GetOption with type string.
-///
-/// Gets the property, coerces to String, and matches it against `values`. A
-/// value outside the list is a RangeError. Returns `DTF_NONE`-shaped 0 when
-/// the property is absent, which every caller reads as "not requested".
+// ECMA-402 §9.2.11 GetOption with type string.
+//
+// Gets the property, coerces to String, and matches it against `values`. A
+// value outside the list is a RangeError. Returns `DTF_NONE`-shaped 0 when
+// the property is absent, which every caller reads as "not requested".
 fn int date_get_string_option(BuiltinContext* ctx, HObject* opts, char[] key,
                               DateOptionValue[] values) {
     if (opts == null) return 0;
@@ -351,16 +351,16 @@ fn int date_get_string_option(BuiltinContext* ctx, HObject* opts, char[] key,
     return 0;
 }
 
-/// Byte-wise equality for two same-length slices.
+// Byte-wise equality for two same-length slices.
 fn bool mem_eq_bytes(char[] a, char[] b) {
     if (a.len != b.len) return false;
     for (usz i = 0; i < a.len; i++) if (a[i] != b[i]) return false;
     return true;
 }
 
-/// ECMA-402 §9.2.11 GetOption with type boolean: no value list, ToBoolean
-/// rather than ToString, so it never throws for a bad value. Returns -1 when
-/// the property is absent.
+// ECMA-402 §9.2.11 GetOption with type boolean: no value list, ToBoolean
+// rather than ToString, so it never throws for a bad value. Returns -1 when
+// the property is absent.
 fn int date_get_boolean_option(BuiltinContext* ctx, HObject* opts, char[] key) {
     if (opts == null) return -1;
     HString* k = builtin_intern_string(ctx.heap, key);
@@ -372,8 +372,8 @@ fn int date_get_boolean_option(BuiltinContext* ctx, HObject* opts, char[] key) {
     return builtin_to_boolean(&v) ? 1 : 0;
 }
 
-/// Get a property and coerce it to a String, for options whose value space is
-/// open (`timeZone`, `calendar`). Returns null when absent.
+// Get a property and coerce it to a String, for options whose value space is
+// open (`timeZone`, `calendar`). Returns null when absent.
 fn HString* date_get_raw_string_option(BuiltinContext* ctx, HObject* opts, char[] key) {
     if (opts == null) return null;
     HString* k = builtin_intern_string(ctx.heap, key);
@@ -391,9 +391,9 @@ fn HString* date_get_raw_string_option(BuiltinContext* ctx, HObject* opts, char[
 // timeZone
 // ============================================================================
 
-/// Parse the UTC offset forms ECMA-402 §11.1.2 accepts for `timeZone`:
-/// "+HH", "+HH:MM", "+HHMM" and the '-' and U+2212 signed equivalents.
-/// Writes the offset in seconds and returns true on a match.
+// Parse the UTC offset forms ECMA-402 §11.1.2 accepts for `timeZone`:
+// "+HH", "+HH:MM", "+HHMM" and the '-' and U+2212 signed equivalents.
+// Writes the offset in seconds and returns true on a match.
 fn bool date_parse_offset_timezone(char[] s, long* out_sec) {
     if (s.len < 2) return false;
     long sign = 1;
@@ -428,16 +428,16 @@ fn bool date_parse_offset_timezone(char[] s, long* out_sec) {
     return true;
 }
 
-/// Resolve the `timeZone` option into a fixed offset.
-///
-/// ECMA-402 §11.1.2 rejects a zone the implementation does not have with a
-/// RangeError, and that is what happens here for every named zone except
-/// "UTC" and its aliases. Resolving "America/Sao_Paulo" needs the IANA
-/// database this engine deliberately does not carry, and the alternative to
-/// throwing is silently formatting the wrong instant, so it throws.
-///
-/// Accepted: "UTC", "GMT", "Etc/UTC", "Etc/GMT", "Universal", "Zulu", "Z"
-/// (all case-insensitive, all offset zero) and the numeric offset forms.
+// Resolve the `timeZone` option into a fixed offset.
+//
+// ECMA-402 §11.1.2 rejects a zone the implementation does not have with a
+// RangeError, and that is what happens here for every named zone except
+// "UTC" and its aliases. Resolving "America/Sao_Paulo" needs the IANA
+// database this engine deliberately does not carry, and the alternative to
+// throwing is silently formatting the wrong instant, so it throws.
+//
+// Accepted: "UTC", "GMT", "Etc/UTC", "Etc/GMT", "Universal", "Zulu", "Z"
+// (all case-insensitive, all offset zero) and the numeric offset forms.
 fn void date_resolve_timezone(BuiltinContext* ctx, HObject* opts, DateTimeFormatOpts* fmt) {
     HString* tz = date_get_raw_string_option(ctx, opts, "timeZone");
     if (ctx.should_throw) return;
@@ -469,8 +469,8 @@ fn void date_resolve_timezone(BuiltinContext* ctx, HObject* opts, DateTimeFormat
     builtin_throw(ctx, ctx.heap.range_err_proto, "unsupported time zone");
 }
 
-/// Render an offset as the "GMT+HHMM" label `timeZoneName` shows, or the
-/// bare "UTC" when the offset is zero.
+// Render an offset as the "GMT+HHMM" label `timeZoneName` shows, or the
+// bare "UTC" when the offset is zero.
 fn void date_write_gmt_offset_label(DateTimeFormatOpts* fmt, long off_sec) {
     if (off_sec == 0) {
         fmt.tz_label[0] = 'U'; fmt.tz_label[1] = 'T'; fmt.tz_label[2] = 'C';
@@ -495,7 +495,7 @@ fn void date_write_gmt_offset_label(DateTimeFormatOpts* fmt, long off_sec) {
 // Resolving the whole bag (ECMA-402 §11.1.2 CreateDateTimeFormat)
 // ============================================================================
 
-/// The value lists of ECMA-402 Table 16, plus the dateStyle/timeStyle list.
+// The value lists of ECMA-402 Table 16, plus the dateStyle/timeStyle list.
 fn DateOptionValue[] date_values_narrow_short_long() {
     static DateOptionValue[3] v = {
         { "narrow", DTF_NARROW }, { "short", DTF_SHORT }, { "long", DTF_LONG },
@@ -552,16 +552,16 @@ fn DateOptionValue[] date_values_hour_cycle() {
     return v[..];
 }
 
-/// ECMA-402 §11.1.2 CreateDateTimeFormat, minus everything that needs locale
-/// data. Validates `locales`, then reads the options bag in the order the
-/// spec lists so an accessor on the bag observes the documented sequence:
-/// localeMatcher, calendar, numberingSystem, hour12, hourCycle, timeZone, the
-/// Table 16 component rows in table order, formatMatcher, dateStyle,
-/// timeStyle.
-///
-/// `required` is DTF_REQ_DATE for toLocaleDateString, DTF_REQ_TIME for
-/// toLocaleTimeString, DTF_REQ_ANY for toLocaleString. `defaults` follows the
-/// same split: it decides which components appear when the caller named none.
+// ECMA-402 §11.1.2 CreateDateTimeFormat, minus everything that needs locale
+// data. Validates `locales`, then reads the options bag in the order the
+// spec lists so an accessor on the bag observes the documented sequence:
+// localeMatcher, calendar, numberingSystem, hour12, hourCycle, timeZone, the
+// Table 16 component rows in table order, formatMatcher, dateStyle,
+// timeStyle.
+//
+// `required` is DTF_REQ_DATE for toLocaleDateString, DTF_REQ_TIME for
+// toLocaleTimeString, DTF_REQ_ANY for toLocaleString. `defaults` follows the
+// same split: it decides which components appear when the caller named none.
 fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
                              int required, DateTimeFormatOpts* fmt) {
     *fmt = {};
@@ -716,8 +716,8 @@ fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
     }
 }
 
-/// ECMA-402 §9.2.11 GetNumberOption: Get, ToNumber, then a range check that
-/// throws RangeError outside [min, max]. Returns 0 when absent.
+// ECMA-402 §9.2.11 GetNumberOption: Get, ToNumber, then a range check that
+// throws RangeError outside [min, max]. Returns 0 when absent.
 fn int date_get_number_option(BuiltinContext* ctx, HObject* opts, char[] key, int min, int max) {
     if (opts == null) return 0;
     HString* k = builtin_intern_string(ctx.heap, key);
@@ -735,9 +735,9 @@ fn int date_get_number_option(BuiltinContext* ctx, HObject* opts, char[] key, in
     return (int)math::floor(d);
 }
 
-/// True for a Unicode `type` subtag: one or more 3-8 alphanum subtags.
-/// §9.2.8 throws RangeError for a calendar or numberingSystem that does not
-/// match this shape, before any question of whether the value is supported.
+// True for a Unicode `type` subtag: one or more 3-8 alphanum subtags.
+// §9.2.8 throws RangeError for a calendar or numberingSystem that does not
+// match this shape, before any question of whether the value is supported.
 fn bool date_is_unicode_type_subtag(char[] s) {
     if (s.len == 0) return false;
     char[][8] parts_buf;
@@ -750,12 +750,12 @@ fn bool date_is_unicode_type_subtag(char[] s) {
     return true;
 }
 
-/// ECMA-402 §11.5.1 DateTimeStyleFormat, resolved against the one locale this
-/// engine has. The component widths per style follow the en-US CLDR patterns:
-/// full carries the weekday and the spelled-out month, long drops the
-/// weekday, medium abbreviates the month, and short goes all-numeric with a
-/// two-digit year. Times gain the zone label at long and full, and drop
-/// seconds at short.
+// ECMA-402 §11.5.1 DateTimeStyleFormat, resolved against the one locale this
+// engine has. The component widths per style follow the en-US CLDR patterns:
+// full carries the weekday and the spelled-out month, long drops the
+// weekday, medium abbreviates the month, and short goes all-numeric with a
+// two-digit year. Times gain the zone label at long and full, and drop
+// seconds at short.
 fn void date_expand_styles(DateTimeFormatOpts* fmt) {
     switch (fmt.date_style) {
         case DTS_FULL:
@@ -790,7 +790,7 @@ fn void date_expand_styles(DateTimeFormatOpts* fmt) {
 // Rendering
 // ============================================================================
 
-/// Full month names, indexed 0-11.
+// Full month names, indexed 0-11.
 fn char[] date_month_long(long m) {
     switch (m) {
         case 0:  return "January";
@@ -808,7 +808,7 @@ fn char[] date_month_long(long m) {
     }
 }
 
-/// Abbreviated month names, indexed 0-11.
+// Abbreviated month names, indexed 0-11.
 fn char[] date_month_short(long m) {
     switch (m) {
         case 0:  return "Jan";
@@ -826,7 +826,7 @@ fn char[] date_month_short(long m) {
     }
 }
 
-/// Full weekday names, indexed 0-6 with 0 = Sunday.
+// Full weekday names, indexed 0-6 with 0 = Sunday.
 fn char[] date_weekday_long(long w) {
     switch (w) {
         case 0:  return "Sunday";
@@ -839,7 +839,7 @@ fn char[] date_weekday_long(long w) {
     }
 }
 
-/// Abbreviated weekday names, indexed 0-6 with 0 = Sunday.
+// Abbreviated weekday names, indexed 0-6 with 0 = Sunday.
 fn char[] date_weekday_short(long w) {
     switch (w) {
         case 0:  return "Sun";
@@ -852,7 +852,7 @@ fn char[] date_weekday_short(long w) {
     }
 }
 
-/// Append `s` to `buf` at `*pos`, stopping at the buffer end.
+// Append `s` to `buf` at `*pos`, stopping at the buffer end.
 fn void date_buf_append(char[] buf, usz* pos, char[] s) {
     foreach (c : s) {
         if (*pos >= buf.len) return;
@@ -861,15 +861,15 @@ fn void date_buf_append(char[] buf, usz* pos, char[] s) {
     }
 }
 
-/// Append a single character.
+// Append a single character.
 fn void date_buf_push(char[] buf, usz* pos, char c) {
     if (*pos >= buf.len) return;
     buf[*pos] = c;
     (*pos)++;
 }
 
-/// Append a non-negative integer in decimal, zero-padded to at least
-/// `min_digits`.
+// Append a non-negative integer in decimal, zero-padded to at least
+// `min_digits`.
 fn void date_buf_append_num(char[] buf, usz* pos, long v, int min_digits) {
     char[24] tmp;
     int n = 0;
@@ -882,11 +882,11 @@ fn void date_buf_append_num(char[] buf, usz* pos, long v, int min_digits) {
     for (int i = n - 1; i >= 0; i--) date_buf_push(buf, pos, tmp[i]);
 }
 
-/// Render the date half into `buf`, returning true if it wrote anything.
-///
-/// The layout is the one en-US uses: a spelled-out month leads
-/// ("January 15, 2024", with the weekday ahead of it when asked for) and a
-/// numeric month goes month-first and slash-separated ("1/15/2024").
+// Render the date half into `buf`, returning true if it wrote anything.
+//
+// The layout is the one en-US uses: a spelled-out month leads
+// ("January 15, 2024", with the weekday ahead of it when asked for) and a
+// numeric month goes month-first and slash-separated ("1/15/2024").
 fn bool date_render_date_part(DateTimeFormatOpts* fmt, char[] buf, usz* pos,
                               long year, long month, long day, long wday) {
     bool spelled = fmt.month == DTF_LONG || fmt.month == DTF_SHORT || fmt.month == DTF_NARROW;
@@ -947,9 +947,9 @@ fn bool date_render_date_part(DateTimeFormatOpts* fmt, char[] buf, usz* pos,
     return wrote;
 }
 
-/// Render the year, honouring the "2-digit" width and appending the era when
-/// `era` was requested. A non-positive proleptic year is shown as its BC
-/// equivalent, so year 0 prints as "1 BC".
+// Render the year, honouring the "2-digit" width and appending the era when
+// `era` was requested. A non-positive proleptic year is shown as its BC
+// equivalent, so year 0 prints as "1 BC".
 fn void date_render_year(DateTimeFormatOpts* fmt, char[] buf, usz* pos, long year) {
     long shown = year;
     bool bc = false;
@@ -976,7 +976,7 @@ fn void date_render_year(DateTimeFormatOpts* fmt, char[] buf, usz* pos, long yea
     }
 }
 
-/// Render the time half into `buf`, returning true if it wrote anything.
+// Render the time half into `buf`, returning true if it wrote anything.
 fn bool date_render_time_part(DateTimeFormatOpts* fmt, char[] buf, usz* pos,
                               long hour, long minute, long second, long ms) {
     bool wrote = false;

@@ -1,4 +1,4 @@
-/// RegExp constructor and RegExp.prototype methods.
+// RegExp constructor and RegExp.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import std::io;
@@ -14,8 +14,8 @@ import std::math;
 // RegExp constructor builtins
 // ============================================================================
 
-/// Helper: extract the compiled regexp data pointer from 'this'.
-/// Returns null if 'this' is not a REGEXP-class object.
+// Helper: extract the compiled regexp data pointer from 'this'.
+// Returns null if 'this' is not a REGEXP-class object.
 fn HObject* regexp_get_this(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (!this_val.is_object() || this_val.get_heapptr() == null) return null;
@@ -24,8 +24,8 @@ fn HObject* regexp_get_this(BuiltinContext* ctx) {
     return obj;
 }
 
-/// RegExp(pattern, flags), ES5 §15.10.3 (called as function) / §15.10.4 (constructor).
-/// When called as a function (not constructor), behaviour is identical to construction.
+// RegExp(pattern, flags), ES5 §15.10.3 (called as function) / §15.10.4 (constructor).
+// When called as a function (not constructor), behaviour is identical to construction.
 fn void builtin_regexp(BuiltinContext* ctx) {
     // Get pattern
     bool is_regexp = false;
@@ -236,13 +236,13 @@ fn void builtin_regexp(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// RegExpInitialize (ES2022 §22.2.3.2.2): parse `flags_str`, compile
-/// `pattern_str`, and install the result on `obj` (REGEXP class), replacing
-/// any previous compiled data (re_free is refcounted) and resetting
-/// lastIndex to 0. `js_flags` seeds the JS flag bits for callers that take
-/// flags from another RegExp's internals instead of a string (pass 0
-/// otherwise). On invalid flags or a pattern that fails to compile, throws
-/// SyntaxError via ctx and returns false leaving `obj` untouched.
+// RegExpInitialize (ES2022 §22.2.3.2.2): parse `flags_str`, compile
+// `pattern_str`, and install the result on `obj` (REGEXP class), replacing
+// any previous compiled data (re_free is refcounted) and resetting
+// lastIndex to 0. `js_flags` seeds the JS flag bits for callers that take
+// flags from another RegExp's internals instead of a string (pass 0
+// otherwise). On invalid flags or a pattern that fails to compile, throws
+// SyntaxError via ctx and returns false leaving `obj` untouched.
 fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
                           char* pattern_str, usz pattern_len,
                           char* flags_str, usz flags_len,
@@ -330,9 +330,9 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
     return true;
 }
 
-/// RegExp.prototype.compile(pattern, flags), ECMA-262 Annex B §B.2.4.1.
-/// Re-initializes the receiver RegExp in place (recompiles the bytecode,
-/// updates source/flags internals, resets lastIndex to 0) and returns it.
+// RegExp.prototype.compile(pattern, flags), ECMA-262 Annex B §B.2.4.1.
+// Re-initializes the receiver RegExp in place (recompiles the bytecode,
+// updates source/flags internals, resets lastIndex to 0) and returns it.
 fn void builtin_regexp_proto_compile(BuiltinContext* ctx) {
     // Steps 1-2: receiver must have a [[RegExpMatcher]] internal slot.
     HObject* obj = regexp_get_this(ctx);
@@ -403,11 +403,11 @@ fn void builtin_regexp_proto_compile(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// RegExp.prototype.test(string), ES2022 §22.2.6.15
-///
-/// Delegates to RegExpExec (`regexp_exec_call`, ES2022 §22.2.7.1) so that a
-/// custom `exec` override is honored and lastIndex is handled in UTF-16
-/// code-unit terms throughout, matching `RegExp.prototype.exec`.
+// RegExp.prototype.test(string), ES2022 §22.2.6.15
+//
+// Delegates to RegExpExec (`regexp_exec_call`, ES2022 §22.2.7.1) so that a
+// custom `exec` override is honored and lastIndex is handled in UTF-16
+// code-unit terms throughout, matching `RegExp.prototype.exec`.
 fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
     HObject* obj = regexp_get_this(ctx);
     if (obj == null) {
@@ -439,7 +439,7 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
     ctx.result.set_boolean(matched);
 }
 
-/// Build a RegExp exec/match result array with .groups and optional .indices.
+// Build a RegExp exec/match result array with .groups and optional .indices.
 fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HString* input_str,
                                       char* input, int input_len,
                                       int out_start, int out_end,
@@ -622,7 +622,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     return arr;
 }
 
-/// RegExp.prototype.exec(string), ES5 §15.10.6.2
+// RegExp.prototype.exec(string), ES5 §15.10.6.2
 fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
     HObject* obj = regexp_get_this(ctx);
     if (obj == null || (*obj.extra_ptr()).regexp.regexp_data == null) {
@@ -754,7 +754,7 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
     ctx.result.set_object(arr);
 }
 
-/// RegExp.prototype.toString(), ES5 §15.10.6.4
+// RegExp.prototype.toString(), ES5 §15.10.6.4
 fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
     HObject* obj = regexp_get_this(ctx);
     if (obj == null) {
@@ -1031,9 +1031,9 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 // RegExp.prototype[@@replace], ES2022 §22.2.5.8
 // ============================================================================
 
-/// GetSubstitution (ES2022 Table 58) using already-ToString'd captures and a
-/// TVal namedCaptures (already ToObject'd when not undefined). Returns the
-/// substituted string, or null on abrupt completion (ctx.should_throw set).
+// GetSubstitution (ES2022 Table 58) using already-ToString'd captures and a
+// TVal namedCaptures (already ToObject'd when not undefined). Returns the
+// substituted string, or null on abrupt completion (ctx.should_throw set).
 fn HString* rr_get_substitution(
     BuiltinContext* ctx,
     HString* matched_hs,     // ToString(result[0])
@@ -1160,7 +1160,7 @@ fn HString* rr_get_substitution(
     return builtin_intern_string(ctx.heap, buf[:offset]);
 }
 
-/// RegExp.prototype[@@replace], ES2022 §22.2.5.8
+// RegExp.prototype[@@replace], ES2022 §22.2.5.8
 fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     // Step 1-2: rx must be Object.
     HObject* rx = regexp_get_symbol_this(ctx);
@@ -1865,7 +1865,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
 // js_flags encoding: 1=g, 2=i, 4=m, 8=s(dotAll), 16=u(unicode), 32=y(sticky)
 // ============================================================================
 
-/// RegExp.prototype[@@matchAll], ES2020 §21.2.5.8 (MatchAllIterator)
+// RegExp.prototype[@@matchAll], ES2020 §21.2.5.8 (MatchAllIterator)
 fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     if (ctx.is_constructor) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
@@ -2041,15 +2041,15 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     ctx.result.set_object(iter);
 }
 
-/// Result of regexp_get_this_or_throw: the HObject and whether it's the prototype.
+// Result of regexp_get_this_or_throw: the HObject and whether it's the prototype.
 struct RegexpThisResult {
     HObject* obj;
     bool is_proto;
 }
 
-/// Helper: get regexp this or throw TypeError.
-/// Returns obj with is_proto=false for normal RegExp objects, or (RegExp.prototype, true)
-/// when `this` is the RegExp prototype itself (for spec-compliant "undefined" returns).
+// Helper: get regexp this or throw TypeError.
+// Returns obj with is_proto=false for normal RegExp objects, or (RegExp.prototype, true)
+// when `this` is the RegExp prototype itself (for spec-compliant "undefined" returns).
 fn RegexpThisResult regexp_get_this_or_throw(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     RegexpThisResult err_result;
@@ -2077,11 +2077,11 @@ fn RegexpThisResult regexp_get_this_or_throw(BuiltinContext* ctx) {
     return ok_result;
 }
 
-/// Helper: get the `this` for RegExp.prototype[@@*] methods (relaxed:
-/// any Object, not just REGEXP-class, per ES2017 §21.2.5.[6-12] step 1, any
-/// `this` is accepted, then `IsRegExp` / RegExpExec abstract operations are
-/// applied later). Returns the HObject or sets ctx.should_throw and returns
-/// null when the receiver is not an Object.
+// Helper: get the `this` for RegExp.prototype[@@*] methods (relaxed:
+// any Object, not just REGEXP-class, per ES2017 §21.2.5.[6-12] step 1, any
+// `this` is accepted, then `IsRegExp` / RegExpExec abstract operations are
+// applied later). Returns the HObject or sets ctx.should_throw and returns
+// null when the receiver is not an Object.
 fn HObject* regexp_get_symbol_this(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (!this_val.is_object() || this_val.get_heapptr() == null) {
@@ -2091,9 +2091,9 @@ fn HObject* regexp_get_symbol_this(BuiltinContext* ctx) {
     return (HObject*)this_val.get_heapptr();
 }
 
-/// Set `rx.prop = val` with spec-compliant strict Set semantics:
-/// Throws TypeError if the own property exists but is non-writable.
-/// Returns true when the property was written successfully.
+// Set `rx.prop = val` with spec-compliant strict Set semantics:
+// Throws TypeError if the own property exists but is non-writable.
+// Returns true when the property was written successfully.
 fn bool regexp_set_prop(BuiltinContext* ctx, HObject* rx, HString* key, TVal* val_ptr) {
     TVal val = *val_ptr;
     // Check writability of existing own property before writing.
@@ -2106,9 +2106,9 @@ fn bool regexp_set_prop(BuiltinContext* ctx, HObject* rx, HString* key, TVal* va
     return true;
 }
 
-/// Spec-compliant Set(obj, key, val, true) that handles both data properties
-/// and accessor setters. Invokes the setter via call_fn when one exists.
-/// Propagates throws via ctx.should_throw. Returns false on throw.
+// Spec-compliant Set(obj, key, val, true) that handles both data properties
+// and accessor setters. Invokes the setter via call_fn when one exists.
+// Propagates throws via ctx.should_throw. Returns false on throw.
 fn bool regexp_set_with_setter(BuiltinContext* ctx, HObject* obj, HString* key, TVal val) {
     // Check for accessor setter first.
     AccessorResult acc = obj.find_accessor_proto((void*)key, false, ctx.heap);  // false = want setter
@@ -2136,11 +2136,11 @@ fn bool regexp_set_with_setter(BuiltinContext* ctx, HObject* obj, HString* key, 
     return regexp_set_prop(ctx, obj, key, &val);
 }
 
-/// RegExpExec abstract operation (ES2017 §21.2.5.2.1), sets ctx.result:
-///   - Calls `Get(rx, "exec")`, invokes it as a function if callable
-///   - Validates the returned value (must be Object or null)
-///   - Falls back to RegExpBuiltinExec (re_run) for built-in regexps
-///   - Sets ctx.should_throw on error; returns false in that case
+// RegExpExec abstract operation (ES2017 §21.2.5.2.1), sets ctx.result:
+//   - Calls `Get(rx, "exec")`, invokes it as a function if callable
+//   - Validates the returned value (must be Object or null)
+//   - Falls back to RegExpBuiltinExec (re_run) for built-in regexps
+//   - Sets ctx.should_throw on error; returns false in that case
 fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     // 3. Let exec be ? Get(R, "exec").
     HString* exec_key = ctx.heap.str(heap::BuiltinStr.EXEC);
@@ -2275,11 +2275,11 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     return true;
 }
 
-/// RegExp.prototype.flags, ES6 §21.2.5.7
-/// Returns a string of flags in alphabetical order: "dgimsuy".
-/// ES2017 §22.2.3.4: walks the receiver for each individual flag via
-/// Get + ToBoolean, so user-overridden `this.global`, `this.sticky`, etc.
-/// are honored. Any Object is a valid receiver (only primitives throw).
+// RegExp.prototype.flags, ES6 §21.2.5.7
+// Returns a string of flags in alphabetical order: "dgimsuy".
+// ES2017 §22.2.3.4: walks the receiver for each individual flag via
+// Get + ToBoolean, so user-overridden `this.global`, `this.sticky`, etc.
+// are honored. Any Object is a valid receiver (only primitives throw).
 fn void builtin_regexp_proto_get_flags(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object() || ctx.this_val.get_heapptr() == null) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
@@ -2349,9 +2349,9 @@ fn void builtin_regexp_proto_get_flags(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// EscapeRegExpPattern, ES2015 §21.2.3.2.4
-/// Escapes `/` and line terminators (LF, CR, LS, PS) in a regex pattern
-/// so it can be safely embedded in a RegExpLiteral.
+// EscapeRegExpPattern, ES2015 §21.2.3.2.4
+// Escapes `/` and line terminators (LF, CR, LS, PS) in a regex pattern
+// so it can be safely embedded in a RegExpLiteral.
 fn usz escape_regexp_pattern(char* src, usz slen, char* dst, usz dmax) {
     // ES2022 §21.2.3.2.4 step 2: if srcLength = 0, return "(?:)".
     if (slen == 0) {
@@ -2421,7 +2421,7 @@ fn usz escape_regexp_pattern(char* src, usz slen, char* dst, usz dmax) {
     return di;
 }
 
-/// RegExp.prototype.source, ES6 §21.2.5.10
+// RegExp.prototype.source, ES6 §21.2.5.10
 fn void builtin_regexp_proto_get_source(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2444,7 +2444,7 @@ fn void builtin_regexp_proto_get_source(BuiltinContext* ctx) {
     }
 }
 
-/// RegExp.prototype.global, ES6 §21.2.5.1
+// RegExp.prototype.global, ES6 §21.2.5.1
 fn void builtin_regexp_proto_get_global(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2452,7 +2452,7 @@ fn void builtin_regexp_proto_get_global(BuiltinContext* ctx) {
     ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 1) != 0);
 }
 
-/// RegExp.prototype.ignoreCase, ES6 §21.2.5.3
+// RegExp.prototype.ignoreCase, ES6 §21.2.5.3
 fn void builtin_regexp_proto_get_ignoreCase(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2460,7 +2460,7 @@ fn void builtin_regexp_proto_get_ignoreCase(BuiltinContext* ctx) {
     ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 2) != 0);
 }
 
-/// RegExp.prototype.multiline, ES6 §21.2.5.5
+// RegExp.prototype.multiline, ES6 §21.2.5.5
 fn void builtin_regexp_proto_get_multiline(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2468,7 +2468,7 @@ fn void builtin_regexp_proto_get_multiline(BuiltinContext* ctx) {
     ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 4) != 0);
 }
 
-/// RegExp.prototype.dotAll, ES2018 §21.2.5.2
+// RegExp.prototype.dotAll, ES2018 §21.2.5.2
 fn void builtin_regexp_proto_get_dotAll(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2476,7 +2476,7 @@ fn void builtin_regexp_proto_get_dotAll(BuiltinContext* ctx) {
     ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 8) != 0);
 }
 
-/// RegExp.prototype.sticky, ES6 §21.2.5.14
+// RegExp.prototype.sticky, ES6 §21.2.5.14
 fn void builtin_regexp_proto_get_sticky(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2484,7 +2484,7 @@ fn void builtin_regexp_proto_get_sticky(BuiltinContext* ctx) {
     ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 32) != 0);
 }
 
-/// RegExp.prototype.unicode, ES6 §21.2.5.16
+// RegExp.prototype.unicode, ES6 §21.2.5.16
 fn void builtin_regexp_proto_get_unicode(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2492,7 +2492,7 @@ fn void builtin_regexp_proto_get_unicode(BuiltinContext* ctx) {
     ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 16) != 0);
 }
 
-/// RegExp.prototype.hasIndices, ES2022 §21.2.5.8
+// RegExp.prototype.hasIndices, ES2022 §21.2.5.8
 fn void builtin_regexp_proto_get_hasIndices(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2500,7 +2500,7 @@ fn void builtin_regexp_proto_get_hasIndices(BuiltinContext* ctx) {
     ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 64) != 0);
 }
 
-/// RegExp.prototype.unicodeSets, ES2024 §21.2.5.17
+// RegExp.prototype.unicodeSets, ES2024 §21.2.5.17
 fn void builtin_regexp_proto_get_unicodeSets(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
@@ -2556,27 +2556,27 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
 // RegExp constructor registration
 // ============================================================================
 
-/// RegExp[@@species] getter, ES2022 §21.2.4.2
-/// Returns the this value (the constructor itself).
+// RegExp[@@species] getter, ES2022 §21.2.4.2
+// Returns the this value (the constructor itself).
 fn void builtin_regexp_species_getter(BuiltinContext* ctx) {
     *ctx.result = ctx.regs[ctx.base_reg - 1];
 }
 
-/// Append two lowercase hex digits for a byte value (0-0xFF) to `buf` at `*len`.
+// Append two lowercase hex digits for a byte value (0-0xFF) to `buf` at `*len`.
 fn void re_escape_append_hex2(char* buf, usz* len, uint byte_val) @inline {
     char[16] hex_digits = "0123456789abcdef";
     buf[(*len)++] = hex_digits[(byte_val >> 4) & 0xF];
     buf[(*len)++] = hex_digits[byte_val & 0xF];
 }
 
-/// Append `\xHH` (byte_val <= 0xFF) to `buf` at `*len`.
+// Append `\xHH` (byte_val <= 0xFF) to `buf` at `*len`.
 fn void re_escape_append_x(char* buf, usz* len, uint byte_val) @inline {
     buf[(*len)++] = '\\';
     buf[(*len)++] = 'x';
     re_escape_append_hex2(buf, len, byte_val);
 }
 
-/// Append `\uHHHH` (a UTF-16 code unit) to `buf` at `*len`.
+// Append `\uHHHH` (a UTF-16 code unit) to `buf` at `*len`.
 fn void re_escape_append_u(char* buf, usz* len, uint code_unit) @inline {
     buf[(*len)++] = '\\';
     buf[(*len)++] = 'u';
@@ -2584,10 +2584,10 @@ fn void re_escape_append_u(char* buf, usz* len, uint code_unit) @inline {
     re_escape_append_hex2(buf, len, code_unit & 0xFF);
 }
 
-/// EncodeForRegExpEscape ( c ), ES2026 proposal-regex-escaping.
-/// Appends the escaped representation of code point `cp` to `buf` at `*len`.
-/// `buf` must have at least 12 bytes of headroom (worst case: astral
-/// codepoint needing two \uHHHH escapes).
+// EncodeForRegExpEscape ( c ), ES2026 proposal-regex-escaping.
+// Appends the escaped representation of code point `cp` to `buf` at `*len`.
+// `buf` must have at least 12 bytes of headroom (worst case: astral
+// codepoint needing two \uHHHH escapes).
 fn void re_escape_encode_codepoint(char* buf, usz* len, uint cp) {
     // SyntaxCharacter or U+002F (SOLIDUS): backslash + the character itself.
     switch (cp) {
@@ -2652,8 +2652,8 @@ fn void re_escape_encode_codepoint(char* buf, usz* len, uint cp) {
     *len += hstring::encode_codepoint_cesu8(cp, buf[*len : 6]);
 }
 
-/// RegExp.escape ( string ), ES2026 proposal-regex-escaping.
-/// Escapes `string` for literal use inside a regular expression Pattern.
+// RegExp.escape ( string ), ES2026 proposal-regex-escaping.
+// Escapes `string` for literal use inside a regular expression Pattern.
 fn void builtin_regexp_escape(BuiltinContext* ctx) {
     if (ctx.argc < 1 || !ctx.regs[ctx.base_reg].is_string() || ctx.regs[ctx.base_reg].get_heapptr() == null) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "RegExp.escape called on non-string");
@@ -2702,7 +2702,7 @@ fn void builtin_regexp_escape(BuiltinContext* ctx) {
     ctx.result.set_string(result);
 }
 
-/// Register RegExp.prototype and the RegExp constructor globally.
+// Register RegExp.prototype and the RegExp constructor globally.
 fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     // Create RegExp.prototype (ObjClass.OBJECT per spec, toString gives [object Object])
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);

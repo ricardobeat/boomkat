@@ -1,4 +1,4 @@
-/// Set constructor and Set.prototype methods.
+// Set constructor and Set.prototype methods.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -17,14 +17,14 @@ fn HObject* check_set(BuiltinContext* ctx) {
     return check_collection_class(ctx, hobject::ObjClass.SET, "Set.prototype method called on incompatible value");
 }
 
-/// Find the index in array_part where a value matches. Returns -1 if not found.
-/// Set entries are stored as [v0, v1, ...] in array_part.
+// Find the index in array_part where a value matches. Returns -1 if not found.
+// Set entries are stored as [v0, v1, ...] in array_part.
 fn int set_find_value(HObject* set, TVal val, heap::Heap* h) {
     return coll_find(set, val, 1, h);
 }
 
-/// Counts non-deleted entries, same logic as the .size getter, factored out
-/// for the set-methods algorithms that need this.size as a plain number.
+// Counts non-deleted entries, same logic as the .size getter, factored out
+// for the set-methods algorithms that need this.size as a plain number.
 fn uint set_live_count(HObject* set) {
     uint count = 0;
     TVal* arr = set.array_part();
@@ -40,7 +40,7 @@ fn uint set_live_count(HObject* set) {
 // Set methods proposal (ES2025 §24.2.4), shared helpers
 // ============================================================================
 
-/// GetSetRecord(obj) result, ES2025 §24.2.4.1.
+// GetSetRecord(obj) result, ES2025 §24.2.4.1.
 struct SetRecord {
     TVal set_like;
     double size;
@@ -48,11 +48,11 @@ struct SetRecord {
     TVal keys_fn;
 }
 
-/// GetSetRecord(obj), ES2025 §24.2.4.1. Validates `obj` is an object with a
-/// numeric, non-NaN `size` and callable `has`/`keys`, in that exact order
-/// (each Get/ToNumber/callability check can throw before the next runs).
-/// Returns a fault on any failure, ctx.should_throw is set by the caller's
-/// standard error paths (builtin_throw / vm_to_number's throw_pending).
+// GetSetRecord(obj), ES2025 §24.2.4.1. Validates `obj` is an object with a
+// numeric, non-NaN `size` and callable `has`/`keys`, in that exact order
+// (each Get/ToNumber/callability check can throw before the next runs).
+// Returns a fault on any failure, ctx.should_throw is set by the caller's
+// standard error paths (builtin_throw / vm_to_number's throw_pending).
 fn SetRecord? get_set_record(BuiltinContext* ctx, TVal obj) {
     if (!obj.is_object() || obj.get_heapptr() == null) {
         coll_throw(ctx, "Method Set.prototype method called on incompatible receiver");
@@ -116,10 +116,10 @@ fn SetRecord? get_set_record(BuiltinContext* ctx, TVal obj) {
     return rec;
 }
 
-/// Call setRecord.[[SetHas]] with `value` (SameValueZero-normalized -0 → +0
-/// is the caller's responsibility per each algorithm's own step). Returns
-/// the ToBoolean of the call result; on error, ctx.should_throw is set and
-/// the return value should be discarded.
+// Call setRecord.[[SetHas]] with `value` (SameValueZero-normalized -0 → +0
+// is the caller's responsibility per each algorithm's own step). Returns
+// the ToBoolean of the call result; on error, ctx.should_throw is set and
+// the return value should be discarded.
 fn bool set_record_has(BuiltinContext* ctx, SetRecord* rec, TVal value) {
     if (rec != null) {
         rec.set_like.set_temproot();
@@ -137,9 +137,9 @@ fn bool set_record_has(BuiltinContext* ctx, SetRecord* rec, TVal value) {
     return tval_to_boolean(result);
 }
 
-/// Call setRecord.[[SetKeys]]() and return the resulting iterator value.
-/// The Object check from GetIteratorFromMethod step 2 happens in
-/// set_iter_step, so a non-object return throws on the first step.
+// Call setRecord.[[SetKeys]]() and return the resulting iterator value.
+// The Object check from GetIteratorFromMethod step 2 happens in
+// set_iter_step, so a non-object return throws on the first step.
 fn TVal set_record_get_keys_iterator(BuiltinContext* ctx, SetRecord* rec) {
     if (rec != null) {
         rec.set_like.set_temproot();
@@ -155,7 +155,7 @@ fn TVal set_record_get_keys_iterator(BuiltinContext* ctx, SetRecord* rec) {
     return result;
 }
 
-/// ToBoolean, ES2015 §7.1.2.
+// ToBoolean, ES2015 §7.1.2.
 fn bool tval_to_boolean(TVal v) {
     switch (v.get_tag()) {
         case UNDEFINED: return false;
@@ -168,11 +168,11 @@ fn bool tval_to_boolean(TVal v) {
     }
 }
 
-/// GetIteratorFromMethod's [[NextMethod]] slot, read once when the iterator
-/// is obtained (ES2022 §7.4.3 step 3: `Get(iterator, "next")`), not on every
-/// step. Set-like class tests observe a "getting next" log entry exactly
-/// once per keys() call, via a next getter that would fire on every access
-/// if re-fetched per iteration step.
+// GetIteratorFromMethod's [[NextMethod]] slot, read once when the iterator
+// is obtained (ES2022 §7.4.3 step 3: `Get(iterator, "next")`), not on every
+// step. Set-like class tests observe a "getting next" log entry exactly
+// once per keys() call, via a next getter that would fire on every access
+// if re-fetched per iteration step.
 fn TVal set_iter_get_next_fn(BuiltinContext* ctx, TVal iterator) {
     TVal next_fn;
     next_fn.set_undefined();
@@ -184,11 +184,11 @@ fn TVal set_iter_get_next_fn(BuiltinContext* ctx, TVal iterator) {
     return next_fn;
 }
 
-/// IteratorStep(iteratorRecord), ES2022 §7.4.6, poor man's variant for the
-/// set-like's keys() iterator. Calls the cached next_fn, then reads
-/// done/value via accessor-aware Get. On done (or a throw), *out_done is set
-/// true. Returns false only when next() itself throws (ctx.should_throw is
-/// set); callers should still check *out_done on a true return.
+// IteratorStep(iteratorRecord), ES2022 §7.4.6, poor man's variant for the
+// set-like's keys() iterator. Calls the cached next_fn, then reads
+// done/value via accessor-aware Get. On done (or a throw), *out_done is set
+// true. Returns false only when next() itself throws (ctx.should_throw is
+// set); callers should still check *out_done on a true return.
 fn bool set_iter_step(BuiltinContext* ctx, TVal iterator, TVal next_fn, TVal* out_value, bool* out_done) {
     *out_done = true;
     iterator.set_temproot();
@@ -237,9 +237,9 @@ fn bool set_iter_step(BuiltinContext* ctx, TVal iterator, TVal next_fn, TVal* ou
     return true;
 }
 
-/// IteratorClose(iterator) for a normal (non-abrupt) early exit, calls
-/// .return() if present and callable, swallowing its result and any error it
-/// raises (the early-exit result already computed takes precedence).
+// IteratorClose(iterator) for a normal (non-abrupt) early exit, calls
+// .return() if present and callable, swallowing its result and any error it
+// raises (the early-exit result already computed takes precedence).
 fn void set_iter_close(BuiltinContext* ctx, TVal iterator) {
     if (!iterator.is_object() || iterator.get_heapptr() == null) return;
     HObject* iter_obj = (HObject*)iterator.get_heapptr();
@@ -255,8 +255,8 @@ fn void set_iter_close(BuiltinContext* ctx, TVal iterator) {
     ctx.heap.has_error = false;  // swallow any error from calling return()
 }
 
-/// Normalizes -0 to +0 per each set-methods algorithm's "if nextValue is -0,
-/// set nextValue to +0" step.
+// Normalizes -0 to +0 per each set-methods algorithm's "if nextValue is -0,
+// set nextValue to +0" step.
 fn TVal set_normalize_neg_zero(TVal v) {
     if (v.is_number() && v.get_number() == 0.0 && 1.0 / v.get_number() < 0.0) {
         TVal zero; zero.set_fastint(0);
@@ -265,10 +265,10 @@ fn TVal set_normalize_neg_zero(TVal v) {
     return v;
 }
 
-/// Allocates a bare Set object (ObjClass.SET, heap.set_proto) with no entries.
-/// Used to build set-methods results directly via internal Set data, never
-/// via Set.prototype.add (add-not-called.js) or a species constructor
-/// (subclass-symbol-species.js, result is always a plain %Set%).
+// Allocates a bare Set object (ObjClass.SET, heap.set_proto) with no entries.
+// Used to build set-methods results directly via internal Set data, never
+// via Set.prototype.add (add-not-called.js) or a species constructor
+// (subclass-symbol-species.js, result is always a plain %Set%).
 fn HObject* set_new_result(BuiltinContext* ctx) {
     HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.SET);
     if (catch err = result_raw) return null;
@@ -277,20 +277,20 @@ fn HObject* set_new_result(BuiltinContext* ctx) {
     return result;
 }
 
-/// Appends `value` to a result Set being built directly (bypasses .add and
-/// the has-check other than the caller's own dedup responsibility), used
-/// when the caller already knows the value isn't a duplicate (union copy,
-/// fresh Set with only unique values found so far).
+// Appends `value` to a result Set being built directly (bypasses .add and
+// the has-check other than the caller's own dedup responsibility), used
+// when the caller already knows the value isn't a duplicate (union copy,
+// fresh Set with only unique values found so far).
 fn void set_result_append(HObject* result, TVal value, Heap* h) {
     uint idx = result.array_used;
     result.set_array_idx(idx, value, h);
     if (result.array_used <= idx) result.array_used = (uint)(idx + 1);
 }
 
-/// Copies every live (non-deleted) entry of `set` into a freshly-allocated
-/// result Set, in insertion order. Used as the starting point for union,
-/// intersection, difference, and symmetricDifference, whose result data is
-/// built directly rather than via .add.
+// Copies every live (non-deleted) entry of `set` into a freshly-allocated
+// result Set, in insertion order. Used as the starting point for union,
+// intersection, difference, and symmetricDifference, whose result data is
+// built directly rather than via .add.
 fn HObject* set_copy_live_entries(BuiltinContext* ctx, HObject* set) {
     HObject* result = set_new_result(ctx);
     if (result == null) return null;
@@ -305,32 +305,32 @@ fn HObject* set_copy_live_entries(BuiltinContext* ctx, HObject* set) {
     return result;
 }
 
-/// State for a live-index walk over O.[[SetData]], shared inline by
-/// isSubsetOf, isDisjointFrom's this.size<=other.size branch, and
-/// intersection's this.size<=other.size branch (ES2025 §24.2.4.9/.10/.11):
-/// "Let thisSize be the number of elements in O.[[SetData]]. Let index be 0.
-/// Repeat, while index < thisSize: let e be O.[[SetData]][index]; index +=
-/// 1; if e is not empty, call otherRec.[[Has]] ... thisSize is re-read (as a
-/// live count) after every Has call", so a hostile has() that mutates `set`
-/// mid-walk is fully observable: growing it extends the walk, shrinking it
-/// can end the walk early, and index always advances over raw (possibly
-/// tombstoned) array_part() slots.
+// State for a live-index walk over O.[[SetData]], shared inline by
+// isSubsetOf, isDisjointFrom's this.size<=other.size branch, and
+// intersection's this.size<=other.size branch (ES2025 §24.2.4.9/.10/.11):
+// "Let thisSize be the number of elements in O.[[SetData]]. Let index be 0.
+// Repeat, while index < thisSize: let e be O.[[SetData]][index]; index +=
+// 1; if e is not empty, call otherRec.[[Has]] ... thisSize is re-read (as a
+// live count) after every Has call", so a hostile has() that mutates `set`
+// mid-walk is fully observable: growing it extends the walk, shrinking it
+// can end the walk early, and index always advances over raw (possibly
+// tombstoned) array_part() slots.
 struct SetLiveWalk {
     HObject* set;
     uint index;
     uint this_size;
 }
 
-/// Initializes a live-index walk (ES2025's "Let thisSize be ...; Let index be 0").
+// Initializes a live-index walk (ES2025's "Let thisSize be ...; Let index be 0").
 fn SetLiveWalk set_live_walk_start(HObject* set) {
     SetLiveWalk w = { set, 0, set_live_count(set) };
     return w;
 }
 
-/// Advances the walk to the next live element. Returns false when exhausted
-/// (index has reached the live count re-sampled after the caller's last
-/// otherRec.[[Has]] call, the caller must call set_live_walk_resample after
-/// each Has invocation before the next call to this function).
+// Advances the walk to the next live element. Returns false when exhausted
+// (index has reached the live count re-sampled after the caller's last
+// otherRec.[[Has]] call, the caller must call set_live_walk_resample after
+// each Has invocation before the next call to this function).
 fn bool set_live_walk_next(SetLiveWalk* w, TVal* out_elem) {
     while (w.index < w.this_size) {
         TVal* arr = w.set.array_part();
@@ -345,9 +345,9 @@ fn bool set_live_walk_next(SetLiveWalk* w, TVal* out_elem) {
     return false;
 }
 
-/// Re-reads the live count after a otherRec.[[Has]] call, per the spec's
-/// "NOTE: The number of elements in O.[[SetData]] may have increased ...
-/// Set thisSize to the number of elements in O.[[SetData]]" step.
+// Re-reads the live count after a otherRec.[[Has]] call, per the spec's
+// "NOTE: The number of elements in O.[[SetData]] may have increased ...
+// Set thisSize to the number of elements in O.[[SetData]]" step.
 fn void set_live_walk_resample(SetLiveWalk* w) {
     w.this_size = set_live_count(w.set);
 }

@@ -12,13 +12,13 @@ import std::io;
 // Scope management
 // ============================================================================
 
-/// Push a new scope level (for blocks, functions, etc.).
+// Push a new scope level (for blocks, functions, etc.).
 fn void CompilerContext.push_scope(&self) {
     // We use scope_depth as a marker; entries below it belong to outer scopes.
     // Nothing to allocate: scope_stack is shared with depth tracking.
 }
 
-/// Pop the current scope level, freeing any variables declared in it.
+// Pop the current scope level, freeing any variables declared in it.
 fn void CompilerContext.pop_scope(&self) {
     // Walk backwards through scope_stack and remove entries at current depth
     while (self.scope_depth > 0) {
@@ -31,7 +31,7 @@ fn void CompilerContext.pop_scope(&self) {
     }
 }
 
-/// Pop all scope entries added since `saved_depth`.
+// Pop all scope entries added since `saved_depth`.
 fn void CompilerContext.pop_scope_to(&self, uint saved_depth) {
     while (self.scope_depth > saved_depth) {
         ScopeEntry* top = &self.scope_stack[self.scope_depth - 1];
@@ -43,14 +43,14 @@ fn void CompilerContext.pop_scope_to(&self, uint saved_depth) {
     }
 }
 
-/// Push a scope marker to delimit block scope boundaries for duplicate
-/// let/const detection.  The marker has no name and no register.
-///
-/// `is_body` marks the marker a FUNCTION BODY opens, as opposed to a nested
-/// BlockStatement. The body's top-level lexical names must not collide with
-/// the parameter list (§14.1.2), while a nested block's freely shadow it, so
-/// the parameter check has to see through this one marker and stop at any
-/// other.
+// Push a scope marker to delimit block scope boundaries for duplicate
+// let/const detection.  The marker has no name and no register.
+//
+// `is_body` marks the marker a FUNCTION BODY opens, as opposed to a nested
+// BlockStatement. The body's top-level lexical names must not collide with
+// the parameter list (§14.1.2), while a nested block's freely shadow it, so
+// the parameter check has to see through this one marker and stop at any
+// other.
 fn void CompilerContext.push_scope_marker(&self, bool is_body = false) {
     // The stack grows on the heap, so the only way to fail here is an
     // allocation failure — which ensure_scope_cap records. A dropped entry
@@ -69,18 +69,18 @@ fn void CompilerContext.push_scope_marker(&self, bool is_body = false) {
     }
 }
 
-/// ES2024 §13.7.4.1 / §13.7.5.13 early error for `var` declarations: a var
-/// binding must not collide with a let/const/class binding in scope. This
-/// covers the for-head rule (BoundNames of the ForDeclaration vs the
-/// VarDeclaredNames of the body Statement): while the body compiles, the
-/// head's lexical names are on scope_stack, so a body `var` (recursing into
-/// nested blocks, per VarDeclaredNames) is caught here. Same-block lex-vs-var
-/// conflicts are separately caught by the block() pre-scan; this walks the
-/// WHOLE stack (past block markers) because the for-head binding lives in an
-/// outer scope relative to the body block. No-op for non-VAR kinds.
-/// Call only from true var-declaration sites (var statements, for-head var
-/// declarations), and not from catch-param or function-declaration paths, whose
-/// bindings follow different scoping rules.
+// ES2024 §13.7.4.1 / §13.7.5.13 early error for `var` declarations: a var
+// binding must not collide with a let/const/class binding in scope. This
+// covers the for-head rule (BoundNames of the ForDeclaration vs the
+// VarDeclaredNames of the body Statement): while the body compiles, the
+// head's lexical names are on scope_stack, so a body `var` (recursing into
+// nested blocks, per VarDeclaredNames) is caught here. Same-block lex-vs-var
+// conflicts are separately caught by the block() pre-scan; this walks the
+// WHOLE stack (past block markers) because the for-head binding lives in an
+// outer scope relative to the body block. No-op for non-VAR kinds.
+// Call only from true var-declaration sites (var statements, for-head var
+// declarations), and not from catch-param or function-declaration paths, whose
+// bindings follow different scoping rules.
 fn void? CompilerContext.check_var_lex_conflict(&self, char[] name, ScopeKind kind) {
     if (kind != ScopeKind.VAR) {
         return;
@@ -95,21 +95,21 @@ fn void? CompilerContext.check_var_lex_conflict(&self, char[] name, ScopeKind ki
     }
 }
 
-/// ES2024 §14.1.2 / §14.15.1 early error: a lexical declaration at the top
-/// level of a parameter list's body scope may not redeclare a BoundName of
-/// that parameter list. `function f(p) { let p; }` and
-/// `try {} catch (e) { let e; }` are both SyntaxErrors, while a body `var` of
-/// the same name stays legal (it resolves to the very same binding), which is
-/// why the parameter flag, not `kind`, is what this keys off.
-///
-/// The walk stops at the first real block boundary: a nested block's lexical
-/// names shadow the parameters freely (`function f(p) { { let p; } }` is
-/// fine). It crosses AT MOST ONE body marker -- the one belonging to the
-/// scope this declaration is in, whose parameters sit immediately below it.
-/// Crossing a second would reach an enclosing function's parameter list, which
-/// this declaration is free to shadow: in
-/// `function outer(e) { try {} catch (x) { function e(){} } }` the inner `e`
-/// shadows outer's parameter and is perfectly legal.
+// ES2024 §14.1.2 / §14.15.1 early error: a lexical declaration at the top
+// level of a parameter list's body scope may not redeclare a BoundName of
+// that parameter list. `function f(p) { let p; }` and
+// `try {} catch (e) { let e; }` are both SyntaxErrors, while a body `var` of
+// the same name stays legal (it resolves to the very same binding), which is
+// why the parameter flag, not `kind`, is what this keys off.
+//
+// The walk stops at the first real block boundary: a nested block's lexical
+// names shadow the parameters freely (`function f(p) { { let p; } }` is
+// fine). It crosses AT MOST ONE body marker -- the one belonging to the
+// scope this declaration is in, whose parameters sit immediately below it.
+// Crossing a second would reach an enclosing function's parameter list, which
+// this declaration is free to shadow: in
+// `function outer(e) { try {} catch (x) { function e(){} } }` the inner `e`
+// shadows outer's parameter and is perfectly legal.
 fn void? CompilerContext.check_lexical_redeclares_param(&self, char[] name) {
     bool crossed_body_mark = false;
     uint i = self.scope_depth;
@@ -127,12 +127,12 @@ fn void? CompilerContext.check_lexical_redeclares_param(&self, char[] name) {
     }
 }
 
-/// Declare a variable in the current scope.
-///
-/// `is_param` marks a formal or catch parameter. Such a binding is pushed with
-/// kind VAR (it shares `var`'s register and env treatment) but a body
-/// `let`/`const` may not redeclare it, so the flag is what lets the
-/// duplicate-lexical walk tell it apart from a real `var`.
+// Declare a variable in the current scope.
+//
+// `is_param` marks a formal or catch parameter. Such a binding is pushed with
+// kind VAR (it shares `var`'s register and env treatment) but a body
+// `let`/`const` may not redeclare it, so the flag is what lets the
+// duplicate-lexical walk tell it apart from a real `var`.
 fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool is_param = false) {    ushort reg = self.alloc_reg();
     // Lexical bindings must survive env-elision when a closure can read them
     // through the env chain (see has_lexical_bindings in the elide/needs_env
@@ -178,10 +178,10 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
     return reg;
 }
 
-/// Resolve a variable name to its register. Searches from innermost scope out.
-/// Returns SCOPE_ERROR if not found or if the variable is captured (must go
-/// through the environment chain instead of using a register) or is in TDZ
-/// (must go through the env so the runtime TDZ sentinel throws ReferenceError).
+// Resolve a variable name to its register. Searches from innermost scope out.
+// Returns SCOPE_ERROR if not found or if the variable is captured (must go
+// through the environment chain instead of using a register) or is in TDZ
+// (must go through the env so the runtime TDZ sentinel throws ReferenceError).
 fn ushort? CompilerContext.resolve_var(&self, char[] name) {
     // Search from top of scope stack backwards
     if (self.scope_depth == 0) {
@@ -206,11 +206,11 @@ fn ushort? CompilerContext.resolve_var(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-/// Resolve a REGISTER-RESIDENT top-level `var` (is_slot_global) to its home
-/// register. Walks the whole scope stack (a `var` is function/global scoped,
-/// never block scoped), skipping SCOPEMARKs but yielding to any matching
-/// block-shadowing `let`/`const`, which must keep resolving through the env.
-/// Returns SCOPE_ERROR when shadowed or when the entry is captured/TDZ.
+// Resolve a REGISTER-RESIDENT top-level `var` (is_slot_global) to its home
+// register. Walks the whole scope stack (a `var` is function/global scoped,
+// never block scoped), skipping SCOPEMARKs but yielding to any matching
+// block-shadowing `let`/`const`, which must keep resolving through the env.
+// Returns SCOPE_ERROR when shadowed or when the entry is captured/TDZ.
 fn ushort? CompilerContext.resolve_slot_global(&self, char[] name) {
     uint i = self.scope_depth;
     while (i > 0) {
@@ -228,28 +228,28 @@ fn ushort? CompilerContext.resolve_slot_global(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-/// True when `name` was proven REGISTER-RESIDENT by pre_scan_global_var_slots.
-/// Interned constants dedupe by content, so comparing indexes is safe.
+// True when `name` was proven REGISTER-RESIDENT by pre_scan_global_var_slots.
+// Interned constants dedupe by content, so comparing indexes is safe.
 fn bool CompilerContext.is_slot_global_name(&self, char[] name) {
     return self.is_slot_global_name_index(self.add_string_constant(name));
 }
 
-/// True when the constant-pool index names a REGISTER-RESIDENT top-level var.
+// True when the constant-pool index names a REGISTER-RESIDENT top-level var.
 fn bool CompilerContext.is_slot_global_name_index(&self, uint name_idx) {
     if (self.slot_global_name_idxs.len() == 0) return false;
     return self.slot_global_name_idxs.contains(name_idx);
 }
 
-/// Resolve a REGISTER-RESIDENT var to its home register by constant-pool index
-/// (the form emit_ident_read has in hand). Recovers the name string and defers
-/// to resolve_slot_global, so block-shadowing is honored identically.
+// Resolve a REGISTER-RESIDENT var to its home register by constant-pool index
+// (the form emit_ident_read has in hand). Recovers the name string and defers
+// to resolve_slot_global, so block-shadowing is honored identically.
 fn ushort? CompilerContext.resolve_slot_global_by_index(&self, uint name_idx) {
     HString* name_hstr = (HString*)self.constants[name_idx].get_heapptr();
     return self.resolve_slot_global(name_hstr.get_data());
 }
-/// Defaults to false (treated as `var`) if the name isn't found in the
-/// scope stack, such as a top-level `function` declaration promoted straight
-/// to the module env, which is hoisted and never in TDZ.
+// Defaults to false (treated as `var`) if the name isn't found in the
+// scope stack, such as a top-level `function` declaration promoted straight
+// to the module env, which is hoisted and never in TDZ.
 fn bool CompilerContext.is_name_lexical(&self, char[] name) {
     uint i = self.scope_depth;
     while (i > 0) {
@@ -261,12 +261,12 @@ fn bool CompilerContext.is_name_lexical(&self, char[] name) {
     return false;
 }
 
-/// True when `name` has a runtime binding in this module scope: any
-/// var/let/const/class/function declared here. A TypeScript type-only name
-/// (an `interface` or `type` alias, which the parser erases without a
-/// binding) is absent, which is what lets `export { G };` after
-/// `interface G {}` erase to nothing instead of registering a phantom
-/// export the linker would reject.
+// True when `name` has a runtime binding in this module scope: any
+// var/let/const/class/function declared here. A TypeScript type-only name
+// (an `interface` or `type` alias, which the parser erases without a
+// binding) is absent, which is what lets `export { G };` after
+// `interface G {}` erase to nothing instead of registering a phantom
+// export the linker would reject.
 fn bool CompilerContext.ts_name_is_runtime_binding(&self, char[] name) {
     uint i = self.scope_depth;
     while (i > 0) {
@@ -284,10 +284,10 @@ fn bool CompilerContext.ts_name_is_runtime_binding(&self, char[] name) {
     return false;
 }
 
-/// Resolve a variable name to its register REGARDLESS of capture status.
-/// Only for declaration-site checks (e.g. `var` redeclaration must reuse the
-/// existing binding, never re-declare and clobber the env value). Normal
-/// reads/writes must use resolve_var so captured locals stay env-resident.
+// Resolve a variable name to its register REGARDLESS of capture status.
+// Only for declaration-site checks (e.g. `var` redeclaration must reuse the
+// existing binding, never re-declare and clobber the env value). Normal
+// reads/writes must use resolve_var so captured locals stay env-resident.
 fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     uint i = self.scope_depth;
     while (i > 0) {
@@ -299,20 +299,20 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-/// Resolve `name` to its register only if it is bound in the scope a function
-/// declaration at the current position belongs to.
-///
-/// A redeclaration of the same name in that scope is the very same binding, so
-/// the second declaration must write into the register the first one already
-/// uses (see function_declaration); allocating a fresh one leaves code emitted
-/// between the two pointing at a stale object. Stopping at a nested block's
-/// SCOPEMARK is what keeps that reuse from reaching an enclosing scope's
-/// binding, which a block-nested declaration is free to shadow.
-///
-/// Like check_lexical_redeclares_param, the walk sees through AT MOST ONE body
-/// marker: hoist_decls declares the body's function names before block()
-/// pushes that marker, so the binding a textual-position declaration must
-/// reuse sits just below it.
+// Resolve `name` to its register only if it is bound in the scope a function
+// declaration at the current position belongs to.
+//
+// A redeclaration of the same name in that scope is the very same binding, so
+// the second declaration must write into the register the first one already
+// uses (see function_declaration); allocating a fresh one leaves code emitted
+// between the two pointing at a stale object. Stopping at a nested block's
+// SCOPEMARK is what keeps that reuse from reaching an enclosing scope's
+// binding, which a block-nested declaration is free to shadow.
+//
+// Like check_lexical_redeclares_param, the walk sees through AT MOST ONE body
+// marker: hoist_decls declares the body's function names before block()
+// pushes that marker, so the binding a textual-position declaration must
+// reuse sits just below it.
 fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
     bool crossed_body_mark = false;
     uint i = self.scope_depth;
@@ -329,19 +329,19 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-/// True when `name` is already bound as a formal or catch PARAMETER.
-///
-/// The hoisting pass uses this for the one case where a hoisted `var` must not
-/// create a binding: ES2015 §9.2.10 step 27 initializes a var-declared name to
-/// undefined only when it is NOT already a parameter name, so
-/// `function f(p){ if (false) { var p = 1; } return p; }` must return the
-/// ARGUMENT, not undefined. Leaving the parameter's own binding in place (and
-/// emitting no LDUNDEF) is what keeps that value alive; declaring afresh would
-/// both write undefined and leave reads pointed at a second, empty slot.
-///
-/// Gated on `is_param` rather than plain name presence: at hoist time the only
-/// bindings in scope ARE the parameters (the body has not been parsed), but the
-/// narrower test keeps this correct if that ever stops holding.
+// True when `name` is already bound as a formal or catch PARAMETER.
+//
+// The hoisting pass uses this for the one case where a hoisted `var` must not
+// create a binding: ES2015 §9.2.10 step 27 initializes a var-declared name to
+// undefined only when it is NOT already a parameter name, so
+// `function f(p){ if (false) { var p = 1; } return p; }` must return the
+// ARGUMENT, not undefined. Leaving the parameter's own binding in place (and
+// emitting no LDUNDEF) is what keeps that value alive; declaring afresh would
+// both write undefined and leave reads pointed at a second, empty slot.
+//
+// Gated on `is_param` rather than plain name presence: at hoist time the only
+// bindings in scope ARE the parameters (the body has not been parsed), but the
+// narrower test keeps this correct if that ever stops holding.
 fn bool CompilerContext.is_param_name(&self, char[] name) {
     uint i = self.scope_depth;
     while (i > 0) {
@@ -354,22 +354,22 @@ fn bool CompilerContext.is_param_name(&self, char[] name) {
     return false;
 }
 
-/// Declare a binding for a for-in/for-of head or a destructuring declarator and
-/// return the register it lives in.
-///
-/// A `var` name does NOT introduce a new binding here: it was already hoisted to
-/// the enclosing function scope, so this site must write into the register that
-/// hoisted binding owns. Calling declare_var unconditionally would allocate a
-/// FRESH register, leave the hoisted one holding its LDUNDEF, and (for a
-/// for-head) drop the new entry at the loop's pop_scope_to — so a read
-/// afterwards returns undefined instead of the value that was bound.
-/// The accompanying DECLVAR keeps the env slot correct, which is why the bug
-/// is invisible at global scope and for captured locals (both env-resident)
-/// and only bites register-resident function locals.
-///
-/// Mirrors the reuse-or-declare handling at the plain `for (var i = ...)` and
-/// identifier `var` statement declaration sites. `let`/`const` DO introduce a
-/// fresh binding at each of these sites, so they always declare.
+// Declare a binding for a for-in/for-of head or a destructuring declarator and
+// return the register it lives in.
+//
+// A `var` name does NOT introduce a new binding here: it was already hoisted to
+// the enclosing function scope, so this site must write into the register that
+// hoisted binding owns. Calling declare_var unconditionally would allocate a
+// FRESH register, leave the hoisted one holding its LDUNDEF, and (for a
+// for-head) drop the new entry at the loop's pop_scope_to — so a read
+// afterwards returns undefined instead of the value that was bound.
+// The accompanying DECLVAR keeps the env slot correct, which is why the bug
+// is invisible at global scope and for captured locals (both env-resident)
+// and only bites register-resident function locals.
+//
+// Mirrors the reuse-or-declare handling at the plain `for (var i = ...)` and
+// identifier `var` statement declaration sites. `let`/`const` DO introduce a
+// fresh binding at each of these sites, so they always declare.
 fn ushort CompilerContext.declare_binding_var(&self, char[] name, ScopeKind kind) {
     if (kind != ScopeKind.VAR) {
         return self.declare_var(name, kind);
@@ -382,21 +382,21 @@ fn ushort CompilerContext.declare_binding_var(&self, char[] name, ScopeKind kind
     return self.declare_var(name, kind);
 }
 
-/// Return the constant-pool name index for `reg`'s binding when it is a CONST
-/// declaration in scope_stack; return 0xFFFFFFFF otherwise. Used at every
-/// register-only write site (postfix INC/DEC, plain/compound/logical
-/// assignment) so a const violation is routed through PUTVAR_ASSIGN /
-/// INC_VAR or DEC_VAR. The bare register-only opcode
-/// silently succeeds on a const, which is the bug plan 062 group H fixes.
-///
-/// Returns 0xFFFFFFFF (not 0) for "no match" because add_string_constant can
-/// legitimately return 0 for the very first string interned into a fresh pool,
-/// and the caller compares against the sentinel to decide whether to emit the
-/// const-checking opcode.
-///
-/// Adds the binding's name to the constant pool on hit, which is idempotent since the same
-/// string always interns to the same index), so the caller's emitted opcode
-/// references a valid pool slot.
+// Return the constant-pool name index for `reg`'s binding when it is a CONST
+// declaration in scope_stack; return 0xFFFFFFFF otherwise. Used at every
+// register-only write site (postfix INC/DEC, plain/compound/logical
+// assignment) so a const violation is routed through PUTVAR_ASSIGN /
+// INC_VAR or DEC_VAR. The bare register-only opcode
+// silently succeeds on a const, which is the bug plan 062 group H fixes.
+//
+// Returns 0xFFFFFFFF (not 0) for "no match" because add_string_constant can
+// legitimately return 0 for the very first string interned into a fresh pool,
+// and the caller compares against the sentinel to decide whether to emit the
+// const-checking opcode.
+//
+// Adds the binding's name to the constant pool on hit, which is idempotent since the same
+// string always interns to the same index), so the caller's emitted opcode
+// references a valid pool slot.
 fn uint CompilerContext.find_const_name_idx(&self, ushort reg) {
     if (self.scope_depth == 0) return 0xFFFFFFFF;
     for (uint i = 0; i < self.scope_depth; i++) {
@@ -408,9 +408,9 @@ fn uint CompilerContext.find_const_name_idx(&self, ushort reg) {
     return 0xFFFFFFFF;
 }
 
-/// Check if a register is the slot of a declared local variable/let/const/param.
-/// Returns true if the register holds a live local binding that must NOT be
-/// freed by expression_statement (the binding outlives the expression).
+// Check if a register is the slot of a declared local variable/let/const/param.
+// Returns true if the register holds a live local binding that must NOT be
+// freed by expression_statement (the binding outlives the expression).
 fn bool CompilerContext.is_local_var_reg(&self, ushort reg) {
     if (self.scope_depth == 0) {
         return false;
@@ -423,12 +423,12 @@ fn bool CompilerContext.is_local_var_reg(&self, ushort reg) {
     return false;
 }
 
-/// Shield a computed-member key register from GETPROP's in-place
-/// ToPropertyKey writeback: if the caller passes a live-local reg,
-/// copy it to a fresh temp so GETPROP can safely mutate the temp
-/// instead of the local. Any callsite emitting `GETPROP _, obj, key`
-/// on a caller-owned key MUST route the key through this helper first.
-/// Returns either the original reg (safe) or the temp copy.
+// Shield a computed-member key register from GETPROP's in-place
+// ToPropertyKey writeback: if the caller passes a live-local reg,
+// copy it to a fresh temp so GETPROP can safely mutate the temp
+// instead of the local. Any callsite emitting `GETPROP _, obj, key`
+// on a caller-owned key MUST route the key through this helper first.
+// Returns either the original reg (safe) or the temp copy.
 fn ushort CompilerContext.shield_computed_key(&self, ushort key_reg) {
     if (!self.is_local_var_reg(key_reg)) return key_reg;
     ushort tmp = self.alloc_reg();
@@ -436,22 +436,22 @@ fn ushort CompilerContext.shield_computed_key(&self, ushort key_reg) {
     return tmp;
 }
 
-/// True when a bare-identifier assignment to `name` is STATICALLY RESOLVABLE,
-/// so the RESOLVEVAR probe and its THROW_UNRESOLVED guard are provably dead.
-///
-/// PutValue (ES2022 §13.15.2 step 1) requires a strict assignment to observe
-/// whether its LHS resolves BEFORE the RHS runs, which is what those two
-/// instructions implement. A binding this compiler declared in the current
-/// function always resolves: it exists in the environment from the moment the
-/// scope is entered (DECLVAR / INITTZ run at function entry), so the probe can
-/// only ever answer "found".
-///
-/// The TDZ entries are deliberately excluded. A `let`/`const` still holds its
-/// sentinel until the initialiser's PUTLEX publishes it, and reaching it early
-/// must throw ReferenceError; that throw comes from the access path, so the
-/// binding has to keep going through the guarded route while `is_tdz` is set.
-/// SCOPEMARK entries are skipped, and the walk stops at the first name match
-/// so an inner shadowing binding decides the answer, not an outer one.
+// True when a bare-identifier assignment to `name` is STATICALLY RESOLVABLE,
+// so the RESOLVEVAR probe and its THROW_UNRESOLVED guard are provably dead.
+//
+// PutValue (ES2022 §13.15.2 step 1) requires a strict assignment to observe
+// whether its LHS resolves BEFORE the RHS runs, which is what those two
+// instructions implement. A binding this compiler declared in the current
+// function always resolves: it exists in the environment from the moment the
+// scope is entered (DECLVAR / INITTZ run at function entry), so the probe can
+// only ever answer "found".
+//
+// The TDZ entries are deliberately excluded. A `let`/`const` still holds its
+// sentinel until the initialiser's PUTLEX publishes it, and reaching it early
+// must throw ReferenceError; that throw comes from the access path, so the
+// binding has to keep going through the guarded route while `is_tdz` is set.
+// SCOPEMARK entries are skipped, and the walk stops at the first name match
+// so an inner shadowing binding decides the answer, not an outer one.
 fn bool CompilerContext.is_statically_resolvable_local(&self, char[] name) {
     if (self.is_global) return false;
     uint i = self.scope_depth;

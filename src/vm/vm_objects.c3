@@ -15,9 +15,9 @@ import std::math;
 // Object and array creation, spreads, and iterators
 // ============================================================================
 
-/// Result of copy_data_property: whether the caller's enumeration loop
-/// should keep going, and (independently) whether a hard VM_ERROR occurred
-/// or the getter threw a catchable value the caller must propagate.
+// Result of copy_data_property: whether the caller's enumeration loop
+// should keep going, and (independently) whether a hard VM_ERROR occurred
+// or the getter threw a catchable value the caller must propagate.
 struct CopyPropResult {
     bool cont;        // false stops the enumeration; getter_threw or vm_error says why)
     bool vm_error;     // put_prop failed, so the caller propagates VM_ERROR~
@@ -25,13 +25,13 @@ struct CopyPropResult {
     TVal thrown_val;
 }
 
-/// Copy one enumerable own property (by prop-table index `i`, key `key`)
-/// from `source` to `target`, invoking the getter for accessor properties
-/// ([[Get]] semantics). On a getter throw, enumeration stops and the thrown
-/// value goes back to the caller to re-raise through vm_throw_value, since later
-/// getters in the same CopyDataProperties call must not run (§7.3.25 step 5.c
-/// / Get's abrupt completion propagates through the ReturnIfAbrupt chain).
-/// Shared by OBJSPRD's and OBJREST's three key-ordering passes.
+// Copy one enumerable own property (by prop-table index `i`, key `key`)
+// from `source` to `target`, invoking the getter for accessor properties
+// ([[Get]] semantics). On a getter throw, enumeration stops and the thrown
+// value goes back to the caller to re-raise through vm_throw_value, since later
+// getters in the same CopyDataProperties call must not run (§7.3.25 step 5.c
+// / Get's abrupt completion propagates through the ReturnIfAbrupt chain).
+// Shared by OBJSPRD's and OBJREST's three key-ordering passes.
 fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, uint i, void* key) {
     hobject::PropFlags flags = source.get_prop_flags(i, vm.heap);
     TVal val;
@@ -57,11 +57,11 @@ fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, u
     return { true, false, false, {} };
 }
 
-/// Test whether `key` (a property-table key: interned HString, possibly a
-/// symbol) is present in `excluded`, an array whose elements are ToPropertyKey-
-/// coerced into interned strings/symbols by key_is_excluded's caller before
-/// the first comparison (see OBJREST). Pointer equality suffices since all
-/// such keys are interned.
+// Test whether `key` (a property-table key: interned HString, possibly a
+// symbol) is present in `excluded`, an array whose elements are ToPropertyKey-
+// coerced into interned strings/symbols by key_is_excluded's caller before
+// the first comparison (see OBJREST). Pointer equality suffices since all
+// such keys are interned.
 fn bool key_is_excluded(void* key, HObject* excluded) {
     if (excluded == null) return false;
     TVal* arr = excluded.array_part();
@@ -73,14 +73,14 @@ fn bool key_is_excluded(void* key, HObject* excluded) {
     return false;
 }
 
-/// CopyDataProperties (ES2018 §7.3.24 / ES2022 §7.3.25): copy every own
-/// enumerable property of `source` into `target`, skipping any key present in
-/// `excluded` (may be null for "no exclusions", as in Object.assign/OBJSPRD).
-/// Shared by OBJSPRD (object spread `{...src}`) and OBJREST (object-rest
-/// destructuring `{...rest} = src`). The two opcodes differ only in whether
-/// an exclusion list is supplied. A getter throw stops enumeration and is
-/// re-raised via vm_throw_value so later getters never run and the throw is
-/// catchable by the caller (§7.3.25 step 5.c).
+// CopyDataProperties (ES2018 §7.3.24 / ES2022 §7.3.25): copy every own
+// enumerable property of `source` into `target`, skipping any key present in
+// `excluded` (may be null for "no exclusions", as in Object.assign/OBJSPRD).
+// Shared by OBJSPRD (object spread `{...src}`) and OBJREST (object-rest
+// destructuring `{...rest} = src`). The two opcodes differ only in whether
+// an exclusion list is supplied. A getter throw stops enumeration and is
+// re-raised via vm_throw_value so later getters never run and the throw is
+// catchable by the caller (§7.3.25 step 5.c).
 fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal src_tv, HObject* excluded) {
     // null/undefined → no-op (Object.assign step 2 / CopyDataProperties
     // §7.3.25 step 2: only null/undefined skip the ToObject(source) step).
@@ -297,7 +297,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     return;
 }
 
-/// Sub-dispatch for NEWOBJ, NEWARR, NEWREGEXP, SETALEN, ARRSPRD, OBJSPRD, SPREAD_ARG opcodes.
+// Sub-dispatch for NEWOBJ, NEWARR, NEWREGEXP, SETALEN, ARRSPRD, OBJSPRD, SPREAD_ARG opcodes.
 fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {

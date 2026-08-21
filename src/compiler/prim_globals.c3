@@ -31,14 +31,14 @@ import std::io;
 // refcount UAF/leak, so every ambiguous case resolves to "not primitive-only".
 
 const uint PRIM_MAX_CANDIDATES = 256;
-/// Nesting the slot-global pre-scan tracks per delimiter. The scan runs ahead
-/// of the parser, so it meets source the parser's own depth limit would later
-/// reject, and it indexes its classification stacks by raw depth. Passing the
-/// cap discards the proof rather than growing the stacks: source this deep is
-/// rejected downstream anyway, and forgoing the optimization is always sound.
+// Nesting the slot-global pre-scan tracks per delimiter. The scan runs ahead
+// of the parser, so it meets source the parser's own depth limit would later
+// reject, and it indexes its classification stacks by raw depth. Passing the
+// cap discards the proof rather than growing the stacks: source this deep is
+// rejected downstream anyway, and forgoing the optimization is always sound.
 const uint SLOT_MAX_NESTING = 256;
-/// Assignments held per parenthesized expression while waiting to see whether
-/// a `=>` follows. Beyond this the candidate is disqualified on the spot.
+// Assignments held per parenthesized expression while waiting to see whether
+// a `=>` follows. Beyond this the candidate is disqualified on the spot.
 const uint SLOT_MAX_PAREN_ASSIGNS = 128;
 const uint PRIM_MAX_DEPS = 8;       // per-candidate RHS-identifier dependencies
 
@@ -128,9 +128,9 @@ fn PrimCandidate* prim_intern(PrimCandidate* table, uint* count, char[] name, bo
     return c;
 }
 
-/// Whole-program pre-scan (Script global scope only). Populates
-/// self.prim_only_name_idxs with the constant-pool indices of proven
-/// primitive-only top-level globals. Lexer state is fully saved and restored.
+// Whole-program pre-scan (Script global scope only). Populates
+// self.prim_only_name_idxs with the constant-pool indices of proven
+// primitive-only top-level globals. Lexer state is fully saved and restored.
 fn void CompilerContext.pre_scan_prim_globals(&self) {
     // Only Script global scope: modules bind via GETVAR (no GETGLOBAL), and the
     // opcodes are only substituted at global slot scope anyway.
@@ -578,7 +578,7 @@ fn void CompilerContext.prim_rhs_token(&self, Token tok, TokenType tt, TokenType
     }
 }
 
-/// True when the given constant-pool name index was proven primitive-only.
+// True when the given constant-pool name index was proven primitive-only.
 fn bool CompilerContext.is_prim_only_global(&self, uint name_idx) {
     if (self.prim_only_name_idxs.len() == 0) return false;
     return self.prim_only_name_idxs.contains(name_idx);
@@ -1000,9 +1000,9 @@ fn int slot_global_intern(char[64]* names, ushort* name_lens, uint* count, char[
     return (int)c;
 }
 
-/// True when `t` opens a control-structure condition whose closing `)` is
-/// followed by a BLOCK `{`, never a function body. Every other parenthesized
-/// expression that a function/method body can follow is classified false.
+// True when `t` opens a control-structure condition whose closing `)` is
+// followed by a BLOCK `{`, never a function body. Every other parenthesized
+// expression that a function/method body can follow is classified false.
 fn bool slot_global_is_ctrl_paren(TokenType t) {
     switch (t) {
         case TokenType.FOR:
@@ -1017,9 +1017,9 @@ fn bool slot_global_is_ctrl_paren(TokenType t) {
     }
 }
 
-/// True when `t` writes a value into the identifier it follows: plain
-/// assignment, a compound-assign, or ++/--. A `var x;` declaration alone does
-/// not write the global property and is intentionally absent.
+// True when `t` writes a value into the identifier it follows: plain
+// assignment, a compound-assign, or ++/--. A `var x;` declaration alone does
+// not write the global property and is intentionally absent.
 fn bool slot_global_is_assign_op(TokenType t) {
     switch (t) {
         case TokenType.ASSIGN:

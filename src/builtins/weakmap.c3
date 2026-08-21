@@ -1,4 +1,4 @@
-/// WeakMap constructor and WeakMap.prototype methods.
+// WeakMap constructor and WeakMap.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::hstring;
@@ -15,8 +15,8 @@ fn HObject* check_weakmap(BuiltinContext* ctx) {
     return check_collection_class(ctx, hobject::ObjClass.WEAKMAP, "WeakMap.prototype method called on incompatible value");
 }
 
-/// Find the index in array_part where a key matches. Returns -1 if not found.
-/// WeakMap entries are stored as [k0, v0, k1, v1, ...] in array_part.
+// Find the index in array_part where a key matches. Returns -1 if not found.
+// WeakMap entries are stored as [k0, v0, k1, v1, ...] in array_part.
 fn int weakmap_find_key(HObject* wm, TVal key, heap::Heap* h) {
     return coll_find(wm, key, 2, h);
 }

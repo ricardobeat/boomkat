@@ -20,16 +20,16 @@ import std::io;
 // an undeclared name is a compile-time SyntaxError.
 // ============================================================================
 
-/// The class id for private-slot binding names lives on the heap, one
-/// monotonic counter per runtime. All compiler contexts in a runtime share
-/// the counter, so sibling classes compiled across the parent/arrow nested
-/// context split get distinct ids; separate runtimes never share it, so
-/// concurrent compiles on separate threads do not race. Per-EVALUATION
-/// freshness of the symbols themselves comes from NEW_PRIV_SYM at runtime;
-/// this id only keeps compile-time bindings distinct.
+// The class id for private-slot binding names lives on the heap, one
+// monotonic counter per runtime. All compiler contexts in a runtime share
+// the counter, so sibling classes compiled across the parent/arrow nested
+// context split get distinct ids; separate runtimes never share it, so
+// concurrent compiles on separate threads do not race. Per-EVALUATION
+// freshness of the symbols themselves comes from NEW_PRIV_SYM at runtime;
+// this id only keeps compile-time bindings distinct.
 
-/// Build the lexical binding name for a private slot into `buf`:
-/// "#priv:<id>:<name>". Returns the filled prefix of `buf`.
+// Build the lexical binding name for a private slot into `buf`:
+// "#priv:<id>:<name>". Returns the filled prefix of `buf`.
 fn char[] format_private_slot_name(char[] buf, uint class_id, char[] name) {
     char[] prefix = "#priv:";
     usz pos = 0;
@@ -46,17 +46,17 @@ fn char[] format_private_slot_name(char[] buf, uint class_id, char[] name) {
     return buf[:pos];
 }
 
-/// Intern a slot binding name and return its stable byte slice, safe to
-/// store in PrivateNameEntry, in a module's import/export metadata, and to
-/// pass to declare_priv_slot's tracker.
-///
-/// The string table holds only a weak reference, so a name that nothing else
-/// in the program mentions sits at refcount 1 and is freed (and its bytes
-/// zeroed) the moment that single reference is dropped, leaving every stored
-/// slice pointing at reclaimed memory. Pin it so the data genuinely outlives
-/// the CompilerContext: these names are read back long after compilation, at
-/// link time (e.g. the alias in `export { x as y }`, which appears nowhere
-/// else in the source).
+// Intern a slot binding name and return its stable byte slice, safe to
+// store in PrivateNameEntry, in a module's import/export metadata, and to
+// pass to declare_priv_slot's tracker.
+//
+// The string table holds only a weak reference, so a name that nothing else
+// in the program mentions sits at refcount 1 and is freed (and its bytes
+// zeroed) the moment that single reference is dropped, leaving every stored
+// slice pointing at reclaimed memory. Pin it so the data genuinely outlives
+// the CompilerContext: these names are read back long after compilation, at
+// link time (e.g. the alias in `export { x as y }`, which appears nowhere
+// else in the source).
 fn char[] CompilerContext.intern_slot_name(&self, char[] slot_name) {
     Heap* hp = (Heap*)self.heap;
     HString* hstr = hp.str_intern(slot_name);
@@ -65,32 +65,32 @@ fn char[] CompilerContext.intern_slot_name(&self, char[] slot_name) {
     return data;
 }
 
-/// Register a private-name slot binding (`#priv:<id>:name` or `#priv:<id>:
-/// brand`/`sbrand`) in the CURRENT (class-enclosing) context WITHOUT
-/// allocating a register or pushing to scope_stack.
-///
-/// Why: these bindings are only ever accessed via GETVAR by name from the
-/// class's __field_init__ and method bodies, the class-enclosing scope
-/// never reads them by register. declare_var would consume a register per
-/// slot, exhausting the 512-register limit for classes with ~500+ private
-/// fields (the test262 start-unicode-* / part-unicode-* suites declare every
-/// ID_Start/ID_Continue character, some versions run to 4800+ lines).
-///
-/// What it DOES still do:
-///   - Mark has_lexical_bindings = true so the compiler does not elide the
-///     class's PUSH_LEX. The lex env is needed at runtime: PUTLEX stores
-///     each fresh NEW_PRIV_SYM there, and inner functions resolve the slot
-///     by walking the env chain.
-///   - Intern the name (via str_intern in the caller; intern_slot_name)
-///     so its byte slice is stable for PrivateNameEntry to keep.
-///
-/// What it does NOT do:
-///   - Allocate a register (the slot has no compile-time register identity
-///     in the class-enclosing scope).
-///   - Push to scope_stack (no scope_stack entry means reclaim_stmt_regs
-///     and pop_scope_to can't accidentally try to free a register we never
-///     owned; resolve_var / find_local_reg never see the slot because all
-///     accesses go through GETVAR with a const-pool name anyway).
+// Register a private-name slot binding (`#priv:<id>:name` or `#priv:<id>:
+// brand`/`sbrand`) in the CURRENT (class-enclosing) context WITHOUT
+// allocating a register or pushing to scope_stack.
+//
+// Why: these bindings are only ever accessed via GETVAR by name from the
+// class's __field_init__ and method bodies, the class-enclosing scope
+// never reads them by register. declare_var would consume a register per
+// slot, exhausting the 512-register limit for classes with ~500+ private
+// fields (the test262 start-unicode-* / part-unicode-* suites declare every
+// ID_Start/ID_Continue character, some versions run to 4800+ lines).
+//
+// What it DOES still do:
+//   - Mark has_lexical_bindings = true so the compiler does not elide the
+//     class's PUSH_LEX. The lex env is needed at runtime: PUTLEX stores
+//     each fresh NEW_PRIV_SYM there, and inner functions resolve the slot
+//     by walking the env chain.
+//   - Intern the name (via str_intern in the caller; intern_slot_name)
+//     so its byte slice is stable for PrivateNameEntry to keep.
+//
+// What it does NOT do:
+//   - Allocate a register (the slot has no compile-time register identity
+//     in the class-enclosing scope).
+//   - Push to scope_stack (no scope_stack entry means reclaim_stmt_regs
+//     and pop_scope_to can't accidentally try to free a register we never
+//     owned; resolve_var / find_local_reg never see the slot because all
+//     accesses go through GETVAR with a const-pool name anyway).
 fn void CompilerContext.declare_priv_slot(&self, char[] name) {
     // Mark the enclosing scope as having lexical bindings, required so the
     // class's PUSH_LEX is emitted and the env elision gate (has_closures &&
@@ -98,7 +98,7 @@ fn void CompilerContext.declare_priv_slot(&self, char[] name) {
     self.has_lexical_bindings = true;
 }
 
-/// Push a fresh private-name scope for a class body about to be parsed.
+// Push a fresh private-name scope for a class body about to be parsed.
 fn void CompilerContext.push_private_scope(&self) {
     if (self.private_scope_depth < MAX_CLASS_NESTING) {
         self.private_scope_start[self.private_scope_depth] = self.private_name_table.count;
@@ -108,7 +108,7 @@ fn void CompilerContext.push_private_scope(&self) {
     }
 }
 
-/// Pop the innermost private-name scope, discarding names declared inside it.
+// Pop the innermost private-name scope, discarding names declared inside it.
 fn void CompilerContext.pop_private_scope(&self) {
     if (self.private_scope_depth > 0) {
         self.private_scope_depth--;
@@ -116,14 +116,14 @@ fn void CompilerContext.pop_private_scope(&self) {
     }
 }
 
-/// Declare a private name in the innermost (current) class scope.  Returns
-/// a pointer to the new entry, or a fault on duplicate declaration (the
-/// caller reports the SyntaxError) or table overflow.
-///
-/// Duplicate detection is scoped to the CURRENT class body only (names in
-/// the same source span between the matching push/pop_private_scope calls);
-/// an outer class's `#x` is legitimately shadowed by an inner class's own
-/// `#x`, mirroring the spec's per-class PrivateEnvironment.
+// Declare a private name in the innermost (current) class scope.  Returns
+// a pointer to the new entry, or a fault on duplicate declaration (the
+// caller reports the SyntaxError) or table overflow.
+//
+// Duplicate detection is scoped to the CURRENT class body only (names in
+// the same source span between the matching push/pop_private_scope calls);
+// an outer class's `#x` is legitimately shadowed by an inner class's own
+// `#x`, mirroring the spec's per-class PrivateEnvironment.
 fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     // INTERN FIRST. `str_intern` rewrites any raw 4-byte UTF-8 astral
     // sequences into CESU-8 surrogate pairs, so two byte forms that decode
@@ -192,16 +192,16 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     return &t.entries[idx];
 }
 
-/// Declare the class brand (one per class body that has any private member).
-/// Uses a source-illegal name ("#priv:<id>:brand") distinct from any user
-/// private name so it can never be resolved via `resolve_private_name`.
-/// Returns the interned binding-name slice, callers add it to whichever
-/// constant pool needs it (constant indices are context-relative).
-///
-/// Like declare_private_name's slot, this is bound via declare_priv_slot,
-/// only GETVAR-accessed at runtime, never register-accessed by the class-
-/// enclosing scope, so it must not consume a register (test262
-/// start-unicode-*.js blow past the 512-register limit if it did).
+// Declare the class brand (one per class body that has any private member).
+// Uses a source-illegal name ("#priv:<id>:brand") distinct from any user
+// private name so it can never be resolved via `resolve_private_name`.
+// Returns the interned binding-name slice, callers add it to whichever
+// constant pool needs it (constant indices are context-relative).
+//
+// Like declare_private_name's slot, this is bound via declare_priv_slot,
+// only GETVAR-accessed at runtime, never register-accessed by the class-
+// enclosing scope, so it must not consume a register (test262
+// start-unicode-*.js blow past the 512-register limit if it did).
 fn char[] CompilerContext.declare_class_brand(&self) {
     uint class_id = self.private_scope_depth > 0
         ? self.private_class_id[self.private_scope_depth - 1] : 0;
@@ -212,11 +212,11 @@ fn char[] CompilerContext.declare_class_brand(&self) {
     return brand_name;
 }
 
-/// Declare the class's STATIC brand (P5), a symbol distinct from the
-/// instance brand, stamped on the constructor object rather than instances.
-/// Uses a source-illegal name ("#priv:<id>:sbrand") so it can never be
-/// resolved via `resolve_private_name`. Same register-free treatment as
-/// declare_class_brand; see its comment for why.
+// Declare the class's STATIC brand (P5), a symbol distinct from the
+// instance brand, stamped on the constructor object rather than instances.
+// Uses a source-illegal name ("#priv:<id>:sbrand") so it can never be
+// resolved via `resolve_private_name`. Same register-free treatment as
+// declare_class_brand; see its comment for why.
 fn char[] CompilerContext.declare_class_static_brand(&self) {
     uint class_id = self.private_scope_depth > 0
         ? self.private_class_id[self.private_scope_depth - 1] : 0;
@@ -227,29 +227,29 @@ fn char[] CompilerContext.declare_class_static_brand(&self) {
     return sbrand_name;
 }
 
-/// Return the interned HString* for a lexical binding name (e.g.
-/// "#priv:brand" or a private name's own "#priv:foo" slot name), as a raw
-/// void* independent of any particular CompilerContext's constant pool.
-/// Used to stamp CompiledFunction.brand_name_hstr / resolve field-init
-/// symbols at construction time, when the reading code (VM construct path)
-/// has no access to the class-enclosing context's constants array.
+// Return the interned HString* for a lexical binding name (e.g.
+// "#priv:brand" or a private name's own "#priv:foo" slot name), as a raw
+// void* independent of any particular CompilerContext's constant pool.
+// Used to stamp CompiledFunction.brand_name_hstr / resolve field-init
+// symbols at construction time, when the reading code (VM construct path)
+// has no access to the class-enclosing context's constants array.
 fn void* CompilerContext.intern_private_binding_name(&self, char[] name) {
     Heap* hp = (Heap*)self.heap;
     HString* hstr = hp.str_intern(name);
     return (void*)hstr;
 }
 
-/// Resolve a private name (without '#') to its declaring entry, searching
-/// from the innermost enclosing class scope outward.  Returns a fault
-/// (SyntaxError) if no enclosing class declares this name.
-///
-/// `name` is the raw token text as scanned from source (potentially with
-/// 4-byte UTF-8 astral codepoints when a literal character or `\u{...}`
-/// escape decoded to a supplementary-plane value). We re-intern it before
-/// comparing against stored entries, every entry's `.name` was itself
-/// interned by declare_private_name, and `str_intern` rewrites raw astral
-/// UTF-8 to CESU-8 surrogate pairs, so byte-level comparison only works
-/// if both sides go through the same canonicalisation.
+// Resolve a private name (without '#') to its declaring entry, searching
+// from the innermost enclosing class scope outward.  Returns a fault
+// (SyntaxError) if no enclosing class declares this name.
+//
+// `name` is the raw token text as scanned from source (potentially with
+// 4-byte UTF-8 astral codepoints when a literal character or `\u{...}`
+// escape decoded to a supplementary-plane value). We re-intern it before
+// comparing against stored entries, every entry's `.name` was itself
+// interned by declare_private_name, and `str_intern` rewrites raw astral
+// UTF-8 to CESU-8 surrogate pairs, so byte-level comparison only works
+// if both sides go through the same canonicalisation.
 fn PrivateNameEntry*? CompilerContext.resolve_private_name(&self, char[] name) {
     char[] canonical_name = self.intern_slot_name(name);
     PrivateNameTable* t = self.private_name_table;
@@ -266,24 +266,24 @@ fn PrivateNameEntry*? CompilerContext.resolve_private_name(&self, char[] name) {
     return COMPILE_ERROR~;
 }
 
-/// Pre-scan a class body for private-name DECLARATIONS (Phase A, plan 054
-/// §2a) and declare them all before any member body compiles, so that a
-/// field initializer may forward-reference a `#name` declared later in the
-/// same class.  The lexer must be positioned just BEFORE the class body's
-/// opening `{`; on return the lexer state is fully restored (mirrors
-/// pre_scan_captures / the for-loop LHS snapshot machinery).
-///
-/// Declarations recognised: `#name` at the class body's top nesting level,
-/// immediately preceded by nothing, `static`, `get`, `set`, `async`, or `*`
-/// (i.e. `#name` as a class-element key, not `this.#name` or `obj?.#name`
-/// inside a method body, which never appear at brace-depth 0 relative to
-/// the class body's own `{`).
-///
-/// Also classifies each declaration (P3/P4/P5): whether `static` precedes
-/// it, whether it is immediately followed by `(` (a method), and whether it
-/// is preceded by a bare `get`/`set` modifier token (an accessor). A
-/// `get #x` + `set #x` pair for the same name merges into one entry; any
-/// other re-declaration of the same name is a SyntaxError.
+// Pre-scan a class body for private-name DECLARATIONS (Phase A, plan 054
+// §2a) and declare them all before any member body compiles, so that a
+// field initializer may forward-reference a `#name` declared later in the
+// same class.  The lexer must be positioned just BEFORE the class body's
+// opening `{`; on return the lexer state is fully restored (mirrors
+// pre_scan_captures / the for-loop LHS snapshot machinery).
+//
+// Declarations recognised: `#name` at the class body's top nesting level,
+// immediately preceded by nothing, `static`, `get`, `set`, `async`, or `*`
+// (i.e. `#name` as a class-element key, not `this.#name` or `obj?.#name`
+// inside a method body, which never appear at brace-depth 0 relative to
+// the class body's own `{`).
+//
+// Also classifies each declaration (P3/P4/P5): whether `static` precedes
+// it, whether it is immediately followed by `(` (a method), and whether it
+// is preceded by a bare `get`/`set` modifier token (an accessor). A
+// `get #x` + `set #x` pair for the same name merges into one entry; any
+// other re-declaration of the same name is a SyntaxError.
 fn void? CompilerContext.prescan_private_names(&self) {
     uint saved_pos    = self.lexer.pos;
     uint saved_line    = self.lexer.line;
@@ -428,11 +428,11 @@ fn void? CompilerContext.prescan_private_names(&self) {
     self.restore_prescan_lexer(saved_pos, saved_line, saved_col, saved_cur, saved_look, saved_haslk, saved_push, saved_haspb, saved_slt);
 }
 
-/// Declare a private accessor name, or merge into an existing entry of the
-/// same name IF the existing entry is itself an accessor (getter XOR
-/// setter) and this declaration supplies the other half (`get #x` + `set
-/// #x`). Any other re-use of the name (field, method, or a second getter/
-/// setter of the same kind) is a duplicate-declaration error.
+// Declare a private accessor name, or merge into an existing entry of the
+// same name IF the existing entry is itself an accessor (getter XOR
+// setter) and this declaration supplies the other half (`get #x` + `set
+// #x`). Any other re-use of the name (field, method, or a second getter/
+// setter of the same kind) is a duplicate-declaration error.
 fn void? CompilerContext.declare_or_merge_private_accessor(&self, char[] name, bool is_getter, bool is_setter, bool is_static_decl) {
     PrivateNameTable* t = self.private_name_table;
     uint scope_begin = self.private_scope_depth > 0
@@ -461,7 +461,7 @@ fn void? CompilerContext.declare_or_merge_private_accessor(&self, char[] name, b
     entry.is_static = is_static_decl;
 }
 
-/// Restore lexer state captured before prescan_private_names ran.
+// Restore lexer state captured before prescan_private_names ran.
 fn void CompilerContext.restore_prescan_lexer(&self, uint pos, uint line, uint col,
         Token cur, Token look, bool haslk, Token push, bool haspb, bool slt) {
     self.lexer.pos             = pos;
@@ -475,19 +475,19 @@ fn void CompilerContext.restore_prescan_lexer(&self, uint pos, uint line, uint c
     self.lexer.seen_line_term  = slt;
 }
 
-/// Emit the shared prelude for a private-field access `obj.#name`: resolve
-/// the name (SyntaxError if undeclared), CHK_BRAND `obj_reg` against the
-/// OWNING CLASS's brand symbol (own-only presence check; TypeError at
-/// runtime if absent. The brand, not this field's own key, is the
-/// unforgeable per-class marker every field/method shares), then load this
-/// name's own runtime symbol into a fresh register via GETVAR. Returns the
-/// register holding the resolved field symbol, the caller emits
-/// GETPROP/PUTPROP with it.
-///
-/// When `defer_brand_check` is true, the CHK_BRAND is skipped (but the brand
-/// symbol is still loaded). The caller must emit the CHK_BRAND later and free
-/// the brand_reg via `self.free_reg(self.deferred_brand_reg)`. The register
-/// is stored in `self.deferred_brand_reg` for the caller to retrieve.
+// Emit the shared prelude for a private-field access `obj.#name`: resolve
+// the name (SyntaxError if undeclared), CHK_BRAND `obj_reg` against the
+// OWNING CLASS's brand symbol (own-only presence check; TypeError at
+// runtime if absent. The brand, not this field's own key, is the
+// unforgeable per-class marker every field/method shares), then load this
+// name's own runtime symbol into a fresh register via GETVAR. Returns the
+// register holding the resolved field symbol, the caller emits
+// GETPROP/PUTPROP with it.
+//
+// When `defer_brand_check` is true, the CHK_BRAND is skipped (but the brand
+// symbol is still loaded). The caller must emit the CHK_BRAND later and free
+// the brand_reg via `self.free_reg(self.deferred_brand_reg)`. The register
+// is stored in `self.deferred_brand_reg` for the caller to retrieve.
 fn ushort? CompilerContext.emit_private_access(&self, char[] name, ushort obj_reg) {
     PrivateNameEntry* entry = self.resolve_private_name(name)!;
     // The binding-name constants go into THIS context's pool, entry only

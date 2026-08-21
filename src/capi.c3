@@ -81,9 +81,9 @@ const uint SLOT_GEN_MAX    = SLOT_GEN_MASK;
 const uint SLOT_FREE_END   = 0xFFFF_FFFF;
 const uint SLOT_INITIAL_CAP = 64;
 
-/// One registry entry. `used` distinguishes a live slot from one on the free
-/// list, so the common stale-handle case is caught without relying on the
-/// generation having advanced.
+// One registry entry. `used` distinguishes a live slot from one on the free
+// list, so the common stale-handle case is caught without relying on the
+// generation having advanced.
 struct SlotEntry {
     TVal v;
     uint gen;
@@ -115,7 +115,7 @@ struct Runtime {
     int      err_line;       // 1-based, 0 when unknown
     int      err_col;
     char[ERRBUF] err_name;   // script name for the most recent failure
-    /// Innermost host-call context, or null outside a host callback. Lets the
+    // Innermost host-call context, or null outside a host callback. Lets the
 }
 
 // Set once the engine's compile-time-populated tables are known good; see
@@ -200,9 +200,9 @@ fn int bk_open(void** out_rt) @export("bk_open") {
     return BK_OK;
 }
 
-/// GC root walk for the value registry. Every live host handle keeps its value
-/// reachable for as long as the host holds it; freed slots hold undefined and
-/// mark nothing.
+// GC root walk for the value registry. Every live host handle keeps its value
+// reachable for as long as the host holds it; freed slots hold undefined and
+// mark nothing.
 fn void mark_slots(void* rtp) {
     if (rtp == null) return;
     Runtime* rt = (Runtime*)rtp;
@@ -240,8 +240,8 @@ fn void bk_close(void* rtp) @export("bk_close") {
 // Slot registry
 // ============================================================================
 
-/// Grow the slot array. Returns false on allocation failure, leaving the
-/// registry usable at its current size.
+// Grow the slot array. Returns false on allocation failure, leaving the
+// registry usable at its current size.
 fn bool slot_grow(Runtime* rt) {
     uint new_cap = rt.slot_cap == 0 ? SLOT_INITIAL_CAP : rt.slot_cap * 2;
     if (new_cap > SLOT_INDEX_MASK) new_cap = SLOT_INDEX_MASK;
@@ -256,11 +256,11 @@ fn bool slot_grow(Runtime* rt) {
     return true;
 }
 
-/// Register a value and return its handle, or 0 if none could be issued.
-///
-/// Returning 0 is the ONLY failure signal, and every caller turns it into an
-/// explicit error: a handle is never handed back for a value that was not
-/// stored.
+// Register a value and return its handle, or 0 if none could be issued.
+//
+// Returning 0 is the ONLY failure signal, and every caller turns it into an
+// explicit error: a handle is never handed back for a value that was not
+// stored.
 fn uint slot_alloc(Runtime* rt, TVal v) {
     uint idx;
     if (rt.free_head != SLOT_FREE_END) {
@@ -285,8 +285,8 @@ fn uint slot_alloc(Runtime* rt, TVal v) {
     return ((rt.slots[idx].gen & SLOT_GEN_MASK) << SLOT_INDEX_BITS) | (idx + 1);
 }
 
-/// Resolve a handle to its entry, or null if the handle is stale, freed, out of
-/// range, or a scope handle. This is the single validation point.
+// Resolve a handle to its entry, or null if the handle is stale, freed, out of
+// range, or a scope handle. This is the single validation point.
 fn SlotEntry* slot_entry(Runtime* rt, uint id) {
     if (rt == null || id == 0) return null;
     if ((id & SCOPE_HANDLE_BIT) != 0) return null;
@@ -417,21 +417,21 @@ fn int bk_eval_with_name(void* rtp, char* src, usz len, char* name, usz name_len
     return BK_OK;
 }
 
-/// The plain eval, fixed script name "<eval>". Forwards to the named variant,
-/// so the position-bearing path is shared.
+// The plain eval, fixed script name "<eval>". Forwards to the named variant,
+// so the position-bearing path is shared.
 fn int bk_eval(void* rtp, char* src, usz len, uint* out_val) @export("bk_eval") {
     return bk_eval_with_name(rtp, src, len, "<eval>", 6, out_val);
 }
 
-/// Read property `key` off `o` or its prototype chain, returning it only if it
-/// holds a string. Needed for the `name`/`message` pair on a thrown Error: an
-/// engine-thrown TypeError owns only `message`, and `name` lives on
-/// Error.prototype.
-///
-/// This walks the chain by hand instead of calling get_prop_proto because that
-/// routes a Proxy anywhere on the chain back through the trap machinery and
-/// into the VM. describe_error runs on the unwind path, where re-entering the
-/// VM could throw again; a proxy link simply ends the search instead.
+// Read property `key` off `o` or its prototype chain, returning it only if it
+// holds a string. Needed for the `name`/`message` pair on a thrown Error: an
+// engine-thrown TypeError owns only `message`, and `name` lives on
+// Error.prototype.
+//
+// This walks the chain by hand instead of calling get_prop_proto because that
+// routes a Proxy anywhere on the chain back through the trap machinery and
+// into the VM. describe_error runs on the unwind path, where re-entering the
+// VM could throw again; a proxy link simply ends the search instead.
 fn HString* str_prop(HObject* o, HString* key, heap::Heap* h) {
     HObject* cur = o;
     uint depth = 0;
@@ -452,9 +452,9 @@ fn HString* str_prop(HObject* o, HString* key, heap::Heap* h) {
     return null;
 }
 
-/// Format a thrown value into the runtime error buffer without re-entering
-/// the VM (a user toString could throw again on the unwind path). Every JS
-/// value reaches a useful message: `throw 42` reports "42", not a placeholder.
+// Format a thrown value into the runtime error buffer without re-entering
+// the VM (a user toString could throw again on the unwind path). Every JS
+// value reaches a useful message: `throw 42` reports "42", not a placeholder.
 fn void describe_error(Runtime* rt, TVal* ev) {
     if (ev.is_string()) {
         HString* s = (HString*)ev.get_heapptr();
@@ -534,7 +534,7 @@ fn int bk_type_of(void* rtp, uint id) @export("bk_type_of") {
     return type_of((Runtime*)rtp, null, id);
 }
 
-/// Context tier; see bk_ctx_get_number.
+// Context tier; see bk_ctx_get_number.
 fn int bk_ctx_type_of(void* ctxp, uint id) @export("bk_ctx_type_of") {
     return type_of(ctx_runtime(ctxp), ctxp, id);
 }
@@ -570,8 +570,8 @@ fn int bk_get_number(void* rtp_in, uint id, double* out) @export("bk_get_number"
     return read_number((Runtime*)rtp_in, null, id, out);
 }
 
-/// Context tier: reads an argument or any handle a callback holds, including a
-/// scope handle, which the runtime tier cannot resolve.
+// Context tier: reads an argument or any handle a callback holds, including a
+// scope handle, which the runtime tier cannot resolve.
 fn int bk_ctx_get_number(void* ctxp, uint id, double* out) @export("bk_ctx_get_number") {
     return read_number(ctx_runtime(ctxp), ctxp, id, out);
 }
@@ -591,7 +591,7 @@ fn int bk_get_bool(void* rtp_in, uint id, int* out) @export("bk_get_bool") {
     return read_bool((Runtime*)rtp_in, null, id, out);
 }
 
-/// Context tier; see bk_ctx_get_number.
+// Context tier; see bk_ctx_get_number.
 fn int bk_ctx_get_bool(void* ctxp, uint id, int* out) @export("bk_ctx_get_bool") {
     return read_bool(ctx_runtime(ctxp), ctxp, id, out);
 }
@@ -614,8 +614,8 @@ fn void sink_put(char c, void* udata) {
     sink.len++;
 }
 
-/// Copy a JS string out as NUL-terminated UTF-8. Two-call protocol: pass
-/// buf==null to learn the required size (excluding NUL).
+// Copy a JS string out as NUL-terminated UTF-8. Two-call protocol: pass
+// buf==null to learn the required size (excluding NUL).
 fn int read_string(Runtime* rt, void* ctxp, uint id, char* buf, usz cap, usz* out_len) {
     if (rt == null) return BK_ERR_INVALID;
     clear_err(rt);
@@ -641,13 +641,13 @@ fn int bk_get_string(void* rtp_in, uint id, char* buf, usz cap, usz* out_len) @e
     return read_string((Runtime*)rtp_in, null, id, buf, cap, out_len);
 }
 
-/// Context tier; see bk_ctx_get_number.
+// Context tier; see bk_ctx_get_number.
 fn int bk_ctx_get_string(void* ctxp, uint id, char* buf, usz cap, usz* out_len) @export("bk_ctx_get_string") {
     return read_string(ctx_runtime(ctxp), ctxp, id, buf, cap, out_len);
 }
 
-/// The runtime owning a callback's context, for a host that needs to persist a
-/// value or evaluate. Mirrors QuickJS's JS_GetRuntime(ctx).
+// The runtime owning a callback's context, for a host that needs to persist a
+// value or evaluate. Mirrors QuickJS's JS_GetRuntime(ctx).
 fn void* bk_ctx_runtime(void* ctxp) @export("bk_ctx_runtime") {
     return (void*)ctx_runtime(ctxp);
 }
@@ -667,7 +667,7 @@ fn int bk_last_error_code(void* rtp) @export("bk_last_error_code") {
     return ((Runtime*)rtp).errcode;
 }
 
-/// Layout must match bk_error_info in include/boomkat.h on the target's ABI.
+// Layout must match bk_error_info in include/boomkat.h on the target's ABI.
 struct BkErrorInfo {
     int code;
     int line;
@@ -675,8 +675,8 @@ struct BkErrorInfo {
     char* script_name;
 }
 
-/// Fill *out with the most recent failure's kind and position. script_name
-/// points at runtime-owned storage with the same lifetime as bk_last_error.
+// Fill *out with the most recent failure's kind and position. script_name
+// points at runtime-owned storage with the same lifetime as bk_last_error.
 fn int bk_last_error_info(void* rtp, BkErrorInfo* out) @export("bk_last_error_info") {
     if (out == null) return BK_ERR_INVALID;
     if (rtp == null) return BK_ERR_INVALID;
@@ -705,10 +705,10 @@ fn int bk_drain_microtasks(void* rtp) @export("bk_drain_microtasks") {
     return BK_OK;
 }
 
-/// Install, replace, or clear the interrupt handler. The callback runs on the
-/// engine thread at VM safepoints; it must not call back into the engine. A
-/// host interrupting from another thread sets a flag in `opaque` and returns
-/// it here.
+// Install, replace, or clear the interrupt handler. The callback runs on the
+// engine thread at VM safepoints; it must not call back into the engine. A
+// host interrupting from another thread sets a flag in `opaque` and returns
+// it here.
 fn void bk_set_interrupt_handler(void* rtp, void* cb, void* opaque) @export("bk_set_interrupt_handler") {
     if (rtp == null) return;
     Runtime* rt = (Runtime*)rtp;
@@ -735,19 +735,19 @@ fn char* bk_version() @export("bk_version") {
 
 const uint SCOPE_HANDLE_BIT = 0x8000_0000;
 
-/// The C-facing callback signature: (ctx, udata).
+// The C-facing callback signature: (ctx, udata).
 alias BkHostFn = fn void(void*, void*);
 
-/// Encode a scope handle for argument/this/new_target index `idx`.
-///
-/// Scope handles are distinguished from global slot ids by the high bit, so
-/// bk_type_of and the readers accept both kinds without separate entry points.
+// Encode a scope handle for argument/this/new_target index `idx`.
+//
+// Scope handles are distinguished from global slot ids by the high bit, so
+// bk_type_of and the readers accept both kinds without separate entry points.
 fn uint scope_handle(uint idx) @inline {
     return SCOPE_HANDLE_BIT | idx;
 }
 
-/// Resolve any handle to a TVal. Global slot ids go to the slot registry;
-/// scope handles read the innermost host call scope through the context.
+// Resolve any handle to a TVal. Global slot ids go to the slot registry;
+// scope handles read the innermost host call scope through the context.
 fn bool resolve_handle(Runtime* rt, void* ctxp, uint id, TVal* out) {
     if ((id & SCOPE_HANDLE_BIT) != 0) {
         if (ctxp == null) return false;
@@ -761,10 +761,10 @@ fn bool resolve_handle(Runtime* rt, void* ctxp, uint id, TVal* out) {
     return slot_get(rt, id, out);
 }
 
-/// Trampoline: every registered host function enters the engine through this
-/// one C3 function, which forwards to the C callback with the context as an
-/// opaque pointer. The udata the engine stored is a HostReg* holding the real
-/// C function pointer and the host's own udata.
+// Trampoline: every registered host function enters the engine through this
+// one C3 function, which forwards to the C callback with the context as an
+// opaque pointer. The udata the engine stored is a HostReg* holding the real
+// C function pointer and the host's own udata.
 struct HostReg {
     void* cfn;
     void* udata;
@@ -778,10 +778,10 @@ fn void host_trampoline(builtins::BuiltinContext* ctx, void* udata) {
     cfn((void*)ctx, reg.udata);
 }
 
-/// Register `cfn` as a global function named `name`.
-///
-/// Returns BK_OK, or BK_ERR_INVALID / BK_ERR_NOMEM. The binding is created
-/// on the global environment, so JS reaches it by bare name.
+// Register `cfn` as a global function named `name`.
+//
+// Returns BK_OK, or BK_ERR_INVALID / BK_ERR_NOMEM. The binding is created
+// on the global environment, so JS reaches it by bare name.
 fn int bk_register_fn(void* rtp, char* name, usz name_len, void* cfn, void* udata,
                        int arity, int constructable) @export("bk_register_fn") {
     if (rtp == null || name == null || cfn == null) return BK_ERR_INVALID;
@@ -825,8 +825,8 @@ fn uint bk_argc(void* ctxp) @export("bk_argc") {
     return builtins::host_argc((builtins::BuiltinContext*)ctxp);
 }
 
-/// Handle to argument `i`. Out-of-range yields a handle to undefined, matching
-/// JS semantics and sparing every host an arity check.
+// Handle to argument `i`. Out-of-range yields a handle to undefined, matching
+// JS semantics and sparing every host an arity check.
 fn uint bk_arg(void* ctxp, uint i) @export("bk_arg") {
     return scope_handle(heap::HOST_SCOPE_ARG0 + i);
 }
@@ -844,9 +844,9 @@ fn int bk_is_construct(void* ctxp) @export("bk_is_construct") {
     return builtins::host_is_construct((builtins::BuiltinContext*)ctxp) ? 1 : 0;
 }
 
-/// The runtime owning the call context, or null if the context is not one of
-/// ours. A host function is handed a context, not a runtime, so this is how the
-/// context-tier entry points find their runtime without consulting a global.
+// The runtime owning the call context, or null if the context is not one of
+// ours. A host function is handed a context, not a runtime, so this is how the
+// context-tier entry points find their runtime without consulting a global.
 fn Runtime* ctx_runtime(void* ctxp) @inline {
     if (ctxp == null) return null;
     builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
@@ -854,7 +854,7 @@ fn Runtime* ctx_runtime(void* ctxp) @inline {
     return (Runtime*)ctx.heap.capi_runtime;
 }
 
-/// Set the callback's return value from a handle.
+// Set the callback's return value from a handle.
 fn void bk_return(void* ctxp, uint id) @export("bk_return") {
     Runtime* rt = ctx_runtime(ctxp);
     if (rt == null) return;
@@ -885,15 +885,15 @@ fn void bk_return_null(void* ctxp) @export("bk_return_null") {
     builtins::host_return((builtins::BuiltinContext*)ctxp, v);
 }
 
-/// Set the return value to a fresh JS string built from UTF-8 bytes.
+// Set the return value to a fresh JS string built from UTF-8 bytes.
 fn void bk_return_string(void* ctxp, char* utf8, usz len) @export("bk_return_string") {
     if (ctxp == null || utf8 == null) return;
     builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
     builtins::host_return(ctx, builtins::host_new_string(ctx, utf8[:len]));
 }
 
-/// Throw a fresh Error of `kind` with `msg`. Does not unwind: the callback
-/// must still return normally, and the throw beats any return value set.
+// Throw a fresh Error of `kind` with `msg`. Does not unwind: the callback
+// must still return normally, and the throw beats any return value set.
 fn void bk_throw_error(void* ctxp, int kind, char* msg) @export("bk_throw_error") {
     if (ctxp == null || msg == null) return;
     usz n = 0;
@@ -901,7 +901,7 @@ fn void bk_throw_error(void* ctxp, int kind, char* msg) @export("bk_throw_error"
     builtins::host_throw_error((builtins::BuiltinContext*)ctxp, kind, msg[:n]);
 }
 
-/// Throw an arbitrary value by handle.
+// Throw an arbitrary value by handle.
 fn void bk_throw(void* ctxp, uint id) @export("bk_throw") {
     Runtime* rt = ctx_runtime(ctxp);
     if (rt == null) return;
@@ -910,8 +910,8 @@ fn void bk_throw(void* ctxp, uint id) @export("bk_throw") {
     builtins::host_throw((builtins::BuiltinContext*)ctxp, v);
 }
 
-/// Promote a scope handle to a runtime-owned global handle the host may keep
-/// past the callback. The caller then owns it and must bk_value_free it.
+// Promote a scope handle to a runtime-owned global handle the host may keep
+// past the callback. The caller then owns it and must bk_value_free it.
 fn uint bk_value_persist(void* ctxp, uint id) @export("bk_value_persist") {
     Runtime* rt = ctx_runtime(ctxp);
     if (rt == null) return 0;
@@ -920,12 +920,12 @@ fn uint bk_value_persist(void* ctxp, uint id) @export("bk_value_persist") {
     return slot_alloc(rt, v);
 }
 
-/// Call a JS function from host code.
-///
-/// `argv` is an array of `argc` handles. On success stores a scope-independent
-/// global handle in *out_val (caller owns it) and returns BK_OK. On an
-/// exception in the callee the throw is staged on the context, so the host
-/// should return promptly; the status is BK_ERR_THROW.
+// Call a JS function from host code.
+//
+// `argv` is an array of `argc` handles. On success stores a scope-independent
+// global handle in *out_val (caller owns it) and returns BK_OK. On an
+// exception in the callee the throw is staged on the context, so the host
+// should return promptly; the status is BK_ERR_THROW.
 fn int bk_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
                 uint* out_val) @export("bk_call") {
     Runtime* rt = ctx_runtime(ctxp);
@@ -983,7 +983,7 @@ fn int bk_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
 // callback) rather than a live call context. Handles they return are
 // caller-owned and must be bk_value_free'd, like bk_eval results.
 
-/// Allocate a slot for `v`, reporting a full table explicitly.
+// Allocate a slot for `v`, reporting a full table explicitly.
 fn int capi_store(Runtime* rt, TVal v, uint* out) {
     uint id = slot_alloc(rt, v);
     if (id == 0) { set_err(rt, BK_ERR_FULL, "value slot table full"); return BK_ERR_FULL; }
@@ -1057,8 +1057,8 @@ fn int bk_new_array(void* rtp, uint* out) @export("bk_new_array") {
     return capi_store(rt, v, out);
 }
 
-/// Fresh array whose elements are the first `n` of `elems`. The caller keeps
-/// ownership of the input handles; they are copied in.
+// Fresh array whose elements are the first `n` of `elems`. The caller keeps
+// ownership of the input handles; they are copied in.
 fn int bk_new_array_from(void* rtp, uint* elems, uint n, uint* out) @export("bk_new_array_from") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
@@ -1079,7 +1079,7 @@ fn int bk_new_array_from(void* rtp, uint* elems, uint n, uint* out) @export("bk_
     return capi_store(rt, v, out);
 }
 
-/// Handle to the global object (globalThis). Caller owns it.
+// Handle to the global object (globalThis). Caller owns it.
 fn int bk_get_global(void* rtp, uint* out) @export("bk_get_global") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
@@ -1093,15 +1093,15 @@ fn int bk_get_global(void* rtp, uint* out) @export("bk_get_global") {
     return capi_store(rt, g, out);
 }
 
-/// Resolve a property handle to an HObject, or fail with BK_ERR_TYPE.
+// Resolve a property handle to an HObject, or fail with BK_ERR_TYPE.
 fn HObject* capi_object(Runtime* rt, uint id, TVal* out) {
     if (!slot_get(rt, id, out)) return null;
     if (!out.is_object()) return null;
     return (HObject*)out.get_heapptr();
 }
 
-/// Surface a VM failure (heap error channel) as a bk_ status, distinguishing an
-/// interrupt from an ordinary throw.
+// Surface a VM failure (heap error channel) as a bk_ status, distinguishing an
+// interrupt from an ordinary throw.
 fn int capi_vm_fault(Runtime* rt) {
     if (rt.heap.uncatchable_throw) {
         rt.heap.uncatchable_throw = false;
@@ -1236,8 +1236,8 @@ fn int bk_delete_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) 
     return BK_OK;
 }
 
-/// Fresh array of an object's own string property names (enumerable and not;
-/// symbol keys skipped). The host walks it with bk_get_prop_index.
+// Fresh array of an object's own string property names (enumerable and not;
+// symbol keys skipped). The host walks it with bk_get_prop_index.
 fn int bk_own_prop_names(void* rtp, uint obj_id, uint* out) @export("bk_own_prop_names") {
     if (rtp == null || out == null) return BK_ERR_INVALID;
     Runtime* rt = (Runtime*)rtp;
@@ -1331,10 +1331,10 @@ fn int bk_own_prop_names(void* rtp, uint obj_id, uint* out) @export("bk_own_prop
     return capi_store(rt, v, out);
 }
 
-/// Call a JS function from outside a callback. argv/argc (NULL/0 for none),
-/// this_val (0 for undefined). On BK_OK *out_val receives a caller-owned
-/// handle. A thrown callee returns BK_ERR_THROW (or BK_ERR_INTERRUPT for an
-/// interrupt); the exception is recorded on the runtime, not unwound through C.
+// Call a JS function from outside a callback. argv/argc (NULL/0 for none),
+// this_val (0 for undefined). On BK_OK *out_val receives a caller-owned
+// handle. A thrown callee returns BK_ERR_THROW (or BK_ERR_INTERRUPT for an
+// interrupt); the exception is recorded on the runtime, not unwound through C.
 fn int bk_call_rt(void* rtp, uint func_id, uint* argv, uint argc, uint this_id,
                    uint* out_val) @export("bk_call_rt") {
     if (rtp == null) return BK_ERR_INVALID;

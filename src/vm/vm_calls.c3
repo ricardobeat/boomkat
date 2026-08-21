@@ -14,11 +14,11 @@ import std::math;
 // Call dispatch for functions, constructors, and generators
 // ============================================================================
 
-/// Finish initializing a strict `arguments` exotic object: set .length,
-/// .callee, and @@iterator (ES2017+ §9.4.4.7 CreateUnmappedArgumentsObject).
-/// Per spec, @@iterator must be the *same function object* as
-/// %Array.prototype.values%, so callers must go through this helper rather
-/// than re-deriving the value property-by-property at each call site.
+// Finish initializing a strict `arguments` exotic object: set .length,
+// .callee, and @@iterator (ES2017+ §9.4.4.7 CreateUnmappedArgumentsObject).
+// Per spec, @@iterator must be the *same function object* as
+// %Array.prototype.values%, so callers must go through this helper rather
+// than re-deriving the value property-by-property at each call site.
 fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint nargs) {
     // ES2017 §9.4.4.7 step 6: callee is a non-configurable accessor whose
     // getter and setter are both %ThrowTypeError% (the same frozen intrinsic
@@ -52,19 +52,19 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
     }
 }
 
-/// Sub-dispatch for CALL, CALL_S, CALL_PROP, SETPROTO, SUPER_CALL, SUPER_CALL_S, NEWTARGET, NEW_OBJ, NEW_OBJ_S, TAILCALL opcodes.
-/// Initialize the pending derived-constructor this_binding after super()
-/// produced the constructed object. super() may execute inside an arrow
-/// function whose activation inherited the constructor's uninitialized (TDZ)
-/// this, so walk up through TDZ activations until the derived constructor
-/// itself is initialized (§9.2.2 "initialized" state).
-///
-/// Returns true if the target derived-constructor frame's this_binding was
-/// already initialized, meaning this is a second super() call. Per §8.1.1.3.1
-/// BindThisValue step 3, that must throw ReferenceError. The base-constructor
-/// side effects (already executed by the time this runs, per §12.3.5.1 step 4
-/// Construct-before-BindThisValue) still happened; only the this-binding is
-/// left untouched here so the caller can throw.
+// Sub-dispatch for CALL, CALL_S, CALL_PROP, SETPROTO, SUPER_CALL, SUPER_CALL_S, NEWTARGET, NEW_OBJ, NEW_OBJ_S, TAILCALL opcodes.
+// Initialize the pending derived-constructor this_binding after super()
+// produced the constructed object. super() may execute inside an arrow
+// function whose activation inherited the constructor's uninitialized (TDZ)
+// this, so walk up through TDZ activations until the derived constructor
+// itself is initialized (§9.2.2 "initialized" state).
+//
+// Returns true if the target derived-constructor frame's this_binding was
+// already initialized, meaning this is a second super() call. Per §8.1.1.3.1
+// BindThisValue step 3, that must throw ReferenceError. The base-constructor
+// side effects (already executed by the time this runs, per §12.3.5.1 step 4
+// Construct-before-BindThisValue) still happened; only the this-binding is
+// left untouched here so the caller can throw.
 fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activation** bound_act = null) {
     // Intermediate frames with a real this (e.g. an object method that
     // invoked the super-capturing arrow) are skipped, not a stop condition;
@@ -97,23 +97,23 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
     return false;
 }
 
-/// Private class fields (ES2022): stamp the class brand and run
-/// `__field_init__(this)` at the point the spec requires, right after `this` is
-/// bound (base constructor: NEW_OBJ; derived constructor: super_init_this_chain).
-/// `ctor_lex_env`/`ctor_var_env` are the CONSTRUCTOR ACTIVATION's own
-/// environments, not the closure template's captured ones, since these are what
-/// GETVAR/PUTLEX inside the constructor body itself resolve private-name
-/// slots through, so using the same chain here keeps brand/field-init
-/// lookups consistent with the constructor's own view of classScope even
-/// when the activation's env was rebased (e.g. named-function-expression
-/// self-binding). `target` is the constructor's CompiledFunction template;
-/// `this_tv` is the bound instance.
-///
-/// Returns `true` on success, including when there is nothing to do: no brand, no
-/// fields). Returns `false` when duplicate initialization or field-init threw
-/// and the throw was propagated through vm_throw_value, so the caller must
-/// abort the construct path (mirrors every other opcode-handler error convention:
-/// `if (!vm_throw_error(...)) return VM_ERROR~;`).
+// Private class fields (ES2022): stamp the class brand and run
+// `__field_init__(this)` at the point the spec requires, right after `this` is
+// bound (base constructor: NEW_OBJ; derived constructor: super_init_this_chain).
+// `ctor_lex_env`/`ctor_var_env` are the CONSTRUCTOR ACTIVATION's own
+// environments, not the closure template's captured ones, since these are what
+// GETVAR/PUTLEX inside the constructor body itself resolve private-name
+// slots through, so using the same chain here keeps brand/field-init
+// lookups consistent with the constructor's own view of classScope even
+// when the activation's env was rebased (e.g. named-function-expression
+// self-binding). `target` is the constructor's CompiledFunction template;
+// `this_tv` is the bound instance.
+//
+// Returns `true` on success, including when there is nothing to do: no brand, no
+// fields). Returns `false` when duplicate initialization or field-init threw
+// and the throw was propagated through vm_throw_value, so the caller must
+// abort the construct path (mirrors every other opcode-handler error convention:
+// `if (!vm_throw_error(...)) return VM_ERROR~;`).
 fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* ctor_var_env,
                                   CompiledFunction* target, TVal this_tv,
                                   Activation* act, Instruction** curr_pc, bool* needs_restart) {
@@ -176,19 +176,19 @@ fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* cto
     return true;
 }
 
-/// Resolve an arrow's live lexical `this` when its CLOSURE-time captured
-/// value was the TDZ sentinel (i.e. the arrow was defined inside a derived
-/// constructor before super() ran). A value captured at closure-creation
-/// time cannot observe super_init_this_chain()'s later in-place mutation of
-/// the owning derived-constructor activation's this_binding, so on the TDZ
-/// fallback path re-walks from the calling activation, using the same parent and
-/// shadow_act_list traversal as super_init_this_chain, to find that
-/// activation's *current* this_binding. `caller_act` is the activation that
-/// is invoking the arrow right now; for a well-formed program this is always
-/// either the derived-constructor activation itself or a frame reached from
-/// it via a still-live call chain (arrows referencing `this`/`super` cannot
-/// legally escape their enclosing constructor's dynamic extent before it
-/// returns). Returns the TDZ sentinel unchanged if no such frame is found.
+// Resolve an arrow's live lexical `this` when its CLOSURE-time captured
+// value was the TDZ sentinel (i.e. the arrow was defined inside a derived
+// constructor before super() ran). A value captured at closure-creation
+// time cannot observe super_init_this_chain()'s later in-place mutation of
+// the owning derived-constructor activation's this_binding, so on the TDZ
+// fallback path re-walks from the calling activation, using the same parent and
+// shadow_act_list traversal as super_init_this_chain, to find that
+// activation's *current* this_binding. `caller_act` is the activation that
+// is invoking the arrow right now; for a well-formed program this is always
+// either the derived-constructor activation itself or a frame reached from
+// it via a still-live call chain (arrows referencing `this`/`super` cannot
+// legally escape their enclosing constructor's dynamic extent before it
+// returns). Returns the TDZ sentinel unchanged if no such frame is found.
 fn TVal super_walk_live_this(Vm* vm, Activation* caller_act) {
     Activation* a = caller_act;
     ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
@@ -205,8 +205,8 @@ fn TVal super_walk_live_this(Vm* vm, Activation* caller_act) {
     return env::tdz_sentinel();
 }
 
-/// Same boundary-crossing walk for reading: find the nearest enclosing
-/// activation (live or shadow-saved) that has a new_target.
+// Same boundary-crossing walk for reading: find the nearest enclosing
+// activation (live or shadow-saved) that has a new_target.
 fn HObject* super_walk_new_target(Vm* vm, Activation* act) {
     Activation* a = act;
     ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
@@ -222,37 +222,37 @@ fn HObject* super_walk_new_target(Vm* vm, Activation* act) {
     }
 }
 
-/// True when `b` is the bindings object of a permanent global environment
-/// record (the global object record or the top-level declarative record).
-/// A binding in either is a permanent GC root for the life of the realm, so
-/// a callee resolved there can be safely borrowed into a register without an
-/// owning reference.
+// True when `b` is the bindings object of a permanent global environment
+// record (the global object record or the top-level declarative record).
+// A binding in either is a permanent GC root for the life of the realm, so
+// a callee resolved there can be safely borrowed into a register without an
+// owning reference.
 fn bool is_global_bindings(Vm* vm, HObject* b) @inline {
     return (vm.global_env != null && b == vm.global_env.bindings)
         || (vm.global_lex_env != null && b == vm.global_lex_env.bindings);
 }
 
-/// Resolve an unqualified name that the environment chain did not bind, by
-/// looking it up on the global object's PROTOTYPE chain.
-///
-/// The global environment is an object Environment Record whose binding object
-/// is the global object (§9.1.1.4), and HasBinding on such a record is
-/// HasProperty, not GetOwnProperty. So an inherited property of the global
-/// object -- everything on Object.prototype -- is a resolvable name:
-/// `hasOwnProperty.call(o, k)` is the idiomatic spelling minifiers emit, and
-/// bare `toString`, `valueOf` and `propertyIsEnumerable` resolve the same way.
-/// The env walk uses own-property lookups, so it stops one link short of these.
-///
-/// Returns true and writes the value to `out` when found. An inherited
-/// accessor runs its getter with the GLOBAL OBJECT as receiver, not the
-/// prototype that owns it: GetBindingValue performs the ordinary [[Get]] on
-/// the binding object, whose receiver is that object (§10.1.8.1).
-///
-/// A getter that throws is reported as a miss, leaving the caller to raise the
-/// ReferenceError it would otherwise have raised. Routing the throw through
-/// here instead would need the vm throw protocol (needs_restart and the
-/// activation unwind) threaded into every call site, and a global-prototype
-/// accessor that throws is not a shape worth that coupling.
+// Resolve an unqualified name that the environment chain did not bind, by
+// looking it up on the global object's PROTOTYPE chain.
+//
+// The global environment is an object Environment Record whose binding object
+// is the global object (§9.1.1.4), and HasBinding on such a record is
+// HasProperty, not GetOwnProperty. So an inherited property of the global
+// object -- everything on Object.prototype -- is a resolvable name:
+// `hasOwnProperty.call(o, k)` is the idiomatic spelling minifiers emit, and
+// bare `toString`, `valueOf` and `propertyIsEnumerable` resolve the same way.
+// The env walk uses own-property lookups, so it stops one link short of these.
+//
+// Returns true and writes the value to `out` when found. An inherited
+// accessor runs its getter with the GLOBAL OBJECT as receiver, not the
+// prototype that owns it: GetBindingValue performs the ordinary [[Get]] on
+// the binding object, whose receiver is that object (§10.1.8.1).
+//
+// A getter that throws is reported as a miss, leaving the caller to raise the
+// ReferenceError it would otherwise have raised. Routing the throw through
+// here instead would need the vm throw protocol (needs_restart and the
+// activation unwind) threaded into every call site, and a global-prototype
+// accessor that throws is not a shape worth that coupling.
 fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
     if (vm.global_env == null || vm.global_env.bindings == null) return false;
     HObject* g = vm.global_env.bindings;
@@ -284,24 +284,24 @@ fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
     return false;
 }
 
-/// Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
-/// Mirrors the GETVAR opcode handler in vm_execute.c3 (same VarIC keyed on
-/// this instruction's own pc_off, same env-chain walk, same getter/TDZ
-/// handling) so CALL_VAR keeps GETVAR's IC hit rate instead of falling back
-/// to an uncached lookup on every call. Returns VM_ERROR~ (via the usual
-/// vm_throw_value/vm_throw_error_fmt + needs_restart protocol) on a
-/// ReferenceError, TDZ access, or a propagated getter throw.
-///
-/// `borrowed` (out): set true when the callee resolved to a *global*
-/// binding (the global object record or the top-level declarative record).
-/// Those environments are permanent GC roots, so their binding slot cannot
-/// be freed for the duration of the call; the callee value is written into
-/// the register WITHOUT an incref (a plain copy) and NOT registered via
-/// track_heap_store. The caller (try_fast_compiled_call) commits this borrow
-/// only when it also takes the compiled-function fast path, where the result
-/// overwrites the same register on return and must therefore skip decref-ing
-/// the (non-owned) old value. For any other callee kind the caller "un-borrows"
-/// by incref+track before dispatching, so every slow path stays balanced.
+// Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
+// Mirrors the GETVAR opcode handler in vm_execute.c3 (same VarIC keyed on
+// this instruction's own pc_off, same env-chain walk, same getter/TDZ
+// handling) so CALL_VAR keeps GETVAR's IC hit rate instead of falling back
+// to an uncached lookup on every call. Returns VM_ERROR~ (via the usual
+// vm_throw_value/vm_throw_error_fmt + needs_restart protocol) on a
+// ReferenceError, TDZ access, or a propagated getter throw.
+//
+// `borrowed` (out): set true when the callee resolved to a *global*
+// binding (the global object record or the top-level declarative record).
+// Those environments are permanent GC roots, so their binding slot cannot
+// be freed for the duration of the call; the callee value is written into
+// the register WITHOUT an incref (a plain copy) and NOT registered via
+// track_heap_store. The caller (try_fast_compiled_call) commits this borrow
+// only when it also takes the compiled-function fast path, where the result
+// overwrites the same register on return and must therefore skip decref-ing
+// the (non-owned) old value. For any other callee kind the caller "un-borrows"
+// by incref+track before dispatching, so every slow path stays balanced.
 fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bool* borrowed) @inline {
     Vm* vm = ds.vm;
     TVal* ra = ds.regs_base + callee_reg;
@@ -500,19 +500,19 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     return;
 }
 
-/// Resolve CALL_GLOBAL's callee-by-name lookup into ds.regs_base[callee_reg].
-/// The global-scope analog of resolve_call_var: mirrors the GETGLOBAL opcode
-/// handler (same per-PC stable-pointer varref IC, same global-scope-confined
-/// env walk, same getter/TDZ handling) so CALL_GLOBAL keeps GETGLOBAL's IC hit
-/// rate. Emitted only where lex_env == global_lex_env and var_env ==
-/// global_env, so any binding it resolves lives in a permanent global
-/// environment record, a GC root for the life of the realm. The data-slot
-/// callee is therefore borrowed (plain copy, no incref, no track_heap_store),
-/// exactly as resolve_call_var does for a global-resolved callee; `borrowed`
-/// is set true. The caller commits the borrow only on the compiled-fn fast
-/// path and un-borrows (incref + track) otherwise. Returns VM_ERROR~ (via the
-/// vm_throw_value/vm_throw_error_fmt + needs_restart protocol) on a
-/// ReferenceError, TDZ access, or a propagated getter throw.
+// Resolve CALL_GLOBAL's callee-by-name lookup into ds.regs_base[callee_reg].
+// The global-scope analog of resolve_call_var: mirrors the GETGLOBAL opcode
+// handler (same per-PC stable-pointer varref IC, same global-scope-confined
+// env walk, same getter/TDZ handling) so CALL_GLOBAL keeps GETGLOBAL's IC hit
+// rate. Emitted only where lex_env == global_lex_env and var_env ==
+// global_env, so any binding it resolves lives in a permanent global
+// environment record, a GC root for the life of the realm. The data-slot
+// callee is therefore borrowed (plain copy, no incref, no track_heap_store),
+// exactly as resolve_call_var does for a global-resolved callee; `borrowed`
+// is set true. The caller commits the borrow only on the compiled-fn fast
+// path and un-borrows (incref + track) otherwise. Returns VM_ERROR~ (via the
+// vm_throw_value/vm_throw_error_fmt + needs_restart protocol) on a
+// ReferenceError, TDZ access, or a propagated getter throw.
 fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg, bool* borrowed) @inline {
     Vm* vm = ds.vm;
     TVal* ra = ds.regs_base + callee_reg;
@@ -691,18 +691,18 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     return;
 }
 
-/// Fast path for CALL/CALL_S/CALL_UNDEF_THIS on a direct (non-generator,
-/// non-class-ctor) compiled-function callee, which is the common
-/// shape for ordinary recursive/iterative JS calls. Hoisted out of
-/// dispatch_calls so Vm.run's CALL case can @inline it directly and skip
-/// the `bl dispatch_calls` + full inner-switch dispatch entirely for this
-/// shape; dispatch_calls' own CALL case still calls this same helper (one
-/// copy of the logic) for callers that don't warrant duplicating it (e.g.
-/// after a lightfunc/builtin re-dispatch lands back on a compiled fn).
-/// Sets *handled=true and returns the (possibly faulting) result if this
-/// call was fully handled here; sets *handled=false (return value unused)
-/// if the guard conditions weren't met and the caller must fall back to
-/// the full dispatch_calls slow path.
+// Fast path for CALL/CALL_S/CALL_UNDEF_THIS on a direct (non-generator,
+// non-class-ctor) compiled-function callee, which is the common
+// shape for ordinary recursive/iterative JS calls. Hoisted out of
+// dispatch_calls so Vm.run's CALL case can @inline it directly and skip
+// the `bl dispatch_calls` + full inner-switch dispatch entirely for this
+// shape; dispatch_calls' own CALL case still calls this same helper (one
+// copy of the logic) for callers that don't warrant duplicating it (e.g.
+// after a lightfunc/builtin re-dispatch lands back on a compiled fn).
+// Sets *handled=true and returns the (possibly faulting) result if this
+// call was fully handled here; sets *handled=false (return value unused)
+// if the guard conditions weren't met and the caller must fall back to
+// the full dispatch_calls slow path.
 fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool* handled) @inline {
     Vm* vm = ds.vm;
     *handled = false;

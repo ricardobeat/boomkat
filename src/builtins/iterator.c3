@@ -1,4 +1,4 @@
-/// Iterator protocol: %IteratorPrototype%, Array/String/Map/Set/RegExpString iterators.
+// Iterator protocol: %IteratorPrototype%, Array/String/Map/Set/RegExpString iterators.
 module boomkat::builtins;
 import boomkat::types;
 import std::io;
@@ -15,8 +15,8 @@ import boomkat::env;
 // Iterator protocol, built-in @@iterator methods and .next() functions
 // ============================================================================
 
-/// Helper: create an array iterator with a specific kind.
-/// kind: 0=value (default), 1=key, 2=key+value (entries)
+// Helper: create an array iterator with a specific kind.
+// kind: 0=value (default), 1=key, 2=key+value (entries)
 fn void create_array_iterator(BuiltinContext* ctx, uint kind) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -40,8 +40,8 @@ fn void create_array_iterator(BuiltinContext* ctx, uint kind) {
     ctx.result.set_object(iter);
 }
 
-/// Helper: create a Map iterator with a specific kind.
-/// kind: 0=values, 1=keys, 2=entries
+// Helper: create a Map iterator with a specific kind.
+// kind: 0=values, 1=keys, 2=entries
 fn void create_map_iterator(BuiltinContext* ctx, uint kind) {
     Heap* heap = ctx.heap;
     HObject* map = check_map(ctx);
@@ -60,8 +60,8 @@ fn void create_map_iterator(BuiltinContext* ctx, uint kind) {
     ctx.result.set_object(iter);
 }
 
-/// Helper: create a Set iterator with a specific kind.
-/// kind: 0=values, 1=keys, 2=entries
+// Helper: create a Set iterator with a specific kind.
+// kind: 0=values, 1=keys, 2=entries
 fn void create_set_iterator(BuiltinContext* ctx, uint kind) {
     Heap* heap = ctx.heap;
     HObject* set = check_set(ctx);
@@ -83,17 +83,17 @@ fn void builtin_array_proto_values(BuiltinContext* ctx) {
     create_array_iterator(ctx, 0);
 }
 
-/// Array.prototype.keys, ES2015 §22.1.3.17 (kind=1)
+// Array.prototype.keys, ES2015 §22.1.3.17 (kind=1)
 fn void builtin_array_proto_keys(BuiltinContext* ctx) {
     create_array_iterator(ctx, 1);
 }
 
-/// Array.prototype.entries, ES2015 §22.1.3.5 (kind=2)
+// Array.prototype.entries, ES2015 §22.1.3.5 (kind=2)
 fn void builtin_array_proto_entries(BuiltinContext* ctx) {
     create_array_iterator(ctx, 2);
 }
 
-/// String.prototype[Symbol.iterator], creates a string iterator object.
+// String.prototype[Symbol.iterator], creates a string iterator object.
 fn void builtin_string_proto_symbol_iter(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 
@@ -120,25 +120,25 @@ fn void builtin_string_proto_symbol_iter(BuiltinContext* ctx) {
     ctx.result.set_object(iter);
 }
 
-/// %IteratorPrototype%[@@iterator] (ES6 section 25.1.2.1), unconditionally
-/// returns the `this` value, whatever it is (object, primitive, or even
-/// null/undefined), there is no ReturnIfAbrupt or type check in the spec
-/// algorithm.
-///
-/// `*ctx.result` starts out ALIASING `ctx.this_val` already, every call
-/// convention that reaches a builtin (lightfunc or HObject dispatch in
-/// vm_call_fn_impl, and the VM's own CALL_PROP handling) seeds the result
-/// register with a raw, non-incref'd copy of `this` before the builtin
-/// runs, since the result slot doubles as the `this`/callee slot. So
-/// `Heap.tval_copy_ref(ctx.result, &ctx.this_val)` is wrong here: it
-/// increfs the incoming value but then decrefs `*ctx.result`'s *existing*
-/// bits, the same heap object, reached through a different TVal location
-/// than `&ctx.this_val`, so the `dst == src` same-pointer guard can't catch
-/// the aliasing, silently cancelling the incref and returning an
-/// under-refcounted reference (the caller frees it one decref too early).
-/// A bare incref (mirroring `set_object`'s convention, extended to every
-/// heap-allocated tag) is correct: the stale bits in `*ctx.result` were
-/// never independently owned, so nothing needs decrementing.
+// %IteratorPrototype%[@@iterator] (ES6 section 25.1.2.1), unconditionally
+// returns the `this` value, whatever it is (object, primitive, or even
+// null/undefined), there is no ReturnIfAbrupt or type check in the spec
+// algorithm.
+//
+// `*ctx.result` starts out ALIASING `ctx.this_val` already, every call
+// convention that reaches a builtin (lightfunc or HObject dispatch in
+// vm_call_fn_impl, and the VM's own CALL_PROP handling) seeds the result
+// register with a raw, non-incref'd copy of `this` before the builtin
+// runs, since the result slot doubles as the `this`/callee slot. So
+// `Heap.tval_copy_ref(ctx.result, &ctx.this_val)` is wrong here: it
+// increfs the incoming value but then decrefs `*ctx.result`'s *existing*
+// bits, the same heap object, reached through a different TVal location
+// than `&ctx.this_val`, so the `dst == src` same-pointer guard can't catch
+// the aliasing, silently cancelling the incref and returning an
+// under-refcounted reference (the caller frees it one decref too early).
+// A bare incref (mirroring `set_object`'s convention, extended to every
+// heap-allocated tag) is correct: the stale bits in `*ctx.result` were
+// never independently owned, so nothing needs decrementing.
 fn void builtin_iterator_proto_symbol_iter(BuiltinContext* ctx) {
     if (ctx.this_val.is_heap_allocated()) {
         void* ptr = ctx.this_val.get_heapptr();
@@ -147,7 +147,7 @@ fn void builtin_iterator_proto_symbol_iter(BuiltinContext* ctx) {
     *ctx.result = ctx.this_val;
 }
 
-/// Array iterator .next(), returns {value, done}.
+// Array iterator .next(), returns {value, done}.
 fn void builtin_array_iterator_next(BuiltinContext* ctx) {
     TVal this_val = ctx.this_val;
     Heap* heap = ctx.heap;
@@ -298,7 +298,7 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// String iterator .next(), returns {value, done}.
+// String iterator .next(), returns {value, done}.
 fn void builtin_string_iterator_next(BuiltinContext* ctx) {
     TVal this_val = ctx.this_val;
     Heap* heap = ctx.heap;
@@ -387,8 +387,8 @@ fn void builtin_string_iterator_next(BuiltinContext* ctx) {
     ctx.result.set_object(result);
 }
 
-/// RegExpStringIterator .next(), ES2020 §21.2.7.2.1
-/// Lazily yields the next regexp match result.
+// RegExpStringIterator .next(), ES2020 §21.2.7.2.1
+// Lazily yields the next regexp match result.
 fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     TVal this_val = ctx.this_val;
     Heap* heap = ctx.heap;
@@ -537,9 +537,9 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     ctx.result.set_object(iter_result);
 }
 
-/// Create %IteratorPrototype% (ES6 §25.1.2) and %ArrayIteratorPrototype%.
-/// %IteratorPrototype% has [Symbol.iterator]() that returns `this`, while
-/// %ArrayIteratorPrototype% owns the shared ArrayIterator.prototype.next method.
+// Create %IteratorPrototype% (ES6 §25.1.2) and %ArrayIteratorPrototype%.
+// %IteratorPrototype% has [Symbol.iterator]() that returns `this`, while
+// %ArrayIteratorPrototype% owns the shared ArrayIterator.prototype.next method.
 fn bool register_iterator_prototype(Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
@@ -646,7 +646,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     return true;
 }
 
-/// Register an accessor property (getter/setter pair) with the given flags.
+// Register an accessor property (getter/setter pair) with the given flags.
 fn bool iterhelper_register_accessor(HObject* proto, Heap* heap, void* key, uint getter_idx, uint setter_idx,
                                        char[] getter_name, char[] setter_name) {
     HObject*? getter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -678,12 +678,12 @@ fn bool iterhelper_register_accessor(HObject* proto, Heap* heap, void* key, uint
     return true;
 }
 
-/// Register the Iterator global constructor, Iterator.prototype's methods
-/// (map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find),
-/// its constructor/@@toStringTag accessor pair, %IteratorHelperPrototype%,
-/// and %WrapForValidIteratorPrototype%. Must run after register_iterator_
-/// prototype (needs heap.iterator_proto) and after register_function_
-/// constructor (needs heap.function_proto).
+// Register the Iterator global constructor, Iterator.prototype's methods
+// (map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find),
+// its constructor/@@toStringTag accessor pair, %IteratorHelperPrototype%,
+// and %WrapForValidIteratorPrototype%. Must run after register_iterator_
+// prototype (needs heap.iterator_proto) and after register_function_
+// constructor (needs heap.function_proto).
 fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     HObject* proto = heap.iterator_proto;
     if (proto == null) return false;
@@ -784,11 +784,11 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
 // forEach/some/every/find).
 // ============================================================================
 
-/// GetV(V, P), ES2025 §7.3.4: like Get(O, P) but P is looked up on
-/// `lookup_obj` (the [[Prototype]]-chain search anchor, a wrapper object
-/// for primitive receivers) while any accessor getter found is invoked with
-/// Receiver = `receiver` (the true, possibly-primitive, ECMAScript value).
-/// Falls back to undefined on a null lookup_obj/key.
+// GetV(V, P), ES2025 §7.3.4: like Get(O, P) but P is looked up on
+// `lookup_obj` (the [[Prototype]]-chain search anchor, a wrapper object
+// for primitive receivers) while any accessor getter found is invoked with
+// Receiver = `receiver` (the true, possibly-primitive, ECMAScript value).
+// Falls back to undefined on a null lookup_obj/key.
 fn TVal iterhelper_getv(BuiltinContext* ctx, HObject* lookup_obj, void* key, TVal receiver) {
     TVal undef; undef.set_undefined();
     if (lookup_obj == null || key == null) return undef;
@@ -814,7 +814,7 @@ fn TVal iterhelper_getv(BuiltinContext* ctx, HObject* lookup_obj, void* key, TVa
     }
 }
 
-/// Build an IteratorResult object {value, done} (ES2015 §7.4.7).
+// Build an IteratorResult object {value, done} (ES2015 §7.4.7).
 fn HObject* iterhelper_make_result(Heap* heap, TVal value, bool done) {
     HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = result_raw) return null;
@@ -829,9 +829,9 @@ fn HObject* iterhelper_make_result(Heap* heap, TVal value, bool done) {
     return result;
 }
 
-/// GetIteratorDirect(obj), ES2025 §7.4.5: Get(obj, "next"), bundled with obj
-/// itself as the Iterator Record's [[Iterator]]. Returns false (ctx.should_throw
-/// set) only if the `next` lookup itself throws (e.g. a throwing accessor).
+// GetIteratorDirect(obj), ES2025 §7.4.5: Get(obj, "next"), bundled with obj
+// itself as the Iterator Record's [[Iterator]]. Returns false (ctx.should_throw
+// set) only if the `next` lookup itself throws (e.g. a throwing accessor).
 fn bool iterhelper_get_iterator_direct(BuiltinContext* ctx, HObject* obj, TVal* out_next) {
     HString* next_key = builtin_intern_string(ctx.heap, "next");
     if (next_key == null) { out_next.set_undefined(); return true; }
@@ -841,10 +841,10 @@ fn bool iterhelper_get_iterator_direct(BuiltinContext* ctx, HObject* obj, TVal* 
     return true;
 }
 
-/// IteratorStep + IteratorValue collapsed into one call (IteratorStepValue,
-/// ES2025 §7.4.9): calls `next_method` on `iterator`, returns true with
-/// *out_value set to the step's .value when not done, false with
-/// *out_done = true when done, and false with ctx.should_throw set on error.
+// IteratorStep + IteratorValue collapsed into one call (IteratorStepValue,
+// ES2025 §7.4.9): calls `next_method` on `iterator`, returns true with
+// *out_value set to the step's .value when not done, false with
+// *out_done = true when done, and false with ctx.should_throw set on error.
 fn bool iterhelper_step_value(BuiltinContext* ctx, HObject* iterator, TVal next_method, TVal* out_value, bool* out_done) {
     Heap* heap = ctx.heap;
     *out_done = false;
@@ -882,15 +882,15 @@ fn bool iterhelper_step_value(BuiltinContext* ctx, HObject* iterator, TVal next_
     return true;
 }
 
-/// IteratorClose(iteratorRecord, completion), ES2025 §7.4.11, "closes" the
-/// underlying iterator by calling its `.return()` if present. Unlike
-/// promise_iterator_close, this can PROPAGATE a throw from return() itself:
-/// when `had_error` is false (the original completion was normal) and
-/// return() throws, that throw becomes the new completion (ctx.should_throw
-/// is set); when `had_error` is true, the original abrupt completion already
-/// recorded in ctx takes precedence and return()'s own result/error is
-/// discarded, matching "if completion is a throw completion, return ?
-/// completion" (step 4).
+// IteratorClose(iteratorRecord, completion), ES2025 §7.4.11, "closes" the
+// underlying iterator by calling its `.return()` if present. Unlike
+// promise_iterator_close, this can PROPAGATE a throw from return() itself:
+// when `had_error` is false (the original completion was normal) and
+// return() throws, that throw becomes the new completion (ctx.should_throw
+// is set); when `had_error` is true, the original abrupt completion already
+// recorded in ctx takes precedence and return()'s own result/error is
+// discarded, matching "if completion is a throw completion, return ?
+// completion" (step 4).
 fn void iterhelper_iterator_close(BuiltinContext* ctx, HObject* iterator, bool had_error) {
     Heap* heap = ctx.heap;
     // `ctx.should_throw`/`ctx.throw_value` already hold the ORIGINAL abrupt
@@ -947,12 +947,12 @@ fn void iterhelper_iterator_close(BuiltinContext* ctx, HObject* iterator, bool h
     if (had_error) { ctx.should_throw = true; ctx.throw_value = saved_throw_value; }
 }
 
-/// GetIteratorFlattenable(obj, primitiveHandling), ES2025 §7.4.4.
-/// primitiveStringsAllowed: when true (Iterator.from), a String primitive is
-/// iterated via its own @@iterator; when false (flatMap's inner iterator),
-/// any non-Object throws TypeError, no String exception.
-/// On success returns true with *out_iterator/*out_next set to the Iterator
-/// Record. On failure returns false with ctx.should_throw set.
+// GetIteratorFlattenable(obj, primitiveHandling), ES2025 §7.4.4.
+// primitiveStringsAllowed: when true (Iterator.from), a String primitive is
+// iterated via its own @@iterator; when false (flatMap's inner iterator),
+// any non-Object throws TypeError, no String exception.
+// On success returns true with *out_iterator/*out_next set to the Iterator
+// Record. On failure returns false with ctx.should_throw set.
 fn bool iterhelper_get_iterator_flattenable(BuiltinContext* ctx, TVal obj, bool primitive_strings_allowed,
                                              HObject** out_iterator, TVal* out_next) {
     Heap* heap = ctx.heap;
@@ -1023,10 +1023,10 @@ fn bool iterhelper_get_iterator_flattenable(BuiltinContext* ctx, TVal obj, bool 
     return true;
 }
 
-/// Iterator(), ES2025 §27.1.3.1.1: abstract, subclassable constructor.
-/// Throws unless NewTarget is a strict subclass (super() from `class X
-/// extends Iterator`), matching "NewTarget is either undefined or the
-/// active function object" -> TypeError.
+// Iterator(), ES2025 §27.1.3.1.1: abstract, subclassable constructor.
+// Throws unless NewTarget is a strict subclass (super() from `class X
+// extends Iterator`), matching "NewTarget is either undefined or the
+// active function object" -> TypeError.
 fn void builtin_iterator_ctor(BuiltinContext* ctx) {
     if (ctx.new_target == null || ctx.new_target == ctx.callee_obj) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Iterator constructor cannot be called directly");
@@ -1039,7 +1039,7 @@ fn void builtin_iterator_ctor(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// Iterator.from(obj), ES2025 §27.1.3.2.2.
+// Iterator.from(obj), ES2025 §27.1.3.2.2.
 fn void builtin_iterator_from(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal obj = builtin_arg(ctx, 0);
@@ -1094,7 +1094,7 @@ fn void builtin_iterator_from(BuiltinContext* ctx) {
     ctx.result.set_object(wrapper);
 }
 
-/// get Iterator.prototype.constructor, ES2025 §27.1.3.3.1.1.
+// get Iterator.prototype.constructor, ES2025 §27.1.3.3.1.1.
 fn void builtin_iterator_proto_constructor_get(BuiltinContext* ctx) {
     if (ctx.heap.iterator_ctor != null) {
         ctx.result.set_object(ctx.heap.iterator_ctor);
@@ -1103,30 +1103,30 @@ fn void builtin_iterator_proto_constructor_get(BuiltinContext* ctx) {
     }
 }
 
-/// set Iterator.prototype.constructor, ES2025 §27.1.3.3.1.2:
-/// SetterThatIgnoresPrototypeProperties(this, %Iterator.prototype%, "constructor", v).
+// set Iterator.prototype.constructor, ES2025 §27.1.3.3.1.2:
+// SetterThatIgnoresPrototypeProperties(this, %Iterator.prototype%, "constructor", v).
 fn void builtin_iterator_proto_constructor_set(BuiltinContext* ctx) {
     HString* key = (HString*)ctx.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     iterhelper_setter_ignores_prototype_properties(ctx, ctx.heap.iterator_proto, key);
     ctx.result.set_undefined();
 }
 
-/// get Iterator.prototype[Symbol.toStringTag], ES2025 §27.1.3.3.13(ish).
+// get Iterator.prototype[Symbol.toStringTag], ES2025 §27.1.3.3.13(ish).
 fn void builtin_iterator_proto_tostringtag_get(BuiltinContext* ctx) {
     HString* s = builtin_intern_string(ctx.heap, "Iterator");
     if (s != null) { ctx.result.set_string(s); } else { ctx.result.set_undefined(); }
 }
 
-/// set Iterator.prototype[Symbol.toStringTag].
-/// SetterThatIgnoresPrototypeProperties(this, %Iterator.prototype%, %Symbol.toStringTag%, v).
+// set Iterator.prototype[Symbol.toStringTag].
+// SetterThatIgnoresPrototypeProperties(this, %Iterator.prototype%, %Symbol.toStringTag%, v).
 fn void builtin_iterator_proto_tostringtag_set(BuiltinContext* ctx) {
     HString* key = ensure_tostringtag_symbol(ctx.heap);
     iterhelper_setter_ignores_prototype_properties(ctx, ctx.heap.iterator_proto, key);
     ctx.result.set_undefined();
 }
 
-/// SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value),
-/// ES2025 §7.3.37. `value` is the setter's sole argument, in ctx.regs[base_reg].
+// SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value),
+// ES2025 §7.3.37. `value` is the setter's sole argument, in ctx.regs[base_reg].
 fn void iterhelper_setter_ignores_prototype_properties(BuiltinContext* ctx, HObject* home, void* property_key) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1188,7 +1188,7 @@ fn void iterhelper_setter_ignores_prototype_properties(BuiltinContext* ctx, HObj
     }
 }
 
-/// %WrapForValidIteratorPrototype%.next(), ES2025 §27.1.3.2.2.1.1.
+// %WrapForValidIteratorPrototype%.next(), ES2025 §27.1.3.2.2.1.1.
 fn void builtin_wrap_for_valid_iterator_next(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1221,7 +1221,7 @@ fn void builtin_wrap_for_valid_iterator_next(BuiltinContext* ctx) {
     *ctx.result = step;
 }
 
-/// %WrapForValidIteratorPrototype%.return(), ES2025 §27.1.3.2.2.1.2.
+// %WrapForValidIteratorPrototype%.return(), ES2025 §27.1.3.2.2.1.2.
 fn void builtin_wrap_for_valid_iterator_return(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1280,7 +1280,7 @@ const uint IH_KIND_DROP    = 3;
 const uint IH_KIND_FLATMAP = 4;
 const uint IH_KIND_CONCAT  = 5;
 
-/// Shared constructor for every lazy Iterator Helper object.
+// Shared constructor for every lazy Iterator Helper object.
 fn HObject* iterhelper_create(Heap* heap, HObject* underlying, TVal next_method, TVal callback, uint kind, double remaining) {
     HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.ITERATOR_HELPER);
     if (catch err = obj_raw) return null;
@@ -1298,13 +1298,13 @@ fn HObject* iterhelper_create(Heap* heap, HObject* underlying, TVal next_method,
     return obj;
 }
 
-/// %IteratorHelperPrototype%.next(), drives one step of the helper's
-/// closure. Real generators suspend mid-closure; this state machine instead
-/// re-derives "where the closure would be" from `counter`/`remaining`/
-/// `inner_iter` and runs straight through to the next yield point (or to
-/// exhaustion) on every call, equivalent because every helper kind here
-/// yields at most once per external next() call, except flatMap, whose inner
-/// loop is resumed via the persisted inner_iter/inner_next fields.
+// %IteratorHelperPrototype%.next(), drives one step of the helper's
+// closure. Real generators suspend mid-closure; this state machine instead
+// re-derives "where the closure would be" from `counter`/`remaining`/
+// `inner_iter` and runs straight through to the next yield point (or to
+// exhaustion) on every call, equivalent because every helper kind here
+// yields at most once per external next() call, except flatMap, whose inner
+// loop is resumed via the persisted inner_iter/inner_next fields.
 fn void builtin_iterator_helper_next(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1346,11 +1346,11 @@ fn void builtin_iterator_helper_next(BuiltinContext* ctx) {
     if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
 }
 
-/// Runs the closure body for one step. Returns false (ctx.should_throw set)
-/// on an abrupt completion the underlying iterator has already been closed
-/// for (via IfAbruptCloseIterator); returns true with *out_done=true when
-/// the closure reaches its natural ReturnCompletion(undefined) end; returns
-/// true with *out_done=false and *out_value set when it yields a value.
+// Runs the closure body for one step. Returns false (ctx.should_throw set)
+// on an abrupt completion the underlying iterator has already been closed
+// for (via IfAbruptCloseIterator); returns true with *out_done=true when
+// the closure reaches its natural ReturnCompletion(undefined) end; returns
+// true with *out_done=false and *out_value set when it yields a value.
 fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHelper* ih, TVal* out_value, bool* out_done) {
     Heap* heap = ctx.heap;
     switch (ih.kind) {
@@ -1649,7 +1649,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
     }
 }
 
-/// %IteratorHelperPrototype%.return(), ES2025 §27.1.2.1.2.
+// %IteratorHelperPrototype%.return(), ES2025 §27.1.2.1.2.
 fn void builtin_iterator_helper_return(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1693,7 +1693,7 @@ fn void builtin_iterator_helper_return(BuiltinContext* ctx) {
 // Iterator.prototype lazy methods: map, filter, take, drop, flatMap.
 // ----------------------------------------------------------------------------
 
-/// Iterator.prototype.map(mapper), ES2025 §27.1.3.3.8.
+// Iterator.prototype.map(mapper), ES2025 §27.1.3.3.8.
 fn void builtin_iterator_proto_map(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1717,7 +1717,7 @@ fn void builtin_iterator_proto_map(BuiltinContext* ctx) {
     if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
 }
 
-/// Iterator.prototype.filter(predicate), ES2025 §27.1.3.3.4.
+// Iterator.prototype.filter(predicate), ES2025 §27.1.3.3.4.
 fn void builtin_iterator_proto_filter(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1741,11 +1741,11 @@ fn void builtin_iterator_proto_filter(BuiltinContext* ctx) {
     if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
 }
 
-/// Shared ToIntegerOrInfinity(limit) + RangeError(NaN/negative) validation for
-/// take/drop. On failure closes `this_obj` (IfAbruptCloseIterator against an
-/// Iterator Record whose [[NextMethod]] is still unset, per spec, the
-/// underlying `.next` must not be read before validation succeeds) and sets
-/// ctx.should_throw. Returns true with *out_limit set on success.
+// Shared ToIntegerOrInfinity(limit) + RangeError(NaN/negative) validation for
+// take/drop. On failure closes `this_obj` (IfAbruptCloseIterator against an
+// Iterator Record whose [[NextMethod]] is still unset, per spec, the
+// underlying `.next` must not be read before validation succeeds) and sets
+// ctx.should_throw. Returns true with *out_limit set on success.
 fn bool iterhelper_validate_limit(BuiltinContext* ctx, HObject* this_obj, double* out_limit) {
     Heap* heap = ctx.heap;
     TVal limit = builtin_arg(ctx, 0);
@@ -1771,7 +1771,7 @@ fn bool iterhelper_validate_limit(BuiltinContext* ctx, HObject* this_obj, double
     return true;
 }
 
-/// Iterator.prototype.take(limit), ES2025 §27.1.3.3.11.
+// Iterator.prototype.take(limit), ES2025 §27.1.3.3.11.
 fn void builtin_iterator_proto_take(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1791,7 +1791,7 @@ fn void builtin_iterator_proto_take(BuiltinContext* ctx) {
     if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
 }
 
-/// Iterator.prototype.drop(limit), ES2025 §27.1.3.3.2.
+// Iterator.prototype.drop(limit), ES2025 §27.1.3.3.2.
 fn void builtin_iterator_proto_drop(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1811,7 +1811,7 @@ fn void builtin_iterator_proto_drop(BuiltinContext* ctx) {
     if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
 }
 
-/// Iterator.prototype.flatMap(mapper), ES2025 §27.1.3.3.6.
+// Iterator.prototype.flatMap(mapper), ES2025 §27.1.3.3.6.
 fn void builtin_iterator_proto_flatmap(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1839,9 +1839,9 @@ fn void builtin_iterator_proto_flatmap(BuiltinContext* ctx) {
 // Iterator.prototype eager methods: reduce, toArray, forEach, some, every, find.
 // ----------------------------------------------------------------------------
 
-/// Validate `this` is an object and IsCallable(fn); on success returns the
-/// Iterator Record (obj, next_method) via GetIteratorDirect. On any failure
-/// closes obj (if the callable check failed) and sets ctx.should_throw.
+// Validate `this` is an object and IsCallable(fn); on success returns the
+// Iterator Record (obj, next_method) via GetIteratorDirect. On any failure
+// closes obj (if the callable check failed) and sets ctx.should_throw.
 fn bool iterhelper_eager_setup(BuiltinContext* ctx, TVal callback, char[] not_callable_msg, HObject** out_obj, TVal* out_next) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1863,7 +1863,7 @@ fn bool iterhelper_eager_setup(BuiltinContext* ctx, TVal callback, char[] not_ca
     return true;
 }
 
-/// Iterator.prototype.reduce(reducer[, initialValue]), ES2025 §27.1.3.3.9.
+// Iterator.prototype.reduce(reducer[, initialValue]), ES2025 §27.1.3.3.9.
 fn void builtin_iterator_proto_reduce(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal reducer = builtin_arg(ctx, 0);
@@ -1917,7 +1917,7 @@ fn void builtin_iterator_proto_reduce(BuiltinContext* ctx) {
     }
 }
 
-/// Iterator.prototype.toArray(), ES2025 §27.1.3.3.12.
+// Iterator.prototype.toArray(), ES2025 §27.1.3.3.12.
 fn void builtin_iterator_proto_toarray(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1949,7 +1949,7 @@ fn void builtin_iterator_proto_toarray(BuiltinContext* ctx) {
     }
 }
 
-/// Iterator.prototype.forEach(procedure), ES2025 §27.1.3.3.7.
+// Iterator.prototype.forEach(procedure), ES2025 §27.1.3.3.7.
 fn void builtin_iterator_proto_foreach(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal procedure = builtin_arg(ctx, 0);
@@ -1986,7 +1986,7 @@ fn void builtin_iterator_proto_foreach(BuiltinContext* ctx) {
     }
 }
 
-/// Iterator.prototype.some(predicate), ES2025 §27.1.3.3.10.
+// Iterator.prototype.some(predicate), ES2025 §27.1.3.3.10.
 fn void builtin_iterator_proto_some(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal predicate = builtin_arg(ctx, 0);
@@ -2029,7 +2029,7 @@ fn void builtin_iterator_proto_some(BuiltinContext* ctx) {
     }
 }
 
-/// Iterator.prototype.every(predicate), ES2025 §27.1.3.3.3.
+// Iterator.prototype.every(predicate), ES2025 §27.1.3.3.3.
 fn void builtin_iterator_proto_every(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal predicate = builtin_arg(ctx, 0);
@@ -2072,7 +2072,7 @@ fn void builtin_iterator_proto_every(BuiltinContext* ctx) {
     }
 }
 
-/// Iterator.prototype.find(predicate), ES2025 §27.1.3.3.5.
+// Iterator.prototype.find(predicate), ES2025 §27.1.3.3.5.
 fn void builtin_iterator_proto_find(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal predicate = builtin_arg(ctx, 0);
@@ -2115,9 +2115,9 @@ fn void builtin_iterator_proto_find(BuiltinContext* ctx) {
     }
 }
 
-/// Iterator.concat(...iterables), TC39 iterator-sequencing proposal.
-/// Returns a lazy iterator that sequences through all iterables in order.
-/// Validates all arguments upfront: each must be an object with callable @@iterator.
+// Iterator.concat(...iterables), TC39 iterator-sequencing proposal.
+// Returns a lazy iterator that sequences through all iterables in order.
+// Validates all arguments upfront: each must be an object with callable @@iterator.
 fn void builtin_iterator_concat(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 

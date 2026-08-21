@@ -18,7 +18,7 @@ import boomkat::builtins;
 // The default engine globals never include them.
 bool test262_host_enabled = false;
 
-/// Create and initialise a new VM.
+// Create and initialise a new VM.
 fn Vm*? vm_create(Heap* heap) {
     void* raw = heap.alloc_func(heap.heap_udata, Vm::size);
     if (raw == null) {
@@ -109,8 +109,8 @@ $endif
     return vm;
 }
 
-/// Proxy MOP bridges, connecting the hobject chain walkers to the builtins-layer
-/// proxy trap implementations (see heap.proxy_get_fn / proxy_has_fn).
+// Proxy MOP bridges, connecting the hobject chain walkers to the builtins-layer
+// proxy trap implementations (see heap.proxy_get_fn / proxy_has_fn).
 fn bool vm_proxy_get_bridge(void* vm, void* heap, void* proxy, void* key, TVal receiver, TVal* out) {
     return builtins::proxy_mop_get(vm, (Heap*)heap, (HObject*)proxy, (HString*)key, receiver, out);
 }
@@ -119,7 +119,7 @@ fn bool vm_proxy_has_bridge(void* vm, void* heap, void* proxy, void* key, bool* 
     return builtins::proxy_mop_has(vm, (Heap*)heap, (HObject*)proxy, (HString*)key, out);
 }
 
-/// Destroy a VM and release all owned resources.
+// Destroy a VM and release all owned resources.
 fn void vm_destroy(Vm* vm) {
     if (vm == null) return;
     // env_destroy is NOT called here because all HObjects are tracked
@@ -134,10 +134,10 @@ fn void vm_destroy(Vm* vm) {
     vm.heap.free_func(vm.heap.heap_udata, vm);
 }
 
-/// Reset a VM for reuse with a freshly-reset heap.
-/// Call heap.reset() first, then vm_reset() to reinitialise global env and
-/// builtins. The valstack backing buffer is reused; only its top is rewound.
-/// Returns false on failure (treat like vm_create failing).
+// Reset a VM for reuse with a freshly-reset heap.
+// Call heap.reset() first, then vm_reset() to reinitialise global env and
+// builtins. The valstack backing buffer is reused; only its top is rewound.
+// Returns false on failure (treat like vm_create failing).
 fn bool vm_reset(Vm* vm, Heap* heap) {
     if (vm == null || heap == null) { return false; }
 
@@ -232,5 +232,5 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
 // Main execution loop
 // ============================================================================
 
-/// Execute a compiled function from the start.
-/// Matches duk_js_execute_bytecode() outer/inner pattern.
+// Execute a compiled function from the start.
+// Matches duk_js_execute_bytecode() outer/inner pattern.

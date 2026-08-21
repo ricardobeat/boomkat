@@ -1,25 +1,25 @@
-/// Disassembler for the bytecode representation defined in `bytecode.c3`.
-///
-/// Part of the `boomkat::bytecode` module, holding the disassembly helpers: the
-/// `OPCODE_NAMES` table, the `get_opcode_name` lookup, the per-format formatter
-/// in `Instruction.disassemble`, and the `write_str`, `write_uint`, and
-/// `write_int` buffer writers.
-///
-/// The `TRACE_VM` feature gates every real implementation. Release builds get
-/// no-op stubs instead, which keeps callers linkable: `vm_trace.c3`, the `-c`
-/// and `--format json` dumpers, and the `dump_vm_state` crash helper. Dead code
-/// elimination then drops `OPCODE_NAMES` from the binary.
+// Disassembler for the bytecode representation defined in `bytecode.c3`.
+//
+// Part of the `boomkat::bytecode` module, holding the disassembly helpers: the
+// `OPCODE_NAMES` table, the `get_opcode_name` lookup, the per-format formatter
+// in `Instruction.disassemble`, and the `write_str`, `write_uint`, and
+// `write_int` buffer writers.
+//
+// The `TRACE_VM` feature gates every real implementation. Release builds get
+// no-op stubs instead, which keeps callers linkable: `vm_trace.c3`, the `-c`
+// and `--format json` dumpers, and the `dump_vm_state` crash helper. Dead code
+// elimination then drops `OPCODE_NAMES` from the binary.
 module boomkat::bytecode;
 
 // ============================================================================
 // Instruction.disassemble: one-line textual rendering
 // ============================================================================
 
-/// Write a one-line disassembly of the instruction into `buf`, returning how
-/// many characters it wrote. For example:
-///   `ADD       r3 = r1, r2`
-///   `LDCONST   r0 = K[42]`
-///   `JUMP      +17`
+// Write a one-line disassembly of the instruction into `buf`, returning how
+// many characters it wrote. For example:
+//   `ADD       r3 = r1, r2`
+//   `LDCONST   r0 = K[42]`
+//   `JUMP      +17`
 fn usz Instruction.disassemble(&self, char[] buf) {
 $if $feature(TRACE_VM):
     if (buf.len == 0) { return 0; }
@@ -116,10 +116,10 @@ $endif
 // DecodedInsn.disassemble: same rendering, widened operands
 // ============================================================================
 
-/// Write a one-line disassembly of a decoded (possibly WIDE-expanded)
-/// instruction into `buf`. Mirrors Instruction.disassemble but reads the
-/// effective 16-bit operand values, so a WIDE-prefixed instruction renders
-/// the registers the VM will actually use.
+// Write a one-line disassembly of a decoded (possibly WIDE-expanded)
+// instruction into `buf`. Mirrors Instruction.disassemble but reads the
+// effective 16-bit operand values, so a WIDE-prefixed instruction renders
+// the registers the VM will actually use.
 fn usz DecodedInsn.disassemble(&self, char[] buf) {
 $if $feature(TRACE_VM):
     if (buf.len == 0) { return 0; }
@@ -205,11 +205,11 @@ $endif
 // Opcode name table (for disassembly / debugging)
 // ============================================================================
 
-/// String names for each opcode, indexed by ordinal.
-///
-/// LLVM drops this constant from the final binary in non-TRACE_VM builds
-/// because no reachable code references it. In `TRACE_VM` builds every
-/// disassembler path reads it.
+// String names for each opcode, indexed by ordinal.
+//
+// LLVM drops this constant from the final binary in non-TRACE_VM builds
+// because no reachable code references it. In `TRACE_VM` builds every
+// disassembler path reads it.
 const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.LDREG.ordinal]       = "LDREG",
     [Opcode.WIDE.ordinal]        = "WIDE",
@@ -390,9 +390,9 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.LAST_OP.ordinal]     = "LAST_OP",
 };
 
-/// Return the human-readable name for an opcode, or "???" for unknown
-/// values. Always present (called by `write_opcode_name` whose caller
-/// chain is gated on TRACE_VM), so OPCODE_NAMES must be reachable too.
+// Return the human-readable name for an opcode, or "???" for unknown
+// values. Always present (called by `write_opcode_name` whose caller
+// chain is gated on TRACE_VM), so OPCODE_NAMES must be reachable too.
 fn char* get_opcode_name(Opcode op) {
     uint idx = (uint)op.ordinal;
     if (idx <= Opcode.LAST_OP.ordinal) {
@@ -408,7 +408,7 @@ fn char* get_opcode_name(Opcode op) {
 // Internal helpers for disassembly buffer writing
 // ============================================================================
 
-/// Write an opcode name into `buf` starting at `pos`.  Returns new pos.
+// Write an opcode name into `buf` starting at `pos`.  Returns new pos.
 fn usz write_opcode_name(Opcode op, char[] buf, usz pos) {
 $if $feature(TRACE_VM):
     char* name = get_opcode_name(op);
@@ -427,7 +427,7 @@ $else
 $endif
 }
 
-/// Write a C string into `buf` starting at `pos`.  Returns new pos.
+// Write a C string into `buf` starting at `pos`.  Returns new pos.
 fn usz write_str(char[] buf, usz pos, char* s) {
 $if $feature(TRACE_VM):
     usz i = 0;
@@ -443,7 +443,7 @@ $else
 $endif
 }
 
-/// Write an unsigned integer (decimal) into `buf` starting at `pos`.
+// Write an unsigned integer (decimal) into `buf` starting at `pos`.
 fn usz write_uint(char[] buf, usz pos, uint val) {
 $if $feature(TRACE_VM):
     // Small stack buffer for decimal digits (max 10 digits for uint).
@@ -478,7 +478,7 @@ $else
 $endif
 }
 
-/// Write a signed integer (decimal) into `buf` starting at `pos`.
+// Write a signed integer (decimal) into `buf` starting at `pos`.
 fn usz write_int(char[] buf, usz pos, int val) {
 $if $feature(TRACE_VM):
     if (val < 0) {

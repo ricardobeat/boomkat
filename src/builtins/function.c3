@@ -1,4 +1,4 @@
-/// Function constructor and Function.prototype methods.
+// Function constructor and Function.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::bytecode;
@@ -17,8 +17,8 @@ import boomkat::lexer;
 // Function constructor (ES5 §15.3)
 // ============================================================================
 
-/// Function(p1, p2, ..., pn, body), creates a new function dynamically.
-/// Called as function or constructor, behavior is identical per ES5 §15.3.1.
+// Function(p1, p2, ..., pn, body), creates a new function dynamically.
+// Called as function or constructor, behavior is identical per ES5 §15.3.1.
 fn void builtin_function(BuiltinContext* ctx) {
     // Per ES5 §15.3.1: Function() called as a plain function and `new Function()`
     // are identical, both create a fresh function object and the thisArg is
@@ -236,7 +236,7 @@ fn void builtin_function(BuiltinContext* ctx) {
 // Function.prototype methods
 // ============================================================================
 
-/// Helper: get argument from the value stack by index (0-based within the call).
+// Helper: get argument from the value stack by index (0-based within the call).
 fn TVal builtin_arg(BuiltinContext* ctx, uint idx) {
     if (idx < ctx.argc) {
         return ctx.regs[ctx.base_reg + idx];
@@ -246,26 +246,26 @@ fn TVal builtin_arg(BuiltinContext* ctx, uint idx) {
     return undef;
 }
 
-/// Store a heap-valued result into `*ctx.result`, taking a reference for it.
-///
-/// `*ctx.result` does NOT hold an owned reference on entry: every call
-/// convention that reaches a builtin (both dispatch cases in vm_call_fn_impl,
-/// invoke_getter's builtin path, and the VM's own CALL_PROP handling) seeds the
-/// result slot with a RAW, non-incref'd copy of the callee or of `this`, since
-/// that slot doubles as the callee/`this` slot. `Heap.tval_copy_ref` would
-/// therefore decref bits the slot never owned, dropping a live reference on the
-/// callee itself -- for a builtin reachable as an intrinsic accessor (e.g.
-/// `get Error.prototype.stack`) that frees the intrinsic while the accessor
-/// cell still points at it, and the object pool then hands the same memory out
-/// as an unrelated closure.
-///
-/// The correct convention, the one `set_object` and friends already follow, is
-/// to incref the incoming value and store its bits raw. Use this whenever the
-/// result is read out of a slot the builtin does not own (an argument register,
-/// an internal slot such as HObjectError.captured_stack, a property table
-/// entry). A value the builtin already owns -- notably a `Heap.call_fn` return,
-/// which is itself a raw copy out of the callee's result slot -- is stored with
-/// a plain `*ctx.result = v` instead, as array/core/proxy already do.
+// Store a heap-valued result into `*ctx.result`, taking a reference for it.
+//
+// `*ctx.result` does NOT hold an owned reference on entry: every call
+// convention that reaches a builtin (both dispatch cases in vm_call_fn_impl,
+// invoke_getter's builtin path, and the VM's own CALL_PROP handling) seeds the
+// result slot with a RAW, non-incref'd copy of the callee or of `this`, since
+// that slot doubles as the callee/`this` slot. `Heap.tval_copy_ref` would
+// therefore decref bits the slot never owned, dropping a live reference on the
+// callee itself -- for a builtin reachable as an intrinsic accessor (e.g.
+// `get Error.prototype.stack`) that frees the intrinsic while the accessor
+// cell still points at it, and the object pool then hands the same memory out
+// as an unrelated closure.
+//
+// The correct convention, the one `set_object` and friends already follow, is
+// to incref the incoming value and store its bits raw. Use this whenever the
+// result is read out of a slot the builtin does not own (an argument register,
+// an internal slot such as HObjectError.captured_stack, a property table
+// entry). A value the builtin already owns -- notably a `Heap.call_fn` return,
+// which is itself a raw copy out of the callee's result slot -- is stored with
+// a plain `*ctx.result = v` instead, as array/core/proxy already do.
 fn void builtin_store_result(BuiltinContext* ctx, TVal* src) {
     if (src.is_heap_allocated()) {
         void* ptr = src.get_heapptr();
@@ -274,12 +274,12 @@ fn void builtin_store_result(BuiltinContext* ctx, TVal* src) {
     *ctx.result = *src;
 }
 
-/// Function.prototype.call(thisArg, ...args)
-///
-/// Calls `this` (the downstream function) with `thisArg` as `this` and the
-/// remaining arguments passed individually.
-///
-/// ES5 §15.3.4.4
+// Function.prototype.call(thisArg, ...args)
+//
+// Calls `this` (the downstream function) with `thisArg` as `this` and the
+// remaining arguments passed individually.
+//
+// ES5 §15.3.4.4
 fn void builtin_function_proto_call(BuiltinContext* ctx) {
     TVal downstream = ctx.this_val;
 
@@ -408,9 +408,9 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
     }
 }
 
-/// Shared apply implementation for Function.prototype.apply and Reflect.apply.
-/// `target` must already be callable. `this_arg` and `arg_array` are the
-/// receiver and arguments-list values respectively.
+// Shared apply implementation for Function.prototype.apply and Reflect.apply.
+// `target` must already be callable. `this_arg` and `arg_array` are the
+// receiver and arguments-list values respectively.
 fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_array) {
     // If argArray is undefined or null, call with no args.
     bool has_array = true;
@@ -647,12 +647,12 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     }
 }
 
-/// Function.prototype.apply(thisArg, argArray)
-///
-/// Calls `this` (the downstream function) with `thisArg` as `this` and the
-/// elements of `argArray` passed as individual arguments.
-///
-/// ES5 §15.3.4.3
+// Function.prototype.apply(thisArg, argArray)
+//
+// Calls `this` (the downstream function) with `thisArg` as `this` and the
+// elements of `argArray` passed as individual arguments.
+//
+// ES5 §15.3.4.3
 fn void builtin_function_proto_apply(BuiltinContext* ctx) {
     TVal downstream = ctx.this_val;
 
@@ -694,12 +694,12 @@ fn void builtin_function_proto_apply(BuiltinContext* ctx) {
     apply_call(ctx, downstream, new_this, arg_array);
 }
 
-/// Function.prototype.bind(thisArg, ...args)
-///
-/// Creates a new function that, when called, has its `this` bound to `thisArg`
-/// and prepends any additional arguments.
-///
-/// ES5 §15.3.4.5
+// Function.prototype.bind(thisArg, ...args)
+//
+// Creates a new function that, when called, has its `this` bound to `thisArg`
+// and prepends any additional arguments.
+//
+// ES5 §15.3.4.5
 fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     TVal downstream = ctx.this_val;
 
@@ -922,10 +922,10 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     ctx.result.set_object(bound_obj);
 }
 
-/// Function.prototype.toString()
-///
-/// Returns a string representation of the function.
-/// ES2019 §19.2.3.5
+// Function.prototype.toString()
+//
+// Returns a string representation of the function.
+// ES2019 §19.2.3.5
 fn void builtin_function_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     
@@ -1022,11 +1022,11 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
     }
 }
 
-/// Function.prototype[Symbol.hasInstance](V), ES6 §19.2.3.6
-/// Implements OrdinaryHasInstance(this, V): returns true iff V is an object
-/// whose prototype chain contains this.prototype. `this` (the constructor C)
-/// must be callable; if C is a bound function, its [[BoundTargetFunction]] is
-/// used instead. Non-callable `this` or non-object V → false (no throw for V).
+// Function.prototype[Symbol.hasInstance](V), ES6 §19.2.3.6
+// Implements OrdinaryHasInstance(this, V): returns true iff V is an object
+// whose prototype chain contains this.prototype. `this` (the constructor C)
+// must be callable; if C is a bound function, its [[BoundTargetFunction]] is
+// used instead. Non-callable `this` or non-object V → false (no throw for V).
 fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     TVal c_val = ctx.regs[ctx.base_reg - 1];  // this = constructor C
 
@@ -1107,25 +1107,25 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     ctx.result.set_boolean(matched);
 }
 
-/// Restricted function property getter, throws TypeError on access. Used as
-/// the [[Get]] accessor for `Function.prototype.caller` and
-/// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
+// Restricted function property getter, throws TypeError on access. Used as
+// the [[Get]] accessor for `Function.prototype.caller` and
+// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
 fn void builtin_function_proto_restricted_getter(BuiltinContext* ctx) {
     builtin_throw(ctx, ctx.heap.type_err_proto,
         "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
 }
 
-/// Restricted function property setter, throws TypeError on assignment. Used as
-/// the [[Set]] accessor for `Function.prototype.caller` and
-/// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
+// Restricted function property setter, throws TypeError on assignment. Used as
+// the [[Set]] accessor for `Function.prototype.caller` and
+// `Function.prototype.arguments` (ES2017 §9.2.7 AddRestrictedFunctionProperties).
 fn void builtin_function_proto_restricted_setter(BuiltinContext* ctx) {
     builtin_throw(ctx, ctx.heap.type_err_proto,
         "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
 }
 
-/// Bound function [[Call]] handler.
-/// When a bound function is called, this handler unwraps the bound data,
-/// prepends bound args to the call args, and re-dispatches.
+// Bound function [[Call]] handler.
+// When a bound function is called, this handler unwraps the bound data,
+// prepends bound args to the call args, and re-dispatches.
 fn void builtin_bound_call(BuiltinContext* ctx) {
     TVal func_val = ctx.regs[ctx.base_reg - 2];
     if (!func_val.is_object()) {
@@ -1302,8 +1302,8 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
 // Function constructor + Function.prototype registration
 // ============================================================================
 
-/// Create Function.prototype, register call/apply/bind, and register
-/// the Function constructor globally.
+// Create Function.prototype, register call/apply/bind, and register
+// the Function constructor globally.
 fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     // Create Function constructor as a proper function object FIRST
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);

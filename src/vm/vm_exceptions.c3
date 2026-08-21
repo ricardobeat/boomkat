@@ -13,7 +13,7 @@ import std::math;
 // ============================================================================
 // Exception handling
 // ============================================================================
-/// Sub-dispatch for TRY, ENDTRY, THROW, CATCH, FINALLY, ENDFINALLY opcodes.
+// Sub-dispatch for TRY, ENDTRY, THROW, CATCH, FINALLY, ENDFINALLY opcodes.
 fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {

@@ -26,14 +26,14 @@ const uint AYS_YIELD          = 5; // resuming after GeneratorYield (consumer .n
 const uint AYS_AWAIT_CLOSE    = 6; // resuming after AsyncIteratorClose's Await (missing-throw path)
 const uint AYS_AWAIT_RETVAL   = 7; // resuming after Await(received.value) (missing-return path)
 
-/// Suspend an async-generator body onto its request-queue GeneratorState at an
-/// internal Await (ES2018 §27.6). Attaches ASYNC_GEN_AWAIT_RESUME/REJECT
-/// reactions to `await_obj`, saves the body state with `saved_pc = save_pc`,
-/// signals the drain (ag_did_await), pops the async-gen activation, and returns
-/// control to the drain's caller. `save_pc` is the instruction to re-enter on
-/// resolution: the LOAD_RESUME after AWAIT, or the YIELD_STAR_ASYNC opcode
-/// itself for the delegation state machine. Returns false on OOM (the caller
-/// should treat that as a no-op continuation, matching AWAIT's OOM handling).
+// Suspend an async-generator body onto its request-queue GeneratorState at an
+// internal Await (ES2018 §27.6). Attaches ASYNC_GEN_AWAIT_RESUME/REJECT
+// reactions to `await_obj`, saves the body state with `saved_pc = save_pc`,
+// signals the drain (ag_did_await), pops the async-gen activation, and returns
+// control to the drain's caller. `save_pc` is the instruction to re-enter on
+// resolution: the LOAD_RESUME after AWAIT, or the YIELD_STAR_ASYNC opcode
+// itself for the delegation state machine. Returns false on OOM (the caller
+// should treat that as a no-op continuation, matching AWAIT's OOM handling).
 fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj, bool await_was_settled, void* save_pc) {
     Vm* vm = ds.vm;
     gs.saved_pc = save_pc;
@@ -109,17 +109,17 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     return true;
 }
 
-/// True if `v` is a callable value (a lightfunc or a callable object).
+// True if `v` is a callable value (a lightfunc or a callable object).
 fn bool ays_is_callable(TVal v) {
     if (v.is_lightfunc()) return true;
     return v.is_object() && v.get_heapptr() != null &&
            ((HObject*)v.get_heapptr()).is_callable();
 }
 
-/// Accessor-aware property read on `obj` (walks the proto chain). Invokes a
-/// getter when the property is an accessor; on a getter throw, sets *err=true
-/// and leaves the thrown value in vm.return_val (vm.has_error is cleared here so
-/// the caller can route it). Returns undefined for an absent property.
+// Accessor-aware property read on `obj` (walks the proto chain). Invokes a
+// getter when the property is an accessor; on a getter throw, sets *err=true
+// and leaves the thrown value in vm.return_val (vm.has_error is cleared here so
+// the caller can route it). Returns undefined for an absent property.
 fn TVal ays_get_prop(Vm* vm, HObject* obj, HString* key, bool* err) {
     *err = false;
     TVal out; out.set_undefined();
@@ -142,10 +142,10 @@ fn TVal ays_get_prop(Vm* vm, HObject* obj, HString* key, bool* err) {
     return out;
 }
 
-/// GetMethod(obj, key) (ES §7.3.10): accessor-aware read, then require the
-/// result be undefined/null (→ *found=false) or callable (→ *found=true).
-/// A non-callable, non-nullish value is a TypeError, but that check is left to
-/// callers that need it (the async yield* fallbacks only branch on presence).
+// GetMethod(obj, key) (ES §7.3.10): accessor-aware read, then require the
+// result be undefined/null (→ *found=false) or callable (→ *found=true).
+// A non-callable, non-nullish value is a TypeError, but that check is left to
+// callers that need it (the async yield* fallbacks only branch on presence).
 fn TVal ays_get_method(Vm* vm, HObject* obj, HString* key, bool* found, bool* err) {
     *found = false;
     TVal m = ays_get_prop(vm, obj, key, err);
@@ -154,8 +154,8 @@ fn TVal ays_get_method(Vm* vm, HObject* obj, HString* key, bool* found, bool* er
     return m;
 }
 
-/// Save the async-gen body state back into the request-queue gs, ready to be
-/// re-entered at `save_pc`. Shared by the async yield* Await/Yield suspensions.
+// Save the async-gen body state back into the request-queue gs, ready to be
+// re-entered at `save_pc`. Shared by the async yield* Await/Yield suspensions.
 fn void ays_save_body(Dispatch* ds, GeneratorState* gs, void* save_pc) {
     Vm* vm = ds.vm;
     for (uint i = 0; i < gs.num_regs; i++) {
@@ -169,9 +169,9 @@ fn void ays_save_body(Dispatch* ds, GeneratorState* gs, void* save_pc) {
     gs.state = GEN_SUSPENDED_YIELD;
 }
 
-/// Pop the async-gen activation, writing `result` back to the caller (the
-/// drain's call_fn context), and return control there. Shared tail of the async
-/// yield* Yield suspension and body completions.
+// Pop the async-gen activation, writing `result` back to the caller (the
+// drain's call_fn context), and return control there. Shared tail of the async
+// yield* Yield suspension and body completions.
 fn void ays_pop_to_caller(Dispatch* ds, TVal result) {
     Vm* vm = ds.vm;
     Activation* yact = &vm.activations[vm.activation_count - 1];
@@ -192,11 +192,11 @@ fn void ays_pop_to_caller(Dispatch* ds, TVal result) {
     ds.needs_restart = true;
 }
 
-/// Throw `errval` at the async yield* point (ES2018 `? ...` rethrows). Finds a
-/// catcher within the async-gen body; if none, surfaces the throw via
-/// heap.has_error so the drain rejects the in-flight request (mirrors the
-/// async-gen LOAD_RESUME uncaught-throw path). Returns false only on a hard VM
-/// error the caller must propagate.
+// Throw `errval` at the async yield* point (ES2018 `? ...` rethrows). Finds a
+// catcher within the async-gen body; if none, surfaces the throw via
+// heap.has_error so the drain rejects the in-flight request (mirrors the
+// async-gen LOAD_RESUME uncaught-throw path). Returns false only on a hard VM
+// error the caller must propagate.
 fn bool ays_throw_into_body(Dispatch* ds, GeneratorState* gs, TVal errval) {
     Vm* vm = ds.vm;
     if (vm_throw_value(vm, errval, ds.act, &ds.curr_pc, &ds.needs_restart, true)) {
@@ -228,8 +228,8 @@ fn bool ays_throw_into_body(Dispatch* ds, GeneratorState* gs, TVal errval) {
     return true;
 }
 
-/// Throw a fresh TypeError with `msg` at the async yield* point (protocol
-/// violations: missing throw method, non-object iterator result).
+// Throw a fresh TypeError with `msg` at the async yield* point (protocol
+// violations: missing throw method, non-object iterator result).
 fn bool ays_throw_type(Dispatch* ds, GeneratorState* gs, char[] msg) {
     Vm* vm = ds.vm;
     HObject*? te_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
@@ -243,14 +243,14 @@ fn bool ays_throw_type(Dispatch* ds, GeneratorState* gs, char[] msg) {
     return ays_throw_into_body(ds, gs, tv);
 }
 
-/// GeneratorYield inside the async yield* state machine (ES2018 §14.4.14 async
-/// step 7.a.v): settle the in-flight request with the yielded `value` and
-/// suspend, re-entering YIELD_STAR_ASYNC when the consumer resumes. `value` is
-/// the already-read IteratorValue of the inner result, which is not re-Awaited
-/// (a manually-implemented async iterator that yields a promise surfaces it
-/// unwrapped) and is placed into a fresh {value, done:false} so the drain's
-/// finish step reads plain data props (never re-invoking the inner getters,
-/// which this opcode already read once). Caller sets gs.ays_step = AYS_YIELD.
+// GeneratorYield inside the async yield* state machine (ES2018 §14.4.14 async
+// step 7.a.v): settle the in-flight request with the yielded `value` and
+// suspend, re-entering YIELD_STAR_ASYNC when the consumer resumes. `value` is
+// the already-read IteratorValue of the inner result, which is not re-Awaited
+// (a manually-implemented async iterator that yields a promise surfaces it
+// unwrapped) and is placed into a fresh {value, done:false} so the drain's
+// finish step reads plain data props (never re-invoking the inner getters,
+// which this opcode already read once). Caller sets gs.ays_step = AYS_YIELD.
 fn void ays_do_yield(Dispatch* ds, GeneratorState* gs, TVal value) {
     Vm* vm = ds.vm;
     ays_save_body(ds, gs, ds.curr_pc - 1); // re-enter this opcode on resume
@@ -275,9 +275,9 @@ fn void ays_do_yield(Dispatch* ds, GeneratorState* gs, TVal value) {
     ays_pop_to_caller(ds, wrapped);
 }
 
-/// Await `value` inside the async yield* state machine: PromiseResolve it and
-/// suspend, re-entering YIELD_STAR_ASYNC at `next_step` when it settles.
-/// Returns false on OOM (the caller should treat that as a no-op continuation).
+// Await `value` inside the async yield* state machine: PromiseResolve it and
+// suspend, re-entering YIELD_STAR_ASYNC at `next_step` when it settles.
+// Returns false on OOM (the caller should treat that as a no-op continuation).
 fn bool ays_await(Dispatch* ds, GeneratorState* gs, TVal value, uint next_step) {
     Vm* vm = ds.vm;
     HObject*? resolved_raw = builtins::promise_resolve_default_ctor(vm.heap, (void*)vm, value);
@@ -296,10 +296,10 @@ fn bool ays_await(Dispatch* ds, GeneratorState* gs, TVal value, uint next_step) 
     return true;
 }
 
-/// Return `value` from the async yield* point (ES2018 §14.4.14 step 7.c: the
-/// delegate's return() completed, or it had no return method). Routes through
-/// any enclosing try/finally in the body (like an injected `return`), else
-/// completes the generator now so the drain settles {value, done:true}.
+// Return `value` from the async yield* point (ES2018 §14.4.14 step 7.c: the
+// delegate's return() completed, or it had no return method). Routes through
+// any enclosing try/finally in the body (like an injected `return`), else
+// completes the generator now so the drain settles {value, done:true}.
 fn void ays_return_from_body(Dispatch* ds, GeneratorState* gs, TVal value) {
     // Walk up to the nearest catcher with a finally. The innermost catcher
     // may be a catch-only try (no finally_pc), in which case the return must
@@ -320,15 +320,15 @@ fn void ays_return_from_body(Dispatch* ds, GeneratorState* gs, TVal value) {
     vm_complete_generator_return(ds, &value);
 }
 
-/// Reject the current async function's Promise with `reason` and pop its
-/// activation, restoring the caller's dispatch state in `ds` (valstack,
-/// current function/bytecode pointers, curr_pc). Used when an AWAIT cannot
-/// proceed (constructor-lookup error or allocation failure) but the frame
-/// still owns an async Promise to settle per the "next tick" contract. On
-/// draining the last activation, halts the VM with `reason` as the return
-/// value instead (no caller frame to resume). Returns false without doing
-/// anything if the current activation isn't an async function with a
-/// Promise attached, so the caller falls back to a plain uncaught error.
+// Reject the current async function's Promise with `reason` and pop its
+// activation, restoring the caller's dispatch state in `ds` (valstack,
+// current function/bytecode pointers, curr_pc). Used when an AWAIT cannot
+// proceed (constructor-lookup error or allocation failure) but the frame
+// still owns an async Promise to settle per the "next tick" contract. On
+// draining the last activation, halts the VM with `reason` as the return
+// value instead (no caller frame to resume). Returns false without doing
+// anything if the current activation isn't an async function with a
+// Promise attached, so the caller falls back to a plain uncaught error.
 fn bool async_reject_and_pop(Dispatch* ds, TVal reason) {
     Vm* vm = ds.vm;
     if ((ds.act.flags & ACT_FLAG_ASYNC) == 0 || ds.act.async_promise == null) {
@@ -365,7 +365,7 @@ fn bool async_reject_and_pop(Dispatch* ds, TVal reason) {
     return true;
 }
 
-/// Sub-dispatch for LOAD_RESUME, AWAIT, YIELD, YIELD_STAR opcodes.
+// Sub-dispatch for LOAD_RESUME, AWAIT, YIELD, YIELD_STAR opcodes.
 fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {

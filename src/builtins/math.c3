@@ -1,4 +1,4 @@
-/// Math built-in object methods.
+// Math built-in object methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::hstring;
@@ -14,10 +14,10 @@ import std::math;
 // Math method builtins
 // ============================================================================
 
-/// Helper: get numeric arg at index i, defaulting to NaN if absent.
-/// Uses vm_to_number for objects so that valueOf / toString are called
-/// per the spec (and any exception they throw propagates through the VM).
-/// Returns NaN and sets ctx.should_throw / throw_value on ToNumber failure.
+// Helper: get numeric arg at index i, defaulting to NaN if absent.
+// Uses vm_to_number for objects so that valueOf / toString are called
+// per the spec (and any exception they throw propagates through the VM).
+// Returns NaN and sets ctx.should_throw / throw_value on ToNumber failure.
 fn double math_arg(BuiltinContext* ctx, ushort i) {
     if (i >= ctx.argc) return double::nan;
     TVal* arg = &ctx.regs[ctx.base_reg + i];
@@ -196,7 +196,7 @@ fn void builtin_math_tan(BuiltinContext* ctx) {
     ctx.result.set_number(math_tan(x));
 }
 
-/// Math.random(), uses the heap's PRNG state (xorshift32).
+// Math.random(), uses the heap's PRNG state (xorshift32).
 fn void builtin_math_random(BuiltinContext* ctx) {
     uint state = ctx.heap.rnd_state;
     state ^= state << 13;
@@ -410,8 +410,8 @@ fn void builtin_math_imul(BuiltinContext* ctx) {
 // Math.sumPrecise - compensated summation using Shewchuk algorithm
 // ============================================================================
 
-/// SumPrecise state for accumulating high-precision sums.
-/// Uses limb-based representation for infinite precision intermediate result.
+// SumPrecise state for accumulating high-precision sums.
+// Uses limb-based representation for infinite precision intermediate result.
 enum SumPreciseStateEnum : uint {
     FINITE,
     INFINITY,
@@ -891,7 +891,7 @@ fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
     return register_named_value(global_env, heap, "Math", math_tv);
 }
 
-/// Helper: register a Math method as a lightfunc property on the Math object.
+// Helper: register a Math method as a lightfunc property on the Math object.
 fn bool register_math_method(HObject* math, Heap* heap, char[] name, uint fn_index) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;

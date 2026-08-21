@@ -1,4 +1,4 @@
-/// Object constructor and Object.prototype methods.
+// Object constructor and Object.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::bytecode;
@@ -15,10 +15,10 @@ import boomkat::vm;
 // Object constructor builtins
 // ============================================================================
 
-/// ToObject, ES5 §9.9
-/// Wraps primitives into proper exotic wrapper objects.
-/// Returns the object directly for OBJECT type. Returns false for null/undefined.
-/// Sets ctx.result and returns true on success. Returns false on allocation failure.
+// ToObject, ES5 §9.9
+// Wraps primitives into proper exotic wrapper objects.
+// Returns the object directly for OBJECT type. Returns false for null/undefined.
+// Sets ctx.result and returns true on success. Returns false on allocation failure.
 fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
     // Already an object
     if (val.is_object()) {
@@ -91,7 +91,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
     return false;
 }
 
-/// Helper: build a property descriptor object for a data property
+// Helper: build a property descriptor object for a data property
 fn void builtin_build_data_descriptor(Heap* heap, HObject** out, TVal value, bool writable, bool enumerable, bool configurable) {
     HObject*? desc_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = desc_raw) { *out = null; return; }
@@ -107,10 +107,10 @@ fn void builtin_build_data_descriptor(Heap* heap, HObject** out, TVal value, boo
     *out = desc;
 }
 
-/// Object() as function (ES5 §15.2.1.1) or new Object() as constructor (§15.2.2.1).
-/// If value is null/undefined/absent, returns a new empty Object.
-/// If value is already an Object, returns it.
-/// Otherwise, wraps the primitive (boolean/number/string) in a wrapper object.
+// Object() as function (ES5 §15.2.1.1) or new Object() as constructor (§15.2.2.1).
+// If value is null/undefined/absent, returns a new empty Object.
+// If value is already an Object, returns it.
+// Otherwise, wraps the primitive (boolean/number/string) in a wrapper object.
 fn void builtin_object(BuiltinContext* ctx) {
     // ES2015 §19.1.1.1 Object([value]) step 1: when NewTarget is neither
     // undefined nor the active function object (i.e. Object was invoked via
@@ -258,31 +258,31 @@ fn void builtin_object(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// Collects an object's own String-keyed property names into `key_buf` in
-/// spec order (OrdinaryOwnPropertyKeys): integer indices ascending, then
-/// String keys in insertion order.  Symbol keys are excluded.  Returns the
-/// number of keys written.  `key_buf` must have room for at least
-/// `obj.prop_count + obj.array_size + string_char_length` entries.
-///
-/// When `require_enumerable` is true, only currently-enumerable keys are
-/// collected (used by Object.keys, where EnumerableOwnPropertyNames' kind
-/// is "key" and no [[Get]] is ever performed, so a single filtered pass is
-/// spec-equivalent to the interleaved algorithm).  When false, ALL own
-/// string keys are returned regardless of enumerability, Object.entries/
-/// values must call this with `require_enumerable = false` and then, for
-/// each key, re-check `[[GetOwnProperty]]`'s enumerable attribute
-/// immediately before performing `[[Get]]` on that key, since a getter
-/// invoked earlier in the walk may have changed a later key's
-/// enumerability (EnumerableOwnPropertyNames interleaves the descriptor
-/// check and the value fetch per key, it does not snapshot enumerability
-/// for the whole list up front).
-/// Upper bound on the number of own string keys collect_own_enum_string_keys
-/// (and the equivalent inline getOwnPropertyNames/Reflect.ownKeys walks) can
-/// write into key_buf. Named props + dense array slots are NOT enough: exotic
-/// objects synthesize virtual integer-index keys outside the property table,
-/// string-wrapper char indices [0, char_length) and TypedArray element
-/// indices [0, [[ArrayLength]]), which must be budgeted for separately or
-/// the collector overflows key_buf (heap corruption).
+// Collects an object's own String-keyed property names into `key_buf` in
+// spec order (OrdinaryOwnPropertyKeys): integer indices ascending, then
+// String keys in insertion order.  Symbol keys are excluded.  Returns the
+// number of keys written.  `key_buf` must have room for at least
+// `obj.prop_count + obj.array_size + string_char_length` entries.
+//
+// When `require_enumerable` is true, only currently-enumerable keys are
+// collected (used by Object.keys, where EnumerableOwnPropertyNames' kind
+// is "key" and no [[Get]] is ever performed, so a single filtered pass is
+// spec-equivalent to the interleaved algorithm).  When false, ALL own
+// string keys are returned regardless of enumerability, Object.entries/
+// values must call this with `require_enumerable = false` and then, for
+// each key, re-check `[[GetOwnProperty]]`'s enumerable attribute
+// immediately before performing `[[Get]]` on that key, since a getter
+// invoked earlier in the walk may have changed a later key's
+// enumerability (EnumerableOwnPropertyNames interleaves the descriptor
+// check and the value fetch per key, it does not snapshot enumerability
+// for the whole list up front).
+// Upper bound on the number of own string keys collect_own_enum_string_keys
+// (and the equivalent inline getOwnPropertyNames/Reflect.ownKeys walks) can
+// write into key_buf. Named props + dense array slots are NOT enough: exotic
+// objects synthesize virtual integer-index keys outside the property table,
+// string-wrapper char indices [0, char_length) and TypedArray element
+// indices [0, [[ArrayLength]]), which must be budgeted for separately or
+// the collector overflows key_buf (heap corruption).
 fn uint own_key_buf_capacity(HObject* obj) {
     uint max_keys = obj.prop_count + obj.array_size + 32;
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
@@ -295,12 +295,12 @@ fn uint own_key_buf_capacity(HObject* obj) {
     return max_keys;
 }
 
-/// True iff `obj` has at least one own enumerable String key, i.e. iff
-/// collect_own_enum_string_keys would write at least one entry.  Callers that
-/// only need "is it empty?" use this instead of scanning `prop_count`
-/// themselves: the named property table is not the only key source, and a
-/// bare prop_count test reports an integer-indexed exotic (TypedArray
-/// elements, String-wrapper char indices) as having no keys at all.
+// True iff `obj` has at least one own enumerable String key, i.e. iff
+// collect_own_enum_string_keys would write at least one entry.  Callers that
+// only need "is it empty?" use this instead of scanning `prop_count`
+// themselves: the named property table is not the only key source, and a
+// bare prop_count test reports an integer-indexed exotic (TypedArray
+// elements, String-wrapper char indices) as having no keys at all.
 fn bool own_has_enum_string_key(Heap* heap, HObject* obj) {
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
@@ -453,8 +453,8 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
     return key_count;
 }
 
-/// Object.keys(obj), ES5 §15.2.3.14
-/// Returns an array of an object's own enumerable property names.
+// Object.keys(obj), ES5 §15.2.3.14
+// Returns an array of an object's own enumerable property names.
 fn void builtin_object_keys(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -541,8 +541,8 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
 // ============================================================================
 // Object.getOwnPropertyNames, ES5 §15.2.3.4
 // ============================================================================
-/// Returns an array of all own property names (both enumerable and non-enumerable)
-/// of the given object. Equivalent to Object.keys but without the enumerable filter.
+// Returns an array of all own property names (both enumerable and non-enumerable)
+// of the given object. Equivalent to Object.keys but without the enumerable filter.
 fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -790,7 +790,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
 // ============================================================================
 // Object.getOwnPropertySymbols, ES6 §19.1.2.7
 // ============================================================================
-/// Returns an array of all symbol-keyed own properties of the given object.
+// Returns an array of all symbol-keyed own properties of the given object.
 fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -870,9 +870,9 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.ownKeys, ES6 §26.1.11
 // ============================================================================
-/// Returns an array of the target object's own property keys (strings and symbols).
-/// Unlike Object.keys, does NOT filter by enumerable, returns ALL own keys.
-/// Order: integer indices ascending, then string keys in insertion order, then symbol keys.
+// Returns an array of the target object's own property keys (strings and symbols).
+// Unlike Object.keys, does NOT filter by enumerable, returns ALL own keys.
+// Order: integer indices ascending, then string keys in insertion order, then symbol keys.
 fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1049,9 +1049,9 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
 // Shared Reflect helpers
 // ============================================================================
 
-/// Validate that `arg` is an object. For Reflect methods the target must be an
-/// Object (no ToObject coercion for primitives). Throws TypeError and returns
-/// null if the argument is null, undefined, or any primitive.
+// Validate that `arg` is an object. For Reflect methods the target must be an
+// Object (no ToObject coercion for primitives). Throws TypeError and returns
+// null if the argument is null, undefined, or any primitive.
 fn HObject* reflect_require_object(BuiltinContext* ctx, TVal arg, char[] msg) {
     if (arg.is_null() || arg.is_undefined() || !arg.is_object()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, msg);
@@ -1063,7 +1063,7 @@ fn HObject* reflect_require_object(BuiltinContext* ctx, TVal arg, char[] msg) {
 // ============================================================================
 // Reflect.get, ES6 §26.1.5
 // ============================================================================
-/// Returns the value of the property, or undefined if the property is absent.
+// Returns the value of the property, or undefined if the property is absent.
 fn void builtin_reflect_get(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1090,7 +1090,7 @@ fn void builtin_reflect_get(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.set, ES6 §26.1.13
 // ============================================================================
-/// Sets the property and returns a boolean indicating success.
+// Sets the property and returns a boolean indicating success.
 fn void builtin_reflect_set(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1120,7 +1120,7 @@ fn void builtin_reflect_set(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.has, ES6 §26.1.8
 // ============================================================================
-/// Returns true if the target has the property (own or inherited).
+// Returns true if the target has the property (own or inherited).
 fn void builtin_reflect_has(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1144,7 +1144,7 @@ fn void builtin_reflect_has(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.deleteProperty, ES6 §26.1.4
 // ============================================================================
-/// Deletes the property and returns a boolean indicating success.
+// Deletes the property and returns a boolean indicating success.
 fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1177,7 +1177,7 @@ fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.getOwnPropertyDescriptor, ES6 §26.1.6
 // ============================================================================
-/// Returns a property descriptor for the own property, or undefined.
+// Returns a property descriptor for the own property, or undefined.
 fn void builtin_reflect_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1202,7 +1202,7 @@ fn void builtin_reflect_getOwnPropertyDescriptor(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.defineProperty, ES6 §26.1.3
 // ============================================================================
-/// Defines a property and returns a boolean indicating success.
+// Defines a property and returns a boolean indicating success.
 fn void builtin_reflect_defineProperty(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1234,7 +1234,7 @@ fn void builtin_reflect_defineProperty(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.getPrototypeOf, ES6 §26.1.7
 // ============================================================================
-/// Returns the [[Prototype]] of the target object.
+// Returns the [[Prototype]] of the target object.
 fn void builtin_reflect_getPrototypeOf(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1249,7 +1249,7 @@ fn void builtin_reflect_getPrototypeOf(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.setPrototypeOf, ES6 §26.1.14
 // ============================================================================
-/// Sets the [[Prototype]] and returns a boolean indicating success.
+// Sets the [[Prototype]] and returns a boolean indicating success.
 fn void builtin_reflect_setPrototypeOf(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1278,7 +1278,7 @@ fn void builtin_reflect_setPrototypeOf(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.isExtensible, ES6 §26.1.9
 // ============================================================================
-/// Returns true if the target object is extensible.
+// Returns true if the target object is extensible.
 fn void builtin_reflect_isExtensible(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1293,7 +1293,7 @@ fn void builtin_reflect_isExtensible(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.preventExtensions, ES6 §26.1.12
 // ============================================================================
-/// Makes the target object non-extensible and returns a boolean.
+// Makes the target object non-extensible and returns a boolean.
 fn void builtin_reflect_preventExtensions(BuiltinContext* ctx) {
     TVal target_tv; target_tv.set_undefined();
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
@@ -1313,7 +1313,7 @@ fn void builtin_reflect_preventExtensions(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.apply, ES6 §26.1.1
 // ============================================================================
-/// Calls `target` with `thisArgument` and the elements of `argumentsList`.
+// Calls `target` with `thisArgument` and the elements of `argumentsList`.
 fn void builtin_reflect_apply(BuiltinContext* ctx) {
     TVal target; target.set_undefined();
     if (ctx.argc > 0) target = ctx.regs[ctx.base_reg];
@@ -1346,8 +1346,8 @@ fn void builtin_reflect_apply(BuiltinContext* ctx) {
 // ============================================================================
 // Reflect.construct, ES6 §26.1.2
 // ============================================================================
-/// Constructs an instance of `target` using `argumentsList` and optional
-/// `newTarget` as the value of new.target.
+// Constructs an instance of `target` using `argumentsList` and optional
+// `newTarget` as the value of new.target.
 fn void builtin_reflect_construct(BuiltinContext* ctx) {
     TVal target; target.set_undefined();
     if (ctx.argc > 0) target = ctx.regs[ctx.base_reg];
@@ -1456,8 +1456,8 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
 // ============================================================================
 // Object.getPrototypeOf, ES5 §15.2.3.2
 // ============================================================================
-/// Returns the [[Prototype]] of an object. Throws TypeError if argument is
-/// not an object (null or undefined).
+// Returns the [[Prototype]] of an object. Throws TypeError if argument is
+// not an object (null or undefined).
 fn void builtin_object_getPrototypeOf(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.getPrototypeOf requires a value");
@@ -1503,8 +1503,8 @@ fn void builtin_object_getPrototypeOf(BuiltinContext* ctx) {
 // ============================================================================
 // Object.isExtensible, ES5 §15.2.3.13
 // ============================================================================
-/// Returns true if the object is extensible (can have new properties added).
-/// Non-object arguments return true per ES5 §15.2.3.13.
+// Returns true if the object is extensible (can have new properties added).
+// Non-object arguments return true per ES5 §15.2.3.13.
 fn void builtin_object_isExtensible(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_boolean(false);
@@ -1529,8 +1529,8 @@ fn void builtin_object_isExtensible(BuiltinContext* ctx) {
 // ============================================================================
 // Object.preventExtensions, ES5 §15.2.3.10
 // ============================================================================
-/// Makes an object non-extensible (prevents adding new properties).
-/// Returns the object itself. Throws TypeError if argument is not an object.
+// Makes an object non-extensible (prevents adding new properties).
+// Returns the object itself. Throws TypeError if argument is not an object.
 fn void builtin_object_preventExtensions(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -1560,8 +1560,8 @@ fn void builtin_object_preventExtensions(BuiltinContext* ctx) {
 // ============================================================================
 // Object.getOwnPropertyDescriptor, ES5 §15.2.3.3
 // ============================================================================
-/// Returns a property descriptor for an own property of the given object.
-/// Throws TypeError if first argument is not an object.
+// Returns a property descriptor for an own property of the given object.
+// Throws TypeError if first argument is not an object.
 fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -1973,8 +1973,8 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
 // ============================================================================
 // Object.getOwnPropertyDescriptors, ES2017 §19.1.2.9
 // ============================================================================
-/// Returns an object whose own keys are the own property keys of ToObject(arg),
-/// each mapped to that property's descriptor object.
+// Returns an object whose own keys are the own property keys of ToObject(arg),
+// each mapped to that property's descriptor object.
 fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.getOwnPropertyDescriptors called on non-object");
@@ -2124,8 +2124,8 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
     ctx.result.set_object(res);
 }
 
-/// ES5 [[Get]] for descriptor field extraction, invokes getters per §8.10.5.
-/// Returns true if the property exists, setting `out` to the result value.
+// ES5 [[Get]] for descriptor field extraction, invokes getters per §8.10.5.
+// Returns true if the property exists, setting `out` to the result value.
 fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal* out) {
     if (obj.flags.exotic_proxyobj) {
         TVal recv; recv.set_object(obj);
@@ -2165,26 +2165,26 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
     return true;
 }
 
-/// Re-checks whether `key`, already known to be an own String-keyed
-/// property of `obj` (as produced by collect_own_enum_string_keys with
-/// require_enumerable = false), is *currently* enumerable.  Object.entries/
-/// values must call this immediately before [[Get]]ing each key, since an
-/// earlier key's getter may have changed a later key's enumerability
-/// in-between the snapshot and the fetch (EnumerableOwnPropertyNames
-/// interleaves [[GetOwnProperty]] and [[Get]] per key, not once up front).
-/// Dense array indices, String-exotic character indices, and TypedArray
-/// indices are always enumerable by spec and can't be redefined non-
-/// enumerable without leaving the property table, so only named
-/// properties need a fresh flags lookup.
+// Re-checks whether `key`, already known to be an own String-keyed
+// property of `obj` (as produced by collect_own_enum_string_keys with
+// require_enumerable = false), is *currently* enumerable.  Object.entries/
+// values must call this immediately before [[Get]]ing each key, since an
+// earlier key's getter may have changed a later key's enumerability
+// in-between the snapshot and the fetch (EnumerableOwnPropertyNames
+// interleaves [[GetOwnProperty]] and [[Get]] per key, not once up front).
+// Dense array indices, String-exotic character indices, and TypedArray
+// indices are always enumerable by spec and can't be redefined non-
+// enumerable without leaving the property table, so only named
+// properties need a fresh flags lookup.
 fn bool key_is_currently_enumerable(HObject* obj, hstring::HString* key, Heap* h) {
     int idx = obj.find_prop_idx(key, h);
     if (idx < 0) return true;
     return obj.get_prop_flags((uint)idx, h).enumerable;
 }
 
-/// [[Get]] for Object.values/entries enumeration: like desc_get, but also serves
-/// the lazily-materialised indexed character properties of a String exotic object
-/// (which don't live in the property table and so aren't found by desc_get).
+// [[Get]] for Object.values/entries enumeration: like desc_get, but also serves
+// the lazily-materialised indexed character properties of a String exotic object
+// (which don't live in the property table and so aren't found by desc_get).
 fn bool desc_get_enum(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal* out) {
     if (obj.flags.exotic_stringobj && key.is_arridx()
         && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
@@ -2203,12 +2203,12 @@ fn bool desc_get_enum(BuiltinContext* ctx, HObject* obj, hstring::HString* key, 
     return desc_get(ctx, obj, key, out);
 }
 
-/// Perform `[[Set]]` of `key` = `val` on `obj` with Throw=true (Object.assign
-/// semantics, ES2015 §19.1.2.2).  Invokes setters when an accessor exists
-/// (own or on prototype chain).  Throws TypeError when the target is
-/// non-writable for a new/existing data property or non-extensible for a
-/// new property.  Returns true on success, false on error (ctx->should_throw
-/// is set in the latter case).
+// Perform `[[Set]]` of `key` = `val` on `obj` with Throw=true (Object.assign
+// semantics, ES2015 §19.1.2.2).  Invokes setters when an accessor exists
+// (own or on prototype chain).  Throws TypeError when the target is
+// non-writable for a new/existing data property or non-extensible for a
+// new property.  Returns true on success, false on error (ctx->should_throw
+// is set in the latter case).
 fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal* val) {
     if (obj.flags.exotic_proxyobj) {
         TVal recv; recv.set_object(obj);
@@ -2327,10 +2327,10 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
     return true;
 }
 
-/// Field-presence flags returned by `to_property_descriptor` so callers can
-/// distinguish a descriptor that omits a field from one that sets it to undefined
-/// (e.g. when the value is inherited via an accessor with no getter). Per ES5
-/// §8.10.5, even an `undefined` field is "present" in the descriptor.
+// Field-presence flags returned by `to_property_descriptor` so callers can
+// distinguish a descriptor that omits a field from one that sets it to undefined
+// (e.g. when the value is inherited via an accessor with no getter). Per ES5
+// §8.10.5, even an `undefined` field is "present" in the descriptor.
 struct DescFields {
     bool has_enumerable;
     bool has_configurable;
@@ -2340,14 +2340,14 @@ struct DescFields {
     bool has_set;
 }
 
-/// ToPropertyDescriptor, ES5 §8.10.5
-///
-/// Parses a descriptor object into PropFlags + value (or getter/setter).
-/// `out_flags` receives the flags to use for a newly created property.
-/// `out_value` receives the data value (or getter/setter).
-/// `is_accessor_out` is set true when the descriptor is an accessor descriptor.
-/// `out_fields` (optional) receives which fields were present on the descriptor
-/// (counts inherited accessor results that returned undefined as present).
+// ToPropertyDescriptor, ES5 §8.10.5
+//
+// Parses a descriptor object into PropFlags + value (or getter/setter).
+// `out_flags` receives the flags to use for a newly created property.
+// `out_value` receives the data value (or getter/setter).
+// `is_accessor_out` is set true when the descriptor is an accessor descriptor.
+// `out_fields` (optional) receives which fields were present on the descriptor
+// (counts inherited accessor results that returned undefined as present).
 fn bool to_property_descriptor(BuiltinContext* ctx, HObject* desc_obj,
                                hobject::PropFlags* out_flags,
                                TVal* out_value, bool* is_accessor_out,
@@ -2477,7 +2477,7 @@ fn bool to_property_descriptor(BuiltinContext* ctx, HObject* desc_obj,
     return true;
 }
 
-/// Object.defineProperty, ES5 §15.2.3.6
+// Object.defineProperty, ES5 §15.2.3.6
 fn void builtin_object_defineProperty(BuiltinContext* ctx) {
     // Step 1: Check first arg is Object
     if (ctx.argc < 1) {
@@ -2867,7 +2867,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
 // ============================================================================
 // Object.defineProperties, ES5 §15.2.3.7
 // ============================================================================
-/// Define multiple properties on an object from a properties object.
+// Define multiple properties on an object from a properties object.
 fn void builtin_object_defineProperties(BuiltinContext* ctx) {
     // Step 1: Check first arg is Object
     if (ctx.argc < 1) {
@@ -3279,32 +3279,32 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-/// Helper: check if descriptor object has "get" property
+// Helper: check if descriptor object has "get" property
 fn bool has_get_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "get");
     return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
-/// Helper: check if descriptor object has "set" property
+// Helper: check if descriptor object has "set" property
 fn bool has_set_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "set");
     return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
-/// Helper: check if descriptor object has "value" property
+// Helper: check if descriptor object has "value" property
 fn bool has_value_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
     return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
-/// Helper: check if descriptor object has "writable" property
+// Helper: check if descriptor object has "writable" property
 fn bool has_writable_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "writable");
     return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
-/// Helper: check if descriptor object has "enumerable" property
+// Helper: check if descriptor object has "enumerable" property
 fn bool has_enumerable_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "enumerable");
     return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
 }
-/// Helper: check if descriptor object has "configurable" property
+// Helper: check if descriptor object has "configurable" property
 fn bool has_configurable_in_desc_helper(Heap* heap, HObject* desc_obj) {
     HString* key = builtin_intern_string(heap, "configurable");
     return key != null && desc_obj.find_prop_idx(key, heap) >= 0;
@@ -3313,27 +3313,27 @@ fn bool has_configurable_in_desc_helper(Heap* heap, HObject* desc_obj) {
 // ============================================================================
 // Object.create, ES5 §15.2.3.5 / ES2020 §19.1.2.2
 // ============================================================================
-/// Create a new object with the specified prototype and optional properties.
-///
-/// ES2020 spec:
-/// 1. Let obj be ? OrdinaryCreateFromConstructor(O, "%Object.prototype%").
-/// 2. If Properties is not undefined, then
-///    a. Return ? ObjectDefineProperties(obj, Properties).
-/// 3. Return obj.
-///
-/// ObjectDefineProperties (§19.1.2.4):
-/// 1. Let props be ? ToObject(Properties).
-/// 2. Let keys be ? props.[[OwnPropertyKeys]]().
-/// 3. Let descriptors be a new empty List.
-/// 4. For each element nextKey of keys, do
-///    a. Let propDesc be ? props.[[GetOwnProperty]](nextKey).
-///    b. If propDesc is not undefined and propDesc.[[Enumerable]] is true, then
-///       i. Let descObj be ? Get(props, nextKey).
-///       ii. Let desc be ? ToPropertyDescriptor(descObj).
-///       iii. Append { nextKey, desc } to descriptors.
-/// 5. For each element { propKey, desc } in descriptors, do
-///    a. ? DefinePropertyOrThrow(O, propKey, desc).
-/// 6. Return O.
+// Create a new object with the specified prototype and optional properties.
+//
+// ES2020 spec:
+// 1. Let obj be ? OrdinaryCreateFromConstructor(O, "%Object.prototype%").
+// 2. If Properties is not undefined, then
+//    a. Return ? ObjectDefineProperties(obj, Properties).
+// 3. Return obj.
+//
+// ObjectDefineProperties (§19.1.2.4):
+// 1. Let props be ? ToObject(Properties).
+// 2. Let keys be ? props.[[OwnPropertyKeys]]().
+// 3. Let descriptors be a new empty List.
+// 4. For each element nextKey of keys, do
+//    a. Let propDesc be ? props.[[GetOwnProperty]](nextKey).
+//    b. If propDesc is not undefined and propDesc.[[Enumerable]] is true, then
+//       i. Let descObj be ? Get(props, nextKey).
+//       ii. Let desc be ? ToPropertyDescriptor(descObj).
+//       iii. Append { nextKey, desc } to descriptors.
+// 5. For each element { propKey, desc } in descriptors, do
+//    a. ? DefinePropertyOrThrow(O, propKey, desc).
+// 6. Return O.
 fn void builtin_object_create(BuiltinContext* ctx) {
     // Step 1: Check prototype argument
     if (ctx.argc < 1) {
@@ -3578,7 +3578,7 @@ fn void builtin_object_create(BuiltinContext* ctx) {
 // ============================================================================
 // Object.seal, ES5 §15.2.3.8
 // ============================================================================
-/// Seal an object: prevent extensions and make all properties non-configurable.
+// Seal an object: prevent extensions and make all properties non-configurable.
 fn void builtin_object_seal(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -3616,7 +3616,7 @@ fn void builtin_object_seal(BuiltinContext* ctx) {
 // ============================================================================
 // Object.freeze, ES5 §15.2.3.9
 // ============================================================================
-/// Freeze an object: seal and make all data properties non-writable.
+// Freeze an object: seal and make all data properties non-writable.
 fn void builtin_object_freeze(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -3673,7 +3673,7 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
 // ============================================================================
 // Object.isSealed, ES5 §15.2.3.11
 // ============================================================================
-/// Check if an object is sealed.
+// Check if an object is sealed.
 fn void builtin_object_isSealed(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_boolean(false);
@@ -3724,7 +3724,7 @@ fn void builtin_object_isSealed(BuiltinContext* ctx) {
 // ============================================================================
 // Object.isFrozen, ES5 §15.2.3.12
 // ============================================================================
-/// Check if an object is frozen.
+// Check if an object is frozen.
 fn void builtin_object_isFrozen(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_boolean(false);
@@ -3798,8 +3798,8 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
 // ============================================================================
 // Object.entries, ES2017 §19.1.2.21
 // ============================================================================
-/// Returns an array of the given object's own enumerable string-keyed property
-/// [key, value] pairs.
+// Returns an array of the given object's own enumerable string-keyed property
+// [key, value] pairs.
 fn void builtin_object_entries(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -3900,7 +3900,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
 // ============================================================================
 // Object.values, ES2017 §19.1.2.22
 // ============================================================================
-/// Returns an array of the given object's own enumerable string-keyed property values.
+// Returns an array of the given object's own enumerable string-keyed property values.
 fn void builtin_object_values(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -3975,7 +3975,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
 // ============================================================================
 // Object.assign, ES2015 §19.1.2.2
 // ============================================================================
-/// Copies enumerable own properties from source objects to a downstream object.
+// Copies enumerable own properties from source objects to a downstream object.
 fn void builtin_object_assign(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result.set_undefined();
@@ -4152,8 +4152,8 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
 // ============================================================================
 // Object.is, ES6 §19.1.2.10
 // ============================================================================
-/// Object.is(value1, value2), SameValue comparison.
-/// Differs from === in two ways: NaN === NaN, and +0 !== -0.
+// Object.is(value1, value2), SameValue comparison.
+// Differs from === in two ways: NaN === NaN, and +0 !== -0.
 fn void builtin_object_is(BuiltinContext* ctx) {
     if (ctx.argc < 2) {
         // Missing args → undefined (per ES6 spec, both args required)
@@ -4171,8 +4171,8 @@ fn void builtin_object_is(BuiltinContext* ctx) {
 // ============================================================================
 // Object.hasOwn, ES2022 §19.1.2.10
 // ============================================================================
-/// Object.hasOwn(obj, prop), returns true if obj has own property prop.
-/// Equivalent to Object.prototype.hasOwnProperty.call(obj, prop).
+// Object.hasOwn(obj, prop), returns true if obj has own property prop.
+// Equivalent to Object.prototype.hasOwnProperty.call(obj, prop).
 fn void builtin_object_hasOwn(BuiltinContext* ctx) {
     if (ctx.argc < 2) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.hasOwn requires 2 arguments");
@@ -4215,14 +4215,14 @@ fn void builtin_object_hasOwn(BuiltinContext* ctx) {
 // ============================================================================
 // Object.setPrototypeOf, ES2015 §19.1.2.19
 // ============================================================================
-/// Shared ordinary-object prototype-set logic with extensible and cycle checks.
-/// Returns true if the prototype was set (or no change was needed), false if
-/// the operation was rejected, non-extensible object with different proto,
-/// proto cycle, or an immutable-prototype exotic object given a different
-/// value. Never throws itself (ES2022 §10.4.7.1 [[SetPrototypeOf]] just
-/// returns false); callers that need Set-with-Throw semantics (e.g.
-/// Object.setPrototypeOf, unlike Reflect.setPrototypeOf) throw on a false
-/// result themselves.
+// Shared ordinary-object prototype-set logic with extensible and cycle checks.
+// Returns true if the prototype was set (or no change was needed), false if
+// the operation was rejected, non-extensible object with different proto,
+// proto cycle, or an immutable-prototype exotic object given a different
+// value. Never throws itself (ES2022 §10.4.7.1 [[SetPrototypeOf]] just
+// returns false); callers that need Set-with-Throw semantics (e.g.
+// Object.setPrototypeOf, unlike Reflect.setPrototypeOf) throw on a false
+// result themselves.
 fn bool ordinary_set_proto(BuiltinContext* ctx, HObject* obj, HObject* new_proto) {
     // Immutable-prototype exotic object check (ES2022 §10.4.7.1):
     // Object.prototype is an immutable-prototype exotic object, its [[Prototype]]
@@ -4279,7 +4279,7 @@ fn bool ordinary_set_proto(BuiltinContext* ctx, HObject* obj, HObject* new_proto
     return true;
 }
 
-/// Object.setPrototypeOf(obj, proto), sets the prototype of obj to proto.
+// Object.setPrototypeOf(obj, proto), sets the prototype of obj to proto.
 fn void builtin_object_setPrototypeOf(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.setPrototypeOf requires an object");
@@ -4349,10 +4349,10 @@ fn void builtin_object_setPrototypeOf(BuiltinContext* ctx) {
 // ============================================================================
 // Object.fromEntries, ES2019 §19.1.2.5
 // ============================================================================
-/// Creates a new object from an iterable of [key, value] pairs.
-/// Get(entry, ToString(idx)) for an entry pair: dense array slot, then
-/// String-exotic character access, then accessor-aware named lookup through
-/// the prototype chain. Getter throws land in ctx.should_throw.
+// Creates a new object from an iterable of [key, value] pairs.
+// Get(entry, ToString(idx)) for an entry pair: dense array slot, then
+// String-exotic character access, then accessor-aware named lookup through
+// the prototype chain. Getter throws land in ctx.should_throw.
 fn TVal from_entries_get_index(BuiltinContext* ctx, HObject* pair, uint idx) {
     TVal out;
     out.set_undefined();
@@ -4643,10 +4643,10 @@ fn void builtin_object_groupBy(BuiltinContext* ctx) {
     ctx.result.set_object(groups);
 }
 
-/// Convert a TVal to a property key (HString*) for use in Object.fromEntries.
-/// Per ES2019 §19.1.2.5, this performs ToPropertyKey on the entry's "0" element.
-/// Uses builtin_to_string_vm for object values (calls toString/valueOf via ToPrimitive),
-/// and builtin_to_string for primitives.
+// Convert a TVal to a property key (HString*) for use in Object.fromEntries.
+// Per ES2019 §19.1.2.5, this performs ToPropertyKey on the entry's "0" element.
+// Uses builtin_to_string_vm for object values (calls toString/valueOf via ToPrimitive),
+// and builtin_to_string for primitives.
 fn HString* builtin_to_property_key(BuiltinContext* ctx, TVal key_val) {
     if (key_val.is_string()) {
         HString* s = (HString*)key_val.get_heapptr();
@@ -4917,9 +4917,9 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, "[object Object]"));
 }
 
-/// Object.prototype.hasOwnProperty, ES2022 §20.1.3.2
-/// Step 1: Let P = ? ToPropertyKey(V)  (before ToObject)
-/// Step 2: Let O = ? ToObject(this value)
+// Object.prototype.hasOwnProperty, ES2022 §20.1.3.2
+// Step 1: Let P = ? ToPropertyKey(V)  (before ToObject)
+// Step 2: Let O = ? ToObject(this value)
 fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
     // Step 1: ToPropertyKey(V), must run BEFORE ToObject(this)
     TVal arg;
@@ -5009,7 +5009,7 @@ fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
     ctx.result.set_boolean(false);
 }
 
-/// Object.prototype.propertyIsEnumerable, ES5 §15.2.4.7
+// Object.prototype.propertyIsEnumerable, ES5 §15.2.4.7
 fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     // V = first argument, converted to string key
     TVal arg;
@@ -5084,9 +5084,9 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     ctx.result.set_boolean(false);
 }
 
-/// Object.prototype.valueOf, ES5 §15.2.4.4
-/// Performs ToObject(this) and returns the resulting object.
-/// Throws TypeError if this is undefined or null (RequireObjectCoercible).
+// Object.prototype.valueOf, ES5 §15.2.4.4
+// Performs ToObject(this) and returns the resulting object.
+// Throws TypeError if this is undefined or null (RequireObjectCoercible).
 fn void builtin_object_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     // RequireObjectCoercible: null and undefined throw TypeError
@@ -5102,8 +5102,8 @@ fn void builtin_object_proto_valueOf(BuiltinContext* ctx) {
     // ctx.result was set by builtin_to_object
 }
 
-/// Object.prototype.__proto__ getter, ES2015 Annex B §B.2.2.1.
-/// Wraps Object.getPrototypeOf: ToObject(this) and return its [[Prototype]].
+// Object.prototype.__proto__ getter, ES2015 Annex B §B.2.2.1.
+// Wraps Object.getPrototypeOf: ToObject(this) and return its [[Prototype]].
 fn void builtin_object_proto___proto___getter(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     // §B.2.2.1 step 1: ToObject(this), throws TypeError for null/undefined.
@@ -5135,9 +5135,9 @@ fn void builtin_object_proto___proto___getter(BuiltinContext* ctx) {
     }
 }
 
-/// Object.prototype.__proto__ setter, ES2015 Annex B §B.2.2.2.
-/// Argument must be Object or null; this must be object-coercible.
-/// Calls the equivalent of Object.setPrototypeOf(this, value) on success.
+// Object.prototype.__proto__ setter, ES2015 Annex B §B.2.2.2.
+// Argument must be Object or null; this must be object-coercible.
+// Calls the equivalent of Object.setPrototypeOf(this, value) on success.
 fn void builtin_object_proto___proto___setter(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     // §B.2.2.2 step 1: RequireObjectCoercible(this).
@@ -5189,10 +5189,10 @@ fn void builtin_object_proto___proto___setter(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
-/// Object.prototype.isPrototypeOf(V), ES2022 §20.1.3.3
-/// Step 1: If V is not Object, return false.
-/// Step 2: Let O = ? ToObject(this value), throws TypeError for null/undefined.
-/// Walks the prototype chain of V looking for O.
+// Object.prototype.isPrototypeOf(V), ES2022 §20.1.3.3
+// Step 1: If V is not Object, return false.
+// Step 2: Let O = ? ToObject(this value), throws TypeError for null/undefined.
+// Walks the prototype chain of V looking for O.
 fn void builtin_object_proto_isPrototypeOf(BuiltinContext* ctx) {
     ctx.result.set_boolean(false);
 
@@ -5237,9 +5237,9 @@ fn void builtin_object_proto_isPrototypeOf(BuiltinContext* ctx) {
     }
 }
 
-/// Object.prototype.toLocaleString(), ES2022 §20.1.3.5
-/// Invoke(this, "toString"), gets toString via prototype chain and calls it with this as receiver.
-/// Throws TypeError if this is null or undefined.
+// Object.prototype.toLocaleString(), ES2022 §20.1.3.5
+// Invoke(this, "toString"), gets toString via prototype chain and calls it with this as receiver.
+// Throws TypeError if this is null or undefined.
 fn void builtin_object_proto_toLocaleString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     // RequireObjectCoercible: null and undefined throw TypeError

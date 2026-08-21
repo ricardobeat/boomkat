@@ -15,15 +15,15 @@ import std::math;
 // Return, variable access, closures, iterators, exceptions, and miscellany
 // ============================================================================
 
-/// Find the nearest catcher (starting at `act.cat`) that owns a finally
-/// block, freeing every catch-only catcher (no finally_pc) walked past along
-/// the way and re-pointing `act.cat` at the finally-owning catcher found (or
-/// null). A `return` reaching an intervening catch-only try (e.g. `try {
-/// try { return x; } catch (e) {} } finally { ... }`) must still route
-/// through the enclosing finally, but the catch-only catcher's own ENDTRY
-/// never runs, since the return short-circuits it, which mirrors what ENDTRY does
-/// on the normal fall-through path so the chain doesn't end up with a stale
-/// catch-only catcher still attached above the finally one.
+// Find the nearest catcher (starting at `act.cat`) that owns a finally
+// block, freeing every catch-only catcher (no finally_pc) walked past along
+// the way and re-pointing `act.cat` at the finally-owning catcher found (or
+// null). A `return` reaching an intervening catch-only try (e.g. `try {
+// try { return x; } catch (e) {} } finally { ... }`) must still route
+// through the enclosing finally, but the catch-only catcher's own ENDTRY
+// never runs, since the return short-circuits it, which mirrors what ENDTRY does
+// on the normal fall-through path so the chain doesn't end up with a stale
+// catch-only catcher still attached above the finally one.
 fn Catcher* find_and_unlink_finally_catcher(Vm* vm, Activation* act) {
     Catcher* c = (Catcher*)act.cat;
     while (c != null && c.finally_pc == null) {
@@ -36,11 +36,11 @@ fn Catcher* find_and_unlink_finally_catcher(Vm* vm, Activation* act) {
     return c;
 }
 
-/// Complete a generator's return: mark GEN_COMPLETED, wrap `val` in an
-/// IteratorResult {value, done:true}, write it to the caller, and pop the
-/// activation. Shared by RET_GEN/RETUNDEF_GEN and by ENDFINALLY's
-/// generator-aware pending-return completion (a return that was deferred
-/// through a try/finally in a generator body).
+// Complete a generator's return: mark GEN_COMPLETED, wrap `val` in an
+// IteratorResult {value, done:true}, write it to the caller, and pop the
+// activation. Shared by RET_GEN/RETUNDEF_GEN and by ENDFINALLY's
+// generator-aware pending-return completion (a return that was deferred
+// through a try/finally in a generator body).
 fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
     Vm* vm = ds.vm;
     // Prefer async_gen_state from the completing activation, which is a stable
@@ -111,13 +111,13 @@ fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
     ds.needs_restart = true;
 }
 
-/// Scan forward from a FINALLY opcode to find the matching ENDFINALLY that
-/// terminates its finally block.  Nested try/finally blocks inside the body
-/// each contribute a balanced FINALLY/ENDFINALLY pair, so we track depth.
-/// TRY opcodes are two words (the second is a NOP jump slot holding the
-/// finally offset), so we skip that slot to avoid misreading it as an opcode.
-/// Returns null if no matching ENDFINALLY is found (should not happen for
-/// well-formed bytecode).
+// Scan forward from a FINALLY opcode to find the matching ENDFINALLY that
+// terminates its finally block.  Nested try/finally blocks inside the body
+// each contribute a balanced FINALLY/ENDFINALLY pair, so we track depth.
+// TRY opcodes are two words (the second is a NOP jump slot holding the
+// finally offset), so we skip that slot to avoid misreading it as an opcode.
+// Returns null if no matching ENDFINALLY is found (should not happen for
+// well-formed bytecode).
 fn Instruction* find_matching_endfinally(Instruction* finally_pc, Instruction* code_end) {
     // finally_pc points at the FINALLY marker; scan from the instruction after.
     Instruction* p = finally_pc + 1;
@@ -140,9 +140,9 @@ fn Instruction* find_matching_endfinally(Instruction* finally_pc, Instruction* c
     return null;
 }
 
-/// Sub-dispatch for the generator return opcodes RET_GEN/RETUNDEF_GEN.
-/// The hot non-generator RET/RETUNDEF paths are inlined directly in Vm.run
-/// (src/vm/vm_execute.c3) since they dominate recursion-heavy workloads.
+// Sub-dispatch for the generator return opcodes RET_GEN/RETUNDEF_GEN.
+// The hot non-generator RET/RETUNDEF paths are inlined directly in Vm.run
+// (src/vm/vm_execute.c3) since they dominate recursion-heavy workloads.
 fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
     Vm* vm = ds.vm;
     switch (op) {
@@ -215,12 +215,12 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
     }
 }
 
-/// ES2015 §9.2.11 SetFunctionName, for computed-key methods and accessors:
-/// shared by CLASS_INITGET/CLASS_INITSET/CLASS_INITPROP (class bodies) and
-/// INITGET/INITSET/INITPROP (object literals).
-/// If the accessor function `fn_obj` currently has an empty `.name` property,
-/// overwrite it with `prefix + key_str` (string key) or `prefix + "[desc]"`
-/// (symbol key), matching the computed-accessor name spec.
+// ES2015 §9.2.11 SetFunctionName, for computed-key methods and accessors:
+// shared by CLASS_INITGET/CLASS_INITSET/CLASS_INITPROP (class bodies) and
+// INITGET/INITSET/INITPROP (object literals).
+// If the accessor function `fn_obj` currently has an empty `.name` property,
+// overwrite it with `prefix + key_str` (string key) or `prefix + "[desc]"`
+// (symbol key), matching the computed-accessor name spec.
 fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, char[] prefix) {
     if (fn_obj == null) return;
     // Only update if current .name is the empty string (compiler-emitted
@@ -265,37 +265,37 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     }
 }
 
-/// Return status of initprop_define: distinguishes the two failure shapes
-/// so the opcode handler knows whether to synthesize a generic TypeError or
-/// propagate an abrupt completion a Proxy trap already raised.
+// Return status of initprop_define: distinguishes the two failure shapes
+// so the opcode handler knows whether to synthesize a generic TypeError or
+// propagate an abrupt completion a Proxy trap already raised.
 const int INITPROP_OK = 0;
 const int INITPROP_TYPE_ERROR = 1;   // caller throws its own generic TypeError
 const int INITPROP_ABRUPT = 2;       // heap.has_error / heap.error_value already set
 
-/// Shared INITPROP/INITPROPN body: define a data property with WEC flags
-/// using CreateDataPropertyOrThrow semantics (ES2022 §7.3.4 step 4, also
-/// reached via §15.7.10 step 8.b for class fields). If the property already
-/// exists and is configurable, it is replaced. An existing non-configurable
-/// property (e.g. `class { static [x] = 42 }` where x="prototype" hits the
-/// class's non-configurable .prototype) or a non-extensible receiver (e.g.
-/// `Object.freeze(this)` inside a sibling field initializer) must throw a
-/// TypeError: we return INITPROP_TYPE_ERROR so the opcode handler can do the
-/// vm_throw_error_fmt call (which needs its `ds` state). Object/array
-/// literals also route through here; their receivers are freshly allocated
-/// (always extensible, all props configurable), so the ordinary fast path
-/// below is unconditionally correct for them.
-///
-/// A Proxy receiver (e.g. a class extending a base whose constructor returns
-/// `new Proxy(this, {...})`) must instead go through the full
-/// [[DefineOwnProperty]] MOP (ES2022 §15.7.10 step 8.b for a class field install,
-/// and §7.3.4 CreateDataPropertyOrThrow generally) so its `defineProperty`
-/// trap observably fires. That path is routed to object_define_own, which
-/// recurses through nested proxies and falls back to ordinary semantics once
-/// it reaches a non-exotic target. Ordinary (non-proxy) receivers never pay
-/// for this, so the exotic_proxyobj flag check is the only added cost.
-///
-/// Callers have already coerced the key on computed-key paths via TOPROPKEY,
-/// so `get_prop_key` here is idempotent.
+// Shared INITPROP/INITPROPN body: define a data property with WEC flags
+// using CreateDataPropertyOrThrow semantics (ES2022 §7.3.4 step 4, also
+// reached via §15.7.10 step 8.b for class fields). If the property already
+// exists and is configurable, it is replaced. An existing non-configurable
+// property (e.g. `class { static [x] = 42 }` where x="prototype" hits the
+// class's non-configurable .prototype) or a non-extensible receiver (e.g.
+// `Object.freeze(this)` inside a sibling field initializer) must throw a
+// TypeError: we return INITPROP_TYPE_ERROR so the opcode handler can do the
+// vm_throw_error_fmt call (which needs its `ds` state). Object/array
+// literals also route through here; their receivers are freshly allocated
+// (always extensible, all props configurable), so the ordinary fast path
+// below is unconditionally correct for them.
+//
+// A Proxy receiver (e.g. a class extending a base whose constructor returns
+// `new Proxy(this, {...})`) must instead go through the full
+// [[DefineOwnProperty]] MOP (ES2022 §15.7.10 step 8.b for a class field install,
+// and §7.3.4 CreateDataPropertyOrThrow generally) so its `defineProperty`
+// trap observably fires. That path is routed to object_define_own, which
+// recurses through nested proxies and falls back to ordinary semantics once
+// it reaches a non-exotic target. Ordinary (non-proxy) receivers never pay
+// for this, so the exotic_proxyobj flag check is the only added cost.
+//
+// Callers have already coerced the key on computed-key paths via TOPROPKEY,
+// so `get_prop_key` here is idempotent.
 fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
     void* key = get_prop_key(vm, key_val);
     if (key == null) return INITPROP_OK;
@@ -342,13 +342,13 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
     return INITPROP_OK;
 }
 
-/// Instantiate a function closure from a CompiledFunction template, capturing
-/// the given var/lex environments. Sets .name/.length and, for constructable
-/// functions, .prototype (with .constructor). Returns null only on allocation
-/// failure. Shared by the CLOSURE opcode and by the ESM linker, which
-/// instantiates exported `function` declarations eagerly at link time so a
-/// cyclic early import observes the hoisted function rather than `undefined`
-/// (ECMA-262 16.2.1.5.5 step 17).
+// Instantiate a function closure from a CompiledFunction template, capturing
+// the given var/lex environments. Sets .name/.length and, for constructable
+// functions, .prototype (with .constructor). Returns null only on allocation
+// failure. Shared by the CLOSURE opcode and by the ESM linker, which
+// instantiates exported `function` declarations eagerly at link time so a
+// cyclic early import observes the hoisted function rather than `undefined`
+// (ECMA-262 16.2.1.5.5 step 17).
 fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* var_env, EnvRecord* lex_env, TVal* enclosing_this = null, HObject* enclosing_new_target = null) {
     HObject*? func_obj_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch _e = func_obj_raw) return null;
@@ -468,7 +468,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     return func_obj;
 }
 
-/// Sub-dispatch for CLOSURE, GETBOUND opcodes.
+// Sub-dispatch for CLOSURE, GETBOUND opcodes.
 fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
@@ -532,7 +532,7 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
     return (TVal){};
 }
 
-/// Sub-dispatch for INITFOR, NEXTFOR opcodes.
+// Sub-dispatch for INITFOR, NEXTFOR opcodes.
 fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
@@ -736,8 +736,8 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 }
 
 
-/// Throw a TypeError with `msg` at the current instruction; returns the dispatch
-/// sentinel. On uncaught, returns the uncaught-error result.
+// Throw a TypeError with `msg` at the current instruction; returns the dispatch
+// sentinel. On uncaught, returns the uncaught-error result.
 fn TVal? throw_type_error_at(Vm* vm, Dispatch* ds, String msg) {
     HObject*? te_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try te = te_raw) {
@@ -753,20 +753,20 @@ fn TVal? throw_type_error_at(Vm* vm, Dispatch* ds, String msg) {
     return (TVal){};
 }
 
-/// ToObject for method receivers: return the object form of `v`, or null (with a
-/// pending TypeError absent; the caller handles null and undefined first).
-/// Objects pass through; a primitive is boxed, because @@asyncIterator /
-/// @@iterator live on the wrapper prototypes and are only reachable through
-/// one.  `for await (c of "ab")` is the case that proves the source is not
-/// always an object: skipping the boxing left the iterator undefined and the
-/// loop failed on the `.next` read instead of walking the string.
+// ToObject for method receivers: return the object form of `v`, or null (with a
+// pending TypeError absent; the caller handles null and undefined first).
+// Objects pass through; a primitive is boxed, because @@asyncIterator /
+// @@iterator live on the wrapper prototypes and are only reachable through
+// one.  `for await (c of "ab")` is the case that proves the source is not
+// always an object: skipping the boxing left the iterator undefined and the
+// loop failed on the `.next` read instead of walking the string.
 fn HObject* to_object_for_method(Vm* vm, TVal v) {
     return builtins::to_object_for_lookup(vm.heap, v);
 }
 
-/// Resolve a PROP_ACCESSOR lookup by invoking its getter with `this = recv`.
-/// Returns the getter result, or undefined if the getter is not callable. On a
-/// getter throw, leaves vm.has_error set (caller propagates).
+// Resolve a PROP_ACCESSOR lookup by invoking its getter with `this = recv`.
+// Returns the getter result, or undefined if the getter is not callable. On a
+// getter throw, leaves vm.has_error set (caller propagates).
 fn TVal resolve_accessor_get(Vm* vm, hobject::AccessorResult acc, TVal recv) {
     TVal out; out.set_undefined();
     if (acc.accessor_fn.is_object() && acc.accessor_fn.get_heapptr() != null) {
@@ -778,7 +778,7 @@ fn TVal resolve_accessor_get(Vm* vm, hobject::AccessorResult acc, TVal recv) {
     return out;
 }
 
-/// Sub-dispatch for NOP, DEBUGGER, BREAK, CONTINUE, INITGET, INITSET, INITSETI, CSVARI, PUSH_LEX, POP_LEX, REQUIRE_OBJ, CHKOBJ opcodes.
+// Sub-dispatch for NOP, DEBUGGER, BREAK, CONTINUE, INITGET, INITSET, INITSETI, CSVARI, PUSH_LEX, POP_LEX, REQUIRE_OBJ, CHKOBJ opcodes.
 fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {

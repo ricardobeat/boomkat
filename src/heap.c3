@@ -23,47 +23,47 @@ alias ReallocFunc = fn void*(void* udata, void* ptr, usz size);
 alias FreeFunc    = fn void(void* udata, void* ptr);
 alias FatalFunc   = fn void(void* udata, char* msg);
 
-/// Calls a JS handler function from a builtin, passing one argument.
-/// The VM pointer is opaque here to keep heap independent of the vm module.
+// Calls a JS handler function from a builtin, passing one argument.
+// The VM pointer is opaque here to keep heap independent of the vm module.
 alias VmCallHandlerFn = fn TVal(void* vm, TVal handler, TVal* arg);
-/// Marks activation-record env bindings during the GC mark phase.
+// Marks activation-record env bindings during the GC mark phase.
 alias MarkActivationsFn = fn void(void* vm, void* heap);
 
-/// Walks a Catcher chain head, which the heap holds only as an opaque `void*`
-/// (Catcher lives in the vm module, which depends on this one). A suspended
-/// generator's chain needs marking during GC and freeing at teardown, and the
-/// heap can do neither without knowing the layout. Set by vm_create.
+// Walks a Catcher chain head, which the heap holds only as an opaque `void*`
+// (Catcher lives in the vm module, which depends on this one). A suspended
+// generator's chain needs marking during GC and freeing at teardown, and the
+// heap can do neither without knowing the layout. Set by vm_create.
 alias CatcherChainFn = fn void(void* heap, void* cat_head, int mode);
 
-/// Mark the chain's values for the GC and leave the chain intact.
+// Mark the chain's values for the GC and leave the chain intact.
 const int CATCHER_CHAIN_MARK             = 0;
-/// Release the owned values and free every node.
+// Release the owned values and free every node.
 const int CATCHER_CHAIN_FREE             = 1;
-/// Free every node without releasing what it points at, for heap teardown,
-/// where the referents are already gone.
+// Free every node without releasing what it points at, for heap teardown,
+// where the referents are already gone.
 const int CATCHER_CHAIN_FREE_NODES_ONLY  = 2;
 
-/// Runs after a microtask handler completes, with the handler's return value
-/// and the downstream promise to resolve.
+// Runs after a microtask handler completes, with the handler's return value
+// and the downstream promise to resolve.
 alias MicrotaskAfterFn = fn void(void* heap, void* vm, TVal result, TVal downstream);
 
-/// Host notification for a promise that was rejected with nothing watching it.
-/// Called once per such promise at the end of drain_microtasks, with the
-/// rejection reason. `udata` is whatever the host passed to
-/// Heap.set_rejection_tracker.
+// Host notification for a promise that was rejected with nothing watching it.
+// Called once per such promise at the end of drain_microtasks, with the
+// rejection reason. `udata` is whatever the host passed to
+// Heap.set_rejection_tracker.
 alias RejectionTrackerFn = fn void(void* heap, void* vm, TVal promise, TVal reason, void* udata);
 
-/// Calls a JS function with an argument array and an explicit `this`.
+// Calls a JS function with an argument array and an explicit `this`.
 alias VmCallFn = fn TVal(void* vm, TVal func, TVal* args, uint nargs, TVal this_val);
 
-/// Invokes a JS function as a constructor and returns the resulting `this`.
-/// `new_target` is the value seen as `new.target` inside the constructor,
-/// which is the subclass for super() calls.
+// Invokes a JS function as a constructor and returns the resulting `this`.
+// `new_target` is the value seen as `new.target` inside the constructor,
+// which is the subclass for super() calls.
 alias VmConstructFn = fn TVal(void* vm, TVal func, TVal* args, uint nargs, TVal new_target);
 
-/// Proxy MOP bridges, set by vm_create. They let the hobject prototype-chain
-/// walkers route through Proxy traps without depending on the builtins layer.
-/// On error the callee sets heap.has_error/error_value and returns false.
+// Proxy MOP bridges, set by vm_create. They let the hobject prototype-chain
+// walkers route through Proxy traps without depending on the builtins layer.
+// On error the callee sets heap.has_error/error_value and returns false.
 alias ProxyGetFn = fn bool(void* vm, void* heap, void* proxy, void* key, TVal receiver, TVal* out);
 alias ProxyHasFn = fn bool(void* vm, void* heap, void* proxy, void* key, bool* out);
 
@@ -77,61 +77,61 @@ const uint  INITIAL_STR_TABLE_SIZE  = 256;
 const float STR_TABLE_LOAD_FACTOR   = 0.70;
 const long  GC_INITIAL_TRIGGER      = 1;
 const long  GC_TRIGGER_GROW_FACTOR  = 1;
-/// Divisor applied to the last cycle's mark work when it sets the next cycle's
-/// allocation budget.
-///
-/// The budget wants to track marking cost (see the trigger reset), but using
-/// that cost raw collects far too rarely and holds a lot of floating garbage.
-/// Dividing it trades a little of each back. Measured on `for (const x of arr)`
-/// over a 200k array (best of 5) with peak RSS from the 400k case:
-///
-///     divisor   1      82ms   137MB
-///     divisor   4      81ms    90MB
-///     divisor   8      79ms    82MB
-///     divisor  16      75ms    78MB   <- both fastest and near-leanest
-///     divisor  32      86ms    76MB
-///     divisor  64      98ms    77MB
-///
-/// 16 is not a compromise between the two: collecting a little more often
-/// keeps the working set in cache, so below it the extra floating garbage
-/// costs time as well as memory, and above it the collection frequency starts
-/// to dominate again.
+// Divisor applied to the last cycle's mark work when it sets the next cycle's
+// allocation budget.
+//
+// The budget wants to track marking cost (see the trigger reset), but using
+// that cost raw collects far too rarely and holds a lot of floating garbage.
+// Dividing it trades a little of each back. Measured on `for (const x of arr)`
+// over a 200k array (best of 5) with peak RSS from the 400k case:
+//
+//     divisor   1      82ms   137MB
+//     divisor   4      81ms    90MB
+//     divisor   8      79ms    82MB
+//     divisor  16      75ms    78MB   <- both fastest and near-leanest
+//     divisor  32      86ms    76MB
+//     divisor  64      98ms    77MB
+//
+// 16 is not a compromise between the two: collecting a little more often
+// keeps the working set in cache, so below it the extra floating garbage
+// costs time as well as memory, and above it the collection frequency starts
+// to dominate again.
 const long  GC_MARK_WORK_DIVISOR    = 16;
 const uint  MEGA_CACHE_SIZE         = 512;
-/// Initial capacity for the gray object stack, which grows as needed.
+// Initial capacity for the gray object stack, which grows as needed.
 const uint  GRAY_STACK_INITIAL_CAP  = 64;
-/// Initial capacity for Array.prototype.join's in-progress set, allocated on
-/// first use (most programs never nest a join) and grown as needed.
+// Initial capacity for Array.prototype.join's in-progress set, allocated on
+// first use (most programs never nest a join) and grown as needed.
 const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
 
-/// Marks an embedder-owned root set that is not an HObject. Called during
-/// mark_roots with the pointer stored in Heap.capi_roots.
+// Marks an embedder-owned root set that is not an HObject. Called during
+// mark_roots with the pointer stored in Heap.capi_roots.
 alias CapiMarkFn = fn void(void*);
-/// The C ABI's interrupt callback, invoked by the VM at safepoints. Returns
-/// non-zero to abort the running script. Lives here rather than in the capi
-/// module so vm_execute can call it without importing capi (which imports vm).
+// The C ABI's interrupt callback, invoked by the VM at safepoints. Returns
+// non-zero to abort the running script. Lives here rather than in the capi
+// module so vm_execute can call it without importing capi (which imports vm).
 alias BkInterruptFn = fn int(void* runtime, void* opaque);
-/// How many backward jumps between GC checks. Spacing them out stops loops
-/// from thrashing the collector.
+// How many backward jumps between GC checks. Spacing them out stops loops
+// from thrashing the collector.
 const uint  BWD_GC_INTERVAL        = 1024;
-/// How many back-edge safepoints between interrupt handler calls. Under
-/// threaded dispatch most back-edges run inside the burst and never reach the
-/// switch, which is where the poll site lives, so the effective cadence there
-/// is this many times BWD_GC_INTERVAL. A power of two; reset after every
-/// handler call and at each top-level eval, so a near-zero budget from a prior
-/// run cannot trigger an immediate unprompted callback.
+// How many back-edge safepoints between interrupt handler calls. Under
+// threaded dispatch most back-edges run inside the burst and never reach the
+// switch, which is where the poll site lives, so the effective cadence there
+// is this many times BWD_GC_INTERVAL. A power of two; reset after every
+// handler call and at each top-level eval, so a near-zero budget from a prior
+// run cannot trigger an immediate unprompted callback.
 const uint  INTERRUPT_BUDGET_INIT  = 16;
-/// Strings longer than this are never interned. They are very rarely property
-/// keys, and interned copies pile up in the table until the next GC, which
-/// gives O(n^2) memory growth in loops like `s += chunk`.
+// Strings longer than this are never interned. They are very rarely property
+// keys, and interned copies pile up in the table until the next GC, which
+// gives O(n^2) memory growth in loops like `s += chunk`.
 const uint  MAX_INTERN_BYTES        = 256;
 
 // Lightfunc deleted-property bitset sizing.
 // Each builtin index occupies 3 bits: name, length, and prototype deleted flags.
 const uint LF_DELETED_WORDS   = 32;                          // ulong words in lf_deleted_props
 const uint LF_MAX_TRACKED     = (LF_DELETED_WORDS * 64) / 3; // 682, the highest trackable builtin index
-/// Sentinel marking a deleted string table entry, so open addressing can probe past it.
+// Sentinel marking a deleted string table entry, so open addressing can probe past it.
 const HString* STR_TABLE_TOMBSTONE = (HString*)1;
 
 // --- LongjmpState ---
@@ -156,21 +156,21 @@ struct LongjmpState {
 
 // --- GeneratorState (ES6 §25.3) ---
 
-/// Generator execution state, per ES6 §25.3.3.1 GeneratorState.
+// Generator execution state, per ES6 §25.3.3.1 GeneratorState.
 enum GeneratorStateType : char {
     GEN_SUSPENDED_START,
     GEN_SUSPENDED_YIELD,
     GEN_EXECUTING,
     GEN_COMPLETED,
-    /// Async generators only (ES2018 §27.6). The generator is working through
-    /// the §27.6.3.7 await-return steps for a `.return()` request, and holds
-    /// off draining further requests until that settles.
+    // Async generators only (ES2018 §27.6). The generator is working through
+    // the §27.6.3.7 await-return steps for a `.return()` request, and holds
+    // off draining further requests until that settles.
     GEN_AWAITING_RETURN,
 }
 
-/// One entry in an async generator's request queue (ES2018 §27.6.3.1
-/// AsyncGeneratorRequest). Concurrent next/return/throw calls each push a
-/// request and get their own promise. The queue drains FIFO.
+// One entry in an async generator's request queue (ES2018 §27.6.3.1
+// AsyncGeneratorRequest). Concurrent next/return/throw calls each push a
+// request and get their own promise. The queue drains FIFO.
 struct AsyncGenRequest {
     ResumeKind        completion_kind; // NEXT, RETURN, or THROW
     TVal              value;           // completion value, or the thrown value
@@ -178,19 +178,19 @@ struct AsyncGenRequest {
     AsyncGenRequest*  next;            // FIFO link; null at the tail
 }
 
-/// How a generator was resumed, which tells the YIELD opcode what to do when
-/// execution reaches a yield point.
+// How a generator was resumed, which tells the YIELD opcode what to do when
+// execution reaches a yield point.
 enum ResumeKind : char {
     NEXT,     /// .next(): yield returns an IteratorResult as usual
     THROW,    /// .throw(): inject an exception at the yield point
     RETURN,   /// .return(): inject a return at the yield point
 }
 
-/// How an async-generator body last suspended. The AWAIT and YIELD opcodes
-/// record this so async_gen_drain knows what to do with the value coming back
-/// from the body. YIELD and RETURN settle the current request. AWAIT means the
-/// body suspended on an internal `await`, so a microtask re-drives it and the
-/// current request's promise stays untouched.
+// How an async-generator body last suspended. The AWAIT and YIELD opcodes
+// record this so async_gen_drain knows what to do with the value coming back
+// from the body. YIELD and RETURN settle the current request. AWAIT means the
+// body suspended on an internal `await`, so a microtask re-drives it and the
+// current request's promise stays untouched.
 enum GenSuspendKind : char {
     AG_SUSPEND_NONE,   /// idle, or this is not an async-gen resume
     AG_SUSPEND_AWAIT,  /// body suspended at an internal `await`, invisible to the caller
@@ -201,63 +201,63 @@ enum GenSuspendKind : char {
 // For-in enumeration state
 // ============================================================================
 
-/// Runtime state for a for-in loop iteration.  Created by INITFOR.
-///
-/// OWNERSHIP: the state is owned by the *activation that created it*, via the
-/// intrusive `parent` chain rooted at `Activation.forin`, exactly like the
-/// Catcher chain hanging off `Activation.cat`. The `iter_state` register that
-/// INITFOR writes holds a BORROWED pointer, read by NEXTFOR to advance the
-/// enumeration; it is never the owner.
-///
-/// The register cannot be the owner because a for-in has many abrupt exits
-/// (break, labeled break, return, throw, labeled continue to an outer loop)
-/// and the compiler frees the register after the loop, so a state left behind
-/// by an early exit becomes unreachable. Making the *frame* the owner means
-/// no exit edge has to remember anything: every one of them either re-runs
-/// INITFOR (which releases the state its own output register still names) or
-/// pops the activation (which drains the whole chain). See free_forin_chain.
-///
-/// `keys` holds a flat array of interned HString* pointers collected from
-/// the object and its prototype chain (omitting duplicates). The array and
-/// the struct itself are plain-malloc'd; forin_state_free releases both.
-///
-/// `target` is the original for-in target (a borrowed pointer to the
-/// heap-allocated HObject). It is temproot-pinned for the lifetime of the
-/// enumeration so the target stays reachable even when the loop body
-/// doesn't reference it, and so NEXTFOR can re-check property existence
-/// at yield time per EnumerateObjectProperties, so a property deleted from
-/// the target before its turn is skipped (plan 062 group N).
-///
-/// `keys` holds raw HString* with no incref of its own, and NEXTFOR
-/// dereferences them long after collection. Two things could root them, and
-/// only one actually does:
-///
-///  - Interning does NOT. sweep_strings frees any table entry whose refcount is
-///    1 and which the mark phase did not reach, so the string table is a weak
-///    reference. "The keys are interned" is not a lifetime argument.
-///  - The target's property table DOES, for an ordinary object: the pin keeps
-///    the target alive, the target's live property keys are marked through it,
-///    and every key in the snapshot came from some level of that prototype
-///    chain. This is the real guarantee.
-///
-/// The second argument does not cover a Proxy, whose keys are virtual: they
-/// exist only as [[OwnPropertyKeys]] trap results and appear in no property
-/// table anywhere. What covers them instead is that they are still referenced
-/// by the trap's own result array while it is being partitioned, and
-/// proxy_partitioned_own_keys holds a native frame across that whole window, so
-/// no safepoint inside a [[GetOwnProperty]] trap can clear the array's pin. By
-/// the time the snapshot is handed to the enumeration the keys are ordinary
-/// interned strings whose refcount the surrounding JS values hold above the
-/// sweep threshold; instrumenting the minimum refcount seen at every snapshot
-/// across the proxy and for-in corpus of test262 gave 5, against a sweep
-/// threshold of 1, with zero observations at or below 2.
-///
-/// Marking `keys` here would make that a proof rather than a measurement, but
-/// it is not free: the snapshot is walked on every GC for every live
-/// enumeration, and the strings are already reachable by the argument above.
-/// If a future exotic key source can produce a key that neither a property
-/// table nor a live trap result references, mark the array instead of
-/// extending this comment.
+// Runtime state for a for-in loop iteration.  Created by INITFOR.
+//
+// OWNERSHIP: the state is owned by the *activation that created it*, via the
+// intrusive `parent` chain rooted at `Activation.forin`, exactly like the
+// Catcher chain hanging off `Activation.cat`. The `iter_state` register that
+// INITFOR writes holds a BORROWED pointer, read by NEXTFOR to advance the
+// enumeration; it is never the owner.
+//
+// The register cannot be the owner because a for-in has many abrupt exits
+// (break, labeled break, return, throw, labeled continue to an outer loop)
+// and the compiler frees the register after the loop, so a state left behind
+// by an early exit becomes unreachable. Making the *frame* the owner means
+// no exit edge has to remember anything: every one of them either re-runs
+// INITFOR (which releases the state its own output register still names) or
+// pops the activation (which drains the whole chain). See free_forin_chain.
+//
+// `keys` holds a flat array of interned HString* pointers collected from
+// the object and its prototype chain (omitting duplicates). The array and
+// the struct itself are plain-malloc'd; forin_state_free releases both.
+//
+// `target` is the original for-in target (a borrowed pointer to the
+// heap-allocated HObject). It is temproot-pinned for the lifetime of the
+// enumeration so the target stays reachable even when the loop body
+// doesn't reference it, and so NEXTFOR can re-check property existence
+// at yield time per EnumerateObjectProperties, so a property deleted from
+// the target before its turn is skipped (plan 062 group N).
+//
+// `keys` holds raw HString* with no incref of its own, and NEXTFOR
+// dereferences them long after collection. Two things could root them, and
+// only one actually does:
+//
+//  - Interning does NOT. sweep_strings frees any table entry whose refcount is
+//    1 and which the mark phase did not reach, so the string table is a weak
+//    reference. "The keys are interned" is not a lifetime argument.
+//  - The target's property table DOES, for an ordinary object: the pin keeps
+//    the target alive, the target's live property keys are marked through it,
+//    and every key in the snapshot came from some level of that prototype
+//    chain. This is the real guarantee.
+//
+// The second argument does not cover a Proxy, whose keys are virtual: they
+// exist only as [[OwnPropertyKeys]] trap results and appear in no property
+// table anywhere. What covers them instead is that they are still referenced
+// by the trap's own result array while it is being partitioned, and
+// proxy_partitioned_own_keys holds a native frame across that whole window, so
+// no safepoint inside a [[GetOwnProperty]] trap can clear the array's pin. By
+// the time the snapshot is handed to the enumeration the keys are ordinary
+// interned strings whose refcount the surrounding JS values hold above the
+// sweep threshold; instrumenting the minimum refcount seen at every snapshot
+// across the proxy and for-in corpus of test262 gave 5, against a sweep
+// threshold of 1, with zero observations at or below 2.
+//
+// Marking `keys` here would make that a proof rather than a measurement, but
+// it is not free: the snapshot is walked on every GC for every live
+// enumeration, and the strings are already reachable by the argument above.
+// If a future exotic key source can produce a key that neither a property
+// table nor a live trap result references, mark the array instead of
+// extending this comment.
 struct ForInState {
     HString** keys;      /// Array of interned property-name HString* pointers
     HObject* target;     /// Borrowed pointer to the for-in target (NOT owned)
@@ -266,11 +266,11 @@ struct ForInState {
     uint index;          /// Current position (next key to return)
 }
 
-/// Saved execution context for a generator.
-///
-/// Calling a generator function saves the initial execution state here and
-/// returns a generator object. Later calls to .next(), .throw(), or .return()
-/// resume the body from this state.
+// Saved execution context for a generator.
+//
+// Calling a generator function saves the initial execution state here and
+// returns a generator object. Later calls to .next(), .throw(), or .return()
+// resume the body from this state.
 struct GeneratorState {
     GeneratorStateType state;
     void* func;               // CompiledFunction*, opaque to avoid a circular dependency
@@ -289,12 +289,12 @@ struct GeneratorState {
     void* var_env;            // EnvRecord* (opaque)
     void* lex_env;            // EnvRecord* (opaque)
     void* cat;                // Catcher* chain head, opaque; saved across yields
-    /// ForInState* chain head, opaque and saved across yields exactly like
-    /// `cat`. A generator can suspend in the middle of a for-in, and the
-    /// suspend pops the activation, so ownership of the frame's live for-in
-    /// states moves here. Otherwise the pop would free states that saved_regs
-    /// still points at, and resuming would read freed memory. Resume moves them
-    /// back, and gs_release frees them if the generator never resumes.
+    // ForInState* chain head, opaque and saved across yields exactly like
+    // `cat`. A generator can suspend in the middle of a for-in, and the
+    // suspend pops the activation, so ownership of the frame's live for-in
+    // states moves here. Otherwise the pop would free states that saved_regs
+    // still points at, and resuming would read freed memory. Resume moves them
+    // back, and gs_release frees them if the generator never resumes.
     void* forin;
     TVal this_binding;
     TVal resume_value;        // value passed by .next()
@@ -348,32 +348,32 @@ struct GeneratorState {
     // function, such as a default expression thunk, the resume value goes into a
     // specific register of the generator's frame. 0xFFFF means unused.
     uint pending_resume_reg;
-    /// How many HObjects currently hold this GeneratorState: the generator
-    /// instance, plus every `is_async_state` reaction closure that parks the
-    /// pointer in func.var_env. Maintained by gs_acquire and gs_release.
+    // How many HObjects currently hold this GeneratorState: the generator
+    // instance, plus every `is_async_state` reaction closure that parks the
+    // pointer in func.var_env. Maintained by gs_acquire and gs_release.
     uint ref_count;
 }
 
-/// Register one more HObject holder of `gs`. Every store of a GeneratorState*
-/// into an HObject (gen.generator_data or an is_async_state func.var_env) must
-/// be paired with this, and with a gs_release when that HObject is torn down.
+// Register one more HObject holder of `gs`. Every store of a GeneratorState*
+// into an HObject (gen.generator_data or an is_async_state func.var_env) must
+// be paired with this, and with a gs_release when that HObject is torn down.
 fn void gs_acquire(GeneratorState* gs) {
     if (gs != null) { gs.ref_count++; }
 }
 
-/// Drop one HObject's hold on `gs`, freeing the state and its saved registers
-/// once the last holder is gone.
-///
-/// The count is the only ownership signal. Sweep tears down every dying node in
-/// one pass, so deciding ownership by reading a gs field would race siblings in
-/// that same pass: the first free recycles the struct, and the next holder reads
-/// whatever landed there.
-///
-/// `heap_ptr` is always required, including during full-heap teardown, which
-/// still frees through the heap's own allocator. With an embedder allocator,
-/// freeing to libc instead would be a cross-allocator free.
-///
-/// `run_decref` is false during teardown, where the heap is already coming apart.
+// Drop one HObject's hold on `gs`, freeing the state and its saved registers
+// once the last holder is gone.
+//
+// The count is the only ownership signal. Sweep tears down every dying node in
+// one pass, so deciding ownership by reading a gs field would race siblings in
+// that same pass: the first free recycles the struct, and the next holder reads
+// whatever landed there.
+//
+// `heap_ptr` is always required, including during full-heap teardown, which
+// still frees through the heap's own allocator. With an embedder allocator,
+// freeing to libc instead would be a cross-allocator free.
+//
+// `run_decref` is false during teardown, where the heap is already coming apart.
 fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
     if (gs == null) { return; }
     if (gs.ref_count > 0) { gs.ref_count--; }
@@ -426,8 +426,8 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
     h.free_func(h.heap_udata, gs);
 }
 
-/// One parked Atomics.waitAsync waiter. `byte_index` is an absolute offset into
-/// `buffer`, and Atomics.notify resolves `promise` with "ok".
+// One parked Atomics.waitAsync waiter. `byte_index` is an absolute offset into
+// `buffer`, and Atomics.notify resolves `promise` with "ok".
 struct AtomicsWaiter {
     hobject::HObject* buffer;
     hobject::HObject* promise;
@@ -435,12 +435,12 @@ struct AtomicsWaiter {
     bool              active;
 }
 
-/// One registered host function.
-///
-/// `handler` is the host trampoline; it is called with the BuiltinContext the
-/// VM already staged, so no argument copying happens at the boundary itself.
-/// `udata` is opaque and passed through untouched. `name` is an interned
-/// HString backing Function.prototype.name, and `arity` backs .length.
+// One registered host function.
+//
+// `handler` is the host trampoline; it is called with the BuiltinContext the
+// VM already staged, so no argument copying happens at the boundary itself.
+// `udata` is opaque and passed through untouched. `name` is an interned
+// HString backing Function.prototype.name, and `arity` backs .length.
 struct HostFnEntry {
     void* handler;
     void* udata;
@@ -449,16 +449,16 @@ struct HostFnEntry {
     bool  constructable;
 }
 
-/// One host-call scope: the values a single host callback can address.
-///
-/// `values` is a real JS Array allocated through alloc_object, so it carries a
-/// temproot flag and its elements are marked transitively. That is what keeps
-/// arguments alive without spending a GC-root entry, and
-/// without referencing ctx.regs — a nested bk_call can realloc the valstack
-/// and leave a register pointer dangling (see vm_calls.c3:1331).
-///
-/// `generation` is bumped every time a scope is popped, so a handle used after
-/// its callback returned fails the check and reads no freed memory.
+// One host-call scope: the values a single host callback can address.
+//
+// `values` is a real JS Array allocated through alloc_object, so it carries a
+// temproot flag and its elements are marked transitively. That is what keeps
+// arguments alive without spending a GC-root entry, and
+// without referencing ctx.regs — a nested bk_call can realloc the valstack
+// and leave a register pointer dangling (see vm_calls.c3:1331).
+//
+// `generation` is bumped every time a scope is popped, so a handle used after
+// its callback returned fails the check and reads no freed memory.
 struct HostScope {
     hobject::HObject* values;
     uint              generation;
@@ -466,19 +466,19 @@ struct HostScope {
 
 // --- Heap struct ---
 
-/// Size classes for the small-block pools on the Heap. Property blocks and
-/// string bodies both draw from them, so the classes cover the property-table
-/// sizes (8-byte slots growing at 1.5x: 64, 96, 144, 216, ...) and the string
-/// sizes that dominate real programs (a 40-byte header plus a short payload).
-/// Requests above the largest class go through the heap allocator, where the
-/// per-block overhead is a rounding error.
+// Size classes for the small-block pools on the Heap. Property blocks and
+// string bodies both draw from them, so the classes cover the property-table
+// sizes (8-byte slots growing at 1.5x: 64, 96, 144, 216, ...) and the string
+// sizes that dominate real programs (a 40-byte header plus a short payload).
+// Requests above the largest class go through the heap allocator, where the
+// per-block overhead is a rounding error.
 const usz POOL_CLASS_COUNT = 16;
 const usz[POOL_CLASS_COUNT] POOL_CLASS_SIZES = {
     48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192
 };
 
-/// The pool that holds a request of `size` bytes, or -1 when it exceeds the
-/// largest class and must go to the heap allocator.
+// The pool that holds a request of `size` bytes, or -1 when it exceeds the
+// largest class and must go to the heap allocator.
 fn int pool_class_index(usz size) @inline {
     for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
         if (size <= POOL_CLASS_SIZES[i]) return (int)i;
@@ -522,51 +522,51 @@ struct Heap {
     long  gc_trigger_counter;
     bool  gc_pending;            /// Deferred GC requested by alloc/realloc
     uint  bwd_gc_budget;         /// Countdown to the next backward-jump GC safepoint
-    /// Nesting depth of native builtin frames on the C3 stack. Non-zero means a
-    /// builtin may hold a fresh object in a raw local that no GC root can see,
-    /// so temproot flags must survive a safepoint collection. See mark_and_sweep.
+    // Nesting depth of native builtin frames on the C3 stack. Non-zero means a
+    // builtin may hold a fresh object in a raw local that no GC root can see,
+    // so temproot flags must survive a safepoint collection. See mark_and_sweep.
     uint  native_frame_depth;
     uint  live_obj_count;
     uint  peak_live_obj_count;   /// High-water mark for live objects
-    /// TVals visited by the last mark phase.
-    ///
-    /// live_obj_count counts only nodes on heap_allocated, which is what the
-    /// collection budget used to scale by. Marking cost is not that number: an
-    /// array's elements live inside its prop_alloc rather than as separate
-    /// nodes, so a 200k-element array marks 226k values while contributing ~1
-    /// to live_obj_count. Budgeting against the node count therefore let mark
-    /// cost grow with the array while the allocations permitted between cycles
-    /// stayed flat -- the product being quadratic. See mark_work_last use in
-    /// the trigger reset.
+    // TVals visited by the last mark phase.
+    //
+    // live_obj_count counts only nodes on heap_allocated, which is what the
+    // collection budget used to scale by. Marking cost is not that number: an
+    // array's elements live inside its prop_alloc rather than as separate
+    // nodes, so a 200k-element array marks 226k values while contributing ~1
+    // to live_obj_count. Budgeting against the node count therefore let mark
+    // cost grow with the array while the allocations permitted between cycles
+    // stayed flat -- the product being quadratic. See mark_work_last use in
+    // the trigger reset.
     ulong mark_work_last;
 
-    /// Host function registry. A host function is an ordinary FUNCTION object
-    /// whose builtin_fn_index is HOST_FN_BASE + slot, so every existing call
-    /// site treats it as a builtin and dispatch_builtin's out-of-range branch
-    /// routes it here. See builtins::HOST_FN_BASE.
-    ///
-    /// Not a GC root and does not need to be: the only heap pointer stored is
-    /// an interned HString for the name, which the intern table already keeps
-    /// alive for the heap's lifetime. No TVal lives here, so the 64-root
-    /// budget is untouched.
+    // Host function registry. A host function is an ordinary FUNCTION object
+    // whose builtin_fn_index is HOST_FN_BASE + slot, so every existing call
+    // site treats it as a builtin and dispatch_builtin's out-of-range branch
+    // routes it here. See builtins::HOST_FN_BASE.
+    //
+    // Not a GC root and does not need to be: the only heap pointer stored is
+    // an interned HString for the name, which the intern table already keeps
+    // alive for the heap's lifetime. No TVal lives here, so the 64-root
+    // budget is untouched.
     HostFnEntry* host_fns;
     uint         host_fn_count;
     uint         host_fn_capacity;
 
-    /// Stack of live host-call scopes; index host_scope_depth-1 is the
-    /// innermost. Scopes nest exactly as the C3 call stack does, so a
-    /// host -> JS -> host chain pushes one per level.
+    // Stack of live host-call scopes; index host_scope_depth-1 is the
+    // innermost. Scopes nest exactly as the C3 call stack does, so a
+    // host -> JS -> host chain pushes one per level.
     HostScope* host_scopes;
     uint       host_scope_depth;
     uint       host_scope_capacity;
-    /// Monotonic counter stamped into each handle. Never reset, so a handle
-    /// from a popped scope can never collide with a live one.
+    // Monotonic counter stamped into each handle. Never reset, so a handle
+    // from a popped scope can never collide with a live one.
     uint       host_scope_generation;
-    /// Monotonic compile-time id for class private-slot binding names
-    /// ("#priv:<id>:foo"), one per class body. Per-runtime: every compiler
-    /// context in one runtime shares it, so sibling classes across the
-    /// parent/arrow context split stay distinct, and separate runtimes never
-    /// race on it.
+    // Monotonic compile-time id for class private-slot binding names
+    // ("#priv:<id>:foo"), one per class body. Per-runtime: every compiler
+    // context in one runtime shares it, so sibling classes across the
+    // parent/arrow context split stay distinct, and separate runtimes never
+    // race on it.
     uint       priv_class_id;
 
     // Sweeping the string table is only safe when no raw HString* pointers sit
@@ -649,11 +649,11 @@ struct Heap {
     HObject* symbol_proto;
     HObject* bigint_proto;
     HObject* promise_proto;
-    /// Promise constructor, cached lazily and rooted through this field.
+    // Promise constructor, cached lazily and rooted through this field.
     HObject* promise_ctor;
-    /// %Function% (ES2015 §19.2.2). Kept so the later GeneratorFunction,
-    /// AsyncFunction, and AsyncGeneratorFunction passes can point their
-    /// [[Prototype]] at it, since the spec makes those subclasses of Function.
+    // %Function% (ES2015 §19.2.2). Kept so the later GeneratorFunction,
+    // AsyncFunction, and AsyncGeneratorFunction passes can point their
+    // [[Prototype]] at it, since the spec makes those subclasses of Function.
     HObject* function_ctor;
     HObject* generator_proto;
     HObject* generator_func_proto; // GeneratorFunction.prototype (ES6 §25.2.3)
@@ -683,10 +683,10 @@ struct Heap {
     GeneratorState* resume_gen;
     TVal yield_value;          /// Value yielded by YIELD opcode
     bool did_yield;            /// True when YIELD was just executed
-    /// Set by AWAIT when it suspends an async-generator body on an internal
-    /// await (ES2018 §27.6.3.8, §27.6.3.9). The drain then leaves the current
-    /// request's promise alone and a microtask ASYNC_GEN resume re-drives the
-    /// body. The drain clears this before each body resume.
+    // Set by AWAIT when it suspends an async-generator body on an internal
+    // await (ES2018 §27.6.3.8, §27.6.3.9). The drain then leaves the current
+    // request's promise alone and a microtask ASYNC_GEN resume re-drives the
+    // body. The drain clears this before each body resume.
     bool ag_did_await;
 
     // Initial generator call state. The initial-call path in vm_calls sets these
@@ -754,15 +754,15 @@ struct Heap {
     void*               capi_interrupt_fn;
     void*               capi_interrupt_opaque;
     uint                interrupt_budget;
-    /// Set when interrupt_budget runs down to zero; the switch site clears it
-    /// and calls the handler. The threaded burst charges the budget too and
-    /// bails on this flag, so back-edges consumed inside a burst still reach
-    /// the poll without underflowing (charge resets the budget at zero).
+    // Set when interrupt_budget runs down to zero; the switch site clears it
+    // and calls the handler. The threaded burst charges the budget too and
+    // bails on this flag, so back-edges consumed inside a burst still reach
+    // the poll without underflowing (charge resets the budget at zero).
     bool                interrupt_due;
-    /// Set while an "interrupted" error is unwinding. vm_throw_value skips
-    /// catch catchers while it is set, so script cannot swallow the abort;
-    /// finally blocks still run. Cleared only at the host boundary when the
-    /// BK_ERR_INTERRUPT status is handed out.
+    // Set while an "interrupted" error is unwinding. vm_throw_value skips
+    // catch catchers while it is set, so script cannot swallow the abort;
+    // finally blocks still run. Cleared only at the host boundary when the
+    // BK_ERR_INTERRUPT status is handed out.
     bool                uncatchable_throw;
 
     // Valstack window the GC scans for roots. valstack_base is refreshed on VM
@@ -784,13 +784,13 @@ struct Heap {
     VmCallHandlerFn     call_handler_fn;
     VmCallFn            call_fn;
     VmConstructFn       construct_fn;
-    /// Proxy trap bridges and the owning VM. See ProxyGetFn and ProxyHasFn.
+    // Proxy trap bridges and the owning VM. See ProxyGetFn and ProxyHasFn.
     ProxyGetFn          proxy_get_fn;
     ProxyHasFn          proxy_has_fn;
     void*               vm_ptr;
-    /// Marks activation-record env bindings during GC.
+    // Marks activation-record env bindings during GC.
     MarkActivationsFn   mark_activations_fn;
-    /// Marks or frees a suspended generator's Catcher chain. See CatcherChainFn.
+    // Marks or frees a suspended generator's Catcher chain. See CatcherChainFn.
     CatcherChainFn      catcher_chain_fn;
 
     // Well-known symbols. Each is created on first use and rooted by its field.
@@ -808,7 +808,7 @@ struct Heap {
     HString*            matchall_symbol;
     HString*            asynciterator_symbol;
 
-    /// Resolves downstream promises once a microtask handler finishes. Set by builtins init.
+    // Resolves downstream promises once a microtask handler finishes. Set by builtins init.
     MicrotaskAfterFn    microtask_after_fn;
 
     // Microtask queue, filled by promise_trigger_reactions and drained after
@@ -831,7 +831,7 @@ struct Heap {
     TVal*                unhandled_rejections;
     uint                 unhandled_count;
     uint                 unhandled_capacity;
-    /// Host callback for unhandled rejections, invoked at the end of the drain.
+    // Host callback for unhandled rejections, invoked at the end of the drain.
     RejectionTrackerFn   rejection_tracker_fn;
     void*                rejection_tracker_udata;
 
@@ -939,9 +939,9 @@ struct Heap {
 // Built-in string cache, pre-interned at heap creation
 // ============================================================================
 
-/// Indices into Heap.strs[] for frequently-used interned strings.
-/// Eliminates repeated hash+lookup for these strings on every property
-/// access, typeof, and error path.
+// Indices into Heap.strs[] for frequently-used interned strings.
+// Eliminates repeated hash+lookup for these strings on every property
+// access, typeof, and error path.
 enum BuiltinStr : uint {
     UNDEFINED,   // "undefined"
     OBJECT,      // "object"
@@ -991,8 +991,8 @@ enum BuiltinStr : uint {
     INDICES,       // "indices"
 }
 
-/// The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
-/// interns entry `i` into `Heap.strs[i]`, so the two must stay aligned.
+// The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
+// interns entry `i` into `Heap.strs[i]`, so the two must stay aligned.
 const String[] BUILTIN_STR_LITERALS = {
     "undefined", "object", "boolean", "number", "string", "function",
     "true", "false", "null", "message", "prototype", "constructor",
@@ -1173,16 +1173,16 @@ fn Heap*? create(
     return h;
 }
 
-/// The pre-interned, pinned HString for a builtin literal. Using this instead of
-/// re-interning the literal skips a hash and a string-table probe, and yields the
-/// same pointer the table holds, so pointer-identity equality is unaffected.
+// The pre-interned, pinned HString for a builtin literal. Using this instead of
+// re-interning the literal skips a hash and a string-table probe, and yields the
+// same pointer the table holds, so pointer-identity equality is unaffected.
 fn HString* Heap.str(&self, BuiltinStr which) @inline {
     return (HString*)self.strs[which.ordinal];
 }
 
-/// Pre-intern frequently-used strings into Heap.strs[], once at heap creation.
-/// Each string is allocated only if the table does not already hold it, so
-/// repeat calls are harmless.
+// Pre-intern frequently-used strings into Heap.strs[], once at heap creation.
+// Each string is allocated only if the table does not already hold it, so
+// repeat calls are harmless.
 fn void Heap.init_builtin_strs(&self) {
     foreach (i, lit : BUILTIN_STR_LITERALS) {
         HString* s = self.str_intern((char[])lit);
@@ -1194,13 +1194,13 @@ fn void Heap.init_builtin_strs(&self) {
     // Cache the "length" pointer for HObject.put_prop array_length sync.
 }
 
-/// Convert an integer to an interned HString*. Values from 0 to 255 come from
-/// the small-integer cache; anything else is formatted and interned.
-///
-/// As with Heap.str_intern, the result is a borrowed reference: use it directly
-/// as a property key, or incref it to anchor it in a TVal or register. Cached
-/// entries are pinned like the builtin strings above, so incref and decref
-/// against them do nothing and they never need releasing.
+// Convert an integer to an interned HString*. Values from 0 to 255 come from
+// the small-integer cache; anything else is formatted and interned.
+//
+// As with Heap.str_intern, the result is a borrowed reference: use it directly
+// as a property key, or incref it to anchor it in a TVal or register. Cached
+// entries are pinned like the builtin strings above, so incref and decref
+// against them do nothing and they never need releasing.
 fn HString* Heap.int_to_hstring(&self, long val) {
     if (val >= 0 && val <= 255) {
         usz idx = (usz)val;
@@ -1227,34 +1227,34 @@ fn HString* Heap.int_to_hstring(&self, long val) {
 // ============================================================================
 
 const uint SHAPE_INITIAL_CAP   = 64;
-/// The one value that is never a valid shape ID. It means "not a shape" in
-/// every context: no parent shape, no transition found, and no slot available.
-/// alloc_shape_slot() refuses to hand it out, so no live shape can equal it.
+// The one value that is never a valid shape ID. It means "not a shape" in
+// every context: no parent shape, no transition found, and no slot available.
+// alloc_shape_slot() refuses to hand it out, so no live shape can equal it.
 const uint SHAPE_NONE          = 0xFFFF_FFFF;
 const uint SHAPE_TRANS_INITIAL = 16;   // must be a power of 2
 const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
 
-/// Set on a shapes[] entry that is a free-list link rather than a shape
-/// pointer. The top address bit is never set on a real allocation.
+// Set on a shapes[] entry that is a free-list link rather than a shape
+// pointer. The top address bit is never set on a real allocation.
 const uptr SHAPE_FREE_TAG      = (uptr)1 << (uptr)(uptr::size * 8 - 1);
-/// A free-list link packs the next free id in the low bits and the retired
-/// generation above it, so reuse can resume past the generation that inline
-/// caches may still hold. Ids stop at 0xFFFE, so 16 bits cover them.
+// A free-list link packs the next free id in the low bits and the retired
+// generation above it, so reuse can resume past the generation that inline
+// caches may still hold. Ids stop at 0xFFFE, so 16 bits cover them.
 const uint SHAPE_FREE_LINK_BITS = 16;
 const uint SHAPE_FREE_LINK_MASK = 0xFFFF;
 const uint SHAPE_FREE_GEN_MASK  = 0x7FFF;
-/// End-of-list marker inside a link. Slot ids stop at 0xFFFE, so 0xFFFF is free
-/// to mean "no next".
+// End-of-list marker inside a link. Slot ids stop at 0xFFFE, so 0xFFFF is free
+// to mean "no next".
 const uint SHAPE_FREE_END       = 0xFFFF;
 
 struct TransitionEntry {
     uint parent_id;
     void* key;
     uint shape_id;
-    /// Raw PropFlags byte this transition installs. It is part of the dedup key:
-    /// objects that reach the same parent and add the same key with the same
-    /// flags share a shape, while differing flags need their own shape so
-    /// readers see the right attributes.
+    // Raw PropFlags byte this transition installs. It is part of the dedup key:
+    // objects that reach the same parent and add the same key with the same
+    // flags share a shape, while differing flags need their own shape so
+    // readers see the right attributes.
     char flags;
 }
 
@@ -1343,10 +1343,10 @@ fn void Heap.init_shapes(&self) {
     self.init_transition_table();
 }
 
-/// Reserve a slot in the shapes array and return its ID. The caller is
-/// responsible for storing the shape at shapes[id]. Returns SHAPE_NONE when no
-/// slot could be reserved, in which case no slot is consumed. The array grows on
-/// demand, so the only bound is what the allocator will hand out.
+// Reserve a slot in the shapes array and return its ID. The caller is
+// responsible for storing the shape at shapes[id]. Returns SHAPE_NONE when no
+// slot could be reserved, in which case no slot is consumed. The array grows on
+// demand, so the only bound is what the allocator will hand out.
 fn uint Heap.alloc_shape_slot(&self) {
     // Reuse a reclaimed slot before growing. Without this the pool is a pure
     // bump allocator and a delete/insert loop exhausts the id space.
@@ -1385,36 +1385,36 @@ fn uint Heap.alloc_shape_slot(&self) {
     return id;
 }
 
-/// Release a slot holding a *private* shape, freeing the shape and putting the
-/// id back on the free list.
-///
-/// Only private shapes may be passed here. A private shape has
-/// parent == PRIVATE_SHAPE_PARENT, is absent from the transition table, and is
-/// referenced by exactly one object -- the one replacing it right now. Freeing
-/// a transition-table shape instead would be a use-after-free, since other
-/// objects and cached transitions still point at it, so that case is rejected
-/// rather than trusted to the caller.
-/// Store a freshly created shape in a slot just returned by alloc_shape_slot,
-/// stamping the generation that keeps recycled ids from colliding with live
-/// inline-cache entries.
+// Release a slot holding a *private* shape, freeing the shape and putting the
+// id back on the free list.
+//
+// Only private shapes may be passed here. A private shape has
+// parent == PRIVATE_SHAPE_PARENT, is absent from the transition table, and is
+// referenced by exactly one object -- the one replacing it right now. Freeing
+// a transition-table shape instead would be a use-after-free, since other
+// objects and cached transitions still point at it, so that case is rejected
+// rather than trusted to the caller.
+// Store a freshly created shape in a slot just returned by alloc_shape_slot,
+// stamping the generation that keeps recycled ids from colliding with live
+// inline-cache entries.
 fn void Heap.store_new_shape(&self, uint id, hobject::Shape* sh) {
     sh.generation = self.shape_reuse_gen;
     self.shapes[id] = sh;
 }
 
-/// True when shapes[id] holds a real shape rather than a free-list link.
-/// Free slots store SHAPE_FREE_TAG | next_free; the tag is bit 63 (bit 31 on a
-/// 32-bit host), which no live allocation carries, so teardown can skip those
-/// entries instead of freeing an integer as a pointer.
+// True when shapes[id] holds a real shape rather than a free-list link.
+// Free slots store SHAPE_FREE_TAG | next_free; the tag is bit 63 (bit 31 on a
+// 32-bit host), which no live allocation carries, so teardown can skip those
+// entries instead of freeing an integer as a pointer.
 fn bool Heap.shape_slot_live(&self, uint id) {
     hobject::Shape* sh = self.shapes[id];
     if (sh == null) return false;
     return ((uptr)sh & SHAPE_FREE_TAG) == 0;
 }
 
-/// `release_keys` must be false when the replacement shape copied this shape's
-/// key pointers without increfing them: the references move to the new shape,
-/// so decrefing here would leave it holding freed keys.
+// `release_keys` must be false when the replacement shape copied this shape's
+// key pointers without increfing them: the references move to the new shape,
+// so decrefing here would leave it holding freed keys.
 fn void Heap.free_shape_slot(&self, uint id, bool release_keys) {
     if (id == 0 || id >= self.shape_count) return;
     if (self.shape_free_head == id) return;         // already free
@@ -1431,26 +1431,26 @@ fn void Heap.free_shape_slot(&self, uint id, bool release_keys) {
 }
 
 
-/// Transition to a new shape that includes the given property key, using the
-/// default WEC data-property flags.  Thin wrapper over
-/// transition_shape_new_flags() for the overwhelmingly common case.
+// Transition to a new shape that includes the given property key, using the
+// default WEC data-property flags.  Thin wrapper over
+// transition_shape_new_flags() for the overwhelmingly common case.
 fn uint Heap.transition_shape_new(&self, uint cur_shape_id, void* key) {
     return self.transition_shape_new_flags(cur_shape_id, key, hobject::PROP_FLAGS_WEC);
 }
 
-/// Transition to a shape that adds `key` with `flags`.
-///
-/// The key must be absent from the object; callers confirm that with
-/// find_prop_idx() first, which lets this skip the O(N) chain walk.
-///
-/// The transition table is keyed on (parent shape, key, flags), so two objects
-/// that reach the same parent and add the same key with the same flags converge
-/// on one shape. That holds for non-default flags too, such as every instance of
-/// a class installing the same private field. Differing flags for the same key
-/// produce separate shapes.
-/// Returns SHAPE_NONE when no shape could be produced. The caller must treat
-/// that as a hard failure: continuing with the unchanged shape would store a
-/// value the shape does not describe, which reads back as a missing property.
+// Transition to a shape that adds `key` with `flags`.
+//
+// The key must be absent from the object; callers confirm that with
+// find_prop_idx() first, which lets this skip the O(N) chain walk.
+//
+// The transition table is keyed on (parent shape, key, flags), so two objects
+// that reach the same parent and add the same key with the same flags converge
+// on one shape. That holds for non-default flags too, such as every instance of
+// a class installing the same private field. Differing flags for the same key
+// produce separate shapes.
+// Returns SHAPE_NONE when no shape could be produced. The caller must treat
+// that as a hard failure: continuing with the unchanged shape would store a
+// value the shape does not describe, which reads back as a missing property.
 fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
     if (cur_shape_id >= self.shape_count || !self.shape_slot_live(cur_shape_id)) {
         return cur_shape_id;
@@ -1488,7 +1488,7 @@ fn void Heap.bump_shape_gen(&self, uint shape_id) {
     }
 }
 
-/// Get a shape pointer by ID. Returns null if invalid or reclaimed.
+// Get a shape pointer by ID. Returns null if invalid or reclaimed.
 fn hobject::Shape* Heap.get_shape(&self, uint shape_id) {
     if (shape_id >= self.shape_count) return null;
     if (!self.shape_slot_live((uint)shape_id)) return null;
@@ -2005,13 +2005,13 @@ fn void Heap.reset(&self) {
 // Host function registry
 // ============================================================================
 
-/// Record a host function and return its slot, or -1 if the table cannot grow.
-///
-/// The slot is an index into host_fns; callers turn it into a callable object
-/// through builtins::make_host_function, which adds HOST_FN_BASE. Slots are
-/// never reused: a registration is permanent for the heap's lifetime, so an
-/// index captured in a function object can never come to mean a different
-/// function.
+// Record a host function and return its slot, or -1 if the table cannot grow.
+//
+// The slot is an index into host_fns; callers turn it into a callable object
+// through builtins::make_host_function, which adds HOST_FN_BASE. Slots are
+// never reused: a registration is permanent for the heap's lifetime, so an
+// index captured in a function object can never come to mean a different
+// function.
 fn long Heap.register_host_fn(&self, void* handler, void* udata, void* name, int arity, bool constructable) {
     if (handler == null) return -1;
     if (self.host_fn_count >= self.host_fn_capacity) {
@@ -2032,9 +2032,9 @@ fn long Heap.register_host_fn(&self, void* handler, void* udata, void* name, int
     return (long)slot;
 }
 
-/// Entry for `slot`, or null when the slot was never registered. Every caller
-/// treats null as "not a host function" rather than faulting, so a stale or
-/// forged index degrades to a TypeError instead of a wild jump.
+// Entry for `slot`, or null when the slot was never registered. Every caller
+// treats null as "not a host function" rather than faulting, so a stale or
+// forged index degrades to a TypeError instead of a wild jump.
 fn HostFnEntry* Heap.host_fn_at(&self, uint slot) {
     if (slot >= self.host_fn_count) return null;
     return &self.host_fns[slot];
@@ -2044,17 +2044,17 @@ fn HostFnEntry* Heap.host_fn_at(&self, uint slot) {
 // Host call scopes
 // ============================================================================
 
-/// Slot 0 of every scope holds `this`; slot 1 holds new.target; arguments
-/// start at HOST_SCOPE_ARG0. Fixed offsets keep bk_this/bk_arg branch-free.
+// Slot 0 of every scope holds `this`; slot 1 holds new.target; arguments
+// start at HOST_SCOPE_ARG0. Fixed offsets keep bk_this/bk_arg branch-free.
 const uint HOST_SCOPE_THIS = 0;
 const uint HOST_SCOPE_NEW_TARGET = 1;
 const uint HOST_SCOPE_ARG0 = 2;
 
-/// Push a scope for one host callback and return its depth index, or -1.
-///
-/// The backing store is an ARRAY object, which alloc_object temproot-pins for
-/// the duration of the surrounding native frame, so its elements survive any
-/// collection the host triggers without consuming a GC root.
+// Push a scope for one host callback and return its depth index, or -1.
+//
+// The backing store is an ARRAY object, which alloc_object temproot-pins for
+// the duration of the surrounding native frame, so its elements survive any
+// collection the host triggers without consuming a GC root.
 fn long Heap.host_scope_push(&self) {
     if (self.host_scope_depth >= self.host_scope_capacity) {
         uint new_cap = self.host_scope_capacity == 0 ? 4 : self.host_scope_capacity * 2;
@@ -2077,8 +2077,8 @@ fn long Heap.host_scope_push(&self) {
     return (long)depth;
 }
 
-/// Pop the innermost scope. Its values become unreachable and its generation
-/// is retired, so any handle still held by the host now fails validation.
+// Pop the innermost scope. Its values become unreachable and its generation
+// is retired, so any handle still held by the host now fails validation.
 fn void Heap.host_scope_pop(&self) {
     if (self.host_scope_depth == 0) return;
     self.host_scope_depth--;
@@ -2086,7 +2086,7 @@ fn void Heap.host_scope_pop(&self) {
     self.host_scopes[self.host_scope_depth].generation = 0;
 }
 
-/// Store `v` in the innermost scope at `index`, returning success.
+// Store `v` in the innermost scope at `index`, returning success.
 fn bool Heap.host_scope_set(&self, uint depth, uint index, TVal v) {
     if (depth >= self.host_scope_depth) return false;
     HObject* arr = self.host_scopes[depth].values;
@@ -2096,8 +2096,8 @@ fn bool Heap.host_scope_set(&self, uint depth, uint index, TVal v) {
     return arr.put_prop(key, v, hobject::PROP_FLAGS_WEC, self);
 }
 
-/// Read the value at `index` in scope `depth`. Returns false when the scope is
-/// gone or the index was never populated.
+// Read the value at `index` in scope `depth`. Returns false when the scope is
+// gone or the index was never populated.
 fn bool Heap.host_scope_get(&self, uint depth, uint index, TVal* out) {
     if (depth >= self.host_scope_depth) return false;
     HObject* arr = self.host_scopes[depth].values;
@@ -2110,7 +2110,7 @@ fn bool Heap.host_scope_get(&self, uint depth, uint index, TVal* out) {
     return true;
 }
 
-/// Generation stamp of scope `depth`, or 0 when that depth is not live.
+// Generation stamp of scope `depth`, or 0 when that depth is not live.
 fn uint Heap.host_scope_generation_at(&self, uint depth) {
     if (depth >= self.host_scope_depth) return 0;
     return self.host_scopes[depth].generation;
@@ -2143,13 +2143,13 @@ fn void Heap.track_compiled_func(&self, void* cf) {
 // Module system: hooks and cache management
 // ============================================================================
 
-/// Register module host hooks, before any module loading happens. Null selects
-/// the defaults. The pointer must stay valid for the lifetime of the Heap.
+// Register module host hooks, before any module loading happens. Null selects
+// the defaults. The pointer must stay valid for the lifetime of the Heap.
 fn void Heap.set_module_hooks(&self, void* hooks) {
     self.module_hooks = hooks;
 }
 
-/// Free the module cache and all ModuleDef entries.
+// Free the module cache and all ModuleDef entries.
 fn void Heap.free_module_cache(&self) {
     if (self.module_cache != null) {
         void** cache = (void**)self.module_cache;
@@ -2191,17 +2191,17 @@ fn void*? Heap.alloc(&self, usz size) {
     return ptr;
 }
 
-/// Allocate without running a collection. Used for refcounted allocations such
-/// as strings, which the mark-and-sweep heap_allocated list does not hold.
-///
-/// A synchronous GC from inside this allocator would be unsafe: it can free an
-/// in-flight object or string that a C3 local still points to but no GC root can
-/// see, such as the gap between alloc_object and the put_prop that anchors it,
-/// which corrupts the pool through a double free. Allocations here only ever set
-/// gc_pending, and the collection runs at the next safepoint.
-///
-/// Small requests come from the size-class pools; only oversized ones reach the
-/// allocator below, so strings pay no per-block malloc header.
+// Allocate without running a collection. Used for refcounted allocations such
+// as strings, which the mark-and-sweep heap_allocated list does not hold.
+//
+// A synchronous GC from inside this allocator would be unsafe: it can free an
+// in-flight object or string that a C3 local still points to but no GC root can
+// see, such as the gap between alloc_object and the put_prop that anchors it,
+// which corrupts the pool through a double free. Allocations here only ever set
+// gc_pending, and the collection runs at the next safepoint.
+//
+// Small requests come from the size-class pools; only oversized ones reach the
+// allocator below, so strings pay no per-block malloc header.
 fn void*? Heap.alloc_no_gc(&self, usz size) {
     // Large strings still count toward GC pressure. A program building many
     // multi-KB concat results held by short-lived objects would never burn the
@@ -2423,8 +2423,8 @@ fn void Heap.decref_tval(&self, TVal* tv) @inline {
     }
 }
 
-/// Copy a TVal from src to dst, keeping refcounts balanced. Increfs src, then
-/// decrefs the old dst value, then copies the bits. Does nothing when dst == src.
+// Copy a TVal from src to dst, keeping refcounts balanced. Increfs src, then
+// decrefs the old dst value, then copies the bits. Does nothing when dst == src.
 fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
     if (dst != src) {
         // The incref comes first so that when src and dst hold the same object
@@ -2441,22 +2441,22 @@ fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
     }
 }
 
-/// Move a builtin's result from its transient local TVal, such as the slot
-/// `ctx.result` points at, into a VM register.
-///
-/// Builtins fill that slot with increffing setters like `set_string`, whether
-/// the value is brand new or an existing one passing through. `tval_copy_ref`
-/// gives the register its own reference either way, which leaves the transient's
-/// claim outstanding. Most heap values have a backstop: mark-and-sweep reclaims
-/// objects, and the string table keeps interned strings alive at any refcount.
-/// Releasing those here would be pointless at best, and a use-after-free at
-/// worst, since a Symbol's backing string can sit at refcount 1 while other code
-/// still uses it.
-///
-/// A large, non-interned, non-symbol string has no such backstop. It is a
-/// refcounted leaf, so an unbalanced setter reference leaks it permanently, and
-/// that alone is what this releases. Requiring refcount == 1 confirms the
-/// setter's claim is the only one, as it is for a value just created.
+// Move a builtin's result from its transient local TVal, such as the slot
+// `ctx.result` points at, into a VM register.
+//
+// Builtins fill that slot with increffing setters like `set_string`, whether
+// the value is brand new or an existing one passing through. `tval_copy_ref`
+// gives the register its own reference either way, which leaves the transient's
+// claim outstanding. Most heap values have a backstop: mark-and-sweep reclaims
+// objects, and the string table keeps interned strings alive at any refcount.
+// Releasing those here would be pointless at best, and a use-after-free at
+// worst, since a Symbol's backing string can sit at refcount 1 while other code
+// still uses it.
+//
+// A large, non-interned, non-symbol string has no such backstop. It is a
+// refcounted leaf, so an unbalanced setter reference leaks it permanently, and
+// that alone is what this releases. Requiring refcount == 1 confirms the
+// setter's claim is the only one, as it is for a value just created.
 fn void Heap.store_builtin_result(&self, TVal* dst, TVal* transient) @inline {
     bool release_transient = false;
     if (transient.is_string()) {
@@ -2477,14 +2477,14 @@ fn void Heap.store_builtin_result(&self, TVal* dst, TVal* transient) @inline {
     }
 }
 
-/// Move a TVal from a register into a heap slot, handing src's reference to dst.
-/// The old dst value is decref'd and src's bits are moved in with no incref,
-/// since ownership transfers; the caller then clears src to undefined. A
-/// primitive already in dst needs no decref, so the branch skips it. This is the
-/// hot global-slot write path used by PUTGLOBAL.
-///
-/// Only the overwritten dst value decides whether a decref is owed. The move
-/// preserves src's refcount whether src is a heap value or a primitive.
+// Move a TVal from a register into a heap slot, handing src's reference to dst.
+// The old dst value is decref'd and src's bits are moved in with no incref,
+// since ownership transfers; the caller then clears src to undefined. A
+// primitive already in dst needs no decref, so the branch skips it. This is the
+// hot global-slot write path used by PUTGLOBAL.
+//
+// Only the overwritten dst value decides whether a decref is owed. The move
+// preserves src's refcount whether src is a heap value or a primitive.
 fn void Heap.tval_move_slot_fast(&self, TVal* dst, TVal* src) @inline {
     if (dst.is_heap_allocated()) {
         void* ptr = dst.get_heapptr();
@@ -2572,8 +2572,8 @@ fn void Heap.register_gc_root(&self, HeapHeader* hdr) {
 // Array.prototype.join cycle detection
 // ============================================================================
 
-/// True when `obj` is already being joined further up the call stack, i.e.
-/// recursing into it would not terminate.
+// True when `obj` is already being joined further up the call stack, i.e.
+// recursing into it would not terminate.
 fn bool Heap.join_visited_has(&self, HObject* obj) {
     for (uint i = 0; i < self.join_visited_count; i++) {
         if (self.join_visited[i] == (void*)obj) return true;
@@ -2581,9 +2581,9 @@ fn bool Heap.join_visited_has(&self, HObject* obj) {
     return false;
 }
 
-/// Mark `obj` as being joined. Returns false when the stack cannot grow, which
-/// callers must treat as a failure to enter rather than as "no cycle": pushing
-/// nothing would let the next level re-enter the same array unnoticed.
+// Mark `obj` as being joined. Returns false when the stack cannot grow, which
+// callers must treat as a failure to enter rather than as "no cycle": pushing
+// nothing would let the next level re-enter the same array unnoticed.
 fn bool Heap.join_visited_push(&self, HObject* obj) {
     if (self.join_visited_count >= self.join_visited_capacity) {
         usz new_cap = self.join_visited_capacity > 0
@@ -2598,7 +2598,7 @@ fn bool Heap.join_visited_push(&self, HObject* obj) {
     return true;
 }
 
-/// Unmark the innermost array being joined.
+// Unmark the innermost array being joined.
 fn void Heap.join_visited_pop(&self) {
     if (self.join_visited_count > 0) self.join_visited_count--;
 }
@@ -2694,8 +2694,8 @@ fn void Heap.mark_env_chain(&self, void* env_ptr) {
     }
 }
 
-/// Mark everything a suspended GeneratorState references. Both generator objects
-/// and the async/await resume and reject builtins go through here.
+// Mark everything a suspended GeneratorState references. Both generator objects
+// and the async/await resume and reject builtins go through here.
 fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
     if (gs == null) return;
     if (gs.saved_regs != null) {
@@ -3192,10 +3192,10 @@ fn void Heap.mark_roots(&self) {
 // Heap verification, built only with `-D HEAP_VERIFY`
 // ============================================================================
 
-/// Check that a HeapHeader is live and carries a valid htype. Objects and
-/// buffers are looked up by walking `heap_allocated`, which is O(n). Strings,
-/// symbols included, are checked by htype alone, since not all of them are in
-/// str_table. Returns false and writes a diagnostic to stderr on failure.
+// Check that a HeapHeader is live and carries a valid htype. Objects and
+// buffers are looked up by walking `heap_allocated`, which is O(n). Strings,
+// symbols included, are checked by htype alone, since not all of them are in
+// str_table. Returns false and writes a diagnostic to stderr on failure.
 fn bool Heap.validate_hobject(&self, HeapHeader* hdr, ZString where) {
 $if $feature(HEAP_VERIFY):
     if (hdr == null) {
@@ -3230,8 +3230,8 @@ $else
 $endif
 }
 
-/// Validate every heap pointer in a TVal array such as saved_regs, returning
-/// the number of errors found.
+// Validate every heap pointer in a TVal array such as saved_regs, returning
+// the number of errors found.
 fn uint Heap.verify_tval_array(&self, TVal* arr, uint count, ZString context) {
 $if $feature(HEAP_VERIFY):
     uint errors = 0;
@@ -3260,8 +3260,8 @@ $else
 $endif
 }
 
-/// Check that every GC root set points at a live heap object, returning true
-/// when all of them do. Built only with `-D HEAP_VERIFY`.
+// Check that every GC root set points at a live heap object, returning true
+// when all of them do. Built only with `-D HEAP_VERIFY`.
 fn bool Heap.verify_roots(&self, ZString context) {
 $if $feature(HEAP_VERIFY):
     io::eprintf("[HEAP_VERIFY] %s: checking roots...\n", context);
@@ -3439,9 +3439,9 @@ $else
 $endif
 }
 
-/// Report whether any suspended generator's saved_regs still references `ptr`,
-/// which would make freeing it leave a dangling pointer. The sweep calls this
-/// before freeing an object.
+// Report whether any suspended generator's saved_regs still references `ptr`,
+// which would make freeing it leave a dangling pointer. The sweep calls this
+// before freeing an object.
 fn bool Heap.is_in_generator_saved_regs(&self, HeapHeader* ptr) {
 $if $feature(HEAP_VERIFY):
     HeapHeader* walk = self.heap_allocated;
@@ -3782,10 +3782,10 @@ fn uint Heap.hash_string(&self, char[] data) {
     return h == hstring::HASH_DEFERRED ? h + 1 : h;
 }
 
-/// The string's content hash, computing and caching it if it was deferred.
-/// Interned strings always have it already, so this is a plain field read on
-/// the hot path; only a large non-interned string ever pays the O(blen) scan,
-/// and only if something actually needs its hash.
+// The string's content hash, computing and caching it if it was deferred.
+// Interned strings always have it already, so this is a plain field read on
+// the hot path; only a large non-interned string ever pays the O(blen) scan,
+// and only if something actually needs its hash.
 fn uint Heap.content_hash(&self, hstring::HString* s) {
     if (s.hash == hstring::HASH_DEFERRED) {
         s.hash = self.hash_string(s.get_data());
@@ -4011,15 +4011,15 @@ fn void Heap.large_string_unregister(&self, HString* s) {
     }
 }
 
-/// Allocate a non-interned concat accumulator holding `data` but with room to
-/// grow to `cap` bytes, so subsequent appends land in place instead of copying
-/// the whole accumulator again.
-///
-/// Used for `acc = acc + chunk` results at or over the VM's CONCAT_ACCUM_MIN,
-/// which is below `MAX_INTERN_BYTES`, so this does add un-interned strings in
-/// that range. They follow the same contract as the large ones: refcounted,
-/// registered here, and canonicalized by `ensure_interned` where identity
-/// matters. Returns null if allocation fails.
+// Allocate a non-interned concat accumulator holding `data` but with room to
+// grow to `cap` bytes, so subsequent appends land in place instead of copying
+// the whole accumulator again.
+//
+// Used for `acc = acc + chunk` results at or over the VM's CONCAT_ACCUM_MIN,
+// which is below `MAX_INTERN_BYTES`, so this does add un-interned strings in
+// that range. They follow the same contract as the large ones: refcounted,
+// registered here, and canonicalized by `ensure_interned` where identity
+// matters. Returns null if allocation fails.
 fn HString* Heap.alloc_concat_accumulator(&self, char[] data, uint cap) {
     HString*? new_s = hstring::hstring_alloc_cap(self, data, hstring::HASH_DEFERRED, cap);
     if (try s = new_s) {
@@ -4032,10 +4032,10 @@ fn HString* Heap.alloc_concat_accumulator(&self, char[] data, uint cap) {
     return null;
 }
 
-/// Intern an HString on demand. An already-interned string comes back
-/// unchanged; otherwise a lookup by content may find an existing copy, and
-/// failing that this string is inserted. Property lookup calls this when a
-/// non-interned concatenation result is used as a key.
+// Intern an HString on demand. An already-interned string comes back
+// unchanged; otherwise a lookup by content may find an existing copy, and
+// failing that this string is inserted. Property lookup calls this when a
+// non-interned concatenation result is used as a key.
 fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
     if (s.flags.is_interned) return s;
     // A large concat result reaches here with its hash still deferred, and the
@@ -4050,8 +4050,8 @@ fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
     return s;
 }
 
-/// Record that a lightfunc's virtual property was deleted. The bit index is
-/// fn_idx * 3 + prop_bit, with prop_bit 0 for name, 1 for length, 2 for prototype.
+// Record that a lightfunc's virtual property was deleted. The bit index is
+// fn_idx * 3 + prop_bit, with prop_bit 0 for name, 1 for length, 2 for prototype.
 fn void lf_mark_deleted(ulong* bits, uint fn_idx, uint prop_bit) @inline {
     if (fn_idx >= LF_MAX_TRACKED) return;
     uint idx = fn_idx * 3 + prop_bit;
@@ -4064,7 +4064,7 @@ fn bool lf_is_deleted(ulong* bits, uint fn_idx, uint prop_bit) @inline {
     return (bits[idx / 64] & ((ulong)1 << (idx % 64))) != 0;
 }
 
-/// Map a lightfunc virtual property name to its prop_bit, or -1 for any other key.
+// Map a lightfunc virtual property name to its prop_bit, or -1 for any other key.
 fn int lf_key_to_prop_bit(HString* key) @inline {
     if (key.equals("name")) return 0;
     if (key.equals("length")) return 1;
@@ -4092,10 +4092,10 @@ fn HString* Heap.str_intern(&self, char[] data) {
     return self.str_intern_normalized(data);
 }
 
-/// Intern bytes that are already CESU-8 canonical. Callers whose input has no
-/// raw 4-byte UTF-8 sequences, such as pure-ASCII builtin literals or data
-/// already put through `normalize_to_cesu8`, can skip the astral scan by
-/// calling this directly.
+// Intern bytes that are already CESU-8 canonical. Callers whose input has no
+// raw 4-byte UTF-8 sequences, such as pure-ASCII builtin literals or data
+// already put through `normalize_to_cesu8`, can skip the astral scan by
+// calling this directly.
 fn HString* Heap.str_intern_normalized(&self, char[] data) {
     // Strings this long are not used as property keys, symbols, or identifiers.
     // Interning them piles dead strings into the table until the next GC, giving
@@ -4154,9 +4154,9 @@ fn uint Heap.xorshift32(&self) {
 // Microtask queue, the spec's PromiseJobs job queue
 // ============================================================================
 
-/// Enqueue a promise reaction job as a (handler, argument, downstream) triple.
-/// The queue drains after each top-level script and after vm_call_fn_impl
-/// returns from a compiled function.
+// Enqueue a promise reaction job as a (handler, argument, downstream) triple.
+// The queue drains after each top-level script and after vm_call_fn_impl
+// returns from a compiled function.
 fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
     // Grow the queue if the new entry does not fit; each takes 3 TVal slots.
     uint needed = self.microtask_count + 1;
@@ -4176,9 +4176,9 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
     self.microtask_count++;
 }
 
-/// Run every queued job, including jobs enqueued while draining, such as when a
-/// handler resolves another promise. A re-entrancy guard keeps a nested call
-/// from starting a second drain.
+// Run every queued job, including jobs enqueued while draining, such as when a
+// handler resolves another promise. A re-entrancy guard keeps a nested call
+// from starting a second drain.
 fn void Heap.drain_microtasks(&self, void* vm) {
     if (self.microtask_draining) { return; }
     // An empty queue still has to fall through to the report: a top-level
@@ -4259,20 +4259,20 @@ fn void Heap.drain_microtasks(&self, void* vm) {
 // Unhandled rejection tracking
 // ============================================================================
 
-/// Install the host's unhandled-rejection callback. Passing null disables
-/// reporting, which is the default: the engine keeps recording rejections
-/// either way, so a tracker installed mid-run still sees later ones.
+// Install the host's unhandled-rejection callback. Passing null disables
+// reporting, which is the default: the engine keeps recording rejections
+// either way, so a tracker installed mid-run still sees later ones.
 fn void Heap.set_rejection_tracker(&self, RejectionTrackerFn fnp, void* udata) {
     self.rejection_tracker_fn = fnp;
     self.rejection_tracker_udata = udata;
 }
 
-/// Record a promise that was rejected with nothing watching it.
-///
-/// Called from promise_settle on every rejection. The verdict is provisional:
-/// `p.catch(...)` later in the same tick sets is_handled, and
-/// report_unhandled_rejections skips the entry. That is the whole reason the
-/// list exists rather than reporting at rejection time.
+// Record a promise that was rejected with nothing watching it.
+//
+// Called from promise_settle on every rejection. The verdict is provisional:
+// `p.catch(...)` later in the same tick sets is_handled, and
+// report_unhandled_rejections skips the entry. That is the whole reason the
+// list exists rather than reporting at rejection time.
 fn void Heap.track_rejection(&self, hobject::HObject* promise) {
     if (promise == null) return;
     if ((*promise.extra_ptr()).promise.in_reject_list) return;
@@ -4296,12 +4296,12 @@ fn void Heap.track_rejection(&self, hobject::HObject* promise) {
     (*promise.extra_ptr()).promise.in_reject_list = true;
 }
 
-/// Deliver the rejections that are still unhandled now that the queue is
-/// empty, then clear the list.
-///
-/// The list is drained into locals before any callback runs, because a tracker
-/// is host code that may evaluate script and reject further promises; those
-/// belong to the next drain, not this one.
+// Deliver the rejections that are still unhandled now that the queue is
+// empty, then clear the list.
+//
+// The list is drained into locals before any callback runs, because a tracker
+// is host code that may evaluate script and reject further promises; those
+// belong to the next drain, not this one.
 fn void Heap.report_unhandled_rejections(&self, void* vm) {
     if (self.unhandled_count == 0) return;
 
