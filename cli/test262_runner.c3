@@ -25,6 +25,23 @@ import boomkat::builtins;
 import std::io;
 
 // ============================================================================
+// Unhandled rejection tracking
+// ============================================================================
+
+// Unhandled rejections reported while the current test runs. The CLI installs
+// the same tracker; without it here, a promise that rejects with nothing
+// watching it is entirely invisible to the suite — which is how a spurious
+// rejection from the dynamic-import path went unnoticed while every affected
+// test scored PASS.
+int unhandled_rejection_count = 0;
+
+// Heap.set_rejection_tracker callback. Counts only — run_one_test prints the
+// verdict, since it is the frame that knows which test this belongs to.
+fn void runner_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reason, void* udata) {
+    unhandled_rejection_count++;
+}
+
+// ============================================================================
 // Manifest mode: read test paths from a file, run tests
 // ============================================================================
 
@@ -401,6 +418,11 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     if (catch err = source) { return 1; }
     char[] src = source;
 
+    // Installed per test: the heap is recreated between batches, and the count
+    // has to start at zero for every test regardless.
+    unhandled_rejection_count = 0;
+    hp.set_rejection_tracker(&runner_rejection_tracker, null);
+
     if (exec_js(v, hp, MIN_HARNESS) != 0) { io::eprintfn("  FAIL: MIN_HARNESS"); return 1; }
 
     if (assert_src.len > 0) {
@@ -562,6 +584,15 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
                 }
             }
         }
+    }
+
+    // Diagnostic only, never a verdict: test262 does not treat an unhandled
+    // rejection as a failure (`import('')` in the dynamic-import syntax tests
+    // rejects with nothing attached and still passes, which is why d8 is run
+    // with --ignore-unhandled-promises). Reporting it keeps the engine's own
+    // spurious rejections visible instead of silently scoring PASS.
+    if (unhandled_rejection_count > 0) {
+        io::eprintfn("  NOTE: %d unhandled promise rejection(s)", unhandled_rejection_count);
     }
 
     char[] kn = "__test262_fail";
