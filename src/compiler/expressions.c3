@@ -5737,6 +5737,14 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
             } else {
                 loop_var = self.alloc_reg();
             }
+        } else if (try slot_home = self.resolve_slot_global(var_name)) {
+            // A top-level `var` proven register-resident by
+            // pre_scan_global_var_slots lives in a home register, not the
+            // global object. `for (x of ...)` / `for ((x) of ...)` must write
+            // straight into that home; a PUTVAR would update the env slot while
+            // the body reads the stale register, so x stays undefined.
+            loop_var = slot_home;
+            reg_resident = true;
         } else {
             loop_var = self.alloc_reg();
         }
