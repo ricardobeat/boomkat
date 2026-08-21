@@ -2173,8 +2173,8 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // PUTPROP to write the new value back. The GETPROP emitted by
         // member_expr already loaded the value into `operand`; we keep it
         // (do NOT NOP it) so the register has the correct value at runtime.
-        // The obj/prop register indices are saved in X        // member.prop_reg by member_expr (and kept alive by the
-        // is_postfix check there).
+        // The obj/prop register indices are recorded in member.obj_reg / member.prop_reg
+        // by member_expr, and kept alive by the is_postfix check there.
         bool handled = false;
         if (self.last_was_member()) {
             ushort obj_reg = self.member_obj();
