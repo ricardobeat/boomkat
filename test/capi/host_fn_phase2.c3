@@ -1,11 +1,11 @@
-/// Phase 2 host-function tests: the call scope, the accessor API, throwing,
-/// and value round-tripping.
-///
-/// Everything here goes through builtins::host_* rather than reading
-/// ctx.regs directly, which is what the C ABI will layer handles over. The
-/// point of the phase is that the GC design holds: every test must also pass
-/// under the GC_STRESS + ASan target, where a collection happens at every
-/// allocation.
+// Phase 2 host-function tests: the call scope, the accessor API, throwing,
+// and value round-tripping.
+//
+// Everything here goes through builtins::host_* rather than reading
+// ctx.regs directly, which is what the C ABI will layer handles over. The
+// point of the phase is that the GC design holds: every test must also pass
+// under the GC_STRESS + ASan target, where a collection happens at every
+// allocation.
 module host_fn_phase2;
 
 import boomkat::builtins;
@@ -24,8 +24,8 @@ int g_fails;
 
 // --- host functions under test -------------------------------------------
 
-/// Sums every argument through host_arg, so the count and the scope reads are
-/// both exercised.
+// Sums every argument through host_arg, so the count and the scope reads are
+// both exercised.
 fn void host_sum(builtins::BuiltinContext* ctx, void* udata) {
     double sum = 0;
     uint n = builtins::host_argc(ctx);
@@ -38,12 +38,12 @@ fn void host_sum(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, r);
 }
 
-/// Returns argument 0 unchanged: the round-trip identity test.
+// Returns argument 0 unchanged: the round-trip identity test.
 fn void host_echo(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, builtins::host_arg(ctx, 0));
 }
 
-/// Reads past the end of the argument list; must be undefined, not garbage.
+// Reads past the end of the argument list; must be undefined, not garbage.
 fn void host_missing(builtins::BuiltinContext* ctx, void* udata) {
     TVal v = builtins::host_arg(ctx, 5);
     TVal r;
@@ -51,17 +51,17 @@ fn void host_missing(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, r);
 }
 
-/// Throws a TypeError with a fixed message.
+// Throws a TypeError with a fixed message.
 fn void host_throws(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_throw_error(ctx, builtins::HOST_ERR_TYPE, "host said no");
 }
 
-/// Throws its first argument as-is, so a non-Error thrown value round-trips.
+// Throws its first argument as-is, so a non-Error thrown value round-trips.
 fn void host_throws_value(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_throw(ctx, builtins::host_arg(ctx, 0));
 }
 
-/// Both throws and returns; the throw must win.
+// Both throws and returns; the throw must win.
 fn void host_throw_and_return(builtins::BuiltinContext* ctx, void* udata) {
     TVal r;
     r.set_fastint(1);
@@ -69,12 +69,12 @@ fn void host_throw_and_return(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_throw_error(ctx, builtins::HOST_ERR_RANGE, "throw wins");
 }
 
-/// Builds a fresh JS string from host bytes, including an astral character.
+// Builds a fresh JS string from host bytes, including an astral character.
 fn void host_greet(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, builtins::host_new_string(ctx, "host says hi"));
 }
 
-/// Reports whether it was called as a constructor.
+// Reports whether it was called as a constructor.
 fn void host_is_new(builtins::BuiltinContext* ctx, void* udata) {
     TVal r;
     r.set_boolean(builtins::host_is_construct(ctx));
@@ -92,9 +92,9 @@ fn void host_is_new(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, r);
 }
 
-/// Allocates repeatedly, then re-reads argument 0. Under GC_STRESS every one
-/// of those allocations collects, so this fails loudly if the scope is not
-/// keeping the argument alive.
+// Allocates repeatedly, then re-reads argument 0. Under GC_STRESS every one
+// of those allocations collects, so this fails loudly if the scope is not
+// keeping the argument alive.
 fn void host_alloc_churn(builtins::BuiltinContext* ctx, void* udata) {
     for (int i = 0; i < 64; i++) {
         builtins::host_new_string(ctx, "churn allocation");
@@ -116,7 +116,7 @@ fn bool install(Heap* hp, Vm* v, String name, void* handler, int arity, bool cto
     return env::env_declare(v.global_env, (void*)nm, fv);
 }
 
-/// Evaluate `src`; require the completion value to equal `want` numerically.
+// Evaluate `src`; require the completion value to equal `want` numerically.
 fn void check(Heap* hp, Vm* v, String label, String src, double want) {
     Lexer lex = lexer::lexer_init((char[])src, hp);
     defer lex.free_arena();

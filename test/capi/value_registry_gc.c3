@@ -1,12 +1,12 @@
-/// Value-registry GC tests, run under GC_STRESS + ASan.
-///
-/// The registry is a plain array rather than an HObject, so nothing marks it
-/// transitively -- Heap.capi_mark has to walk it. Under GC_STRESS a collection
-/// runs at every allocation, so a missing root turns into a deterministic
-/// use-after-free here instead of a rare corruption in the field.
-///
-/// The C ABI is driven through its exported entry points, the same surface a
-/// host uses.
+// Value-registry GC tests, run under GC_STRESS + ASan.
+//
+// The registry is a plain array rather than an HObject, so nothing marks it
+// transitively -- Heap.capi_mark has to walk it. Under GC_STRESS a collection
+// runs at every allocation, so a missing root turns into a deterministic
+// use-after-free here instead of a rare corruption in the field.
+//
+// The C ABI is driven through its exported entry points, the same surface a
+// host uses.
 module value_registry_gc;
 
 import boomkat::capi;
@@ -24,13 +24,13 @@ fn void check(String label, bool cond) {
     }
 }
 
-/// Handles held across heavy allocation must keep their values alive and
-/// unchanged.
-///
-/// The values are OBJECTS on purpose. The sweep frees anything the mark phase
-/// did not reach, regardless of refcount, so an object reachable only from the
-/// registry is collected out from under the host unless capi_mark walks it.
-/// A held string would survive on its refcount alone and prove nothing.
+// Handles held across heavy allocation must keep their values alive and
+// unchanged.
+//
+// The values are OBJECTS on purpose. The sweep frees anything the mark phase
+// did not reach, regardless of refcount, so an object reachable only from the
+// registry is collected out from under the host unless capi_mark walks it.
+// A held string would survive on its refcount alone and prove nothing.
 fn void test_handles_survive_gc(void* rt) {
     const uint N = 96;
     uint[N] held;
@@ -66,8 +66,8 @@ fn void test_handles_survive_gc(void* rt) {
     for (uint i = 0; i < made; i++) capi::bk_value_free(rt, held[i]);
 }
 
-/// Freed handles must stop rooting their values, or the registry is a leak that
-/// GC_STRESS will not catch but a long-running host will.
+// Freed handles must stop rooting their values, or the registry is a leak that
+// GC_STRESS will not catch but a long-running host will.
 fn void test_freed_handles_release(void* rt) {
     uint churned = 0;
     for (uint i = 0; i < 2000; i++) {

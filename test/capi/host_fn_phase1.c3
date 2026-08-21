@@ -1,9 +1,9 @@
-/// Phase 1 host-function tests: dispatch through the reserved index range.
-///
-/// Registers host functions directly against the Heap (no C ABI yet, that is
-/// Phase 3) and evaluates JS that calls them through every dispatch shape the
-/// plan enumerates: plain call, method with `this`, .call/.apply/.bind, getter,
-/// setter, new, super(), a builtin callback, and .name/.length metadata.
+// Phase 1 host-function tests: dispatch through the reserved index range.
+//
+// Registers host functions directly against the Heap (no C ABI yet, that is
+// Phase 3) and evaluates JS that calls them through every dispatch shape the
+// plan enumerates: plain call, method with `this`, .call/.apply/.bind, getter,
+// setter, new, super(), a builtin callback, and .name/.length metadata.
 module host_fn_phase1;
 
 import boomkat::builtins;
@@ -23,14 +23,14 @@ int g_fails;
 
 // --- host functions under test -------------------------------------------
 
-/// Returns 42, ignoring arguments. The minimal proof that dispatch lands.
+// Returns 42, ignoring arguments. The minimal proof that dispatch lands.
 fn void host_answer(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
     ctx.result.set_fastint(42);
 }
 
-/// Sums its first two arguments, exercising argument access from the register
-/// window the VM already staged.
+// Sums its first two arguments, exercising argument access from the register
+// window the VM already staged.
 fn void host_add(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
     double sum = 0;
@@ -41,7 +41,7 @@ fn void host_add(builtins::BuiltinContext* ctx, void* udata) {
     ctx.result.set_number(sum);
 }
 
-/// Returns the `this` receiver's .x, proving this_val is delivered.
+// Returns the `this` receiver's .x, proving this_val is delivered.
 fn void host_get_x(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
     ctx.result.set_undefined();
@@ -54,13 +54,13 @@ fn void host_get_x(builtins::BuiltinContext* ctx, void* udata) {
     *ctx.result = v;
 }
 
-/// Reads the udata pointer through as an int, proving passthrough.
+// Reads the udata pointer through as an int, proving passthrough.
 fn void host_udata(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
     ctx.result.set_fastint(udata == null ? -1 : (long)*(int*)udata);
 }
 
-/// A constructor: sets this.tag = 7.
+// A constructor: sets this.tag = 7.
 fn void host_ctor(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
     if (ctx.this_val.is_object()) {
@@ -74,8 +74,8 @@ fn void host_ctor(builtins::BuiltinContext* ctx, void* udata) {
     ctx.result.set_undefined();
 }
 
-/// Comparator for Array.prototype.sort: descending. Exercises a builtin
-/// calling a host function (the path most designs forget).
+// Comparator for Array.prototype.sort: descending. Exercises a builtin
+// calling a host function (the path most designs forget).
 fn void host_cmp(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
     double a = 0;
@@ -98,7 +98,7 @@ fn bool install(Heap* hp, Vm* v, String name, void* handler, void* udata, int ar
     return env::env_declare(v.global_env, (void*)nm, fv);
 }
 
-/// Evaluate `src` and compare its completion value's number to `want`.
+// Evaluate `src` and compare its completion value's number to `want`.
 fn void check_num(Heap* hp, Vm* v, String label, String src, double want) {
     Lexer lex = lexer::lexer_init((char[])src, hp);
     defer lex.free_arena();
@@ -143,7 +143,7 @@ fn void check_num(Heap* hp, Vm* v, String label, String src, double want) {
     io::printfn("ok   %s = %f", label, d);
 }
 
-/// Evaluate `src` and require it to be truthy (used for string/boolean asserts).
+// Evaluate `src` and require it to be truthy (used for string/boolean asserts).
 fn void check_true(Heap* hp, Vm* v, String label, String src) {
     check_num(hp, v, label, src, 1.0);
 }

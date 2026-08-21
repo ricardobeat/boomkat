@@ -1,10 +1,10 @@
-/// Phase 4 host-function tests: calling JS from host code.
-///
-/// Covers the host -> JS -> host round trip, argument and `this` passing,
-/// exception propagation out of a callee, and the run-depth guard that bounds
-/// unbounded mutual recursion. Also re-checks that a host argument survives a
-/// nested call that reallocates the valstack, which is the specific hazard the
-/// call scope exists to prevent.
+// Phase 4 host-function tests: calling JS from host code.
+//
+// Covers the host -> JS -> host round trip, argument and `this` passing,
+// exception propagation out of a callee, and the run-depth guard that bounds
+// unbounded mutual recursion. Also re-checks that a host argument survives a
+// nested call that reallocates the valstack, which is the specific hazard the
+// call scope exists to prevent.
 module host_fn_phase4;
 
 import boomkat::builtins;
@@ -23,7 +23,7 @@ int g_fails;
 
 // --- host functions under test -------------------------------------------
 
-/// hostApply(f, x) -> f(x). The minimal host -> JS call.
+// hostApply(f, x) -> f(x). The minimal host -> JS call.
 fn void host_apply(builtins::BuiltinContext* ctx, void* udata) {
     TVal f = builtins::host_arg(ctx, 0);
     TVal a = builtins::host_arg(ctx, 1);
@@ -35,7 +35,7 @@ fn void host_apply(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, r);
 }
 
-/// hostApplyThis(f, recv) -> f.call(recv), proving `this` is delivered.
+// hostApplyThis(f, recv) -> f.call(recv), proving `this` is delivered.
 fn void host_apply_this(builtins::BuiltinContext* ctx, void* udata) {
     TVal f = builtins::host_arg(ctx, 0);
     TVal recv = builtins::host_arg(ctx, 1);
@@ -45,8 +45,8 @@ fn void host_apply_this(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, r);
 }
 
-/// Calls f(x) and then re-reads its own argument 0, asserting the call scope
-/// survived a nested execution that may have reallocated the valstack.
+// Calls f(x) and then re-reads its own argument 0, asserting the call scope
+// survived a nested execution that may have reallocated the valstack.
 fn void host_call_then_read(builtins::BuiltinContext* ctx, void* udata) {
     TVal f = builtins::host_arg(ctx, 0);
     TVal a = builtins::host_arg(ctx, 1);
@@ -59,8 +59,8 @@ fn void host_call_then_read(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, builtins::host_arg(ctx, 1));
 }
 
-/// Calls a JS function that throws, without checking ok: the throw must still
-/// propagate rather than being swallowed into an undefined result.
+// Calls a JS function that throws, without checking ok: the throw must still
+// propagate rather than being swallowed into an undefined result.
 fn void host_call_throwing(builtins::BuiltinContext* ctx, void* udata) {
     TVal f = builtins::host_arg(ctx, 0);
     TVal undef;
@@ -71,7 +71,7 @@ fn void host_call_throwing(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_return(ctx, r);
 }
 
-/// Calls a non-callable value, which must produce a TypeError.
+// Calls a non-callable value, which must produce a TypeError.
 fn void host_call_bad(builtins::BuiltinContext* ctx, void* udata) {
     TVal notfn = builtins::host_arg(ctx, 0);
     TVal undef;
@@ -80,8 +80,8 @@ fn void host_call_bad(builtins::BuiltinContext* ctx, void* udata) {
     builtins::host_call(ctx, notfn, null, 0, undef, &ok);
 }
 
-/// Unbounded host -> JS -> host recursion. Must terminate by throwing rather
-/// than exhausting the native stack.
+// Unbounded host -> JS -> host recursion. Must terminate by throwing rather
+// than exhausting the native stack.
 fn void host_recurse(builtins::BuiltinContext* ctx, void* udata) {
     TVal f = builtins::host_arg(ctx, 0);
     TVal undef;
