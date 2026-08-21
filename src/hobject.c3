@@ -1,20 +1,17 @@
-// HObject, the representation behind every ECMAScript object, ordinary and
-// exotic alike. Each one carries a HeapHeader-compatible prefix of flags and GC
-// list pointers, a prototype link, and a property table with a linear entry
-// array plus a hash part for fast named lookup.
+// HObject, the representation behind every ECMAScript object. Each carries a
+// HeapHeader-compatible prefix of flags and GC list pointers, a prototype
+// link, and a property table: a linear entry array plus a hash part for fast
+// named lookup.
 //
-// Integer-indexed properties below `array_size` can also live in a dense array
-// part, which keeps a dense JS array from needing a PropEntry per element.
+// Integer-indexed properties below `array_size` can live in a dense array
+// part instead, so a dense JS array needs no PropEntry per element.
 //
-// Looking up a property takes the first of these that applies:
-//   1. The key is an interned string naming an array index below `array_size`,
-//      so the array part answers it.
-//   2. A hash table exists, so hashing the key pointer gives an index into the
-//      props array, and the keys are then compared.
+// Lookup takes the first of these that applies:
+//   1. The key is an interned string naming an array index below `array_size`:
+//      the array part answers it.
+//   2. A hash table exists: hashing the key pointer gives an index into the
+//      props array, then keys are compared.
 //   3. Otherwise the props array is scanned linearly.
-//
-// The hash table holds uint indices into the props array, with HASH_UNUSED and
-// HASH_DELETED marking empty and tombstone slots.
 module boomkat::hobject;
 
 import boomkat::types;
@@ -30,22 +27,17 @@ import std::io;
 faultdef PROP_NOT_FOUND;
 faultdef OBJ_ALLOC_FAULT;
 
-// Read the `bindings` field out of an opaque EnvRecord*, returning null for a
-// null pointer. This exists for heap.c3, which marks a GeneratorState's saved
-// var_env and lex_env but cannot import env.c3, since env.c3 imports heap.c3.
-// hobject.c3 already imports env.c3 for HObjectFunction, so the typed
-// dereference happens here.
+// Read fields out of an opaque EnvRecord* for heap.c3, which marks saved scope
+// chains during GC but cannot import env.c3 (env.c3 imports heap.c3).
 fn HObject* env_record_bindings(void* env_ptr) {
     if (env_ptr == null) return null;
     return ((env::EnvRecord*)env_ptr).bindings;
 }
 
-// Read the `parent` field out of an opaque EnvRecord*, so heap.c3 can walk a
-// whole scope chain during GC marking. EnvRecords are pool allocated and never
-// collected, but each one's `bindings` HObject is an ordinary heap node.
-// Marking only the innermost link leaves every enclosing scope's bindings
-// unmarked, and a closure reading an outer binding after the sweep would
-// dereference freed memory. Returns null for a null env_ptr.
+// Read the `parent` link from an opaque EnvRecord*, so heap.c3 can mark a whole
+// scope chain. EnvRecords are pool allocated and never collected, but each
+// one's `bindings` HObject is an ordinary heap node: marking only the
+// innermost link would leave enclosing scopes' bindings unmarked.
 fn void* env_record_parent(void* env_ptr) {
     if (env_ptr == null) return null;
     return (void*)((env::EnvRecord*)env_ptr).parent;
@@ -248,25 +240,16 @@ bitstruct ObjFlags : uint {
     // flags would be O(depth), making bulk reads O(N^2).
     bool has_nondefault_flags : 27;
     // Module Namespace Exotic Object (ECMA-262 §10.4.6). Exports are stored as
-    // live-binding accessor properties, but the reflective surface must present
-    // them as data descriptors of
-    // {value, writable:true, enumerable:true, configurable:false}. The builtins
-    // that interpose on this flag are getOwnPropertyDescriptor, defineProperty,
-    // hasOwnProperty, Object.keys, propertyIsEnumerable, for-in,
-    // Reflect.deleteProperty, [[Set]], and [[Delete]]. Plain [[Get]] still runs
-    // through the accessors, which already throw a ReferenceError on TDZ.
+    // live-binding accessors but must present as data descriptors
+    // {writable:true, enumerable:true, configurable:false}; the builtins that
+    // interpose on this flag handle that. Plain [[Get]] still runs through the
+    // accessors, which throw a ReferenceError on TDZ.
     bool exotic_module_ns : 28;
-    // Set the first time an array-index key (e.g. "2") is installed in this
-    // object's named property table, on any class. For an exotic array this
-    // usually means some index now lives only in the named table, with its
-    // own configurable/writable/enumerable flags, rather than the dense part
-    // (see builtin_object_defineProperty's "dense array promotion", which
-    // clears the dense slot at the same index once it promotes it); for a
-    // plain object every numeric-looking key is a named property to begin
-    // with. Never cleared, so it is conservative like has_nondefault_flags:
-    // array push/pop fast paths use it (both on the receiver and while
-    // walking its prototype chain) to skip an O(prop_count) scan of every
-    // named key in the common case where no index was ever installed there.
+    // Set when an array-index key (e.g. "2") is installed in the named
+    // property table, meaning that index may no longer live only in the dense
+    // part. Never cleared, like has_nondefault_flags. Array push/pop fast
+    // paths use it (on the receiver and while walking its prototype chain) to
+    // skip an O(prop_count) scan of named keys.
     bool has_indexed_named_prop : 29;
 }
 
@@ -502,34 +485,26 @@ struct HObjectFunction {
     EnvRecord*        var_env;
     EnvRecord*        lex_env;
     int               builtin_fn_index;
-    // Arrow functions only, where ES2015 §9.2.1 makes [[ThisMode]] lexical.
-    // Holds the enclosing activation's `this` from when the closure was
-    // created, and every later call reuses it however the arrow is invoked:
-    // bare, through .call or .apply, as a builtin callback with a thisArg, or
-    // across vm_call_fn_impl's nested Vm.run boundary. Unused on non-arrows.
-    // It sits after builtin_fn_index so that HObjectProxy, which overlays this
-    // struct, keeps that field at the same offset.
+    // Arrow functions only ([[ThisMode]] lexical, ES2015 §9.2.1): the
+    // enclosing activation's `this` from closure creation, reused however the
+    // arrow is later invoked. Unused on non-arrows. It sits after
+    // builtin_fn_index so HObjectProxy, which overlays this struct, keeps that
+    // field at the same offset.
     TVal              captured_this;
-    // Arrow functions only, where ES2015 §9.2.1 makes [[NewTarget]] lexical.
-    // Holds the enclosing function's new.target from closure-creation time.
-    // Like captured_this it outlives the enclosing frame, so walking the
-    // activation chain at call time cannot recover it. Null on non-arrows and
-    // when the enclosing invocation had no new.target.
+    // Arrow functions only: the enclosing function's new.target from
+    // closure-creation time, which outlives the enclosing frame. Null on
+    // non-arrows and when the enclosing invocation had no new.target.
     HObject*          captured_new_target;
     // Bound function internals: [[BoundTargetFunction]], [[BoundThis]], and
-    // [[BoundArguments]] from ES2015+ §10.4.1. Live only when flags.is_bound is
-    // set, and zeroed on every other FUNCTION object.
+    // [[BoundArguments]] (ES2015+ §10.4.1). Live only when flags.is_bound.
     //
-    // They are plain fields rather than a union variant because bound functions
-    // are ObjClass.FUNCTION, and generic call dispatch reads builtin_fn_index
-    // through this struct without first checking is_bound; a variant would have
-    // to match that field's offset exactly. They are not property-table entries
-    // either, since Object.getOwnPropertyNames and Reflect.ownKeys report
-    // non-enumerable own properties and would expose them.
-    //
-    // bound_target is a full TVal because the target can be a lightfunc.
-    // bound_args is null when nothing was bound beyond `this`, and otherwise a
-    // real JS Array, so spreading and .length reads work on it unchanged.
+    // Plain fields rather than a union variant because bound functions are
+    // ObjClass.FUNCTION and generic dispatch reads builtin_fn_index through
+    // this struct without checking is_bound first; not property-table entries
+    // because getOwnPropertyNames and Reflect.ownKeys would expose them.
+    // bound_target is a full TVal because the target can be a lightfunc;
+    // bound_args is null when nothing beyond `this` was bound, otherwise a
+    // real JS Array so spreading and .length work unchanged.
     TVal              bound_target;
     TVal              bound_this;
     HObject*          bound_args;
@@ -540,11 +515,10 @@ struct HObjectPrimitive {
     TVal              primitive_value;
 }
 
-// Error object ([[ErrorData]] instances, ObjClass.ERROR), holding the stack
-// string captured at construction. The error-stack-accessor proposal exposes it
-// only through the accessor pair on Error.prototype and never as an own
-// property, so it stays out of the property table where
-// getOwnPropertyNames, Reflect.ownKeys, and for-in cannot see it.
+// Error object ([[ErrorData]], ObjClass.ERROR), holding the stack string
+// captured at construction. Exposed only through the accessor pair on
+// Error.prototype, never as an own property, so it stays out of the property
+// table where getOwnPropertyNames and for-in cannot see it.
 struct HObjectError {
     TVal              captured_stack;
 }
@@ -735,23 +709,19 @@ struct PropHashInfo {
     uint  count;    /// prop_count as of the last rebuild
 }
 
-// Open-addressed index over a collection's array_part, so Map/Set lookups do
-// not scan it.
+// Map/Set lookup index over array_part, so lookups need not scan it.
 //
 // Map, Set, WeakMap and WeakSet keep their entries in array_part -- keys and
-// values interleaved for the Maps, values alone for the Sets -- and every
-// add/has/get/delete used to walk that array comparing each entry with
-// SameValueZero. Building a 100k Set was therefore quadratic and took 24
-// seconds against QuickJS's 9ms, with 90% of samples inside the comparison.
+// values interleaved for the Maps, values alone for the Sets -- so scanning it
+// per operation is quadratic over a large collection. This index answers each
+// lookup with one probe.
 //
-// `slots` holds 1-based array_part indices, 0 meaning empty and DELETED_SLOT
-// meaning a tombstone that probing must step over. Storing indices rather
-// than keys keeps array_part the single source of truth: iteration order,
-// tombstone semantics and GC tracing all stay exactly as they were, and the
-// index costs one uint per slot rather than a second copy of every key.
+// `slots` holds 1-based array_part indices, 0 empty, DELETED_SLOT a tombstone
+// probing must step over. Storing indices keeps array_part the single source
+// of truth for iteration order, tombstone semantics and GC tracing, and costs
+// one uint per slot rather than a second copy of every key.
 //
-// Built lazily once a collection exceeds COLL_HASH_MIN_ENTRIES, so the small
-// collections that dominate real code keep paying nothing.
+// Built lazily once a collection exceeds COLL_HASH_MIN_ENTRIES.
 struct CollHashInfo {
     uint* slots;   /// 1-based indices into array_part; 0 = empty
     uint  mask;    /// one less than the slot count, which is a power of two
@@ -1407,11 +1377,9 @@ fn bool dense_index_ok(uint cur_size, uint idx) {
 // transition to the caller, through Heap.transition_shape.
 fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
     // Property lookup compares keys by pointer, so a stored key must be the
-    // canonical interned string. Callers such as JSON.parse and
-    // builtin_to_property_key_vm hand in un-interned concatenation results;
-    // canonicalize here so the rest of this function and every later
-    // find_prop_idx can rely on pointer identity. Symbols pass through:
-    // their unique counter hash keeps them distinct in the table.
+    // canonical interned string; callers hand in un-interned concatenation
+    // results. Symbols pass through: their unique counter hash keeps them
+    // distinct in the table.
     if (key != null && !((hstring::HString*)key).flags.is_interned) {
         key = (void*)h.ensure_interned((hstring::HString*)key);
     }
@@ -1516,22 +1484,15 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     }
     self.prop_count++;
 
-    // This is the one place a new named-table slot is created (prop_count is
-    // incremented nowhere else), so it is the exhaustive choke point for
-    // detecting an array-index key entering the named table: some dense-array
-    // fast path (push/pop and anything else that trusts array_part() as the
-    // sole source of truth for in-range indices) may need to know a
-    // particular index no longer lives only there. Tracked for every class,
-    // not just exotic arrays: a plain object has no dense part of its own,
-    // but can sit on an array's prototype chain, where an indexed data or
-    // accessor property must still take priority over CreateDataProperty on
-    // a receiver that appends past its own length (e.g. Array.prototype.push
-    // walking the chain to decide whether a new index is truly unclaimed).
-    // The array-index case above returns early without reaching here for the
-    // common densely-written index on an exotic array, so for those this
-    // only fires for indices dense_index_ok rejected or an explicit
-    // named-table promotion (see e.g. Object.defineProperty's "dense array
-    // promotion", which follows by clearing the dense slot).
+    // This is the only place a named-table slot is created, so it is the choke
+    // point for detecting an array-index key entering the named table: dense
+    // fast paths that trust array_part() need to know an index may no longer
+    // live only there. Tracked for every class, not just exotic arrays: a
+    // plain object can sit on an array's prototype chain, where an indexed
+    // property must still take priority over CreateDataProperty on a receiver
+    // appending past its own length. The dense-index case above returns early,
+    // so this fires only for indices dense_index_ok rejected or an explicit
+    // named-table promotion.
     HString* new_key_hs = (HString*)key;
     if (new_key_hs.is_arridx()) {
         self.flags.has_indexed_named_prop = true;
@@ -1762,19 +1723,14 @@ fn TVal? HObject.get_array_idx(&self, uint idx) {
 // caller should then fall through to put_prop.
 // Keep a materialised named "length" property in sync with array_len_ptr.
 //
-// Most arrays never get a named "length" entry at all — array_len_ptr is the
-// sole source of truth and every reader (get_prop, get_prop_proto, for-in,
-// JSON.stringify) knows to fall back to it. But SETALEN (array literals) and
-// arr_set_length_or_throw both call put_prop with the "length" key, which
-// creates a real prop_values() slot holding a TVal snapshot of the length.
-// Once that slot exists, any later write that bumps array_len_ptr through a
-// fast path bypassing put_prop's own key==length_key branch — the dense
-// indexed-store fast paths here and in vm_property.c3's PUTPROP handler —
-// must update the same slot, or a reader that finds the named property first
-// (find_prop_idx succeeds before the array_len_ptr fallback is ever reached)
-// sees the stale value frozen at whatever SETALEN last wrote. This is a
-// no-op, no lookup beyond the one find_prop_idx, for the (overwhelmingly
-// common) case where no such property exists.
+// Most arrays never get a named "length" entry: array_len_ptr is the sole
+// source of truth and every reader falls back to it. But SETALEN (array
+// literals) and arr_set_length_or_throw call put_prop with the "length" key,
+// which creates a real prop_values() slot holding a snapshot of the length.
+// Once that slot exists, any write that bumps array_len_ptr through a fast
+// path bypassing put_prop's key==length_key branch must update it too, or a
+// reader that finds the named property first sees a stale value. A no-op
+// lookup for the common case where no such property exists.
 fn void HObject.sync_named_length(&self, heap::Heap* h) {
     if (!self.flags.exotic_array) return;
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
@@ -1940,21 +1896,14 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 
 // Allocate and initialise a new HObject of the given class.
 //
-// `heap_ptr` is an opaque Heap pointer. The caller must insert the object into
-// the heap's GC list, which this does not do; Heap.alloc_object wraps both.
+// `heap_ptr` is an opaque Heap pointer. The caller inserts the object into the
+// heap's GC list; Heap.alloc_object wraps both steps.
 //
-// Attempts pool allocation first (O(1) bump or freelist pop). Falls back
-// to malloc when the pool is exhausted; the pool_fallback flag is set so
-// hobject_free routes the free correctly.
+// Pool allocation first, malloc fallback when the pool is exhausted
+// (flags.pool_fallback records which, so hobject_free routes the free).
 //
-// The object starts with:
-//   - flags.htype          = HType.OBJECT
-//   - flags.extensible     = true
-//   - flags.obj_class      = cls
-//   - (padding)            = 0
-//   - Empty property table and no array part
-//
-// Returns `null` on allocation failure.
+// The object starts with htype OBJECT, extensible, class `cls`, an empty
+// property table, and no array part. Returns `null` on allocation failure.
 fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     usz alloc_sz = alloc_size_for_class(cls);
 
@@ -2018,13 +1967,12 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     return obj;
 }
 
-// Free an HObject along with everything it owns: the property table and the
-// array part. The caller must already have unlinked it from the
-// heap's GC list.
+// Free an HObject and everything it owns: the property table and the array
+// part. The caller has already unlinked it from the heap's GC list.
 //
-// A pooled object, meaning one without flags.pool_fallback, goes back to its
-// FixedBlockPool. The rest are freed through the heap's allocator, or through
-// mem::free when no heap is active.
+// A pooled object (no flags.pool_fallback) goes back to its FixedBlockPool;
+// the rest are freed through the heap's allocator, or mem::free when no heap
+// is active.
 fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     if (obj == null) { return; }
     // The owning heap, which every caller supplies. Its `tearing_down` flag,
@@ -2096,15 +2044,11 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     }
 
     // Release this object's reference to its GeneratorState. A single gs can
-    // be reachable from several HObjects at once: the GENERATOR instance that
-    // owns the body, plus every `is_async_state` reaction closure parking a gs
-    // pointer in func.var_env: await resume and reject, and the async-generator
-    // internal-await, return, and yield-return pairs. Each took a gs.ref_count
-    // through heap::gs_acquire, so the last one torn down performs the free.
-    // See heap::gs_release for why the count, and not any gs field, decides.
-    //
-    // The allocator comes from `heap_ptr`; `tearing_down` on that same heap
-    // says whether the decref pass runs.
+    // be held by several HObjects: the GENERATOR instance, plus every
+    // `is_async_state` reaction closure parking the pointer in func.var_env.
+    // Each took a gs.ref_count through heap::gs_acquire, so the last teardown
+    // performs the free. See heap::gs_release for why the count, not any gs
+    // field, decides.
     if (obj.flags.obj_class == ObjClass.GENERATOR) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
         (*obj.extra_ptr()).gen.generator_data = null;
@@ -2115,11 +2059,10 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
     }
 
-    // Release the values held in property slots and array elements. A neighbour
-    // referenced here can be dying in the same sweep, as happens with a cycle,
-    // so these go through Heap.decref and its sweep guard, which skips any
-    // unmarked non-temproot target. Mark-and-sweep reclaims cycles; this pass
-    // never does.
+    // Release property slots and array elements. A neighbour referenced here
+    // can be dying in the same sweep (a cycle), so these go through
+    // Heap.decref and its sweep guard. Mark-and-sweep reclaims cycles; this
+    // pass never does.
     if (obj.prop_alloc != null && !hp.tearing_down) {
         heap::Heap* h = hp;
         PropValue* pvs = obj.prop_values();
@@ -2166,9 +2109,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         obj.coll_hash = null;
     }
 
-    // Free the block holding prop_values and array_part. The shape is shared and
-    // owned by the heap, so it stays. pool_free finds the class from the block's
-    // current size, which the pools kept exact.
+    // Free the block holding prop_values and array_part. The shape is shared
+    // and owned by the heap, so it stays.
     if (obj.prop_alloc != null) {
         if (hp != null) {
             heap::Heap* h = hp;
@@ -2188,8 +2130,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
 
 // Release just the header's backing memory, whether a pool block or a malloc,
 // once hobject_free(obj, heap, false) has run the sub-allocation teardowns and
-// decrefs. The sweep uses this to hold every header free until no dying node
-// will be read again.
+// decrefs. The sweep runs all teardowns before any header free, so nothing is
+// read from memory another dying node already released.
 fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
     heap::Heap* hp = (heap::Heap*)heap_ptr;
@@ -2231,7 +2173,7 @@ fn uint HObject.enumerable_count(&self, heap::Heap* h) {
 }
 
 // Returns the property entry at the given raw index, or `null` if `idx`
-// is out of range.  Intended for iteration over own properties.
+// is out of range. Intended for iteration over own properties.
 fn PropValue*? HObject.get_prop_at(&self, uint idx) {
     if (idx >= self.prop_count) {
         return PROP_NOT_FOUND~;
@@ -2243,12 +2185,8 @@ fn PropValue*? HObject.get_prop_at(&self, uint idx) {
 // Prototype-chain helpers
 // ============================================================================
 
-// Walk the prototype chain looking for a named property.
-//
-// Returns the TVal of the first own property with the matching key found
-// along the chain, or `null` (Optional failure) if no object in the chain
-// has the property.  The depth limit prevents infinite loops from circular
-// prototype chains.
+// Walk the prototype chain looking for a named property, returning the first
+// match or PROP_NOT_FOUND. The depth limit stops circular prototype chains.
 fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
     HObject* cur = self;
     uint depth = 0;
@@ -2283,11 +2221,9 @@ fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
     return PROP_NOT_FOUND~;
 }
 
-// Search the prototype chain for an accessor property (getter or setter).
-//
-// Returns an AccessorResult with the accessor function and its owning object
-// (for `this` binding), or `.found = false` if no accessor exists.
-// If a data property is found before any accessor, the search stops (no accessor).
+// Search the prototype chain for an accessor (getter or setter), returning it
+// with its owning object for `this` binding, or `.found = false`. A data
+// property found first stops the search.
 fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h) {
     HObject* cur = self;
     uint depth = 0;
@@ -2312,15 +2248,14 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
     return { .found = false };
 }
 
-// ES5 §8.12.3 [[Get]] / ES2020 §10.1.8.1 OrdinaryGet.
-// Walks the prototype chain, invoking accessor getters and returning the
-// raw value or property-missing. Used by builtins that need full Get
-// semantics (e.g. Map/Set constructors looking up `set` / `add`).
+// ES5 §8.12.3 [[Get]] / ES2020 §10.1.8.1 OrdinaryGet: full prototype-chain
+// Get semantics, invoking accessor getters. Used by builtins needing a full
+// Get (e.g. Map/Set constructors looking up `set` / `add`).
 fn PropLookupResult HObject.get_with_accessors(&self, void* key, heap::Heap* h) {
     return self.get_prop_or_accessor_proto(key, true, h);
 }
 
-// Maximum prototype chain depth before we assume a cycle / infinite loop.
+// Maximum prototype chain depth before a chain is treated as circular.
 const uint MAX_PROTO_DEPTH = 256;
 
 // Result of a combined accessor + data property lookup.
@@ -2330,10 +2265,8 @@ enum PropLookupKind {
     PROP_NOT_FOUND
 }
 
-// Combined result of a prototype-chain lookup.
-// Check `kind` first: if PROP_ACCESSOR, read `acc`;
-// if PROP_DATA, read `data_val` (and optionally `owner`);
-// if PROP_NOT_FOUND, neither is valid.
+// Combined result of a prototype-chain lookup. Check `kind` first: PROP_DATA
+// reads `data_val` (and optionally `owner`), PROP_ACCESSOR reads `acc`.
 struct PropLookupResult {
     PropLookupKind kind;
     TVal data_val;
@@ -2346,14 +2279,13 @@ struct PropLookupResult {
 // ============================================================================
 
 // A Shape records an object's named-property structure: which properties
-// exist, at what indices, and with what flags. Adding a property moves an
-// object from a parent shape to a child, so shapes form a transition tree, and
-// objects that gain the same properties in the same order end up sharing one.
-// That sharing is what lets an inline cache predict a property's offset.
+// exist, at what indices, with what flags. Adding a property moves an object
+// to a child shape, so shapes form a transition tree, and objects that gain
+// the same properties in the same order share one -- which is what lets an
+// inline cache predict a property's offset.
 //
-// One allocation holds the header followed by the ShapeProperty array. Names
-// and flags live there and are shared; the values live per object in
-// PropValue[].
+// One allocation holds the header followed by the ShapeProperty array; values
+// live per object in PropValue[].
 struct Shape {
     // Bumped when the object's property storage is reallocated, which moves
     // the values without changing the shape id. Caches that hold a pointer
@@ -2369,17 +2301,15 @@ struct Shape {
     // Parent pointer for walking the chain, null at the root.
     Shape*    parent_shape;
     // Key-to-index table covering the whole chain from root to this shape,
-    // shared by every object using it. Built on first lookup once the
-    // property count reaches HASH_MIN_PROPS AND a second object has reached
-    // this shape, and valid for the shape's whole life because a shape's keys
-    // and indexes never change after creation. Null until built, or
-    // permanently when allocation failed.
+    // shared by every object using it. Built on first lookup once prop_count
+    // reaches HASH_MIN_PROPS and a second object has reached this shape.
+    // Valid for the shape's whole life: keys and indexes never change after
+    // creation. Null until built, or permanently when allocation failed.
     HashEntry* hash_table;
     // Set when a second object reaches this shape through the transition
-    // table. A table costs O(prop_count) to build and to hold, and a chain of
-    // N single-user shapes would pay that N times over for one object, which
-    // is quadratic in both time and memory. Only a shape more than one object
-    // actually uses can amortize it, so unshared shapes walk the chain.
+    // table. A hash table costs O(prop_count) to build and hold; only a shape
+    // more than one object uses can amortize that, so unshared shapes walk
+    // the chain.
     bool      shared;
 }
 
@@ -2491,27 +2421,23 @@ fn void shape_free(Shape* sh, heap::Heap* h, bool release_keys) {
 // ============================================================================
 
 // Longest prototype chain an ICEntry can validate. Each level costs a pointer
-// and a uint in every entry, and entries are allocated one per instruction,
-// so this trades code memory for depth. Four covers the common library shape
-// of an instance reaching a method a few subclasses up.
+// and a uint per entry, and entries are one per instruction; four covers an
+// instance reaching a method a few subclasses up.
 const uint IC_MAX_CHAIN = 4;
 
-// One inline cache entry per GETPROP or PUTPROP site, holding the last lookup's
-// result so a later access on the same shape can skip the prototype-chain walk.
+// One inline cache entry per GETPROP or PUTPROP site: the last lookup's
+// result, so a later access on the same shape skips the prototype-chain walk.
 //
-// An entry covers a property found up to IC_MAX_CHAIN links up the prototype
-// chain. Serving a deep hit is only sound while no intermediate object has
-// gained a shadowing property and no link has been repointed, so the entry
-// snapshots each intermediate's identity and shape and the hit path replays
-// that walk. The walk is pointer and shape-ID comparisons with no property
-// lookup, which is what makes it cheaper than the real chain search.
+// An entry covers a property up to IC_MAX_CHAIN links up the prototype chain,
+// which is only sound while no intermediate has gained a shadowing property
+// and no link has been repointed. The entry snapshots each intermediate's
+// identity and shape, and the hit path replays that walk as pointer and
+// shape-ID comparisons.
 struct ICEntry {
     // Shape ID of the object when this entry was populated.
     uint   shape_id;
-    // The receiver shape's generation when this entry was populated. A shape
-    // id is recycled after the last object holding it drops it, so the id
-    // alone can come back naming a different property layout; pairing it with
-    // the generation stamped at reuse makes the (id, generation) pair unique.
+    // The receiver shape's generation when populated. A shape id is recycled,
+    // so (id, generation) pairs uniquely name one layout.
     uint   shape_gen;
     // Property index within the owner's prop_values[].
     uint   prop_idx;
@@ -2547,15 +2473,10 @@ fn uint HObject.shape_generation(&self, heap::Heap* h) @inline {
 }
 
 // Resolve the owner an ICEntry points at, or null when the entry no longer
-// describes the live object graph.
-//
-// The receiver's own shape_id is checked by the caller. This replays the
-// recorded prototype walk, requiring every object from the first prototype
-// through the owner to still be the same object at the same shape. That
-// rejects a repointed link, a shadowing property added on an intermediate,
-// and a delete on the owner, which moves the owner's shape while leaving its
-// prop_values allocation in place and so is invisible to the caller's
-// prop_alloc check.
+// describes the live graph. The caller checks the receiver's own shape_id;
+// this replays the recorded prototype walk, rejecting a repointed link, a
+// shadowing property on an intermediate, and a delete on the owner (which
+// moves the owner's shape but not its prop_alloc).
 fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
     if (ic.proto == null) return hobj;
     HObject* cur = hobj;
@@ -2568,16 +2489,13 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
     return (HObject*)ic.proto;
 }
 
-// One entry in the global megamorphic cache, keyed by (shape_id, key) and
-// shared by every call site, which spares polymorphic sites the repeated
-// prototype-chain walks.
+// One entry in the global megamorphic cache, keyed by (shape_id, key), shared
+// by every call site.
 //
-// An entry covers an own property or one found on the receiver's immediate
-// prototype. The one-link case needs more than the receiver's shape to stay
-// sound, because a shape describes only a property layout: it does not name a
-// prototype, and `Object.setPrototypeOf` repoints that link without touching
-// the shape. So the entry snapshots the prototype's identity and shape and the
-// hit path re-checks both, exactly as ICEntry's chain replay does.
+// Covers an own property or one found on the receiver's immediate prototype.
+// A shape does not name a prototype, which Object.setPrototypeOf can repoint
+// without touching shapes, so the entry also snapshots the prototype's
+// identity and shape for the hit path to re-check.
 struct MegamorphicEntry {
     void*   key;           // interned key pointer (null = empty slot)
     uint    shape_id;      // receiver's shape ID at lookup time
@@ -2586,9 +2504,9 @@ struct MegamorphicEntry {
     // The owning prototype's shape when the entry was filled, so a property
     // added to or deleted from it is noticed. Meaningless when `proto` is null.
     uint    proto_shape_id;
-    // The heap's shape-recycle epoch at population time. A freed shape id is
-    // handed back out, so an id alone cannot say whether it still names the
-    // shape this entry was filled for; comparing the epoch closes that gap.
+    // The heap's shape-recycle epoch at population time: a freed shape id is
+    // handed back out, so comparing the epoch says whether the id still names
+    // the shape this entry was filled for.
     uint    recycle_epoch;
     TVal*   prop_value_ptr; // direct pointer to value slot
     void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
@@ -2642,9 +2560,8 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     e.is_accessor = is_accessor;
 }
 
-// Inline cache for a GETVAR or TYPEOFIDENT site, holding the resolved
-// environment record and property index so later accesses skip the scope-chain
-// walk.
+// Inline cache for a GETVAR or TYPEOFIDENT site: the resolved environment
+// record and property index, so later accesses skip the scope-chain walk.
 struct VarICEntry {
     // The EnvRecord* owning the binding, null while unpopulated.
     void*   env;
@@ -2652,11 +2569,10 @@ struct VarICEntry {
     void*   bindings;
     // Shape ID of the bindings object when this entry was populated.
     uint    shape_id;
-    // The heap's shape-recycle epoch at population time. Shape ids are handed
-    // back out after a shape is freed, so an id on its own cannot say whether
-    // it still names the shape this entry was filled for. Comparing the epoch
-    // closes that gap with a load the hit path already has in cache, rather
-    // than reaching into the shapes table for the shape's own generation.
+    // The heap's shape-recycle epoch at population time. Shape ids are reused,
+    // so comparing the epoch says whether the id still names the filled shape;
+    // this costs a load the hit path already has in cache instead of reaching
+    // into the shapes table for the shape's generation.
     uint    recycle_epoch;
     // Property index within bindings.props[].
     uint    prop_idx;
@@ -2665,23 +2581,19 @@ struct VarICEntry {
     // act.lex_env at population time; a hit requires the same chain head
     // so entries never serve a different activation's environment.
     void*   search_head;
-    // Set for a PUTGLOBAL, INC_GLOBAL, DEC_GLOBAL, or MOVE_GG slot whose
-    // property is a writable but non-configurable data property, meaning a real
-    // global `var` or function binding (ES §9.3.4 CreateGlobalVarBinding).
-    // Such a descriptor can never become an accessor or turn read-only, so the
-    // store fast path can skip re-checking writability on every access.
-    // Configurable globals, such as those `eval` creates, leave this false and
-    // take the checking path. The shape_id compare still runs either way, so
-    // prop_idx always names this binding.
+    // Set for PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL/MOVE_GG slots whose property is
+    // a writable but non-configurable data property (ES §9.3.4
+    // CreateGlobalVarBinding): such a descriptor can never become an accessor
+    // or turn read-only, so the store fast path skips re-checking writability.
+    // Configurable globals (e.g. from `eval`) leave this false and take the
+    // checking path; the shape_id compare runs either way.
     bool    varref_store_ok;
 }
 
-// Populate a variable IC entry, writing every guard field together. The
-// readers compare shape_id, recycle_epoch, key and search_head; a fill that
-// sets one without the others leaves the slot holding a stale value from its
-// previous occupant, which a reader for a different field set could trust.
-// All fill sites route through here. `key` is a reference the GC sweep marks,
-// so the old key is released and the new one held.
+// Populate a variable IC entry, writing every guard field together: readers
+// compare shape_id, recycle_epoch, key and search_head, and a partial fill can
+// leave a previous occupant's stale value looking valid. `key` is a reference
+// the GC sweep marks, so the old key is released and the new one held.
 fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
                     uint prop_idx, void* key, void* search_head, bool store_ok,
                     heap::Heap* h) {
@@ -2698,21 +2610,12 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
 }
 
 // True when the megamorphic cache may answer a getter lookup on this receiver.
+// A hit reports straight from the property table, so excluded are proxies
+// ([[Get]] runs a trap), exotic arrays/arguments (dense part and array_len_ptr
+// can answer instead of the table), and string wrappers (indexed keys are read
+// from the primitive by the caller).
 //
-// A cache hit reports a plain data property straight from the property table,
-// so it must only serve receivers for which the table is the whole answer. Two
-// classes of receiver are excluded:
-//
-//   - a proxy, whose [[Get]] runs a trap and whose shape says nothing about
-//     what the trap will return;
-//   - an exotic array or arguments object, where a key can be answered by the
-//     dense part or by `array_len_ptr` rather than the table, neither of which
-//     a (shape, key) entry can describe;
-//   - a string wrapper, whose indexed keys are read from the primitive by the
-//     caller and so are invisible to this walk.
-//
-// The same test gates storing, so no entry is ever filled from a receiver it
-// could not later be served to.
+// The same test gates storing.
 macro bool HObject.mega_cacheable(&self) {
     return !self.flags.exotic_proxyobj
         && !self.flags.exotic_array
@@ -2721,12 +2624,11 @@ macro bool HObject.mega_cacheable(&self) {
 }
 
 // Walk the prototype chain once, returning whichever of an accessor or a data
-// property is found first, along with the object that owns it.
+// property is found first, along with its owner.
 //
 // Every full Get in the engine funnels through here: the VM's GETPROP slow
-// path, the spec-mandated Gets that builtins perform, and the coercion
-// helpers. The megamorphic cache is consulted here rather than at those call
-// sites so all of them share one probe and one invalidation story.
+// path, builtins' spec-mandated Gets, and the coercion helpers. The megamorphic
+// cache is probed here so all call sites share one invalidation story.
 fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h) {
     HObject* cur = self;
     uint depth = 0;

@@ -201,7 +201,7 @@ enum GenSuspendKind : char {
 // For-in enumeration state
 // ============================================================================
 
-// Runtime state for a for-in loop iteration.  Created by INITFOR.
+// Runtime state for a for-in loop iteration. Created by INITFOR.
 //
 // OWNERSHIP: the state is owned by the *activation that created it*, via the
 // intrusive `parent` chain rooted at `Activation.forin`, exactly like the
@@ -530,14 +530,13 @@ struct Heap {
     uint  peak_live_obj_count;   /// High-water mark for live objects
     // TVals visited by the last mark phase.
     //
-    // live_obj_count counts only nodes on heap_allocated, which is what the
-    // collection budget used to scale by. Marking cost is not that number: an
-    // array's elements live inside its prop_alloc rather than as separate
-    // nodes, so a 200k-element array marks 226k values while contributing ~1
-    // to live_obj_count. Budgeting against the node count therefore let mark
-    // cost grow with the array while the allocations permitted between cycles
-    // stayed flat -- the product being quadratic. See mark_work_last use in
-    // the trigger reset.
+    // live_obj_count counts only nodes on heap_allocated. Marking cost is not
+    // that number: an array's elements live inside its prop_alloc rather than
+    // as separate nodes, so a 200k-element array marks 226k values while
+    // contributing ~1 to live_obj_count. Budgeting against the node count
+    // therefore let mark cost grow with the array while the allocations
+    // permitted between cycles stayed flat -- the product being quadratic. See
+    // mark_work_last use in the trigger reset.
     ulong mark_work_last;
 
     // Host function registry. A host function is an ordinary FUNCTION object
@@ -741,8 +740,7 @@ struct Heap {
     // created through bk_open. A host function receives a call context, which
     // carries a heap, so this is how it reaches its runtime without a global
     // naming "the one runtime". Distinct from capi_roots, which happens to hold
-    // the same pointer but means "what the GC should walk for host-held values":
-    // one field answering two questions is the defect this change removes.
+    // the same pointer but means "what the GC should walk for host-held values".
     void*               capi_runtime;
     CapiMarkFn          capi_mark;
 
@@ -879,12 +877,6 @@ struct Heap {
     // skip its decref loop: releasing references while the sweep runs would
     // corrupt the string table it is walking, and every node is about to be
     // freed regardless.
-    //
-    // This is state about the heap, so it lives on the heap. It used to be
-    // inferred from the process-global active-heap pointer being null, which
-    // conflated "we are tearing down" with "there is no heap to allocate from"
-    // and left teardown behaviour depending on a global that a second runtime
-    // would overwrite.
     bool                tearing_down;
 
     // Maps (parent_shape_id, key_pointer) to child_shape_id, so objects that add
@@ -1191,7 +1183,6 @@ fn void Heap.init_builtin_strs(&self) {
         // every incref and decref against them a no-op. See HeapHeader.set_pinned.
         if (s != null) { ((HeapHeader*)s).set_pinned(); }
     }
-    // Cache the "length" pointer for HObject.put_prop array_length sync.
 }
 
 // Convert an integer to an interned HString*. Values from 0 to 255 come from
@@ -1385,15 +1376,6 @@ fn uint Heap.alloc_shape_slot(&self) {
     return id;
 }
 
-// Release a slot holding a *private* shape, freeing the shape and putting the
-// id back on the free list.
-//
-// Only private shapes may be passed here. A private shape has
-// parent == PRIVATE_SHAPE_PARENT, is absent from the transition table, and is
-// referenced by exactly one object -- the one replacing it right now. Freeing
-// a transition-table shape instead would be a use-after-free, since other
-// objects and cached transitions still point at it, so that case is rejected
-// rather than trusted to the caller.
 // Store a freshly created shape in a slot just returned by alloc_shape_slot,
 // stamping the generation that keeps recycled ids from colliding with live
 // inline-cache entries.
@@ -1412,6 +1394,16 @@ fn bool Heap.shape_slot_live(&self, uint id) {
     return ((uptr)sh & SHAPE_FREE_TAG) == 0;
 }
 
+// Release a slot holding a *private* shape, freeing the shape and putting the
+// id back on the free list.
+//
+// Only private shapes may be passed here. A private shape has
+// parent == PRIVATE_SHAPE_PARENT, is absent from the transition table, and is
+// referenced by exactly one object -- the one replacing it right now. Freeing
+// a transition-table shape instead would be a use-after-free, since other
+// objects and cached transitions still point at it, so that case is rejected
+// rather than trusted to the caller.
+//
 // `release_keys` must be false when the replacement shape copied this shape's
 // key pointers without increfing them: the references move to the new shape,
 // so decrefing here would leave it holding freed keys.

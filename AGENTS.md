@@ -79,12 +79,7 @@ Tagged values live in the mantissa of IEEE 754 NaNs (Duktape's scheme): **16-bit
 
 **C3 gotcha**: always parenthesize bitwise operations mixed with comparisons: `&`, `|`, and `^` bind looser than in C, so `(v >> 52) & 0x7FF != 0x7FF0` parses as `(v >> 52) & (0x7FF != 0x7FF0)`.
 
-## Writing Comments
-
-Load the **humanizer** skill before writing or editing comments, doc comments, or
-markdown in this repo. It removes the patterns that make text read as
-machine-generated. The house style, which the whole codebase was passed through
-in one sweep:
+## Writing style
 
 **Say what the code does now.** No "previously", "used to", "was changed to", no
 retelling a bug that is already fixed, and no describing what something is *not*
@@ -94,11 +89,6 @@ line below it should be deleted.
 **Keep the why, cut the what.** Ordering constraints, GC safety invariants, spec
 section references, and the reason a non-obvious branch exists all earn their
 space. Paraphrasing the code does not.
-
-**No em dashes.** Use a comma, a colon, or a new sentence. This is the single
-most reliable tell, and the codebase currently contains zero. Same for
-box-drawing characters in banners: use `// ===` for sections and `// --- Title ---`
-for sub-sections.
 
 **Be direct.** "is not on the list" beats "is off the list"; "the table is full
 but we found a tombstone" beats "no empty slot remained". Do not trade a precise
@@ -116,47 +106,3 @@ comment and its code disagree, read the code and fix the comment.
 
 `docs/architecture.md` is the engine's design guide, and it follows the same
 rules. Update it when a change makes one of its claims wrong.
-
-## Compiler / VM Invariants
-
-- **PUTVAR zeroes its source register** (vm.c3): after syncing a register to the environment it decrefs and sets the register to `undefined`. Variable-binding work must not read a value back from a register after PUTVAR; read via GETVAR instead.
-- **Register init must skip argument slots** (vm.c3): the per-call init memset starts at `max(undef_limit, nargs)`, not `undef_limit`, or it clobbers the sliding-window argument slots at `new_regs[0..nargs-1]`.
-- **async/await uses resumable execution** (same as QuickJS/V8): async functions compile with `is_generator=true` to reuse the generator save/restore path. `AWAIT` extracts the result of a settled Promise or suspends (saves registers/PC/env to `GeneratorState`, adds a reaction, pops the activation); the resume callback restores it. Async generators (`async function*`) are **not** implemented.
-- **`is_async` must not leak into nested functions**: `function_declaration`/`function_expr` restore `is_async` only around the `compile_inner_function` call, then reset it.
-- **break/continue across finally** (vm.c3): `BREAK`/`CONTINUE` are jump-offset opcodes that walk the catcher chain and redirect through active `finally` blocks via `pending_pc`. Flags: `CATCHER_FLAG_PENDING_BREAK/CONTINUE/IN_FINALLY`. `IN_FINALLY` guards against throw/return-in-finally infinite loops.
-
-Two CLI binaries share the engine (`src`): **`boomkat`** (`cli/boomkat.c3`) is
-the plain runner: run a file, or `--module <file>` for ESM, nothing else. **`boomkat_debug`**
-(`cli/boomkat_debug.c3`, built via `just build-trace`) is the inspection binary and is the
-one that carries the debug flags below. The plain `boomkat` does not understand `-c` or `-t`;
-it treats them as a file path. Debug flags (no perf impact on release builds):
-- `-c` / `--compile-only`: disassemble bytecode, skip execution (`--format json` for structured output)
-- `-t` / `--trace-vm`: print each instruction + register values before dispatch (stderr)
-- `--dump-constants`: dump the constant pool
-- `-d` / `--debug`: stage-level timing (load, compile, execute)
-- `--no-optimize`: disable all compiler peephole passes (debug aid). When a miscompiled pattern reproduces only on optimized builds, this flag narrows the bug to either code generation or one of the peephole passes. The flag toggles `compiler::g_disable_optimize` (also accessible from C3 code via `compiler::set_disable_optimize(bool)` / `compiler::get_disable_optimize()`); per-context `CompilerContext.disable_optimize` is initialised from the global in `CompilerContext.init()`. When disabled, the bytecode is copied verbatim into the `CompiledFunction` (NOPs included) so every peephole-produced instruction is visible in the dump.
-
-  **Caveat: `--no-optimize` output is not always correct.** The local-var-to-register elision guarded by `elide_ok` (`src/compiler/context.c3`) is not purely an optimization: with it disabled, a function-local `var` is emitted as `DECLVAR_HOIST`/`DECLVAR`/`PUTVAR`, which currently resolve against the *global* environment, so an inner `var x` leaks to the outer scope. Minimal repro:
-
-  ```js
-  var x = "outer";
-  function f(){ var x = "inner"; }
-  f();
-  print(x);   // optimized: "outer" (correct)   --no-optimize: "inner" (wrong)
-  ```
-
-  Three files in `test/` (`function_scope.js`, `test_capture_analysis.js`, `test_spread.js`) fail under `--no-optimize` for this reason. So use the flag to compare *bytecode shape* (its intended purpose), and treat a wrong **value** under `--no-optimize` as suspect until reproduced on an optimized build. This is a pre-existing codegen bug, not a peephole bug.
-
-`just lldb <file>` builds with `-O0` and launches lldb with a backtrace on crash; use it when a JS file triggers a VM fault. On `VM_ERROR` the CLI also dumps the failing instruction and first 32 registers to stderr.
-
-### Printing TVal values (C3 gotcha)
-
-`io::printf("%s", char*)` prints the **pointer as hex** (`0x...`), not the string content. For string TVal output, iterate bytes with `io::printf("%c", d[i])`:
-```
-case STRING:
-    char[] d = s.get_data();
-    io::printf("\"");
-    for (usz i = 0; i < d.len; i++) { io::printf("%c", d[i]); }
-    io::printf("\"");
-```
-Same pattern for stderr (`io::eprintf("%c", ...)`).
