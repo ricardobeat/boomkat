@@ -31,6 +31,12 @@ import std::io;
 // refcount UAF/leak, so every ambiguous case resolves to "not primitive-only".
 
 const uint PRIM_MAX_CANDIDATES = 256;
+/// Nesting the slot-global pre-scan tracks per delimiter. The scan runs ahead
+/// of the parser, so it meets source the parser's own depth limit would later
+/// reject, and it indexes its classification stacks by raw depth. Passing the
+/// cap discards the proof rather than growing the stacks: source this deep is
+/// rejected downstream anyway, and forgoing the optimization is always sound.
+const uint SLOT_MAX_NESTING = 256;
 const uint PRIM_MAX_DEPS = 8;       // per-candidate RHS-identifier dependencies
 
 struct PrimCandidate {
@@ -653,8 +659,8 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
     // `{` that follows a non-control `)` (function/method body) or an arrow or
     // a `class` keyword is a function boundary, and a `{` that follows a
     // control `)` or a statement-start/block keyword is a plain block.
-    bool[256] paren_control;
-    bool[256] brace_is_fn;
+    bool[SLOT_MAX_NESTING] paren_control;
+    bool[SLOT_MAX_NESTING] brace_is_fn;
     int  cur_fn_depth = 0;      // enclosing nested-function-body count
     bool last_paren_was_control = false;  // the most recent `)` closed a control cond
     bool class_pending = false;  // saw `class`; its body `{` is a fn boundary
@@ -695,6 +701,7 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
         // Classify delimiters as they open or close, before adjusting depth.
         if (tt == TokenType.LPAREN) {
             paren_depth++;
+            if (paren_depth >= SLOT_MAX_NESTING) { disabled = true; break; }
             paren_control[paren_depth] = slot_global_is_ctrl_paren(prev_tt);
             if (fn_pending && fn_sig_paren < 0) {
                 fn_sig_paren = (int)paren_depth;
@@ -723,6 +730,7 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
                 || class_pending;
             class_pending = false;
             brace_depth++;
+            if (brace_depth >= SLOT_MAX_NESTING) { disabled = true; break; }
             brace_is_fn[brace_depth] = is_fn;
             if (is_fn) { cur_fn_depth++; }
             // A braced arrow/class body is fully tracked by brace_is_fn, so
@@ -875,17 +883,26 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
                                         prev_ident[:prev_ident_len]);
             if (aidx >= 0) {
                 value_written[aidx] = true;
-                // An assignment inside a paren group is ambiguous: the group may
-                // be an arrow's parameter list, whose default-value expressions
-                // compile to separate thunk functions. Such a thunk writes the
-                // name through the env chain, but a register-resident global is
-                // read from its home register, so the write would be lost
-                // (`((a = (g = 5)) => {})()` left g unchanged). We cannot tell an
-                // arrow param list from a plain grouping without lookahead to
-                // `=>`, so disqualify conservatively, matching the pass's
-                // soundness rule that every ambiguous case falls back to the
-                // guarded env path.
-                if (paren_depth > 0) { nested_ref[aidx] = true; }
+                // An assignment inside a plain paren group is ambiguous: the
+                // group may be an arrow's parameter list, whose default-value
+                // expressions compile to separate thunk functions. Such a thunk
+                // writes the name through the env chain, but a register-resident
+                // global is read from its home register, so the write would be
+                // lost (`((a = (g = 5)) => {})()` left g unchanged). Without
+                // lookahead to `=>` a plain grouping cannot be told apart from an
+                // arrow param list, so it is disqualified.
+                //
+                // A control-clause paren is not ambiguous: `for (`, `if (`, and
+                // the rest can never open an arrow's parameter list, and their
+                // assignments compile inline in the same function. Only a plain
+                // paren somewhere in the enclosing chain forces the fallback, so
+                // a `for (var i = 0; ...)` counter stays register-resident while
+                // `for (var f = (a = 1) => a; ...)` still disqualifies.
+                bool inside_plain_paren = false;
+                for (uint d = 1; d <= paren_depth && d < SLOT_MAX_NESTING; d++) {
+                    if (!paren_control[d]) { inside_plain_paren = true; break; }
+                }
+                if (inside_plain_paren) { nested_ref[aidx] = true; }
             }
         }
 
