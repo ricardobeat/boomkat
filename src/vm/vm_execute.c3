@@ -1578,6 +1578,12 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     HObject* mod_promise = prom_raw;
     mod_promise.prototype = vm.heap.promise_proto;
     builtins::promise_init(mod_promise);
+    // Internal to this evaluation: its rejection is handed back through
+    // heap.error_value (or adopted by the module's eval_promise when the body
+    // suspends), never left for user code to observe. Marking it handled up
+    // front keeps a module whose body throws from also reporting a bogus
+    // unhandled rejection alongside the real one on the import() promise.
+    (*mod_promise.extra_ptr()).promise.is_handled = true;
     // Pin it across the evaluation + microtask drain so GC can't sweep it
     // transiently, and released before returning.
     mod_promise.as_header().incref();
@@ -1769,6 +1775,10 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         mod_promise = prom_raw;
         mod_promise.prototype = vm.heap.promise_proto;
         builtins::promise_init(mod_promise);
+        // Internal to this evaluation, as in execute_module_async above: the
+        // rejection reaches the caller through heap.error_value, so it must
+        // not also surface as an unhandled rejection.
+        (*mod_promise.extra_ptr()).promise.is_handled = true;
         // Pin it across the evaluation + microtask drain so GC can't sweep
         // it transiently, releasing it before returning.
         mod_promise.as_header().incref();
