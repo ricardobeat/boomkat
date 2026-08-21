@@ -1,149 +1,145 @@
 /*
- * main.c — embedding the boomkat JavaScript engine from plain C99.
+ * main.c -- embedding the boomkat JavaScript engine from plain C99.
  *
- * Walks the whole v1 surface in the order a real embedder meets it:
- * open a runtime, evaluate JS for a value, read that value out in each type,
- * surface a thrown exception and a syntax error, then shut down.
+ * Walks the surface in the order a real embedder meets it: open a context,
+ * evaluate for a value, read it out, build values from C, reach into an
+ * object, and surface the two kinds of failure.
  *
  * Build and run with `make` (see README.md).
  */
 
-#include "bk_util.h"
+#include <boomkat.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Print the label, then the pending error the way an embedder would log it. */
-static void report_error(bk_runtime rt, const char *label, int status)
+/* Log the pending failure the way an embedder would. */
+static void report(bk_ctx js, const char *label)
 {
-    printf("%-14s %-8s %s\n", label, bku_status_name(status), bk_last_error(rt));
+    printf("%-16s %-9s %s\n", label, bk_status_str(bk_error_code(js)), bk_error(js));
 }
 
 int main(void)
 {
-    bk_runtime rt = NULL;
-    bk_value v = BK_INVALID_VALUE;
-    int status;
-
-    /* ---------------------------------------------------------- 1. open */
-    status = bk_open(&rt);
-    if (status != BK_OK) {
-        fprintf(stderr, "bk_open failed: %s\n", bku_status_name(status));
+    bk_ctx js = bk_open();
+    if (!js) {
+        fprintf(stderr, "bk_open failed\n");
         return EXIT_FAILURE;
     }
     printf("boomkat version %s\n\n", bk_version());
 
-    /* ------------------------------------------- 2. evaluate for a number */
+    /* ------------------------------------------------------ 1. read a value
+     *
+     * A handle-returning call fails by returning 0, so the check is the same
+     * shape for every call below.
+     */
     {
-        static const char src[] =
+        bk_value v = bk_eval_str(js,
             "var xs = [1, 2, 3, 4, 5];\n"
-            "xs.reduce(function (a, b) { return a + b; }, 0);";
+            "xs.reduce(function (a, b) { return a + b; }, 0);");
         double sum = 0.0;
-
-        status = bku_eval_cstr(rt, src, &v);
-        if (status != BK_OK) {
-            report_error(rt, "sum:", status);
-            goto fail;
-        }
-        if (bk_get_number(rt, v, &sum) != BK_OK) {
+        if (!v) { report(js, "sum:"); goto fail; }
+        if (bk_read_number(js, v, &sum) != BK_OK) {
             fprintf(stderr, "expected a number, got %s\n",
-                    bku_type_name(bk_type_of(rt, v)));
+                    bk_type_str(bk_type_of(js, v)));
             goto fail;
         }
         printf("sum of 1..5      = %g\n", sum);
-        bk_value_free(rt, v); /* every handle from bk_eval must be freed */
-        v = BK_INVALID_VALUE;
+        bk_free(js, v);           /* every handle you are given, you free */
     }
 
-    /* ------------------------------------------- 3. evaluate for a string */
-    {
-        static const char src[] =
-            "['boomkat', 'from', 'C99'].join(' ') + ' \\u2014 astral: \\u{1F600}';";
-        char *text;
-
-        status = bku_eval_cstr(rt, src, &v);
-        if (status != BK_OK) {
-            report_error(rt, "greeting:", status);
-            goto fail;
-        }
-        text = bku_string_dup(rt, v); /* caller owns the buffer */
-        if (text == NULL) {
-            fprintf(stderr, "could not read the string\n");
-            goto fail;
-        }
-        printf("greeting         = %s\n", text);
-        free(text);
-        bk_value_free(rt, v);
-        v = BK_INVALID_VALUE;
-    }
-
-    /* ------------------------------- 4. booleans, and inspecting the type */
-    {
-        static const char src[] = "typeof globalThis.Math === 'object';";
-        int flag = 0;
-
-        status = bku_eval_cstr(rt, src, &v);
-        if (status != BK_OK) {
-            report_error(rt, "has Math:", status);
-            goto fail;
-        }
-        bk_get_bool(rt, v, &flag);
-        printf("Math is object   = %s (handle type: %s)\n",
-               flag ? "true" : "false", bku_type_name(bk_type_of(rt, v)));
-        bk_value_free(rt, v);
-        v = BK_INVALID_VALUE;
-    }
-
-    /* --------------------- 5. anything at all, stringified on the JS side */
-    {
-        char *text = bku_eval_to_string(rt, "({ ok: true, items: [1, 2] })");
-        printf("object as string = %s\n\n", text ? text : "(error)");
-        free(text);
-    }
-
-    /*
-     * ------------------------------------------------- 6. failure handling
+    /* ---------------------------------------------------- 2. any value as text
      *
-     * Errors are surfaced as a status code plus a message on the runtime.
-     * Nothing aborts or longjmps across the boundary, so an embedder handles
-     * a bad script exactly like any other failed C call: check, log, continue.
+     * bk_cstr coerces the way String(v) does and hands back storage the
+     * context owns, so printing a result takes no buffer and no free. Four
+     * results stay live at once, which is why they can share one printf.
      */
-    printf("errors are values, not crashes:\n");
-
-    /* A thrown exception -> BK_ERR_THROW. */
-    status = bku_eval_cstr(rt, "throw new RangeError('index out of range');", NULL);
-    report_error(rt, "  throw", status);
-
-    /* A syntax error is caught at compile time -> BK_ERR_SYNTAX. */
-    status = bku_eval_cstr(rt, "function ( { oops", NULL);
-    report_error(rt, "  bad syntax", status);
-
-    /* Reading a string out of a number is a type error, not undefined behaviour. */
-    status = bku_eval_cstr(rt, "123;", &v);
-    if (status == BK_OK) {
-        size_t len = 0;
-        status = bk_get_string(rt, v, NULL, 0, &len);
-        report_error(rt, "  wrong type", status);
-        bk_value_free(rt, v);
-        v = BK_INVALID_VALUE;
-    }
-
-    /* The runtime is still perfectly usable after all of that. */
     {
-        char *text = bku_eval_to_string(rt, "'still running'");
-        printf("\nafter errors     = %s\n", text ? text : "(error)");
-        free(text);
+        bk_value n = bk_eval_str(js, "6 * 7");
+        bk_value s = bk_eval_str(js, "'hi ' + String.fromCodePoint(0x1F600)");
+        bk_value a = bk_eval_str(js, "[1,2,3].map(x => x * x)");
+        bk_value o = bk_eval_str(js, "({ kind: 'config' })");
+        printf("as text          = %s | %s | %s | %s\n",
+               bk_cstr(js, n, NULL), bk_cstr(js, s, NULL),
+               bk_cstr(js, a, NULL), bk_cstr(js, o, NULL));
+        bk_free(js, n); bk_free(js, s); bk_free(js, a); bk_free(js, o);
     }
 
-    /* --------------------------------------------------------- 7. cleanup */
-    bk_close(rt); /* invalidates every outstanding handle */
+    /* ------------------------------------------------ 3. build values from C
+     *
+     * Nothing here goes through JS source, so none of it can be a string
+     * injection.
+     */
+    {
+        bk_value cfg  = bk_object(js);
+        bk_value host = bk_str(js, "example.com");
+        bk_value port = bk_number(js, 8080);
+
+        bk_setp(js, cfg, "host", host);
+        bk_setp(js, cfg, "port", port);
+        bk_free(js, host);
+        bk_free(js, port);
+
+        bk_set_globalp(js, "config", cfg);
+        {
+            bk_value v = bk_eval_str(js, "config.host + ':' + config.port");
+            printf("built in C       = %s\n", bk_cstr(js, v, NULL));
+            bk_free(js, v);
+        }
+
+        /* ...and read back out the same way. */
+        {
+            bk_value p = bk_getp(js, cfg, "port");
+            double d = 0;
+            bk_read_number(js, p, &d);
+            printf("config.port      = %g\n", d);
+            bk_free(js, p);
+        }
+        bk_free(js, cfg);
+    }
+
+    /* --------------------------------------------------- 4. calling into JS */
+    {
+        bk_value fn = bk_eval_str(js, "(function add(a, b) { return a + b; })");
+        bk_value args[2];
+        bk_value out;
+        args[0] = bk_number(js, 40);
+        args[1] = bk_number(js, 2);
+        out = bk_call(js, fn, 0, args, 2);
+        printf("add(40, 2)       = %s\n", bk_cstr(js, out, NULL));
+        bk_free(js, args[0]); bk_free(js, args[1]);
+        bk_free(js, out); bk_free(js, fn);
+    }
+
+    /* ------------------------------------------------------- 5. the failures
+     *
+     * Both kinds report through the same two calls, and the context stays
+     * usable afterwards.
+     */
+    printf("\n");
+    if (!bk_eval_str(js, "var = = =")) report(js, "syntax error:");
+    if (!bk_eval_str(js, "null.x"))    report(js, "thrown:");
+
+    {
+        bk_error_info info;
+        bk_value v = bk_eval_named(js, "\n\nlet y = ;", 10, "config.js", 9);
+        if (!v && bk_error_info_of(js, &info) == BK_OK) {
+            printf("%-16s %s:%d:%d\n", "located at:",
+                   info.script_name ? info.script_name : "?", info.line, info.col);
+        }
+    }
+
+    {
+        bk_value v = bk_eval_str(js, "'still here'");
+        printf("%-16s %s\n", "after failure:", bk_cstr(js, v, NULL));
+        bk_free(js, v);
+    }
+
+    bk_close(js);
     return EXIT_SUCCESS;
 
 fail:
-    if (v != BK_INVALID_VALUE) {
-        bk_value_free(rt, v);
-    }
-    bk_close(rt);
+    bk_close(js);
     return EXIT_FAILURE;
 }

@@ -10,6 +10,7 @@
 module value_registry_gc;
 
 import boomkat::capi;
+import boomkat::embed;
 import boomkat::types;
 import std::io;
 
@@ -33,15 +34,16 @@ fn void check(String label, bool cond) {
 // A held string would survive on its refcount alone and prove nothing.
 fn void test_handles_survive_gc(void* rt) {
     const uint N = 96;
-    uint[N] held;
+    ulong[N] held;
     uint made = 0;
 
     for (uint i = 0; i < N; i++) {
         // Each object is reachable ONLY through its handle: the expression
         // result is never stored in a global or any other live structure.
         String src = string::tformat("({ tag: 'reg-%d-value' })", i);
-        uint v = 0;
-        if (capi::bk_eval(rt, (char*)src.ptr, src.len, &v) != capi::BK_OK) break;
+        ulong v = 0;
+        v = capi::bk_eval(rt, (char*)src.ptr, src.len);
+        if (v == 0) break;
         held[i] = v;
         made++;
     }
@@ -50,20 +52,21 @@ fn void test_handles_survive_gc(void* rt) {
     // Churn the heap with the handles outstanding. Under GC_STRESS this
     // collects constantly.
     String churn = "var s = 0; for (var i = 0; i < 400; i++) { s += ({ x: i }).x; } s";
-    uint junk = 0;
-    if (capi::bk_eval(rt, (char*)churn.ptr, churn.len, &junk) == capi::BK_OK) {
-        capi::bk_value_free(rt, junk);
+    ulong junk = 0;
+    junk = capi::bk_eval(rt, (char*)churn.ptr, churn.len);
+    if (junk != 0) {
+        capi::bk_free(rt, junk);
     }
 
     // Read each object's tag back through the engine, which dereferences the
     // held object: if it was swept, ASan reports the use-after-free here.
     uint wrong = 0;
     for (uint i = 0; i < made; i++) {
-        if (capi::bk_type_of(rt, held[i]) != capi::BK_TYPE_OBJECT) { wrong++; continue; }
+        if (capi::bk_type_of(rt, held[i]) != embed::BK_TYPE_OBJECT) { wrong++; continue; }
     }
     check("registry: held objects survive GC", wrong == 0);
 
-    for (uint i = 0; i < made; i++) capi::bk_value_free(rt, held[i]);
+    for (uint i = 0; i < made; i++) capi::bk_free(rt, held[i]);
 }
 
 // Freed handles must stop rooting their values, or the registry is a leak that
@@ -72,30 +75,32 @@ fn void test_freed_handles_release(void* rt) {
     uint churned = 0;
     for (uint i = 0; i < 2000; i++) {
         String src = string::tformat("'transient-%d'", i);
-        uint v = 0;
-        if (capi::bk_eval(rt, (char*)src.ptr, src.len, &v) != capi::BK_OK) break;
-        capi::bk_value_free(rt, v);
+        ulong v = 0;
+        v = capi::bk_eval(rt, (char*)src.ptr, src.len);
+        if (v == 0) break;
+        capi::bk_free(rt, v);
         churned++;
     }
     check("registry: alloc/free churn under GC stress", churned == 2000);
 
     // The registry must still be correct afterwards.
     String src = "'final'";
-    uint v = 0;
-    bool ok = capi::bk_eval(rt, (char*)src.ptr, src.len, &v) == capi::BK_OK;
+    ulong v = 0;
+    v = capi::bk_eval(rt, (char*)src.ptr, src.len);
+    bool ok = v != 0;
     if (ok) {
         char[32] buf;
         usz written = 0;
-        ok = capi::bk_get_string(rt, v, &buf[0], 32, &written) == capi::BK_OK
+        ok = capi::bk_read_string(rt, v, &buf[0], 32, &written) == capi::BK_OK
              && (String)buf[:written] == "final";
-        capi::bk_value_free(rt, v);
+        capi::bk_free(rt, v);
     }
     check("registry: usable after churn", ok);
 }
 
 fn int main() {
-    void* rt = null;
-    if (capi::bk_open(&rt) != capi::BK_OK) {
+    void* rt = capi::bk_open();
+    if (rt == null) {
         io::printn("FAIL could not open runtime");
         return 1;
     }

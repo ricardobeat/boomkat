@@ -122,13 +122,36 @@ lib: out/boomkat.a
 out/boomkat.a: project.json include/boomkat.h $(call target_sources,boomkat_static)
 	$(C3C_BUILD) boomkat_static $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
+# Linker export lists for the shared library, regenerated from the header's
+# BK_API declarations by scripts/gen_abi_header.py. Without one the dylib
+# exports every engine symbol (thousands), and on ELF those interpose: a
+# consumer linking its own regexp code collides with ours (re_exec vs glibc,
+# see docs/embedding.md).
+ifeq ($(UNAME_S),Darwin)
+  BK_EXPORT_LIST := out/boomkat.exports
+  BK_EXPORT_LDFLAG := -z -exported_symbols_list -z $(abspath out/boomkat.exports)
+else
+  BK_EXPORT_LIST := out/boomkat.map
+  BK_EXPORT_LDFLAG := -z --version-script=$(abspath out/boomkat.map)
+endif
+
+out/boomkat.exports out/boomkat.map: scripts/gen_abi_header.py include/boomkat.h src/embed/abi.c3
+	python3 scripts/gen_abi_header.py --lists
+
+# Fail when the enum blocks of include/boomkat.h drift from the manifest in
+# src/embed/abi.c3, or the header's BK_API set disagrees with capi.c3's
+# @export set. Regenerate with `python3 scripts/gen_abi_header.py`.
+.PHONY: check-abi
+check-abi:
+	python3 scripts/gen_abi_header.py --check
+
 # Shared library. c3c stamps a *relative* install name into the dylib, so a
 # consumer launched from any other directory fails to resolve it in dyld; the
 # install_name_tool step rewrites it to @rpath so it can be installed at any
 # PREFIX. The shared link is named libboomkat so embedders write `-lboomkat`.
 shared: out/boomkat.$(SHLIB_EXT)
-out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(call target_sources,boomkat_dylib)
-	$(C3C_BUILD) boomkat_dylib $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(BK_EXPORT_LIST) $(call target_sources,boomkat_dylib)
+	$(C3C_BUILD) boomkat_dylib $(C3C_BUILDFLAGS) $(C3C_LDFLAGS) $(BK_EXPORT_LDFLAG)
 ifeq ($(UNAME_S),Darwin)
 	install_name_tool -id "@rpath/libboomkat.dylib" $@
 endif
@@ -160,6 +183,16 @@ out/embed_api: test/capi/embed_api.c include/boomkat.h out/boomkat.a
 .PHONY: test-embed-api
 test-embed-api: out/embed_api
 	./out/embed_api
+
+# The acceptance test for the v2 surface: the hello-world from the header,
+# verbatim, compiled with every warning on.
+out/dozen_lines: test/capi/dozen_lines.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/dozen_lines.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/dozen_lines
+
+.PHONY: test-dozen-lines
+test-dozen-lines: out/dozen_lines
+	./out/dozen_lines
 
 # Value-registry GC tests under GC_STRESS + ASan: a collection at every
 # allocation, so a registry the mark phase does not walk fails deterministically

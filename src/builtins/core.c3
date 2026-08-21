@@ -11,6 +11,7 @@ import boomkat::heap;
 import boomkat::env;
 import boomkat::compiler;
 import boomkat::lexer;
+import boomkat::embed::abi;
 import boomkat::re_bindings;
 import boomkat::vm;
 import boomkat::dtoa_bindings;
@@ -3335,13 +3336,14 @@ fn void host_throw(BuiltinContext* ctx, TVal v) {
     ctx.should_throw = true;
 }
 
-// Error kinds selectable by host_throw_error. Mirrors the BK_ERROR_* values
-// the C ABI exposes.
-const int HOST_ERR_ERROR     = 0;
-const int HOST_ERR_TYPE      = 1;
-const int HOST_ERR_RANGE     = 2;
-const int HOST_ERR_REFERENCE = 3;
-const int HOST_ERR_SYNTAX    = 4;
+// Error kinds selectable by host_throw_error. The values live in
+// boomkat::embed::abi, the manifest the C header's BK_ERROR_* enum is
+// generated from.
+const int HOST_ERR_ERROR     = abi::BK_ERROR;
+const int HOST_ERR_TYPE      = abi::BK_ERROR_TYPE;
+const int HOST_ERR_RANGE     = abi::BK_ERROR_RANGE;
+const int HOST_ERR_REFERENCE = abi::BK_ERROR_REFERENCE;
+const int HOST_ERR_SYNTAX    = abi::BK_ERROR_SYNTAX;
 
 // Throw a fresh Error of `kind` carrying `msg`. The ergonomic path, and the
 // one bindings use: it spares the host from building an Error through the

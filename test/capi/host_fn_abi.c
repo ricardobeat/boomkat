@@ -23,91 +23,90 @@ static void check(const char *label, int cond) {
 
 /* --- host functions under test ------------------------------------------ */
 
-static void h_answer(bk_call_ctx ctx, void *udata) {
+static void h_answer(bk_ctx ctx, void *udata) {
     (void)udata;
     host_calls++;
     bk_return_number(ctx, 42);
 }
 
-static void h_add(bk_call_ctx ctx, void *udata) {
+static void h_add(bk_ctx ctx, void *udata) {
     (void)udata;
     double sum = 0;
     unsigned int i, n = bk_argc(ctx);
     for (i = 0; i < n; i++) {
         double d;
-        if (bk_ctx_get_number(ctx, bk_arg(ctx, i), &d) == BK_OK) sum += d;
+        if (bk_read_number(ctx, bk_arg(ctx, i), &d) == BK_OK) sum += d;
     }
     bk_return_number(ctx, sum);
 }
 
 /* Reads the udata pointer through, proving passthrough. */
-static void h_udata(bk_call_ctx ctx, void *udata) {
+static void h_udata(bk_ctx ctx, void *udata) {
     bk_return_number(ctx, udata ? *(int *)udata : -1);
 }
 
 /* Returns a host-built string, including an astral character. */
-static void h_greet(bk_call_ctx ctx, void *udata) {
+static void h_greet(bk_ctx ctx, void *udata) {
     static const char msg[] = "hi from C \xF0\x9F\x98\x80";
     (void)udata;
     bk_return_string(ctx, msg, sizeof(msg) - 1);
 }
 
 /* Throws a TypeError. */
-static void h_throws(bk_call_ctx ctx, void *udata) {
+static void h_throws(bk_ctx ctx, void *udata) {
     (void)udata;
     bk_throw_error(ctx, BK_ERROR_TYPE, "host refused");
 }
 
 /* Echoes argument 0 back, exercising handle round-tripping. */
-static void h_echo(bk_call_ctx ctx, void *udata) {
+static void h_echo(bk_ctx ctx, void *udata) {
     (void)udata;
     bk_return(ctx, bk_arg(ctx, 0));
 }
 
 /* Reports whether it saw a construct call, stashed via the return value. */
-static void h_is_new(bk_call_ctx ctx, void *udata) {
+static void h_is_new(bk_ctx ctx, void *udata) {
     (void)udata;
     if (!bk_is_construct(ctx)) bk_return_bool(ctx, 0);
     /* On `new` the created object is returned automatically. */
 }
 
 /* hostApply(f, x) -> f(x): the host calling back into JS. */
-static void h_apply(bk_call_ctx ctx, void *udata) {
+static void h_apply(bk_ctx ctx, void *udata) {
     bk_value args[1];
     bk_value out = 0;
     (void)udata;
     args[0] = bk_arg(ctx, 1);
-    if (bk_call(ctx, bk_arg(ctx, 0), args, 1, 0, &out) != BK_OK) return;
+    if (!(out = bk_call(ctx, bk_arg(ctx, 0), 0, args, 1))) return;
     bk_return(ctx, out);
 }
 
 /* Calls a JS function that throws; the throw must propagate. */
-static void h_apply_throwing(bk_call_ctx ctx, void *udata) {
+static void h_apply_throwing(bk_ctx ctx, void *udata) {
     (void)udata;
-    if (bk_call(ctx, bk_arg(ctx, 0), NULL, 0, 0, NULL) != BK_OK) return;
+    if (!bk_call(ctx, bk_arg(ctx, 0), 0, NULL, 0)) return;
     bk_return_number(ctx, 0);
 }
 
 /* --- harness ------------------------------------------------------------- */
 
 /* Evaluate `src`, expecting a number equal to `want`. */
-static void eval_num(bk_runtime rt, const char *label, const char *src, double want) {
-    bk_value v = 0;
+static void eval_num(bk_ctx rt, const char *label, const char *src, double want) {
     double got = 0;
-    int rc = bk_eval(rt, src, strlen(src), &v);
-    if (rc != BK_OK) {
-        printf("FAIL %s: status %d (%s)\n", label, rc, bk_last_error(rt));
+    bk_value v = bk_eval(rt, src, strlen(src));
+    if (!v) {
+        printf("FAIL %s: %s\n", label, bk_error(rt));
         failures++;
         return;
     }
-    if (bk_get_number(rt, v, &got) != BK_OK) {
+    if (bk_read_number(rt, v, &got) != BK_OK) {
         printf("FAIL %s: not a number\n", label);
         failures++;
-        bk_value_free(rt, v);
+        bk_free(rt, v);
         return;
     }
     check(label, got == want);
-    bk_value_free(rt, v);
+    bk_free(rt, v);
 }
 
 /* --- value registry ------------------------------------------------------
@@ -120,14 +119,14 @@ static void eval_num(bk_runtime rt, const char *label, const char *src, double w
 
 #define MANY 5000
 
-static void test_many_live_handles(bk_runtime rt) {
+static void test_many_live_handles(bk_ctx rt) {
     static bk_value h[MANY];
     int i, made = 0, wrong = 0, scope_bit = 0;
 
     for (i = 0; i < MANY; i++) {
         char src[64];
         snprintf(src, sizeof src, "%d", i);
-        if (bk_eval(rt, src, strlen(src), &h[i]) != BK_OK) break;
+        if (!(h[i] = bk_eval(rt, src, strlen(src)))) break;
         /* Bit 31 is reserved for scope handles; a global id must never set it. */
         if (h[i] & 0x80000000u) scope_bit++;
         made++;
@@ -138,50 +137,50 @@ static void test_many_live_handles(bk_runtime rt) {
     /* Each handle must still read back its own distinct value. */
     for (i = 0; i < made; i++) {
         double d = -1;
-        if (bk_get_number(rt, h[i], &d) != BK_OK || d != (double)i) wrong++;
+        if (bk_read_number(rt, h[i], &d) != BK_OK || d != (double)i) wrong++;
     }
     check("each of 5000 handles reads back its own value", wrong == 0);
 
-    for (i = 0; i < made; i++) bk_value_free(rt, h[i]);
+    for (i = 0; i < made; i++) bk_free(rt, h[i]);
 }
 
-static void test_stale_handle_rejected(bk_runtime rt) {
+static void test_stale_handle_rejected(bk_ctx rt) {
     bk_value a, b;
     double d;
     int i, resolved = 0;
     bk_value reuse[64];
 
-    if (bk_eval(rt, "111", 3, &a) != BK_OK) { check("stale: setup", 0); return; }
-    bk_value_free(rt, a);
+    if (!(a = bk_eval(rt, "111", 3))) { check("stale: setup", 0); return; }
+    bk_free(rt, a);
 
     /* Force the freed index to be handed out again. */
     for (i = 0; i < 64; i++) {
         char src[32];
         snprintf(src, sizeof src, "%d", 900 + i);
-        if (bk_eval(rt, src, strlen(src), &reuse[i]) != BK_OK) reuse[i] = 0;
+        reuse[i] = bk_eval(rt, src, strlen(src));
     }
 
     /* The stale handle must be rejected -- never resolved to a new occupant. */
     d = -1;
-    check("stale handle is rejected", bk_get_number(rt, a, &d) != BK_OK);
+    check("stale handle is rejected", bk_read_number(rt, a, &d) != BK_OK);
     check("stale handle yields no value", d == -1);
     check("stale handle reports invalid", bk_type_of(rt, a) == BK_TYPE_UNDEFINED);
 
     for (i = 0; i < 64; i++) {
-        if (reuse[i] && bk_get_number(rt, reuse[i], &d) == BK_OK && d == (double)(900 + i)) resolved++;
+        if (reuse[i] && bk_read_number(rt, reuse[i], &d) == BK_OK && d == (double)(900 + i)) resolved++;
     }
     check("reused slots resolve to their own new values", resolved == 64);
 
     /* Double free must not corrupt the free list. */
-    bk_value_free(rt, a);
-    bk_value_free(rt, a);
-    if (bk_eval(rt, "222", 3, &b) == BK_OK) {
-        check("registry usable after double free", bk_get_number(rt, b, &d) == BK_OK && d == 222);
-        bk_value_free(rt, b);
+    bk_free(rt, a);
+    bk_free(rt, a);
+    if ((b = bk_eval(rt, "222", 3))) {
+        check("registry usable after double free", bk_read_number(rt, b, &d) == BK_OK && d == 222);
+        bk_free(rt, b);
     } else {
         check("registry usable after double free", 0);
     }
-    for (i = 0; i < 64; i++) if (reuse[i]) bk_value_free(rt, reuse[i]);
+    for (i = 0; i < 64; i++) if (reuse[i]) bk_free(rt, reuse[i]);
 }
 
 /* A handle freed once must stay rejected no matter how many alloc/free cycles
@@ -192,75 +191,75 @@ static void test_stale_handle_rejected(bk_runtime rt) {
  *
  * The loop must run well past the generation space (32767) to prove anything.
  * A shorter run passes even when the counter does wrap. */
-static void test_stale_handle_never_resolves(bk_runtime rt) {
+static void test_stale_handle_never_resolves(bk_ctx rt) {
     bk_value stale;
     long i, cycles = 200000;
     int leaked = 0;
 
-    if (bk_eval(rt, "111", 3, &stale) != BK_OK) {
+    if (!(stale = bk_eval(rt, "111", 3))) {
         check("stale handle never resolves", 0);
         return;
     }
-    bk_value_free(rt, stale);
+    bk_free(rt, stale);
 
     for (i = 0; i < cycles; i++) {
         bk_value t;
         double g;
         char s[32];
         snprintf(s, sizeof s, "%ld", 1000000 + i);
-        if (bk_eval(rt, s, strlen(s), &t) != BK_OK) { leaked = -1; break; }
-        if (bk_get_number(rt, stale, &g) == BK_OK) { leaked = 1; bk_value_free(rt, t); break; }
-        bk_value_free(rt, t);
+        if (!(t = bk_eval(rt, s, strlen(s)))) { leaked = -1; break; }
+        if (bk_read_number(rt, stale, &g) == BK_OK) { leaked = 1; bk_free(rt, t); break; }
+        bk_free(rt, t);
     }
     check("stale handle never resolves across generation wrap", leaked == 0);
 }
 
-/* bk_get_string's two-call protocol. The conversion sink counts every byte it
+/* bk_read_string's two-call protocol. The conversion sink counts every byte it
  * produces, including those past the buffer, so a short buffer still reports the
- * true size. The sink state is per-call and lives on bk_get_string's stack, so
+ * true size. The sink state is per-call and lives on bk_read_string's stack, so
  * one call cannot disturb another. */
-static void test_string_sink(bk_runtime rt) {
+static void test_string_sink(bk_ctx rt) {
     bk_value v, v2;
     size_t need = 0, need2 = 0, got = 0, n2 = 0;
     char small[4], big[256], b2[64];
     const char *src = "'hi \\u{1F600} there'";
     const char *s2 = "'second'";
 
-    if (bk_eval(rt, src, strlen(src), &v) != BK_OK) {
+    if (!(v = bk_eval(rt, src, strlen(src)))) {
         check("string sink: eval", 0);
         return;
     }
     check("sizing call reports a length",
-          bk_get_string(rt, v, NULL, 0, &need) == BK_OK && need > 0);
+          bk_read_string(rt, v, NULL, 0, &need) == BK_OK && need > 0);
     check("short buffer fails but reports the true size",
-          bk_get_string(rt, v, small, sizeof small, &need2) != BK_OK && need2 == need);
+          bk_read_string(rt, v, small, sizeof small, &need2) != BK_OK && need2 == need);
     check("full copy matches the sized length",
-          bk_get_string(rt, v, big, sizeof big, &got) == BK_OK && got == need);
+          bk_read_string(rt, v, big, sizeof big, &got) == BK_OK && got == need);
 
-    if (bk_eval(rt, s2, strlen(s2), &v2) == BK_OK) {
-        bk_get_string(rt, v2, b2, sizeof b2, &n2);
+    if ((v2 = bk_eval(rt, s2, strlen(s2)))) {
+        bk_read_string(rt, v2, b2, sizeof b2, &n2);
         check("a later call is not disturbed by an earlier one",
               n2 == 6 && strcmp(b2, "second") == 0);
-        bk_value_free(rt, v2);
+        bk_free(rt, v2);
     }
-    bk_value_free(rt, v);
+    bk_free(rt, v);
 }
 
-static void test_churn(bk_runtime rt) {
+static void test_churn(bk_ctx rt) {
     int i, bad = 0;
     /* Allocate and free far past the old 1024 cap and past the point where a
      * leaked shape slot per free used to exhaust the engine. */
     for (i = 0; i < 200000; i++) {
         bk_value v;
         double d;
-        if (bk_eval(rt, "7", 1, &v) != BK_OK) { bad = 1; break; }
-        if (bk_get_number(rt, v, &d) != BK_OK || d != 7) { bad = 1; break; }
-        bk_value_free(rt, v);
+        if (!(v = bk_eval(rt, "7", 1))) { bad = 1; break; }
+        if (bk_read_number(rt, v, &d) != BK_OK || d != 7) { bad = 1; break; }
+        bk_free(rt, v);
     }
     check("200k alloc/free cycles stay correct", bad == 0);
 }
 
-static void test_handles_survive_gc(bk_runtime rt) {
+static void test_handles_survive_gc(bk_ctx rt) {
     bk_value held[256];
     bk_value junk;
     int i, wrong = 0;
@@ -272,41 +271,41 @@ static void test_handles_survive_gc(bk_runtime rt) {
      * keeps them alive across a collection. */
     for (i = 0; i < 256; i++) {
         snprintf(buf, sizeof buf, "'held-%d'", i);
-        if (bk_eval(rt, buf, strlen(buf), &held[i]) != BK_OK) held[i] = 0;
+        held[i] = bk_eval(rt, buf, strlen(buf));
     }
     /* Churn the heap so a collection runs with the handles outstanding. */
-    if (bk_eval(rt, CHURN, strlen(CHURN), &junk) == BK_OK) bk_value_free(rt, junk);
+    if ((junk = bk_eval(rt, CHURN, strlen(CHURN)))) bk_free(rt, junk);
 
     for (i = 0; i < 256; i++) {
         char got[64];
         size_t n = 0;
         snprintf(buf, sizeof buf, "held-%d", i);
         if (!held[i]) { wrong++; continue; }
-        if (bk_get_string(rt, held[i], got, sizeof got, &n) != BK_OK) { wrong++; continue; }
+        if (bk_read_string(rt, held[i], got, sizeof got, &n) != BK_OK) { wrong++; continue; }
         if (strcmp(got, buf) != 0) wrong++;
     }
     check("host-held values survive GC", wrong == 0);
-    for (i = 0; i < 256; i++) if (held[i]) bk_value_free(rt, held[i]);
+    for (i = 0; i < 256; i++) if (held[i]) bk_free(rt, held[i]);
 }
 
 int main(void) {
-    bk_runtime rt = NULL;
+    bk_ctx rt = NULL;
     int udata_val = 99;
 
-    if (bk_open(&rt) != BK_OK) {
+    if (!(rt = bk_open())) {
         fprintf(stderr, "bk_open failed\n");
         return 1;
     }
 
-    if (bk_register_fn(rt, "hostAnswer", 10, h_answer, NULL, 0, 0) != BK_OK) return 1;
-    if (bk_register_fn(rt, "hostAdd", 7, h_add, NULL, 2, 0) != BK_OK) return 1;
-    if (bk_register_fn(rt, "hostUdata", 9, h_udata, &udata_val, 0, 0) != BK_OK) return 1;
-    if (bk_register_fn(rt, "hostGreet", 9, h_greet, NULL, 0, 0) != BK_OK) return 1;
-    if (bk_register_fn(rt, "hostThrows", 10, h_throws, NULL, 0, 0) != BK_OK) return 1;
-    if (bk_register_fn(rt, "hostEcho", 8, h_echo, NULL, 1, 0) != BK_OK) return 1;
-    if (bk_register_fn(rt, "HostIsNew", 9, h_is_new, NULL, 0, 1) != BK_OK) return 1;
-    if (bk_register_fn(rt, "hostApply", 9, h_apply, NULL, 2, 0) != BK_OK) return 1;
-    if (bk_register_fn(rt, "hostApplyThrowing", 17, h_apply_throwing, NULL, 1, 0) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "hostAnswer", h_answer, 0, 0u, NULL) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "hostAdd", h_add, 2, 0u, NULL) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "hostUdata", h_udata, 0, 0u, &udata_val) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "hostGreet", h_greet, 0, 0u, NULL) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "hostThrows", h_throws, 0, 0u, NULL) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "hostEcho", h_echo, 1, 0u, NULL) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "HostIsNew", h_is_new, 0, BK_CTOR, NULL) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "hostApply", h_apply, 2, 0u, NULL) != BK_OK) return 1;
+    if (bk_register_fn(rt, 0, "hostApplyThrowing", h_apply_throwing, 1, 0u, NULL) != BK_OK) return 1;
 
     /* dispatch shapes */
     eval_num(rt, "plain call", "hostAnswer()", 42);
@@ -381,3 +380,4 @@ int main(void) {
     printf("all host-function ABI tests passed\n");
     return 0;
 }
+

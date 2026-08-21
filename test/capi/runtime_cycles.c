@@ -31,11 +31,11 @@ static const char *SRC =
   "1";
 int main(void){
     for(int i=0;i<40;i++){
-        bk_runtime rt=NULL; bk_value v;
-        if(bk_open(&rt)!=BK_OK){ printf("open failed at %d\n",i); return 1; }
-        if(bk_eval(rt,SRC,strlen(SRC),&v)!=BK_OK){ printf("eval failed at %d: %s\n",i,bk_last_error(rt)); bk_close(rt); return 1; }
-        bk_value_free(rt,v);
-        bk_drain_microtasks(rt);
+        bk_ctx rt=NULL; bk_value v;
+        if(!(rt = bk_open())){ printf("open failed at %d\n",i); return 1; }
+        if(!(v = bk_eval(rt, SRC, strlen(SRC)))){ printf("eval failed at %d: %s\n",i,bk_error(rt)); bk_close(rt); return 1; }
+        bk_free(rt,v);
+        bk_drain(rt);
         bk_close(rt);                 /* <- Heap.destroy, tearing_down path */
     }
     printf("40 open/eval/close cycles clean\n");

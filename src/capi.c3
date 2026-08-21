@@ -1,670 +1,166 @@
 module boomkat::capi;
 
 import boomkat::builtins;
-import boomkat::compiler;
+import boomkat::embed;
 import boomkat::vm;
 import boomkat::heap;
 import boomkat::hobject;
-import boomkat::env;
 import boomkat::hstring;
-import boomkat::lexer;
 import boomkat::types;
-import boomkat::bytecode;
+import libc;
 
 // ============================================================================
-// Status codes (must mirror include/boomkat.h)
+// The bk_ C ABI.
+//
+// This file is the C-facing face of `boomkat::embed`: it unwraps the opaque
+// `bk_ctx`, marshals to integer handles and status codes, and owns nothing.
+// The registry, the error formatter, the UTF-8 sink and the host trampoline
+// all live in `src/embed.c3`, shared with the native C3 binding.
+//
+// Two conventions run through every entry point below:
+//
+//   * A `bk_ctx` is an `embed::Ctx*`, which names a runtime and, inside a host
+//     callback, the call in progress. There is no second tier: the same reader
+//     works in both places.
+//   * A call that produces a value returns the handle, with 0 meaning failure;
+//     a call that produces none returns a status. Either way the detail is on
+//     the runtime, for bk_error / bk_error_code to report.
 // ============================================================================
 
-const int BK_OK            = 0;
-const int BK_ERR_NOMEM     = -1;
-const int BK_ERR_SYNTAX    = -2;
-const int BK_ERR_THROW     = -3;
-const int BK_ERR_INTERNAL  = -4;
-const int BK_ERR_INVALID   = -5;
-const int BK_ERR_TYPE      = -6;
-const int BK_ERR_FULL      = -7;
-const int BK_ERR_INTERRUPT = -8;
+alias Runtime = embed::Runtime;
+alias Ctx     = embed::Ctx;
 
-const int BK_TYPE_UNDEFINED = 0;
-const int BK_TYPE_NULL      = 1;
-const int BK_TYPE_BOOLEAN   = 2;
-const int BK_TYPE_NUMBER    = 3;
-const int BK_TYPE_STRING    = 4;
-const int BK_TYPE_OBJECT    = 5;
-const int BK_TYPE_FUNCTION  = 6;
-const int BK_TYPE_OTHER     = 7;
+const int BK_OK            = embed::BK_OK;
+const int BK_ERR_NOMEM     = embed::BK_ERR_NOMEM;
+const int BK_ERR_SYNTAX    = embed::BK_ERR_SYNTAX;
+const int BK_ERR_THROW     = embed::BK_ERR_THROW;
+const int BK_ERR_INTERNAL  = embed::BK_ERR_INTERNAL;
+const int BK_ERR_INVALID   = embed::BK_ERR_INVALID;
+const int BK_ERR_TYPE      = embed::BK_ERR_TYPE;
+const int BK_ERR_FULL      = embed::BK_ERR_FULL;
+const int BK_ERR_INTERRUPT = embed::BK_ERR_INTERRUPT;
 
-const usz ERRBUF = 512;
+const int BK_TYPE_UNDEFINED = embed::BK_TYPE_UNDEFINED;
+const int BK_TYPE_OTHER     = embed::BK_TYPE_OTHER;
 
 // ============================================================================
-// Value handle encoding
+// Context plumbing
 // ============================================================================
-//
-// A handle is one 32-bit word:
-//
-//    31          30..19            18..0
-//   [scope]  [ generation ]     [ index+1 ]
-//
-// Bit 31 is SCOPE_HANDLE_BIT, reserved for per-call scope handles, so a global
-// slot id must never set it -- the encoding below cannot, since index and
-// generation together occupy only bits 0..30.
-//
-// Index is stored biased by one, which keeps 0 reserved as "no value" and lets
-// bk_call/bk_eval keep treating a zero out-param as failure.
-//
-// 16 index bits cap the registry at 65535 simultaneously live handles. That is
-// a real ceiling reported as BK_ERR_FULL, not a silent wrap: the array itself
-// grows on demand and never reserves that much.
-//
-// 15 generation bits retire a slot on free. A stale handle to a freed slot
-// mismatches the slot's current generation and is rejected, so it can never
-// resolve to whatever value later occupies that index.
-//
-// The generation counter is finite, so it is not allowed to wrap. A slot whose
-// generation reaches SLOT_GEN_MAX has exhausted its supply of distinct handles
-// and is permanently retired instead of being returned to the free list: every
-// handle ever issued for that index stays rejectable forever. Without that, the
-// counter would return to a value a stale handle still carries and the two
-// would become bit-identical, which no check downstream could separate.
-//
-// Retirement is permanent for the life of the runtime. It cannot be undone by
-// waiting for the registry to empty: a handle freed long ago is still held by
-// the host, and resetting the generation would make it resolve again. One index
-// is spent per 32767 alloc/free cycles on it, so exhausting all 65535 indexes
-// takes over two billion cycles, and the result is a clean BK_ERR_FULL rather
-// than a stale handle resolving.
-const uint SLOT_INDEX_BITS = 16;
-const uint SLOT_INDEX_MASK = (1u << SLOT_INDEX_BITS) - 1;   // 65535
-const uint SLOT_GEN_BITS   = 15;
-const uint SLOT_GEN_MASK   = (1u << SLOT_GEN_BITS) - 1;     // 32767
-const uint SLOT_GEN_MAX    = SLOT_GEN_MASK;
-const uint SLOT_FREE_END   = 0xFFFF_FFFF;
-const uint SLOT_INITIAL_CAP = 64;
 
-// One registry entry. `used` distinguishes a live slot from one on the free
-// list, so the common stale-handle case is caught without relying on the
-// generation having advanced.
-struct SlotEntry {
-    TVal v;
-    uint gen;
-    uint next_free;
-    bool used;
+// The runtime behind a context, or null if the context is null.
+macro Runtime* rt_of(void* p) => p == null ? null : ((Ctx*)p).rt;
+
+// The live call behind a context, or null outside a callback.
+macro void* bctx_of(void* p) => p == null ? null : ((Ctx*)p).bctx;
+
+// Record a failure and hand back its code, so a caller can `return fail(...)`.
+// Every failing entry point goes through here or through embed::set_err, which
+// is what lets a host log bk_error unconditionally on a bad status.
+fn int fail(Runtime* rt, int code, String msg) {
+    if (rt != null) embed::set_err(rt, code, msg);
+    return code;
+}
+
+// Resolve a handle against this context: the registry for an owned handle, the
+// live call's scope for an argument handle.
+fn bool resolve(void* ctxp, ulong id, TVal* out) {
+    return embed::resolve_handle(rt_of(ctxp), bctx_of(ctxp), id, out);
+}
+
+// Store a value in the registry and return its handle, or 0 with the failure
+// recorded. Reports exhaustion for every value kind, undefined included:
+// handle 0 reads back as undefined, so returning it for a failed registration
+// would be a silent wrong answer rather than an error.
+fn ulong store(Runtime* rt, TVal v) {
+    ulong id = embed::slot_alloc(rt, v);
+    if (id == 0) embed::set_err(rt, BK_ERR_FULL, "value registry full");
+    return id;
+}
+
+// A handle argument that did not resolve. Records the reason and yields 0, so
+// the value-returning entry points can `return bad_handle(rt)`.
+fn ulong bad_handle(Runtime* rt) {
+    fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    return 0;
 }
 
 // ============================================================================
-// Runtime
+// Lifecycle
 // ============================================================================
 
-// The engine keeps process-global state (compiler error buffer, hobject active
-// heap), so exactly one runtime may exist at a time. Enforced, not documented.
-struct Runtime {
-    Heap*    heap;
-    Vm*      vm;
-    // Host-held values. A dedicated growable array rather than an HObject: the
-    // object registry was bounded by the ushort prop_count and burned a shape
-    // slot per delete, and it hashed an integer key into a string on every
-    // access. The GC walks this array directly (see Heap.capi_roots).
-    SlotEntry* slots;
-    uint     slot_cap;
-    uint     slot_count;     // high-water index, not the live count
-    uint     free_head;
-    uint     live;
-    uint     retired;        // slots withheld from reuse at generation max
-    char[ERRBUF] errmsg;
-    int      errcode;
-    int      err_line;       // 1-based, 0 when unknown
-    int      err_col;
-    char[ERRBUF] err_name;   // script name for the most recent failure
-    // Innermost host-call context, or null outside a host callback. Lets the
+fn void* bk_open() @export("bk_open") {
+    Runtime* rt = embed::create();
+    if (rt == null) return null;
+    // The host's bk_ctx is the runtime's own root context. A callback gets a
+    // different one, built on the trampoline's stack, naming the same runtime.
+    return (void*)&rt.root;
 }
 
-// Set once the engine's compile-time-populated tables are known good; see
-// ensure_engine_init. Never cleared, since the tables outlive any runtime.
-bool g_engine_ready = false;
-
-fn void set_err(Runtime* rt, int code, char[] msg) {
-    rt.errcode = code;
-    usz n = msg.len < ERRBUF - 1 ? msg.len : ERRBUF - 1;
-    for (usz i = 0; i < n; i++) rt.errmsg[i] = msg[i];
-    rt.errmsg[n] = 0;
+fn void bk_close(void* ctxp) @export("bk_close") {
+    embed::destroy(rt_of(ctxp));
 }
 
-fn void set_err_at(Runtime* rt, int code, char[] msg, int line, int col) {
-    set_err(rt, code, msg);
-    rt.err_line = line;
-    rt.err_col = col;
-}
-
-fn void set_script_name(Runtime* rt, char* name, usz len) {
-    usz n = len < ERRBUF - 1 ? len : ERRBUF - 1;
-    for (usz i = 0; i < n; i++) rt.err_name[i] = name[i];
-    rt.err_name[n] = 0;
-}
-
-fn void clear_err(Runtime* rt) {
-    rt.errcode = BK_OK;
-    rt.errmsg[0] = 0;
-    rt.err_line = 0;
-    rt.err_col = 0;
-    rt.err_name[0] = 0;
-}
-
-// The engine's one @init function (builtins::init_builtin_dispatch_table)
-// normally runs from the C3 runtime's startup walk of the Mach-O/ELF init
-// sections. That walk is only reliable when c3c also drives the final link:
-// when this archive is linked by a foreign toolchain the C3 startup can bind
-// to the wrong image header and either fault or silently skip the section, so
-// the dispatch table stays all-null and the first builtin call misbehaves.
-// Observed concretely with the Zig linker, which emits a second, bogus
-// __mh_execute_header in __DATA,__bss that the walk latches onto.
-//
-// Running the initializer explicitly here removes the ABI's dependence on that
-// walk entirely. It is idempotent -- it just re-stores compile-time constants
-// into a fixed-size table -- so double execution with the startup path is
-// harmless, and this is the only place a host can reach the engine first.
-fn void ensure_engine_init() {
-    if (g_engine_ready) return;
-    g_engine_ready = true;
-    builtins::init_builtin_dispatch_table();
-}
-
-fn int bk_open(void** out_rt) @export("bk_open") {
-    if (out_rt == null) return BK_ERR_INVALID;
-    *out_rt = null;
-    ensure_engine_init();
-
-    Heap*? hpr = heap::create(null, null, null, null, null);
-    if (catch hpr) return BK_ERR_NOMEM;
-    Heap* hp = hpr;
-
-    Vm*? vr = vm::vm_create(hp);
-    if (catch vr) { hp.destroy(); return BK_ERR_NOMEM; }
-    Vm* v = vr;
-
-    void* raw = hp.alloc_func(hp.heap_udata, Runtime::size);
-    if (raw == null) { vm::vm_destroy(v); hp.destroy(); return BK_ERR_NOMEM; }
-    Runtime* rt = (Runtime*)raw;
-    rt.heap = hp; rt.vm = v;
-    rt.slots = null; rt.slot_cap = 0; rt.slot_count = 0;
-    rt.free_head = SLOT_FREE_END; rt.live = 0; rt.retired = 0;
-    clear_err(rt);
-
-    // The slot array is not an HObject, so the mark phase cannot reach it
-    // transitively. Hand the heap a direct view of it instead; mark_roots walks
-    // every live entry from there.
-    hp.capi_roots = (void*)rt;
-    hp.capi_runtime = (void*)rt;
-    hp.capi_mark = (heap::CapiMarkFn)&mark_slots;
-
-    *out_rt = (void*)rt;
-    return BK_OK;
-}
-
-// GC root walk for the value registry. Every live host handle keeps its value
-// reachable for as long as the host holds it; freed slots hold undefined and
-// mark nothing.
-fn void mark_slots(void* rtp) {
-    if (rtp == null) return;
-    Runtime* rt = (Runtime*)rtp;
-    if (rt.slots == null) return;
-    for (uint i = 0; i < rt.slot_count; i++) {
-        if (!rt.slots[i].used) continue;
-        rt.heap.mark_tval(&rt.slots[i].v);
-    }
-}
-
-fn void bk_close(void* rtp) @export("bk_close") {
-    if (rtp == null) return;
-    Runtime* rt = (Runtime*)rtp;
-    Heap* hp = rt.heap;
-    // Stop the GC walking the registry before any of it is torn down.
-    hp.capi_roots = null;
-    hp.capi_runtime = null;
-    hp.capi_mark = null;
-    if (rt.slots != null) {
-        for (uint i = 0; i < rt.slot_count; i++) {
-            if (rt.slots[i].used && rt.slots[i].v.is_heap_allocated()) {
-                hp.decref_tval(&rt.slots[i].v);
-            }
-        }
-        hp.free_func(hp.heap_udata, (void*)rt.slots);
-        rt.slots = null;
-    }
-    // Teardown order is load-bearing: vm_destroy uses heap.free_func.
-    vm::vm_destroy(rt.vm);
-    hp.free_func(hp.heap_udata, (void*)rt);
-    hp.destroy();
-}
-
-// ============================================================================
-// Slot registry
-// ============================================================================
-
-// Grow the slot array. Returns false on allocation failure, leaving the
-// registry usable at its current size.
-fn bool slot_grow(Runtime* rt) {
-    uint new_cap = rt.slot_cap == 0 ? SLOT_INITIAL_CAP : rt.slot_cap * 2;
-    if (new_cap > SLOT_INDEX_MASK) new_cap = SLOT_INDEX_MASK;
-    if (new_cap <= rt.slot_cap) return false;
-    usz bytes = (usz)new_cap * SlotEntry::size;
-    void* raw = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.slots, bytes);
-    if (raw == null) return false;
-    usz old_bytes = (usz)rt.slot_cap * SlotEntry::size;
-    mem::clear((char*)raw + old_bytes, (sz)(bytes - old_bytes));
-    rt.slots = (SlotEntry*)raw;
-    rt.slot_cap = new_cap;
-    return true;
-}
-
-// Register a value and return its handle, or 0 if none could be issued.
-//
-// Returning 0 is the ONLY failure signal, and every caller turns it into an
-// explicit error: a handle is never handed back for a value that was not
-// stored.
-fn uint slot_alloc(Runtime* rt, TVal v) {
-    uint idx;
-    if (rt.free_head != SLOT_FREE_END) {
-        idx = rt.free_head;
-        rt.free_head = rt.slots[idx].next_free;
-    } else {
-        // slot_count indexes from 0 and the handle stores index+1, so the last
-        // usable index is SLOT_INDEX_MASK - 1.
-        if (rt.slot_count >= SLOT_INDEX_MASK) return 0;
-        if (rt.slot_count == rt.slot_cap && !slot_grow(rt)) return 0;
-        idx = rt.slot_count;
-        rt.slot_count++;
-        rt.slots[idx].gen = 1;
-    }
-    if (v.is_heap_allocated()) {
-        void* ptr = v.get_heapptr();
-        if (ptr != null) ((types::HeapHeader*)ptr).incref();
-    }
-    rt.slots[idx].v = v;
-    rt.slots[idx].used = true;
-    rt.live++;
-    return ((rt.slots[idx].gen & SLOT_GEN_MASK) << SLOT_INDEX_BITS) | (idx + 1);
-}
-
-// Resolve a handle to its entry, or null if the handle is stale, freed, out of
-// range, or a scope handle. This is the single validation point.
-fn SlotEntry* slot_entry(Runtime* rt, uint id) {
-    if (rt == null || id == 0) return null;
-    if ((id & SCOPE_HANDLE_BIT) != 0) return null;
-    uint biased = id & SLOT_INDEX_MASK;
-    if (biased == 0) return null;
-    uint idx = biased - 1;
-    if (idx >= rt.slot_count) return null;
-    SlotEntry* e = &rt.slots[idx];
-    if (!e.used) return null;
-    if (((id >> SLOT_INDEX_BITS) & SLOT_GEN_MASK) != (e.gen & SLOT_GEN_MASK)) return null;
-    return e;
-}
-
-fn bool slot_get(Runtime* rt, uint id, TVal* out) {
-    SlotEntry* e = slot_entry(rt, id);
-    if (e == null) return false;
-    *out = e.v;
-    return true;
-}
-
-fn void bk_value_free(void* rtp, uint id) @export("bk_value_free") {
-    if (rtp == null) return;
-    Runtime* rt = (Runtime*)rtp;
-    // Scope handles are owned by the call that issued them, so freeing one is
-    // ignored rather than treated as an error.
-    SlotEntry* e = slot_entry(rt, id);
-    if (e == null) return;
-
-    if (e.v.is_heap_allocated()) rt.heap.decref_tval(&e.v);
-    e.v.set_undefined();
-    e.used = false;
-    if (rt.live > 0) rt.live--;
-
-    // Advance the generation so every handle naming this index is now stale and
-    // slot_entry rejects it, keeping a later occupant unreachable through an old
-    // handle.
-    //
-    // At SLOT_GEN_MAX the counter has no unused value left: bumping it would
-    // return to a generation some outstanding handle still carries, making the
-    // two handles bit-identical. Such a slot is permanently retired instead of
-    // being relisted, so it is never allocated again and every handle for it
-    // stays rejected.
-    if (e.gen >= SLOT_GEN_MAX) {
-        rt.retired++;
-        return;
-    }
-    e.gen++;
-
-    uint idx = (id & SLOT_INDEX_MASK) - 1;
-    e.next_free = rt.free_head;
-    rt.free_head = idx;
+fn char* bk_version() @export("bk_version") {
+    return "0.2.0";
 }
 
 // ============================================================================
 // Eval
 // ============================================================================
 
-fn int bk_eval_with_name(void* rtp, char* src, usz len, char* name, usz name_len,
-                              uint* out_val) @export("bk_eval_with_name") {
-    if (rtp == null || src == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
-    if (name != null) set_script_name(rt, name, name_len);
-    // A fresh eval starts with a clean interrupt state: an abort from a prior
-    // run was cleared when it surfaced here, and a near-zero budget must not
-    // trigger an immediate unprompted callback.
-    rt.heap.uncatchable_throw = false;
-    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
-    if (out_val != null) *out_val = 0;
-
-    Lexer lex = lexer::lexer_init(src[:len], rt.heap, name != null ? name[:name_len] : (char[])"<eval>");
-    lex.skip_hashbang();
-    // compile_eval, not compile: a top-level *script* only yields a value via an
-    // explicit RET, so `40+2` would come back undefined. eval-form code carries a
-    // completion value, which is what an embedder expects from bk_eval.
-    CompiledFunction*? fr = compiler::compile_eval(&lex, rt.heap);
-    if (catch fr) {
-        // Copy immediately: the compiler error buffer lives on the lexer and
-        // is clobbered by the next failing compile.
-        char* m = &lex.err_msg[0];
-        usz n = 0;
-        while (m[n] != 0 && n < ERRBUF - 1) n++;
-        // Some compiler failure paths return without populating the global
-        // buffer (e.g. "var = = ="). Never hand the host an empty message.
-        if (n == 0) {
-            set_err_at(rt, BK_ERR_SYNTAX, "SyntaxError", (int)lex.err_line, (int)lex.err_col);
-        } else {
-            set_err_at(rt, BK_ERR_SYNTAX, m[:n], (int)lex.err_line, (int)lex.err_col);
-        }
-        lex.free_arena();
-        return BK_ERR_SYNTAX;
-    }
-    CompiledFunction* f = fr;
-
-    rt.heap.has_error = false;
-    TVal? res = rt.vm.execute(f);
-    lex.free_arena();
-
-    if (catch res) {
-        if (rt.heap.has_error) {
-            // The interrupt flag marks this failure as an abort of a runaway
-            // script and is cleared here, at the host boundary.
-            if (rt.heap.uncatchable_throw) {
-                rt.heap.uncatchable_throw = false;
-                set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-                return BK_ERR_INTERRUPT;
-            }
-            describe_error(rt, &rt.heap.error_value);
-            return BK_ERR_THROW;
-        }
-        set_err(rt, BK_ERR_INTERNAL, "internal VM error");
-        return BK_ERR_INTERNAL;
-    }
-
-    if (out_val != null) {
-        TVal v = res;
-        // slot_alloc returns 0 only on genuine exhaustion or OOM, so report it
-        // for every value kind. Letting an undefined result through as handle 0
-        // would turn a failed registration into an ordinary undefined -- a
-        // silent wrong answer rather than an error.
-        uint id = slot_alloc(rt, v);
-        if (id == 0) {
-            set_err(rt, BK_ERR_FULL, "value slot table full");
-            return BK_ERR_FULL;
-        }
-        *out_val = id;
-    }
-    return BK_OK;
+fn ulong bk_eval_named(void* ctxp, char* src, usz len, char* name, usz name_len)
+        @export("bk_eval_named") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || src == null) return 0;
+    TVal res;
+    int rc = embed::eval_source(rt, src[:len],
+                                name != null ? name[:name_len] : (char[])"<eval>", &res);
+    if (rc != BK_OK) return 0;
+    return store(rt, res);
 }
 
-// The plain eval, fixed script name "<eval>". Forwards to the named variant,
-// so the position-bearing path is shared.
-fn int bk_eval(void* rtp, char* src, usz len, uint* out_val) @export("bk_eval") {
-    return bk_eval_with_name(rtp, src, len, "<eval>", 6, out_val);
+fn ulong bk_eval(void* ctxp, char* src, usz len) @export("bk_eval") {
+    return bk_eval_named(ctxp, src, len, "<eval>", 6);
 }
 
-// Read property `key` off `o` or its prototype chain, returning it only if it
-// holds a string. Needed for the `name`/`message` pair on a thrown Error: an
-// engine-thrown TypeError owns only `message`, and `name` lives on
-// Error.prototype.
-//
-// This walks the chain by hand instead of calling get_prop_proto because that
-// routes a Proxy anywhere on the chain back through the trap machinery and
-// into the VM. describe_error runs on the unwind path, where re-entering the
-// VM could throw again; a proxy link simply ends the search instead.
-fn HString* str_prop(HObject* o, HString* key, heap::Heap* h) {
-    HObject* cur = o;
-    uint depth = 0;
-    while (cur != null && depth < 64) {
-        if (cur.flags.exotic_proxyobj) return null;
-        int idx = cur.find_prop_idx((void*)key, h);
-        if (idx >= 0) {
-            // An accessor slot holds a getter/setter pair, not a value. Reading
-            // it would mean calling into the VM, so treat it as absent.
-            if (cur.get_prop_flags((uint)idx, h).is_accessor) return null;
-            TVal got = cur.prop_values()[idx];
-            if (got.is_string()) return (HString*)got.get_heapptr();
-            return null;
-        }
-        cur = cur.prototype;
-        depth++;
-    }
-    return null;
-}
-
-// Format a thrown value into the runtime error buffer without re-entering
-// the VM (a user toString could throw again on the unwind path). Every JS
-// value reaches a useful message: `throw 42` reports "42", not a placeholder.
-fn void describe_error(Runtime* rt, TVal* ev) {
-    if (ev.is_string()) {
-        HString* s = (HString*)ev.get_heapptr();
-        set_err(rt, BK_ERR_THROW, s.get_data());
-        return;
-    }
-    if (ev.is_undefined()) { set_err(rt, BK_ERR_THROW, "undefined"); return; }
-    if (ev.is_null())      { set_err(rt, BK_ERR_THROW, "null"); return; }
-    if (ev.is_boolean())   {
-        set_err(rt, BK_ERR_THROW, ev.get_boolean() ? "true" : "false");
-        return;
-    }
-    if (ev.is_numeric()) {
-        // Same shortest-roundtrip formatter the engine uses for Number->String,
-        // and it is a pure buffer write: no VM re-entry, no allocation.
-        char[64] nbuf;
-        usz n = builtins::json_number_to_string(ev.get_number_or_fastint(), &nbuf[0], 64);
-        set_err(rt, BK_ERR_THROW, nbuf[:n]);
-        return;
-    }
-    if (ev.is_object()) {
-        HObject* o = (HObject*)ev.get_heapptr();
-        HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE], rt.heap);
-        HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME], rt.heap);
-
-        // "TypeError: x is not a function" -- name comes off the prototype, so
-        // this reads like the message a JS host would print.
-        if (name != null && msg != null && msg.blen != 0) {
-            char[ERRBUF] buf;
-            usz pos = 0;
-            char[] np = name.get_data();
-            char[] mp = msg.get_data();
-            for (usz i = 0; i < np.len && pos < ERRBUF - 3; i++) buf[pos++] = np[i];
-            buf[pos++] = ':';
-            buf[pos++] = ' ';
-            for (usz i = 0; i < mp.len && pos < ERRBUF - 1; i++) buf[pos++] = mp[i];
-            set_err(rt, BK_ERR_THROW, buf[:pos]);
-            return;
-        }
-        if (msg != null && msg.blen != 0) { set_err(rt, BK_ERR_THROW, msg.get_data()); return; }
-        if (name != null && name.blen != 0) { set_err(rt, BK_ERR_THROW, name.get_data()); return; }
-        set_err(rt, BK_ERR_THROW, "uncaught exception (object)");
-        return;
-    }
-    set_err(rt, BK_ERR_THROW, "uncaught exception");
-}
-
-// ============================================================================
-// Readers
-// ============================================================================
-
-fn int type_of(Runtime* rt, void* ctxp, uint id) {
-    if (rt == null) return BK_TYPE_OTHER;
-    TVal v;
-    if (!resolve_handle(rt, ctxp, id, &v)) return BK_TYPE_UNDEFINED;
-    if (v.is_undefined()) return BK_TYPE_UNDEFINED;
-    if (v.is_null()) return BK_TYPE_NULL;
-    if (v.is_boolean()) return BK_TYPE_BOOLEAN;
-    if (v.is_numeric()) return BK_TYPE_NUMBER;
-    // A Symbol is a STRING-tagged HString with is_symbol set, so is_string()
-    // alone would misreport it as a string and let bk_get_string hand back
-    // the symbol's raw internal bytes.
-    if (v.is_string()) {
-        HString* s = (HString*)v.get_heapptr();
-        if (s != null && s.is_symbol()) return BK_TYPE_OTHER;
-        return BK_TYPE_STRING;
-    }
-    if (v.is_object()) {
-        HObject* o = (HObject*)v.get_heapptr();
-        if (o != null && o.flags.callable) return BK_TYPE_FUNCTION;
-        return BK_TYPE_OBJECT;
-    }
-    return BK_TYPE_OTHER;
-}
-
-fn int bk_type_of(void* rtp, uint id) @export("bk_type_of") {
-    return type_of((Runtime*)rtp, null, id);
-}
-
-// Context tier; see bk_ctx_get_number.
-fn int bk_ctx_type_of(void* ctxp, uint id) @export("bk_ctx_type_of") {
-    return type_of(ctx_runtime(ctxp), ctxp, id);
-}
-
-// A reader that fails must leave a message behind: bk_last_error is documented
-// as describing "the most recent failure", and a host that logs it on a bad
-// status would otherwise print an empty string (or, worse, a stale message from
-// an unrelated earlier call).
-fn int reader_fail(Runtime* rt, int code, String msg) {
-    set_err(rt, code, msg);
-    return code;
-}
-
-// The readers come in two tiers. A host function holds a call context, not a
-// runtime, and only the context tier can resolve a scope handle at all. Code
-// outside a callback holds a runtime and uses the runtime tier. Neither accepts
-// a null and falls back to "the one runtime": a global slot handle is an index
-// into some runtime's registry, so with two runtimes open there is no such
-// thing, and guessing would resolve one runtime's handle against another's
-// values.
-fn int read_number(Runtime* rt, void* ctxp, uint id, double* out) {
-    if (out == null) return BK_ERR_INVALID;
+fn int bk_drain(void* ctxp) @export("bk_drain") {
+    Runtime* rt = rt_of(ctxp);
     if (rt == null) return BK_ERR_INVALID;
-    clear_err(rt);
-    TVal v;
-    if (!resolve_handle(rt, ctxp, id, &v)) return reader_fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-    if (!v.is_numeric()) return reader_fail(rt, BK_ERR_TYPE, "value is not a number");
-    *out = v.get_number_or_fastint();
-    return BK_OK;
-}
-
-fn int bk_get_number(void* rtp_in, uint id, double* out) @export("bk_get_number") {
-    return read_number((Runtime*)rtp_in, null, id, out);
-}
-
-// Context tier: reads an argument or any handle a callback holds, including a
-// scope handle, which the runtime tier cannot resolve.
-fn int bk_ctx_get_number(void* ctxp, uint id, double* out) @export("bk_ctx_get_number") {
-    return read_number(ctx_runtime(ctxp), ctxp, id, out);
-}
-
-fn int read_bool(Runtime* rt, void* ctxp, uint id, int* out) {
-    if (out == null) return BK_ERR_INVALID;
-    if (rt == null) return BK_ERR_INVALID;
-    clear_err(rt);
-    TVal v;
-    if (!resolve_handle(rt, ctxp, id, &v)) return reader_fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-    if (!v.is_boolean()) return reader_fail(rt, BK_ERR_TYPE, "value is not a boolean");
-    *out = v.get_boolean() ? 1 : 0;
-    return BK_OK;
-}
-
-fn int bk_get_bool(void* rtp_in, uint id, int* out) @export("bk_get_bool") {
-    return read_bool((Runtime*)rtp_in, null, id, out);
-}
-
-// Context tier; see bk_ctx_get_number.
-fn int bk_ctx_get_bool(void* ctxp, uint id, int* out) @export("bk_ctx_get_bool") {
-    return read_bool(ctx_runtime(ctxp), ctxp, id, out);
-}
-
-// UTF-8 conversion sink. The state is per-call and lives on bk_get_string's
-// stack, reached through the udata pointer write_cesu8_as_utf8 passes back.
-//
-// `len` counts every byte the conversion produces, including those past `cap`,
-// because the two-call protocol needs the full required size even when the
-// buffer is too small or absent.
-struct StringSink {
-    char* buf;
-    usz   len;
-    usz   cap;
-}
-
-fn void sink_put(char c, void* udata) {
-    StringSink* sink = (StringSink*)udata;
-    if (sink.len + 1 < sink.cap) { sink.buf[sink.len] = c; }
-    sink.len++;
-}
-
-// Copy a JS string out as NUL-terminated UTF-8. Two-call protocol: pass
-// buf==null to learn the required size (excluding NUL).
-fn int read_string(Runtime* rt, void* ctxp, uint id, char* buf, usz cap, usz* out_len) {
-    if (rt == null) return BK_ERR_INVALID;
-    clear_err(rt);
-    TVal v;
-    if (!resolve_handle(rt, ctxp, id, &v)) return reader_fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-    if (!v.is_string()) return reader_fail(rt, BK_ERR_TYPE, "value is not a string");
-    HString* s = (HString*)v.get_heapptr();
-    // Symbols share the string tag but carry no meaningful text; copying their
-    // bytes out would yield invalid UTF-8. JS forbids implicit conversion too.
-    if (s != null && s.is_symbol()) return BK_ERR_TYPE;
-
-    StringSink sink = { .buf = buf, .len = 0, .cap = (buf == null) ? 0 : cap };
-    hstring::write_cesu8_as_utf8(s.get_data(), &sink_put, &sink);
-    usz need = sink.len;
-    if (out_len != null) *out_len = need;
-    if (buf == null) return BK_OK;
-    if (need + 1 > cap) return reader_fail(rt, BK_ERR_FULL, "buffer too small for string");
-    buf[need] = 0;
-    return BK_OK;
-}
-
-fn int bk_get_string(void* rtp_in, uint id, char* buf, usz cap, usz* out_len) @export("bk_get_string") {
-    return read_string((Runtime*)rtp_in, null, id, buf, cap, out_len);
-}
-
-// Context tier; see bk_ctx_get_number.
-fn int bk_ctx_get_string(void* ctxp, uint id, char* buf, usz cap, usz* out_len) @export("bk_ctx_get_string") {
-    return read_string(ctx_runtime(ctxp), ctxp, id, buf, cap, out_len);
-}
-
-// The runtime owning a callback's context, for a host that needs to persist a
-// value or evaluate. Mirrors QuickJS's JS_GetRuntime(ctx).
-fn void* bk_ctx_runtime(void* ctxp) @export("bk_ctx_runtime") {
-    return (void*)ctx_runtime(ctxp);
+    return embed::drain_microtasks(rt);
 }
 
 // ============================================================================
-// Errors / microtasks
+// Value lifetime
 // ============================================================================
 
-fn char* bk_last_error(void* rtp) @export("bk_last_error") {
-    if (rtp == null) return null;
-    Runtime* rt = (Runtime*)rtp;
+fn void bk_free(void* ctxp, ulong id) @export("bk_free") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return;
+    embed::slot_release(rt, id);
+}
+
+fn ulong bk_persist(void* ctxp, ulong id) @export("bk_persist") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    return store(rt, v);
+}
+
+// ============================================================================
+// Errors
+// ============================================================================
+
+fn char* bk_error(void* ctxp) @export("bk_error") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return "";
     return &rt.errmsg[0];
 }
 
-fn int bk_last_error_code(void* rtp) @export("bk_last_error_code") {
-    if (rtp == null) return BK_ERR_INVALID;
-    return ((Runtime*)rtp).errcode;
+fn int bk_error_code(void* ctxp) @export("bk_error_code") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    return rt.errcode;
 }
 
 // Layout must match bk_error_info in include/boomkat.h on the target's ABI.
@@ -675,12 +171,9 @@ struct BkErrorInfo {
     char* script_name;
 }
 
-// Fill *out with the most recent failure's kind and position. script_name
-// points at runtime-owned storage with the same lifetime as bk_last_error.
-fn int bk_last_error_info(void* rtp, BkErrorInfo* out) @export("bk_last_error_info") {
-    if (out == null) return BK_ERR_INVALID;
-    if (rtp == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
+fn int bk_error_info_of(void* ctxp, BkErrorInfo* out) @export("bk_error_info_of") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
     out.code = rt.errcode;
     out.line = rt.err_line;
     out.col = rt.err_col;
@@ -688,594 +181,439 @@ fn int bk_last_error_info(void* rtp, BkErrorInfo* out) @export("bk_last_error_in
     return BK_OK;
 }
 
-fn int bk_drain_microtasks(void* rtp) @export("bk_drain_microtasks") {
-    if (rtp == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
-    rt.heap.uncatchable_throw = false;
-    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
-    rt.heap.drain_microtasks((void*)rt.vm);
-    // The drain aborts on an interrupt: the host needs to know its abort
-    // landed, and a reader-style error would be wiped by the next call.
-    if (rt.heap.uncatchable_throw) {
-        rt.heap.uncatchable_throw = false;
-        set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-        return BK_ERR_INTERRUPT;
-    }
-    return BK_OK;
+fn char* bk_status_str(int status) @export("bk_status_str") {
+    return embed::status_name(status);
 }
 
-// Install, replace, or clear the interrupt handler. The callback runs on the
-// engine thread at VM safepoints; it must not call back into the engine. A
-// host interrupting from another thread sets a flag in `opaque` and returns
-// it here.
-fn void bk_set_interrupt_handler(void* rtp, void* cb, void* opaque) @export("bk_set_interrupt_handler") {
-    if (rtp == null) return;
-    Runtime* rt = (Runtime*)rtp;
-    rt.heap.capi_interrupt_fn = cb;
-    rt.heap.capi_interrupt_opaque = opaque;
-    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
-}
-
-fn char* bk_version() @export("bk_version") {
-    return "0.2.0";
+fn char* bk_type_str(int type) @export("bk_type_str") {
+    return embed::type_name(type);
 }
 
 // ============================================================================
-// Host functions
-//
-// A host callback is a C function the engine calls when JS invokes the
-// corresponding function value. The engine side (builtins::dispatch_host)
-// stages a per-call scope; everything here is the opaque-handle layer over it.
-//
-// Handles inside a callback are SCOPE handles: they carry the high bit and are
-// valid only for the duration of that call. bk_value_persist copies one into
-// the global slot registry when the host needs it to outlive the callback.
+// Reading values
 // ============================================================================
 
-const uint SCOPE_HANDLE_BIT = 0x8000_0000;
-
-// The C-facing callback signature: (ctx, udata).
-alias BkHostFn = fn void(void*, void*);
-
-// Encode a scope handle for argument/this/new_target index `idx`.
-//
-// Scope handles are distinguished from global slot ids by the high bit, so
-// bk_type_of and the readers accept both kinds without separate entry points.
-fn uint scope_handle(uint idx) @inline {
-    return SCOPE_HANDLE_BIT | idx;
+fn int bk_type_of(void* ctxp, ulong id) @export("bk_type_of") {
+    if (rt_of(ctxp) == null) return BK_TYPE_OTHER;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return BK_TYPE_UNDEFINED;
+    return embed::classify(v);
 }
 
-// Resolve any handle to a TVal. Global slot ids go to the slot registry;
-// scope handles read the innermost host call scope through the context.
-fn bool resolve_handle(Runtime* rt, void* ctxp, uint id, TVal* out) {
-    if ((id & SCOPE_HANDLE_BIT) != 0) {
-        if (ctxp == null) return false;
-        builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
-        uint idx = id & ~SCOPE_HANDLE_BIT;
-        if (idx == heap::HOST_SCOPE_THIS)       { *out = builtins::host_this(ctx); return true; }
-        if (idx == heap::HOST_SCOPE_NEW_TARGET) { *out = builtins::host_new_target(ctx); return true; }
-        *out = builtins::host_arg(ctx, idx - heap::HOST_SCOPE_ARG0);
-        return true;
-    }
-    return slot_get(rt, id, out);
-}
-
-// Trampoline: every registered host function enters the engine through this
-// one C3 function, which forwards to the C callback with the context as an
-// opaque pointer. The udata the engine stored is a HostReg* holding the real
-// C function pointer and the host's own udata.
-struct HostReg {
-    void* cfn;
-    void* udata;
-}
-
-fn void host_trampoline(builtins::BuiltinContext* ctx, void* udata) {
-    if (udata == null) return;
-    HostReg* reg = (HostReg*)udata;
-    if (reg.cfn == null) return;
-    BkHostFn cfn = (BkHostFn)reg.cfn;
-    cfn((void*)ctx, reg.udata);
-}
-
-// Register `cfn` as a global function named `name`.
-//
-// Returns BK_OK, or BK_ERR_INVALID / BK_ERR_NOMEM. The binding is created
-// on the global environment, so JS reaches it by bare name.
-fn int bk_register_fn(void* rtp, char* name, usz name_len, void* cfn, void* udata,
-                       int arity, int constructable) @export("bk_register_fn") {
-    if (rtp == null || name == null || cfn == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
-
-    HString* nm = rt.heap.str_intern(name[:name_len]);
-    if (nm == null) { set_err(rt, BK_ERR_NOMEM, "could not intern function name"); return BK_ERR_NOMEM; }
-
-    // The registration record outlives the call, so it is heap-allocated and
-    // owned by the runtime; the host function table keeps the only pointer.
-    void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
-    if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
-    HostReg* reg = (HostReg*)raw;
-    reg.cfn = cfn;
-    reg.udata = udata;
-
-    long slot = rt.heap.register_host_fn((void*)&host_trampoline, (void*)reg, (void*)nm,
-                                         arity, constructable != 0);
-    if (slot < 0) {
-        rt.heap.free_func(rt.heap.heap_udata, raw);
-        set_err(rt, BK_ERR_NOMEM, "host function table full");
-        return BK_ERR_NOMEM;
-    }
-
-    HObject*? fo = builtins::make_host_function(rt.heap, (uint)slot);
-    if (catch fo) { set_err(rt, BK_ERR_NOMEM, "could not create function object"); return BK_ERR_NOMEM; }
-    TVal fv;
-    fv.set_object(fo);
-    if (!env::env_declare(rt.vm.global_env, (void*)nm, fv)) {
-        set_err(rt, BK_ERR_INTERNAL, "could not bind function name");
-        return BK_ERR_INTERNAL;
-    }
+fn int bk_read_number(void* ctxp, ulong id, double* out) @export("bk_read_number") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    if (!v.is_numeric()) return fail(rt, BK_ERR_TYPE, "value is not a number");
+    *out = v.get_number_or_fastint();
     return BK_OK;
 }
 
-// --- inside a callback ------------------------------------------------------
-
-fn uint bk_argc(void* ctxp) @export("bk_argc") {
-    if (ctxp == null) return 0;
-    return builtins::host_argc((builtins::BuiltinContext*)ctxp);
-}
-
-// Handle to argument `i`. Out-of-range yields a handle to undefined, matching
-// JS semantics and sparing every host an arity check.
-fn uint bk_arg(void* ctxp, uint i) @export("bk_arg") {
-    return scope_handle(heap::HOST_SCOPE_ARG0 + i);
-}
-
-fn uint bk_this(void* ctxp) @export("bk_this") {
-    return scope_handle(heap::HOST_SCOPE_THIS);
-}
-
-fn uint bk_new_target(void* ctxp) @export("bk_new_target") {
-    return scope_handle(heap::HOST_SCOPE_NEW_TARGET);
-}
-
-fn int bk_is_construct(void* ctxp) @export("bk_is_construct") {
-    if (ctxp == null) return 0;
-    return builtins::host_is_construct((builtins::BuiltinContext*)ctxp) ? 1 : 0;
-}
-
-// The runtime owning the call context, or null if the context is not one of
-// ours. A host function is handed a context, not a runtime, so this is how the
-// context-tier entry points find their runtime without consulting a global.
-fn Runtime* ctx_runtime(void* ctxp) @inline {
-    if (ctxp == null) return null;
-    builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
-    if (ctx.heap == null) return null;
-    return (Runtime*)ctx.heap.capi_runtime;
-}
-
-// Set the callback's return value from a handle.
-fn void bk_return(void* ctxp, uint id) @export("bk_return") {
-    Runtime* rt = ctx_runtime(ctxp);
-    if (rt == null) return;
-    builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
+fn int bk_read_bool(void* ctxp, ulong id, int* out) @export("bk_read_bool") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
     TVal v;
-    if (!resolve_handle(rt, ctxp, id, &v)) return;
-    builtins::host_return(ctx, v);
+    if (!resolve(ctxp, id, &v)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    if (!v.is_boolean()) return fail(rt, BK_ERR_TYPE, "value is not a boolean");
+    *out = v.get_boolean() ? 1 : 0;
+    return BK_OK;
 }
 
-fn void bk_return_number(void* ctxp, double d) @export("bk_return_number") {
-    if (ctxp == null) return;
+fn int bk_read_string(void* ctxp, ulong id, char* buf, usz cap, usz* out_len)
+        @export("bk_read_string") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
     TVal v;
-    v.set_number(d);
-    builtins::host_return((builtins::BuiltinContext*)ctxp, v);
+    if (!resolve(ctxp, id, &v)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    if (!v.is_string()) return fail(rt, BK_ERR_TYPE, "value is not a string");
+    HString* hs = (HString*)v.get_heapptr();
+    // Symbols share the string tag but carry no meaningful text; copying their
+    // bytes out would yield invalid UTF-8. JS forbids implicit conversion too.
+    if (hs != null && hs.is_symbol()) return fail(rt, BK_ERR_TYPE, "value is a symbol");
+
+    usz need = embed::utf8_write(hs, buf, buf == null ? 0 : cap);
+    if (out_len != null) *out_len = need;
+    if (buf == null) return BK_OK;
+    if (need + 1 > cap) return fail(rt, BK_ERR_FULL, "buffer too small for string");
+    buf[need] = 0;
+    return BK_OK;
 }
 
-fn void bk_return_bool(void* ctxp, int b) @export("bk_return_bool") {
-    if (ctxp == null) return;
+// ============================================================================
+// Coercion tier
+// ============================================================================
+
+fn double bk_to_number(void* ctxp, ulong id) @export("bk_to_number") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return (double)(0.0 / 0.0);
+    embed::clear_err(rt);
     TVal v;
-    v.set_boolean(b != 0);
-    builtins::host_return((builtins::BuiltinContext*)ctxp, v);
+    if (!resolve(ctxp, id, &v)) {
+        fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+        return (double)(0.0 / 0.0);
+    }
+    if (v.is_numeric()) return v.get_number_or_fastint();
+
+    // Anything else may run user code (valueOf/toString) and therefore throw.
+    // vm_to_number reports through the heap's error channel rather than an
+    // optional, so the throw is picked up here and turned into a status.
+    rt.heap.has_error = false;
+    double d = vm::vm_to_number(rt.vm, &v);
+    if (rt.heap.has_error) {
+        vm_fault(rt);
+        return (double)(0.0 / 0.0);
+    }
+    return d;
 }
 
-fn void bk_return_null(void* ctxp) @export("bk_return_null") {
-    if (ctxp == null) return;
+fn int bk_to_bool(void* ctxp, ulong id) @export("bk_to_bool") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
     TVal v;
-    v.set_null();
-    builtins::host_return((builtins::BuiltinContext*)ctxp, v);
+    if (!resolve(ctxp, id, &v)) {
+        fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+        return 0;
+    }
+    // ToBoolean never calls user code, so this cannot throw.
+    return builtins::builtin_to_boolean(&v) ? 1 : 0;
 }
 
-// Set the return value to a fresh JS string built from UTF-8 bytes.
-fn void bk_return_string(void* ctxp, char* utf8, usz len) @export("bk_return_string") {
-    if (ctxp == null || utf8 == null) return;
-    builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
-    builtins::host_return(ctx, builtins::host_new_string(ctx, utf8[:len]));
-}
-
-// Throw a fresh Error of `kind` with `msg`. Does not unwind: the callback
-// must still return normally, and the throw beats any return value set.
-fn void bk_throw_error(void* ctxp, int kind, char* msg) @export("bk_throw_error") {
-    if (ctxp == null || msg == null) return;
-    usz n = 0;
-    while (msg[n] != 0) n++;
-    builtins::host_throw_error((builtins::BuiltinContext*)ctxp, kind, msg[:n]);
-}
-
-// Throw an arbitrary value by handle.
-fn void bk_throw(void* ctxp, uint id) @export("bk_throw") {
-    Runtime* rt = ctx_runtime(ctxp);
-    if (rt == null) return;
-    TVal v;
-    if (!resolve_handle(rt, ctxp, id, &v)) return;
-    builtins::host_throw((builtins::BuiltinContext*)ctxp, v);
-}
-
-// Promote a scope handle to a runtime-owned global handle the host may keep
-// past the callback. The caller then owns it and must bk_value_free it.
-fn uint bk_value_persist(void* ctxp, uint id) @export("bk_value_persist") {
-    Runtime* rt = ctx_runtime(ctxp);
+fn ulong bk_to_string(void* ctxp, ulong id) @export("bk_to_string") {
+    Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     TVal v;
-    if (!resolve_handle(rt, ctxp, id, &v)) return 0;
-    return slot_alloc(rt, v);
+    if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    HString* s;
+    if (embed::to_string(rt, v, &s) != BK_OK) return 0;
+    TVal sv; sv.set_string(s);
+    return store(rt, sv);
 }
 
-// Call a JS function from host code.
-//
-// `argv` is an array of `argc` handles. On success stores a scope-independent
-// global handle in *out_val (caller owns it) and returns BK_OK. On an
-// exception in the callee the throw is staged on the context, so the host
-// should return promptly; the status is BK_ERR_THROW.
-fn int bk_call(void* ctxp, uint func_id, uint* argv, uint argc, uint this_id,
-                uint* out_val) @export("bk_call") {
-    Runtime* rt = ctx_runtime(ctxp);
-    if (rt == null) return BK_ERR_INVALID;
-    builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
-    if (out_val != null) *out_val = 0;
-
-    TVal fv;
-    if (!resolve_handle(rt, ctxp, func_id, &fv)) return BK_ERR_INVALID;
-    TVal tv;
-    if (this_id == 0) { tv.set_undefined(); } else if (!resolve_handle(rt, ctxp, this_id, &tv)) { tv.set_undefined(); }
-
-    // Bounded stack array: the engine's own call paths cap staged arguments
-    // the same way, and a host needing more can build an array in JS.
-    TVal[16] args;
-    uint n = argc > 16 ? 16 : argc;
-    for (uint i = 0; i < n; i++) {
-        TVal a;
-        if (argv == null || !resolve_handle(rt, ctxp, argv[i], &a)) a.set_undefined();
-        args[i] = a;
+// Convert to text into a context-owned ring buffer. This is the short path
+// behind `printf("%s", bk_cstr(...))`: no size query, no buffer, no free.
+fn char* bk_cstr(void* ctxp, ulong id, usz* out_len) @export("bk_cstr") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return null;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) {
+        fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+        return null;
     }
+    HString* s;
+    if (embed::to_string(rt, v, &s) != BK_OK) return null;
 
-    bool ok = false;
-    TVal res = builtins::host_call(ctx, fv, &args[0], n, tv, &ok);
-    if (!ok) {
-        // An interrupt heard here stays flagged: the staged re-throw that
-        // fires when this callback returns must remain uncatchable, so the
-        // flag clears only at the outermost host boundary that surfaces it.
-        if (rt.heap.uncatchable_throw) {
-            set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-            return BK_ERR_INTERRUPT;
-        }
-        return BK_ERR_THROW;
+    usz need = embed::utf8_len(s);
+    char* buf = embed::cstr_slot(rt, need);
+    if (buf == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
+    embed::utf8_write(s, buf, need + 1);
+    buf[need] = 0;
+    if (out_len != null) *out_len = need;
+    return buf;
+}
+
+fn char* bk_strdup(void* ctxp, ulong id, usz* out_len) @export("bk_strdup") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return null;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) {
+        fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+        return null;
     }
-    if (out_val != null) {
-        // Report exhaustion for every value kind, undefined included: handle 0
-        // reads back as undefined, so returning it on a failed registration
-        // would be a silent wrong answer rather than an error.
-        uint id = slot_alloc(rt, res);
-        if (id == 0) {
-            set_err(rt, BK_ERR_FULL, "value slot table full");
-            return BK_ERR_FULL;
-        }
-        *out_val = id;
-    }
-    return BK_OK;
+    HString* s;
+    if (embed::to_string(rt, v, &s) != BK_OK) return null;
+
+    usz need = embed::utf8_len(s);
+    // libc malloc, not the engine allocator: the header documents free().
+    char* buf = (char*)libc::malloc(need + 1);
+    if (buf == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
+    embed::utf8_write(s, buf, need + 1);
+    buf[need] = 0;
+    if (out_len != null) *out_len = need;
+    return buf;
 }
 
 // ============================================================================
-// Value construction, object graph, and host calls outside a callback
+// Building values
 // ============================================================================
-//
-// These mirror the bk_return_* / bk_call helpers but live on the runtime
-// tier, for hosts that hold a bk_runtime (or a context promoted out of a
-// callback) rather than a live call context. Handles they return are
-// caller-owned and must be bk_value_free'd, like bk_eval results.
 
-// Allocate a slot for `v`, reporting a full table explicitly.
-fn int capi_store(Runtime* rt, TVal v, uint* out) {
-    uint id = slot_alloc(rt, v);
-    if (id == 0) { set_err(rt, BK_ERR_FULL, "value slot table full"); return BK_ERR_FULL; }
-    *out = id;
-    return BK_OK;
-}
-
-fn int bk_new_number(void* rtp, double d, uint* out) @export("bk_new_number") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_number(void* ctxp, double d) @export("bk_number") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
     TVal v; v.set_number(d);
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-fn int bk_new_bool(void* rtp, int b, uint* out) @export("bk_new_bool") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_bool(void* ctxp, int b) @export("bk_bool") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
     TVal v; v.set_boolean(b != 0);
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-fn int bk_new_null(void* rtp, uint* out) @export("bk_new_null") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_null(void* ctxp) @export("bk_null") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
     TVal v; v.set_null();
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-fn int bk_new_undefined(void* rtp, uint* out) @export("bk_new_undefined") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_undefined(void* ctxp) @export("bk_undefined") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
     TVal v; v.set_undefined();
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-fn int bk_new_string(void* rtp, char* utf8, usz len, uint* out) @export("bk_new_string") {
-    if (rtp == null || utf8 == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_string(void* ctxp, char* utf8, usz len) @export("bk_string") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || utf8 == null) return 0;
+    embed::clear_err(rt);
     HString* s = rt.heap.str_intern(utf8[:len]);
-    if (s == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    if (s == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
     TVal v; v.set_string(s);
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-fn int bk_new_object(void* rtp, uint* out) @export("bk_new_object") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_object(void* ctxp) @export("bk_object") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
     HObject*? oraw = rt.heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch oraw) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    if (catch oraw) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
     HObject* o = oraw;
     o.prototype = rt.heap.object_proto;
     TVal v; v.set_object(o);
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-fn int bk_new_array(void* rtp, uint* out) @export("bk_new_array") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+// Fresh empty array. Shared by bk_array, bk_array_of and bk_keys.
+fn HObject* new_array(Runtime* rt) {
     HObject*? araw = rt.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch araw) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    if (catch araw) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
     HObject* a = araw;
     a.prototype = rt.heap.array_proto;
+    return a;
+}
+
+fn ulong bk_array(void* ctxp) @export("bk_array") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    HObject* a = new_array(rt);
+    if (a == null) return 0;
     TVal v; v.set_object(a);
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-// Fresh array whose elements are the first `n` of `elems`. The caller keeps
-// ownership of the input handles; they are copied in.
-fn int bk_new_array_from(void* rtp, uint* elems, uint n, uint* out) @export("bk_new_array_from") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
-    if (n > 0 && elems == null) return BK_ERR_INVALID;
-    HObject*? araw = rt.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch araw) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
-    HObject* a = araw;
-    a.prototype = rt.heap.array_proto;
+fn ulong bk_array_of(void* ctxp, ulong* elems, uint n) @export("bk_array_of") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (n > 0 && elems == null) { embed::set_err(rt, BK_ERR_INVALID, "null element array"); return 0; }
+    HObject* a = new_array(rt);
+    if (a == null) return 0;
     for (uint i = 0; i < n; i++) {
         TVal ev;
-        if (elems == null || !slot_get(rt, elems[i], &ev)) ev.set_undefined();
+        if (!resolve(ctxp, elems[i], &ev)) ev.set_undefined();
         builtins::array_set_elem(a, i, ev, rt.heap);
     }
     TVal len_tv; len_tv.set_fastint((long)n);
     a.put_prop(rt.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, rt.heap);
     TVal v; v.set_object(a);
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-// Handle to the global object (globalThis). Caller owns it.
-fn int bk_get_global(void* rtp, uint* out) @export("bk_get_global") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_global(void* ctxp) @export("bk_global") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
     TVal g;
     if (rt.vm.global_env != null && rt.vm.global_env.bindings != null) {
         g.set_object(rt.vm.global_env.bindings);
     } else {
         g.set_undefined();
     }
-    return capi_store(rt, g, out);
+    return store(rt, g);
 }
 
-// Resolve a property handle to an HObject, or fail with BK_ERR_TYPE.
-fn HObject* capi_object(Runtime* rt, uint id, TVal* out) {
-    if (!slot_get(rt, id, out)) return null;
-    if (!out.is_object()) return null;
+// ============================================================================
+// Properties
+// ============================================================================
+
+// Resolve a handle that must name an object, recording the failure otherwise.
+fn HObject* as_object(void* ctxp, ulong id, TVal* out) {
+    Runtime* rt = rt_of(ctxp);
+    if (!resolve(ctxp, id, out)) {
+        fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+        return null;
+    }
+    if (!out.is_object()) {
+        fail(rt, BK_ERR_TYPE, "value is not an object");
+        return null;
+    }
     return (HObject*)out.get_heapptr();
 }
 
-// Surface a VM failure (heap error channel) as a bk_ status, distinguishing an
+// Surface a VM failure (heap error channel) as a status, distinguishing an
 // interrupt from an ordinary throw.
-fn int capi_vm_fault(Runtime* rt) {
+fn int vm_fault(Runtime* rt) {
     if (rt.heap.uncatchable_throw) {
         rt.heap.uncatchable_throw = false;
-        set_err(rt, BK_ERR_INTERRUPT, "interrupted");
+        embed::set_err(rt, BK_ERR_INTERRUPT, "interrupted");
         return BK_ERR_INTERRUPT;
     }
-    describe_error(rt, &rt.heap.error_value);
+    embed::describe_error(rt, &rt.heap.error_value);
     return BK_ERR_THROW;
 }
 
-fn int bk_get_prop(void* rtp, uint obj_id, char* key, usz key_len, uint* out) @export("bk_get_prop") {
-    if (rtp == null || key == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
-    *out = 0;
+// Shared by the named and indexed getters.
+fn ulong get_key(void* ctxp, ulong obj_id, HString* k) {
+    Runtime* rt = rt_of(ctxp);
     TVal ov;
-    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, BK_ERR_TYPE, "value is not an object");
-    HObject* obj = (HObject*)ov.get_heapptr();
-    HString* k = rt.heap.str_intern(key[:key_len]);
-    if (k == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return 0;
+    if (k == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
     TVal got;
     if (!builtins::js_get_with_receiver((void*)rt.vm, rt.heap, obj, k, ov, &got)) {
-        return capi_vm_fault(rt);
+        vm_fault(rt);
+        return 0;
     }
-    return capi_store(rt, got, out);
+    return store(rt, got);
 }
 
-fn int bk_get_prop_index(void* rtp, uint obj_id, uint idx, uint* out) @export("bk_get_prop_index") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
-    *out = 0;
-    TVal ov;
-    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, BK_ERR_TYPE, "value is not an object");
-    HObject* obj = (HObject*)ov.get_heapptr();
-    HString* k = rt.heap.int_to_hstring((long)idx);
-    if (k == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
-    TVal got;
-    if (!builtins::js_get_with_receiver((void*)rt.vm, rt.heap, obj, k, ov, &got)) {
-        return capi_vm_fault(rt);
-    }
-    return capi_store(rt, got, out);
+fn ulong bk_get(void* ctxp, ulong obj_id, char* key, usz key_len) @export("bk_get") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || key == null) return 0;
+    embed::clear_err(rt);
+    return get_key(ctxp, obj_id, rt.heap.str_intern(key[:key_len]));
 }
 
-fn int bk_set_prop(void* rtp, uint obj_id, char* key, usz key_len, uint val_id) @export("bk_set_prop") {
-    if (rtp == null || key == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_get_index(void* ctxp, ulong obj_id, uint idx) @export("bk_get_index") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    return get_key(ctxp, obj_id, rt.heap.int_to_hstring((long)idx));
+}
+
+// Shared by the named and indexed setters.
+fn int set_key(void* ctxp, ulong obj_id, HString* k, ulong val_id) {
+    Runtime* rt = rt_of(ctxp);
     TVal ov, vv;
-    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, BK_ERR_TYPE, "value is not an object");
-    if (!slot_get(rt, val_id, &vv)) return reader_fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-    HObject* obj = (HObject*)ov.get_heapptr();
-    HString* k = rt.heap.str_intern(key[:key_len]);
-    if (k == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return rt.errcode;
+    if (!resolve(ctxp, val_id, &vv)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
     bool res;
     if (!builtins::js_set_with_receiver((void*)rt.vm, rt.heap, obj, k, vv, ov, &res)) {
-        return capi_vm_fault(rt);
+        return vm_fault(rt);
     }
-    if (!res) {
-        // Strict-only engine: a Set that returns false throws a TypeError.
-        set_err(rt, BK_ERR_THROW, "Cannot assign to read only property");
-        return BK_ERR_THROW;
-    }
+    // Strict-only engine: a Set that returns false throws a TypeError.
+    if (!res) return fail(rt, BK_ERR_THROW, "Cannot assign to read only property");
     return BK_OK;
 }
 
-fn int bk_set_prop_index(void* rtp, uint obj_id, uint idx, uint val_id) @export("bk_set_prop_index") {
-    if (rtp == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
-    TVal ov, vv;
-    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, BK_ERR_TYPE, "value is not an object");
-    if (!slot_get(rt, val_id, &vv)) return reader_fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-    HObject* obj = (HObject*)ov.get_heapptr();
-    HString* k = rt.heap.int_to_hstring((long)idx);
-    if (k == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
-    bool res;
-    if (!builtins::js_set_with_receiver((void*)rt.vm, rt.heap, obj, k, vv, ov, &res)) {
-        return capi_vm_fault(rt);
-    }
-    if (!res) {
-        set_err(rt, BK_ERR_THROW, "Cannot assign to read only property");
-        return BK_ERR_THROW;
-    }
-    return BK_OK;
+fn int bk_set(void* ctxp, ulong obj_id, char* key, usz key_len, ulong val_id)
+        @export("bk_set") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || key == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    return set_key(ctxp, obj_id, rt.heap.str_intern(key[:key_len]), val_id);
 }
 
-fn int bk_has_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) @export("bk_has_prop") {
-    if (rtp == null || key == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn int bk_set_index(void* ctxp, ulong obj_id, uint idx, ulong val_id)
+        @export("bk_set_index") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    return set_key(ctxp, obj_id, rt.heap.int_to_hstring((long)idx), val_id);
+}
+
+fn int bk_has(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
+        @export("bk_has") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || key == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
     TVal ov;
-    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, BK_ERR_TYPE, "value is not an object");
-    HObject* obj = (HObject*)ov.get_heapptr();
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return rt.errcode;
     HString* k = rt.heap.str_intern(key[:key_len]);
-    if (k == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
     bool b;
-    if (!builtins::js_has_property((void*)rt.vm, rt.heap, obj, k, &b)) {
-        return capi_vm_fault(rt);
-    }
+    if (!builtins::js_has_property((void*)rt.vm, rt.heap, obj, k, &b)) return vm_fault(rt);
     *out = b ? 1 : 0;
     return BK_OK;
 }
 
-fn int bk_delete_prop(void* rtp, uint obj_id, char* key, usz key_len, int* out) @export("bk_delete_prop") {
-    if (rtp == null || key == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn int bk_delete(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
+        @export("bk_delete") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || key == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
     TVal ov;
-    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, BK_ERR_TYPE, "value is not an object");
-    HObject* obj = (HObject*)ov.get_heapptr();
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return rt.errcode;
     HString* k = rt.heap.str_intern(key[:key_len]);
-    if (k == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
-    // Absent (own) property: report 0 and succeed, mirroring the header.
+    if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
+    // Absent own property: report 0 and succeed, mirroring the header.
     if (obj.find_prop_idx((void*)k, rt.heap) < 0) { *out = 0; return BK_OK; }
     bool res;
     if (obj.flags.exotic_proxyobj) {
-        if (!builtins::proxy_mop_delete((void*)rt.vm, rt.heap, obj, k, &res)) {
-            return capi_vm_fault(rt);
-        }
+        if (!builtins::proxy_mop_delete((void*)rt.vm, rt.heap, obj, k, &res)) return vm_fault(rt);
     } else if (obj.flags.exotic_module_ns) {
         res = false;
     } else {
         res = obj.es_delete_prop((void*)k, rt.heap);
     }
-    if (!res) {
-        // Strict-only engine: deleting a non-configurable property throws.
-        set_err(rt, BK_ERR_THROW, "Cannot delete property");
-        return BK_ERR_THROW;
-    }
+    // Strict-only engine: deleting a non-configurable property throws.
+    if (!res) return fail(rt, BK_ERR_THROW, "Cannot delete property");
     *out = 1;
     return BK_OK;
 }
 
-// Fresh array of an object's own string property names (enumerable and not;
-// symbol keys skipped). The host walks it with bk_get_prop_index.
-fn int bk_own_prop_names(void* rtp, uint obj_id, uint* out) @export("bk_own_prop_names") {
-    if (rtp == null || out == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
+fn ulong bk_keys(void* ctxp, ulong obj_id) @export("bk_keys") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
     TVal ov;
-    if (capi_object(rt, obj_id, &ov) == null) return reader_fail(rt, BK_ERR_TYPE, "value is not an object");
-    HObject* obj = (HObject*)ov.get_heapptr();
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return 0;
     Heap* h = rt.heap;
 
-    HObject*? araw = h.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch araw) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
-    HObject* arr = araw;
-    arr.prototype = h.array_proto;
-    uint idx = 0;
+    HObject* arr = new_array(rt);
+    if (arr == null) return 0;
 
     // Proxy exotic: [[OwnPropertyKeys]] filtered to string keys.
     if (obj.flags.exotic_proxyobj) {
         HString** pkeys;
         uint pn;
         if (!builtins::proxy_filtered_own_keys((void*)rt.vm, h, obj, 1, &pkeys, &pn)) {
-            return capi_vm_fault(rt);
+            vm_fault(rt);
+            return 0;
         }
         defer h.free_func(h.heap_udata, pkeys);
         for (uint i = 0; i < pn; i++) {
             TVal kv; kv.set_string(pkeys[i]);
             builtins::array_set_elem(arr, i, kv, h);
         }
-        idx = pn;
         TVal plen; plen.set_fastint((long)pn);
         arr.put_prop(h.str(heap::BuiltinStr.LENGTH), plen, hobject::PROP_FLAGS_WC, h);
         TVal v; v.set_object(arr);
-        return capi_store(rt, v, out);
+        return store(rt, v);
     }
 
     uint max_keys = builtins::own_key_buf_capacity(obj) + 64;
     usz bytes = (usz)(max_keys * HString*::size);
     HString** key_buf = (HString**)h.alloc_func(h.heap_udata, bytes);
-    if (key_buf == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    if (key_buf == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
     defer h.free_func(h.heap_udata, key_buf);
     uint key_count = 0;
 
@@ -1293,7 +631,7 @@ fn int bk_own_prop_names(void* rtp, uint obj_id, uint* out) @export("bk_own_prop
             key_buf[key_count++] = h.int_to_hstring((long)i);
         }
     }
-    // Named integer-indexed properties, mergesort-lite ascending.
+    // Named integer-indexed properties.
     for (uint i = 0; i < obj.prop_count; i++) {
         if (obj.prop_key_at(i, h) != null) {
             HString* key = (HString*)obj.prop_key_at(i, h);
@@ -1328,44 +666,233 @@ fn int bk_own_prop_names(void* rtp, uint obj_id, uint* out) @export("bk_own_prop
     TVal len_tv; len_tv.set_fastint((long)key_count);
     arr.put_prop(h.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WC, h);
     TVal v; v.set_object(arr);
-    return capi_store(rt, v, out);
+    return store(rt, v);
 }
 
-// Call a JS function from outside a callback. argv/argc (NULL/0 for none),
-// this_val (0 for undefined). On BK_OK *out_val receives a caller-owned
-// handle. A thrown callee returns BK_ERR_THROW (or BK_ERR_INTERRUPT for an
-// interrupt); the exception is recorded on the runtime, not unwound through C.
-fn int bk_call_rt(void* rtp, uint func_id, uint* argv, uint argc, uint this_id,
-                   uint* out_val) @export("bk_call_rt") {
-    if (rtp == null) return BK_ERR_INVALID;
-    Runtime* rt = (Runtime*)rtp;
-    clear_err(rt);
-    if (out_val != null) *out_val = 0;
+// ============================================================================
+// Calls
+// ============================================================================
+
+// Argument counts up to this are staged on the stack; the engine's own call
+// paths cap staged arguments the same way, and a host needing more can build
+// an array in JS.
+const uint MAX_CALL_ARGS = 16;
+
+fn ulong bk_call(void* ctxp, ulong fn_id, ulong this_id, ulong* argv, uint argc)
+        @export("bk_call") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+
+    void* bctx = bctx_of(ctxp);
 
     TVal fv;
-    if (!slot_get(rt, func_id, &fv)) return reader_fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-    if (!fv.is_lightfunc()) {
-        if (!fv.is_object()) return reader_fail(rt, BK_ERR_TYPE, "value is not a function");
-        HObject* fo = (HObject*)fv.get_heapptr();
-        if (fo == null || !fo.flags.callable) return reader_fail(rt, BK_ERR_TYPE, "value is not a function");
+    if (!resolve(ctxp, fn_id, &fv)) return bad_handle(rt);
+    // Outside a callback there is no JS frame to throw into, so a non-callable
+    // callee is reported as a status. Inside one it must reach JS as a real
+    // TypeError, which host_call stages, so the check is left to it: doing it
+    // here would swallow the exception and hand the script an undefined.
+    if (bctx == null && !fv.is_lightfunc()) {
+        HObject* fo = fv.is_object() ? (HObject*)fv.get_heapptr() : null;
+        if (fo == null || !fo.flags.callable) {
+            fail(rt, BK_ERR_TYPE, "value is not a function");
+            return 0;
+        }
     }
-    if (argc > 0 && argv == null) return BK_ERR_INVALID;
-    TVal tv;
-    if (this_id == 0) { tv.set_undefined(); } else if (!slot_get(rt, this_id, &tv)) { tv.set_undefined(); }
+    if (argc > 0 && argv == null) {
+        fail(rt, BK_ERR_INVALID, "null argument array");
+        return 0;
+    }
 
-    TVal[16] args;
-    uint n = argc > 16 ? 16 : argc;
+    TVal tv;
+    if (this_id == 0 || !resolve(ctxp, this_id, &tv)) tv.set_undefined();
+
+    TVal[MAX_CALL_ARGS] args;
+    uint n = argc > MAX_CALL_ARGS ? MAX_CALL_ARGS : argc;
     for (uint i = 0; i < n; i++) {
         TVal a;
-        if (argv == null || !slot_get(rt, argv[i], &a)) a.set_undefined();
+        if (!resolve(ctxp, argv[i], &a)) a.set_undefined();
         args[i] = a;
     }
 
-    rt.heap.has_error = false;
-    TVal res = rt.heap.call_fn((void*)rt.vm, fv, &args[0], n, tv);
-    if (rt.heap.has_error) {
-        return capi_vm_fault(rt);
+    TVal res;
+    if (bctx != null) {
+        // Inside a callback the call goes through the host entry point, which
+        // stages the throw on this call rather than unwinding through C.
+        bool ok = false;
+        res = builtins::host_call((builtins::BuiltinContext*)bctx, fv, &args[0], n, tv, &ok);
+        if (!ok) {
+            // An interrupt heard here stays flagged: the staged re-throw that
+            // fires when this callback returns must remain uncatchable, so the
+            // flag clears only at the outermost boundary that surfaces it.
+            if (rt.heap.uncatchable_throw) {
+                embed::set_err(rt, BK_ERR_INTERRUPT, "interrupted");
+            } else {
+                embed::describe_error(rt, &rt.heap.error_value);
+            }
+            return 0;
+        }
+    } else {
+        rt.heap.has_error = false;
+        res = rt.heap.call_fn((void*)rt.vm, fv, &args[0], n, tv);
+        if (rt.heap.has_error) {
+            vm_fault(rt);
+            return 0;
+        }
     }
-    if (out_val != null) return capi_store(rt, res, out_val);
+    return store(rt, res);
+}
+
+// ============================================================================
+// Host functions
+// ============================================================================
+
+// Layout must match bk_fn_def in include/boomkat.h on the target's ABI.
+struct BkFnDef {
+    char* name;
+    void* cfn;
+    int   arity;
+    uint  flags;
+    void* udata;
+}
+
+const uint BK_CTOR = 1;
+
+// Install a table of host functions, ending at the first entry with a null
+// name. `target_id` 0 means globalThis, which is an environment binding rather
+// than a property write, so the two cases stay separate below.
+fn int bk_register(void* ctxp, ulong target_id, BkFnDef* defs) @export("bk_register") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || defs == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+
+    TVal ov;
+    HObject* target = null;
+    if (target_id != 0) {
+        target = as_object(ctxp, target_id, &ov);
+        if (target == null) return rt.errcode;
+    }
+
+    for (usz i = 0; defs[i].name != null; i++) {
+        BkFnDef* d = &defs[i];
+        if (d.cfn == null) return fail(rt, BK_ERR_INVALID, "table entry has no function");
+        usz nlen = 0;
+        while (d.name[nlen] != 0) nlen++;
+
+        // The registration record outlives the call, so it is heap-allocated
+        // and owned by the runtime; the host function table keeps the only
+        // pointer.
+        void* raw = rt.heap.alloc_func(rt.heap.heap_udata, embed::HostReg::size);
+        if (raw == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
+        embed::HostReg* reg = (embed::HostReg*)raw;
+        reg.cfn = d.cfn;
+        reg.udata = d.udata;
+
+        TVal fv;
+        int rc = embed::make_fn_value(rt, d.name[:nlen], (void*)&embed::host_trampoline,
+                                      raw, d.arity, (d.flags & BK_CTOR) != 0, &fv);
+        if (rc != BK_OK) {
+            rt.heap.free_func(rt.heap.heap_udata, raw);
+            return rc;
+        }
+
+        if (target == null) {
+            rc = embed::declare_global(rt, d.name[:nlen], fv);
+            if (rc != BK_OK) return rc;
+        } else {
+            HString* k = rt.heap.str_intern(d.name[:nlen]);
+            if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
+            if (!target.put_prop(k, fv, hobject::PROP_FLAGS_WC, rt.heap)) {
+                return fail(rt, BK_ERR_INTERNAL, "could not install function on target");
+            }
+        }
+    }
     return BK_OK;
+}
+
+fn int bk_set_global(void* ctxp, char* name, usz name_len, ulong val_id)
+        @export("bk_set_global") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || name == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, val_id, &v)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    return embed::declare_global(rt, name[:name_len], v);
+}
+
+// --- inside a callback ------------------------------------------------------
+//
+// These need the call, not just the runtime, so they report "nothing" when the
+// context is the runtime's root rather than a live call: 0 arguments, handle 0,
+// no return value set.
+
+fn uint bk_argc(void* ctxp) @export("bk_argc") {
+    void* bctx = bctx_of(ctxp);
+    if (bctx == null) return 0;
+    return builtins::host_argc((builtins::BuiltinContext*)bctx);
+}
+
+// Handle to argument `i`. Out-of-range yields a handle to undefined, matching
+// JS semantics and sparing every host an arity check.
+fn ulong bk_arg(void* ctxp, uint i) @export("bk_arg") {
+    if (bctx_of(ctxp) == null) return 0;
+    return embed::scope_handle(rt_of(ctxp), (ulong)(heap::HOST_SCOPE_ARG0 + i));
+}
+
+fn ulong bk_this(void* ctxp) @export("bk_this") {
+    if (bctx_of(ctxp) == null) return 0;
+    return embed::scope_handle(rt_of(ctxp), (ulong)heap::HOST_SCOPE_THIS);
+}
+
+fn ulong bk_new_target(void* ctxp) @export("bk_new_target") {
+    if (bctx_of(ctxp) == null) return 0;
+    return embed::scope_handle(rt_of(ctxp), (ulong)heap::HOST_SCOPE_NEW_TARGET);
+}
+
+fn int bk_is_construct(void* ctxp) @export("bk_is_construct") {
+    void* bctx = bctx_of(ctxp);
+    if (bctx == null) return 0;
+    return builtins::host_is_construct((builtins::BuiltinContext*)bctx) ? 1 : 0;
+}
+
+fn void bk_return(void* ctxp, ulong id) @export("bk_return") {
+    void* bctx = bctx_of(ctxp);
+    if (bctx == null) return;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return;
+    builtins::host_return((builtins::BuiltinContext*)bctx, v);
+}
+
+// Throw a fresh Error of `kind` with `msg`. Does not unwind: the callback must
+// still return normally, and the throw beats any return value set.
+fn void bk_throw_error(void* ctxp, int kind, char* msg) @export("bk_throw_error") {
+    void* bctx = bctx_of(ctxp);
+    if (bctx == null || msg == null) return;
+    usz n = 0;
+    while (msg[n] != 0) n++;
+    builtins::host_throw_error((builtins::BuiltinContext*)bctx, kind, msg[:n]);
+}
+
+fn void bk_throw(void* ctxp, ulong id) @export("bk_throw") {
+    void* bctx = bctx_of(ctxp);
+    if (bctx == null) return;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return;
+    builtins::host_throw((builtins::BuiltinContext*)bctx, v);
+}
+
+// ============================================================================
+// Interrupt
+// ============================================================================
+
+// Install, replace, or clear the interrupt handler. The callback runs on the
+// engine thread at VM safepoints; it must not call back into the engine. A
+// host interrupting from another thread sets a flag in `opaque` and returns it
+// here.
+fn void bk_set_interrupt(void* ctxp, void* cb, void* opaque) @export("bk_set_interrupt") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return;
+    rt.heap.capi_interrupt_fn = cb;
+    rt.heap.capi_interrupt_opaque = opaque;
+    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
 }
