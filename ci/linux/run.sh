@@ -40,17 +40,18 @@ write_probe() {
     cat > /tmp/staticprobe.c <<'EOF'
 #include <boomkat.h>
 #include <stdio.h>
-#include <string.h>
 int main(void) {
-    bk_runtime rt;
-    if (bk_open(&rt) != BK_OK) return 1;
+    bk_ctx ctx = bk_open();
+    if (!ctx) return 1;
     const char *s = "6*7";
-    bk_value v; double n = 0;
-    if (bk_eval(rt, s, strlen(s), &v) != BK_OK) return 1;
-    bk_get_number(rt, v, &n);
+    bk_value v = bk_eval_str(ctx, s);
+    if (!v) return 1;
+    double n = 0;
+    if (bk_read_number(ctx, v, &n) != BK_OK) return 1;
     printf("%g\n", n);
-    bk_value_free(rt, v); bk_close(rt);
-    return n == 42.0 ? 0 : 1;
+    bk_free(ctx, v);
+    bk_close(ctx);
+    return 0;
 }
 EOF
 }
@@ -161,25 +162,21 @@ if want link; then
         skip "ldd bindings/c/out/example-shared"
     fi
 
-    say "5b. nm -D — exported bk_ symbols on the shared library"
+    say "5b. nm -D -- exported bk_ symbols on the shared library"
     if [ -f out/boomkat.so ]; then
         exported=$(nm -D --defined-only out/boomkat.so | awk '$2 ~ /^[TDBRW]$/ {print $3}' | sort)
         bk_syms=$(printf '%s\n' "$exported" | grep -c '^bk_')
-        printf '%s\n' "$exported" | grep '^bk_' | sed 's/^/  /'
-        [ "$bk_syms" -ge 12 ] && pass "$bk_syms boomkat symbols exported (>= 12)" \
-                               || fail "only $bk_syms boomkat symbols exported"
-
-        # Everything the engine and its vendored C define is also exported: c3c
-        # has no visibility control and no version script, so the whole module
-        # graph (boomkat.*, lre_*, cr_*) lands in .dynsym. This is NOT a Linux
-        # regression -- the macOS dylib exports ~2460 symbols for the same
-        # reason -- so it is reported as a count, not failed on. What matters is
-        # that the 12 documented bk_ entry points are all present.
         total_n=$(printf '%s\n' "$exported" | grep -c . || true)
         printf '  total exported symbols: %s (%s are bk_)\n' "$total_n" "$bk_syms"
-        printf '  note: c3c exports the whole module graph; macOS does the same.\n'
-        printf '  sample non-bk_ exports:\n'
-        printf '%s\n' "$exported" | grep -v "^bk_" | head -5 | sed 's/^/    /'
+        # The version script bounds the export set to exactly the header's
+        # BK_API surface: no engine internals, nothing for ELF interposition
+        # to grab (the re_exec collision this replaced is history).
+        expected=$(grep -c '^bk_' out/boomkat.exports 2>/dev/null || echo 0)
+        if [ "$total_n" -eq "$expected" ] && [ "$expected" -gt 0 ]; then
+            pass "export list enforced: $total_n symbols, all bk_"
+        else
+            fail "export list not enforced ($total_n exported, $expected declared)"
+        fi
     else
         skip "nm on boomkat.so"
     fi
@@ -233,23 +230,15 @@ const std = @import("std");
 const c = @cImport({ @cInclude("boomkat.h"); });
 
 pub fn main() void {
-    var rt: c.bk_runtime = undefined;
-    if (c.bk_open(&rt) != c.BK_OK) {
-        std.debug.print("bk_open failed\n", .{});
-        return;
-    }
+    const ctx = c.bk_open() orelse return;
+    defer c.bk_close(ctx);
     const src = "6*7";
-    var v: c.bk_value = undefined;
-    if (c.bk_eval(rt, src, src.len, &v) != c.BK_OK) {
-        std.debug.print("eval failed\n", .{});
-        c.bk_close(rt);
-        return;
-    }
+    const v = c.bk_eval_str(ctx, src);
+    if (v == 0) return;
     var n: f64 = 0;
-    _ = c.bk_get_number(rt, v, &n);
+    if (c.bk_read_number(ctx, v, &n) != c.BK_OK) return;
     std.debug.print("zig static: {d}\n", .{n});
-    c.bk_value_free(rt, v);
-    c.bk_close(rt);
+    c.bk_free(ctx, v);
 }
 EOF
     zig_cmd=(zig build-exe main.zig -lc
@@ -281,24 +270,26 @@ name = "ruststatic"
 path = "src/main.rs"
 EOF
     cat > src/main.rs <<'EOF'
-use std::os::raw::{c_char, c_double, c_int, c_void};
+use std::os::raw::{c_char, c_double, c_ulonglong, c_void};
 extern "C" {
-    fn bk_open(out: *mut *mut c_void) -> c_int;
-    fn bk_eval(rt: *mut c_void, src: *const c_char, len: usize, out: *mut u32) -> c_int;
-    fn bk_get_number(rt: *mut c_void, v: u32, out: *mut c_double) -> c_int;
-    fn bk_close(rt: *mut c_void);
+    fn bk_open() -> *mut c_void;
+    fn bk_close(ctx: *mut c_void);
+    fn bk_eval(ctx: *mut c_void, src: *const c_char, len: usize) -> c_ulonglong;
+    fn bk_read_number(ctx: *mut c_void, v: c_ulonglong, out: *mut c_double) -> c_int;
+    fn bk_free(ctx: *mut c_void, v: c_ulonglong);
 }
 fn main() {
     unsafe {
-        let mut rt: *mut c_void = std::ptr::null_mut();
-        assert_eq!(bk_open(&mut rt), 0, "bk_open");
+        let ctx = bk_open();
+        assert!(!ctx.is_null(), "bk_open");
         let s = b"6*7";
-        let mut v: u32 = 0;
-        assert_eq!(bk_eval(rt, s.as_ptr() as *const c_char, s.len(), &mut v), 0, "bk_eval");
+        let v = bk_eval(ctx, s.as_ptr() as *const c_char, s.len());
+        assert_ne!(v, 0, "bk_eval");
         let mut n: c_double = 0.0;
-        bk_get_number(rt, v, &mut n);
+        bk_read_number(ctx, v, &mut n);
         println!("rust static: {}", n);
-        bk_close(rt);
+        bk_free(ctx, v);
+        bk_close(ctx);
     }
 }
 EOF

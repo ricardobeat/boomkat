@@ -118,10 +118,10 @@ The `Call` carries `args` (arguments as plain Python values), `raw` (the same
 arguments as live `JsValue` references), `this`, `new_target`, `is_construct`, and
 `runtime` (the `Runtime` this call is executing inside).
 
-Arguments arrive as *scope* handles, which name a slot in the call rather than in the
-runtime's value registry. The binding reads them through the ABI's context tier
-(`bk_ctx_type_of`, `bk_ctx_get_number`, `bk_ctx_get_bool`, `bk_ctx_get_string`),
-which is the only tier that resolves them.
+Arguments arrive as *scope* handles, which name a slot in the call rather than in
+the runtime's value registry. The binding reads them through the call's own
+context, which in v2 resolves scope handles and registry handles alike, so the
+same reader works everywhere.
 
 ### Throwing
 
@@ -204,10 +204,10 @@ serialized, exactly as they do when leaving the engine for Python at all.
 
 ### Host functions
 
-`Call.runtime` is the runtime the callback is executing inside, resolved from the call
-context via `bk_ctx_runtime` rather than from whichever `Runtime` registered the
-function. Registering one Python callable in several runtimes therefore works, and each
-invocation can tell them apart:
+`Call.runtime` is the `Runtime` whose registration created the callback's
+trampoline; each trampoline closes over its own Runtime, so registering one
+Python callable in several runtimes works, and each invocation can tell them
+apart:
 
 ```python
 def which(call):

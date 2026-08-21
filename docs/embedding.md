@@ -19,7 +19,7 @@ any of the per-language sections.
 - [Lifetime and GC rules](#lifetime-and-gc-rules)
 - [Status of the bindings](#status-of-the-bindings)
 - [Per-language guides](#per-language-guides)
-- [Known limitations of v1](#known-limitations-of-v1)
+- [Known limitations](#known-limitations)
 
 ## Packaging
 
@@ -35,23 +35,30 @@ Both libraries are self-contained: the vendored C sources (`libregexp`,
 `cutils`, `dtoa`) are already inside them. Compiling those separately into
 your program produces duplicate symbols.
 
-The shared library exports the 12 documented `bk_` entry points:
+The shared library exports exactly the 50 `bk_` entry points, enforced at link
+time by a generated export list (`out/boomkat.exports` on Mach-O,
+`out/boomkat.map` on ELF, both produced by `scripts/gen_abi_header.py` from the
+header's own declarations):
 
 ```
-bk_close  bk_drain_microtasks  bk_eval    bk_get_bool  bk_get_number
-bk_get_string  bk_last_error  bk_last_error_code  bk_open  bk_type_of
-bk_value_free  bk_version
+bk_arg  bk_argc  bk_array  bk_array_of  bk_bool  bk_call  bk_close  bk_cstr
+bk_delete  bk_drain  bk_error  bk_error_code  bk_error_info_of  bk_eval
+bk_eval_named  bk_free  bk_get  bk_get_index  bk_global  bk_has
+bk_is_construct  bk_keys  bk_new_target  bk_null  bk_number  bk_object
+bk_open  bk_persist  bk_read_bool  bk_read_number  bk_read_string  bk_register
+bk_return  bk_set  bk_set_global  bk_set_index  bk_set_interrupt  bk_status_str
+bk_strdup  bk_string  bk_this  bk_throw  bk_throw_error  bk_to_bool
+bk_to_number  bk_to_string  bk_type_of  bk_type_str  bk_undefined  bk_version
 ```
 
-They are not the only exported symbols. `c3c` has no visibility control and
-emits no version script, so the entire module graph is exported alongside them:
-2460 symbols on the macOS dylib, 2272 on the Linux `.so` (measured). Treat the
-12 above as the supported surface and everything else as private, but be aware
-that on ELF the extra exports participate in global symbol interposition. That
-is not hypothetical. A wrapper function named `re_exec` collided with glibc's
-legacy `re_exec`, and every JS regexp segfaulted inside libc until it was
-renamed to `re_run`. If you add a C helper to the engine, check the name against
-`nm -D /lib/*/libc.so.6`.
+Before the export list existed, `c3c`'s lack of visibility control exported the
+entire module graph alongside them: 2460 symbols on the macOS dylib, 2272 on
+the Linux `.so` (measured). On ELF those extra exports participate in global
+symbol interposition, and it was not hypothetical: a wrapper function named
+`re_exec` collided with glibc's legacy `re_exec`, and every JS regexp segfaulted
+inside libc until it was renamed to `re_run`. The export list removes that whole
+class of collision; keep it in mind anyway if you add C helpers that consumers
+might also link.
 
 ### Installing
 
@@ -202,45 +209,20 @@ All seven binding surfaces were run in-container and produce correct output.
 ## Hello world in C99
 
 Compiles clean at `-std=c99 -Wall -Wextra -pedantic` and was run to produce the
-output shown.
+output shown. It is also committed verbatim as `test/capi/dozen_lines.c`, built
+by `make test-dozen-lines`, which is the acceptance test for the whole surface.
 
 ```c
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <boomkat.h>
 
 int main(void) {
-    bk_runtime rt;
-    if (bk_open(&rt) != BK_OK) {
-        fprintf(stderr, "cannot start the engine\n");
-        return 1;
-    }
-
-    static const char SRC[] =
-        "const who = 'world';"
-        "`hello, ${who} — ` + [1,2,3].map(n => n * n).join(',')";
-
-    bk_value v;
-    int rc = bk_eval(rt, SRC, strlen(SRC), &v);
-    if (rc != BK_OK) {
-        fprintf(stderr, "eval failed (%d): %s\n", rc, bk_last_error(rt));
-        bk_close(rt);
-        return 1;
-    }
-
-    /* Two-call protocol: measure, then fill a caller-owned buffer. */
-    size_t len;
-    if (bk_get_string(rt, v, NULL, 0, &len) == BK_OK) {
-        char *buf = malloc(len + 1);
-        if (buf && bk_get_string(rt, v, buf, len + 1, &len) == BK_OK) {
-            printf("%s\n", buf);
-        }
-        free(buf);
-    }
-
-    bk_value_free(rt, v);
-    bk_close(rt);
+    bk_ctx js = bk_open();
+    bk_value v = bk_eval_str(js, "[1,2,3].map(n => n*n).join(',')");
+    if (!v) { fprintf(stderr, "%s\n", bk_error(js)); return 1; }
+    printf("%s\n", bk_cstr(js, v, NULL));
+    bk_free(js, v);
+    bk_close(js);
     return 0;
 }
 ```
@@ -249,8 +231,14 @@ int main(void) {
 $ cc -std=c99 -Wall -Wextra -pedantic -I$PREFIX/include hello.c \
      $PREFIX/lib/boomkat.a -o hello
 $ ./hello
-hello, world — 1,4,9
+1,4,9
 ```
+
+No malloc, no out-params, no two-call dance for the common case: value calls
+return handles directly, `bk_cstr` coerces any value to context-owned text, and
+`bk_error` reports what went wrong. When you need owned memory or must not
+allocate at all, `bk_strdup` and `bk_read_string` cover those cases; see
+[the string protocol](#the-string-protocol).
 
 The shared-link build produces identical output, including when run from an
 unrelated working directory.
@@ -263,8 +251,8 @@ All declarations live in `include/boomkat.h`. The implementation is `src/capi.c3
 
 | Type | Definition | Meaning |
 |---|---|---|
-| `bk_runtime` | `void *` | Opaque runtime. Never dereference. |
-| `bk_value` | `unsigned int` | **Handle, not a pointer.** Index into a GC-rooted slot registry. `0` (`BK_INVALID_VALUE`) is never valid. |
+| `bk_ctx` | `struct bk_ctx_s *` | One context type. The runtime at top level; the live call inside a host function. Opaque; never dereference. A callback's context is valid only for that call. |
+| `bk_value` | `uint64_t` | **Handle, not a pointer.** Names a slot in the issuing context's GC-rooted registry, tagged with the issuing runtime's id. `0` (`BK_INVALID_VALUE`) is never valid and is the failure return of every value-producing call. |
 
 `bk_value` is an integer by design. The engine's internal `TVal` is 8 or 16
 bytes depending on a compile-time feature and all its accessors are C3 macros
@@ -279,13 +267,14 @@ with no linkable symbol, so it can never cross the boundary.
 | `BK_ERR_SYNTAX` | -2 | Compile failed. |
 | `BK_ERR_THROW` | -3 | Uncaught JS exception. |
 | `BK_ERR_INTERNAL` | -4 | Engine fault with no JS error attached. |
-| `BK_ERR_INVALID` | -5 | Null/bad argument, or bad handle. |
+| `BK_ERR_INVALID` | -5 | Null/bad argument, or bad handle (including one from another runtime). |
 | `BK_ERR_TYPE` | -6 | Value is not of the requested type. |
-| `BK_ERR_FULL` | -7 | Buffer too small, or slot table exhausted. |
+| `BK_ERR_FULL` | -7 | Buffer too small. |
+| `BK_ERR_INTERRUPT` | -8 | Aborted by the interrupt handler. |
 
-`BK_ERR_FULL` is overloaded. Disambiguate by which call returned it:
-`bk_get_string` means the buffer was too small, `bk_eval` means the value
-registry is full.
+The numeric values are single-sourced in `src/embed/abi.c3`;
+`scripts/gen_abi_header.py` regenerates the header's enum blocks from it and
+`make check-abi` fails when they drift.
 
 ### Value types
 
@@ -294,20 +283,45 @@ registry is full.
 
 ### Functions
 
+Value-producing calls return the handle directly and report failure as `0`,
+with the detail in `bk_error` / `bk_error_code`. Calls that produce no value
+return a `bk_status`.
+
 | Function | Returns | Contract |
 |---|---|---|
-| `bk_open(bk_runtime *out)` | status | Opens an independent runtime. Several may be open at once; they share no globals, objects or interned strings (verified). |
-| `bk_close(bk_runtime)` | void | Destroys the runtime and everything it owns; all handles become invalid. Safe with `NULL`. |
-| `bk_version(void)` | `const char *` | Static string, currently `"0.1.0"`. Never `NULL`. |
-| `bk_eval(rt, src, len, out_val)` | status | Compiles and runs `len` bytes of UTF-8 for its completion value, so `"40 + 2"` yields 42. On `BK_OK` `*out_val` is an owned handle; pass `NULL` for `out_val` to run for side effects only. Drains microtasks before returning. |
-| `bk_value_free(rt, v)` | void | Releases a handle. Safe with `0` or an already-freed handle. |
-| `bk_type_of(rt, v)` | `bk_type` | **Cannot fail.** An invalid or freed handle reports `BK_TYPE_UNDEFINED`. |
-| `bk_get_number(rt, v, double *out)` | status | Strict, no coercion. Handles both the double and 47-bit fastint representations. |
-| `bk_get_bool(rt, v, int *out)` | status | Strict. `*out` is 0 or 1. |
-| `bk_get_string(rt, v, buf, cap, out_len)` | status | Strict. Two-call protocol, see below. |
-| `bk_last_error(rt)` | `const char *` | Message for the most recent failure. Never `NULL`; empty when none. Owned by the runtime, so copy it. Formatted without re-entering the VM. |
-| `bk_last_error_code(rt)` | status | Code matching `bk_last_error`. |
-| `bk_drain_microtasks(rt)` | void | Runs pending promise jobs. Re-entrancy guarded. `bk_eval` already drains. |
+| `bk_open(void)` | `bk_ctx` | Opens an independent runtime; `NULL` if that failed. Several may be open at once; they share no globals, objects or interned strings (verified). |
+| `bk_close(ctx)` | void | Destroys the runtime and everything it owns; all handles become invalid. Safe with `NULL`. Do not call on a callback's context. |
+| `bk_version(void)` | `const char *` | Static string. Never `NULL`. |
+| `bk_eval(ctx, src, len)` | `bk_value` | Compiles and runs `len` bytes of UTF-8 for its completion value, so `"40 + 2"` yields 42. Owned handle, or 0 on failure. Drains microtasks before returning. |
+| `bk_eval_named(ctx, src, len, name, name_len)` | `bk_value` | As `bk_eval`, with `name` recorded as the script name for error reporting. Copied; `NULL` means `"<eval>"`. |
+| `bk_drain(ctx)` | status | Runs pending promise jobs. Re-entrancy guarded. `bk_eval` already drains. |
+| `bk_free(ctx, v)` | void | Releases an owned handle. Safe with `0`, a scope handle, or an already-freed handle. |
+| `bk_persist(ctx, v)` | `bk_value` | Copies a scope value into the registry so it outlives the current callback. Owned result. |
+| `bk_error(ctx)` | `const char *` | Message for the most recent failure. Never `NULL`; empty when none. Context-owned, valid until the next `bk_*` call. Formatted without re-entering the VM. |
+| `bk_error_code(ctx)` | status | Code matching `bk_error`. |
+| `bk_error_info_of(ctx, &info)` | status | Fills line/col/script-name detail for the most recent failure. |
+| `bk_status_str(s)` / `bk_type_str(t)` | `const char *` | Static names for logging. Never `NULL`. |
+| `bk_type_of(ctx, v)` | `bk_type` | **Cannot fail.** An invalid or freed handle reports `BK_TYPE_UNDEFINED`. |
+| `bk_read_number(ctx, v, double *out)` | status | Strict, no coercion. Handles both the double and 47-bit fastint representations. |
+| `bk_read_bool(ctx, v, int *out)` | status | Strict. `*out` is 0 or 1. |
+| `bk_read_string(ctx, v, buf, cap, out_len)` | status | Strict. Two-call protocol, see below. |
+| `bk_to_number(ctx, v)` / `bk_to_bool(ctx, v)` / `bk_to_string(ctx, v)` | value | ES abstract operations. May run user code and throw; on throw they return the zero value with `bk_error_code` set. |
+| `bk_cstr(ctx, v, size_t *len)` | `const char *` | Any value as text, the way `String(v)` would render it. Context-owned, valid until the fourth following `bk_cstr` call, so several can be live in one printf. `NULL` only if the conversion threw. |
+| `bk_strdup(ctx, v, size_t *len)` | `char *` | As `bk_cstr`, but caller-owned; free with `free()`. |
+| `bk_number` / `bk_bool` / `bk_null` / `bk_undefined` / `bk_string` / `bk_object` / `bk_array` / `bk_array_of` / `bk_global` | `bk_value` | Constructors. Owned handles, or 0 on failure. |
+| `bk_get(ctx, obj, key, key_len)` / `bk_get_index(ctx, obj, idx)` | `bk_value` | Property read through the prototype chain. Missing property yields undefined. 0 if `obj` is not an object or a getter/trap threw. |
+| `bk_set(ctx, obj, key, key_len, val)` / `bk_set_index(...)` | status | Full Set semantics. Value copied in. |
+| `bk_has(ctx, obj, key, key_len, int *out)` / `bk_delete(...)` | status | `in` and `delete`. Deleting non-configurable throws, as strict mode requires. |
+| `bk_keys(ctx, obj)` | `bk_value` | Own string property names as an array; walk with `bk_get_index`. |
+| `bk_call(ctx, fn, this_val, argv, argc)` | `bk_value` | Invokes a JS function. Pass 0 for an undefined receiver, NULL/0 for no arguments. Works at top level and inside a callback. Owned handle, or 0 with the callee's exception recorded. |
+| `bk_register(ctx, target, defs)` | status | Installs a whole table of host functions onto `target` (0 = globalThis), see [Host functions](#host-functions). |
+| `bk_set_global(ctx, name, name_len, v)` | status | Binds `name` to `v` as a global. Value copied in. |
+| `bk_argc(ctx)` / `bk_arg(ctx, i)` / `bk_this(ctx)` / `bk_new_target(ctx)` / `bk_is_construct(ctx)` / `bk_return(ctx, v)` / `bk_throw_error(ctx, kind, msg)` / `bk_throw(ctx, v)` | — | Callback-only accessors; see [Host functions](#host-functions). |
+| `bk_set_interrupt(ctx, cb, opaque)` | void | Installs a poll handler that aborts the running script uncatchably as `BK_ERR_INTERRUPT`. |
+
+The header also carries `static inline` sugar (`bk_eval_str`, `bk_getp`,
+`bk_return_number`, the `bk_is_*` predicates, ...), which adds no symbols to the
+ABI.
 
 `bk_eval` uses `compile_eval`, not `compile`. Plain `compile` returns a value
 only on an explicit `RET`, so a top-level expression would yield `undefined`,
@@ -315,19 +329,27 @@ which is not what an embedder expects.
 
 ### The string protocol
 
-The ABI never hands out memory the caller must free, which removes a whole class
-of FFI leak. There is deliberately no `bk_free_string`.
+Three tiers, pick by ownership and allocation budget:
 
 ```c
-size_t len;
-bk_get_string(rt, v, NULL, 0, &len);   /* measure: len excludes the NUL */
+/* 1. Coerce anything to text, zero effort. Context-owned, valid until the
+      fourth following bk_cstr call, so nesting inside one printf is safe. */
+printf("%s\n", bk_cstr(rt, v, NULL));
+
+/* 2. Owned copy the caller frees with free(). */
+char *owned = bk_strdup(rt, v, &len);
+
+/* 3. Zero-allocation two-call protocol for embedded hosts: */
+bk_read_string(rt, v, NULL, 0, &len);       /* measure: len excludes the NUL */
 char *buf = malloc(len + 1);
-bk_get_string(rt, v, buf, len + 1, &len);  /* fill */
+bk_read_string(rt, v, buf, len + 1, &len);  /* fill */
 ```
 
-If `cap` is too small the call returns `BK_ERR_FULL` and writes the required
-length to `*out_len`, so a failed fill tells you how big to retry (verified:
-a 3-byte buffer for a 7-byte string returns `-7` with `*out_len == 7`).
+`bk_read_string` returns `BK_ERR_FULL` when `cap` is too small and writes the
+required length to `*out_len`, so a failed fill tells you how big to retry
+(verified: a 3-byte buffer for a 7-byte string returns `-7` with
+`*out_len == 7`). The first two tiers coerce via `ToString` inside the engine,
+so there is no source-splicing path for injection to ride on.
 
 Strings are converted from the engine's internal CESU-8 to standard UTF-8, so
 astral characters emerge as proper 4-byte sequences rather than surrogate
@@ -335,22 +357,23 @@ halves. Verified: `'hi \u{1F600}'` measures 7 bytes and round-trips as `hi 😀`
 
 ### Error handling
 
-Nothing aborts, panics, or `longjmp`s across this boundary. Every call returns a
-status or a handle.
+Nothing aborts, panics, or `longjmp`s across this boundary. Value-producing
+calls return `0` on failure; everything else returns a status.
 
 ```c
-if (bk_eval(rt, src, len, &v) != BK_OK) {
-    fprintf(stderr, "%s\n", bk_last_error(rt));   /* copy if you keep it */
+bk_value v = bk_eval_str(rt, src);
+if (!v) {
+    fprintf(stderr, "%s\n", bk_error(rt));   /* copy if you keep it */
 }
 ```
 
-`bk_last_error` is valid only until the next `bk_*` call. The engine's compile
-error buffer is process-global and is clobbered by the next failing compile, so
-the shim copies the message immediately.
+`bk_error` is valid only until the next `bk_*` call. The engine's compile error
+buffer is process-global and is clobbered by the next failing compile, so the
+shim copies the message immediately.
 
-Every failing reader records the reason: `bk_get_number`, `bk_get_bool`, and
-`bk_get_string` return `BK_ERR_TYPE`, `BK_ERR_INVALID`, or `BK_ERR_FULL`
-and leave a message that `bk_last_error` returns. Branch on the status code,
+Every failing reader records the reason: `bk_read_number`, `bk_read_bool`, and
+`bk_read_string` return `BK_ERR_TYPE`, `BK_ERR_INVALID`, or `BK_ERR_FULL`
+and leave a message that `bk_error` returns. Branch on the status code,
 never on the message text, after a reader call.
 
 One syntax-error input, `"var = = ="`, leaves the global compile buffer empty,
@@ -363,10 +386,10 @@ A host function is a C callback that JS invokes by name. It is how JS reaches
 the host's I/O, timers, logging, and application logic.
 
 ```c
-static void greet(bk_call_ctx ctx, void *udata) {
+static void greet(bk_ctx ctx, void *udata) {
     char buf[128];
     size_t n = 0;
-    if (bk_get_string(NULL, bk_arg(ctx, 0), buf, sizeof buf, &n) != BK_OK) {
+    if (bk_read_string(ctx, bk_arg(ctx, 0), buf, sizeof buf, &n) != BK_OK) {
         bk_throw_error(ctx, BK_ERROR_TYPE, "greet() wants a string");
         return;
     }
@@ -374,19 +397,25 @@ static void greet(bk_call_ctx ctx, void *udata) {
     bk_return_number(ctx, (double)n);
 }
 
-bk_register_fn(rt, "greet", 5, greet, NULL, /*arity*/1, /*constructable*/0);
-bk_eval(rt, "greet('world')", 14, NULL);
+static const bk_fn_def api[] = {
+    { "greet", greet, 1, 0u, NULL },
+    BK_FN_END
+};
+bk_register(rt, 0, api);   /* target 0 == globalThis */
+bk_exec(rt, "greet('world')");
 ```
 
-The callback receives an opaque `bk_call_ctx` and the `udata` pointer given at
-registration, passed through untouched. Read arguments with `bk_argc` and
-`bk_arg`; an index past the end yields a handle to `undefined` rather than an
-error, matching JS. `bk_this`, `bk_new_target`, and `bk_is_construct` cover
-method and constructor calls.
+The callback receives an opaque `bk_ctx` naming the live call and the `udata`
+pointer given at registration, passed through untouched. Read arguments with
+`bk_argc` and `bk_arg`; an index past the end yields a handle to `undefined`
+rather than an error, matching JS. `bk_this`, `bk_new_target`, and
+`bk_is_construct` cover method and constructor calls. The callback's context is
+an ordinary context: every reader, constructor, property call and `bk_call` in
+the header accepts it.
 
-To return a value, `bk_return` takes a handle, while `bk_return_number`,
-`_bool`, `_null`, and `_string` are the direct forms. A callback that returns
-nothing yields `undefined`.
+To return a value, `bk_return` takes a handle, while the inline helpers
+`bk_return_number`, `_bool`, `_null`, and `_string` are the direct forms. A
+callback that returns nothing yields `undefined`.
 
 Throwing never unwinds. `bk_throw_error(ctx, kind, msg)` and
 `bk_throw(ctx, handle)` *record* a throw and return normally, and the callback
@@ -394,25 +423,25 @@ must then return normally too. There is no `longjmp` across the boundary, which
 is what lets every dispatch site in the engine remain unchanged. A recorded
 throw beats any return value set in the same callback.
 
-For constructors, pass `constructable` non-zero to allow `new`. The engine
-creates the instance and `bk_this` sees it; return nothing to keep that object,
-or return an object to replace it (ES2015 §9.2.2). A zero value makes `new fn()`
-throw a `TypeError`, matching ES2015 §10.3 where built-ins construct only when
+For constructors, set the `BK_CTOR` flag to allow `new`. The engine creates the
+instance and `bk_this` sees it; return nothing to keep that object, or return an
+object to replace it (ES2015 §9.2.2). Without the flag `new fn()` throws a
+`TypeError`, matching ES2015 §10.3 where built-ins construct only when
 specified. Constructable host functions get an own `.prototype` with a
 `.constructor` back-reference, so `class D extends HostCtor` works.
 
 Handle lifetime is the one rule to internalise. Handles from `bk_arg`,
 `bk_this`, and `bk_new_target` are *scope handles*: valid only until the
-callback returns. To keep one, promote it with `bk_value_persist`, which
-returns a runtime-owned handle the caller must `bk_value_free`. Scope handles
-passed to `bk_value_free` are ignored rather than treated as an error. The
-readers accept both handle kinds and tolerate a `NULL` runtime inside a
-callback, so `bk_get_number(NULL, bk_arg(ctx, 0), &d)` is valid.
+callback returns. To keep one, promote it with `bk_persist`, which returns an
+owned handle the caller must `bk_free`. Scope handles passed to `bk_free` are
+ignored rather than treated as an error. The readers accept both handle kinds,
+and a callback's context resolves registry handles too, so one host call needs
+no other tier.
 
-`bk_call(ctx, func, argv, argc, this_val, out_val)` invokes a JS function from
-inside a callback. On `BK_OK`, `*out_val` is a runtime-owned handle you must
-free. If the callee throws, the exception is recorded on your context and
-`BK_ERR_THROW` is returned; return promptly and let the engine propagate it.
+`bk_call(ctx, func, this_val, argv, argc)` invokes a JS function from inside a
+callback (and works at top level too). It returns an owned handle you must
+free. If the callee throws, the exception is recorded on your context and `0`
+is returned; return promptly and let the engine propagate it.
 
 Arguments are copied, not referenced. The engine stages each call's `this`,
 `new.target`, and arguments into a GC-rooted per-call scope rather than pointing
@@ -422,40 +451,43 @@ handle has no way to refresh it.
 
 ## Lifetime and GC rules
 
-Handles are owned. A handle from `bk_eval` stays valid until you call
-`bk_value_free` or `bk_close`. It survives garbage collection, because the
-slot registry is a GC root and held values are transitively reachable by the
-mark phase. Verified: a held string survived 200,000 object allocations, and the
-design passes under `GC_STRESS` + AddressSanitizer with no use-after-free and no
-invalid reads.
+Handles are owned. A handle from `bk_eval` stays valid until you call `bk_free`
+or `bk_close`. It survives garbage collection, because the slot registry is a
+GC root and held values are transitively reachable by the mark phase. Verified:
+a held string survived 200,000 object allocations, and the design passes under
+`GC_STRESS` + AddressSanitizer with no use-after-free and no invalid reads.
 
 Handles leak if you never free them. The registry grows on demand and reuses
-freed slots, so there is no small fixed cap. Its ceiling is 65535 simultaneously
-live handles, and exceeding it returns `BK_ERR_FULL` (verified: the first
-failure lands at exactly 65535 and is reported cleanly, never as a zero handle
-paired with success). Free eagerly in loops.
+freed slots; with 32 index bits it is bounded by memory rather than by a fixed
+count. Free eagerly in loops anyway.
 
 A freed handle is retired rather than blindly recycled. Each slot carries a
 generation that advances on free, so reading a stale handle fails instead of
 resolving to whatever value later lands in that slot. A generation counter is
-finite, so a slot that exhausts its supply of distinct handles is withdrawn from
-reuse for the life of the runtime instead of wrapping: were it to wrap, a stale
-handle would become bit-identical to a live one and resolve silently. Verified
-across 400000 alloc/free cycles holding a stale handle throughout.
+finite (15 bits), so a slot that exhausts its supply of distinct handles is
+withdrawn from reuse for the life of the runtime instead of wrapping: were it to
+wrap, a stale handle would become bit-identical to a live one and resolve
+silently.
+
+Every handle also carries the id of the runtime that issued it, in the top 16
+bits. Resolving one against another runtime returns `BK_ERR_INVALID` instead of
+answering with whatever occupies that slot there -- which, before the tag
+existed, was a wrong answer indistinguishable from a correct one. Verified by
+`test/capi/two_runtimes.c`, which asserts the refusal for strings, numbers,
+persisted handles, and handles whose issuing runtime has since closed.
 
 Never dereference a `bk_value`. It is an index, not an address.
 
-Do not cache `const char *` returns. `bk_last_error` and `bk_version` point to
-runtime-owned storage. Copy before the next call.
+Do not cache `const char *` returns. `bk_error` and `bk_version` point to
+context-owned or static storage; `bk_cstr` results stay valid until the fourth
+following `bk_cstr` call. Copy before the next call when in doubt.
 
 Several runtimes may be open at once, each with its own globals, objects and
 interned strings. Nothing is shared between them, so one is unaffected by
 another allocating, collecting, or closing.
 
-Values do not cross. A `bk_value` is an index into one runtime's registry, so
-passing a handle to a different runtime's reader returns `BK_ERR_INVALID`
-rather than resolving against an unrelated value. To move a value, read it out
-and write it back in: the copy is a distinct object in the receiving runtime.
+Values do not cross runtimes. To move a value, read it out and write it back
+in: the copy is a distinct object in the receiving runtime.
 
 A runtime must be driven from one thread at a time. The engine has no locking,
 so two threads inside one runtime corrupt it, and nothing enforces that. Two
@@ -514,7 +546,7 @@ just example-c-static BK_INCDIR=$PWD/include BK_LIBDIR=$PWD/out \
 ```
 
 ```
-boomkat version 0.1.0
+boomkat version 0.2.0
 
 sum of 1..5      = 15
 greeting         = boomkat from C99 — astral: 😀
@@ -533,11 +565,6 @@ Static and shared builds produce byte-identical output; `otool -L` confirms the
 shared build genuinely links `@rpath/boomkat.dylib` rather than silently
 resolving to the archive. Clean under ASan.
 
-**Caveat:** `bku_eval_to_string()` in `bk_util.c` stringifies by concatenating
-caller source into `String((...))`. That is JS source injection if the input is
-ever untrusted. Safe for the literals in the example; do not copy it into a path
-where the JS comes from elsewhere.
-
 ### Zig: `bindings/zig/`
 
 ```sh
@@ -546,7 +573,7 @@ cd bindings/zig && zig build run
 ```
 
 ```
-boomkat 0.1.0
+boomkat 0.2.0
 sum 1..100 = 5050
 squares (string) = 1,4,9,16
 Throw: Unexpected token in JSON
@@ -582,7 +609,7 @@ cargo run --manifest-path bindings/rust/boomkat/Cargo.toml --example hello_js
 ```
 
 ```
-boomkat 0.1.0
+boomkat 0.2.0
 sum        = 10
 greeting   = hello world 😀
 its type   = String
@@ -599,7 +626,7 @@ ok
 ```
 
 A workspace of two crates: `boomkat-sys` (raw `extern "C"`, one decl per header
-symbol) and `boomkat_dylib` (safe wrapper). The safe layer converts several of the ABI's
+symbol) and `boomkat` (safe wrapper). The safe layer converts several of the ABI's
 disciplinary rules into compile errors: `Value` borrows `Runtime` by lifetime so
 a value cannot outlive its engine, and `Runtime` is neither `Send` nor `Sync`, so
 the documented thread-unsafety is enforced by the type system.
@@ -608,12 +635,8 @@ the documented thread-unsafety is enforced by the type system.
 overrides for an installed copy. A missing archive panics with the exact
 `make lib` command rather than a bare linker error.
 
-**Note:** `tests/basic.rs` is deliberately a *single* test function, because
-`cargo test` parallelises across threads in one process and the ABI is
-one-runtime-per-process. Correct, but it means coarse failure reporting.
-
-The `wrong type = ...: value is not a string` line exercises the
-reader-failure message path fixed on `main`.
+**Note:** run `cargo test` with `-- --test-threads=1` if you pin CPU or memory:
+the tests open independent runtimes, which is safe in parallel but not free.
 
 ### C3: `bindings/c3/`
 
@@ -653,7 +676,7 @@ make example-ruby        # or: ruby bindings/ruby/examples/example.rb
 ```
 
 ```
-engine version: 0.1.0
+engine version: 0.2.0
 sum of 1..5: 15
 Math.hypot(3, 4): 5.0
 greeting: hello from 😂
@@ -686,7 +709,7 @@ python3 bindings/python/example.py
 ```
 
 ```
-engine version: 0.1.0
+engine version: 0.2.0
 sum of squares: 30.0
 greeting: hello 😀
 counter: 5.0
@@ -710,9 +733,9 @@ STRING-tagged `HString` with `is_symbol` set, and `bk_get_string` would
 otherwise copy raw internal bytes). Before the fix, `Symbol()` raised
 `UnicodeDecodeError: invalid start byte 0xff`.
 
-## Known limitations of v1
+## Known limitations
 
-Host functions are supported through `bk_register_fn` and `bk_call`; see
+Host functions are supported through `bk_register` and `bk_call`; see
 [Host functions](#host-functions) above. A host function is an ordinary function
 object whose dispatch index sits in a reserved range above every compile-time
 ordinal, so it reaches `dispatch_builtin`'s out-of-range branch and routes to a
@@ -720,20 +743,10 @@ per-heap host table. Every call shape works: plain calls, methods,
 `.call`/`.apply`/`.bind`, accessors, `new`, `super()`, and built-in callbacks
 such as an `Array.prototype.sort` comparator.
 
-Registration binds globals only. `bk_register_fn` creates a binding on the
-global environment. There is no API to install a host function as a property of
-an existing object from C; do it in JS (`ns.fn = hostFn`) after registering.
-
 Registration is permanent. A host function lives for the runtime's lifetime;
 there is no unregister. Slots are never reused, so an index captured in a
-function object can never come to mean a different function.
-
-There is no property access from the host, and no `bk_get_prop`. Objects are
-opaque handles; read them from a JS callback and return a primitive, or
-serialise with `JSON.stringify`.
-
-`bk_call` is callback-only. It takes a `bk_call_ctx`, so it works from inside
-a host function but not from `main`. Use `bk_eval` at the top level.
+function object can never come to mean a different function. `bk_register`
+installs onto any object (pass its handle as `target`), not only globals.
 
 Host recursion is bounded. A host to JS to host chain never pushes a VM
 activation, so neither `MAX_CALLS` nor `MAX_RUN_DEPTH` counts it. `dispatch_host`
@@ -742,15 +755,13 @@ The cap is set per build profile because the limit is native stack: an
 unoptimised sanitizer build overflows an 8 MB stack around 16 levels, while an
 optimised build is far cheaper.
 
-The readers do no coercion. `bk_get_string` on a number returns
-`BK_ERR_TYPE`. Call `String(x)` in JS first.
+The strict readers do no coercion; the coercion tier (`bk_to_number`,
+`bk_to_bool`, `bk_to_string`, `bk_cstr`) does, and may throw. Pick per call site:
+a type check at a boundary is usually what you want, and `bk_cstr` for display.
 
 A runtime must be driven from one thread at a time, and that is unenforced.
 Multiple runtimes in one process are supported; values do not cross between
 them. See [Lifetime and GC rules](#lifetime-and-gc-rules).
-
-The registry grows on demand up to 65535 live handles. That ceiling is not
-configurable at runtime.
 
 There are no modules, timers, or I/O. The engine deliberately ships no host
 runtime surface; see `engine-scope.md`. Supply your own from the host.

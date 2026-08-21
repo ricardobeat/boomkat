@@ -27,14 +27,15 @@ module JS
 
   # Status codes from boomkat.h. Success is 0; every failure is negative.
   module Status
-    OK       =  0
-    NOMEM    = -1
-    SYNTAX   = -2
-    THROW    = -3
-    INTERNAL = -4
-    INVALID  = -5
-    TYPE     = -6
-    FULL     = -7
+    OK         =  0
+    NOMEM      = -1
+    SYNTAX     = -2
+    THROW      = -3
+    INTERNAL   = -4
+    INVALID    = -5
+    TYPE       = -6
+    FULL       = -7
+    INTERRUPT  = -8
   end
 
   # Error constructors bk_throw_error can raise, from bk_error_kind.
@@ -175,40 +176,40 @@ module JS
     extend Fiddle::Importer
 
     SIGNATURES = [
-      'int bk_open(void*)',
+      'void* bk_open()',
       'void bk_close(void*)',
       'const char* bk_version()',
-      'int bk_eval(void*, const char*, size_t, unsigned int*)',
-      'void bk_value_free(void*, unsigned int)',
-      'int bk_type_of(void*, unsigned int)',
-      'int bk_get_number(void*, unsigned int, double*)',
-      'int bk_get_bool(void*, unsigned int, int*)',
-      'int bk_get_string(void*, unsigned int, char*, size_t, size_t*)',
-      'const char* bk_last_error(void*)',
-      'int bk_last_error_code(void*)',
-      'void bk_drain_microtasks(void*)',
 
-      # Host functions. The bk_call_ctx is an opaque pointer; the readers above
-      # take a runtime, so a callback reads its arguments through the bk_ctx_*
-      # tier instead -- only that tier resolves a scope handle.
-      'int bk_register_fn(void*, const char*, size_t, void*, void*, int, int)',
-      'void* bk_ctx_runtime(void*)',
-      'int bk_ctx_type_of(void*, unsigned int)',
-      'int bk_ctx_get_number(void*, unsigned int, double*)',
-      'int bk_ctx_get_bool(void*, unsigned int, int*)',
-      'int bk_ctx_get_string(void*, unsigned int, char*, size_t, size_t*)',
+      # Value-producing calls return the handle directly; 0 means failure,
+      # with the detail in bk_error / bk_error_code.
+      'unsigned long long bk_eval(void*, const char*, size_t)',
+      'void bk_free(void*, unsigned long long)',
+      'int bk_type_of(void*, unsigned long long)',
+      'int bk_read_number(void*, unsigned long long, double*)',
+      'int bk_read_bool(void*, unsigned long long, int*)',
+      'int bk_read_string(void*, unsigned long long, char*, size_t, size_t*)',
+      'const char* bk_error(void*)',
+      'int bk_error_code(void*)',
+      'int bk_drain(void*)',
+
+      # Host functions: one call installs a bk_fn_def table ended by an
+      # entry with a NULL name; target 0 means globalThis. The table is
+      # handed over as a packed byte buffer (see Runtime#register).
+      'int bk_register(void*, unsigned long long, void*)',
       'unsigned int bk_argc(void*)',
-      'unsigned int bk_arg(void*, unsigned int)',
-      'unsigned int bk_this(void*)',
+      'unsigned long long bk_arg(void*, unsigned int)',
+      'unsigned long long bk_this(void*)',
       'int bk_is_construct(void*)',
-      'void bk_return(void*, unsigned int)',
-      'void bk_return_number(void*, double)',
-      'void bk_return_bool(void*, int)',
-      'void bk_return_null(void*)',
-      'void bk_return_string(void*, const char*, size_t)',
+      'void bk_return(void*, unsigned long long)',
       'void bk_throw_error(void*, int, const char*)',
-      'unsigned int bk_value_persist(void*, unsigned int)',
-      'int bk_call(void*, unsigned int, const unsigned int*, unsigned int, unsigned int, unsigned int*)'
+      'unsigned long long bk_persist(void*, unsigned long long)',
+      'unsigned long long bk_call(void*, unsigned long long, unsigned long long, const unsigned long long*, unsigned int)',
+
+      # Constructors. The header's bk_return_* forms are static inline sugar
+      # over these plus bk_return, so fiddle binds these instead.
+      'unsigned long long bk_number(void*, double)',
+      'unsigned long long bk_bool(void*, int)',
+      'unsigned long long bk_string(void*, const char*, size_t)'
     ].freeze
 
     class << self
@@ -238,13 +239,13 @@ module JS
   # A JS value that arrived as a host-function argument, remembering the scope
   # handle it came from.
   #
-  # The v1 ABI has no value constructors, so the only values that can be passed
-  # to a JS callback are ones the engine already holds. Arguments therefore
-  # carry their handle along: #arg returns a Float or String that behaves
-  # exactly like an ordinary one but can also be handed straight back to
-  # JS::Callback#call. Ruby's numeric and string operators return plain
-  # Float/String, so the tag disappears the moment a value is computed with --
-  # which is correct, since a computed value has no handle to reuse.
+  # Passing an existing engine value to a JS callback is cheaper than building
+  # a fresh one, so arguments carry their handle along: #arg returns a Float or
+  # String that behaves exactly like an ordinary one but can also be handed
+  # straight back to JS::Callback#call. Ruby's numeric and string operators
+  # return plain Float/String, so the tag disappears the moment a value is
+  # computed with -- which is correct, since a computed value has no handle to
+  # reuse.
   module Tagged
     # The scope handle this value came from.
     attr_accessor :handle
@@ -358,60 +359,29 @@ module JS
     alias inspect to_s
   end
 
-  # Which tier of the C reader API a handle must be resolved through.
-  #
-  # A bk_value names a slot, and the slot table it indexes depends on where the
-  # handle came from: a runtime's registry for an #eval result, one call's scope
-  # for an argument. The two tiers take different first arguments -- a runtime
-  # or a call context -- and neither accepts NULL, so a handle carries the tier
-  # that can read it rather than the conversion code guessing.
-  module Reader
-    # Resolves runtime-registry handles: what bk_eval and bk_call hand back.
-    class Runtime
-      def initialize(pointer)
-        @p = pointer
-      end
-
-      def type_of(v)
-        Lib.bk_type_of(@p, v)
-      end
-
-      def get_number(v, out)
-        Lib.bk_get_number(@p, v, out)
-      end
-
-      def get_bool(v, out)
-        Lib.bk_get_bool(@p, v, out)
-      end
-
-      def get_string(v, buf, cap, len)
-        Lib.bk_get_string(@p, v, buf, cap, len)
-      end
+  # Resolves handles reached through one context. v2 has a single context
+  # type: the runtime's own at top level, the callback's inside a host
+  # function. Both resolve registry handles, and the callback's also resolves
+  # the scope handles bk_arg / bk_this / bk_new_target return.
+  class Reader
+    def initialize(ctx)
+      @p = ctx
     end
 
-    # Resolves scope handles -- bk_arg, bk_this -- which name a slot in the
-    # live call rather than in the runtime, and which the runtime tier cannot
-    # see. It also resolves registry handles, so one host call needs only this.
-    class Context
-      def initialize(ctx)
-        @p = ctx
-      end
+    def type_of(v)
+      Lib.bk_type_of(@p, v)
+    end
 
-      def type_of(v)
-        Lib.bk_ctx_type_of(@p, v)
-      end
+    def read_number(v, out)
+      Lib.bk_read_number(@p, v, out)
+    end
 
-      def get_number(v, out)
-        Lib.bk_ctx_get_number(@p, v, out)
-      end
+    def read_bool(v, out)
+      Lib.bk_read_bool(@p, v, out)
+    end
 
-      def get_bool(v, out)
-        Lib.bk_ctx_get_bool(@p, v, out)
-      end
-
-      def get_string(v, buf, cap, len)
-        Lib.bk_ctx_get_string(@p, v, buf, cap, len)
-      end
+    def read_string(v, buf, cap, len)
+      Lib.bk_read_string(@p, v, buf, cap, len)
     end
   end
 
@@ -430,9 +400,10 @@ module JS
     def initialize(runtime, ctx)
       @runtime = runtime
       @ctx = ctx
-      @reader = Reader::Context.new(ctx)
+      @reader = Reader.new(ctx)
       @live = true
-      # Global handles produced by #invoke, released when the call ends.
+      # Registry handles produced by #invoke and by argument conversion,
+      # released when the call ends.
       @owned = []
     end
 
@@ -472,33 +443,34 @@ module JS
     def invoke(func_handle, args)
       check_live!
 
-      handles = args.map { |a| @runtime.send(:argument_handle, a) }
+      handles = args.map { |a| @runtime.send(:argument_handle, a, self) }
       argv = nil
       unless handles.empty?
-        argv = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT * handles.size)
-        handles.each_with_index { |h, i| argv[i * Fiddle::SIZEOF_INT, Fiddle::SIZEOF_INT] = [h].pack('L') }
+        argv = Fiddle::Pointer.malloc(Fiddle::SIZEOF_LONG_LONG * handles.size)
+        handles.each_with_index do |h, i|
+          argv[i * Fiddle::SIZEOF_LONG_LONG, Fiddle::SIZEOF_LONG_LONG] = [h].pack('Q')
+        end
       end
 
-      out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
-      status = Lib.bk_call(@ctx, func_handle, argv, handles.size, 0, out)
+      id = Lib.bk_call(@ctx, func_handle, 0, argv, handles.size)
 
-      if status != Status::OK
+      if id.zero?
         # The callee's exception is already staged on this context, so letting
         # this escape the host function propagates the original JS error
         # untouched. CalleeThrow marks it as "already staged" so the trampoline
         # does not overwrite it with a re-derived one.
-        message = Lib.bk_last_error(@runtime.send(:pointer)).to_s
+        status = Lib.bk_error_code(@ctx)
+        message = Lib.bk_error(@ctx).to_s
         message = "JS call failed (status #{status})" if message.empty?
         raise CalleeThrow.new(message, status)
       end
 
-      # bk_call hands back a runtime-owned handle. It is kept alive until this
-      # host call ends and tagged onto the converted value, so a result can be
-      # fed straight into another callback -- f.call(f.call(x)) -- which is the
-      # only way to chain calls when the ABI cannot construct values. The
-      # argument handles are borrowed from the caller's scope and are not ours
-      # to free.
-      id = out[0, Fiddle::SIZEOF_INT].unpack1('L')
+      # bk_call hands back a registry handle. It is kept alive until this host
+      # call ends and tagged onto the converted value, so a result can be fed
+      # straight into another callback -- f.call(f.call(x)). The argument
+      # handles are borrowed from the caller's scope (or released with the
+      # rest of @owned when they were freshly constructed) and are not ours
+      # to free here.
       @owned << id
       @runtime.send(:handle_to_ruby, id, self)
     end
@@ -508,7 +480,7 @@ module JS
     # refused, so move a value across by reading it out and writing it back in.
     def persist(handle)
       check_live!
-      Lib.bk_value_persist(@ctx, handle)
+      Lib.bk_persist(@ctx, handle)
     end
 
     def to_s
@@ -518,9 +490,9 @@ module JS
 
     # Marks every handle reached through this context dead once the trampoline
     # returns, so a Call captured by a closure fails loudly instead of handing
-    # the engine a stale scope handle, and releases the global handles #invoke
-    # took ownership of. Without this the slot table -- 1024 entries -- would
-    # leak one per JS callback invocation.
+    # the engine a stale scope handle, and releases the registry handles
+    # #invoke took ownership of. Without this every JS callback invocation
+    # would leak one.
     def expire!
       @live = false
       @owned.each { |id| @runtime.send(:free_handle, id) }
@@ -531,6 +503,12 @@ module JS
 
     def check_live!
       raise Error.new('JS::Call used after its host function returned', Status::INVALID) unless @live
+    end
+
+    # Registers a freshly constructed handle for release when the call ends.
+    def record_owned(handle)
+      @owned << handle
+      handle
     end
   end
 
@@ -577,12 +555,10 @@ module JS
     def initialize(library = nil)
       Lib.load!(library || JS.default_library)
 
-      out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP)
-      status = Lib.bk_open(out)
-      raise Error.new('bk_open failed', status) if status != Status::OK
+      @rt = Lib.bk_open
+      raise Error.new('bk_open failed', Status::NOMEM) unless @rt
 
-      @rt = out.ptr
-      @reader = Reader::Runtime.new(@rt)
+      @reader = Reader.new(@rt)
       @closed = false
 
       # Every Fiddle::Closure registered against this runtime. A closure that
@@ -642,10 +618,8 @@ module JS
       @closures << closure
 
       bytes = name.to_s.dup.force_encoding(Encoding::BINARY)
-      status = Lib.bk_register_fn(
-        @rt, name.to_s, bytes.bytesize, closure, nil,
-        declared, constructable ? 1 : 0
-      )
+      status = Lib.bk_register(@rt, 0, build_fn_table(bytes, closure, declared,
+                                                      constructable))
       if status != Status::OK
         @closures.pop
         raise_status!(status)
@@ -672,18 +646,17 @@ module JS
 
       # bk_eval takes a byte length, so measure bytes and not characters:
       # any non-ASCII source would otherwise be truncated mid-string.
-      bytes  = source.to_s.dup.force_encoding(Encoding::BINARY)
-      handle = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
+      bytes = source.to_s.dup.force_encoding(Encoding::BINARY)
 
-      status = Lib.bk_eval(@rt, source.to_s, bytes.bytesize, handle)
-      raise_status!(status, filename) if status != Status::OK
+      id = Lib.bk_eval(@rt, source.to_s, bytes.bytesize)
+      raise_status!(Lib.bk_error_code(@rt), filename) if id.zero?
 
-      id = handle[0, Fiddle::SIZEOF_INT].unpack1('L')
       begin
         to_ruby(id)
       ensure
-        # Handles are not garbage collected; the slot table holds 1024.
-        Lib.bk_value_free(@rt, id) if id != 0
+        # Handles are not garbage collected; release the slot even if the
+        # conversion raised.
+        Lib.bk_free(@rt, id) if id != 0
       end
     end
 
@@ -691,8 +664,9 @@ module JS
     def exec(source, filename = nil)
       check_open!
       bytes = source.to_s.dup.force_encoding(Encoding::BINARY)
-      status = Lib.bk_eval(@rt, source.to_s, bytes.bytesize, nil)
-      raise_status!(status, filename) if status != Status::OK
+      id = Lib.bk_eval(@rt, source.to_s, bytes.bytesize)
+      raise_status!(Lib.bk_error_code(@rt), filename) if id.zero?
+      Lib.bk_free(@rt, id) if id != 0
       self
     end
 
@@ -712,7 +686,7 @@ module JS
       check_open!
       if @reader.type_of(handle) == Type::UNDEFINED
         probe = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE)
-        if @reader.get_number(handle, probe) == Status::INVALID
+        if @reader.read_number(handle, probe) == Status::INVALID
           raise Error.new(
             "handle #{handle} is not held by this runtime", Status::INVALID
           )
@@ -725,7 +699,8 @@ module JS
     # is only needed after resolving promises from outside the engine.
     def drain_microtasks
       check_open!
-      Lib.bk_drain_microtasks(@rt)
+      status = Lib.bk_drain(@rt)
+      raise_status!(status) if status != Status::OK
       self
     end
 
@@ -755,6 +730,31 @@ module JS
 
     def pointer
       @rt
+    end
+
+    # Size of one bk_fn_def on the C ABI: two pointers, an int, an unsigned
+    # int, and a trailing pointer, with no padding beyond that on any 64-bit
+    # target this binding supports.
+    FN_DEF_SIZE = Fiddle::SIZEOF_VOIDP * 3 + Fiddle::SIZEOF_INT * 2
+    private_constant :FN_DEF_SIZE
+
+    # Pack a two-entry registration table into a byte buffer: the function
+    # itself, then the all-zero terminator bk_register stops at. The name
+    # bytes live at the tail of the same buffer so nothing can be collected
+    # between building the table and the call.
+    def build_fn_table(name_bytes, closure, arity, constructable)
+      name_off = FN_DEF_SIZE * 2
+      buf = Fiddle::Pointer.malloc(name_off + name_bytes.bytesize + 1)
+      buf[name_off, name_bytes.bytesize] = name_bytes
+
+      buf[0, FN_DEF_SIZE] = [
+        buf.to_i + name_off,
+        closure.to_i,
+        arity,
+        constructable ? 1 : 0,
+        0
+      ].pack('Q Q l L Q')
+      buf
     end
 
     # Wrap a Ruby block in the C callback shape bk_host_fn declares:
@@ -798,14 +798,15 @@ module JS
     def return_value(call, ctx, value)
       case value
       when nil            then # a callback that returns nothing yields undefined
-      when true, false    then Lib.bk_return_bool(ctx, value ? 1 : 0)
-      when Numeric        then Lib.bk_return_number(ctx, value.to_f)
+      when true, false    then return_constructed(ctx, Lib.bk_bool(ctx, value ? 1 : 0))
+      when Numeric        then return_constructed(ctx, Lib.bk_number(ctx, value.to_f))
       when String
         bytes = value.dup.force_encoding(Encoding::BINARY)
-        Lib.bk_return_string(ctx, value, bytes.bytesize)
+        return_constructed(ctx, Lib.bk_string(ctx, value, bytes.bytesize))
       when Symbol
         s = value.to_s
-        Lib.bk_return_string(ctx, s, s.dup.force_encoding(Encoding::BINARY).bytesize)
+        bytes = s.dup.force_encoding(Encoding::BINARY)
+        return_constructed(ctx, Lib.bk_string(ctx, s, bytes.bytesize))
       when Callback       then # already a JS value; returning it is a no-op here
       else
         raise HostThrow.new(
@@ -815,28 +816,42 @@ module JS
       end
     end
 
+    # Hand a freshly constructed handle to bk_return and give its slot back:
+    # bk_return copies the value in, so the temporary does not outlive this.
+    def return_constructed(ctx, handle)
+      Lib.bk_return(ctx, handle)
+      Lib.bk_free(ctx, handle) if handle != 0
+    end
+
     # Resolve one JS::Callback#call argument to a handle bk_call can take.
     #
-    # Only values that already live in the engine can be passed. The v1 ABI has
-    # no value constructors -- no bk_new_number, no bk_new_string -- so there
-    # is no way to build a fresh JS value out of Ruby data. The one path that
-    # looks like it would work, evaluating a literal with bk_eval, re-enters
-    # the VM from inside a host callback and faults the native stack, so a Ruby
-    # primitive is refused here with a clear message rather than crashing.
-    #
-    # In practice a host callback passes back what JS handed it: an argument it
-    # received, or a value the callee returned. That covers the shape this is
-    # for -- a host function driving a JS callback over data JS already owns.
-    def argument_handle(value)
+    # A JS value the engine already holds passes through by its existing
+    # handle. A Ruby primitive is constructed on the fly -- v2 has value
+    # constructors usable inside a callback -- and recorded on the call so it
+    # is released with the call's other handles. Anything else is refused:
+    # objects and arrays would need JSON round-tripping, which is the host's
+    # call to make.
+    def argument_handle(value, call)
       handle = value.handle if value.respond_to?(:handle)
       return handle if handle
 
-      raise HostThrow.new(
-        "cannot pass #{describe_unpassable(value)} to a JS callback: the v1 " \
-        'ABI has no value constructors, so only a value the engine already ' \
-        'holds -- an argument this call received, or a result a previous call ' \
-        'returned -- can be passed', :type
-      )
+      case value
+      when true, false
+        call.send(:record_owned, Lib.bk_bool(pointer, value ? 1 : 0))
+      when Numeric
+        call.send(:record_owned, Lib.bk_number(pointer, value.to_f))
+      when String, Symbol
+        s = value.to_s
+        bytes = s.dup.force_encoding(Encoding::BINARY)
+        call.send(:record_owned, Lib.bk_string(pointer, s, bytes.bytesize))
+      else
+        raise HostThrow.new(
+          "cannot pass #{describe_unpassable(value)} to a JS callback: only " \
+          'a primitive (number, string, boolean, nil), or a value the engine ' \
+          'already holds -- an argument this call received, or a result an ' \
+          'earlier call returned -- can be passed', :type
+        )
+      end
     end
 
     def describe_unpassable(value)
@@ -887,7 +902,7 @@ module JS
     end
 
     def free_handle(id)
-      Lib.bk_value_free(@rt, id) if id && id != 0 && !@closed
+      Lib.bk_free(@rt, id) if id && id != 0 && !@closed
     end
 
     # Convert a handle reached through a live host call -- an argument's scope
@@ -907,8 +922,8 @@ module JS
       case type
       when Type::UNDEFINED, Type::NULL then nil
       when Type::BOOLEAN  then read_bool(id, reader)
-      # Numbers and strings keep their handle, which the v1 ABI requires of
-      # anything passed to bk_call: it can only take values it already holds.
+      # Numbers and strings keep their handle, so they can be passed back into
+      # bk_call without a fresh allocation.
       when Type::NUMBER   then Tagged.wrap(read_number(id, reader), id)
       when Type::STRING   then Tagged.wrap(read_string(id, reader), id)
       when Type::FUNCTION then Callback.new(call, id)
@@ -924,10 +939,10 @@ module JS
     end
 
     # Turn a non-OK status into the matching exception, using the engine's
-    # message. bk_last_error owns its buffer and the next call overwrites it,
-    # so copy the string out immediately.
+    # message. bk_error owns its buffer and the next call overwrites it, so
+    # copy the string out immediately.
     def raise_status!(status, filename = nil)
-      message = Lib.bk_last_error(@rt).to_s
+      message = Lib.bk_error(@rt).to_s
       message = "JS error (status #{status})" if message.empty?
       message = "#{filename}: #{message}" if filename
 
@@ -949,21 +964,21 @@ module JS
       end
     end
 
-    # The readers take the tier that can resolve the handle: this runtime for a
-    # registry handle from #eval, the call's context for a scope handle from a
-    # host function's arguments.
+    # The readers take the context that can resolve the handle: the runtime's
+    # own for a registry handle from #eval, the call's for a scope handle from
+    # a host function's arguments.
     def read_bool(id, reader)
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
-      status = reader.get_bool(id, out)
-      raise Error.new('bk_get_bool failed', status) if status != Status::OK
+      status = reader.read_bool(id, out)
+      raise Error.new('bk_read_bool failed', status) if status != Status::OK
 
       out[0, Fiddle::SIZEOF_INT].unpack1('l') != 0
     end
 
     def read_number(id, reader)
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE)
-      status = reader.get_number(id, out)
-      raise Error.new('bk_get_number failed', status) if status != Status::OK
+      status = reader.read_number(id, out)
+      raise Error.new('bk_read_number failed', status) if status != Status::OK
 
       out[0, Fiddle::SIZEOF_DOUBLE].unpack1('d')
     end
@@ -973,15 +988,15 @@ module JS
     # characters arrive as proper 4-byte sequences.
     def read_string(id, reader)
       len = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T)
-      status = reader.get_string(id, nil, 0, len)
-      raise Error.new('bk_get_string (measure) failed', status) if status != Status::OK
+      status = reader.read_string(id, nil, 0, len)
+      raise Error.new('bk_read_string (measure) failed', status) if status != Status::OK
 
       size = len[0, Fiddle::SIZEOF_SIZE_T].unpack1('J')
       return ''.dup.force_encoding(Encoding::UTF_8) if size.zero?
 
       buf = Fiddle::Pointer.malloc(size + 1)
-      status = reader.get_string(id, buf, size + 1, len)
-      raise Error.new('bk_get_string (read) failed', status) if status != Status::OK
+      status = reader.read_string(id, buf, size + 1, len)
+      raise Error.new('bk_read_string (read) failed', status) if status != Status::OK
 
       buf[0, size].force_encoding(Encoding::UTF_8)
     end

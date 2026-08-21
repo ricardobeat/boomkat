@@ -241,8 +241,8 @@ reference. The binding is designed to make that mistake impossible.
 
 `release` is optional for a short program, since `close` frees everything, but
 required in a loop, since an unreleased value holds its slot until `close`. The
-registry grows on demand and reuses released slots; only with 65535 values live
-at once does `eval` report `VALUE_TABLE_FULL`.
+registry grows on demand and reuses released slots, bounded by memory rather than
+by a fixed count.
 
 A released handle is retired rather than blindly recycled. Each slot carries a
 generation that advances on release, so reusing a handle after `release` reports

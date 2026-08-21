@@ -279,7 +279,7 @@ impl Type {
 /// two runtimes share no state whatsoever. See the crate docs for the full
 /// argument.
 pub struct Runtime {
-    raw: sys::bk_runtime,
+    raw: sys::bk_ctx,
     /// `Send`, not `Sync`: a runtime may move between threads but must not be
     /// used from two at once. See the type's doc comment.
     _not_sync: PhantomData<std::cell::Cell<()>>,
@@ -300,12 +300,11 @@ impl Runtime {
     /// independent: each has its own globals, prototypes, objects and string
     /// intern table, and nothing is shared between them.
     pub fn new() -> Result<Self, Error> {
-        let mut raw: sys::bk_runtime = std::ptr::null_mut();
-        // SAFETY: `raw` is a valid, writable out-parameter.
-        let status = unsafe { sys::bk_open(&mut raw) };
+        // SAFETY: `bk_open` has no preconditions.
+        let raw = unsafe { sys::bk_open() };
 
-        if status != sys::BK_OK || raw.is_null() {
-            return Err(Error::new(Kind::from_status(status), ""));
+        if raw.is_null() {
+            return Err(Error::new(Kind::from_status(sys::BK_ERR_NOMEM), ""));
         }
 
         Ok(Runtime {
@@ -327,22 +326,15 @@ impl Runtime {
     ///
     /// Pending promise jobs are drained before this returns.
     pub fn eval(&self, src: &str) -> Result<Value<'_>, Error> {
-        let mut handle: sys::bk_value = sys::BK_INVALID_VALUE;
         // The ABI takes a pointer plus an explicit length, so interior NULs
         // are fine and no CString round-trip is needed.
-        // SAFETY: `src` is a valid slice for `src.len()` bytes; `handle` is a
-        // valid out-parameter; `self.raw` is a live runtime.
-        let status = unsafe {
-            sys::bk_eval(
-                self.raw,
-                src.as_ptr() as *const c_char,
-                src.len(),
-                &mut handle,
-            )
-        };
+        // SAFETY: `src` is a valid slice for `src.len()` bytes; `self.raw` is
+        // a live context.
+        let handle =
+            unsafe { sys::bk_eval(self.raw, src.as_ptr() as *const c_char, src.len()) };
 
-        if status != sys::BK_OK {
-            return Err(self.error(status));
+        if handle == sys::BK_INVALID_VALUE {
+            return Err(self.last_error());
         }
 
         Ok(Value {
@@ -353,28 +345,25 @@ impl Runtime {
 
     /// Run `src` purely for its side effects, discarding the result.
     pub fn eval_unit(&self, src: &str) -> Result<(), Error> {
-        // SAFETY: as `eval`, but with a null out-parameter, which the ABI
-        // documents as "run for side effects".
-        let status = unsafe {
-            sys::bk_eval(
-                self.raw,
-                src.as_ptr() as *const c_char,
-                src.len(),
-                std::ptr::null_mut(),
-            )
-        };
-
-        if status != sys::BK_OK {
-            return Err(self.error(status));
+        let handle =
+            unsafe { sys::bk_eval(self.raw, src.as_ptr() as *const c_char, src.len()) };
+        if handle == sys::BK_INVALID_VALUE {
+            return Err(self.last_error());
         }
+        // SAFETY: live context; the ABI accepts any handle here.
+        unsafe { sys::bk_free(self.raw, handle) };
         Ok(())
     }
 
     /// Run pending promise jobs. [`Runtime::eval`] already drains before it
     /// returns; this is for the case where host code resolved a promise.
-    pub fn drain_microtasks(&self) {
-        // SAFETY: `self.raw` is a live runtime; the ABI guards re-entrancy.
-        unsafe { sys::bk_drain_microtasks(self.raw) }
+    pub fn drain_microtasks(&self) -> Result<(), Error> {
+        // SAFETY: `self.raw` is a live context; the ABI guards re-entrancy.
+        let status = unsafe { sys::bk_drain(self.raw) };
+        if status != sys::BK_OK {
+            return Err(self.error(status));
+        }
+        Ok(())
     }
 
     /// Bind a Rust closure as a JS global function named `name`.
@@ -437,54 +426,85 @@ impl Runtime {
         F: for<'a> Fn(&Ctx<'a>) -> Result<HostValue<'a>, Error> + 'static,
     {
         // One leaked box per registration; see the doc comment above. The
-        // pointer is erased to `*mut c_void` for the ABI and recovered inside
-        // `trampoline::<F>`, the only place that knows `F` again. The runtime
-        // does not ride along: the trampoline reads it off the call context,
-        // so a closure registered here can only ever address this runtime.
+        // pointer rides in `udata` together with this runtime's context (v2
+        // gives a callback no way to reach its runtime otherwise); the
+        // trampoline recovers both.
         let boxed: *mut F = Box::into_raw(Box::new(f));
+        let data: *mut TrampolineData<F> = Box::into_raw(Box::new(TrampolineData {
+            f: boxed,
+            rt: self.raw,
+        }));
 
-        // SAFETY: `name` is valid for `name.len()` bytes; `trampoline::<F>` has
-        // the required C signature; `boxed` outlives the runtime because it is
-        // never freed. The engine only passes `udata` back, never derefs it.
-        let status = unsafe {
-            sys::bk_register_fn(
-                self.raw,
-                name.as_ptr() as *const c_char,
-                name.len(),
-                trampoline::<F>,
-                boxed as *mut c_void,
-                arity as c_int,
-                constructable as c_int,
-            )
+        // The table ends at the first zeroed entry, so two entries suffice:
+        // the function itself, then BK_FN_END.
+        let c_name = match CString::new(name) {
+            Ok(s) => s,
+            Err(_) => {
+                drop(unsafe { Box::from_raw(boxed) });
+                drop(unsafe { Box::from_raw(data) });
+                return Err(Error::new(
+                    Kind::Encoding,
+                    "function name contains a NUL byte",
+                ));
+            }
         };
+        let defs = [
+            sys::bk_fn_def {
+                name: c_name.as_ptr(),
+                cfn: Some(trampoline::<F>),
+                arity: arity as c_int,
+                flags: if constructable { sys::BK_CTOR } else { 0 },
+                udata: data as *mut c_void,
+            },
+            sys::BK_FN_END,
+        ];
+
+        // SAFETY: `c_name` outlives the call, which copies what it needs;
+        // `trampoline::<F>` has the required C signature; `data` outlives the
+        // runtime because it is never freed. The engine only passes `udata`
+        // back, never derefs it.
+        let status = unsafe { sys::bk_register(self.raw, 0, defs.as_ptr()) };
 
         if status != sys::BK_OK {
-            // Registration failed, so the engine never took the pointer and we
-            // still own it uniquely. Reclaim it rather than leaking on a path
-            // that has no runtime-lifetime justification.
-            // SAFETY: `boxed` came from `Box::into_raw` above and, since
-            // registration failed, no copy of it escaped.
+            // Registration failed, so the engine never took the pointers and we
+            // still own them uniquely. Reclaim them rather than leaking on a
+            // path that has no runtime-lifetime justification.
+            // SAFETY: both came from `Box::into_raw` above and, since
+            // registration failed, no copy of either escaped.
             drop(unsafe { Box::from_raw(boxed) });
+            drop(unsafe { Box::from_raw(data) });
             return Err(self.error(status));
         }
         Ok(())
-        // `boxed` is intentionally not freed on the success path.
+        // `boxed` and `data` are intentionally not freed on the success path.
     }
 
     /// Build an [`Error`] from a status, copying the engine's message out
     /// before the next call can clobber it.
     fn error(&self, status: c_int) -> Error {
-        // SAFETY: boomkat_last_error is documented never to return null, and its
-        // buffer is valid until the next boomkat_* call. We copy immediately.
-        let msg = unsafe {
-            let p = sys::bk_last_error(self.raw);
+        Error::new(Kind::from_status(status), self.error_text())
+    }
+
+    /// Build an [`Error`] from whatever the engine last recorded on this
+    /// context: the shape a value-returning call reports through.
+    fn last_error(&self) -> Error {
+        // SAFETY: live context; `bk_error_code` cannot fail.
+        let status = unsafe { sys::bk_error_code(self.raw) };
+        Error::new(Kind::from_status(status), self.error_text())
+    }
+
+    /// Copy the engine's message out before the next call can overwrite it.
+    fn error_text(&self) -> String {
+        // SAFETY: bk_error is documented never to return null, and its buffer
+        // is valid until the next bk_* call. We copy immediately.
+        unsafe {
+            let p = sys::bk_error(self.raw);
             if p.is_null() {
                 String::new()
             } else {
                 CStr::from_ptr(p).to_string_lossy().into_owned()
             }
-        };
-        Error::new(Kind::from_status(status), msg)
+        }
     }
 }
 
@@ -528,8 +548,8 @@ impl<'rt> Value<'rt> {
     /// Read a number. Does not coerce: a non-number is [`Kind::Type`].
     pub fn as_number(&self) -> Result<f64, Error> {
         let mut out = 0.0f64;
-        // SAFETY: live runtime and handle; `out` is a valid out-parameter.
-        let status = unsafe { sys::bk_get_number(self.rt.raw, self.handle, &mut out) };
+        // SAFETY: live context and handle; `out` is a valid out-parameter.
+        let status = unsafe { sys::bk_read_number(self.rt.raw, self.handle, &mut out) };
         if status != sys::BK_OK {
             return Err(self.rt.error(status));
         }
@@ -539,8 +559,8 @@ impl<'rt> Value<'rt> {
     /// Read a boolean. Does not coerce: a non-boolean is [`Kind::Type`].
     pub fn as_bool(&self) -> Result<bool, Error> {
         let mut out: c_int = 0;
-        // SAFETY: live runtime and handle; `out` is a valid out-parameter.
-        let status = unsafe { sys::bk_get_bool(self.rt.raw, self.handle, &mut out) };
+        // SAFETY: live context and handle; `out` is a valid out-parameter.
+        let status = unsafe { sys::bk_read_bool(self.rt.raw, self.handle, &mut out) };
         if status != sys::BK_OK {
             return Err(self.rt.error(status));
         }
@@ -556,31 +576,29 @@ impl<'rt> Value<'rt> {
         read_string(self.rt, self.handle)
     }
 
-    /// Render a primitive the way JS would display it.
+    /// Render the value the way `String(v)` would in JS, via the ABI's
+    /// coercion entry point. Works for any type; may run user code (a
+    /// `valueOf`/`toString`) and therefore throws if that throws.
     ///
-    /// The ABI has no coercion entry point, so this covers only the primitives
-    /// that can be read directly. For objects, arrays, and functions, call
-    /// `String(x)` or `JSON.stringify(x)` inside the snippet you evaluate.
+    /// The engine owns the result buffer only until the fourth following
+    /// coercion on this runtime, so it is copied out immediately.
     pub fn to_display_string(&self) -> Result<String, Error> {
-        match self.type_of() {
-            Type::String => self.as_string(),
-            Type::Number => Ok(format_number(self.as_number()?)),
-            Type::Boolean => Ok(self.as_bool()?.to_string()),
-            Type::Null => Ok("null".to_string()),
-            Type::Undefined => Ok("undefined".to_string()),
-            _ => Err(Error::new(
-                Kind::Type,
-                "no ABI coercion for this type; wrap it in String(...) in JS",
-            )),
+        // SAFETY: live context and handle; `out_len` may be null.
+        let p = unsafe { sys::bk_cstr(self.rt.raw, self.handle, std::ptr::null_mut()) };
+        if p.is_null() {
+            return Err(self.rt.last_error());
         }
+        // SAFETY: `p` is NUL-terminated as documented.
+        let s = unsafe { CStr::from_ptr(p) };
+        Ok(s.to_string_lossy().into_owned())
     }
 }
 
 impl Drop for Value<'_> {
     fn drop(&mut self) {
-        // SAFETY: live runtime; the ABI accepts 0 and already-freed handles,
+        // SAFETY: live context; the ABI accepts 0 and already-freed handles,
         // and Value is not Copy/Clone, so this frees exactly once.
-        unsafe { sys::bk_value_free(self.rt.raw, self.handle) };
+        unsafe { sys::bk_free(self.rt.raw, self.handle) };
     }
 }
 
@@ -601,10 +619,9 @@ impl fmt::Debug for Value<'_> {
 /// so `'a` is what stops one being stashed in a `static` or returned past the
 /// closure — the mistake the C ABI can only warn about in prose.
 ///
-/// It carries the call context it came from, because that is what names the
-/// runtime the handle belongs to. With several runtimes open a handle is an
-/// index into exactly one registry, so a reader that had to guess would answer
-/// with an unrelated value; every read here goes through `boomkat_ctx_*` instead.
+/// It carries the call context it came from, which is also what every reader in
+/// v2 addresses: one context type resolves registry handles and scope handles
+/// alike.
 ///
 /// A `HostValue` does not free anything on drop. Scope handles have nothing to
 /// free; a [`Ctx::call`] result is owned by its [`Retained`] guard, which frees
@@ -612,9 +629,8 @@ impl fmt::Debug for Value<'_> {
 #[derive(Clone, Copy)]
 pub struct HostValue<'a> {
     repr: Repr,
-    /// The call this value belongs to. Readers address the runtime through it;
-    /// a host-built value has none to address, and never needs one.
-    ctx: sys::bk_call_ctx,
+    /// The call this value belongs to; the context its readers go through.
+    ctx: sys::bk_ctx,
     /// Invariant in `'a`: `HostValue<'long>` must not coerce to
     /// `HostValue<'short>` or vice versa, so no lifetime laundering can smuggle
     /// a handle out of the call it belongs to.
@@ -637,7 +653,7 @@ enum Repr {
 }
 
 impl<'a> HostValue<'a> {
-    fn handle(ctx: sys::bk_call_ctx, handle: sys::bk_value) -> Self {
+    fn handle(ctx: sys::bk_ctx, handle: sys::bk_value) -> Self {
         HostValue {
             repr: Repr::Handle(handle),
             ctx,
@@ -645,7 +661,7 @@ impl<'a> HostValue<'a> {
         }
     }
 
-    fn built(ctx: sys::bk_call_ctx, index: usize) -> Self {
+    fn built(ctx: sys::bk_ctx, index: usize) -> Self {
         HostValue {
             repr: Repr::Built(index),
             ctx,
@@ -675,10 +691,9 @@ impl<'a> HostValue<'a> {
     /// not constructed it yet.
     pub fn type_of(&self) -> Type {
         match self.raw() {
-            // SAFETY: live context for this call; the context tier is what
-            // resolves scope handles, and it reports undefined for anything it
-            // does not recognise rather than faulting.
-            Some(h) => Type::from_raw(unsafe { sys::bk_ctx_type_of(self.ctx, h) }),
+            // SAFETY: live context for this call; it reports undefined for
+            // anything it does not recognise rather than faulting.
+            Some(h) => Type::from_raw(unsafe { sys::bk_type_of(self.ctx, h) }),
             None => Type::Undefined,
         }
     }
@@ -688,7 +703,7 @@ impl<'a> HostValue<'a> {
         let handle = self.raw().ok_or_else(|| Error::new(Kind::Type, NOT_READABLE))?;
         let mut out = 0.0f64;
         // SAFETY: as `type_of`; `out` is a valid out-parameter.
-        let status = unsafe { sys::bk_ctx_get_number(self.ctx, handle, &mut out) };
+        let status = unsafe { sys::bk_read_number(self.ctx, handle, &mut out) };
         if status != sys::BK_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a number"));
         }
@@ -700,7 +715,7 @@ impl<'a> HostValue<'a> {
         let handle = self.raw().ok_or_else(|| Error::new(Kind::Type, NOT_READABLE))?;
         let mut out: c_int = 0;
         // SAFETY: as `type_of`; `out` is a valid out-parameter.
-        let status = unsafe { sys::bk_ctx_get_bool(self.ctx, handle, &mut out) };
+        let status = unsafe { sys::bk_read_bool(self.ctx, handle, &mut out) };
         if status != sys::BK_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a boolean"));
         }
@@ -729,11 +744,11 @@ impl fmt::Debug for HostValue<'_> {
 /// reachable from it borrows `'a`, so the borrow checker rejects a value
 /// escaping into a longer-lived place.
 pub struct Ctx<'a> {
-    raw: sys::bk_call_ctx,
-    /// The runtime this call belongs to, read off the context. Freeing a
-    /// [`Ctx::call`] result needs it, and so does a host that wants to
-    /// evaluate; see [`Ctx::runtime`].
-    rt: sys::bk_runtime,
+    raw: sys::bk_ctx,
+    /// The runtime this call belongs to, carried in `udata` at registration
+    /// (v2 gives a callback no engine-side way to reach it). Freeing a
+    /// [`Ctx::call`] result needs it.
+    rt: sys::bk_ctx,
     /// Values the host built, parked until one of them is returned. See
     /// [`Repr::Built`].
     built: std::cell::RefCell<Vec<Built>>,
@@ -745,12 +760,10 @@ pub struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    fn new(raw: sys::bk_call_ctx) -> Self {
+    fn new(raw: sys::bk_ctx, rt: sys::bk_ctx) -> Self {
         Ctx {
             raw,
-            // SAFETY: `raw` is the live context the engine handed the
-            // trampoline; the ABI answers which runtime owns it.
-            rt: unsafe { sys::bk_ctx_runtime(raw) },
+            rt,
             built: std::cell::RefCell::new(Vec::new()),
             kept: std::cell::RefCell::new(Vec::new()),
             _call: PhantomData,
@@ -828,7 +841,7 @@ impl<'a> Ctx<'a> {
             Error::new(Kind::Type, "a host-built value has no handle to persist")
         })?;
         // SAFETY: live context; `handle` came from this call.
-        let out = unsafe { sys::bk_value_persist(self.raw, handle) };
+        let out = unsafe { sys::bk_persist(self.raw, handle) };
         if out == sys::BK_INVALID_VALUE {
             return Err(Error::new(Kind::Full, "could not persist the value"));
         }
@@ -901,39 +914,36 @@ impl<'a> Ctx<'a> {
             Some(v) => v.raw().ok_or_else(not_passable)?,
             None => sys::BK_INVALID_VALUE,
         };
-        let mut out: sys::bk_value = sys::BK_INVALID_VALUE;
 
         // SAFETY: live context; `raw_args` is valid for its length (a null
-        // pointer when empty is what the ABI wants for "no arguments");
-        // `out` is a valid out-parameter.
-        let status = unsafe {
+        // pointer when empty is what the ABI wants for "no arguments").
+        let out = unsafe {
             sys::bk_call(
                 self.raw,
                 func_handle,
+                this_handle,
                 if raw_args.is_empty() {
                     std::ptr::null()
                 } else {
                     raw_args.as_ptr()
                 },
                 raw_args.len() as u32,
-                this_handle,
-                &mut out,
             )
         };
 
-        // Only BK_ERR_THROW means the callee raised a JS exception, and only
-        // then has the engine staged it on this context. BK_ERR_FULL and
-        // BK_ERR_INVALID come back with nothing staged, so tagging them as an
-        // already-recorded throw would make the trampoline suppress a message
+        // Only a callee exception leaves a throw staged on this context; other
+        // failures come back with nothing recorded, and reporting them as an
+        // already-staged throw would make the trampoline suppress a message
         // that was never recorded -- the failure would vanish.
-        if status == sys::BK_ERR_THROW {
-            return Err(Error::new(Kind::Throw, CALLEE_THREW));
-        }
-        if status != sys::BK_OK {
+        if out == sys::BK_INVALID_VALUE {
+            // SAFETY: live context.
+            let status = unsafe { sys::bk_error_code(self.raw) };
+            if status == sys::BK_ERR_THROW {
+                return Err(Error::new(Kind::Throw, CALLEE_THREW));
+            }
             let kind = Kind::from_status(status);
             return Err(Error::new(kind, match kind {
-                Kind::Full => "the value registry is full; release earlier call \
-                               results before making more calls",
+                Kind::Full => "the value registry could not serve the call",
                 Kind::Invalid => "bk_call rejected its arguments",
                 _ => kind.describe(),
             }));
@@ -950,9 +960,9 @@ impl<'a> Ctx<'a> {
     /// Free a runtime-owned handle produced by [`Ctx::call`].
     fn release(&self, handle: sys::bk_value) {
         // SAFETY: `handle` came from a successful `boomkat_call` on this context,
-        // so it names a runtime-owned slot in `self.rt`. `Retained` frees it
-        // exactly once, on drop.
-        unsafe { sys::bk_value_free(self.rt, handle) };
+        // so it names a slot in `self.rt`. `Retained` frees it exactly once,
+        // on drop.
+        unsafe { sys::bk_free(self.rt, handle) };
     }
 }
 
@@ -960,7 +970,7 @@ impl<'a> Ctx<'a> {
 ///
 /// Dropping it frees the slot. That is what lets a host callback call JS an
 /// unbounded number of times: without it, every result would be held until the
-/// callback returned and the 1025th call would fail with [`Kind::Full`].
+/// callback returned and the registry would grow without bound.
 ///
 /// Deref gives the underlying [`HostValue`], so a result reads and passes on
 /// like any other value:
@@ -1035,7 +1045,7 @@ impl fmt::Debug for Retained<'_, '_> {
 /// A `Persisted` is not [`Send`]: it names a slot in one runtime, and that
 /// runtime must be driven from one thread at a time.
 pub struct Persisted {
-    rt: sys::bk_runtime,
+    rt: sys::bk_ctx,
     handle: sys::bk_value,
 }
 
@@ -1051,7 +1061,7 @@ impl Persisted {
     pub fn as_number(&self) -> Result<f64, Error> {
         let mut out = 0.0f64;
         // SAFETY: live runtime and handle; `out` is a valid out-parameter.
-        let status = unsafe { sys::bk_get_number(self.rt, self.handle, &mut out) };
+        let status = unsafe { sys::bk_read_number(self.rt, self.handle, &mut out) };
         if status != sys::BK_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a number"));
         }
@@ -1062,7 +1072,7 @@ impl Persisted {
     pub fn as_bool(&self) -> Result<bool, Error> {
         let mut out: c_int = 0;
         // SAFETY: live runtime and handle; `out` is a valid out-parameter.
-        let status = unsafe { sys::bk_get_bool(self.rt, self.handle, &mut out) };
+        let status = unsafe { sys::bk_read_bool(self.rt, self.handle, &mut out) };
         if status != sys::BK_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a boolean"));
         }
@@ -1073,7 +1083,7 @@ impl Persisted {
     pub fn as_string(&self) -> Result<String, Error> {
         read_measured(
             // SAFETY: live runtime and handle; the measure-then-fill protocol.
-            |buf, cap, len| unsafe { sys::bk_get_string(self.rt, self.handle, buf, cap, len) },
+            |buf, cap, len| unsafe { sys::bk_read_string(self.rt, self.handle, buf, cap, len) },
             |status| Error::new(Kind::from_status(status), "value is not a string"),
         )
     }
@@ -1081,9 +1091,9 @@ impl Persisted {
 
 impl Drop for Persisted {
     fn drop(&mut self) {
-        // SAFETY: `handle` is a registry slot in `self.rt` from
-        // `boomkat_value_persist`, freed exactly once since this is not Copy/Clone.
-        unsafe { sys::bk_value_free(self.rt, self.handle) };
+        // SAFETY: `self.rt` is the runtime that issued `handle`, and it must
+        // still be open; see the type's doc comment.
+        unsafe { sys::bk_free(self.rt, self.handle) };
     }
 }
 
@@ -1115,19 +1125,35 @@ enum Built {
 
 impl Built {
     /// Set this as the call's return value. Called at most once per call.
-    fn apply(&self, raw: sys::bk_call_ctx) {
+    fn apply(&self, raw: sys::bk_ctx) {
         match self {
             // SAFETY: live context in every arm; the string pointer is valid
             // for its length across the call, which copies it into the engine.
-            Built::Number(n) => unsafe { sys::bk_return_number(raw, *n) },
-            Built::Bool(b) => unsafe { sys::bk_return_bool(raw, *b as c_int) },
-            Built::Null => unsafe { sys::bk_return_null(raw) },
+            // Each constructor hands back a registry slot that bk_return copies
+            // out, so it is released immediately.
+            Built::Number(n) => return_constructed(raw, unsafe { sys::bk_number(raw, *n) }),
+            Built::Bool(b) => return_constructed(raw, unsafe { sys::bk_bool(raw, *b as c_int) }),
+            Built::Null => return_constructed(raw, unsafe { sys::bk_null(raw) }),
             // A callback that sets no return value already yields undefined.
             Built::Undefined => {}
-            Built::Str(s) => unsafe {
-                sys::bk_return_string(raw, s.as_ptr() as *const c_char, s.len())
-            },
+            Built::Str(s) => {
+                let h = unsafe { sys::bk_string(raw, s.as_ptr() as *const c_char, s.len()) };
+                return_constructed(raw, h);
+            }
         }
+    }
+}
+
+/// Return a freshly constructed handle and give its slot back: bk_return
+/// copies the value in, so the temporary does not outlive this call.
+fn return_constructed(raw: sys::bk_ctx, handle: sys::bk_value) {
+    if handle == sys::BK_INVALID_VALUE {
+        return; // Construction failed; the engine has the error recorded.
+    }
+    // SAFETY: live context and a live handle from the constructor above.
+    unsafe {
+        sys::bk_return(raw, handle);
+        sys::bk_free(raw, handle);
     }
 }
 
@@ -1138,28 +1164,27 @@ impl Built {
 fn read_string(owner: &Runtime, handle: sys::bk_value) -> Result<String, Error> {
     read_measured(
         |buf, cap, len| {
-            // SAFETY: live runtime and handle; `buf`/`len` are valid for the
+            // SAFETY: live context and handle; `buf`/`len` are valid for the
             // capacity given, which is 0 with a null buf on the measuring call.
-            unsafe { sys::bk_get_string(owner.raw, handle, buf, cap, len) }
+            unsafe { sys::bk_read_string(owner.raw, handle, buf, cap, len) }
         },
         |status| owner.error(status),
     )
 }
 
-/// As [`read_string`], but addressing the runtime through a call context.
+/// As [`read_string`], but addressing a callback's context.
 ///
-/// This is what a host callback uses: it holds a `boomkat_call_ctx` and no runtime,
-/// and only the context tier resolves the scope handles arguments carry. There
-/// is no runtime here to read a message from, so failures carry a generic one.
-fn read_ctx_string(ctx: sys::bk_call_ctx, handle: sys::bk_value) -> Result<String, Error> {
+/// This is what a host callback uses for its scope handles. There is no
+/// runtime here to read a message from, so failures carry a generic one.
+fn read_ctx_string(ctx: sys::bk_ctx, handle: sys::bk_value) -> Result<String, Error> {
     read_measured(
         // SAFETY: live context and handle; as `read_string`.
-        |buf, cap, len| unsafe { sys::bk_ctx_get_string(ctx, handle, buf, cap, len) },
+        |buf, cap, len| unsafe { sys::bk_read_string(ctx, handle, buf, cap, len) },
         |status| Error::new(Kind::from_status(status), "value is not a string"),
     )
 }
 
-/// The measure-then-fill protocol itself, over whichever reader tier `read`
+/// The measure-then-fill protocol itself, over whichever reader `read`
 /// closes over.
 fn read_measured(
     read: impl Fn(*mut c_char, usize, *mut usize) -> c_int,
@@ -1208,19 +1233,21 @@ fn read_measured(
 /// Called only by the engine, with the `udata` pointer this crate registered:
 /// a live `*mut F` from `Box::into_raw` that is never freed while the runtime
 /// lives.
-unsafe extern "C" fn trampoline<F>(raw: sys::bk_call_ctx, udata: *mut c_void)
+unsafe extern "C" fn trampoline<F>(raw: sys::bk_ctx, udata: *mut c_void)
 where
     F: for<'a> Fn(&Ctx<'a>) -> Result<HostValue<'a>, Error> + 'static,
 {
     if raw.is_null() || udata.is_null() {
         return;
     }
-    // SAFETY: `udata` is the leaked `*mut F` from `register_fn_impl`, alive for
-    // the runtime's lifetime. Taken as a shared reference only; the closure is
-    // `Fn`, so re-entrant calls (host -> JS -> same host) are fine.
-    let f: &F = unsafe { &*(udata as *const F) };
+    // SAFETY: `udata` is the leaked `*mut TrampolineData<F>` from
+    // `register_fn_impl`, alive for the runtime's lifetime. The closure is
+    // taken as a shared reference only; it is `Fn`, so re-entrant calls
+    // (host -> JS -> same host) are fine.
+    let data: &TrampolineData<F> = unsafe { &*(udata as *const TrampolineData<F>) };
+    let f: &F = unsafe { &*data.f };
 
-    let ctx = Ctx::new(raw);
+    let ctx = Ctx::new(raw, data.rt);
 
     // AssertUnwindSafe: on a panic we touch `ctx` only to record a throw and
     // free handles, neither of which reads closure state that a panic could
@@ -1262,16 +1289,23 @@ where
     // those when the call frame goes.
     for handle in ctx.kept.borrow().iter() {
         // SAFETY: each handle came from a successful `boomkat_call` on this
-        // context, is runtime-owned by `ctx.rt`, and is freed exactly once:
+        // context, names a slot in `data.rt`, and is freed exactly once:
         // `keep` forgets the guard that would otherwise free it, and pushes it
         // here once.
-        unsafe { sys::bk_value_free(ctx.rt, *handle) };
+        unsafe { sys::bk_free(data.rt, *handle) };
     }
+}
+
+/// What the trampoline recovers from `udata`: the closure and the runtime that
+/// registered it. One leaked allocation per registration.
+struct TrampolineData<F> {
+    f: *mut F,
+    rt: sys::bk_ctx,
 }
 
 /// Record a JS throw carrying `msg`, tolerating a message with interior NULs by
 /// truncating at the first one — the ABI takes a NUL-terminated string.
-fn throw_message(raw: sys::bk_call_ctx, kind: c_int, msg: &str) {
+fn throw_message(raw: sys::bk_ctx, kind: c_int, msg: &str) {
     let cstr = CString::new(msg).unwrap_or_else(|e| {
         let upto = e.nul_position();
         // Position of a NUL byte is a valid UTF-8 boundary, so this cannot
@@ -1293,15 +1327,6 @@ fn panic_message(payload: &Box<dyn Any + Send>) -> &str {
         s
     } else {
         "unknown"
-    }
-}
-
-/// Render a number the way JS does: integral values without a trailing `.0`.
-fn format_number(n: f64) -> String {
-    if n.is_finite() && n.fract() == 0.0 && n.abs() < 1e21 {
-        format!("{}", n as i64)
-    } else {
-        format!("{}", n)
     }
 }
 

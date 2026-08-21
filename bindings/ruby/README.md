@@ -282,8 +282,8 @@ These come from the v1 ABI, not from the binding:
 - CRuby only. Host functions need `Fiddle::Closure`, which depends on libffi
   closure support. `#register` raises `JS::HostError` where it is missing;
   JRuby and TruffleRuby never provide it through fiddle.
-- Value handles are freed automatically by `#eval`. The slot table holds 65535
-  live handles.
+- Value handles are freed automatically by `#eval`. The registry grows on
+  demand, bounded by memory rather than by a fixed count.
 
 ### Known engine bug
 

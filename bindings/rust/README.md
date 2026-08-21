@@ -14,13 +14,13 @@ Two crates over the `bk_` C ABI (`include/boomkat.h`):
 - The engine's static archive. Build it from the repo root:
 
   ```sh
-  make lib          # produces out/bk_static.a
+  make lib          # produces out/boomkat.a
   ```
 
   `build.rs` walks up from the crate looking for the checkout (the directory
-  containing `include/boomkat.h`) and links `out/bk_static.a` from it. To link
+  containing `include/boomkat.h`) and links `out/boomkat.a` from it. To link
   against an installed copy instead, set `BK_LIB_DIR` to a directory holding
-  `libboomkat.a` or `bk_static.a`:
+  `libboomkat.a` or `boomkat.a`:
 
   ```sh
   make install PREFIX=/usr/local
@@ -191,15 +191,14 @@ Three things this layer handles that the raw ABI leaves to the caller:
   A `Persisted` holds a registry slot until it drops, and knows which runtime
   it belongs to.
 - Reads inside a callback address the right runtime. A callback is handed a
-  call context, not a runtime, and with several open there is no "the runtime"
-  to fall back on — so `HostValue`'s readers go through the ABI's context tier
-  (`bk_ctx_get_number` and friends), which is also the only tier that resolves
-  the scope handles arguments carry. This is invisible from Rust: `ctx.arg(0)`
-  carries its context, so `.as_number()` simply works.
-- `ctx.call` results are freed for you. Each comes back runtime-owned,
-  holding one of the registry's 65535 slots, and its `Retained` guard releases it
-  on drop. That is what lets a host function call JS in a loop: the slot goes
-  back as the loop turns, rather than piling up until the callback returns.
+  call context, and in v2 that one context type resolves scope handles and
+  registry handles alike, so the same readers work everywhere. This is invisible
+  from Rust: `ctx.arg(0)` carries its context, so `.as_number()` simply works.
+- `ctx.call` results are freed for you. Each comes back owned, holding one of
+  the registry's slots, and its `Retained` guard releases it on drop. The
+  registry grows on demand, bounded by memory rather than by a fixed count, and
+  the guard is what lets a host function call JS in a loop: the slot goes back
+  as the loop turns.
 
 The closure is leaked deliberately. It is boxed and its pointer handed to
 the engine as `udata`; the engine holds it for as long as the runtime lives and
@@ -277,10 +276,10 @@ These come from the C ABI, not from this binding.
 
 ## ABI fix made while writing this
 
-`bk_get_number`, `bk_get_bool`, and `bk_get_string` returned `BK_ERR_TYPE`
+The v1 readers (`bk_get_number` and friends) returned `BK_ERR_TYPE`
 and `BK_ERR_FULL` without ever touching the runtime's error state, so
 `bk_last_error` reported whatever the *previous* failure had left there: a
-stale message, sometimes from an unrelated call. They now set a specific
-message on failure and clear it on success, matching what the header promises
-of every other entry point. Fixed in `src/capi.c3`; the contract is now spelled
-out in `include/boomkat.h` under `bk_last_error`.
+stale message, sometimes from an unrelated call. That is fixed in what is now
+the strict reader tier (`bk_read_number`, `bk_read_bool`, `bk_read_string`):
+each sets a specific message on failure and clears it on success, matching what
+the header promises of every other entry point.

@@ -130,11 +130,10 @@ keep a value past the call, promote it with `ctx.persist(v)` and `deinit` the
 result. A persisted handle is still tagged with the (by then finished) call, so
 retag it with `v.rebind(&rt)` to read it after the callback returns.
 
-`ctx.runtime()` reaches the runtime behind the call — useful for telling apart
-two runtimes sharing one registered function, or for naming the runtime to
-`rebind` onto. Do not `eval` through it while the callback is on the stack;
-re-entering the VM that way corrupts the interpreter. Use `ctx.call` to invoke
-JS from inside a host function.
+To tell apart two runtimes sharing one registered function, pass each a
+distinct `udata` at registration (`registerWith`). Do not re-enter the VM by
+storing the callback's context: it dies when the call returns, and calling JS
+from inside a host function is what `ctx.call` is for.
 
 Calling back into JS with `ctx.call(func, args, this)` is bounded: a runaway
 host to JS to host chain raises a `RangeError` instead of exhausting the native
@@ -191,7 +190,7 @@ each driving their own runtime share no state and are fine.
 
 ## Why the shared library, not the static archive
 
-`make lib` also produces `out/bk_static.a`, but linking it into a Zig-built
+`make lib` also produces `out/boomkat.a`, but linking it into a Zig-built
 executable crashes before `main`. The C3 runtime finds its `@init` constructors
 by walking the init sections of the running image at startup, and that walk
 depends on resolving the image header correctly. Zig's linker emits a second,
@@ -212,26 +211,39 @@ The binding wraps every ABI entry point:
 | `js.version()` | `bk_version` |
 | `Runtime.init` / `.deinit` | `bk_open` / `bk_close` |
 | `Runtime.eval` / `.exec` | `bk_eval` |
-| `Runtime.lastError` | `bk_last_error`, `bk_last_error_code` |
-| `Runtime.drainMicrotasks` | `bk_drain_microtasks` |
-| `Runtime.register` / `.registerWith` | `bk_register_fn` |
-| `Value.deinit` | `bk_value_free` |
-| `Value.typeOf` | `bk_type_of` / `bk_ctx_type_of` |
-| `Value.toNumber` / `.toBool` / `.toString` | `bk_get_number` / `_bool` / `_string`, or their `bk_ctx_get_*` forms |
+| `Runtime.lastError` | `bk_error`, `bk_error_code` |
+| `Runtime.drain` | `bk_drain` |
+| `Runtime.register` / `.registerWith` | `bk_register` |
+| `Value.deinit` | `bk_free` |
+| `Value.typeOf` | `bk_type_of` |
+| `Value.toNumber` / `.toBool` / `.toString` | `bk_read_number` / `_bool` / `_string` |
+| `Value.cstr` | `bk_cstr` |
 | `Value.rebind` | — (retags a handle onto a `Runtime`) |
 | `Ctx.argc` / `.arg` / `.this` / `.newTarget` | `bk_argc` / `bk_arg` / `bk_this` / `bk_new_target` |
 | `Ctx.isConstruct` | `bk_is_construct` |
-| `Ctx.runtime` | `bk_ctx_runtime` |
-| `Ctx.ret` / `.returnNumber` / `.returnBool` / `.returnNull` / `.returnString` | `bk_return*` |
+| `Ctx.ret` / `.returnNumber` / `.returnBool` / `.returnNull` / `.returnString` | `bk_return` + constructors |
 | `Ctx.throwError` / `.throwValue` | `bk_throw_error` / `bk_throw` |
-| `Ctx.persist` | `bk_value_persist` |
+| `Ctx.persist` | `bk_persist` |
 | `Ctx.call` | `bk_call` |
 
-The readers come in two tiers in C: `bk_get_*` take a runtime, `bk_ctx_get_*`
-take a call context, and only the context tier resolves the scope handles
-`bk_arg`/`bk_this`/`bk_new_target` return. Neither accepts NULL. A `Value`
-records which one owns it, so `toNumber` and friends pick the right tier and
-callers write the same code inside and outside a callback.
+v2 has one context type: a callback's context resolves scope handles and
+registry handles alike, so the same readers work inside and outside a callback.
+The binding carries the context a value was created on in `owner` and `rebind`
+moves it onto the runtime's own context for use after the call returns.
+
+Notes carried over from the ABI:
+
+- The strict readers do not coerce; `cstr` does, via the ABI's coercion entry
+  point. Wrap the value in `String(x)` or `Number(x)` in JS if you prefer.
+- Any number of runtimes may be open at once; see [Multiple
+  runtimes](#multiple-runtimes). A runtime must be driven from one thread at a
+  time, and nothing enforces it.
+- `toString` allocates through the allocator you pass, and you free the result.
+  Everything else copies into caller memory, so there is nothing else to free.
+- Handles leak if they are never freed, which is what `defer v.deinit()` is
+  for. The registry grows on demand, bounded by memory rather than by a fixed
+  count. Scope handles reaching a host callback are exempt: the engine reclaims
+  them when the callback returns.
 
 Notes carried over from the ABI:
 
@@ -243,6 +255,6 @@ Notes carried over from the ABI:
 - `toString` allocates through the allocator you pass, and you free the result.
   Everything else copies into caller memory, so there is nothing else to free.
 - Handles leak if they are never freed, which is what `defer v.deinit()` is
-  for. The table holds 65535 live values and then returns `error.Full`. Scope
-  handles reaching a host callback are exempt: the engine reclaims them when
-  the callback returns.
+  for. The registry grows on demand, bounded by memory rather than by a fixed
+  count. Scope handles reaching a host callback are exempt: the engine reclaims
+  them when the callback returns.

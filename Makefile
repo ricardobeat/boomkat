@@ -194,6 +194,14 @@ out/dozen_lines: test/capi/dozen_lines.c include/boomkat.h out/boomkat.a
 test-dozen-lines: out/dozen_lines
 	./out/dozen_lines
 
+# The smallest end-to-end check: static archive links, opens a context, evals
+# 6*7, prints 42. `make smoke` is what ci/linux/run.sh asserts on.
+.PHONY: smoke
+smoke: out/boomkat.a test/capi/smoke.c include/boomkat.h
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/smoke.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/smoke
+	./out/smoke
+
 # Value-registry GC tests under GC_STRESS + ASan: a collection at every
 # allocation, so a registry the mark phase does not walk fails deterministically
 # instead of rarely.

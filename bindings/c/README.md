@@ -73,7 +73,7 @@ after errors     = still running
 ```
 
 Exit status is 0. The engine stores text as CESU-8 internally, and
-`bk_get_string` converts to real UTF-8, so the astral character in the greeting
+`bk_read_string` converts to real UTF-8, so the astral character in the greeting
 arrives as a proper 4-byte sequence rather than a mangled surrogate pair.
 
 `just example-c-multiple` prints (host_fn section):
@@ -141,24 +141,24 @@ time as the first pair.
 
 ## What to take away
 
-`bk_value` is a handle, not a pointer. It is an integer index into one
-runtime's GC-rooted slot registry, so do not dereference it, and do not use it
-with any runtime but the one that issued it. Every handle you get from
-`bk_eval` must be released with `bk_value_free`, passing that same runtime;
-the registry holds 65535 live handles before returning `BK_ERR_FULL`.
+`bk_value` is a handle, not a pointer. It is a 64-bit word naming one slot in
+the issuing runtime's GC-rooted registry, tagged with that runtime's id: do not
+dereference it, and do not resolve it against any runtime but the one that
+issued it -- the wrong-runtime case is refused with `BK_ERR_INVALID`. Every
+handle you get from `bk_eval` must be released with `bk_free`; the registry
+grows on demand, so it is bounded by memory rather than by a fixed count.
 
 Errors come back as return values. Nothing aborts, panics, or longjmps across
-the boundary. A failed call returns a negative status and leaves a message on
-the runtime, so a bad script is handled exactly like any other failed C call.
-The runtime keeps working afterwards, as the output shows.
+the boundary. A failed value call returns `0` and leaves a message on the
+context for `bk_error`, so a bad script is handled exactly like any other
+failed C call. The runtime keeps working afterwards, as the output shows.
 
-Strings are copied into your buffer. `bk_get_string` uses a two-call
-measure-then-fill protocol, so the ABI never hands back memory you must free.
-`bku_string_dup` wraps that into a single `malloc`-ing call.
+Strings have three paths. `bk_cstr` coerces any value to context-owned text
+(valid until the fourth following call), `bk_strdup` gives you a `malloc`-ing
+copy you free, and `bk_read_string` is the zero-allocation two-call protocol.
 
-Readers are strict and do not coerce. `bk_get_string` on a number is a
-`BK_ERR_TYPE`, not an implicit conversion. Stringify on the JS side instead.
-`bku_eval_to_string` does this by wrapping the source in `String(...)`.
+Strict readers do not coerce. `bk_read_string` on a number is a `BK_ERR_TYPE`,
+not an implicit conversion; use `bk_cstr` when you want JS's own stringification.
 
 Link the archive alone. The vendored C (libregexp, cutils, dtoa) is already
 inside `libboomkat.a` and the dylib. Compiling it separately gives duplicate
@@ -166,8 +166,10 @@ symbols.
 
 ## Host functions (`host_fn.c`)
 
-`bk_register_fn` binds a C callback as a JS global. The callback is
-`void (*)(bk_call_ctx ctx, void *udata)`. The context is opaque, and the
+`bk_register` installs a table of C callbacks as JS globals (`target` 0 means
+globalThis; pass an object handle to install onto it instead). Each entry is
+`{ name, fn, arity, flags, udata }` and the table ends at `BK_FN_END`. The
+callback is `void (*)(bk_ctx ctx, void *udata)`. The context is opaque, and the
 `udata` pointer is handed back untouched on every call, which is how a callback
 reaches host state without a file-scope global.
 
@@ -180,37 +182,28 @@ the right constructor, as the `RangeError` and `TypeError` lines above show.
 
 Argument handles are scope handles. Values from `bk_arg`, `bk_this`, and
 `bk_new_target` are valid only until the callback returns and must not be
-stored. To keep one, promote it with `bk_value_persist`, which yields a
-runtime-owned handle you must later `bk_value_free`. Handles that come back
-from `bk_call` are runtime-owned already and do need freeing.
+stored. To keep one, promote it with `bk_persist`, which yields an owned handle
+you must later `bk_free`. Handles that come back from `bk_call` are owned
+already and need freeing too.
 
-Readers come in two tiers, and which one you want follows from what you hold.
-Outside a callback you hold a `bk_runtime`, so you use `bk_get_number`,
-`bk_get_bool`, `bk_get_string` and `bk_type_of`. Inside a callback you hold a
-`bk_call_ctx`, so you use `bk_ctx_get_number` and friends — and only that tier
-resolves the scope handles `bk_arg`, `bk_this` and `bk_new_target` hand out.
-Neither tier accepts `NULL`.
-
-`bk_ctx_runtime(ctx)` gets you the runtime when you genuinely need one: to
-free a handle from `bk_call`, to `bk_eval`, or to hold a value past the call.
-`h_map_twice` in `host_fn.c` uses it for exactly the first of those. Freeing
-with a null runtime is silently ignored, so a callback that gets this wrong
-leaks a registry slot per call and starts failing with `BK_ERR_FULL` once the
-65535 slots run out — with no diagnostic before that point.
+There is one context type. A callback's context resolves its scope handles and
+every registry handle alike, so callback code and top-level code are textually
+identical: the same readers work in both places, which is what retired the old
+runtime/context tier split.
 
 Registered functions are ordinary function objects. They have a `.name` and
 `.length`, and work as methods, accessors, `.call`/`.apply`/`.bind` targets, and
 callbacks to built-ins. The `['ada', 'alan'].map(greet)` above is a real
 `Array.prototype.map` call. Like any `map` callback, `greet` receives
 `(element, index, array)`; it simply ignores the arguments it does not want.
-Constructability is opt-in: the final `bk_register_fn` argument is 0 in this
-example, so `new greet()` throws a `TypeError`.
+Constructability is opt-in: set the `BK_CTOR` flag on the table entry to allow
+`new`; without it `new greet()` throws a `TypeError`.
 
-`bk_call` runs JS from C. If the callee throws, it returns `BK_ERR_THROW`
-with the exception already recorded on the context, so return promptly and let
-the engine propagate it, as `mapTwice` does. Host recursion is bounded, so a
-callback that re-enters JS without end raises a `RangeError` rather than
-exhausting the native stack.
+`bk_call(ctx, fn, this_val, argv, argc)` runs JS from C, at top level or inside
+a callback alike. It returns an owned handle, or 0 with the callee's exception
+already recorded on the context, so return promptly and let the engine propagate
+it, as `mapTwice` does. Host recursion is bounded, so a callback that re-enters
+JS without end raises a `RangeError` rather than exhausting the native stack.
 
 ## Several runtimes at once (`two_runtimes.c`)
 
@@ -219,35 +212,25 @@ globals, objects, shapes and interned strings, and they stay independent for
 their whole lifetimes; closing one does not disturb another. `two_runtimes.c`
 demonstrates each of those, then opens two more to make a point about handles.
 
-A `bk_value` belongs to one runtime and means nothing in another, but the
-engine will not catch you for mixing them up. A handle is a slot index plus a
-generation tag, with nothing identifying which runtime issued it, so two
-runtimes at the same allocation state hand out bit-identical handles. Passing
-one to the wrong runtime's reader is caught only when that slot happens to be
-free or differently-generationed on the other side; when the two registries are
-in step, the read returns `BK_OK` and quietly gives you the other runtime's
-value. `two_runtimes.c` prints both outcomes from the same pair.
+A `bk_value` belongs to the runtime that issued it and says so: the top 16 bits
+of every handle carry that runtime's id. Resolving a handle against another
+runtime fails with `BK_ERR_INVALID` instead of answering with whatever occupies
+that slot there. Before handles were tagged, two runtimes at the same allocation
+state handed out bit-identical handles, and the wrong-runtime read returned
+`BK_OK` with the other runtime's value. `two_runtimes.c` asserts the refusal
+for strings, numbers, persisted handles, and handles whose issuing runtime has
+since closed.
 
-Pairing a handle with its runtime is therefore the host's job. If your binding
-hands `bk_value`s to its users, that is an argument for wrapping them in
-something that carries the runtime along. To move a value across, read it out
-on one side and write it back on the other.
+To move a value across, read it out on one side and write it back on the other.
 
-## Limitations in v1
+## Limitations
 
 - The engine is not thread safe. A runtime must be driven from one thread at a
   time: there is no locking, and nothing enforces the rule. Two threads each
   driving their *own* runtime share nothing and are fine; two threads inside one
   runtime corrupt it.
-- Host functions are globals. `bk_register_fn` binds a name on the global
-  object; there is no API for installing a C callback as a property of an
-  arbitrary object. Do that from JS, by moving the global onto the object.
 - Registration is permanent. A host function lives for the runtime's lifetime,
   and there is no unregister call.
-- `bk_call` works only inside a callback. It takes a `bk_call_ctx`, so JS
-  functions can be called from inside a host callback but not directly from
-  `main`. To call one from the top level, wrap the call in JS source and use
-  `bk_eval`.
 
 On Linux, link with `-lm -ldl`; the Makefile adds these automatically on
 non-Darwin platforms.

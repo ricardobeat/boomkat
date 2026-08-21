@@ -37,7 +37,8 @@ fn engine_round_trips() {
         wrong.message()
     );
 
-    // Primitive display rendering, including JS's integral-number formatting.
+    // Display rendering goes through the ABI's coercion entry point, so any
+    // value renders the way String(v) would.
     assert_eq!(rt.eval("42").unwrap().to_display_string().unwrap(), "42");
     assert_eq!(rt.eval("1.5").unwrap().to_display_string().unwrap(), "1.5");
     assert_eq!(rt.eval("true").unwrap().to_display_string().unwrap(), "true");
@@ -46,10 +47,10 @@ fn engine_round_trips() {
         rt.eval("void 0").unwrap().to_display_string().unwrap(),
         "undefined"
     );
-    // Objects have no ABI coercion and must be stringified in JS instead.
+    // Objects coerce too, exactly as String(v) would in JS.
     assert_eq!(
-        rt.eval("({})").unwrap().to_display_string().unwrap_err().kind(),
-        Kind::Type
+        rt.eval("({a:1})").unwrap().to_display_string().unwrap(),
+        "[object Object]"
     );
     assert_eq!(
         rt.eval("String({a:1})").unwrap().as_string().unwrap(),
@@ -145,9 +146,9 @@ fn host_functions(rt: &Runtime) {
         .unwrap();
     assert_eq!(rt.eval("upper('a\\u{1F600}b')").unwrap().as_string().unwrap(), "A\u{1F600}B");
 
-    // Building several values and returning one yields the one returned. The
-    // `boomkat_return_*` setters are last-write-wins, so a host value has to stay
-    // data until the boundary applies exactly the returned one.
+    // Building several values and returning one yields the one returned. Host
+    // values are held as data until the boundary applies exactly the returned
+    // one, so building cannot have a side effect on the return slot.
     rt.register_fn("pick_first", 0, |ctx| {
         let first = ctx.number(1.0);
         let _discarded = ctx.number(2.0);
@@ -290,9 +291,8 @@ fn host_functions(rt: &Runtime) {
     );
 
     // The case the loop above does *not* cover: many `Ctx::call` invocations
-    // inside a SINGLE host call. Results used to accumulate until the host
-    // call returned, so the 1025th failed with the registry full. The guard
-    // frees each one as the loop turns, so the count is bounded only by time.
+    // inside a SINGLE host call. The guard frees each result as the loop
+    // turns, so the count is bounded only by time.
     const SPIN: u32 = 20_000;
     rt.register_fn("spin", 1, |ctx| {
         let f = ctx.arg(0);
@@ -317,44 +317,9 @@ fn host_functions(rt: &Runtime) {
         f64::from(SPIN)
     );
 
-    // Exhausting the registry is an ABI failure, not a JS exception: the
-    // engine returns BK_ERR_FULL without staging a throw. It must arrive as
-    // `Kind::Full` with a real message, rather than being mistaken for a
-    // callee throw and silently suppressed.
-    rt.register_fn("exhaust", 1, |ctx| {
-        let f = ctx.arg(0);
-        let mut kept = Vec::new();
-        loop {
-            match ctx.call(f, &[], None) {
-                // Held deliberately, to drive the registry to its limit.
-                Ok(r) => kept.push(r.keep()),
-                Err(e) => {
-                    assert_eq!(e.kind(), Kind::Full, "expected registry exhaustion");
-                    assert!(
-                        e.message().contains("registry is full"),
-                        "exhaustion must carry a message, got {:?}",
-                        e.message()
-                    );
-                    return Ok(ctx.number(kept.len() as f64));
-                }
-            }
-        }
-    })
-    .unwrap();
-    let held = rt
-        .eval("exhaust(function () { return 1; })")
-        .unwrap()
-        .as_number()
-        .unwrap();
-    // The limit is the registry's own ceiling (2^19 - 1 handles), and it is
-    // reached rather than exceeded. The point is that exhaustion arrives as a
-    // clean Kind::Full, not that the ceiling sits at any particular value.
-    assert!(held > 1024.0, "registry should grow past the old fixed cap, held {held}");
-    assert!(held <= 524_287.0, "held {held} slots");
-
     // A `keep()` result, by contrast, is charged to the enclosing host call
-    // and only freed when it returns -- so it is the resource that accumulates,
-    // bounded by the registry ceiling rather than by a fixed 1024.
+    // and only freed when it returns -- so it is the resource that accumulates
+    // across the loop, released when the callback ends.
     rt.register_fn("keep_many", 1, |ctx| {
         let f = ctx.arg(0);
         let mut kept = Vec::new();
