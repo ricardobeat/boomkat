@@ -1,7 +1,7 @@
-/// Host functions in the native C3 binding: JS calling into C3, and C3 calling
-/// back into JS.
-///
-///     c3c build boomkat_example_host_c3 && ./out/boomkat_example_host_c3
+// Host functions in the native C3 binding: JS calling into C3, and C3 calling
+// back into JS.
+//
+//     c3c build boomkat_example_host_c3 && ./out/boomkat_example_host_c3
 module boomkat_example_host;
 
 import boomkat;
@@ -17,8 +17,8 @@ import std::math;
 // always finishes under its own control.
 // ----------------------------------------------------------------------------
 
-/// `hypot(a, b)` -- arguments in, a number out. Argument types are the host's
-/// responsibility: JS may pass anything, so check and throw rather than assume.
+// `hypot(a, b)` -- arguments in, a number out. Argument types are the host's
+// responsibility: JS may pass anything, so check and throw rather than assume.
 fn void host_hypot(JsCtx ctx, void* udata) {
     double? a = ctx.arg(0).as_number();
     double? b = ctx.arg(1).as_number();
@@ -27,26 +27,26 @@ fn void host_hypot(JsCtx ctx, void* udata) {
     ctx.ret_number(math::sqrt(a * a + b * b));
 }
 
-/// `greet(name)` -- a string in, a freshly built string out.
+// `greet(name)` -- a string in, a freshly built string out.
 fn void host_greet(JsCtx ctx, void* udata) {
     String? name = ctx.arg(0).as_string();
     if (catch name) { ctx.throw_error(TYPE, "greet: expected a string"); return; }
     ctx.ret_string(string::tformat("hello, %s", name));
 }
 
-/// `counter()` -- reads mutable host state through the udata pointer that was
-/// handed to `register_fn`. This is how a callback reaches anything other than
-/// globals: C3 function pointers cannot capture.
+// `counter()` -- reads mutable host state through the udata pointer that was
+// handed to `register_fn`. This is how a callback reaches anything other than
+// globals: C3 function pointers cannot capture.
 fn void host_counter(JsCtx ctx, void* udata) {
     int* n = (int*)udata;
     (*n)++;
     ctx.ret_number((double)*n);
 }
 
-/// `withdraw(amount)` -- throws a RangeError JS can catch.
-///
-/// Note the `return` right after `throw_error`: the throw does not unwind, so
-/// without it the rest of the body would still run.
+// `withdraw(amount)` -- throws a RangeError JS can catch.
+//
+// Note the `return` right after `throw_error`: the throw does not unwind, so
+// without it the rest of the body would still run.
 fn void host_withdraw(JsCtx ctx, void* udata) {
     double? amount = ctx.arg(0).as_number();
     if (catch amount) { ctx.throw_error(TYPE, "withdraw: expected a number"); return; }
@@ -57,11 +57,11 @@ fn void host_withdraw(JsCtx ctx, void* udata) {
     ctx.ret_number(100.0 - amount);
 }
 
-/// `applyTwice(fn, x)` -- calls a JS function from host code, twice, feeding
-/// each result into the next.
-///
-/// If the callback throws, `call` reports JS_EXCEPTION and the exception is
-/// already recorded on this call, so returning propagates it to JS unchanged.
+// `applyTwice(fn, x)` -- calls a JS function from host code, twice, feeding
+// each result into the next.
+//
+// If the callback throws, `call` reports JS_EXCEPTION and the exception is
+// already recorded on this call, so returning propagates it to JS unchanged.
 fn void host_apply_twice(JsCtx ctx, void* udata) {
     JsArg callback = ctx.arg(0);
     JsArg value = ctx.arg(1);
@@ -78,12 +78,12 @@ fn void host_apply_twice(JsCtx ctx, void* udata) {
     ctx.ret(value);
 }
 
-/// `Point(x, y)` -- a constructor. Registered with `constructable = true`, so
-/// `new Point(3, 4)` works and a plain `Point(3, 4)` is rejected here.
-///
-/// The engine has already allocated `this` with the prototype taken from
-/// new.target, so the callback populates it and returns; there is nothing to
-/// `ret`, and a returned number would be discarded anyway.
+// `Point(x, y)` -- a constructor. Registered with `constructable = true`, so
+// `new Point(3, 4)` works and a plain `Point(3, 4)` is rejected here.
+//
+// The engine has already allocated `this` with the prototype taken from
+// new.target, so the callback populates it and returns; there is nothing to
+// `ret`, and a returned number would be discarded anyway.
 fn void host_point(JsCtx ctx, void* udata) {
     if (!ctx.is_construct()) {
         ctx.throw_error(TYPE, "Point requires 'new'");
@@ -159,8 +159,8 @@ fn int main() {
     return 0;
 }
 
-/// Evaluate `src` and print its result, or the message of whatever it failed
-/// with. Everything above goes through this so the output reads as a transcript.
+// Evaluate `src` and print its result, or the message of whatever it failed
+// with. Everything above goes through this so the output reads as a transcript.
 fn void show(JsRuntime* rt, String label, String src) {
     JsValue? v = rt.eval(src);
     if (catch e = v) {

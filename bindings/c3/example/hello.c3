@@ -1,6 +1,6 @@
-/// Minimal embedding example for the native C3 binding (`bindings/c3/boomkat.c3`).
-///
-///     c3c build boomkat_example_c3 && ./out/boomkat_example_c3
+// Minimal embedding example for the native C3 binding (`bindings/c3/boomkat.c3`).
+//
+//     c3c build boomkat_example_c3 && ./out/boomkat_example_c3
 module boomkat_example;
 
 import boomkat;
@@ -57,7 +57,7 @@ fn int main() {
     return 0;
 }
 
-/// Evaluating and reading in one step: both failures propagate as C3 faults.
+// Evaluating and reading in one step: both failures propagate as C3 faults.
 fn double? read_number(JsRuntime* rt, String source) {
     JsValue v = rt.eval(source)!;
     defer rt.release(v);
