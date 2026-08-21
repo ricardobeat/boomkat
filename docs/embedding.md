@@ -147,25 +147,16 @@ against LLVM 19.1.7, GCC 14.2). Run it with `make linux-ci`; see
 | `make lib` / `make shared` | Both build; `out/boomkat.so` is produced |
 | `make smoke` | Prints `42` |
 | `ldd` | No unresolved deps on `boomkat.so` or on an executable linked against it |
-| `nm -D` | All 12 `bk_` symbols exported |
+| `nm -D` | The export list is enforced: exactly the header's `bk_` surface |
 | `make install PREFIX=…` | Header and both libraries install; static and `-lboomkat` shared builds compile and run against the prefix |
 | rpath | `-Wl,-rpath,$PREFIX/lib` is load-bearing: without it the loader fails and `LD_LIBRARY_PATH` is required |
 
-Verifying Linux turned up two platform-specific defects, both since fixed:
+`__muloti4` is not in libgcc; see the linking section above for how the build
+supplies it.
 
-- `re_exec` collided with glibc. The vendored regexp wrapper exported a function
-  named `re_exec`; glibc exports a legacy BSD `re_exec` too. Because the shared
-  library exports every engine symbol, ELF interposition bound the engine's own
-  call sites to *libc's* unrelated function and every JS regexp segfaulted
-  inside `regexec`. Confirmed by backtrace and by the crash vanishing under
-  `LD_PRELOAD=out/boomkat.so`. It is now named `re_run`. macOS's two-level
-  namespace hid this completely.
-- `__muloti4` is not in libgcc, so every link of the engine and of the static
-  archive failed. See the linking section above.
-
-The `.so` suffix selection in every loader (`bindings/python/js.py`,
-`bindings/ruby/lib/js.rb`, `bindings/zig/build.zig`, `bindings/rust`'s
-`build.rs`, `examples/justfile`) was already correct and needed no change.
+Every loader (`bindings/python/js.py`, `bindings/ruby/lib/js.rb`,
+`bindings/zig/build.zig`, `bindings/rust`'s `build.rs`, `examples/justfile`)
+selects the `.so` suffix on Linux.
 
 #### The static-link init hazard does not reproduce on Linux
 
@@ -507,16 +498,7 @@ integer keys. Refcounting then comes free from the existing `put_prop`/
 ## Status of the bindings
 
 The five language bindings in `bindings/` are all on `main`, each with its own
-README and example. They were written and verified against the C ABI, and
-driving the ABI from those languages surfaced four defects in `src/capi.c3`,
-all now fixed on `main`:
-
-| Defect | Observed before the fix | Now |
-|---|---|---|
-| Readers set no error message; `bk_last_error` returned stale text | `str<-number = rc=-6 err=[]` after priming a sentinel | every failing reader leaves a message |
-| `Symbol` misreported as `BK_TYPE_STRING`; `bk_get_string` emitted invalid UTF-8 | `Symbol type = 4`, bytes `ff 01 78` | symbols report `BK_TYPE_OTHER` |
-| Thrown primitives lost their value | `throw 42` → `[uncaught exception]` | `throw 42` reports `42` |
-| An `Error`'s `name` was never found (own-property lookup only) | `throw new TypeError('tt')` → `[tt]`, not `TypeError: tt` | `name` resolves through the prototype |
+README and example.
 
 ## Per-language guides
 
@@ -635,7 +617,7 @@ the tests open independent runtimes, which is safe in parallel but not free.
 ### C3: `bindings/c3/`
 
 The native binding links the engine's C3 modules directly and does not go
-through the C ABI, so none of the ABI defects above apply to it.
+through the C ABI.
 
 ```sh
 c3c build boomkat_example_c3
@@ -720,12 +702,6 @@ library raises a clean `JsError(-5)`.
 Type mapping: number → `float`, string → `str`, bool → `bool`, `null`/`undefined`
 → `None`, object → `<js object>`, function → `<js function>`, symbol/bigint →
 `<js other>`.
-
-The `Symbol` fix the Python binding drove is on `main`: `bk_type_of` reports a
-`Symbol` as `BK_TYPE_OTHER` instead of `BK_TYPE_STRING` (a symbol is a
-STRING-tagged `HString` with `is_symbol` set, and `bk_get_string` would
-otherwise copy raw internal bytes). Before the fix, `Symbol()` raised
-`UnicodeDecodeError: invalid start byte 0xff`.
 
 ## Known limitations
 
