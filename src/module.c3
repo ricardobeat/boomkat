@@ -698,7 +698,13 @@ fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name) {
 // Resolve a module specifier, compile it, and recursively resolve dependencies.
 // `wants_json` selects the JSON-module load path (parse the file with
 // JSON.parse; sole export is `default`) rather than ECMAScript compilation.
-fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bool wants_json = false) {
+//
+// `quiet` suppresses the compile-error diagnostic on stderr, for a caller that
+// turns the failure into a value the program can observe: a dynamic import()
+// rejects its promise with the parked SyntaxError, and printing as well emits
+// an engine diagnostic for an error the script is handling. The static path
+// leaves it false — there the diagnostic is the only report of what went wrong.
+fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bool wants_json = false, bool quiet = false) {
     // 1. Normalize name via host hook
     char[]? normalized_opt = call_resolve_name(heap, base_name, specifier);
     if (catch err = normalized_opt) return MODULE_ERROR~;
@@ -791,12 +797,14 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         usz name_copy = normalized.len < 511 ? normalized.len : 511;
         mem::copy(&name_buf[0], normalized.ptr, (sz)(name_copy));
         name_buf[name_copy] = 0;
-        if (msg_len > 0) {
-            io::eprintfn("%s: compile error at line %d:%d: %s",
-                         (ZString)name_buf[0..], line, col, (ZString)msg);
-        } else {
-            io::eprintfn("%s: compile error at line %d:%d",
-                         (ZString)name_buf[0..], line, col);
+        if (!quiet) {
+            if (msg_len > 0) {
+                io::eprintfn("%s: compile error at line %d:%d: %s",
+                             (ZString)name_buf[0..], line, col, (ZString)msg);
+            } else {
+                io::eprintfn("%s: compile error at line %d:%d",
+                             (ZString)name_buf[0..], line, col);
+            }
         }
         // Park a SyntaxError on the heap error channel: a module parse
         // failure is a static-semantics early error, and ECMA-262 requires
@@ -822,7 +830,9 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
     // 7. Recursively resolve dependencies
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
-        ModuleDef*? dep = resolve_module(heap, rme.module_name, normalized, rme.wants_json);
+        // A dependency of a quietly-resolved module is quiet too: its parse
+        // failure reaches the same promise rejection.
+        ModuleDef*? dep = resolve_module(heap, rme.module_name, normalized, rme.wants_json, quiet);
         if (catch err = dep) {
             return MODULE_ERROR~;
         }
@@ -2160,7 +2170,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     ModuleDef* mod = null;
     heap.has_error = false;
     heap.error_value.set_undefined();
-    ModuleDef*? mod_opt = resolve_module(heap, spec_data, base_data, wants_json);
+    ModuleDef*? mod_opt = resolve_module(heap, spec_data, base_data, wants_json, true);
     if (catch err = mod_opt) {
         // A load failure may have parked a specific static-semantics error
         // (SyntaxError for a module parse failure) on the heap error channel.

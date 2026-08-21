@@ -68,6 +68,29 @@ silent() {
   esac
 }
 
+# silent_quiet <name> <source>
+# Stricter than silent: the run must produce NO output at all. Used where the
+# engine has a diagnostic it could print for an error the script is handling —
+# a module that fails to parse behind a dynamic import() — and printing it
+# anyway is the bug (the parse error is delivered as the promise's rejection
+# reason, so stderr noise is duplicate, and any harness reading stderr as a
+# failure signal scores the test red).
+silent_quiet() {
+  local name="$1" src="$2"
+  printf '%s\n' "$src" > "$TMP/t.js"
+  local got rc
+  got="$(timeout 30 "$ENGINE" "$TMP/t.js" 2>&1)"
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    FAIL=$((FAIL + 1)); echo "FAIL: $name — expected exit 0, got $rc ('$got')"; return
+  fi
+  if [ -n "$got" ]; then
+    FAIL=$((FAIL + 1)); echo "FAIL: $name — expected no output, got '$got'"; return
+  fi
+  PASS=$((PASS + 1))
+}
+
 # --- rejections that must be reported --------------------------------------
 reported "bare Promise.reject" \
   'Promise.reject(new Error("boom"));' "boom"
@@ -93,6 +116,18 @@ silent "handler attached later in the same tick" \
   'var p = Promise.reject(new Error("x")); p.catch(function(){});'
 silent "resolved promise" \
   'Promise.resolve(1).then(function(){});'
+
+# --- a module that fails to PARSE behind a dynamic import() ----------------
+# `var x; function x() {}` is legal in a Script and an early SyntaxError in a
+# Module, so importing this file is the shortest way to a module that resolves
+# and then refuses to compile. ECMA-262 requires import() to reject with that
+# SyntaxError; the engine used to reject AND print the compile error, so a
+# program handling the rejection still got engine output on stderr.
+printf '%s\n' 'var smoosh; function smoosh() {}' > "$TMP/badmodule_FIXTURE.js"
+silent_quiet "handled dynamic import of an unparseable module" \
+  "import('./badmodule_FIXTURE.js').catch(function (e) {});"
+reported "unhandled dynamic import of an unparseable module" \
+  "import('./badmodule_FIXTURE.js');" "cannot share a name"
 
 echo ""
 echo "Rejection reporting: $PASS passed, $FAIL failed"
