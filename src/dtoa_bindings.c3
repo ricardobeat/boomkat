@@ -30,7 +30,7 @@ const int JS_DTOA_EXP_ENABLED  = 4;
  *   pnext: out parameter, pointing on success at the first unconsumed char,
  *           on failure is set to `str`.
  *   radix: the base, where 0 auto-detects a 0x, 0o, or 0b prefix for ints.
- *   flags: the JS_ATOD_* bits above.
+ *   flags: the JS_DTOA_* bits above.
  *   tmp:   DTOA_TMP_SIZE bytes of scratch memory.
  *
  * Returns the parsed value (NaN on parse failure).
@@ -45,7 +45,7 @@ extern fn int boomkat_js_dtoa(char* buf, double d, int radix, int n_digits, int 
  * strtod-compatible decimal parser backed by js_atod.
  *
  * Presents the classic (str, &endptr) -> double interface so it can drop into
- * the ToNumber / JSON number paths that previously called libc::strtod: parses
+ * the ToNumber / JSON number paths that call libc::strtod: parses
  * a base-10 number at `str`, writes the first unconsumed char to `*endptr`, and
  * on parse failure leaves `*endptr == str` (matching strtod's "nothing
  * consumed" signal) and returns NaN.  Uses the same David-Gay parser as the
