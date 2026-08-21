@@ -223,9 +223,65 @@ fn bool is_ident_cont(char c) {
 // Values are formatted directly rather than through vm_to_string to prevent
 // user getters or toString methods from throwing or re-entering the VM during unwind.
 fn void print_uncaught(Heap* hp, TVal* err_val) {
+    // Error objects report as `Uncaught <name>: <message>`, the shape every
+    // JS shell prints and that test262 harnesses parse to recover the error
+    // type of a `negative:` test.
+    if (err_val.is_object()) {
+        HObject* obj = (HObject*)err_val.get_heapptr();
+        if (obj != null) {
+            HString* msg_str = error_message_of(hp, obj);
+            HString* name_str = msg_str != null ? error_name_of(hp, obj) : null;
+            if (name_str != null) {
+                io::eprintf("Uncaught ");
+                print_hstring_stderr(name_str);
+                io::eprintf(": ");
+                print_hstring_stderr(msg_str);
+                io::eprintf("\n");
+                return;
+            }
+        }
+    }
     io::eprintf("Uncaught: ");
     print_tval_stderr(hp, err_val);
     io::eprintf("\n");
+}
+
+// The `message` of a thrown object, own or inherited, when it is a string.
+// A thrown array or plain object has none: that absence is what distinguishes
+// an error-shaped value from any other object, and reporting
+// `Uncaught Array: [object]` for one would be noise, not information.
+fn HString* error_message_of(Heap* hp, HObject* obj) {
+    HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
+    TVal? msg_opt = obj.get_prop_proto(msg_key, hp);
+    if (try msg_tv = msg_opt) {
+        if (msg_tv.is_string()) return (HString*)msg_tv.get_heapptr();
+    }
+    return null;
+}
+
+// The error type name of a thrown object: its `name` property, or failing that
+// its `constructor.name` (which is what names host error types such as
+// Test262Error). Returns null when neither yields a string.
+fn HString* error_name_of(Heap* hp, HObject* obj) {
+    HString* name_key = (HString*)hp.strs[heap::BuiltinStr.NAME];
+    TVal? name_opt = obj.get_prop_proto(name_key, hp);
+    if (try name_tv = name_opt) {
+        if (name_tv.is_string()) return (HString*)name_tv.get_heapptr();
+    }
+    HString* ctor_key = (HString*)hp.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal? ctor_opt = obj.get_prop_proto(ctor_key, hp);
+    if (try ctor_tv = ctor_opt) {
+        if (ctor_tv.is_object()) {
+            HObject* ctor = (HObject*)ctor_tv.get_heapptr();
+            if (ctor != null) {
+                TVal? cname_opt = ctor.get_prop_proto(name_key, hp);
+                if (try cname_tv = cname_opt) {
+                    if (cname_tv.is_string()) return (HString*)cname_tv.get_heapptr();
+                }
+            }
+        }
+    }
+    return null;
 }
 
 // Format a single TVal for stderr. Objects print their string `message` property
