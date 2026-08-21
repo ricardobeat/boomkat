@@ -1131,7 +1131,7 @@ Implementation notes against the real code:
 The six bindings differ in how well they can express a C function pointer
 callback. Two are trivial, two are straightforward, and two need real care.
 
-### C99 (`examples/c99`)
+### C99 (`bindings/c`)
 
 Nothing to design; this is the reference shape.
 
@@ -1351,7 +1351,7 @@ amended per binding in Phase 5.
 ## Test strategy
 
 Test files go in `test/` alongside the existing suite (`test/*.js`) for the
-JS-visible behaviour, and in `examples/c99` (or a new `test/capi/`) for the ABI.
+JS-visible behaviour, and in `bindings/c` (or a new `test/capi/`) for the ABI.
 Every JS-level test must also pass under `make boomkat_gc_stress`.
 
 ### Call shapes — the five paths from premise 6

@@ -26,14 +26,13 @@ That produces `out/libjse.dylib` (macOS) or `out/libjse.so` (Linux).
 ## Run
 
 ```sh
-make example-ruby
+just example-ruby
 ```
 
-That runs both examples, or run either directly:
+Or directly:
 
 ```sh
 ruby bindings/ruby/examples/example.rb
-ruby bindings/ruby/examples/two_runtimes.rb
 ```
 
 The binding finds the library by searching, in order:

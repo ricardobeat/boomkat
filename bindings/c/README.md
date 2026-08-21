@@ -14,56 +14,43 @@ build system beyond `make` and `cc`.
 
 ## Prerequisites
 
-- A C99 compiler (`cc`, `clang`, or `gcc`) and `make`.
+- A C99 compiler (`cc`, `clang`, or `gcc`) and [`just`](https://github.com/casey/just).
 - The engine's header and libraries, installed from the repo root:
 
   ```sh
-  make -C ../.. lib shared          # build out/jse_static.a and out/libjse.dylib
-  make -C ../.. install PREFIX=/usr/local
+  make lib shared
+  make install PREFIX=/usr/local
   ```
 
   `PREFIX` defaults to `/usr/local`, which usually needs `sudo`. Any writable
   prefix works, as long as you pass the same `PREFIX` to both commands.
 
-Verified with Apple clang 21.0.0 and GNU Make 3.81 on macOS 27 (arm64), against
+Verified with Apple clang 21.0.0 and just 1.46.0 on macOS 27 (arm64), against
 libraries built with c3c 0.8.2.
 
 ## Build and run
 
-Static link, which gives one self-contained binary with nothing to ship
-alongside it:
+By default the recipes read the engine's own `out/` tree, so a working build
+without an install step is the default:
 
 ```sh
-make PREFIX=/usr/local run
+just example-c-static    # static-link binary
+just example-c-shared    # shared-link binary (libjse.dylib/.so via rpath)
+just example-c-multiple  # host_fn + two_runtimes, both static
+just example-ruby        # Ruby fiddle example
+just example-clean       # remove the built binaries
 ```
 
-Shared link, which resolves `libjse` at run time through an rpath:
+To link against an installed engine tree instead, set `PREFIX` (defaults to
+`/usr/local`) or override `JSE_INCDIR` / `JSE_LIBDIR` / `JSE_STATIC_LIB`
+individually:
 
 ```sh
-make PREFIX=/usr/local run-shared
+just example-c-static JSE_INCDIR=/opt/jse/include \
+                      JSE_STATIC_LIB=/opt/jse/lib/libjse.a
+just example-c-shared JSE_INCDIR=/opt/jse/include \
+                      JSE_LIBDIR=/opt/jse/lib
 ```
-
-The host-function and two-runtime examples are separate static binaries:
-
-```sh
-make PREFIX=/usr/local run-host-fn
-make PREFIX=/usr/local run-two-runtimes
-```
-
-To build straight from the engine's `out/` directory without installing at all:
-
-```sh
-make JSE_INCDIR=../../include JSE_LIBDIR=../../out \
-     JSE_STATIC_LIB=../../out/jse_static.a run
-
-make JSE_INCDIR=../../include JSE_LIBDIR=../../out \
-     JSE_STATIC_LIB=../../out/jse_static.a run-host-fn
-
-make JSE_INCDIR=../../include JSE_LIBDIR=../../out \
-     JSE_STATIC_LIB=../../out/jse_static.a run-two-runtimes
-```
-
-`make clean` removes all four binaries.
 
 ## Expected output
 
@@ -89,7 +76,7 @@ Exit status is 0. The engine stores text as CESU-8 internally, and
 `jse_get_string` converts to real UTF-8, so the astral character in the greeting
 arrives as a proper 4-byte sequence rather than a mangled surrogate pair.
 
-`make run-host-fn` prints:
+`just example-c-multiple` prints (host_fn section):
 
 ```
 jse version 0.1.0
@@ -117,7 +104,7 @@ greet() reached host state 4 times
 `greet` is called four times, not three: `['ada', 'alan'].map(greet)` accounts
 for two, and the count is read from host memory through the `udata` pointer.
 
-`make run-two-runtimes` prints:
+`just example-c-multiple` prints (two_runtimes section):
 
 ```
 jse version 0.1.0

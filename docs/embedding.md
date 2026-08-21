@@ -107,7 +107,7 @@ cc -std=c99 -I$PREFIX/include app.c $PREFIX/lib/libjse.a -lm -ldl \
    /usr/lib/llvm-19/lib/clang/19/lib/linux/libclang_rt.builtins-$(uname -m).a -o app
 ```
 
-The Makefile and `examples/c99/Makefile` locate it automatically and append it
+The root Makefile and `examples/justfile` locate it automatically and append it
 to `JSE_LDLIBS`; override `C3C_RT_LIB` / `JSE_RT_LIB` to point elsewhere. The
 shared library is unaffected, because it resolved the symbol at its own link.
 The same flag is needed when `c3c` links the engine itself, which the Makefile
@@ -160,7 +160,7 @@ Verifying Linux turned up two platform-specific defects, both since fixed:
 
 The `.so` suffix selection in every loader (`bindings/python/js.py`,
 `bindings/ruby/lib/js.rb`, `bindings/zig/build.zig`, `bindings/rust`'s
-`build.rs`, `examples/c99/Makefile`) was already correct and needed no change.
+`build.rs`, `examples/justfile`) was already correct and needed no change.
 
 #### The static-link init hazard does not reproduce on Linux
 
@@ -191,7 +191,7 @@ All seven binding surfaces were run in-container and produce correct output.
 
 | Binding | Linux | Notes |
 |---|---|---|
-| C99 static | pass | needs compiler-rt; `examples/c99/Makefile` adds it |
+| C99 static | pass | needs compiler-rt; `examples/justfile` adds it |
 | C99 shared | pass | |
 | Python (ctypes) | pass | |
 | Ruby (fiddle) | pass | only after the `re_exec` → `re_run` fix; every regexp crashed before it |
@@ -494,13 +494,23 @@ and any remaining limitations.
 
 ## Per-language guides
 
-### C99: `examples/c99/`
+### C: `bindings/c/`
 
 ```sh
 make lib shared
 make install PREFIX=$PREFIX
-make -C examples/c99 PREFIX=$PREFIX          # `make shared` for the shared-link variant
-make -C examples/c99 PREFIX=$PREFIX run
+just example-c-static    # static-link binary
+just example-c-shared    # shared-link binary (libjse.dylib/.so via rpath)
+just example-c-multiple  # host_fn + two_runtimes, both static
+just example-ruby        # Ruby fiddle example
+just example-clean       # remove the built binaries
+```
+
+Point at the engine's own `out/` tree when an install tree is not present:
+
+```sh
+just example-c-static JSE_INCDIR=$PWD/include JSE_LIBDIR=$PWD/out \
+                      JSE_STATIC_LIB=$PWD/out/jse_static.a
 ```
 
 ```
@@ -527,10 +537,6 @@ resolving to the archive. Clean under ASan.
 caller source into `String((...))`. That is JS source injection if the input is
 ever untrusted. Safe for the literals in the example; do not copy it into a path
 where the JS comes from elsewhere.
-
-On `main`, `make example-c` builds `examples/c/hello.c` and prints
-`jse 0.1.0 / squares: 1,4,9,16 / caught: nope` (verified); the fuller
-`examples/c99/` project above is built with `make -C examples/c99`.
 
 ### Zig: `bindings/zig/`
 

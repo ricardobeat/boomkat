@@ -91,7 +91,7 @@ mount failed with errno 17: failed to create directory 'quickjs'
 ## Cross-platform build artifacts
 
 The working tree is bind-mounted from macOS, so `out/`, `bindings/rust/target/`,
-`bindings/zig/.zig-cache/` and `examples/c99/jse-example` may hold Mach-O files.
+`bindings/zig/.zig-cache/` and `bindings/c/out/example` may hold Mach-O files.
 The `bindings` phase clears the binding caches, but **`out/` is not cleared** —
 run `rm -rf out build` when switching platforms, or the suite will validate a
 stale macOS archive and report confusing failures. A macOS `jse_static.a`

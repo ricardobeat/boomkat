@@ -63,7 +63,7 @@ C3C_BUILDFLAGS = --build-dir "$$d"
 PREFIX ?= /usr/local
 
 .PHONY: all lib lib-full test262_runner test262_runner_asan boomkat boomkat_debug boomkat_gc_stress clean \
-        shared jse jse-stress example-c example-ruby smoke install
+        shared jse jse-stress install
 
 all: lib-full test262_runner boomkat
 
@@ -125,16 +125,6 @@ endif
 # turns a missing GC root in the slot registry into a deterministic failure.
 jse-stress:
 	$(C3C_BUILD) jse_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
-
-# Smoke test: links the STATIC archive, so it validates the archive path rather
-# than only the dylib. Vendored C (libregexp, cutils, dtoa) is already inside
-# the archive -- compiling it again here would produce duplicate symbols.
-out/smoke: examples/c/smoke.c include/jse.h out/jse_static.a
-	cc -std=c99 -Wall -Wextra -pedantic -Iinclude examples/c/smoke.c \
-	   out/jse_static.a $(JSE_LDLIBS) -o out/smoke
-
-smoke: out/smoke
-	./out/smoke
 
 # Host-function ABI tests: registration, argument access, throwing, and
 # calling JS from a callback, all through include/jse.h only.
@@ -199,20 +189,6 @@ test-runtime-cycles: jse-stress
 	   out/jse_stress.$(SHLIB_EXT) -Wl,-rpath,$(CURDIR)/out $(JSE_LDLIBS) \
 	   -o out/runtime_cycles
 	ASAN_OPTIONS=detect_leaks=0 ./out/runtime_cycles
-
-# Larger example, linked against the shared library via rpath.
-out/hello: examples/c/hello.c include/jse.h out/libjse.$(SHLIB_EXT)
-	cc -std=c99 -Wall -Wextra -pedantic -Iinclude examples/c/hello.c \
-	   out/libjse.$(SHLIB_EXT) -Wl,-rpath,$(CURDIR)/out $(JSE_LDLIBS) -o out/hello
-
-example-c: out/hello
-	./out/hello
-
-# Ruby binding example. Pure stdlib fiddle -- nothing to compile, so this only
-# needs the shared library and any ruby >= 2.6 (the macOS system ruby is 2.6).
-example-ruby: out/libjse.$(SHLIB_EXT)
-	ruby bindings/ruby/examples/example.rb
-	ruby bindings/ruby/examples/two_runtimes.rb
 
 # make install PREFIX=/usr/local -- header + both libraries.
 # The dylib keeps its @rpath install name rather than being restamped with an

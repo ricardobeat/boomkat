@@ -1,6 +1,8 @@
 # Boomkat — common tasks
 justfile := "benchmarks/README.md"
 
+import 'examples.just'
+
 # ── Build ────────────────────────────────────────────────────────────────────
 
 # Build everything (default)

@@ -146,19 +146,19 @@ if want link; then
         skip "ldd libjse.so"
     fi
 
-    timeout 120 make example-c >/dev/null 2>&1
-    if [ -x out/hello ]; then
-        ldd out/hello
-        if ldd out/hello 2>&1 | grep -q 'not found'; then
-            fail "out/hello has unresolved deps"
+    timeout 120 just example-c-shared >/dev/null 2>&1
+    if [ -x bindings/c/out/example-shared ]; then
+        ldd bindings/c/out/example-shared
+        if ldd bindings/c/out/example-shared 2>&1 | grep -q 'not found'; then
+            fail "bindings/c/out/example-shared has unresolved deps"
         else
-            pass "out/hello deps all resolved (links libjse.so via rpath)"
+            pass "bindings/c/out/example-shared deps all resolved (links libjse.so via rpath)"
         fi
-        ldd out/hello | grep -q 'libjse.so' \
-            && pass "out/hello genuinely resolves libjse.so" \
-            || fail "out/hello does not name libjse.so"
+        ldd bindings/c/out/example-shared | grep -q 'libjse.so' \
+            && pass "bindings/c/out/example-shared genuinely resolves libjse.so" \
+            || fail "bindings/c/out/example-shared does not name libjse.so"
     else
-        skip "ldd out/hello"
+        skip "ldd bindings/c/out/example-shared"
     fi
 
     say "5b. nm -D — exported jse_ symbols on the shared library"
@@ -377,23 +377,33 @@ if want bindings; then
     # in it holds Mach-O artifacts. Every one of these caches is keyed in a way
     # that survives the platform change and then fails the link, so clear them.
     rm -rf bindings/zig/.zig-cache bindings/zig/zig-out \
-           bindings/rust/target examples/c99/jse-example examples/c99/jse-example-shared
+           bindings/rust/target bindings/c/out/example bindings/c/out/example-shared
 
-    # --- C99 example -------------------------------------------------------
-    if [ -d examples/c99 ]; then
-        if timeout 300 make -C examples/c99 PREFIX="$PREFIX" run >/tmp/c99.log 2>&1; then
+    # --- C example ---------------------------------------------------------
+    if [ -d bindings/c ]; then
+        # Exercise the install path: route the justfile at the staged prefix
+        # populated by `make install PREFIX=$PREFIX` above, where the archive
+        # is named libjse.a rather than the engine's own jse_static.a.
+        if timeout 300 just example-c-static \
+                JSE_INCDIR="$PREFIX/include" \
+                JSE_LIBDIR="$PREFIX/lib" \
+                JSE_STATIC_LIB="$PREFIX/lib/libjse.a" \
+                >/tmp/c99.log 2>&1; then
             tail -6 /tmp/c99.log | sed 's/^/  /'
-            pass "binding: C99 (static)"
+            pass "binding: C (static)"
         else
-            tail -8 /tmp/c99.log | sed 's/^/  /'; fail "binding: C99 (static)"
+            tail -8 /tmp/c99.log | sed 's/^/  /'; fail "binding: C (static)"
         fi
-        if timeout 300 make -C examples/c99 PREFIX="$PREFIX" run-shared >/tmp/c99s.log 2>&1; then
-            pass "binding: C99 (shared)"
+        if timeout 300 just example-c-shared \
+                JSE_INCDIR="$PREFIX/include" \
+                JSE_LIBDIR="$PREFIX/lib" \
+                >/tmp/c99s.log 2>&1; then
+            pass "binding: C (shared)"
         else
-            tail -8 /tmp/c99s.log | sed 's/^/  /'; fail "binding: C99 (shared)"
+            tail -8 /tmp/c99s.log | sed 's/^/  /'; fail "binding: C (shared)"
         fi
     else
-        skip "binding: C99 (examples/c99 absent)"
+        skip "binding: C (bindings/c absent)"
     fi
 
     # --- Python ------------------------------------------------------------
@@ -409,7 +419,7 @@ if want bindings; then
 
     # --- Ruby --------------------------------------------------------------
     if command -v ruby >/dev/null; then
-        if timeout 300 ruby bindings/ruby/examples/example.rb >/tmp/rb.log 2>&1; then
+        if timeout 300 just example-ruby >/tmp/rb.log 2>&1; then
             tail -8 /tmp/rb.log | sed 's/^/  /'; pass "binding: Ruby (fiddle)"
         else
             tail -8 /tmp/rb.log | sed 's/^/  /'; fail "binding: Ruby (fiddle)"

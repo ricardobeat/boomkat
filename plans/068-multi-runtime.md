@@ -801,7 +801,7 @@ points still read `g_rt`. The guard is the *last* thing to go, after:
 
 **The three readers get a context tier.** `jse_get_number(NULL, id, &d)`
 resolves through `g_rt`, which is what lets a host function read its own
-arguments without holding a runtime (`examples/c99/host_fn.c:82`,
+arguments without holding a runtime (`bindings/c/host_fn.c:82`,
 `test/capi/host_fn_abi.c:38`). That cannot survive two runtimes: a global slot
 handle is a runtime-scoped integer carrying no owner, so `NULL` has no answer,
 and the failure mode is runtime A's handle resolving against runtime B's
@@ -840,7 +840,7 @@ Six surfaces. Only one has its own guard.
 | **`bindings/rust`** | no | Docs. Worth checking whether `Runtime` is `Send`/`!Sync` — after this change it should be `Send` but **not** `Sync`, and values must not be `Send` at all. That is a genuine type-level improvement Rust can express and the others cannot. |
 | **`bindings/ruby`** | no | Docs. |
 | **`bindings/python`** | no | Docs. |
-| **`examples/c99`** | no | Move host-side reads to the `jse_ctx_get_*` tier; add a two-runtime example. |
+| **`bindings/c`** | no | Move host-side reads to the `jse_ctx_get_*` tier; add a two-runtime example. |
 
 Note the irony worth recording in the C3 binding's commit message: its guard is
 already `tlocal`, so it was *stricter* than the engine's in the multi-thread
@@ -1148,7 +1148,7 @@ runtimes can open, every latent cross-runtime bug becomes reachable.
 
 ### Phase 7 — bindings and examples
 
-**Scope.** Zig, Rust, Ruby, Python, `examples/c99` — docs, a two-runtime
+**Scope.** Zig, Rust, Ruby, Python, `bindings/c` — docs, a two-runtime
 example each, and Rust's `Send`/`!Sync` audit. Parallelisable, one per binding.
 
 **Ships alone: yes, per binding, at leisure.**
@@ -1388,7 +1388,7 @@ simply what makes the best embedding API.
 `jse_get_number`/`jse_get_bool`/`jse_get_string` take a runtime and accept
 `NULL`, falling back to `g_rt`. That exists because a host function receives a
 `jse_call_ctx` and no runtime, so without it every callback reading its own
-arguments would have to thread one in. `examples/c99/host_fn.c:82` and
+arguments would have to thread one in. `bindings/c/host_fn.c:82` and
 `test/capi/host_fn_abi.c:38` both rely on it.
 
 It cannot survive two runtimes. A global slot handle is an index into *some*
@@ -1428,7 +1428,7 @@ a host that wants to persist a value or open a nested eval genuinely needs the
 runtime handle.
 
 Sequencing: land with Phase 5, which is where `capi.c3` becomes per-runtime.
-Phase 7 updates `examples/c99/host_fn.c`, `test/capi/host_fn_abi.c` and the six
+Phase 7 updates `bindings/c/host_fn.c`, `test/capi/host_fn_abi.c` and the six
 bindings, none of which are released.
 
 **3. Thread-safety: explicitly out of scope, and the per-thread story is
