@@ -18,13 +18,63 @@ build-batch:
 build-bench:
     @make out/boomkat
 
+# ── Comparison engines ───────────────────────────────────────────────────────
+
+# Fetch both comparison engines (Duktape + QuickJS)
+fetch-engines: fetch-duktape fetch-quickjs
+
+# Fetch Duktape v2.7.0 release tarball into ../duktape-2.7.0 and symlink it here.
+# The duktape git repo does NOT contain src-separate/ — it is generated at dist
+# time — so we use the official release tarball, which ships it prebuilt.
+fetch-duktape:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -d duktape/src-separate ]; then echo "duktape: ok"; exit 0; fi
+    if [ ! -d ../duktape-2.7.0/src-separate ]; then
+        echo "Downloading duktape 2.7.0..."
+        curl -fsSL https://duktape.org/duktape-2.7.0.tar.xz | tar xJ -C ..
+    fi
+    rm -f duktape
+    ln -s ../duktape-2.7.0 duktape
+    echo "duktape: fetched -> ../duktape-2.7.0"
+
+# Clone QuickJS (bellard/quickjs) into ./quickjs
+fetch-quickjs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -f quickjs/quickjs.c ]; then echo "quickjs: ok"; exit 0; fi
+    echo "Cloning quickjs..."
+    git clone --depth 1 https://github.com/bellard/quickjs.git quickjs
+    echo "quickjs: cloned"
+
+# Ensure out/duktape exists (fetches + builds only if missing)
+[private]
+duktape-ready: fetch-duktape
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -f out/duktape ] && exit 0
+    echo "Building original Duktape..."
+    cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.
+    rm -f out/bench_cache_duktape.txt
+
+# Ensure out/qjs exists (fetches + builds only if missing)
+[private]
+qjs-ready: fetch-quickjs
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -f out/qjs ] && exit 0
+    echo "Building QuickJS..."
+    make -C quickjs qjs
+    cp quickjs/qjs out/
+    rm -f out/bench_cache_qjs.txt
+
 # Build original Duktape v2.7.0 for comparison benchmarks
-build-duktape:
+build-duktape: fetch-duktape
     @cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.
     @rm -f out/bench_cache_duktape.txt
 
 # Build QuickJS CLI for comparison benchmarks
-build-quickjs:
+build-quickjs: fetch-quickjs
     make -C quickjs qjs
     cp quickjs/qjs out/
     @rm -f out/bench_cache_qjs.txt
@@ -267,17 +317,13 @@ test262-gate: build-batch
 # ── Benchmarks ───────────────────────────────────────────────────────────────
 
 # Run all benchmarks without rebuilding (default: 3 iterations)
-bench n="3":
+bench n="3": duktape-ready qjs-ready
 	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
-	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; rm -f out/bench_cache_duktape.txt; }
-	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/ && rm -f out/bench_cache_qjs.txt; }
 	bash scripts/run_benchmarks.sh {{n}}
 
 # Rebuild boomkat and run all benchmarks
-bench-rebuild n="3":
+bench-rebuild n="3": duktape-ready qjs-ready
 	c3c build boomkat
-	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; rm -f out/bench_cache_duktape.txt; }
-	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/ && rm -f out/bench_cache_qjs.txt; }
 	bash scripts/run_benchmarks.sh {{n}}
 
 # Clear cached Duktape/QuickJS benchmark results (forces a re-run next time)
@@ -296,32 +342,25 @@ bench-one file n="3":
     ./out/boomkat {{file}}
 
 # Run a single benchmark on original Duktape
-bench-orig file:
-	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; }
+bench-orig file: duktape-ready
 	./out/duktape {{file}}
 
 # ── Size & Memory Benchmarks ────────────────────────────────────────────────
 
 # Measure binary sizes and peak RSS of all engines
-bench-sizes:
+bench-sizes: duktape-ready qjs-ready
 	@echo "=== Engine Size & Memory Benchmark ==="
 	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
-	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; }
-	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/; }
 	bash scripts/run_sizes_bench.sh
 
 # Rebuild boomkat and run size/memory benchmark
-bench-sizes-rebuild:
+bench-sizes-rebuild: duktape-ready qjs-ready
 	c3c build boomkat
-	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; }
-	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/; }
 	bash scripts/run_sizes_bench.sh
 
 # Measure peak RSS memory usage across engines
-bench-memory:
+bench-memory: duktape-ready qjs-ready
 	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
-	@test -f out/duktape || { echo "Building original Duktape..."; cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.; }
-	@test -f out/qjs || { echo "Building QuickJS..."; make -C quickjs qjs && cp quickjs/qjs out/; }
 	bash scripts/run_memory_bench.sh
 
 # Compare memory usage: current build only
