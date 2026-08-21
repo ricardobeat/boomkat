@@ -411,6 +411,38 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
         }
         if (end_idx == i) { end_idx = code_count > 0 ? code_count - 1 : 0; }
         for (uint k = i; k <= end_idx && k < code_count; k++) { in_try[k] = true; }
+
+        // A finally block is entered not only by the modeled TRY->finally edge
+        // but by the abrupt-completion routing (a break/continue/return inside
+        // the try jumps to the catcher's finally_pc, runs the finally, then
+        // ENDFINALLY replays the pending completion). That routing is an edge
+        // this pass's CFG walk does not model, so a store in the finally can be
+        // wrongly seen as dead and eliminated (e.g. `finally { x = 1; }` when x
+        // is read after the loop the continue targets). Exclude the whole
+        // finally region, FINALLY..ENDFINALLY, for the same reason the try body
+        // is excluded. The finally_offset lives in the NOP slot at i+1.
+        if (i + 1 < code_count) {
+            uint finally_off = code[i + 1].get_bc();
+            if (finally_off != 0) {
+                uint fin_start = i + finally_off;
+                // Walk from the FINALLY marker to its matching ENDFINALLY,
+                // honoring nesting (an inner try/finally in this finally body
+                // has its own FINALLY/ENDFINALLY pair).
+                uint fdepth = 0;
+                uint fk = fin_start;
+                while (fk < code_count) {
+                    Opcode fop = code[fk].op;
+                    if (fop == Opcode.FINALLY) { fdepth++; }
+                    else if (fop == Opcode.ENDFINALLY) {
+                        fdepth--;
+                        if (fdepth == 0) { break; }
+                    }
+                    in_try[fk] = true;
+                    fk++;
+                }
+                if (fk < code_count) { in_try[fk] = true; } // include ENDFINALLY
+            }
+        }
     }
 }
 
