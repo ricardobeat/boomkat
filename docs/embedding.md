@@ -133,8 +133,6 @@ Linux is verified on linux/arm64 (Debian trixie, `c3c` 0.8.2 built from source
 against LLVM 19.1.7, GCC 14.2). Run it with `make linux-ci`; see
 [`ci/linux/README.md`](../ci/linux/README.md).
 
-Running it established the following:
-
 | Area | Result |
 |---|---|
 | `c3c build boomkat` | Builds, once `__muloti4` is supplied (see above) |
@@ -461,8 +459,7 @@ A runtime must be driven from one thread at a time. The engine has no locking,
 so two threads inside one runtime corrupt it, and nothing enforces that. Two
 threads each driving their own runtime share nothing and are safe.
 
-The handle design was chosen because both obvious alternatives are broken, which
-is worth knowing before anyone proposes them again:
+The handle design exists because both obvious alternatives are broken:
 - The valstack cannot host host-owned slots. `Vm.execute` unconditionally resets
   `valstack_top` and reinitialises registers on every eval, and
   `ensure_valstack_grow` reallocs and relocates the buffer. Any slot there is
@@ -488,9 +485,6 @@ all now fixed on `main`:
 | `Symbol` misreported as `BK_TYPE_STRING`; `bk_get_string` emitted invalid UTF-8 | `Symbol type = 4`, bytes `ff 01 78` | symbols report `BK_TYPE_OTHER` |
 | Thrown primitives lost their value | `throw 42` → `[uncaught exception]` | `throw 42` reports `42` |
 | An `Error`'s `name` was never found (own-property lookup only) | `throw new TypeError('tt')` → `[tt]`, not `TypeError: tt` | `name` resolves through the prototype |
-
-Each language section below carries its own build commands, expected output,
-and any remaining limitations.
 
 ## Per-language guides
 
@@ -713,7 +707,7 @@ otherwise copy raw internal bytes). Before the fix, `Symbol()` raised
 ## Known limitations of v1
 
 Host functions are supported through `bk_register_fn` and `bk_call`; see
-[Host functions](#host-functions) above. A host function is an ordinary function
+[Host functions](#host-functions). A host function is an ordinary function
 object whose dispatch index sits in a reserved range above every compile-time
 ordinal, so it reaches `dispatch_builtin`'s out-of-range branch and routes to a
 per-heap host table. Every call shape works: plain calls, methods,
@@ -756,8 +750,6 @@ There are no modules, timers, or I/O. The engine deliberately ships no host
 runtime surface; see `engine-scope.md`. Supply your own from the host.
 
 ### Untested paths
-
-Stated so nobody mistakes silence for coverage:
 
 - Linux x86-64. Linux is verified only on arm64; see the Linux section above.
   The x86-64 path was not exercised, because `container`'s amd64 emulation

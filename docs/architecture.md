@@ -42,8 +42,6 @@ involves every layer:
 6. **Drain.** When the script returns, the microtask queue runs, settling
    promises and resuming any async function that was awaiting.
 
-Each section below expands one of those steps.
-
 ## Where the code lives
 
 | Path | What is in it |
@@ -292,10 +290,6 @@ allocation between collections in a loop, and throttles them with
 
 ## Values and objects
 
-The two sections above described how code is compiled and executed. This one and
-the next describe what it operates on: how a value is represented, how an object
-stores its properties, and how both are allocated and reclaimed.
-
 ### TVal
 
 Every register, property slot, and stack slot holds a `TVal`. The default build
@@ -316,7 +310,7 @@ tagged non-double, with the payload in the low 48 bits:
 | `0xFFF8` … `0xFFFA` | `HString*`, `HObject*`, buffer |
 | `0xFFFF` | deleted-slot sentinel |
 
-Two consequences are worth knowing. `set_number` normalizes any NaN it stores to
+Two consequences follow. `set_number` normalizes any NaN it stores to
 a canonical positive NaN, because a negative NaN's bits would collide with the
 tag range. And the tag layout is deliberate: undefined and null are adjacent so
 `is_nullish` is one range check, and numbers and fastints sit below every
@@ -428,8 +422,7 @@ Some operations need a shape that belongs to one object alone.
 out of the transition table, which is how `seal`, `freeze`, and per-property
 flag edits avoid leaking into every object sharing the shape.
 
-One optimization is worth calling out because it changes the complexity of
-ordinary reads. `has_nondefault_flags` is set the moment any non-default
+`has_nondefault_flags` is set the moment any non-default
 property is installed and never cleared. While it is false, `get_prop_flags`
 returns the default descriptor in O(1) instead of walking a shape chain that,
 for a dictionary-mode object, is one node deep per property.
@@ -497,7 +490,7 @@ creation time (`alloc_func`, `realloc_func`, `free_func`, `fatal_func`), each
 taking an opaque `udata` pointer, so an embedder can supply its own allocator.
 Passing null selects defaults that route through the C3 thread allocator.
 
-This matters more than it looks. Anything allocated through the heap must be
+Anything allocated through the heap must be
 released through the same heap, including during teardown. `gs_release()` takes
 an explicit heap pointer for exactly this reason: teardown clears the active-heap
 global but still has to free through the heap's own allocator, and releasing to
@@ -517,8 +510,7 @@ where.
 
 ### Two collectors, one heap
 
-The engine reclaims memory two ways at once, and knowing which one owns a given
-object is the key to reading the memory code.
+The engine reclaims memory two ways at once.
 
 **Reference counting** handles the common case. Every `HeapHeader` carries a
 refcount; `decref()` frees the object when it hits zero, unlinking it from the
@@ -541,8 +533,7 @@ deep object graph cannot overflow the C stack. `mark_roots()` seeds it, and
 
 ### Roots
 
-Reachability is only as good as the root set, and a surprising amount lives
-outside the object graph:
+Much of what stays alive sits outside the object graph:
 
 - registered GC roots and every built-in prototype and intrinsic
 - the VM value stack, scanned from `valstack_base` to the live top pointer
@@ -577,11 +568,6 @@ another teardown already freed:
 
 ### Strings
 
-String equality in this engine is pointer identity, which makes interning an
-engine-wide invariant rather than an optimisation. Any path that produces an
-`HString` which escapes without interning will silently break `indexOf`, strict
-equality, and property-key lookup.
-
 The string table is open-addressed with linear probing and tombstones, hashed
 with FNV-1a seeded per heap. Taking a slot makes the table an owner: the string
 is marked interned and increfed for the table's reference.
@@ -611,21 +597,14 @@ them and incref and decref against them do nothing.
 
 ### Shapes and inline caches
 
-Objects that gain properties in the same order share a hidden class, or *shape*.
-A transition table maps `(parent_shape_id, key, flags)` to a child shape id, so
-two objects taking the same path converge on one shape. The flags are part of the
-key: every instance of a class installing the same private field can share a
-shape, while the same key installed with different attributes needs its own.
+The megamorphic property cache maps `(shape_id, key)` to a resolved
+`(proto, prop_idx, value)`, shared across all call sites to skip repeated
+prototype-chain walks. It is a lossy single-slot table, so a collision simply
+evicts. It is allocated apart from the `Heap` struct to keep that struct small.
 
-Above that sits a megamorphic property cache mapping `(shape_id, key)` to a
-resolved `(proto, prop_idx, value)`, shared across all call sites to skip
-repeated prototype-chain walks. It is a lossy single-slot table, so a collision
-simply evicts. It is allocated apart from the `Heap` struct to keep that struct
-small.
-
-One consequence worth knowing: `Heap.reset()` must clear this cache. Pool
-allocators restart at the same addresses, so a stale entry can be hit by a new
-object at a recycled address and return the wrong value.
+Pool allocators restart at the same addresses, so a stale cache entry can be
+hit by a new object at a recycled address and return the wrong value. That is
+why `Heap.reset()` clears this cache.
 
 ### Generators and async state
 
@@ -634,7 +613,7 @@ registers, program counter, environments, catcher chain, and the resume protocol
 values. It is not an `HObject`, so its lifetime is managed by a small refcount
 maintained by `gs_acquire()` and `gs_release()`.
 
-That count is the *only* ownership signal, and the reason is worth stating.
+That count is the *only* ownership signal.
 Several `HObject`s can hold the same state: the generator instance, plus every
 async reaction closure that parks the pointer in its `var_env`. The sweep tears
 all of them down in a single pass, so deciding ownership by reading a field of
@@ -666,9 +645,9 @@ downstream)` triples, drained after each top-level script and after
 `vm_call_fn_impl` returns. The drain walks a read cursor forward rather than
 snapshotting the count, so jobs enqueued by a running handler append past the
 cursor and run in the same drain, which is the ordering the spec requires.
-`microtask_count` has to keep counting the whole queue while this happens:
-resetting it early would let new jobs overwrite the in-flight batch from slot 0
-and hide queued entries from the collector.
+`microtask_count` keeps counting the whole queue while this happens: resetting
+it early would let new jobs overwrite the in-flight batch from slot 0 and hide
+queued entries from the collector.
 
 ### Tearing down and reusing a heap
 
@@ -731,10 +710,7 @@ slot, not in its property table, so user code cannot reach them by name. The
 reaction chain links through a hidden property rather than `HeapHeader.next`,
 which threads the unrelated GC list.
 
-Reactions become microtasks in the heap's queue, drained after each top-level
-script and after `vm_call_fn_impl` returns. The drain walks forward with a cursor
-so jobs enqueued by a running handler execute in the same drain, which is the
-ordering the spec requires.
+Reactions become microtasks in the heap's queue.
 
 Async functions attach to this machinery directly. `AWAIT` suspends the
 generator-style frame and schedules its resumption as a promise reaction, so the
