@@ -12,9 +12,13 @@
 # JS-level throw as an engine crash, and it burned the one phrase that signals
 # a genuine internal fault, so real engine bugs hid among ordinary throws.
 #
-# The invariant: an uncaught throw prints exactly ONE line, "Uncaught: <value>",
-# and exits 1. "VM error:" is reserved for an internal fault with no JS error
-# attached and must never appear for a JS-level throw.
+# The invariant: an uncaught throw prints exactly ONE line and exits 1.
+# An error-shaped value (one carrying a string `message`, own or inherited)
+# reports as "Uncaught <name>: <message>", the shape every JS shell prints and
+# that test262 harnesses parse to recover a `negative:` test's error type;
+# anything else reports as "Uncaught: <value>". "VM error:" is reserved for an
+# internal fault with no JS error attached and must never appear for a
+# JS-level throw.
 #
 # Usage: bash test/uncaught/run.sh [engine_binary]
 
@@ -51,9 +55,9 @@ check() {
 # Error objects and engine-raised errors (the cases that already worked —
 # guarding them keeps the fix from regressing the common path).
 check "throw Error"       'throw new Error("msg");' \
-      "Uncaught: msg"
+      "Uncaught Error: msg"
 check "engine TypeError"  'null.x;' \
-      "Uncaught: Cannot read properties of null (reading 'x')"
+      "Uncaught TypeError: Cannot read properties of null (reading 'x')"
 
 # Thrown non-Errors: each of these printed "VM error: ..." before the fix.
 check "throw string"      'throw "a string";'  "Uncaught: a string"
@@ -64,6 +68,14 @@ check "throw null"        'throw null;'        "Uncaught: null"
 check "throw undefined"   'throw undefined;'   "Uncaught: undefined"
 check "throw bare object" 'throw {nomsg:1};'   "Uncaught: [object]"
 check "throw array"       'throw [1,2];'       "Uncaught: [object]"
+
+# The name comes from `name` up the prototype chain, or failing that from
+# `constructor.name` — which is what names a host error type such as the
+# Test262Error the conformance harness throws.
+check "throw subclass"    'class E extends Error {}; throw new E("sub");' \
+      "Uncaught Error: sub"
+check "throw custom ctor" 'function T(m){ this.message = m; } throw new T("t262");' \
+      "Uncaught T: t262"
 
 # A throw escaping a sync function called from a nested frame still unwinds to
 # the same top-level reporting path.
@@ -80,13 +92,13 @@ check "rethrow from catch"  'try { throw 1; } catch (e) { throw "re:" + e; }' \
 # async programs live. Same invariant as the block above, plus a pending job.
 check "microtask + throw Error" \
       'Promise.resolve().then(function(){}); throw new Error("msg");' \
-      "Uncaught: msg"
+      "Uncaught Error: msg"
 check "microtask + engine TypeError" \
       'Promise.resolve().then(function(){}); null.x;' \
-      "Uncaught: Cannot read properties of null (reading 'x')"
+      "Uncaught TypeError: Cannot read properties of null (reading 'x')"
 check "microtask + ReferenceError" \
       'Promise.resolve().then(function(){}); missingGlobalName;' \
-      "Uncaught: missingGlobalName is not defined"
+      "Uncaught ReferenceError: missingGlobalName is not defined"
 check "microtask + throw string" \
       'Promise.resolve().then(function(){}); throw "a string";' \
       "Uncaught: a string"
@@ -95,7 +107,7 @@ check "microtask + throw from nested" \
       "Uncaught: deep"
 check "async fn pending + throw" \
       '(async function(){ await null; }()); throw new Error("msg");' \
-      "Uncaught: msg"
+      "Uncaught Error: msg"
 
 # NOT covered here: an unhandled PROMISE REJECTION (`async function f(){ throw
 # "x"; } f();`) is silently ignored and exits 0 — node reports it. That is a
