@@ -583,25 +583,25 @@ fn void host_trampoline(builtins::BuiltinContext* ctx, void* udata) {
     cfn((void*)ctx, reg.udata);
 }
 
-// Install `cfn` as a global function named `name`, arriving through
-// host_trampoline. Returns a BK_* status.
-fn int register_host_fn(Runtime* rt, char[] name, void* cfn, void* udata,
-                        int arity, bool constructable) {
+// Install a function object as a global binding named `name`, dispatching
+// through `trampoline` with `reg_udata` handed back to it.
+//
+// The trampoline is a parameter rather than fixed, because each face has its
+// own: the C ABI forwards to a C function pointer, the C3 binding to a C3
+// callback taking a JsCtx. Everything around that -- interning the name,
+// claiming a host-function slot, building the function object and declaring
+// the binding -- is identical for both and lives here.
+//
+// Returns a BK_* status. On failure `reg_udata` is left alone; the caller
+// allocated it and frees it.
+fn int install_fn(Runtime* rt, char[] name, void* trampoline, void* reg_udata,
+                  int arity, bool constructable) {
     HString* nm = rt.heap.str_intern(name);
     if (nm == null) { set_err(rt, BK_ERR_NOMEM, "could not intern function name"); return BK_ERR_NOMEM; }
 
-    // The registration record outlives the call, so it is heap-allocated and
-    // owned by the runtime; the host function table keeps the only pointer.
-    void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
-    if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
-    HostReg* reg = (HostReg*)raw;
-    reg.cfn = cfn;
-    reg.udata = udata;
-
-    long slot = rt.heap.register_host_fn((void*)&host_trampoline, (void*)reg, (void*)nm,
+    long slot = rt.heap.register_host_fn(trampoline, reg_udata, (void*)nm,
                                          arity, constructable);
     if (slot < 0) {
-        rt.heap.free_func(rt.heap.heap_udata, raw);
         set_err(rt, BK_ERR_NOMEM, "host function table full");
         return BK_ERR_NOMEM;
     }
@@ -615,6 +615,23 @@ fn int register_host_fn(Runtime* rt, char[] name, void* cfn, void* udata,
         return BK_ERR_INTERNAL;
     }
     return BK_OK;
+}
+
+// Install `cfn` as a global function named `name`, arriving through
+// host_trampoline. Returns a BK_* status.
+fn int register_host_fn(Runtime* rt, char[] name, void* cfn, void* udata,
+                        int arity, bool constructable) {
+    // The registration record outlives the call, so it is heap-allocated and
+    // owned by the runtime; the host function table keeps the only pointer.
+    void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
+    if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    HostReg* reg = (HostReg*)raw;
+    reg.cfn = cfn;
+    reg.udata = udata;
+
+    int rc = install_fn(rt, name, (void*)&host_trampoline, (void*)reg, arity, constructable);
+    if (rc != BK_OK) rt.heap.free_func(rt.heap.heap_udata, raw);
+    return rc;
 }
 
 // ============================================================================
