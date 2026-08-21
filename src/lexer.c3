@@ -215,8 +215,6 @@ const KeywordEntry[*] KEYWORDS = {
 
 // Look up an identifier to see if it is a keyword.
 // Returns the keyword token type, or NOT_A_KEYWORD fault if not a keyword.
-// Dispatches on the identifier's first character for faster lookup, then
-// compares length before full byte comparison within candidates.
 fn TokenType? lookup_keyword(char[] name, bool strict_mode) {
     if (name.len == 0) {
         return NOT_A_KEYWORD~;
@@ -256,7 +254,6 @@ fn char[] keyword_to_string(TokenType tt) {
 
 // Return a human-readable name for a token type (for error messages).
 fn char[] token_type_name(TokenType tt) {
-    // Try keyword table first
     char[] kw = keyword_to_string(tt);
     if (kw.len > 0) return kw;
     switch (tt) {
@@ -386,7 +383,7 @@ fn bool is_identifier_part(uint cp) @inline {
     return unicode_bindings::unicode_is_identifier_continue(cp) != 0;
 }
 
-// Check if a character is ASCII whitespace (space, tab, VT, FF, NBSP).
+// Check if a character is ASCII whitespace (TAB, VT, FF, SP).
 fn bool is_whitespace(char c) {
     // Single-byte ASCII WhiteSpace (ES §12.2): TAB, VT, FF, SP. Multi-byte
     // whitespace (NBSP U+00A0, BOM U+FEFF, U+2028/U+2029) is handled by
@@ -1187,8 +1184,9 @@ fn Token? Lexer.scan_number(&self) {
 
     // Fractional part
     if (!self.at_end() && self.peek_char() == '.') {
-        // Only skip if this is truly ... (ellipsis): three consecutive dots
-        // 0..toString is valid: 0. is the number, .toString is property access
+        // `0..toString()` is property access on the number: when another
+        // dot follows, this one ends the number and the next two start an
+        // ellipsis token, so leave the dot unconsumed.
         char next1 = self.peek_char_at(1);
         char next2 = self.peek_char_at(2);
         bool is_ellipsis = (next1 == '.' && next2 == '.');
@@ -1479,9 +1477,9 @@ fn Token? Lexer.scan_string(&self) {
                     }
 
                 default:
-                    // Non-escape: in non-strict mode, treat as literal.
-                    // In strict mode, digit escapes (\1-\9) are octal/identity escapes
-                    // that are SyntaxErrors per ES5 §7.8.4 + Annex B.1.2.
+                    // Unknown escape: emit the escaped character itself.
+                    // \1-\9 are SyntaxErrors in strict mode, so latch
+                    // found_octal for the parser to reject.
                     if (self.strict_mode && esc >= '1' && esc <= '9') {
                         found_octal = true;
                     }
@@ -2113,7 +2111,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                 case '"':  buf[buf_len] = '"';  buf_len++;
                 case '\\': buf[buf_len] = '\\'; buf_len++;
                 case '`':  buf[buf_len] = '`';  buf_len++;
-                case '$':  buf[buf_len] = '$';  buf_len++;  // \$ escapes dollar
+                case '$':  buf[buf_len] = '$';  buf_len++;
 
                 case 'x':
                     // \xHH in template literals, same UTF-8 encoding fix as

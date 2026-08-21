@@ -162,7 +162,6 @@ struct HString {
     uint cached_byte_offset;
 }
 
-// Sets the temproot flag on this string.
 fn void HString.set_temproot(&self) @inline {
     ((types::HeapHeader*)self).set_temproot();
 }
@@ -241,22 +240,11 @@ fn int hstring_compare(HString* a, HString* b) {
 // HString: flag accessors
 // ============================================================================
 
-// Returns `true` when all bytes are in the ASCII range (< 0x80).
 fn bool HString.is_ascii(&self)              { return self.flags.is_ascii; }
-
-// Returns `true` when the string is a valid ECMAScript array index.
 fn bool HString.is_arridx(&self)             { return self.flags.is_arridx; }
-
-// Returns `true` when the string represents an ES2015 Symbol.
 fn bool HString.is_symbol(&self)             { return self.flags.is_symbol; }
-
-// Returns `true` when the string is a hidden symbol.
 fn bool HString.is_hidden(&self)             { return self.flags.is_hidden; }
-
-// Returns `true` when the data resides in an external buffer.
 fn bool HString.has_extdata(&self)           { return self.flags.has_extdata; }
-
-// Returns `true` when the string has been inserted into the heap's string table.
 fn bool HString.is_interned(&self)           { return self.flags.is_interned; }
 
 // ============================================================================

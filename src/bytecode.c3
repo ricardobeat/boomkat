@@ -1157,31 +1157,13 @@ fn Instruction make_wide(uint ext_a, uint ext_b, uint ext_c) {
 // Instruction: field accessors
 // ============================================================================
 
-// Returns the opcode.
-macro Opcode Instruction.get_op(&self) {
-    return self.op;
-}
-
-// Returns the 8-bit A operand.
-macro uint Instruction.get_a(&self) {
-    return self.a;
-}
-
-// Returns the 8-bit B operand.
-macro uint Instruction.get_b(&self) {
-    return self.b;
-}
-
-// Returns the 8-bit C operand.
-macro uint Instruction.get_c(&self) {
-    return self.c;
-}
-
-// Returns the 16-bit unsigned BC combined operand.
-//
 // B is the low byte, C is the high byte:  `BC = C << 8 | B`.
 macro uint Instruction.get_bc(&self) {
     return ((uint)self.c << 8) | (uint)self.b;
+}
+
+macro uint Instruction.get_a(&self) {
+    return self.a;
 }
 
 // Returns the signed 16-bit BC operand (bias-decoded).
@@ -1735,9 +1717,9 @@ fn char[] CompiledFunction.get_filename(&self) {
 
 // Copy `name` into a heap-owned buffer and record it as this function's source
 // filename. No-op when `name` is empty. Non-fatal on allocation failure: the
-// function simply keeps whatever filename it had (usually none). `mem`, like
-// the name and retained source text, so free_compiled_funcs releases it with
-// mem::free.
+// function simply keeps whatever filename it had (usually none). The buffer is
+// heap-owned like the name and retained source text, so free_compiled_funcs
+// releases it with mem::free.
 fn void CompiledFunction.set_filename_owned(&self, char[] name) {
     if (name.len == 0) return;
     char* fname = (char*)alloc::malloc_try(mem, (sz)((usz)name.len + 1)) ?? null;
