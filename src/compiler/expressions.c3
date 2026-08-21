@@ -239,7 +239,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         if (has_assign) {
             // Destructuring assignment, parse pattern and RHS
             self.last_was_getvar = false;
-            self.last_was_member = false;
+            self.member.clear();
 
             if (is_array) {
                 self.advance()!; // consume '['
@@ -254,7 +254,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
 
     // Parse LHS with lhs_mode enabled, member_expr saves (obj, key) without GETPROP
     self.lhs_mode = true;
-    self.last_was_member = false;
+    self.member.clear();
     // Clear before the operand parse so the flag describes THIS operand, not
     // some earlier assignment (`a = 1, b = 2` must not see `a = 1`'s).
     // conditional_expr sets it again only if the operand it returns really was
@@ -274,7 +274,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // (CoverParenthesizedExpression is never a valid assignment target
     // in strict mode, so the grouping here can't be an assignment LHS).
     if (!self.inside_parens && !self.del_mode
-        && self.last_was_member && tt2 != TokenType.ASSIGN
+        && self.last_was_member() && tt2 != TokenType.ASSIGN
         && tt2 != TokenType.PLUS_ASSIGN && tt2 != TokenType.MINUS_ASSIGN
         && tt2 != TokenType.STAR_ASSIGN && tt2 != TokenType.SLASH_ASSIGN
         && tt2 != TokenType.PERCENT_ASSIGN && tt2 != TokenType.STARSTAR_ASSIGN
@@ -283,9 +283,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         && tt2 != TokenType.BIT_OR_ASSIGN && tt2 != TokenType.BIT_XOR_ASSIGN
         && tt2 != TokenType.LOG_AND_ASSIGN && tt2 != TokenType.LOG_OR_ASSIGN
         && tt2 != TokenType.NULLISH_ASSIGN) {
-        self.free_reg(self.last_member_prop_reg);
-        self.free_reg(self.last_member_obj_reg);
-        self.last_was_member = false;
+        self.free_reg(self.member_prop());
+        self.free_reg(self.member_obj());
+        self.member.clear();
     }
 
     TokenType tt = tt2;
@@ -424,7 +424,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // implementing B.3.9; it just also applies it to genuinely strict code
     // (a `.mjs` module still yields ReferenceError), which B.3.9 does not
     // permit.
-    if (self.last_target_invalid || (!self.last_was_member && !self.last_was_getvar && !self.last_was_local_var)) {
+    if (self.last_target_invalid || (!self.last_was_member() && !self.last_was_getvar && !self.last_was_local_var)) {
         self.record_error("Invalid left-hand side in assignment");
         return COMPILE_ERROR~;
     }
@@ -438,7 +438,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // module, or a class static block; outside those scopes `await = 1` is a
     // legal simple assignment. `yield` is reserved unconditionally (strict-
     // only engine), which is the helper's default.
-    if (!self.last_was_member && self.last_lhs_name_len > 0
+    if (!self.last_was_member() && self.last_lhs_name_len > 0
         && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
                               self.is_async || self.is_module || self.forbid_await)) {
         return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
@@ -455,10 +455,14 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     Opcode ident_store_op = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
         : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
     ushort lhs_ref_reg = REG_NONE;
-    bool lhs_was_member = self.last_was_member;
-    ushort lhs_member_obj = self.last_member_obj_reg;
-    ushort lhs_member_prop = self.last_member_prop_reg;
-    bool lhs_member_obj_is_local = self.last_member_obj_is_local;
+    bool lhs_was_member = self.last_was_member();
+    // Snapshot the operands only when a member is recorded. Every use below is
+    // guarded by lhs_was_member anyway, and keeping the read guarded too is
+    // what lets MEMBER_STRICT treat an operand read with no member recorded as
+    // a bug rather than noise.
+    ushort lhs_member_obj  = lhs_was_member ? self.member_obj()  : REG_NONE;
+    ushort lhs_member_prop = lhs_was_member ? self.member_prop() : REG_NONE;
+    bool lhs_member_obj_is_local = lhs_was_member ? self.member_obj_is_local() : false;
     bool lhs_was_local_var = self.last_was_local_var;
     // An assignment operator has been consumed and the LHS markers are
     // captured, so this is the one point every store form converges. Report it
@@ -467,7 +471,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // local register, global, member, compound and logical.
     *saw_assign_op = true;
     // super.x stores go through PUTPROP_SUPER (receiver = this, §13.15.2).
-    Opcode member_store_op = self.last_member_is_super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP;
+    Opcode member_store_op = self.member_is_super() ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP;
     // Save the LHS identifier text for SetFunctionName (below) before it
     // gets clobbered by RHS parsing.
     char[128] lhs_ident_name_buf = self.last_lhs_name_buf;
@@ -693,7 +697,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             // accessor) isn't invoked as a side effect of LHS evaluation.
             // PrivateFieldSet reads nothing, only CHK_BRAND + [[Set]] runs.
             self.code_count--;
-        } else if (self.last_member_is_super) {
+        } else if (self.member_is_super()) {
             // super.x / super[x] emits GETPROP_SUPER usually followed by an
             // LDTHIS (staged this-binding for a possible super method call).
             // Strip both so the null-proto check runs after RHS at PUTPROP_SUPER.
@@ -1426,7 +1430,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
 /// stale one through.
 fn void CompilerContext.clear_ref_markers(&self) {
     self.last_was_getvar = false;
-    self.last_was_member = false;
+    self.member.clear();
     self.last_was_local_var = false;
     // Dropping every marker already makes the target check fail, so the
     // separate ~invalid~ verdict has done its job and must not linger: a stale
@@ -1708,11 +1712,11 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // three) rather than allocating a new register on top, that
             // would sit above prop/obj and make freeing them no-ops, since
             // free_reg only pops the top of the LIFO register stack.
-            if (self.last_was_member) {
-                ushort obj_reg = self.last_member_obj_reg;
-                ushort prop_reg = self.last_member_prop_reg;
-                bool obj_is_local = self.last_member_obj_is_local;
-                self.last_was_member = false;
+            if (self.last_was_member()) {
+                ushort obj_reg = self.member_obj();
+                ushort prop_reg = self.member_prop();
+                bool obj_is_local = self.member_obj_is_local();
+                self.member.clear();
                 if (obj_is_local) {
                     // obj_reg is a live local variable (e.g. `typeof d.value`):
                     // it must NOT be clobbered, writing the TYPEOF result into
@@ -1741,7 +1745,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             self.free_reg(op_void);
             // void result is never a Reference, clear tracking so
             // `delete void x.prop` returns true instead of patching DELPROP.
-            self.last_was_member = false;
+            self.member.clear();
             self.last_was_getvar = false;
             return res_void;
 
@@ -1752,22 +1756,21 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // We use del_mode (not lhs_mode) because expression() inside [bracket]
             // calls assignment_expr which resets lhs_mode.
             self.del_mode = true;
-            self.last_was_member = false;
+            self.member.clear();
             self.last_was_getvar = false;
             ushort op_del = self.unary_expr()!;
             self.del_mode = false;
 
-            if (self.last_was_member) {
-                if (self.last_member_is_super) {
+            if (self.last_was_member()) {
+                if (self.member_is_super()) {
                     // ES2022 §13.5.1.2 step 5.b: delete super.x / delete super[x]
                     // always throws ReferenceError, super references are not deletable.
                     // The super expression (including key evaluation) has already run;
                     // now emit a THROW_REF to raise ReferenceError at runtime.
                     // Free the super base and key registers allocated during super parsing.
-                    self.free_reg(self.last_member_prop_reg);
-                    self.free_reg(self.last_member_obj_reg);
-                    self.last_was_member = false;
-                    self.last_member_is_super = false;
+                    self.free_reg(self.member_prop());
+                    self.free_reg(self.member_obj());
+                    self.member.clear();
                     // Discard the GETPROP_SUPER result register; emit ReferenceError throw.
                     self.free_reg(op_del);
                     uint msg_idx = self.add_string_constant("Cannot delete a super property");
@@ -1791,8 +1794,8 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                     }
                 }
                 // Free saved registers (prop before obj).
-                self.free_reg(self.last_member_prop_reg);
-                self.free_reg(self.last_member_obj_reg);
+                self.free_reg(self.member_prop());
+                self.free_reg(self.member_obj());
                 // Like every other UnaryExpression (§13.5), a `delete` yields
                 // the operator's boolean result, never a Reference, so its
                 // AssignmentTargetType is ~invalid~ and `delete x.y = 1` is a
@@ -1834,18 +1837,18 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             if (self.last_was_optional_chain) {
                 return COMPILE_ERROR~;
             }
-            if (self.last_target_invalid || (!self.last_was_member && !self.last_was_getvar && !self.last_was_local_var)) {
+            if (self.last_target_invalid || (!self.last_was_member() && !self.last_was_getvar && !self.last_was_local_var)) {
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.4 strict mode: ++eval / ++arguments is a SyntaxError.
             // `await`/`yield` are reserved only in their respective async /
             // generator contexts; see the matching check in assignment_expr.
-            if (!self.last_was_member && self.last_lhs_name_len > 0
+            if (!self.last_was_member() && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
                                       self.is_async || self.is_module || self.forbid_await)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
-            // postfix_expr leaves self.last_was_getvar / self.last_was_member
+            // postfix_expr leaves self.last_was_getvar / self.last_was_member()
             // (and the member obj/prop registers) set so we can inspect the
             // LHS shape here. Member takes priority over getvar because for
             // `obj.prop` both flags can be true: member_expr keeps the
@@ -1856,9 +1859,12 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             bool inc_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
             bool inc_was_getglobal_prim = inc_was_getglobal && self.last_was_getglobal_prim;
             uint inc_getvar_name_idx = self.last_getvar_name_idx;
-            bool inc_was_member = self.last_was_member;
-            ushort inc_member_obj = self.last_member_obj_reg;
-            ushort inc_member_prop = self.last_member_prop_reg;
+            bool inc_was_member = self.last_was_member();
+            // Guarded for the same reason as assignment_expr's snapshot: the
+            // operands are used only in the member branch below, and a bare
+            // local target (`++i`) records no member at all.
+            ushort inc_member_obj  = inc_was_member ? self.member_obj()  : REG_NONE;
+            ushort inc_member_prop = inc_was_member ? self.member_prop() : REG_NONE;
 
             if (inc_was_member) {
                 // INC + PUTPROP for member access (e.g. ++obj.prop).
@@ -1898,7 +1904,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 }
             }
             self.last_was_getvar = false;
-            self.last_was_member = false;
+            self.member.clear();
             return op_inc;
 
         case TokenType.DEC:
@@ -1910,13 +1916,13 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             if (self.last_was_optional_chain) {
                 return COMPILE_ERROR~;
             }
-            if (self.last_target_invalid || (!self.last_was_member && !self.last_was_getvar && !self.last_was_local_var)) {
+            if (self.last_target_invalid || (!self.last_was_member() && !self.last_was_getvar && !self.last_was_local_var)) {
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.5 strict mode: --eval / --arguments is a SyntaxError.
             // `await`/`yield` are reserved only in their respective async /
             // generator contexts; see the matching check in assignment_expr.
-            if (!self.last_was_member && self.last_lhs_name_len > 0
+            if (!self.last_was_member() && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
                                       self.is_async || self.is_module || self.forbid_await)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
@@ -1926,9 +1932,12 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             bool dec_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
             bool dec_was_getglobal_prim = dec_was_getglobal && self.last_was_getglobal_prim;
             uint dec_getvar_name_idx = self.last_getvar_name_idx;
-            bool dec_was_member = self.last_was_member;
-            ushort dec_member_obj = self.last_member_obj_reg;
-            ushort dec_member_prop = self.last_member_prop_reg;
+            bool dec_was_member = self.last_was_member();
+            // Guarded for the same reason as assignment_expr's snapshot: the
+            // operands are used only in the member branch below, and a bare
+            // local target (`++i`) records no member at all.
+            ushort dec_member_obj  = dec_was_member ? self.member_obj()  : REG_NONE;
+            ushort dec_member_prop = dec_was_member ? self.member_prop() : REG_NONE;
 
             if (dec_was_member) {
                 // DEC + PUTPROP for member access (e.g. --obj.prop).
@@ -1964,7 +1973,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 }
             }
             self.last_was_getvar = false;
-            self.last_was_member = false;
+            self.member.clear();
             return op_dec;
 
         case TokenType.NEW: {
@@ -2072,7 +2081,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     bool lhs_was_getglobal_prim = lhs_was_getglobal && self.last_was_getglobal_prim;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
 
-    // Note: self.last_was_getvar / self.last_was_member remain set so that
+    // Note: self.last_was_getvar / self.last_was_member() remain set so that
     // outer callers (e.g. unary_expr INC/DEC) can read the LHS info. The
     // INC/DEC handlers below clear these after consuming the LHS info.
 
@@ -2091,13 +2100,13 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     // assignment_expr_inner for why `f()++` is an early error here even though
     // node defers it to a runtime ReferenceError.
     if ((tt == TokenType.INC || tt == TokenType.DEC) && !nl_before_postfix_op) {
-        if (self.last_target_invalid || (!self.last_was_member && !lhs_was_getvar && !self.last_was_local_var)) {
+        if (self.last_target_invalid || (!self.last_was_member() && !lhs_was_getvar && !self.last_was_local_var)) {
             return COMPILE_ERROR~;
         }
         // ES5 §11.3.1/§11.3.2 strict mode: eval++ / arguments-- is a SyntaxError.
         // `await`/`yield` are reserved only in their respective async /
         // generator contexts; see the matching check in assignment_expr.
-        if (!self.last_was_member && self.last_lhs_name_len > 0
+        if (!self.last_was_member() && self.last_lhs_name_len > 0
             && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
                                   self.is_async || self.is_module || self.forbid_await)) {
             return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
@@ -2113,9 +2122,9 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // the prefix form: no LDREG/TONUMERIC, and GETVAR/GETGLOBAL is rewritten
         // in place to INC_VAR/INC_GLOBAL (single instruction, no trailing NOP).
         if (result_discarded && self.postfix_result_discarded()) {
-            if (self.last_was_member) {
-                ushort obj_reg = self.last_member_obj_reg;
-                ushort prop_reg = self.last_member_prop_reg;
+            if (self.last_was_member()) {
+                ushort obj_reg = self.member_obj();
+                ushort prop_reg = self.member_prop();
                 self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
                 self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
                 self.free_reg(prop_reg);
@@ -2151,7 +2160,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 }
             }
             self.last_was_getvar = false;
-            self.last_was_member = false;
+            self.member.clear();
             return operand;
         }
         // Save original value and convert to ToNumeric (ES2020 §13.4.3.1):
@@ -2164,13 +2173,12 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // PUTPROP to write the new value back. The GETPROP emitted by
         // member_expr already loaded the value into `operand`; we keep it
         // (do NOT NOP it) so the register has the correct value at runtime.
-        // The obj/prop register indices are saved in last_member_obj_reg /
-        // last_member_prop_reg by member_expr (and kept alive by the
+        // The obj/prop register indices are saved in X        // member.prop_reg by member_expr (and kept alive by the
         // is_postfix check there).
         bool handled = false;
-        if (self.last_was_member) {
-            ushort obj_reg = self.last_member_obj_reg;
-            ushort prop_reg = self.last_member_prop_reg;
+        if (self.last_was_member()) {
+            ushort obj_reg = self.member_obj();
+            ushort prop_reg = self.member_prop();
             // INC the operand (the property value already in the register).
             self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
             // Write back to the property.
@@ -2191,7 +2199,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             }
         }
         self.last_was_getvar = false;
-        self.last_was_member = false;
+        self.member.clear();
         return saved;
     }
 
@@ -2203,9 +2211,9 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // Discarded result: compile like prefix (no old-value materialization).
         // See the INC case above for the rationale.
         if (result_discarded && self.postfix_result_discarded()) {
-            if (self.last_was_member) {
-                ushort obj_reg = self.last_member_obj_reg;
-                ushort prop_reg = self.last_member_prop_reg;
+            if (self.last_was_member()) {
+                ushort obj_reg = self.member_obj();
+                ushort prop_reg = self.member_prop();
                 self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
                 self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
                 self.free_reg(prop_reg);
@@ -2238,7 +2246,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 }
             }
             self.last_was_getvar = false;
-            self.last_was_member = false;
+            self.member.clear();
             return operand;
         }
         // Save original value and convert to ToNumeric (ES2020 §13.4.3.1):
@@ -2248,9 +2256,9 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         self.emit_abc(Opcode.TONUMERIC, (uint)saved, (uint)saved, 0);
 
         bool handled = false;
-        if (self.last_was_member) {
-            ushort obj_reg = self.last_member_obj_reg;
-            ushort prop_reg = self.last_member_prop_reg;
+        if (self.last_was_member()) {
+            ushort obj_reg = self.member_obj();
+            ushort prop_reg = self.member_prop();
             self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
             self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
             self.free_reg(prop_reg);
@@ -2269,11 +2277,11 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             }
         }
         self.last_was_getvar = false;
-        self.last_was_member = false;
+        self.member.clear();
         return saved;
     }
 
-    // No postfix INC/DEC: leave self.last_was_member etc. set so outer
+    // No postfix INC/DEC: leave self.last_was_member() etc. set so outer
     // callers (e.g. unary_expr INC/DEC) can inspect the LHS shape.
     return operand;
 }
@@ -2300,6 +2308,13 @@ fn void CompilerContext.drop_paren_receiver_unless_ref(&self) {
 fn ushort? CompilerContext.call_expr(&self) {
     self.last_was_optional_chain = false;
     ushort callee = self.member_expr()!;
+    // Mirrors member_expr's obj_is_base_local: true only while `callee` is
+    // still the bare base operand and can therefore be a live local's home
+    // register. `o!.x` (TypeScript non-null assertion) is the case that
+    // reaches the member producers below with a local base, since member_expr
+    // stops at the `!` and this loop consumes the `.x`. Cleared wherever
+    // `callee` is replaced by a result temp.
+    bool callee_is_base_local = self.last_was_local_var;
 
     // If member_expr saved a property object but next token is not a call,
     // free the object register now. Inside parenthesized expressions, defer
@@ -2335,6 +2350,7 @@ fn ushort? CompilerContext.call_expr(&self) {
         }
         if (self.check(TokenType.LPAREN)) {
             callee = self.emit_call(callee)!;
+            callee_is_base_local = false;
             // The result of a call is not a member expression and not a
             // direct variable reference. member_expr may have set
             // last_was_member for the callee (e.g. obj.prop) and
@@ -2346,7 +2362,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             // correctly treat the result as a non-member non-variable.
             // If the call is followed by a member access (e.g. foo().bar),
             // the DOT/LBRACKET branch below will set the flags again.
-            self.last_was_member = false;
+            self.member.clear();
             self.last_was_getvar = false;
             // Free the property object used as 'this' (if any)
             if (self.call_prop_obj_reg != REG_NONE) {
@@ -2360,8 +2376,9 @@ fn ushort? CompilerContext.call_expr(&self) {
                 return COMPILE_ERROR~;
             }
             callee = self.emit_tagged_template(callee)!;
+            callee_is_base_local = false;
             // See comment in the LPAREN branch above.
-            self.last_was_member = false;
+            self.member.clear();
             self.last_was_getvar = false;
             // Free the property object used as 'this' (if any)
             if (self.call_prop_obj_reg != REG_NONE) {
@@ -2381,18 +2398,15 @@ fn ushort? CompilerContext.call_expr(&self) {
 
                 if (self.check(TokenType.LPAREN) || self.check(TokenType.OPT_CHAIN) || self.is_next_template()) {
                     self.free_reg(priv_prop_reg);
-                    self.last_was_member = false;
+                    self.member.clear();
                     self.call_prop_obj_reg = callee;
                 } else {
-                    self.last_was_member = true;
                     self.last_target_invalid = false;
-                    self.last_member_is_super = false;
-                    self.last_member_is_private = true;
-                    self.last_member_obj_reg = callee;
-                    self.last_member_prop_reg = priv_prop_reg;
+                    self.member.set(MemberKind.PRIVATE, callee, priv_prop_reg, callee_is_base_local);
                     self.call_prop_obj_reg = callee;
                 }
                 callee = priv_result;
+                callee_is_base_local = false;
                 continue;
             }
             // Property access: callee.name
@@ -2414,18 +2428,15 @@ fn ushort? CompilerContext.call_expr(&self) {
             if (self.check(TokenType.LPAREN) || self.check(TokenType.OPT_CHAIN) || self.is_next_template()) {
                 // Call/template follows: this is not a target; keep obj as 'this'.
                 self.free_reg(prop_reg);
-                self.last_was_member = false;
+                self.member.clear();
                 self.call_prop_obj_reg = callee;
             } else {
-                self.last_was_member = true;
                 self.last_target_invalid = false;
-                self.last_member_is_super = false;
-                self.last_member_is_private = false;
-                self.last_member_obj_reg = callee;
-                self.last_member_prop_reg = prop_reg;
+                self.member.set(MemberKind.PLAIN, callee, prop_reg, callee_is_base_local);
                 self.call_prop_obj_reg = callee;
             }
             callee = result;
+            callee_is_base_local = false;
         } else if (self.match(TokenType.LBRACKET)) {
             // Computed property access: callee[expr]
             ushort idx_reg = self.expression()!;
@@ -2449,17 +2460,15 @@ fn ushort? CompilerContext.call_expr(&self) {
             // (`f()[k] = v`). See the DOT branch above.
             if (self.check(TokenType.LPAREN) || self.check(TokenType.OPT_CHAIN)) {
                 self.free_reg(idx_reg);
-                self.last_was_member = false;
+                self.member.clear();
                 self.call_prop_obj_reg = callee;
             } else {
-                self.last_was_member = true;
                 self.last_target_invalid = false;
-                self.last_member_is_super = false;
-                self.last_member_obj_reg = callee;
-                self.last_member_prop_reg = idx_reg;
+                self.member.set(MemberKind.PLAIN, callee, idx_reg, callee_is_base_local);
                 self.call_prop_obj_reg = callee;
             }
             callee = result;
+            callee_is_base_local = false;
         } else if (self.match(TokenType.OPT_CHAIN)) {
             // Template literal after ?. is a SyntaxError
             if (self.is_next_template()) {
@@ -2487,7 +2496,8 @@ fn ushort? CompilerContext.call_expr(&self) {
                 // a?.(), clear direct eval flag, optional chain calls are never direct eval
                 self.callee_is_eval = false;
                 callee = self.emit_call(callee)!;
-                self.last_was_member = false;
+                callee_is_base_local = false;
+                self.member.clear();
                 self.last_was_getvar = false;
             } else if (self.match(TokenType.LBRACKET)) {
                 // a?.[expr], result is never a referenceable member/target
@@ -2500,7 +2510,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.emit_abc(Opcode.GETPROP, (uint)result, (uint)callee, (uint)idx_reg);
                 self.free_reg(idx_reg);
 
-                self.last_was_member = false;
+                self.member.clear();
                 self.last_was_getvar = false;
                 // Save object for potential this binding (inner or outer call)
                 if (self.call_prop_obj_reg != REG_NONE) {
@@ -2508,6 +2518,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 }
                 self.call_prop_obj_reg = callee;
                 callee = result;
+                callee_is_base_local = false;
             } else if (self.check(TokenType.HASH_IDENT)) {
                 // a?.#name, short-circuits above on nullish `a`; on the live
                 // path this is a normal (brand-checked) private field read.
@@ -2522,13 +2533,14 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.emit_abc(Opcode.GETPROP_PRIVATE, (uint)priv_result2, (uint)callee, (uint)priv_prop_reg2);
                 self.free_reg(priv_prop_reg2);
 
-                self.last_was_member = false;
+                self.member.clear();
                 self.last_was_getvar = false;
                 if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 self.call_prop_obj_reg = callee;
                 callee = priv_result2;
+                callee_is_base_local = false;
             } else {
                 // a?.prop, result is never a referenceable member
                 char[] prop_str = self.read_property_name()!;
@@ -2541,7 +2553,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.emit_abc(Opcode.GETPROP, (uint)result, (uint)callee, (uint)prop_reg);
                 self.free_reg(prop_reg);
 
-                self.last_was_member = false;
+                self.member.clear();
                 self.last_was_getvar = false;
                 // Save object for potential this binding (inner or outer call)
                 if (self.call_prop_obj_reg != REG_NONE) {
@@ -2549,6 +2561,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 }
                 self.call_prop_obj_reg = callee;
                 callee = result;
+                callee_is_base_local = false;
             }
         } else {
             break;
@@ -3270,7 +3283,7 @@ fn ushort? CompilerContext.new_expr(&self) {
     // the *last* thing parsed here should leave last_was_member set, so an outer
     // assignment (`new X().p = v`) emits a PUTPROP that runs setters, rather than
     // treating the read result as a discardable value.
-    self.last_was_member = false;
+    self.member.clear();
     for (;;) {
         if (self.match(TokenType.OPT_CHAIN)) {
             // Template literal after ?. is a SyntaxError
@@ -3296,7 +3309,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 self.callee_is_eval = false;
                 self.call_prop_obj_reg = REG_NONE;
                 ctor_reg = self.emit_call(ctor_reg)!;
-                self.last_was_member = false;
+                self.member.clear();
                 self.last_was_getvar = false;
             } else if (self.match(TokenType.LBRACKET)) {
                 // new X()?.[expr]
@@ -3305,7 +3318,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 ushort result = self.alloc_reg();
                 self.emit_abc(Opcode.GETPROP, (uint)result, (uint)ctor_reg, (uint)idx_reg);
                 self.free_reg(idx_reg);
-                self.last_was_member = false;
+                self.member.clear();
                 self.last_was_getvar = false;
                 if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
@@ -3321,7 +3334,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 ushort result = self.alloc_reg();
                 self.emit_abc(Opcode.GETPROP, (uint)result, (uint)ctor_reg, (uint)prop_reg);
                 self.free_reg(prop_reg);
-                self.last_was_member = false;
+                self.member.clear();
                 self.last_was_getvar = false;
                 if (self.call_prop_obj_reg != REG_NONE) {
                     self.free_reg(self.call_prop_obj_reg);
@@ -3350,15 +3363,11 @@ fn ushort? CompilerContext.new_expr(&self) {
 
                 if (self.check(TokenType.LPAREN) || self.check(TokenType.OPT_CHAIN) || self.is_next_template()) {
                     self.free_reg(priv_prop_reg);
-                    self.last_was_member = false;
+                    self.member.clear();
                     self.call_prop_obj_reg = ctor_reg;
                 } else {
-                    self.last_was_member = true;
                     self.last_target_invalid = false;
-                    self.last_member_is_super = false;
-                    self.last_member_is_private = true;
-                    self.last_member_obj_reg = ctor_reg;
-                    self.last_member_prop_reg = priv_prop_reg;
+                    self.member.set(MemberKind.PRIVATE, ctor_reg, priv_prop_reg, false);
                     self.call_prop_obj_reg = ctor_reg;
                 }
                 // priv_result is the freshly-allocated top register; priv_prop_reg
@@ -3386,7 +3395,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             self.emit_abc(Opcode.GETPROP, (uint)result, (uint)ctor_reg, (uint)prop_reg);
             // Check if this is a method call: new X().method(args)
             if (self.check(TokenType.LPAREN)) {
-                self.last_was_member = false;
+                self.member.clear();
                 self.free_reg(prop_reg);
                 // Keep ctor_reg alive as 'this' for the method call
                 self.call_prop_obj_reg = ctor_reg;
@@ -3397,11 +3406,8 @@ fn ushort? CompilerContext.new_expr(&self) {
                 // Record member info so an enclosing assignment can PUTPROP.
                 // Keep obj (ctor_reg) and prop_reg alive; assignment_expr frees
                 // them after emitting the store (mirrors member_expr's lhs path).
-                self.last_was_member = true;
                 self.last_target_invalid = false;
-                self.last_member_is_super = false;
-                self.last_member_obj_reg = ctor_reg;
-                self.last_member_prop_reg = prop_reg;
+                self.member.set(MemberKind.PLAIN, ctor_reg, prop_reg, false);
                 self.call_prop_obj_reg = ctor_reg;
                 ctor_reg = result;
                 self.next_reg = ctor_reg + 1;
@@ -3419,7 +3425,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             self.emit_abc(Opcode.GETPROP_CACHE, (uint)result, (uint)ctor_reg, (uint)idx_reg);
             // Check if this is a method call: new X()[idx](args)
             if (self.check(TokenType.LPAREN)) {
-                self.last_was_member = false;
+                self.member.clear();
                 self.free_reg(idx_reg);
                 // Keep ctor_reg alive as 'this' for the method call
                 self.call_prop_obj_reg = ctor_reg;
@@ -3427,11 +3433,8 @@ fn ushort? CompilerContext.new_expr(&self) {
                 self.next_reg = ctor_reg + 1;
                 ctor_reg = self.emit_call(ctor_reg)!;
             } else {
-                self.last_was_member = true;
                 self.last_target_invalid = false;
-                self.last_member_is_super = false;
-                self.last_member_obj_reg = ctor_reg;
-                self.last_member_prop_reg = idx_reg;
+                self.member.set(MemberKind.PLAIN, ctor_reg, idx_reg, false);
                 self.call_prop_obj_reg = ctor_reg;
                 ctor_reg = result;
                 self.next_reg = ctor_reg + 1;
@@ -3441,7 +3444,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             // Throws TypeError at runtime if X isn't callable (ES §13.3.1.1 step 10).
             self.call_prop_obj_reg = REG_NONE;
             ctor_reg = self.emit_call(ctor_reg)!;
-            self.last_was_member = false;
+            self.member.clear();
             self.last_was_getvar = false;
         } else {
             break;
@@ -3461,7 +3464,7 @@ fn ushort? CompilerContext.member_expr(&self) {
     // Reset last_was_member: if the loop runs, it will be set to true.
     // This ensures that a non-member result (simple variable, literal) does
     // not inherit a stale true value from a prior expression.
-    self.last_was_member = false;
+    self.member.clear();
     ushort obj = self.primary_expr()!;
     // Whether `obj` is still the bare base operand (not yet replaced by a
     // GETPROP result temp). Only the base can be a live local register; once
@@ -3486,13 +3489,8 @@ fn ushort? CompilerContext.member_expr(&self) {
                 ushort result = self.alloc_reg();
                 self.emit_abc(Opcode.GETPROP_PRIVATE, (uint)result, (uint)obj, (uint)prop_reg);
 
-                self.last_was_member = true;
                 self.last_target_invalid = false;
-                self.last_member_is_super = false;
-                self.last_member_is_private = true;
-                self.last_member_obj_reg = obj;
-                self.last_member_prop_reg = prop_reg;
-                self.last_member_obj_is_local = obj_is_base_local;
+                self.member.set(MemberKind.PRIVATE, obj, prop_reg, obj_is_base_local);
 
                 if (self.lhs_mode) {
                     if (self.call_prop_obj_reg != REG_NONE) {
@@ -3545,13 +3543,8 @@ fn ushort? CompilerContext.member_expr(&self) {
             // those registers are preserved even in non-lhs/del mode because
             // the result register sits on top of the stack and free_reg is a
             // no-op for registers below the top.
-            self.last_was_member = true;
             self.last_target_invalid = false;
-            self.last_member_is_super = false;
-            self.last_member_is_private = false;
-            self.last_member_obj_reg = obj;
-            self.last_member_prop_reg = prop_reg;
-            self.last_member_obj_is_local = obj_is_base_local;
+            self.member.set(MemberKind.PLAIN, obj, prop_reg, obj_is_base_local);
 
             if (self.del_mode || self.lhs_mode) {
                 // LHS / delete mode: keep obj/prop alive for possible PUTPROP/DELPROP
@@ -3567,7 +3560,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                     self.call_prop_obj_reg = obj;
                 } else {
                     // Save for potential this-binding through parenthesized expressions
-                    // (e.g. (a.b)?.()). assignment_expr cleanup will free last_member_obj_reg,
+                    // (e.g. (a.b)?.()). assignment_expr cleanup will free member.obj_reg,
                     // but call_prop_obj_reg propagates through parens.
                     self.call_prop_obj_reg = obj;
                 }
@@ -3587,7 +3580,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                     self.free_reg(self.call_prop_obj_reg);
                 }
                 if (is_postfix) {
-                    // Postfix: keep obj alive for postfix_expr (via last_member_obj_reg)
+                    // Postfix: keep obj alive for postfix_expr (via member.obj_reg)
                     self.call_prop_obj_reg = REG_NONE;
                 } else {
                     // Non-postfix: save obj for potential this-binding.
@@ -3623,12 +3616,8 @@ fn ushort? CompilerContext.member_expr(&self) {
             self.emit_abc(Opcode.GETPROP_CACHE, (uint)result, (uint)obj, (uint)idx_reg);
 
             // See DOT branch above for why we always track the member.
-            self.last_was_member = true;
             self.last_target_invalid = false;
-            self.last_member_is_super = false;
-            self.last_member_obj_reg = obj;
-            self.last_member_prop_reg = idx_reg;
-            self.last_member_obj_is_local = obj_is_base_local;
+            self.member.set(MemberKind.PLAIN, obj, idx_reg, obj_is_base_local);
 
             if (self.del_mode || self.lhs_mode) {
                 // LHS / delete mode: keep obj/idx alive for possible PUTPROP/DELPROP
@@ -3674,7 +3663,7 @@ fn ushort? CompilerContext.member_expr(&self) {
                 self.free_reg(self.call_prop_obj_reg);
                 self.call_prop_obj_reg = REG_NONE;
             }
-            self.last_was_member = false;
+            self.member.clear();
             obj_is_base_local = false;
         } else {
             break;
@@ -4627,7 +4616,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // SimpleAssignmentTarget (AssignmentTargetType is invalid):
                 // clear the flags so `import.meta = v`, `import.meta++`, and
                 // destructuring targets are rejected like `f()`.
-                self.last_was_member = false;
+                self.member.clear();
                 self.last_was_getvar = false;
                 return meta_reg;
             }
@@ -4678,7 +4667,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // expression clears after emit_call so the assignment/update
             // target checks reject `import(x)++`, `++import(x)`, and
             // `import(x) = v` the same way they already reject `f()++`.
-            self.last_was_member = false;
+            self.member.clear();
             self.last_was_getvar = false;
             return result;
         }
@@ -4840,12 +4829,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // Reset the member/getvar tracking so the enclosing DELETE
                     // handler doesn't double-emit THROW_REF or try to patch a
                     // non-existent GETPROP into DELPROP.
-                    self.last_was_member = false;
+                    self.member.clear();
                     self.last_was_getvar = false;
-                    self.last_member_is_super = false;
-                    self.last_member_obj_reg = 0;
-                    self.last_member_prop_reg = 0;
-                    self.last_member_is_private = false;
                     self.last_was_local_var = false;
                     self.last_was_optional_chain = false;
                     self.call_prop_obj_reg = REG_NONE;
@@ -4902,11 +4887,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.emit_abc(Opcode.GETPROP_SUPER, (uint)result, (uint)super_proto_reg, (uint)super_key_reg);
                 }
 
-                self.last_was_member = true;
                 self.last_target_invalid = false;
-                self.last_member_obj_reg = super_proto_reg;
-                self.last_member_prop_reg = super_key_reg;
-                self.last_member_is_super = true;
+                self.member.set(MemberKind.SUPER, super_proto_reg, super_key_reg, false);
 
                 // For super method calls (super.m() / super[s]()), the this-binding
                 // must be the current instance, not the prototype. Emit LDTHIS into a

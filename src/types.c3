@@ -106,6 +106,14 @@ const bool USE_NANBOX = !$feature(NONANBOX);
 /// Default is false. Pass `-D ENV_STRICT` to c3c to enable.
 const bool ENV_STRICT = $feature(ENV_STRICT);
 
+/// When true, the compiler traps if the recorded member-expression operands
+/// (CompilerContext.member) are read while no member is recorded, or while the
+/// saved registers have already fallen out of the live register window. Catches
+/// stale-lookback bugs in the member tracking at the read site instead of via a
+/// miscompile far downstream.
+/// Default is false. Pass `-D MEMBER_STRICT` to c3c to enable.
+const bool MEMBER_STRICT = $feature(MEMBER_STRICT);
+
 /// Maximum length of a formatted error-message string (160 bytes).
 const int ERROR_MSG_BUF = 160;
 /// Maximum length of a number/date-to-string temporary buffer (32 bytes).

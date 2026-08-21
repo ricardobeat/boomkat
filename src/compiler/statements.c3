@@ -2662,9 +2662,9 @@ fn void? CompilerContext.for_statement(&self) {
         bool head_is_of = false;
 
         if (try mreg = self.call_expr()) {
-            if (self.last_was_member) {
-                self.free_reg(self.last_member_prop_reg);
-                self.free_reg(self.last_member_obj_reg);
+            if (self.last_was_member()) {
+                self.free_reg(self.member_prop());
+                self.free_reg(self.member_obj());
                 self.free_reg(mreg);
                 if (try tok3 = self.lexer.peek()) {
                     if (token_is_of(tok3)) {
@@ -4552,11 +4552,11 @@ fn void? CompilerContext.emit_member_lhs_store(&self, ForLhsSnapshot lhs_snap, u
     self.restore_lhs_snapshot(lhs_snap);
 
     ushort mreg = self.member_expr()!;
-    if (self.last_was_member) {
+    if (self.last_was_member()) {
         self.free_reg(mreg);
-        self.emit_abc(Opcode.PUTPROP, (uint)self.last_member_obj_reg, (uint)self.last_member_prop_reg, (uint)val_reg);
-        self.free_reg(self.last_member_prop_reg);
-        self.free_reg(self.last_member_obj_reg);
+        self.emit_abc(Opcode.PUTPROP, (uint)self.member_obj(), (uint)self.member_prop(), (uint)val_reg);
+        self.free_reg(self.member_prop());
+        self.free_reg(self.member_obj());
     }
 
     self.restore_lhs_snapshot(resume_snap);

@@ -97,6 +97,23 @@ position. Arrow functions and destructuring assignment both use the second
 approach: `(a, b)` might be a parenthesized expression or an arrow's parameter
 list, and `[a, b] = c` is an array literal until the `=` arrives.
 
+A third case is the member expression. `a.b` is compiled before anything says
+whether it is a value, a store target, an increment, or a `delete` operand, so
+`member_expr` records the base and key registers in `CompilerContext.member` and
+the enclosing form consumes them. That record is the parser's only lookback, and
+it is a single tagged `MemberRef` rather than a set of parallel flags:
+`MemberKind` distinguishes plain, private, and super members, which cannot
+overlap, and the tag doubles as the validity bit, so the operands cannot be read
+without first testing whether a member is recorded. Producers write it through
+`set()`, which takes every field, so a member cannot inherit an operand from the
+expression before it.
+
+Building the engine with `-D MEMBER_STRICT` (the `boomkat_memberstrict` target)
+turns the access rules into traps: reading an operand with no member recorded, or
+reading a register that has already fallen out of the live register window, halts
+the compiler at the read instead of emitting an instruction that points at a
+freed register. It is off in every shipping target.
+
 ### Registers and scopes
 
 Registers are allocated as a stack. Expressions take temporaries from the top and

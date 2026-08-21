@@ -145,6 +145,17 @@
         "ENV_STRICT"
       ]
     },
+    "boomkat_memberstrict": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O0",
+      "features": [
+        "MEMBER_STRICT"
+      ]
+    },
     "lib": {
       "type": "static-lib",
       "sources": [

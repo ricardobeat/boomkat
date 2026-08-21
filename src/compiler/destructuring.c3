@@ -415,14 +415,14 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
     // avoid invoking a property getter on the assignment target.
     bool saved_lhs = self.lhs_mode;
     self.lhs_mode = true;
-    self.last_was_member = false;
+    self.member.clear();
     self.last_was_getvar  = false;
 
     ushort lhs_result = self.postfix_expr()!;
 
     self.lhs_mode = saved_lhs;
 
-    if (self.last_was_member) {
+    if (self.last_was_member()) {
         // NOP the trailing GETPROP so we do not invoke a getter.
         if (self.code_count > 0) {
             uint last = self.code_count - 1;
@@ -431,9 +431,9 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
             }
         }
         self.free_reg(lhs_result);
-        *out_obj_reg  = self.last_member_obj_reg;
-        *out_key_reg  = self.last_member_prop_reg;
-        self.last_was_member   = false;
+        *out_obj_reg  = self.member_obj();
+        *out_key_reg  = self.member_prop();
+        self.member.clear();
         self.call_prop_obj_reg = REG_NONE;
         return true;
     }

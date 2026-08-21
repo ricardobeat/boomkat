@@ -245,6 +245,75 @@ fn bool get_disable_optimize()       { return g_disable_optimize; }
 // CompilerContext
 // ============================================================================
 
+// ============================================================================
+// Recorded member expression
+// ============================================================================
+//
+// The parser has no AST, so a construct that is only recognizable after its
+// operands have been emitted (`a.b = v`, `a.b++`, `delete a.b`, a for-of member
+// head) is compiled by recording the member's operands when they are produced
+// and consuming them once the enclosing form is known.
+//
+// Two properties of this shape carry the correctness weight:
+//
+//   * COMPLETENESS. Every field travels through `set()`, whose signature makes
+//     a partial update impossible to express, so a producer cannot leave one
+//     field carrying the value some earlier member expression left there.
+//
+//   * MUTUAL EXCLUSION. A member is plain, private, or super, never two at
+//     once, so the three are one tag rather than independent booleans and the
+//     exclusion holds by construction.
+//
+// The tag doubles as the validity bit: NONE means nothing is recorded, so an
+// operand read cannot be spelled without first asking about the kind. Under
+// `-D MEMBER_STRICT` the accessors below enforce that.
+
+/// Which flavour of member reference is recorded, or NONE for "no member".
+enum MemberKind : char {
+    NONE,
+    /// `obj.x` or `obj[k]`: a plain property reference, stored with PUTPROP.
+    PLAIN,
+    /// `obj.#x`: prop_reg holds the resolved private symbol, not a string key.
+    /// `delete obj.#x` is an early SyntaxError and never reaches here. No
+    /// consumer branches on this yet: privateness rides on the opcode, since
+    /// the producer emits GETPROP_PRIVATE. It is a distinct tag so that a
+    /// private member cannot read as PLAIN if one ever needs to.
+    PRIVATE,
+    /// `super.x` or `super[k]`: the store form must be PUTPROP_SUPER, whose
+    /// receiver is `this` rather than the recorded base (the home prototype).
+    SUPER,
+}
+
+struct MemberRef {
+    MemberKind kind;
+    /// Base register. Only meaningful while `kind != NONE`.
+    ushort obj_reg;
+    /// Property-key register (a resolved private symbol when kind == PRIVATE).
+    ushort prop_reg;
+    /// True when obj_reg is a live local's home register rather than a temp,
+    /// so it must not be freed or reused as a scratch destination: doing either
+    /// corrupts the variable. Locals are released at scope exit instead.
+    bool obj_is_local;
+}
+
+/// Record a member reference. Every field is a parameter with no default, so a
+/// producer sets all of them or none.
+fn void MemberRef.set(&self, MemberKind kind, ushort obj_reg, ushort prop_reg, bool obj_is_local) @inline {
+    self.kind         = kind;
+    self.obj_reg      = obj_reg;
+    self.prop_reg     = prop_reg;
+    self.obj_is_local = obj_is_local;
+}
+
+/// Forget the recorded member. Clearing the tag is what invalidates the whole
+/// record, so the operand fields are left as-is: nothing can read them.
+fn void MemberRef.clear(&self) @inline {
+    self.kind = MemberKind.NONE;
+}
+
+fn bool MemberRef.is_member(&self) @inline => self.kind != MemberKind.NONE;
+fn bool MemberRef.is_super(&self)  @inline => self.kind == MemberKind.SUPER;
+
 struct CompilerContext {
     Lexer* lexer;
     void* heap;
@@ -454,22 +523,10 @@ struct CompilerContext {
     /// heritage expression is parsed, so arrows nested inside it (e.g. in a
     /// call argument, `extends f(() => 1)`) are unaffected.
     bool no_arrow_head;
-    bool last_was_member;
-    ushort last_member_obj_reg;
-    ushort last_member_prop_reg;
-    /// True when last_member_obj_reg is a live local-variable register (the
-    /// member base was a bare local, e.g. `d.value`), so it must NOT be
-    /// overwritten as a scratch destination, doing so corrupts the variable.
-    bool last_member_obj_is_local;
-    /// True when the recorded member expression is a `super.x` / `super[x]`
-    /// reference, its store form must use PUTPROP_SUPER (receiver = this).
-    bool last_member_is_super;
-    /// True when the recorded member expression is `obj.#name`, a CHK_BRAND
-    /// (own-only presence check) must run before the GETPROP/PUTPROP that
-    /// reads/writes last_member_prop_reg (which holds the resolved private
-    /// symbol, not a plain string key). `delete obj.#x` is a SyntaxError and
-    /// never reaches this flag.
-    bool last_member_is_private;
+    /// The member expression the parser most recently produced, if any.
+    /// Read through the member_* accessors below rather than by touching the
+    /// fields, so MEMBER_STRICT can check the access. See MemberRef.
+    MemberRef member;
 
     /// Set when the current expression used optional chaining (?.).
     /// Results of optional chains are never valid assignment targets.
@@ -986,6 +1043,85 @@ struct CompilerContext {
     // `g_disable_optimize` so finish() can just read either source; the
     // per-context field is set in init() from the global.
     bool disable_optimize;
+}
+
+// ============================================================================
+// CompilerContext, recorded-member accessors
+// ============================================================================
+//
+// Every read of a recorded member operand goes through these. Under
+// `-D MEMBER_STRICT` each one checks two things:
+//
+//   1. a member is actually recorded, so the operands are not a stale record
+//      left behind by an earlier expression; and
+//   2. the register being read is still inside the live register window
+//      (`< next_reg`). A record that outlives its operands points above the
+//      allocator's top, which is the shape a stale-lookback bug takes: the
+//      registers are freed, next_reg drops back past them, and the consumer
+//      emits an instruction reading whatever the next allocation puts there.
+//
+// The check cannot be a plain C3 `@require` contract: no target in
+// project.json sets `"safe": true`, so contracts compile to optimizer hints
+// here rather than runtime assertions. It is a feature flag for the same
+// reason ENV_STRICT is one, and it is off in every shipping target.
+//
+// Note what is deliberately NOT asserted: that no bytecode was emitted between
+// the producer and the consumer. Emission in between is normal and required,
+// since assignment_expr records the member, parses and emits the entire RHS,
+// and only then emits the store.
+
+/// A member must be recorded before any operand of it can be read.
+macro void CompilerContext.@check_member_tag(&self, char[] site) {
+    $if types::MEMBER_STRICT:
+    if (self.member.kind == MemberKind.NONE) {
+        io::printfn("MEMBER_STRICT: %s read with no member recorded", (String)site);
+        unreachable("MEMBER_STRICT: stale member read");
+    }
+    $endif
+}
+
+/// The register being read must still be inside the live register window.
+/// Checked per field, not for the pair: freeing the key and then reading the
+/// base (`free_reg(member_prop()); free_reg(member_obj());`) is a legitimate
+/// teardown order in which the key is already gone.
+macro void CompilerContext.@check_member_reg(&self, char[] site, ushort reg) {
+    $if types::MEMBER_STRICT:
+    if (reg >= self.next_reg) {
+        io::printfn("MEMBER_STRICT: %s reads r%d outside the live window (next_reg=r%d)",
+            (String)site, reg, self.next_reg);
+        unreachable("MEMBER_STRICT: stale member register");
+    }
+    $endif
+}
+
+/// True when a member expression is recorded and can be consumed as a store
+/// target. This is the only legal guard before any member_* accessor below.
+fn bool CompilerContext.last_was_member(&self) @inline => self.member.is_member();
+
+/// True when the recorded member is `super.x` / `super[k]`, whose store form is
+/// PUTPROP_SUPER (receiver = this, not the recorded home-prototype base).
+fn bool CompilerContext.member_is_super(&self) @inline => self.member.is_super();
+
+/// Base register of the recorded member.
+fn ushort CompilerContext.member_obj(&self) {
+    self.@check_member_tag("member_obj");
+    self.@check_member_reg("member_obj", self.member.obj_reg);
+    return self.member.obj_reg;
+}
+
+/// Property-key register of the recorded member (a private symbol when the
+/// member is `obj.#x`).
+fn ushort CompilerContext.member_prop(&self) {
+    self.@check_member_tag("member_prop");
+    self.@check_member_reg("member_prop", self.member.prop_reg);
+    return self.member.prop_reg;
+}
+
+/// True when the base is a live local's home register, so it must not be freed
+/// or reused as a scratch destination.
+fn bool CompilerContext.member_obj_is_local(&self) {
+    self.@check_member_tag("member_obj_is_local");
+    return self.member.obj_is_local;
 }
 
 // ============================================================================
