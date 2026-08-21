@@ -150,6 +150,16 @@ out/embed_api: test/capi/embed_api.c include/boomkat.h out/boomkat.a
 test-embed-api: out/embed_api
 	./out/embed_api
 
+# The acceptance test for the v2 surface: the hello-world from the header,
+# verbatim, compiled with every warning on.
+out/dozen_lines: test/capi/dozen_lines.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/dozen_lines.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/dozen_lines
+
+.PHONY: test-dozen-lines
+test-dozen-lines: out/dozen_lines
+	./out/dozen_lines
+
 # Value-registry GC tests under GC_STRESS + ASan: a collection at every
 # allocation, so a registry the mark phase does not walk fails deterministically
 # instead of rarely.

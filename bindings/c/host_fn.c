@@ -13,7 +13,7 @@
  * Build and run with `make run-host-fn` (see README.md).
  */
 
-#include "bk_util.h"
+#include <boomkat.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,14 +34,14 @@ typedef struct {
  *
  * Reads one argument and returns a string the host built.
  *
- * Two details worth copying. First, bk_ctx_get_string uses the same two-call
+ * Two details worth copying. First, bk_read_string uses the same two-call
  * measure-then-fill protocol as everywhere else in the ABI, so the engine
  * never hands back memory to free. Second, it is the CONTEXT-tier reader: a
- * callback holds a bk_call_ctx, and only that tier resolves the scope handles
- * bk_arg hands out. bk_ctx_runtime(ctx) reaches the runtime when one is
+ * callback holds a bk_ctx, and only that tier resolves the scope handles
+ * bk_arg hands out. ctx reaches the runtime when one is
  * genuinely needed.
  */
-static void h_greet(bk_call_ctx ctx, void *udata)
+static void h_greet(bk_ctx ctx, void *udata)
 {
     host_state *st = (host_state *)udata;
     char        name[64];
@@ -57,7 +57,7 @@ static void h_greet(bk_call_ctx ctx, void *udata)
     }
 
     /* Strict readers: a non-string argument is a type error, not a coercion. */
-    if (bk_ctx_get_string(ctx, bk_arg(ctx, 0), name, sizeof(name), &len) != BK_OK) {
+    if (bk_read_string(ctx, bk_arg(ctx, 0), name, sizeof(name), &len) != BK_OK) {
         bk_throw_error(ctx, BK_ERROR_TYPE, "greet() wants a string");
         return;
     }
@@ -74,14 +74,14 @@ static void h_greet(bk_call_ctx ctx, void *udata)
  * its own power. A recorded throw beats any return value set in the same call,
  * but returning early keeps the intent obvious.
  */
-static void h_divide(bk_call_ctx ctx, void *udata)
+static void h_divide(bk_ctx ctx, void *udata)
 {
     double a = 0.0, b = 0.0;
 
     (void)udata;
 
-    if (bk_ctx_get_number(ctx, bk_arg(ctx, 0), &a) != BK_OK ||
-        bk_ctx_get_number(ctx, bk_arg(ctx, 1), &b) != BK_OK) {
+    if (bk_read_number(ctx, bk_arg(ctx, 0), &a) != BK_OK ||
+        bk_read_number(ctx, bk_arg(ctx, 1), &b) != BK_OK) {
         bk_throw_error(ctx, BK_ERROR_TYPE, "divide() wants two numbers");
         return;
     }
@@ -98,7 +98,7 @@ static void h_divide(bk_call_ctx ctx, void *udata)
  * The host calling back into JS. bk_call runs a JS function from inside a
  * callback; the handle it writes to out_val is runtime-owned and must be
  * freed, unlike the scope handles from bk_arg. Freeing it needs the runtime
- * that owns it, which bk_ctx_runtime(ctx) supplies — a handle names a slot in
+ * that owns it, which ctx supplies — a handle names a slot in
  * one specific runtime's registry, so there is no runtime-agnostic free.
  *
  * If the callee throws, bk_call returns BK_ERR_THROW with the exception
@@ -108,9 +108,9 @@ static void h_divide(bk_call_ctx ctx, void *udata)
  * Host recursion is bounded, so a callback that re-enters JS forever gets a
  * RangeError rather than a smashed native stack.
  */
-static void h_map_twice(bk_call_ctx ctx, void *udata)
+static void h_map_twice(bk_ctx ctx, void *udata)
 {
-    bk_runtime rt = bk_ctx_runtime(ctx);
+    bk_ctx rt = ctx;
     bk_value fn   = bk_arg(ctx, 0);
     bk_value once = 0;
     bk_value twice = 0;
@@ -119,13 +119,13 @@ static void h_map_twice(bk_call_ctx ctx, void *udata)
     (void)udata;
 
     args[0] = bk_arg(ctx, 1);
-    if (bk_call(ctx, fn, args, 1, 0, &once) != BK_OK) {
+    if (!(once = bk_call(ctx, fn, 0, args, 1))) {
         return; /* the callee's exception is already recorded */
     }
 
     args[0] = once;
-    if (bk_call(ctx, fn, args, 1, 0, &twice) != BK_OK) {
-        bk_value_free(rt, once);
+    if (!(twice = bk_call(ctx, fn, 0, args, 1))) {
+        bk_free(rt, once);
         return;
     }
 
@@ -136,37 +136,40 @@ static void h_map_twice(bk_call_ctx ctx, void *udata)
      * `twice` after handing it to bk_return is safe: the return value has
      * already been recorded on the context by then.
      */
-    bk_value_free(rt, once);
-    bk_value_free(rt, twice);
+    bk_free(rt, once);
+    bk_free(rt, twice);
 }
 
-/* Evaluate `src`, print `label = result`, and report any failure. */
-static int show(bk_runtime rt, const char *label, const char *src)
+/* Evaluate `src`, print `label = result`, and report any failure.
+ *
+ * bk_cstr renders any value the way String(v) would and hands back
+ * context-owned storage, so this needs no buffer and frees nothing. */
+static int show(bk_ctx rt, const char *label, const char *src)
 {
-    char *text = bku_eval_to_string(rt, src);
+    bk_value v = bk_eval_str(rt, src);
+    const char *text = v ? bk_cstr(rt, v, NULL) : NULL;
 
     if (text == NULL) {
-        printf("%-16s ! %s\n", label, bk_last_error(rt));
-        free(text);
+        printf("%-16s ! %s\n", label, bk_error(rt));
+        bk_free(rt, v);
         return 0;
     }
     printf("%-16s = %s\n", label, text);
-    free(text);
+    bk_free(rt, v);
     return 1;
 }
 
 int main(void)
 {
-    bk_runtime rt = NULL;
+    bk_ctx rt = NULL;
     host_state  st;
-    int         status;
 
     st.app_name = "c99-example";
     st.calls    = 0;
 
-    status = bk_open(&rt);
-    if (status != BK_OK) {
-        fprintf(stderr, "bk_open failed: %s\n", bku_status_name(status));
+    rt = bk_open();
+    if (!rt) {
+        fprintf(stderr, "bk_open failed\n");
         return EXIT_FAILURE;
     }
     printf("boomkat version %s\n\n", bk_version());
@@ -180,10 +183,10 @@ int main(void)
      * lifetime. Note the explicit name lengths — the ABI takes UTF-8 bytes
      * plus a length rather than assuming NUL termination.
      */
-    if (bk_register_fn(rt, "greet", 5, h_greet, &st, 1, 0) != BK_OK ||
-        bk_register_fn(rt, "divide", 6, h_divide, NULL, 2, 0) != BK_OK ||
-        bk_register_fn(rt, "mapTwice", 8, h_map_twice, NULL, 2, 0) != BK_OK) {
-        fprintf(stderr, "registration failed: %s\n", bk_last_error(rt));
+    if (bk_register_fn(rt, 0, "greet", h_greet, 1, 0u, &st) != BK_OK ||
+        bk_register_fn(rt, 0, "divide", h_divide, 2, 0u, NULL) != BK_OK ||
+        bk_register_fn(rt, 0, "mapTwice", h_map_twice, 2, 0u, NULL) != BK_OK) {
+        fprintf(stderr, "registration failed: %s\n", bk_error(rt));
         bk_close(rt);
         return EXIT_FAILURE;
     }

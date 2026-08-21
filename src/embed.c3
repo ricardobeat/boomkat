@@ -160,6 +160,33 @@ struct Runtime {
     int      err_line;       // 1-based, 0 when unknown
     int      err_col;
     char[ERRBUF] err_name;   // script name for the most recent failure
+
+    // Handed to the host as its `bk_ctx`. A callback gets a different Ctx,
+    // built on the trampoline's stack, naming the same runtime plus the call.
+    Ctx      root;
+
+    // Ring of scratch buffers behind bk_cstr, so a host can put several
+    // converted values in one printf without owning any memory. Freed with
+    // the runtime.
+    char*[CSTR_RING] cstr_buf;
+    usz[CSTR_RING]   cstr_cap;
+    uint     cstr_next;
+}
+
+// How many bk_cstr results stay valid at once. Four covers every realistic
+// format string; the fifth call reuses the first buffer.
+const usz CSTR_RING = 4;
+
+// What a `bk_ctx` points at.
+//
+// One type covers both tiers the ABI used to have. Outside a callback the
+// host holds the runtime's own `root`, whose `bctx` is null; inside one it
+// holds a stack Ctx naming the same runtime and the live call. Every entry
+// point therefore reaches both without asking which tier it is in, and
+// `bk_ctx_get_number` and its five siblings simply do not need to exist.
+struct Ctx {
+    Runtime* rt;
+    void*    bctx;   // builtins::BuiltinContext*, null outside a host call
 }
 
 // Set once the engine's compile-time-populated tables are known good; see
@@ -205,6 +232,10 @@ fn Runtime* create() {
     rt.heap = hp; rt.vm = v;
     rt.slots = null; rt.slot_cap = 0; rt.slot_count = 0;
     rt.free_head = SLOT_FREE_END; rt.live = 0; rt.retired = 0;
+    rt.root.rt = rt;
+    rt.root.bctx = null;
+    for (usz i = 0; i < CSTR_RING; i++) { rt.cstr_buf[i] = null; rt.cstr_cap[i] = 0; }
+    rt.cstr_next = 0;
     rt.rt_id = g_next_rt_id & (uint)RT_ID_MASK;
     g_next_rt_id++;
     // Id 0 is reserved as "no runtime", so skip it when the counter wraps.
@@ -251,6 +282,9 @@ fn void destroy(Runtime* rt) {
         }
         hp.free_func(hp.heap_udata, (void*)rt.slots);
         rt.slots = null;
+    }
+    for (usz i = 0; i < CSTR_RING; i++) {
+        if (rt.cstr_buf[i] != null) hp.free_func(hp.heap_udata, (void*)rt.cstr_buf[i]);
     }
     // Teardown order is load-bearing: vm_destroy uses heap.free_func.
     vm::vm_destroy(rt.vm);
@@ -608,8 +642,12 @@ fn void host_trampoline(builtins::BuiltinContext* ctx, void* udata) {
     if (udata == null) return;
     HostReg* reg = (HostReg*)udata;
     if (reg.cfn == null) return;
+    // The callback's `bk_ctx` is a Ctx naming this runtime and this call. It
+    // lives on this frame, which is exactly the lifetime the header promises:
+    // valid for the body of the callback and no longer.
+    Ctx c = { .rt = ctx_runtime((void*)ctx), .bctx = (void*)ctx };
     BkHostFn cfn = (BkHostFn)reg.cfn;
-    cfn((void*)ctx, reg.udata);
+    cfn((void*)&c, reg.udata);
 }
 
 // Install a function object as a global binding named `name`, dispatching
@@ -625,25 +663,10 @@ fn void host_trampoline(builtins::BuiltinContext* ctx, void* udata) {
 // allocated it and frees it.
 fn int install_fn(Runtime* rt, char[] name, void* trampoline, void* reg_udata,
                   int arity, bool constructable) {
-    HString* nm = rt.heap.str_intern(name);
-    if (nm == null) { set_err(rt, BK_ERR_NOMEM, "could not intern function name"); return BK_ERR_NOMEM; }
-
-    long slot = rt.heap.register_host_fn(trampoline, reg_udata, (void*)nm,
-                                         arity, constructable);
-    if (slot < 0) {
-        set_err(rt, BK_ERR_NOMEM, "host function table full");
-        return BK_ERR_NOMEM;
-    }
-
-    HObject*? fo = builtins::make_host_function(rt.heap, (uint)slot);
-    if (catch fo) { set_err(rt, BK_ERR_NOMEM, "could not create function object"); return BK_ERR_NOMEM; }
     TVal fv;
-    fv.set_object(fo);
-    if (!env::env_declare(rt.vm.global_env, (void*)nm, fv)) {
-        set_err(rt, BK_ERR_INTERNAL, "could not bind function name");
-        return BK_ERR_INTERNAL;
-    }
-    return BK_OK;
+    int rc = make_fn_value(rt, name, trampoline, reg_udata, arity, constructable, &fv);
+    if (rc != BK_OK) return rc;
+    return declare_global(rt, name, fv);
 }
 
 // Install `cfn` as a global function named `name`, arriving through
@@ -744,4 +767,118 @@ fn int drain_microtasks(Runtime* rt) {
         return BK_ERR_INTERRUPT;
     }
     return BK_OK;
+}
+
+// ============================================================================
+// String coercion
+// ============================================================================
+
+// ToString(v) through the VM, so valueOf/toString run and may throw.
+// Returns a BK_* status; on BK_OK *out holds the result.
+fn int to_string(Runtime* rt, TVal v, HString** out) {
+    clear_err(rt);
+    rt.heap.has_error = false;
+    HString*? s = vm::vm_to_string(rt.vm, &v);
+    if (catch s) {
+        if (rt.heap.uncatchable_throw) {
+            rt.heap.uncatchable_throw = false;
+            set_err(rt, BK_ERR_INTERRUPT, "interrupted");
+            return BK_ERR_INTERRUPT;
+        }
+        if (rt.heap.has_error) {
+            describe_error(rt, &rt.heap.error_value);
+            return BK_ERR_THROW;
+        }
+        set_err(rt, BK_ERR_INTERNAL, "could not convert value to string");
+        return BK_ERR_INTERNAL;
+    }
+    *out = s;
+    return BK_OK;
+}
+
+// Claim the next ring buffer, grown to hold `need` bytes plus a NUL.
+// Returns null if it could not be grown, leaving the ring usable.
+fn char* cstr_slot(Runtime* rt, usz need) {
+    uint i = rt.cstr_next % (uint)CSTR_RING;
+    rt.cstr_next = i + 1;
+    usz want = need + 1;
+    if (rt.cstr_cap[i] < want) {
+        // Round up so a host converting similar values in a loop stops
+        // reallocating after the first few.
+        usz cap = rt.cstr_cap[i] == 0 ? 64 : rt.cstr_cap[i];
+        while (cap < want) cap *= 2;
+        void* raw = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.cstr_buf[i], cap);
+        if (raw == null) return null;
+        rt.cstr_buf[i] = (char*)raw;
+        rt.cstr_cap[i] = cap;
+    }
+    return rt.cstr_buf[i];
+}
+
+// ============================================================================
+// Function values
+// ============================================================================
+
+// Build a host-function object without binding it to a name, for installing
+// onto an arbitrary object rather than the global environment.
+// Returns a BK_* status; on BK_OK *out holds the function value.
+fn int make_fn_value(Runtime* rt, char[] name, void* trampoline, void* reg_udata,
+                     int arity, bool constructable, TVal* out) {
+    HString* nm = rt.heap.str_intern(name);
+    if (nm == null) { set_err(rt, BK_ERR_NOMEM, "could not intern function name"); return BK_ERR_NOMEM; }
+
+    long slot = rt.heap.register_host_fn(trampoline, reg_udata, (void*)nm,
+                                         arity, constructable);
+    if (slot < 0) {
+        set_err(rt, BK_ERR_NOMEM, "host function table full");
+        return BK_ERR_NOMEM;
+    }
+    HObject*? fo = builtins::make_host_function(rt.heap, (uint)slot);
+    if (catch fo) { set_err(rt, BK_ERR_NOMEM, "could not create function object"); return BK_ERR_NOMEM; }
+    out.set_object(fo);
+    return BK_OK;
+}
+
+// Declare `name` in the global environment, bound to `v`.
+fn int declare_global(Runtime* rt, char[] name, TVal v) {
+    HString* nm = rt.heap.str_intern(name);
+    if (nm == null) { set_err(rt, BK_ERR_NOMEM, "could not intern name"); return BK_ERR_NOMEM; }
+    if (!env::env_declare(rt.vm.global_env, (void*)nm, v)) {
+        set_err(rt, BK_ERR_INTERNAL, "could not bind global name");
+        return BK_ERR_INTERNAL;
+    }
+    return BK_OK;
+}
+
+// ============================================================================
+// Names for logging
+// ============================================================================
+
+fn char* status_name(int status) {
+    switch (status) {
+        case BK_OK:            return "OK";
+        case BK_ERR_NOMEM:     return "NOMEM";
+        case BK_ERR_SYNTAX:    return "SYNTAX";
+        case BK_ERR_THROW:     return "THROW";
+        case BK_ERR_INTERNAL:  return "INTERNAL";
+        case BK_ERR_INVALID:   return "INVALID";
+        case BK_ERR_TYPE:      return "TYPE";
+        case BK_ERR_FULL:      return "FULL";
+        case BK_ERR_INTERRUPT: return "INTERRUPT";
+        default:               return "UNKNOWN";
+    }
+}
+
+fn char* type_name(int type) {
+    switch (type) {
+        case BK_TYPE_UNDEFINED: return "undefined";
+        case BK_TYPE_NULL:      return "null";
+        case BK_TYPE_BOOLEAN:   return "boolean";
+        case BK_TYPE_NUMBER:    return "number";
+        case BK_TYPE_STRING:    return "string";
+        case BK_TYPE_OBJECT:    return "object";
+        case BK_TYPE_FUNCTION:  return "function";
+        case BK_TYPE_OTHER:     return "other";
+        default:                return "unknown";
+    }
 }

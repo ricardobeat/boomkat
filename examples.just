@@ -53,7 +53,7 @@ shared_rpath := absolute_path(BK_LIBDIR)
 example-c-static:
     mkdir -p {{ROOT_DIR}}/bindings/c/out
     cc -std=c99 -Wall -Wextra -pedantic -I{{BK_INCDIR}} \
-        {{ROOT_DIR}}/bindings/c/main.c {{ROOT_DIR}}/bindings/c/bk_util.c {{BK_STATIC}} {{ldlibs_static}} \
+        {{ROOT_DIR}}/bindings/c/main.c {{BK_STATIC}} {{ldlibs_static}} \
         -o {{ROOT_DIR}}/bindings/c/out/example
     {{ROOT_DIR}}/bindings/c/out/example
 
@@ -61,7 +61,7 @@ example-c-static:
 example-c-shared:
     mkdir -p {{ROOT_DIR}}/bindings/c/out
     cc -std=c99 -Wall -Wextra -pedantic -I{{BK_INCDIR}} \
-        {{ROOT_DIR}}/bindings/c/main.c {{ROOT_DIR}}/bindings/c/bk_util.c \
+        {{ROOT_DIR}}/bindings/c/main.c \
         {{BK_SHARED}} -Wl,-rpath,{{shared_rpath}} {{ldlibs_shared}} \
         -o {{ROOT_DIR}}/bindings/c/out/example-shared
     {{ROOT_DIR}}/bindings/c/out/example-shared
@@ -69,11 +69,11 @@ example-c-shared:
 [doc("Build the multi-runtime C examples (host callbacks + two runtimes)")]
 example-c-multiple: example-c-static example-c-shared
     cc -std=c99 -Wall -Wextra -pedantic -I{{BK_INCDIR}} \
-        {{ROOT_DIR}}/bindings/c/host_fn.c {{ROOT_DIR}}/bindings/c/bk_util.c {{BK_STATIC}} {{ldlibs_static}} \
+        {{ROOT_DIR}}/bindings/c/host_fn.c {{BK_STATIC}} {{ldlibs_static}} \
         -o {{ROOT_DIR}}/bindings/c/out/host-fn
     {{ROOT_DIR}}/bindings/c/out/host-fn
     cc -std=c99 -Wall -Wextra -pedantic -I{{BK_INCDIR}} \
-        {{ROOT_DIR}}/bindings/c/two_runtimes.c {{ROOT_DIR}}/bindings/c/bk_util.c {{BK_STATIC}} {{ldlibs_static}} \
+        {{ROOT_DIR}}/bindings/c/two_runtimes.c {{BK_STATIC}} {{ldlibs_static}} \
         -o {{ROOT_DIR}}/bindings/c/out/two-runtimes
     {{ROOT_DIR}}/bindings/c/out/two-runtimes
 

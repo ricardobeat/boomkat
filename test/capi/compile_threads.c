@@ -29,7 +29,7 @@ enum { ITER = 20000 };
 struct worker_arg {
     int        id;
     char       bad;        /* the only invalid byte in this worker's source */
-    bk_runtime rt;
+    bk_ctx rt;
 };
 
 static void check(const char *label, int cond) {
@@ -49,26 +49,26 @@ static void *worker(void *opaque) {
 
     for (int i = 0; i < ITER; i++) {
         snprintf(src, sizeof src, "var %c x", w->bad);
-        int rc = bk_eval(w->rt, src, (int)strlen(src), &v);
-        if (rc == BK_ERR_SYNTAX) {
-            const char *msg = bk_last_error(w->rt);
+        v = bk_eval(w->rt, src, strlen(src));
+        if (!v && bk_error_code(w->rt) == BK_ERR_SYNTAX) {
+            const char *msg = bk_error(w->rt);
             if (msg && strstr(msg, "unexpected character") &&
                 strchr(msg, w->bad)) {
                 bad_saw++;
             }
         }
         /* A valid compile in the same thread must still work. */
-        if (bk_eval(w->rt, "var ok = 40 + 2; ok", 19, &v) == BK_OK) {
+        if ((v = bk_eval(w->rt, "var ok = 40 + 2; ok", 19))) {
             double d = 0;
-            if (bk_get_number(w->rt, v, &d) == BK_OK && d == 42) valid_ok++;
-            bk_value_free(w->rt, v);
+            if (bk_read_number(w->rt, v, &d) == BK_OK && d == 42) valid_ok++;
+            bk_free(w->rt, v);
         }
         /* A class with a private field; its slot id comes from this
          * runtime's own counter, not a shared process global. */
-        if (bk_eval(w->rt, class_src, (int)strlen(class_src), &v) == BK_OK) {
+        if ((v = bk_eval(w->rt, class_src, strlen(class_src)))) {
             double d = 0;
-            if (bk_get_number(w->rt, v, &d) == BK_OK && d == 7) class_ok++;
-            bk_value_free(w->rt, v);
+            if (bk_read_number(w->rt, v, &d) == BK_OK && d == 7) class_ok++;
+            bk_free(w->rt, v);
         }
     }
 
@@ -89,7 +89,7 @@ int main(void) {
     for (int i = 0; i < N; i++) {
         args[i].id = i;
         args[i].bad = bads[i];
-        if (bk_open(&args[i].rt) != BK_OK) {
+        if (!(args[i].rt = bk_open())) {
             printf("FAIL: could not open runtime %d\n", i);
             failures++;
             args[i].rt = NULL;

@@ -14,30 +14,35 @@
  * Build and run with `make run-two-runtimes` (see README.md).
  */
 
-#include "bk_util.h"
+#include <boomkat.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Evaluate `src` in `rt`, print `label = result`, and report any failure. */
-static int show(bk_runtime rt, const char *label, const char *src)
+/* Evaluate `src`, print `label = result`, and report any failure.
+ *
+ * bk_cstr renders any value the way String(v) would and hands back
+ * context-owned storage, so this needs no buffer and frees nothing. */
+static int show(bk_ctx rt, const char *label, const char *src)
 {
-    char *text = bku_eval_to_string(rt, src);
+    bk_value v = bk_eval_str(rt, src);
+    const char *text = v ? bk_cstr(rt, v, NULL) : NULL;
 
     if (text == NULL) {
-        printf("%-30s ! %s\n", label, bk_last_error(rt));
+        printf("%-30s ! %s\n", label, bk_error(rt));
+        bk_free(rt, v);
         return 0;
     }
     printf("%-30s = %s\n", label, text);
-    free(text);
+    bk_free(rt, v);
     return 1;
 }
 
 int main(void)
 {
-    bk_runtime a = NULL;
-    bk_runtime b = NULL;
+    bk_ctx a = NULL;
+    bk_ctx b = NULL;
     bk_value   from_a = BK_INVALID_VALUE;
     double      n = 0.0;
     int         status;
@@ -53,7 +58,7 @@ int main(void)
      * locking. Two threads each driving their OWN runtime share nothing and
      * are fine; two threads inside one runtime are not, and nothing stops you.
      */
-    if (bk_open(&a) != BK_OK || bk_open(&b) != BK_OK) {
+    if (!(a = bk_open()) || !(b = bk_open())) {
         fprintf(stderr, "bk_open failed\n");
         bk_close(a);
         bk_close(b);
@@ -68,11 +73,11 @@ int main(void)
      * other's global object.
      */
     printf("independent globals:\n");
-    bku_eval_cstr(a, "var tag = 'A'; var n = 111;", NULL);
-    bku_eval_cstr(b, "var tag = 'B'; var n = 222;", NULL);
+    bk_exec(a, "var tag = 'A'; var n = 111;");
+    bk_exec(b, "var tag = 'B'; var n = 222;");
     show(a, "  A.tag / A.n", "tag + '/' + n");
     show(b, "  B.tag / B.n", "tag + '/' + n");
-    bku_eval_cstr(b, "var onlyB = 1;", NULL);
+    bk_exec(b, "var onlyB = 1;");
     show(b, "  B.onlyB", "typeof globalThis.onlyB");
     show(a, "  A.onlyB", "typeof globalThis.onlyB");
 
@@ -84,10 +89,8 @@ int main(void)
      * do not interfere; each reads back exactly what it wrote.
      */
     printf("\nindependent objects and shapes:\n");
-    bku_eval_cstr(a,
-        "var o = {}; for (var i = 0; i < 200; i++) o['k' + i] = i;", NULL);
-    bku_eval_cstr(b,
-        "var o = {}; for (var i = 0; i < 200; i++) o['k' + i] = i * 10;", NULL);
+    bk_exec(a, "var o = {}; for (var i = 0; i < 200; i++) o['k' + i] = i;");
+    bk_exec(b, "var o = {}; for (var i = 0; i < 200; i++) o['k' + i] = i * 10;");
     show(a, "  A.o.k199", "o.k199");
     show(b, "  B.o.k199", "o.k199");
     show(a, "  A key count", "Object.keys(o).length");
@@ -100,8 +103,8 @@ int main(void)
      * is why that costs nothing.
      */
     printf("\nindependent string interning:\n");
-    bku_eval_cstr(a, "var s = 'shared-literal' + '';", NULL);
-    bku_eval_cstr(b, "var s = 'shared-literal' + '';", NULL);
+    bk_exec(a, "var s = 'shared-literal' + '';");
+    bk_exec(b, "var s = 'shared-literal' + '';");
     show(a, "  A.s === literal", "s === 'shared-literal'");
     show(b, "  B.s === literal", "s === 'shared-literal'");
 
@@ -130,12 +133,12 @@ int main(void)
      * generation tag and make this section look safer than it is.
      */
     {
-        bk_runtime c = NULL, d = NULL;
+        bk_ctx c = NULL, d = NULL;
         bk_value   vc = BK_INVALID_VALUE, vd = BK_INVALID_VALUE;
 
-        if (bk_open(&c) != BK_OK || bk_open(&d) != BK_OK ||
-            bku_eval_cstr(c, "40 + 2", &vc) != BK_OK ||
-            bku_eval_cstr(d, "7", &vd) != BK_OK) {
+        if (!(c = bk_open()) || !(d = bk_open()) ||
+            !(vc = bk_eval_str(c, "40 + 2")) ||
+            !(vd = bk_eval_str(d, "7"))) {
             fprintf(stderr, "setting up the handle demo failed\n");
             bk_close(c);
             bk_close(d);
@@ -148,10 +151,10 @@ int main(void)
 
         /* Correct use: each handle read by the runtime that issued it. */
         n = -1.0;
-        bk_get_number(c, vc, &n);
+        bk_read_number(c, vc, &n);
         printf("%-30s = %g\n", "  C's handle read by C", n);
         n = -1.0;
-        bk_get_number(d, vd, &n);
+        bk_read_number(d, vd, &n);
         printf("%-30s = %g\n", "  D's handle read by D", n);
 
         /*
@@ -162,20 +165,20 @@ int main(void)
          * refuses C's handle instead of answering with its own value.
          */
         n = -1.0;
-        status = bk_get_number(d, vc, &n);
+        status = bk_read_number(d, vc, &n);
         printf("%-30s = %s  <-- refused, not answered\n",
-               "  C's handle read by D", bku_status_name(status));
+               "  C's handle read by D", bk_status_str(status));
 
         /* Still refused once D's own handle is gone and its generation moves
            on: the rejection does not depend on the registries' relative
            state. */
-        bk_value_free(d, vd);
+        bk_free(d, vd);
         n = -1.0;
-        status = bk_get_number(d, vc, &n);
+        status = bk_read_number(d, vc, &n);
         printf("%-30s = %s\n",
-               "  C's handle read by D again", bku_status_name(status));
+               "  C's handle read by D again", bk_status_str(status));
 
-        bk_value_free(c, vc);
+        bk_free(c, vc);
         bk_close(c);
         bk_close(d);
     }
@@ -185,15 +188,15 @@ int main(void)
      * `n` is read out of A through A's own reader; it is a plain C double by
      * then and belongs to neither runtime.
      */
-    status = bku_eval_cstr(a, "40 + 2", &from_a);
-    if (status != BK_OK) {
-        fprintf(stderr, "eval in A failed: %s\n", bk_last_error(a));
+    from_a = bk_eval_str(a, "40 + 2");
+    if (!from_a) {
+        fprintf(stderr, "eval in A failed: %s\n", bk_error(a));
         goto fail;
     }
-    if (bk_get_number(a, from_a, &n) == BK_OK) {
+    if (bk_read_number(a, from_a, &n) == BK_OK) {
         char src[64];
         snprintf(src, sizeof(src), "var moved = %.17g;", n);
-        bku_eval_cstr(b, src, NULL);
+        bk_exec(b, src);
         show(b, "  moved A->B via C", "moved");
     }
 
@@ -204,7 +207,7 @@ int main(void)
      * other entirely alone.
      */
     printf("\nclosing A leaves B alone:\n");
-    bk_value_free(a, from_a);
+    bk_free(a, from_a);
     from_a = BK_INVALID_VALUE;
     bk_close(a);
     a = NULL;
@@ -215,7 +218,7 @@ int main(void)
 
 fail:
     if (from_a != BK_INVALID_VALUE) {
-        bk_value_free(a, from_a);
+        bk_free(a, from_a);
     }
     bk_close(a);
     bk_close(b);
