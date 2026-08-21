@@ -886,6 +886,23 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
 
     for (uint i = 0; i < count; i++) {
         if (declared[i] && !nested_ref[i]) {
+            // A name that is also a top-level FunctionDeclaration must NOT be
+            // register-resident. The function binding is created in the env
+            // (DECLGLOBALFUNC), so its value lives there, not in a register; a
+            // register home would read undefined (the var's LDUNDEF init) while
+            // the env holds the function, diverging `typeof f`/`f()` from the
+            // hoisted function. Function decls are hoisted before this scan, so
+            // hoisted_fn_names is populated. Leave such names on the guarded
+            // GETGLOBAL/PUTGLOBAL path, which shares the one env binding.
+            bool is_fn_decl = false;
+            for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+                if (str_eq(self.hoisted_fn_names[hi], names[i][:name_lens[i]])) {
+                    is_fn_decl = true;
+                    break;
+                }
+            }
+            if (is_fn_decl) { continue; }
+
             uint idx = self.add_string_constant(names[i][:name_lens[i]]);
             if (!self.slot_global_name_idxs.contains(idx)) {
                 self.slot_global_name_idxs.push(idx);

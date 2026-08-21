@@ -1641,6 +1641,21 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
         self.has_local_bindings = true;
         return;
     }
+    // A var whose name is also a FunctionDeclaration is likewise NOT
+    // re-initialized: GlobalDeclarationInstantiation (§16.1.7) and
+    // FunctionDeclarationInstantiation (§10.2.11) create the var binding but
+    // only initialize names that are not already function-declared, so the
+    // hoisted function value must survive `function f(){} var f;` (and any
+    // order). Emitting LDUNDEF + DECLVAR_HOIST here would clobber the function
+    // binding with undefined (the function binding is env-resident, but the
+    // var's register would also shadow it). Function decls are hoisted before
+    // this pass, so hoisted_fn_names is already populated.
+    for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+        if (str_eq(self.hoisted_fn_names[hi], var_name)) {
+            self.has_local_bindings = true;
+            return;
+        }
+    }
     ushort var_reg = self.declare_var(var_name, VAR);
     self.has_local_bindings = true;
     self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
