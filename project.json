@@ -3,7 +3,7 @@
   "warnings": [
     "all"
   ],
-  "version": "0.1",
+  "version": "0.2",
   "c-sources": [
     "libregexp/libregexp.c",
     "libregexp/libunicode.c",
@@ -22,6 +22,7 @@
   "targets": {
     "boomkat": {
       "type": "executable",
+      "name": "boomkat",
       "sources": [
         "src",
         "cli/boomkat.c3"
@@ -162,8 +163,9 @@
         "src"
       ]
     },
-    "jse": {
+    "boomkat_dylib": {
       "type": "dynamic-lib",
+      "name": "boomkat",
       "sources": [
         "src"
       ],
@@ -176,8 +178,9 @@
         "THREADED_DISPATCH"
       ]
     },
-    "jse_static": {
+    "boomkat_static": {
       "type": "static-lib",
+      "name": "boomkat",
       "sources": [
         "src"
       ],
@@ -190,11 +193,11 @@
         "THREADED_DISPATCH"
       ]
     },
-    "jse_example_c3": {
+    "boomkat_example_c3": {
       "type": "executable",
       "sources": [
         "src",
-        "bindings/c3/jse.c3",
+        "bindings/c3/boomkat.c3",
         "bindings/c3/example/hello.c3"
       ],
       "opt": "O2",
@@ -205,7 +208,7 @@
         "THREADED_DISPATCH"
       ]
     },
-    "jse_stress": {
+    "boomkat_stress": {
       "type": "dynamic-lib",
       "sources": [
         "src"

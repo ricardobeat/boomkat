@@ -8,12 +8,12 @@
  *   1. udata          — reaching host state from a callback without globals
  *   2. arguments      — reading them out, returning a host-built string
  *   3. throwing       — a C callback raising a TypeError that JS catches
- *   4. jse_call       — a C callback invoking a JS function passed to it
+ *   4. bk_call       — a C callback invoking a JS function passed to it
  *
  * Build and run with `make run-host-fn` (see README.md).
  */
 
-#include "jse_util.h"
+#include "bk_util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,14 +34,14 @@ typedef struct {
  *
  * Reads one argument and returns a string the host built.
  *
- * Two details worth copying. First, jse_ctx_get_string uses the same two-call
+ * Two details worth copying. First, bk_ctx_get_string uses the same two-call
  * measure-then-fill protocol as everywhere else in the ABI, so the engine
  * never hands back memory to free. Second, it is the CONTEXT-tier reader: a
- * callback holds a jse_call_ctx, and only that tier resolves the scope handles
- * jse_arg hands out. jse_ctx_runtime(ctx) reaches the runtime when one is
+ * callback holds a bk_call_ctx, and only that tier resolves the scope handles
+ * bk_arg hands out. bk_ctx_runtime(ctx) reaches the runtime when one is
  * genuinely needed.
  */
-static void h_greet(jse_call_ctx ctx, void *udata)
+static void h_greet(bk_call_ctx ctx, void *udata)
 {
     host_state *st = (host_state *)udata;
     char        name[64];
@@ -51,102 +51,102 @@ static void h_greet(jse_call_ctx ctx, void *udata)
     st->calls++;
 
     /* Missing arguments arrive as undefined, not as an invalid handle. */
-    if (jse_argc(ctx) < 1) {
-        jse_throw_error(ctx, JSE_ERROR_TYPE, "greet() needs a name");
+    if (bk_argc(ctx) < 1) {
+        bk_throw_error(ctx, BK_ERROR_TYPE, "greet() needs a name");
         return;
     }
 
     /* Strict readers: a non-string argument is a type error, not a coercion. */
-    if (jse_ctx_get_string(ctx, jse_arg(ctx, 0), name, sizeof(name), &len) != JSE_OK) {
-        jse_throw_error(ctx, JSE_ERROR_TYPE, "greet() wants a string");
+    if (bk_ctx_get_string(ctx, bk_arg(ctx, 0), name, sizeof(name), &len) != BK_OK) {
+        bk_throw_error(ctx, BK_ERROR_TYPE, "greet() wants a string");
         return;
     }
 
     snprintf(out, sizeof(out), "hello %s, from %s", name, st->app_name);
-    jse_return_string(ctx, out, strlen(out));
+    bk_return_string(ctx, out, strlen(out));
 }
 
 /*
  * divide(a, b) -> number
  *
- * Throws when asked to divide by zero. jse_throw_error does NOT unwind: it
+ * Throws when asked to divide by zero. bk_throw_error does NOT unwind: it
  * records the throw and returns normally, so the callback must return under
  * its own power. A recorded throw beats any return value set in the same call,
  * but returning early keeps the intent obvious.
  */
-static void h_divide(jse_call_ctx ctx, void *udata)
+static void h_divide(bk_call_ctx ctx, void *udata)
 {
     double a = 0.0, b = 0.0;
 
     (void)udata;
 
-    if (jse_ctx_get_number(ctx, jse_arg(ctx, 0), &a) != JSE_OK ||
-        jse_ctx_get_number(ctx, jse_arg(ctx, 1), &b) != JSE_OK) {
-        jse_throw_error(ctx, JSE_ERROR_TYPE, "divide() wants two numbers");
+    if (bk_ctx_get_number(ctx, bk_arg(ctx, 0), &a) != BK_OK ||
+        bk_ctx_get_number(ctx, bk_arg(ctx, 1), &b) != BK_OK) {
+        bk_throw_error(ctx, BK_ERROR_TYPE, "divide() wants two numbers");
         return;
     }
     if (b == 0.0) {
-        jse_throw_error(ctx, JSE_ERROR_RANGE, "division by zero");
+        bk_throw_error(ctx, BK_ERROR_RANGE, "division by zero");
         return;
     }
-    jse_return_number(ctx, a / b);
+    bk_return_number(ctx, a / b);
 }
 
 /*
  * mapTwice(fn, x) -> fn(fn(x))
  *
- * The host calling back into JS. jse_call runs a JS function from inside a
+ * The host calling back into JS. bk_call runs a JS function from inside a
  * callback; the handle it writes to out_val is runtime-owned and must be
- * freed, unlike the scope handles from jse_arg. Freeing it needs the runtime
- * that owns it, which jse_ctx_runtime(ctx) supplies — a handle names a slot in
+ * freed, unlike the scope handles from bk_arg. Freeing it needs the runtime
+ * that owns it, which bk_ctx_runtime(ctx) supplies — a handle names a slot in
  * one specific runtime's registry, so there is no runtime-agnostic free.
  *
- * If the callee throws, jse_call returns JSE_ERR_THROW with the exception
+ * If the callee throws, bk_call returns BK_ERR_THROW with the exception
  * already recorded on this context. The right move is to return promptly and
  * let the engine propagate it — which is what the early returns below do.
  *
  * Host recursion is bounded, so a callback that re-enters JS forever gets a
  * RangeError rather than a smashed native stack.
  */
-static void h_map_twice(jse_call_ctx ctx, void *udata)
+static void h_map_twice(bk_call_ctx ctx, void *udata)
 {
-    jse_runtime rt = jse_ctx_runtime(ctx);
-    jse_value fn   = jse_arg(ctx, 0);
-    jse_value once = 0;
-    jse_value twice = 0;
-    jse_value args[1];
+    bk_runtime rt = bk_ctx_runtime(ctx);
+    bk_value fn   = bk_arg(ctx, 0);
+    bk_value once = 0;
+    bk_value twice = 0;
+    bk_value args[1];
 
     (void)udata;
 
-    args[0] = jse_arg(ctx, 1);
-    if (jse_call(ctx, fn, args, 1, 0, &once) != JSE_OK) {
+    args[0] = bk_arg(ctx, 1);
+    if (bk_call(ctx, fn, args, 1, 0, &once) != BK_OK) {
         return; /* the callee's exception is already recorded */
     }
 
     args[0] = once;
-    if (jse_call(ctx, fn, args, 1, 0, &twice) != JSE_OK) {
-        jse_value_free(rt, once);
+    if (bk_call(ctx, fn, args, 1, 0, &twice) != BK_OK) {
+        bk_value_free(rt, once);
         return;
     }
 
-    jse_return(ctx, twice);
+    bk_return(ctx, twice);
 
     /*
-     * Both handles came from jse_call, so both are ours to release. Freeing
-     * `twice` after handing it to jse_return is safe: the return value has
+     * Both handles came from bk_call, so both are ours to release. Freeing
+     * `twice` after handing it to bk_return is safe: the return value has
      * already been recorded on the context by then.
      */
-    jse_value_free(rt, once);
-    jse_value_free(rt, twice);
+    bk_value_free(rt, once);
+    bk_value_free(rt, twice);
 }
 
 /* Evaluate `src`, print `label = result`, and report any failure. */
-static int show(jse_runtime rt, const char *label, const char *src)
+static int show(bk_runtime rt, const char *label, const char *src)
 {
-    char *text = jseu_eval_to_string(rt, src);
+    char *text = bku_eval_to_string(rt, src);
 
     if (text == NULL) {
-        printf("%-16s ! %s\n", label, jse_last_error(rt));
+        printf("%-16s ! %s\n", label, bk_last_error(rt));
         free(text);
         return 0;
     }
@@ -157,19 +157,19 @@ static int show(jse_runtime rt, const char *label, const char *src)
 
 int main(void)
 {
-    jse_runtime rt = NULL;
+    bk_runtime rt = NULL;
     host_state  st;
     int         status;
 
     st.app_name = "c99-example";
     st.calls    = 0;
 
-    status = jse_open(&rt);
-    if (status != JSE_OK) {
-        fprintf(stderr, "jse_open failed: %s\n", jseu_status_name(status));
+    status = bk_open(&rt);
+    if (status != BK_OK) {
+        fprintf(stderr, "bk_open failed: %s\n", bku_status_name(status));
         return EXIT_FAILURE;
     }
-    printf("jse version %s\n\n", jse_version());
+    printf("boomkat version %s\n\n", bk_version());
 
     /*
      * ------------------------------------------------------ 1. registration
@@ -180,11 +180,11 @@ int main(void)
      * lifetime. Note the explicit name lengths — the ABI takes UTF-8 bytes
      * plus a length rather than assuming NUL termination.
      */
-    if (jse_register_fn(rt, "greet", 5, h_greet, &st, 1, 0) != JSE_OK ||
-        jse_register_fn(rt, "divide", 6, h_divide, NULL, 2, 0) != JSE_OK ||
-        jse_register_fn(rt, "mapTwice", 8, h_map_twice, NULL, 2, 0) != JSE_OK) {
-        fprintf(stderr, "registration failed: %s\n", jse_last_error(rt));
-        jse_close(rt);
+    if (bk_register_fn(rt, "greet", 5, h_greet, &st, 1, 0) != BK_OK ||
+        bk_register_fn(rt, "divide", 6, h_divide, NULL, 2, 0) != BK_OK ||
+        bk_register_fn(rt, "mapTwice", 8, h_map_twice, NULL, 2, 0) != BK_OK) {
+        fprintf(stderr, "registration failed: %s\n", bk_last_error(rt));
+        bk_close(rt);
         return EXIT_FAILURE;
     }
 
@@ -220,7 +220,7 @@ int main(void)
     /*
      * ------------------------------------------- 4. C calling back into JS
      */
-    printf("\nC calling JS back through jse_call:\n");
+    printf("\nC calling JS back through bk_call:\n");
     show(rt, "  double", "mapTwice(function (x) { return x * 2; }, 5)");
     show(rt, "  arrow", "mapTwice(x => x + '!', 'go')");
     show(rt, "  builtin", "mapTwice(Math.sqrt, 81)");
@@ -236,6 +236,6 @@ int main(void)
      */
     printf("\ngreet() reached host state %d times\n", st.calls);
 
-    jse_close(rt);
+    bk_close(rt);
     return EXIT_SUCCESS;
 }

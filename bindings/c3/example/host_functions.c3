@@ -1,10 +1,10 @@
 /// Host functions in the native C3 binding: JS calling into C3, and C3 calling
 /// back into JS.
 ///
-///     c3c build jse_example_host_c3 && ./out/jse_example_host_c3
-module jse_example_host;
+///     c3c build boomkat_example_host_c3 && ./out/boomkat_example_host_c3
+module boomkat_example_host;
 
-import jse;
+import boomkat;
 import std::io;
 import std::math;
 
@@ -70,7 +70,7 @@ fn void host_apply_twice(JsCtx ctx, void* udata) {
         JsArg? next = ctx.call(callback, { value });
         if (catch e = next) {
             // NOT_CALLABLE is ours to report; JS_EXCEPTION is already pending.
-            if (e == jse::NOT_CALLABLE) ctx.throw_error(TYPE, "applyTwice: first argument must be a function");
+            if (e == boomkat::NOT_CALLABLE) ctx.throw_error(TYPE, "applyTwice: first argument must be a function");
             return;
         }
         value = next;

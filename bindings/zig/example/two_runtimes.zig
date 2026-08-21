@@ -7,7 +7,7 @@
 //! runtime share no state.
 
 const std = @import("std");
-const js = @import("jse");
+const js = @import("boomkat");
 
 /// Registered in both runtimes. `ctx.runtime()` tells the call which runtime it
 /// is running in, so one function body can serve several.

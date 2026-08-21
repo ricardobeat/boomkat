@@ -1,13 +1,13 @@
 /*
  * Phase 3 tests: host functions across the C ABI.
  *
- * Everything here goes through include/jse.h only -- no engine internals -- so
+ * Everything here goes through include/boomkat.h only -- no engine internals -- so
  * it is also the reference for what a binding author writes. Build and run via
  * `make test-host-abi`.
  */
 #include <stdio.h>
 #include <string.h>
-#include "jse.h"
+#include "boomkat.h"
 
 static int failures;
 static int host_calls;
@@ -23,91 +23,91 @@ static void check(const char *label, int cond) {
 
 /* --- host functions under test ------------------------------------------ */
 
-static void h_answer(jse_call_ctx ctx, void *udata) {
+static void h_answer(bk_call_ctx ctx, void *udata) {
     (void)udata;
     host_calls++;
-    jse_return_number(ctx, 42);
+    bk_return_number(ctx, 42);
 }
 
-static void h_add(jse_call_ctx ctx, void *udata) {
+static void h_add(bk_call_ctx ctx, void *udata) {
     (void)udata;
     double sum = 0;
-    unsigned int i, n = jse_argc(ctx);
+    unsigned int i, n = bk_argc(ctx);
     for (i = 0; i < n; i++) {
         double d;
-        if (jse_ctx_get_number(ctx, jse_arg(ctx, i), &d) == JSE_OK) sum += d;
+        if (bk_ctx_get_number(ctx, bk_arg(ctx, i), &d) == BK_OK) sum += d;
     }
-    jse_return_number(ctx, sum);
+    bk_return_number(ctx, sum);
 }
 
 /* Reads the udata pointer through, proving passthrough. */
-static void h_udata(jse_call_ctx ctx, void *udata) {
-    jse_return_number(ctx, udata ? *(int *)udata : -1);
+static void h_udata(bk_call_ctx ctx, void *udata) {
+    bk_return_number(ctx, udata ? *(int *)udata : -1);
 }
 
 /* Returns a host-built string, including an astral character. */
-static void h_greet(jse_call_ctx ctx, void *udata) {
+static void h_greet(bk_call_ctx ctx, void *udata) {
     static const char msg[] = "hi from C \xF0\x9F\x98\x80";
     (void)udata;
-    jse_return_string(ctx, msg, sizeof(msg) - 1);
+    bk_return_string(ctx, msg, sizeof(msg) - 1);
 }
 
 /* Throws a TypeError. */
-static void h_throws(jse_call_ctx ctx, void *udata) {
+static void h_throws(bk_call_ctx ctx, void *udata) {
     (void)udata;
-    jse_throw_error(ctx, JSE_ERROR_TYPE, "host refused");
+    bk_throw_error(ctx, BK_ERROR_TYPE, "host refused");
 }
 
 /* Echoes argument 0 back, exercising handle round-tripping. */
-static void h_echo(jse_call_ctx ctx, void *udata) {
+static void h_echo(bk_call_ctx ctx, void *udata) {
     (void)udata;
-    jse_return(ctx, jse_arg(ctx, 0));
+    bk_return(ctx, bk_arg(ctx, 0));
 }
 
 /* Reports whether it saw a construct call, stashed via the return value. */
-static void h_is_new(jse_call_ctx ctx, void *udata) {
+static void h_is_new(bk_call_ctx ctx, void *udata) {
     (void)udata;
-    if (!jse_is_construct(ctx)) jse_return_bool(ctx, 0);
+    if (!bk_is_construct(ctx)) bk_return_bool(ctx, 0);
     /* On `new` the created object is returned automatically. */
 }
 
 /* hostApply(f, x) -> f(x): the host calling back into JS. */
-static void h_apply(jse_call_ctx ctx, void *udata) {
-    jse_value args[1];
-    jse_value out = 0;
+static void h_apply(bk_call_ctx ctx, void *udata) {
+    bk_value args[1];
+    bk_value out = 0;
     (void)udata;
-    args[0] = jse_arg(ctx, 1);
-    if (jse_call(ctx, jse_arg(ctx, 0), args, 1, 0, &out) != JSE_OK) return;
-    jse_return(ctx, out);
+    args[0] = bk_arg(ctx, 1);
+    if (bk_call(ctx, bk_arg(ctx, 0), args, 1, 0, &out) != BK_OK) return;
+    bk_return(ctx, out);
 }
 
 /* Calls a JS function that throws; the throw must propagate. */
-static void h_apply_throwing(jse_call_ctx ctx, void *udata) {
+static void h_apply_throwing(bk_call_ctx ctx, void *udata) {
     (void)udata;
-    if (jse_call(ctx, jse_arg(ctx, 0), NULL, 0, 0, NULL) != JSE_OK) return;
-    jse_return_number(ctx, 0);
+    if (bk_call(ctx, bk_arg(ctx, 0), NULL, 0, 0, NULL) != BK_OK) return;
+    bk_return_number(ctx, 0);
 }
 
 /* --- harness ------------------------------------------------------------- */
 
 /* Evaluate `src`, expecting a number equal to `want`. */
-static void eval_num(jse_runtime rt, const char *label, const char *src, double want) {
-    jse_value v = 0;
+static void eval_num(bk_runtime rt, const char *label, const char *src, double want) {
+    bk_value v = 0;
     double got = 0;
-    int rc = jse_eval(rt, src, strlen(src), &v);
-    if (rc != JSE_OK) {
-        printf("FAIL %s: status %d (%s)\n", label, rc, jse_last_error(rt));
+    int rc = bk_eval(rt, src, strlen(src), &v);
+    if (rc != BK_OK) {
+        printf("FAIL %s: status %d (%s)\n", label, rc, bk_last_error(rt));
         failures++;
         return;
     }
-    if (jse_get_number(rt, v, &got) != JSE_OK) {
+    if (bk_get_number(rt, v, &got) != BK_OK) {
         printf("FAIL %s: not a number\n", label);
         failures++;
-        jse_value_free(rt, v);
+        bk_value_free(rt, v);
         return;
     }
     check(label, got == want);
-    jse_value_free(rt, v);
+    bk_value_free(rt, v);
 }
 
 /* --- value registry ------------------------------------------------------
@@ -120,14 +120,14 @@ static void eval_num(jse_runtime rt, const char *label, const char *src, double 
 
 #define MANY 5000
 
-static void test_many_live_handles(jse_runtime rt) {
-    static jse_value h[MANY];
+static void test_many_live_handles(bk_runtime rt) {
+    static bk_value h[MANY];
     int i, made = 0, wrong = 0, scope_bit = 0;
 
     for (i = 0; i < MANY; i++) {
         char src[64];
         snprintf(src, sizeof src, "%d", i);
-        if (jse_eval(rt, src, strlen(src), &h[i]) != JSE_OK) break;
+        if (bk_eval(rt, src, strlen(src), &h[i]) != BK_OK) break;
         /* Bit 31 is reserved for scope handles; a global id must never set it. */
         if (h[i] & 0x80000000u) scope_bit++;
         made++;
@@ -138,50 +138,50 @@ static void test_many_live_handles(jse_runtime rt) {
     /* Each handle must still read back its own distinct value. */
     for (i = 0; i < made; i++) {
         double d = -1;
-        if (jse_get_number(rt, h[i], &d) != JSE_OK || d != (double)i) wrong++;
+        if (bk_get_number(rt, h[i], &d) != BK_OK || d != (double)i) wrong++;
     }
     check("each of 5000 handles reads back its own value", wrong == 0);
 
-    for (i = 0; i < made; i++) jse_value_free(rt, h[i]);
+    for (i = 0; i < made; i++) bk_value_free(rt, h[i]);
 }
 
-static void test_stale_handle_rejected(jse_runtime rt) {
-    jse_value a, b;
+static void test_stale_handle_rejected(bk_runtime rt) {
+    bk_value a, b;
     double d;
     int i, resolved = 0;
-    jse_value reuse[64];
+    bk_value reuse[64];
 
-    if (jse_eval(rt, "111", 3, &a) != JSE_OK) { check("stale: setup", 0); return; }
-    jse_value_free(rt, a);
+    if (bk_eval(rt, "111", 3, &a) != BK_OK) { check("stale: setup", 0); return; }
+    bk_value_free(rt, a);
 
     /* Force the freed index to be handed out again. */
     for (i = 0; i < 64; i++) {
         char src[32];
         snprintf(src, sizeof src, "%d", 900 + i);
-        if (jse_eval(rt, src, strlen(src), &reuse[i]) != JSE_OK) reuse[i] = 0;
+        if (bk_eval(rt, src, strlen(src), &reuse[i]) != BK_OK) reuse[i] = 0;
     }
 
     /* The stale handle must be rejected -- never resolved to a new occupant. */
     d = -1;
-    check("stale handle is rejected", jse_get_number(rt, a, &d) != JSE_OK);
+    check("stale handle is rejected", bk_get_number(rt, a, &d) != BK_OK);
     check("stale handle yields no value", d == -1);
-    check("stale handle reports invalid", jse_type_of(rt, a) == JSE_TYPE_UNDEFINED);
+    check("stale handle reports invalid", bk_type_of(rt, a) == BK_TYPE_UNDEFINED);
 
     for (i = 0; i < 64; i++) {
-        if (reuse[i] && jse_get_number(rt, reuse[i], &d) == JSE_OK && d == (double)(900 + i)) resolved++;
+        if (reuse[i] && bk_get_number(rt, reuse[i], &d) == BK_OK && d == (double)(900 + i)) resolved++;
     }
     check("reused slots resolve to their own new values", resolved == 64);
 
     /* Double free must not corrupt the free list. */
-    jse_value_free(rt, a);
-    jse_value_free(rt, a);
-    if (jse_eval(rt, "222", 3, &b) == JSE_OK) {
-        check("registry usable after double free", jse_get_number(rt, b, &d) == JSE_OK && d == 222);
-        jse_value_free(rt, b);
+    bk_value_free(rt, a);
+    bk_value_free(rt, a);
+    if (bk_eval(rt, "222", 3, &b) == BK_OK) {
+        check("registry usable after double free", bk_get_number(rt, b, &d) == BK_OK && d == 222);
+        bk_value_free(rt, b);
     } else {
         check("registry usable after double free", 0);
     }
-    for (i = 0; i < 64; i++) if (reuse[i]) jse_value_free(rt, reuse[i]);
+    for (i = 0; i < 64; i++) if (reuse[i]) bk_value_free(rt, reuse[i]);
 }
 
 /* A handle freed once must stay rejected no matter how many alloc/free cycles
@@ -192,77 +192,77 @@ static void test_stale_handle_rejected(jse_runtime rt) {
  *
  * The loop must run well past the generation space (32767) to prove anything.
  * A shorter run passes even when the counter does wrap. */
-static void test_stale_handle_never_resolves(jse_runtime rt) {
-    jse_value stale;
+static void test_stale_handle_never_resolves(bk_runtime rt) {
+    bk_value stale;
     long i, cycles = 200000;
     int leaked = 0;
 
-    if (jse_eval(rt, "111", 3, &stale) != JSE_OK) {
+    if (bk_eval(rt, "111", 3, &stale) != BK_OK) {
         check("stale handle never resolves", 0);
         return;
     }
-    jse_value_free(rt, stale);
+    bk_value_free(rt, stale);
 
     for (i = 0; i < cycles; i++) {
-        jse_value t;
+        bk_value t;
         double g;
         char s[32];
         snprintf(s, sizeof s, "%ld", 1000000 + i);
-        if (jse_eval(rt, s, strlen(s), &t) != JSE_OK) { leaked = -1; break; }
-        if (jse_get_number(rt, stale, &g) == JSE_OK) { leaked = 1; jse_value_free(rt, t); break; }
-        jse_value_free(rt, t);
+        if (bk_eval(rt, s, strlen(s), &t) != BK_OK) { leaked = -1; break; }
+        if (bk_get_number(rt, stale, &g) == BK_OK) { leaked = 1; bk_value_free(rt, t); break; }
+        bk_value_free(rt, t);
     }
     check("stale handle never resolves across generation wrap", leaked == 0);
 }
 
-/* jse_get_string's two-call protocol. The conversion sink counts every byte it
+/* bk_get_string's two-call protocol. The conversion sink counts every byte it
  * produces, including those past the buffer, so a short buffer still reports the
- * true size. The sink state is per-call and lives on jse_get_string's stack, so
+ * true size. The sink state is per-call and lives on bk_get_string's stack, so
  * one call cannot disturb another. */
-static void test_string_sink(jse_runtime rt) {
-    jse_value v, v2;
+static void test_string_sink(bk_runtime rt) {
+    bk_value v, v2;
     size_t need = 0, need2 = 0, got = 0, n2 = 0;
     char small[4], big[256], b2[64];
     const char *src = "'hi \\u{1F600} there'";
     const char *s2 = "'second'";
 
-    if (jse_eval(rt, src, strlen(src), &v) != JSE_OK) {
+    if (bk_eval(rt, src, strlen(src), &v) != BK_OK) {
         check("string sink: eval", 0);
         return;
     }
     check("sizing call reports a length",
-          jse_get_string(rt, v, NULL, 0, &need) == JSE_OK && need > 0);
+          bk_get_string(rt, v, NULL, 0, &need) == BK_OK && need > 0);
     check("short buffer fails but reports the true size",
-          jse_get_string(rt, v, small, sizeof small, &need2) != JSE_OK && need2 == need);
+          bk_get_string(rt, v, small, sizeof small, &need2) != BK_OK && need2 == need);
     check("full copy matches the sized length",
-          jse_get_string(rt, v, big, sizeof big, &got) == JSE_OK && got == need);
+          bk_get_string(rt, v, big, sizeof big, &got) == BK_OK && got == need);
 
-    if (jse_eval(rt, s2, strlen(s2), &v2) == JSE_OK) {
-        jse_get_string(rt, v2, b2, sizeof b2, &n2);
+    if (bk_eval(rt, s2, strlen(s2), &v2) == BK_OK) {
+        bk_get_string(rt, v2, b2, sizeof b2, &n2);
         check("a later call is not disturbed by an earlier one",
               n2 == 6 && strcmp(b2, "second") == 0);
-        jse_value_free(rt, v2);
+        bk_value_free(rt, v2);
     }
-    jse_value_free(rt, v);
+    bk_value_free(rt, v);
 }
 
-static void test_churn(jse_runtime rt) {
+static void test_churn(bk_runtime rt) {
     int i, bad = 0;
     /* Allocate and free far past the old 1024 cap and past the point where a
      * leaked shape slot per free used to exhaust the engine. */
     for (i = 0; i < 200000; i++) {
-        jse_value v;
+        bk_value v;
         double d;
-        if (jse_eval(rt, "7", 1, &v) != JSE_OK) { bad = 1; break; }
-        if (jse_get_number(rt, v, &d) != JSE_OK || d != 7) { bad = 1; break; }
-        jse_value_free(rt, v);
+        if (bk_eval(rt, "7", 1, &v) != BK_OK) { bad = 1; break; }
+        if (bk_get_number(rt, v, &d) != BK_OK || d != 7) { bad = 1; break; }
+        bk_value_free(rt, v);
     }
     check("200k alloc/free cycles stay correct", bad == 0);
 }
 
-static void test_handles_survive_gc(jse_runtime rt) {
-    jse_value held[256];
-    jse_value junk;
+static void test_handles_survive_gc(bk_runtime rt) {
+    bk_value held[256];
+    bk_value junk;
     int i, wrong = 0;
     char buf[64];
     static const char *CHURN =
@@ -272,41 +272,41 @@ static void test_handles_survive_gc(jse_runtime rt) {
      * keeps them alive across a collection. */
     for (i = 0; i < 256; i++) {
         snprintf(buf, sizeof buf, "'held-%d'", i);
-        if (jse_eval(rt, buf, strlen(buf), &held[i]) != JSE_OK) held[i] = 0;
+        if (bk_eval(rt, buf, strlen(buf), &held[i]) != BK_OK) held[i] = 0;
     }
     /* Churn the heap so a collection runs with the handles outstanding. */
-    if (jse_eval(rt, CHURN, strlen(CHURN), &junk) == JSE_OK) jse_value_free(rt, junk);
+    if (bk_eval(rt, CHURN, strlen(CHURN), &junk) == BK_OK) bk_value_free(rt, junk);
 
     for (i = 0; i < 256; i++) {
         char got[64];
         size_t n = 0;
         snprintf(buf, sizeof buf, "held-%d", i);
         if (!held[i]) { wrong++; continue; }
-        if (jse_get_string(rt, held[i], got, sizeof got, &n) != JSE_OK) { wrong++; continue; }
+        if (bk_get_string(rt, held[i], got, sizeof got, &n) != BK_OK) { wrong++; continue; }
         if (strcmp(got, buf) != 0) wrong++;
     }
     check("host-held values survive GC", wrong == 0);
-    for (i = 0; i < 256; i++) if (held[i]) jse_value_free(rt, held[i]);
+    for (i = 0; i < 256; i++) if (held[i]) bk_value_free(rt, held[i]);
 }
 
 int main(void) {
-    jse_runtime rt = NULL;
+    bk_runtime rt = NULL;
     int udata_val = 99;
 
-    if (jse_open(&rt) != JSE_OK) {
-        fprintf(stderr, "jse_open failed\n");
+    if (bk_open(&rt) != BK_OK) {
+        fprintf(stderr, "bk_open failed\n");
         return 1;
     }
 
-    if (jse_register_fn(rt, "hostAnswer", 10, h_answer, NULL, 0, 0) != JSE_OK) return 1;
-    if (jse_register_fn(rt, "hostAdd", 7, h_add, NULL, 2, 0) != JSE_OK) return 1;
-    if (jse_register_fn(rt, "hostUdata", 9, h_udata, &udata_val, 0, 0) != JSE_OK) return 1;
-    if (jse_register_fn(rt, "hostGreet", 9, h_greet, NULL, 0, 0) != JSE_OK) return 1;
-    if (jse_register_fn(rt, "hostThrows", 10, h_throws, NULL, 0, 0) != JSE_OK) return 1;
-    if (jse_register_fn(rt, "hostEcho", 8, h_echo, NULL, 1, 0) != JSE_OK) return 1;
-    if (jse_register_fn(rt, "HostIsNew", 9, h_is_new, NULL, 0, 1) != JSE_OK) return 1;
-    if (jse_register_fn(rt, "hostApply", 9, h_apply, NULL, 2, 0) != JSE_OK) return 1;
-    if (jse_register_fn(rt, "hostApplyThrowing", 17, h_apply_throwing, NULL, 1, 0) != JSE_OK) return 1;
+    if (bk_register_fn(rt, "hostAnswer", 10, h_answer, NULL, 0, 0) != BK_OK) return 1;
+    if (bk_register_fn(rt, "hostAdd", 7, h_add, NULL, 2, 0) != BK_OK) return 1;
+    if (bk_register_fn(rt, "hostUdata", 9, h_udata, &udata_val, 0, 0) != BK_OK) return 1;
+    if (bk_register_fn(rt, "hostGreet", 9, h_greet, NULL, 0, 0) != BK_OK) return 1;
+    if (bk_register_fn(rt, "hostThrows", 10, h_throws, NULL, 0, 0) != BK_OK) return 1;
+    if (bk_register_fn(rt, "hostEcho", 8, h_echo, NULL, 1, 0) != BK_OK) return 1;
+    if (bk_register_fn(rt, "HostIsNew", 9, h_is_new, NULL, 0, 1) != BK_OK) return 1;
+    if (bk_register_fn(rt, "hostApply", 9, h_apply, NULL, 2, 0) != BK_OK) return 1;
+    if (bk_register_fn(rt, "hostApplyThrowing", 17, h_apply_throwing, NULL, 1, 0) != BK_OK) return 1;
 
     /* dispatch shapes */
     eval_num(rt, "plain call", "hostAnswer()", 42);
@@ -372,7 +372,7 @@ int main(void) {
     test_handles_survive_gc(rt);
 
     printf("\nhost callbacks dispatched: %d\n", host_calls);
-    jse_close(rt);
+    bk_close(rt);
 
     if (failures) {
         printf("FAILURES: %d\n", failures);

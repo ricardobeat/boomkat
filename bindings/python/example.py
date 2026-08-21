@@ -57,7 +57,7 @@ with Runtime() as rt:
         "try { checkAge(-1) } catch (e) { e.constructor.name + ': ' + e.message }"))
 
     # A host function can call back into JS. Function arguments arrive as
-    # callables, so `fn(x)` runs the JS function through jse_call, and the
+    # callables, so `fn(x)` runs the JS function through bk_call, and the
     # result comes back as a Python value.
     #
     # The arguments passed to a callback must be ones this call received: the

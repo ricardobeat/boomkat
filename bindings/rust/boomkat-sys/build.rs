@@ -1,8 +1,8 @@
 //! Locate the engine's static archive and tell rustc how to link it.
 //!
 //! Search order:
-//!   1. `JSE_LIB_DIR` — a directory holding `libjse.a` (or `jse_static.a`).
-//!   2. The in-tree build output, `<repo>/out/jse_static.a`, which is where
+//!   1. `BK_LIB_DIR` — a directory holding `libboomkat.a` (or `boomkat.a`).
+//!   2. The in-tree build output, `<repo>/out/boomkat.a`, which is where
 //!      `make lib` puts it.
 //!
 //! The archive already contains the vendored C (libregexp, cutils, dtoa), so
@@ -12,9 +12,9 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-/// `make lib` names the archive `jse_static.a`; `make install` installs it as
-/// `libjse.a`. Accept either, and prefer the installed spelling.
-const CANDIDATES: [&str; 2] = ["libjse.a", "jse_static.a"];
+/// `make lib` names the archive `boomkat.a`; `make install` installs it as
+/// `libboomkat.a`. Accept either, and prefer the installed spelling.
+const CANDIDATES: [&str; 2] = ["libboomkat.a", "boomkat.a"];
 
 fn find_archive(dir: &Path) -> Option<PathBuf> {
     CANDIDATES
@@ -24,13 +24,13 @@ fn find_archive(dir: &Path) -> Option<PathBuf> {
 }
 
 /// Walk up from this crate looking for the repo root (the directory holding
-/// `include/jse.h`). Works whether the crate sits at `bindings/rust/jse-sys`
+/// `include/boomkat.h`). Works whether the crate sits at `bindings/rust/boomkat-sys`
 /// or has been vendored somewhere shallower.
 fn repo_root() -> Option<PathBuf> {
     let start = PathBuf::from(env::var("CARGO_MANIFEST_DIR").ok()?);
     let mut cur = start.as_path();
     loop {
-        if cur.join("include/jse.h").is_file() {
+        if cur.join("include/boomkat.h").is_file() {
             return Some(cur.to_path_buf());
         }
         cur = cur.parent()?;
@@ -38,13 +38,13 @@ fn repo_root() -> Option<PathBuf> {
 }
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=JSE_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=BK_LIB_DIR");
 
-    let dir = if let Ok(d) = env::var("JSE_LIB_DIR") {
+    let dir = if let Ok(d) = env::var("BK_LIB_DIR") {
         let d = PathBuf::from(d);
         if find_archive(&d).is_none() {
             panic!(
-                "JSE_LIB_DIR={} contains neither libjse.a nor jse_static.a",
+                "BK_LIB_DIR={} contains neither libboomkat.a nor boomkat.a",
                 d.display()
             );
         }
@@ -52,8 +52,8 @@ fn main() {
     } else {
         let root = repo_root().expect(
             "could not locate the boomkat checkout (no ancestor directory \
-             contains include/jse.h). Set JSE_LIB_DIR to a directory holding \
-             libjse.a or jse_static.a.",
+             contains include/boomkat.h). Set BK_LIB_DIR to a directory holding \
+             libboomkat.a or boomkat.a.",
         );
         let out = root.join("out");
         if find_archive(&out).is_none() {
@@ -69,17 +69,17 @@ fn main() {
     let archive = find_archive(&dir).expect("checked above");
     println!("cargo:rerun-if-changed={}", archive.display());
 
-    // `-l static=jse` needs a `lib`-prefixed file. `make lib` emits
-    // `jse_static.a`, which does not match, and `cargo:rustc-link-arg` would
+    // `-l static=boomkat` needs a `lib`-prefixed file. `make lib` emits
+    // `boomkat.a`, which does not match, and `cargo:rustc-link-arg` would
     // not do here: link-args apply only to the crate currently being built,
     // not to the downstream binaries and examples that actually reference
     // these symbols. So normalise the name by copying into OUT_DIR and link it
     // as an ordinary static library, which *is* propagated transitively.
-    let search_dir = if archive.file_name().unwrap() == "libjse.a" {
+    let search_dir = if archive.file_name().unwrap() == "libboomkat.a" {
         dir.clone()
     } else {
         let out_dir = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
-        let staged = out_dir.join("libjse.a");
+        let staged = out_dir.join("libboomkat.a");
         std::fs::copy(&archive, &staged).unwrap_or_else(|e| {
             panic!(
                 "could not stage {} as {}: {e}",
@@ -91,7 +91,7 @@ fn main() {
     };
 
     println!("cargo:rustc-link-search=native={}", search_dir.display());
-    println!("cargo:rustc-link-lib=static=jse");
+    println!("cargo:rustc-link-lib=static=boomkat");
 
     // Platform libraries the engine itself depends on.
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
@@ -100,6 +100,6 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=dl");
     }
 
-    // Downstream crates can read this as DEP_JSE_LIB_DIR.
+    // Downstream crates can read this as DEP_BOOMKAT_LIB_DIR.
     println!("cargo:lib_dir={}", search_dir.display());
 }

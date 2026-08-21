@@ -49,7 +49,7 @@ with Runtime() as a, Runtime() as b:
     # --- host functions are per runtime -----------------------------------
 
     # The same Python callable registered in both runtimes. `call.runtime` is
-    # resolved from the call context (jse_ctx_runtime), so each invocation
+    # resolved from the call context (bk_ctx_runtime), so each invocation
     # identifies the runtime it is actually executing inside rather than
     # whichever one happened to register it last.
     names = {a: "a", b: "b"}

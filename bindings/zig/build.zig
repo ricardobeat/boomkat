@@ -1,11 +1,11 @@
-//! Build script for the Zig binding to the jse_ C ABI.
+//! Build script for the Zig binding to the bk_ C ABI.
 //! Written for Zig 0.16.0 (`b.createModule` + `.root_module`).
 //!
 //! By default this links the SHARED library built by `make shared` at the repo
 //! root, two directories up. Override either path with:
-//!   zig build run -Djse-include=/usr/local/include -Djse-lib=/usr/local/lib/libjse.dylib
+//!   zig build run -Dboomkat-include=/usr/local/include -Dboomkat-lib=/usr/local/lib/boomkat.dylib
 //!
-//! Why the dylib and not out/jse_static.a: the C3 runtime discovers its @init
+//! Why the dylib and not out/boomkat.a: the C3 runtime discovers its @init
 //! constructors by walking the init sections of the running image at startup.
 //! When a foreign linker (Zig's) produces the final executable, that walk binds
 //! to the wrong image header -- Zig emits a second, bogus __mh_execute_header
@@ -22,22 +22,22 @@ pub fn build(b: *std.Build) void {
 
     const include_dir = b.option(
         []const u8,
-        "jse-include",
-        "Directory containing jse.h (default: ../../include)",
+        "boomkat-include",
+        "Directory containing boomkat.h (default: ../../include)",
     ) orelse b.pathFromRoot("../../include");
 
     const default_lib = switch (target.result.os.tag) {
-        .macos => "../../out/libjse.dylib",
-        else => "../../out/libjse.so",
+        .macos => "../../out/boomkat.dylib",
+        else => "../../out/boomkat.so",
     };
     const lib_path = b.option(
         []const u8,
-        "jse-lib",
-        "Path to the jse shared library (default: ../../out/libjse.<dylib|so>)",
+        "boomkat-lib",
+        "Path to the boomkat shared library (default: ../../out/boomkat.<dylib|so>)",
     ) orelse b.pathFromRoot(default_lib);
 
-    // The binding module: importable as `@import("jse")` by consumers.
-    const mod = b.addModule("jse", .{
+    // The binding module: importable as `@import("boomkat")` by consumers.
+    const mod = b.addModule("boomkat", .{
         .root_source_file = b.path("src/js.zig"),
         .target = target,
         .optimize = optimize,
@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) void {
     mod.addIncludePath(.{ .cwd_relative = include_dir });
     mod.addObjectFile(.{ .cwd_relative = lib_path });
 
-    // The dylib's install name is @rpath/libjse.dylib, so the executable needs
+    // The dylib's install name is @rpath/boomkat.dylib, so the executable needs
     // an rpath pointing at the directory it was linked from.
     const lib_dir = std.fs.path.dirname(lib_path) orelse ".";
     mod.addRPathSpecial(lib_dir);
@@ -59,13 +59,13 @@ pub fn build(b: *std.Build) void {
     };
     const examples = [_]Example{
         .{
-            .name = "jse-example",
+            .name = "boomkat-example",
             .path = "example/main.zig",
             .step = "run",
             .desc = "Build and run the example",
         },
         .{
-            .name = "jse-two-runtimes",
+            .name = "boomkat-two-runtimes",
             .path = "example/two_runtimes.zig",
             .step = "run-two-runtimes",
             .desc = "Build and run the two-runtime example",
@@ -79,7 +79,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path(ex.path),
                 .target = target,
                 .optimize = optimize,
-                .imports = &.{.{ .name = "jse", .module = mod }},
+                .imports = &.{.{ .name = "boomkat", .module = mod }},
             }),
         });
         b.installArtifact(exe);

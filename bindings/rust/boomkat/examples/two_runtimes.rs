@@ -6,9 +6,9 @@
 //! prototypes, separate host functions. This walks that, shows how a value
 //! actually moves from one to the other, and ends on the threading rule.
 
-use jse::Runtime;
+use boomkat::Runtime;
 
-fn main() -> Result<(), jse::Error> {
+fn main() -> Result<(), boomkat::Error> {
     let a = Runtime::new()?;
     let b = Runtime::new()?;
 

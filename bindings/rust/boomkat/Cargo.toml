@@ -1,5 +1,5 @@
 [package]
-name = "jse"
+name = "boomkat"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.70"
@@ -7,7 +7,7 @@ description = "Safe Rust bindings for the boomkat JavaScript engine"
 publish = false
 
 [dependencies]
-jse-sys = { path = "../jse-sys", version = "0.1.0" }
+boomkat-sys = { path = "../boomkat-sys", version = "0.1.0" }
 
 [[example]]
 name = "hello_js"

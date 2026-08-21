@@ -41,7 +41,7 @@ fn void test_handles_survive_gc(void* rt) {
         // result is never stored in a global or any other live structure.
         String src = string::tformat("({ tag: 'reg-%d-value' })", i);
         uint v = 0;
-        if (capi::jse_eval(rt, (char*)src.ptr, src.len, &v) != capi::JSE_OK) break;
+        if (capi::bk_eval(rt, (char*)src.ptr, src.len, &v) != capi::BK_OK) break;
         held[i] = v;
         made++;
     }
@@ -51,19 +51,19 @@ fn void test_handles_survive_gc(void* rt) {
     // collects constantly.
     String churn = "var s = 0; for (var i = 0; i < 400; i++) { s += ({ x: i }).x; } s";
     uint junk = 0;
-    if (capi::jse_eval(rt, (char*)churn.ptr, churn.len, &junk) == capi::JSE_OK) {
-        capi::jse_value_free(rt, junk);
+    if (capi::bk_eval(rt, (char*)churn.ptr, churn.len, &junk) == capi::BK_OK) {
+        capi::bk_value_free(rt, junk);
     }
 
     // Read each object's tag back through the engine, which dereferences the
     // held object: if it was swept, ASan reports the use-after-free here.
     uint wrong = 0;
     for (uint i = 0; i < made; i++) {
-        if (capi::jse_type_of(rt, held[i]) != capi::JSE_TYPE_OBJECT) { wrong++; continue; }
+        if (capi::bk_type_of(rt, held[i]) != capi::BK_TYPE_OBJECT) { wrong++; continue; }
     }
     check("registry: held objects survive GC", wrong == 0);
 
-    for (uint i = 0; i < made; i++) capi::jse_value_free(rt, held[i]);
+    for (uint i = 0; i < made; i++) capi::bk_value_free(rt, held[i]);
 }
 
 /// Freed handles must stop rooting their values, or the registry is a leak that
@@ -73,8 +73,8 @@ fn void test_freed_handles_release(void* rt) {
     for (uint i = 0; i < 2000; i++) {
         String src = string::tformat("'transient-%d'", i);
         uint v = 0;
-        if (capi::jse_eval(rt, (char*)src.ptr, src.len, &v) != capi::JSE_OK) break;
-        capi::jse_value_free(rt, v);
+        if (capi::bk_eval(rt, (char*)src.ptr, src.len, &v) != capi::BK_OK) break;
+        capi::bk_value_free(rt, v);
         churned++;
     }
     check("registry: alloc/free churn under GC stress", churned == 2000);
@@ -82,20 +82,20 @@ fn void test_freed_handles_release(void* rt) {
     // The registry must still be correct afterwards.
     String src = "'final'";
     uint v = 0;
-    bool ok = capi::jse_eval(rt, (char*)src.ptr, src.len, &v) == capi::JSE_OK;
+    bool ok = capi::bk_eval(rt, (char*)src.ptr, src.len, &v) == capi::BK_OK;
     if (ok) {
         char[32] buf;
         usz written = 0;
-        ok = capi::jse_get_string(rt, v, &buf[0], 32, &written) == capi::JSE_OK
+        ok = capi::bk_get_string(rt, v, &buf[0], 32, &written) == capi::BK_OK
              && (String)buf[:written] == "final";
-        capi::jse_value_free(rt, v);
+        capi::bk_value_free(rt, v);
     }
     check("registry: usable after churn", ok);
 }
 
 fn int main() {
     void* rt = null;
-    if (capi::jse_open(&rt) != capi::JSE_OK) {
+    if (capi::bk_open(&rt) != capi::BK_OK) {
         io::printn("FAIL could not open runtime");
         return 1;
     }
@@ -103,7 +103,7 @@ fn int main() {
     test_handles_survive_gc(rt);
     test_freed_handles_release(rt);
 
-    capi::jse_close(rt);
+    capi::bk_close(rt);
 
     if (g_fails > 0) {
         io::printfn("FAILURES: %d", g_fails);

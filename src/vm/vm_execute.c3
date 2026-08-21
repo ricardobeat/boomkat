@@ -1927,11 +1927,11 @@ fn bool vm_poll_interrupt(Vm* vm, Activation* act, Instruction** curr_pc, bool* 
     if (h.capi_interrupt_fn == null) return false;
     if (!h.interrupt_due) return false;
     h.interrupt_due = false;
-    heap::JseInterruptFn cb = (heap::JseInterruptFn)h.capi_interrupt_fn;
+    heap::BkInterruptFn cb = (heap::BkInterruptFn)h.capi_interrupt_fn;
     if (cb(h.capi_runtime, h.capi_interrupt_opaque) == 0) return false;
     // Abort. The error is a genuine Error marked uncatchable: catch catchers
     // skip it (vm_throw_value) but finally blocks still run, and the flag is
-    // cleared only when the host receives the JSE_ERR_INTERRUPT status.
+    // cleared only when the host receives the BK_ERR_INTERRUPT status.
     h.uncatchable_throw = true;
     vm_throw_error(vm, h.err_proto, "interrupted", act, curr_pc, needs_restart);
     return true;

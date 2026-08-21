@@ -152,8 +152,8 @@ clean:
 
 # ── Packaging ────────────────────────────────────────────────────────────────
 
-# Pack the engine as a .c3l library: self-contained copy (dist/jse.c3l/) for
-# distribution, and a symlink version (dist/jse.link.c3l/) for local dev.
+# Pack the engine as a .c3l library: self-contained copy (dist/boomkat.c3l/) for
+# distribution, and a symlink version (dist/boomkat.link.c3l/) for local dev.
 pack:
     bash {{justfile_directory()}}/scripts/pack_c3l.sh
     bash {{justfile_directory()}}/scripts/pack_c3l.sh --link

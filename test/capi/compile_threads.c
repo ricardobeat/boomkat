@@ -20,7 +20,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
-#include "jse.h"
+#include "boomkat.h"
 
 static int failures;
 
@@ -29,7 +29,7 @@ enum { ITER = 20000 };
 struct worker_arg {
     int        id;
     char       bad;        /* the only invalid byte in this worker's source */
-    jse_runtime rt;
+    bk_runtime rt;
 };
 
 static void check(const char *label, int cond) {
@@ -45,30 +45,30 @@ static void *worker(void *opaque) {
     struct worker_arg *w = (struct worker_arg *)opaque;
     char src[64];
     int bad_saw = 0, valid_ok = 0, class_ok = 0;
-    jse_value v;
+    bk_value v;
 
     for (int i = 0; i < ITER; i++) {
         snprintf(src, sizeof src, "var %c x", w->bad);
-        int rc = jse_eval(w->rt, src, (int)strlen(src), &v);
-        if (rc == JSE_ERR_SYNTAX) {
-            const char *msg = jse_last_error(w->rt);
+        int rc = bk_eval(w->rt, src, (int)strlen(src), &v);
+        if (rc == BK_ERR_SYNTAX) {
+            const char *msg = bk_last_error(w->rt);
             if (msg && strstr(msg, "unexpected character") &&
                 strchr(msg, w->bad)) {
                 bad_saw++;
             }
         }
         /* A valid compile in the same thread must still work. */
-        if (jse_eval(w->rt, "var ok = 40 + 2; ok", 19, &v) == JSE_OK) {
+        if (bk_eval(w->rt, "var ok = 40 + 2; ok", 19, &v) == BK_OK) {
             double d = 0;
-            if (jse_get_number(w->rt, v, &d) == JSE_OK && d == 42) valid_ok++;
-            jse_value_free(w->rt, v);
+            if (bk_get_number(w->rt, v, &d) == BK_OK && d == 42) valid_ok++;
+            bk_value_free(w->rt, v);
         }
         /* A class with a private field; its slot id comes from this
          * runtime's own counter, not a shared process global. */
-        if (jse_eval(w->rt, class_src, (int)strlen(class_src), &v) == JSE_OK) {
+        if (bk_eval(w->rt, class_src, (int)strlen(class_src), &v) == BK_OK) {
             double d = 0;
-            if (jse_get_number(w->rt, v, &d) == JSE_OK && d == 7) class_ok++;
-            jse_value_free(w->rt, v);
+            if (bk_get_number(w->rt, v, &d) == BK_OK && d == 7) class_ok++;
+            bk_value_free(w->rt, v);
         }
     }
 
@@ -89,7 +89,7 @@ int main(void) {
     for (int i = 0; i < N; i++) {
         args[i].id = i;
         args[i].bad = bads[i];
-        if (jse_open(&args[i].rt) != JSE_OK) {
+        if (bk_open(&args[i].rt) != BK_OK) {
             printf("FAIL: could not open runtime %d\n", i);
             failures++;
             args[i].rt = NULL;
@@ -104,7 +104,7 @@ int main(void) {
         if (args[i].rt) pthread_join(th[i], NULL);
     }
     for (int i = 0; i < N; i++) {
-        if (args[i].rt) jse_close(args[i].rt);
+        if (args[i].rt) bk_close(args[i].rt);
     }
 
     if (failures) { printf("\nFAILURES: %d\n", failures); return 1; }

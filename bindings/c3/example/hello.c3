@@ -1,9 +1,9 @@
-/// Minimal embedding example for the native C3 binding (`bindings/c3/jse.c3`).
+/// Minimal embedding example for the native C3 binding (`bindings/c3/boomkat.c3`).
 ///
-///     c3c build jse_example_c3 && ./out/jse_example_c3
-module jse_example;
+///     c3c build boomkat_example_c3 && ./out/boomkat_example_c3
+module boomkat_example;
 
-import jse;
+import boomkat;
 import std::io;
 
 fn int main() {

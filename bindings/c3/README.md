@@ -6,7 +6,7 @@ are C3 faults, and nothing is passed as an opaque integer handle.
 
 | File | Purpose |
 |---|---|
-| `jse.c3` | the binding (`module jse`) |
+| `boomkat.c3` | the binding (`module boomkat`) |
 | `example/hello.c3` | evaluating source and reading values back |
 | `example/host_functions.c3` | JS calling into C3, and C3 calling back into JS |
 | `example/project.json` | standalone build for `host_functions` (see below) |
@@ -29,13 +29,13 @@ are C3 faults, and nothing is passed as an opaque integer handle.
 From the repository root:
 
 ```sh
-c3c build jse_example_c3
+c3c build boomkat_example_c3
 ```
 
 ## Run
 
 ```sh
-./out/jse_example_c3
+./out/boomkat_example_c3
 ```
 
 ## Expected output
@@ -47,10 +47,10 @@ joined      = hi there 😀
 squares     = 1,4,9,16 (type OBJECT)
 
 -- errors --
-compile     = jse::SYNTAX_ERROR: expected '<identifier>', got '('
-throw       = jse::JS_EXCEPTION: index out of bounds
+compile     = boomkat::SYNTAX_ERROR: expected '<identifier>', got '('
+throw       = boomkat::JS_EXCEPTION: index out of bounds
 parsed      = 7
-undefined   = jse::JS_EXCEPTION: notDefinedAnywhere is not defined
+undefined   = boomkat::JS_EXCEPTION: notDefinedAnywhere is not defined
 still alive = 400
 ```
 
@@ -169,9 +169,9 @@ example with `GC_STRESS` and AddressSanitizer. It must print the same thing.
 To fold this into the repo's own `project.json` instead, add:
 
 ```json
-"jse_example_host_c3": {
+"boomkat_example_host_c3": {
   "type": "executable",
-  "sources": ["src", "bindings/c3/jse.c3", "bindings/c3/example/host_functions.c3"],
+  "sources": ["src", "bindings/c3/boomkat.c3", "bindings/c3/example/host_functions.c3"],
   "opt": "O2",
   "single-module": true,
   "fp-math": "relaxed",
@@ -182,13 +182,13 @@ To fold this into the repo's own `project.json` instead, add:
 
 ## Using it in your own target
 
-Add `bindings/c3/jse.c3` to a target's `sources` next to `src`, then
-`import jse;`:
+Add `bindings/c3/boomkat.c3` to a target's `sources` next to `src`, then
+`import boomkat;`:
 
 ```json
 "my_app": {
   "type": "executable",
-  "sources": ["src", "bindings/c3/jse.c3", "app/main.c3"],
+  "sources": ["src", "bindings/c3/boomkat.c3", "app/main.c3"],
   "opt": "O2",
   "single-module": true,
   "features": ["THREADED_DISPATCH"]
@@ -269,18 +269,18 @@ hands a callback opaque `unsigned int` handles that must be resolved one at a
 time, and its readers return status codes. Here a callback gets `JsArg` values
 with typed accessors, a scope-vs-registry distinction the compiler enforces,
 and errors as ordinary C3 faults. Both paths run the same engine machinery: the
-C ABI's `jse_register_fn` calls exactly the `Heap.register_host_fn` and
+C ABI's `bk_register_fn` calls exactly the `Heap.register_host_fn` and
 `builtins::make_host_function` this binding calls, so there is no capability the
 C ABI has and this does not.
 
-Reach for the C ABI (`include/jse.h`, `src/capi.c3`, built via `make lib` or
+Reach for the C ABI (`include/boomkat.h`, `src/capi.c3`, built via `make lib` or
 `make shared`) when:
 
 - The host is not C3, such as C, Rust, Zig, Python/ctypes, or Ruby/fiddle. That
   is what it is for; see `examples/python`, `examples/ruby`.
 - You need a shared library with a stable, versioned symbol surface. The native
   binding has no ABI guarantee: it recompiles against engine internals, so
-  anything built from it must be rebuilt with the engine. Only the 12 `jse_*`
+  anything built from it must be rebuilt with the engine. Only the 12 `bk_*`
   symbols are stable across engine changes.
 - You are `dlopen`-ing the engine at runtime, or want the engine behind a
   process or plugin boundary rather than statically linked in.

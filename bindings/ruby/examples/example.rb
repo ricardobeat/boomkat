@@ -126,7 +126,7 @@ JS.open do |vm|
   JS
 
   # A host function can call back into JS. A JS function argument arrives as a
-  # JS::Callback; #call runs it through jse_call and converts the result.
+  # JS::Callback; #call runs it through bk_call and converts the result.
   vm.register('twice') { |f, x| f.call(f.call(x)) }
   puts "twice(x => x * 3, 5): #{vm.eval('twice(x => x * 3, 5)')}"
 

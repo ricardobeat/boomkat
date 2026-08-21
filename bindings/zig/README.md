@@ -1,6 +1,6 @@
-# Zig binding for the `jse_` embedding ABI
+# Zig binding for the `bk_` embedding ABI
 
-An idiomatic Zig wrapper over `include/jse.h`: C status codes become a Zig
+An idiomatic Zig wrapper over `include/boomkat.h`: C status codes become a Zig
 error set, and `Runtime`/`Value` are `defer`-friendly.
 
 ```zig
@@ -36,7 +36,7 @@ try rt.register("hypot", hypot, .{ .arity = 2 });
 - The engine's shared library, built from the repo root:
 
 ```sh
-make shared          # produces out/libjse.dylib (macOS) or out/libjse.so (Linux)
+make shared          # produces out/boomkat.dylib (macOS) or out/boomkat.so (Linux)
 ```
 
 ## Build and run
@@ -49,21 +49,21 @@ zig build run
 
 `zig build test` runs the binding's unit tests. `zig build run-two-runtimes`
 runs the two-runtime example, and `zig build` alone installs both examples to
-`zig-out/bin/jse-example` and `zig-out/bin/jse-two-runtimes`.
+`zig-out/bin/boomkat-example` and `zig-out/bin/boomkat-two-runtimes`.
 
-By default the build looks for `../../include` and `../../out/libjse.dylib`.
+By default the build looks for `../../include` and `../../out/boomkat.dylib`.
 To point it at an installed prefix or any other location:
 
 ```sh
 zig build run \
-  -Djse-include=/usr/local/include \
-  -Djse-lib=/usr/local/lib/libjse.dylib
+  -Dboomkat-include=/usr/local/include \
+  -Dboomkat-lib=/usr/local/lib/boomkat.dylib
 ```
 
 ## Expected output
 
 ```
-jse 0.1.0
+boomkat 0.1.0
 sum 1..100 = 5050
 squares (string) = 1,4,9,16
 Throw: SyntaxError: Unexpected token in JSON
@@ -80,7 +80,7 @@ Lines 4-5 show a thrown exception and a syntax error arriving as distinct Zig
 errors (`error.Throw`, `error.Syntax`), with the engine's message available
 from `rt.lastError()`. The remaining lines come from host functions: a Zig
 function called from JS with arguments, one throwing a `RangeError` that JS
-catches, one calling a JS callback back through `jse_call`, and one carrying
+catches, one calling a JS callback back through `bk_call`, and one carrying
 host state through `udata`.
 
 ## Host functions
@@ -191,7 +191,7 @@ each driving their own runtime share no state and are fine.
 
 ## Why the shared library, not the static archive
 
-`make lib` also produces `out/jse_static.a`, but linking it into a Zig-built
+`make lib` also produces `out/bk_static.a`, but linking it into a Zig-built
 executable crashes before `main`. The C3 runtime finds its `@init` constructors
 by walking the init sections of the running image at startup, and that walk
 depends on resolving the image header correctly. Zig's linker emits a second,
@@ -209,27 +209,27 @@ The binding wraps every ABI entry point:
 
 | Zig | C |
 |---|---|
-| `js.version()` | `jse_version` |
-| `Runtime.init` / `.deinit` | `jse_open` / `jse_close` |
-| `Runtime.eval` / `.exec` | `jse_eval` |
-| `Runtime.lastError` | `jse_last_error`, `jse_last_error_code` |
-| `Runtime.drainMicrotasks` | `jse_drain_microtasks` |
-| `Runtime.register` / `.registerWith` | `jse_register_fn` |
-| `Value.deinit` | `jse_value_free` |
-| `Value.typeOf` | `jse_type_of` / `jse_ctx_type_of` |
-| `Value.toNumber` / `.toBool` / `.toString` | `jse_get_number` / `_bool` / `_string`, or their `jse_ctx_get_*` forms |
+| `js.version()` | `bk_version` |
+| `Runtime.init` / `.deinit` | `bk_open` / `bk_close` |
+| `Runtime.eval` / `.exec` | `bk_eval` |
+| `Runtime.lastError` | `bk_last_error`, `bk_last_error_code` |
+| `Runtime.drainMicrotasks` | `bk_drain_microtasks` |
+| `Runtime.register` / `.registerWith` | `bk_register_fn` |
+| `Value.deinit` | `bk_value_free` |
+| `Value.typeOf` | `bk_type_of` / `bk_ctx_type_of` |
+| `Value.toNumber` / `.toBool` / `.toString` | `bk_get_number` / `_bool` / `_string`, or their `bk_ctx_get_*` forms |
 | `Value.rebind` | — (retags a handle onto a `Runtime`) |
-| `Ctx.argc` / `.arg` / `.this` / `.newTarget` | `jse_argc` / `jse_arg` / `jse_this` / `jse_new_target` |
-| `Ctx.isConstruct` | `jse_is_construct` |
-| `Ctx.runtime` | `jse_ctx_runtime` |
-| `Ctx.ret` / `.returnNumber` / `.returnBool` / `.returnNull` / `.returnString` | `jse_return*` |
-| `Ctx.throwError` / `.throwValue` | `jse_throw_error` / `jse_throw` |
-| `Ctx.persist` | `jse_value_persist` |
-| `Ctx.call` | `jse_call` |
+| `Ctx.argc` / `.arg` / `.this` / `.newTarget` | `bk_argc` / `bk_arg` / `bk_this` / `bk_new_target` |
+| `Ctx.isConstruct` | `bk_is_construct` |
+| `Ctx.runtime` | `bk_ctx_runtime` |
+| `Ctx.ret` / `.returnNumber` / `.returnBool` / `.returnNull` / `.returnString` | `bk_return*` |
+| `Ctx.throwError` / `.throwValue` | `bk_throw_error` / `bk_throw` |
+| `Ctx.persist` | `bk_value_persist` |
+| `Ctx.call` | `bk_call` |
 
-The readers come in two tiers in C: `jse_get_*` take a runtime, `jse_ctx_get_*`
+The readers come in two tiers in C: `bk_get_*` take a runtime, `bk_ctx_get_*`
 take a call context, and only the context tier resolves the scope handles
-`jse_arg`/`jse_this`/`jse_new_target` return. Neither accepts NULL. A `Value`
+`bk_arg`/`bk_this`/`bk_new_target` return. Neither accepts NULL. A `Value`
 records which one owns it, so `toNumber` and friends pick the right tier and
 callers write the same code inside and outside a callback.
 

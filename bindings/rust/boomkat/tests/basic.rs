@@ -1,7 +1,7 @@
 //! Runtimes are independent, so these tests open their own and run in
 //! parallel under `cargo test` like any other.
 
-use jse::{Error, Kind, Runtime, Type};
+use boomkat::{Error, Kind, Runtime, Type};
 
 #[test]
 fn engine_round_trips() {
@@ -146,7 +146,7 @@ fn host_functions(rt: &Runtime) {
     assert_eq!(rt.eval("upper('a\\u{1F600}b')").unwrap().as_string().unwrap(), "A\u{1F600}B");
 
     // Building several values and returning one yields the one returned. The
-    // `jse_return_*` setters are last-write-wins, so a host value has to stay
+    // `boomkat_return_*` setters are last-write-wins, so a host value has to stay
     // data until the boundary applies exactly the returned one.
     rt.register_fn("pick_first", 0, |ctx| {
         let first = ctx.number(1.0);
@@ -165,7 +165,7 @@ fn host_functions(rt: &Runtime) {
     // And a throw still beats a value built before it.
     rt.register_fn("build_then_fail", 0, |ctx| {
         let _discarded = ctx.number(5.0);
-        Err(jse::Error::throw("nope"))
+        Err(boomkat::Error::throw("nope"))
     })
     .unwrap();
     assert_eq!(rt.eval("build_then_fail()").unwrap_err().kind(), Kind::Throw);
@@ -179,7 +179,7 @@ fn host_functions(rt: &Runtime) {
     assert_eq!(rt.eval("nada()").unwrap().type_of(), Type::Undefined);
 
     // Err becomes a JS throw, with the Kind picking the constructor.
-    rt.register_fn("boom", 0, |_| Err(jse::Error::throw("host refused")))
+    rt.register_fn("boom", 0, |_| Err(boomkat::Error::throw("host refused")))
         .unwrap();
     assert!(rt
         .eval("try { boom() } catch (e) { e instanceof Error && e.message === 'host refused' }")
@@ -318,7 +318,7 @@ fn host_functions(rt: &Runtime) {
     );
 
     // Exhausting the registry is an ABI failure, not a JS exception: the
-    // engine returns JSE_ERR_FULL without staging a throw. It must arrive as
+    // engine returns BK_ERR_FULL without staging a throw. It must arrive as
     // `Kind::Full` with a real message, rather than being mistaken for a
     // callee throw and silently suppressed.
     rt.register_fn("exhaust", 1, |ctx| {
@@ -497,7 +497,7 @@ fn values_cross_runtimes_only_by_copying() {
     // The handle itself never crosses. `a.eval(..)` borrows `a`, so there is no
     // way to hand the resulting Value to `b`: it has no method taking one, and
     // the 'rt lifetime would reject it if it did. This is the compile-time
-    // version of the ABI's JSE_ERR_INVALID.
+    // version of the ABI's BK_ERR_INVALID.
     let n = a.eval("21").unwrap().as_number().unwrap();
     b.eval_unit(&format!("globalThis.n = {n} * 2")).unwrap();
     assert_eq!(b.eval("n").unwrap().as_number().unwrap(), 42.0);
@@ -516,7 +516,7 @@ fn callback_persists_into_its_own_runtime() {
     let b = Runtime::new().unwrap();
 
     for (rt, label) in [(&a, "A"), (&b, "B")] {
-        let held: RefCell<Option<jse::Persisted>> = RefCell::new(None);
+        let held: RefCell<Option<boomkat::Persisted>> = RefCell::new(None);
         rt.register_fn("remember", 1, move |ctx| {
             *held.borrow_mut() = Some(ctx.persist(ctx.arg(0))?);
             // Read it back through the runtime tier, after the scope handle

@@ -12,16 +12,16 @@ target_sources = $(shell jq -r '.["c-sources"][]' project.json) \
                      if [ -d "$$s" ]; then find "$$s" -name '*.c3'; else echo "$$s"; fi; \
                  done)
 
-# ---- C embedding ABI (include/jse.h + src/capi.c3) --------------------------
+# ---- C embedding ABI (include/boomkat.h + src/capi.c3) --------------------------
 # Shared-library suffix and the link flags a C consumer needs. macOS resolves
 # libm/libdl from libSystem; ELF platforms need them named explicitly.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
   SHLIB_EXT := dylib
-  JSE_LDLIBS :=
+  BK_LDLIBS :=
 else
   SHLIB_EXT := so
-  JSE_LDLIBS := -lm -ldl
+  BK_LDLIBS := -lm -ldl
 endif
 
 # The BigInt path multiplies int128 values, which LLVM lowers to the
@@ -38,7 +38,7 @@ ifneq ($(UNAME_S),Darwin)
       /usr/lib/llvm-*/lib/clang/*/lib/linux/libclang_rt.builtins-$(shell uname -m).a))
   ifneq ($(C3C_RT_LIB),)
     C3C_LDFLAGS := -z $(C3C_RT_LIB)
-    JSE_LDLIBS += $(C3C_RT_LIB)
+    BK_LDLIBS += $(C3C_RT_LIB)
   endif
 endif
 
@@ -63,11 +63,11 @@ C3C_BUILDFLAGS = --build-dir "$$d"
 PREFIX ?= /usr/local
 
 .PHONY: all lib lib-full test262_runner test262_runner_asan boomkat boomkat_debug boomkat_gc_stress clean \
-        shared jse jse-stress install
+        shared boomkat-stress install
 
 all: lib-full test262_runner boomkat
 
-# `lib` builds the jse_* embedding archive (see the C ABI section below).
+# `lib` builds the bk_* embedding archive (see the C ABI section below).
 # `lib-full` is the original unoptimised whole-engine archive.
 lib-full: out/lib.a
 test262_runner: out/test262_runner
@@ -103,34 +103,37 @@ out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
 
 # ---- C embedding ABI targets ------------------------------------------------
 
-# Static archive carrying the jse_* ABI. Built with the same flags as the
+# Static archive carrying the bk_* ABI. Built with the same flags as the
 # shipped executables so an embedder gets the engine the test suite exercised.
-lib: out/jse_static.a
-out/jse_static.a: project.json include/jse.h $(call target_sources,jse_static)
-	$(C3C_BUILD) jse_static $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+# c3c names the file from the target's `name` key, so the static archive lands
+# at out/boomkat.a and the dylib at out/boomkat.dylib.
+lib: out/boomkat.a
+out/boomkat.a: project.json include/boomkat.h $(call target_sources,boomkat_static)
+	$(C3C_BUILD) boomkat_static $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
-# Shared library. c3c stamps a *relative* install name ("out/jse.dylib"), so a
+# Shared library. c3c stamps a *relative* install name into the dylib, so a
 # consumer launched from any other directory fails to resolve it in dyld; the
-# install_name_tool step rewrites it to @rpath. The libjse.$(SHLIB_EXT) copy
-# exists so `-ljse` and ctypes/fiddle find_library lookups both work.
-shared jse: out/libjse.$(SHLIB_EXT)
-out/libjse.$(SHLIB_EXT): project.json include/jse.h $(call target_sources,jse)
-	$(C3C_BUILD) jse $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+# install_name_tool step rewrites it to @rpath so it can be installed at any
+# PREFIX. The shared link is named libboomkat so embedders write `-lboomkat`.
+shared: out/boomkat.$(SHLIB_EXT)
+out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(call target_sources,boomkat_dylib)
+	$(C3C_BUILD) boomkat_dylib $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 ifeq ($(UNAME_S),Darwin)
-	install_name_tool -id "@rpath/libjse.dylib" out/jse.dylib
+	install_name_tool -id "@rpath/libboomkat.dylib" $@
 endif
-	cp out/jse.$(SHLIB_EXT) out/libjse.$(SHLIB_EXT)
+# Keep a `lib`-prefixed copy so embedders can link with `-lboomkat`.
+	cp $@ out/libboomkat.$(SHLIB_EXT)
 
 # GC_STRESS + ASan shared build: collects at every allocation, which is what
 # turns a missing GC root in the slot registry into a deterministic failure.
-jse-stress:
-	$(C3C_BUILD) jse_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+boomkat-stress:
+	$(C3C_BUILD) boomkat_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 # Host-function ABI tests: registration, argument access, throwing, and
-# calling JS from a callback, all through include/jse.h only.
-out/host_fn_abi: test/capi/host_fn_abi.c include/jse.h out/jse_static.a
+# calling JS from a callback, all through include/boomkat.h only.
+out/host_fn_abi: test/capi/host_fn_abi.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/host_fn_abi.c \
-	   out/jse_static.a $(JSE_LDLIBS) -o out/host_fn_abi
+	   out/boomkat.a $(BK_LDLIBS) -o out/host_fn_abi
 
 .PHONY: test-host-abi
 test-host-abi: out/host_fn_abi
@@ -139,9 +142,9 @@ test-host-abi: out/host_fn_abi
 # Embedding API tests (plans/074): interrupt handler with in-suite SIGALRM
 # watchdog and recovery, value/object/array construction, property access and
 # enumeration, script-name + line/col error info, and host-side calls.
-out/embed_api: test/capi/embed_api.c include/jse.h out/jse_static.a
+out/embed_api: test/capi/embed_api.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/embed_api.c \
-	   out/jse_static.a $(JSE_LDLIBS) -o out/embed_api
+	   out/boomkat.a $(BK_LDLIBS) -o out/embed_api
 
 .PHONY: test-embed-api
 test-embed-api: out/embed_api
@@ -159,9 +162,9 @@ test-registry-gc:
 # interned strings; a host function in one calling into another; and handles
 # refused across runtimes. None of this could run before the process-global heap
 # pointer was removed.
-out/two_runtimes: test/capi/two_runtimes.c include/jse.h out/jse_static.a
+out/two_runtimes: test/capi/two_runtimes.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/two_runtimes.c \
-	   out/jse_static.a $(JSE_LDLIBS) -o out/two_runtimes
+	   out/boomkat.a $(BK_LDLIBS) -o out/two_runtimes
 
 .PHONY: test-two-runtimes
 test-two-runtimes: out/two_runtimes
@@ -171,9 +174,9 @@ test-two-runtimes: out/two_runtimes
 # process global, so concurrent failing compiles raced; it now lives on the
 # per-compilation lexer. Four threads each compile a source whose only invalid
 # byte is thread-unique and assert that the reported error names their byte.
-out/compile_threads: test/capi/compile_threads.c include/jse.h out/jse_static.a
+out/compile_threads: test/capi/compile_threads.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/compile_threads.c \
-	   out/jse_static.a $(JSE_LDLIBS) -o out/compile_threads
+	   out/boomkat.a $(BK_LDLIBS) -o out/compile_threads
 
 .PHONY: test-compile-threads
 test-compile-threads: out/compile_threads
@@ -184,9 +187,9 @@ test-compile-threads: out/compile_threads
 # decrefing there would touch the string table the sweep is walking. The JS
 # suites run one destroy per process, so this drives 40 full heap lifecycles.
 .PHONY: test-runtime-cycles
-test-runtime-cycles: jse-stress
+test-runtime-cycles: boomkat-stress
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/runtime_cycles.c \
-	   out/jse_stress.$(SHLIB_EXT) -Wl,-rpath,$(CURDIR)/out $(JSE_LDLIBS) \
+	   out/boomkat_stress.$(SHLIB_EXT) -Wl,-rpath,$(CURDIR)/out $(BK_LDLIBS) \
 	   -o out/runtime_cycles
 	ASAN_OPTIONS=detect_leaks=0 ./out/runtime_cycles
 
@@ -195,11 +198,11 @@ test-runtime-cycles: jse-stress
 # absolute one: install_name_tool cannot grow the load command past the header
 # padding c3c emitted, so a long PREFIX would fail the install. Consumers link
 # with -Wl,-rpath,$(PREFIX)/lib; ctypes/fiddle load the path directly.
-install: out/jse_static.a out/libjse.$(SHLIB_EXT)
+install: out/boomkat.a out/boomkat.$(SHLIB_EXT)
 	install -d $(DESTDIR)$(PREFIX)/include $(DESTDIR)$(PREFIX)/lib
-	install -m 644 include/jse.h $(DESTDIR)$(PREFIX)/include/jse.h
-	install -m 644 out/jse_static.a $(DESTDIR)$(PREFIX)/lib/libjse.a
-	install -m 755 out/libjse.$(SHLIB_EXT) $(DESTDIR)$(PREFIX)/lib/libjse.$(SHLIB_EXT)
+	install -m 644 include/boomkat.h $(DESTDIR)$(PREFIX)/include/boomkat.h
+	install -m 644 out/boomkat.a $(DESTDIR)$(PREFIX)/lib/libboomkat.a
+	install -m 755 out/boomkat.$(SHLIB_EXT) $(DESTDIR)$(PREFIX)/lib/boomkat.$(SHLIB_EXT)
 
 # ---- Linux CI ---------------------------------------------------------------
 # Build the Linux image and run the whole build/test/link-validation suite in
@@ -210,7 +213,7 @@ install: out/jse_static.a out/libjse.$(SHLIB_EXT)
 # symlink must be out of the way first: mounting onto an existing symlink fails
 # with "errno 17: failed to create directory 'quickjs'". The symlink is removed
 # before the run and restored after, so host builds keep working either way.
-LINUX_IMAGE ?= jse-linux-ci
+LINUX_IMAGE ?= boomkat-linux-ci
 LINUX_ARCH  ?= arm64
 QUICKJS_DIR ?= $(realpath quickjs)
 
@@ -252,7 +255,7 @@ linux-ci-shell:
 # container engine (podman by default; set X86_ENGINE=docker to use docker),
 # NOT Apple's `container` CLI, whose amd64 emulation breaks c3c's linking. The
 # engine runs a real Linux VM with binfmt, so the prebuilt x86-64 c3c works.
-X86_IMAGE  ?= jse-linux-x86-ci
+X86_IMAGE  ?= boomkat-linux-x86-ci
 X86_ENGINE ?= podman
 X86_RUN = $(X86_ENGINE) run --rm --platform linux/amd64 \
 	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" -w /work $(X86_IMAGE)

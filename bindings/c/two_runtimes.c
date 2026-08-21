@@ -1,5 +1,5 @@
 /*
- * two_runtimes.c — running two jse runtimes side by side in one process.
+ * two_runtimes.c — running two boomkat runtimes side by side in one process.
  *
  * Where main.c drives a single runtime, this opens two and shows what they do
  * and do not share:
@@ -7,26 +7,26 @@
  *   1. globals    — a global set in A is invisible in B
  *   2. objects    — each runtime builds its own, with its own shapes
  *   3. strings    — the same literal interns separately in each
- *   4. handles    — a jse_value belongs to one runtime, and the engine does
+ *   4. handles    — a bk_value belongs to one runtime, and the engine does
  *                   not reliably catch you for using it with the other
  *   5. lifetime   — closing A leaves B untouched
  *
  * Build and run with `make run-two-runtimes` (see README.md).
  */
 
-#include "jse_util.h"
+#include "bk_util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* Evaluate `src` in `rt`, print `label = result`, and report any failure. */
-static int show(jse_runtime rt, const char *label, const char *src)
+static int show(bk_runtime rt, const char *label, const char *src)
 {
-    char *text = jseu_eval_to_string(rt, src);
+    char *text = bku_eval_to_string(rt, src);
 
     if (text == NULL) {
-        printf("%-30s ! %s\n", label, jse_last_error(rt));
+        printf("%-30s ! %s\n", label, bk_last_error(rt));
         return 0;
     }
     printf("%-30s = %s\n", label, text);
@@ -36,16 +36,16 @@ static int show(jse_runtime rt, const char *label, const char *src)
 
 int main(void)
 {
-    jse_runtime a = NULL;
-    jse_runtime b = NULL;
-    jse_value   from_a = JSE_INVALID_VALUE;
+    bk_runtime a = NULL;
+    bk_runtime b = NULL;
+    bk_value   from_a = BK_INVALID_VALUE;
     double      n = 0.0;
     int         status;
 
     /*
      * ------------------------------------------------------ 1. two runtimes
      *
-     * Nothing is process-global, so jse_open succeeds as many times as you ask
+     * Nothing is process-global, so bk_open succeeds as many times as you ask
      * it to. Each runtime owns its own globals, objects, shapes and interned
      * strings, and they are independent for the whole of their lifetimes.
      *
@@ -53,13 +53,13 @@ int main(void)
      * locking. Two threads each driving their OWN runtime share nothing and
      * are fine; two threads inside one runtime are not, and nothing stops you.
      */
-    if (jse_open(&a) != JSE_OK || jse_open(&b) != JSE_OK) {
-        fprintf(stderr, "jse_open failed\n");
-        jse_close(a);
-        jse_close(b);
+    if (bk_open(&a) != BK_OK || bk_open(&b) != BK_OK) {
+        fprintf(stderr, "bk_open failed\n");
+        bk_close(a);
+        bk_close(b);
         return EXIT_FAILURE;
     }
-    printf("jse version %s\n\n", jse_version());
+    printf("boomkat version %s\n\n", bk_version());
 
     /*
      * ------------------------------------------------------- 2. globals
@@ -68,11 +68,11 @@ int main(void)
      * other's global object.
      */
     printf("independent globals:\n");
-    jseu_eval_cstr(a, "var tag = 'A'; var n = 111;", NULL);
-    jseu_eval_cstr(b, "var tag = 'B'; var n = 222;", NULL);
+    bku_eval_cstr(a, "var tag = 'A'; var n = 111;", NULL);
+    bku_eval_cstr(b, "var tag = 'B'; var n = 222;", NULL);
     show(a, "  A.tag / A.n", "tag + '/' + n");
     show(b, "  B.tag / B.n", "tag + '/' + n");
-    jseu_eval_cstr(b, "var onlyB = 1;", NULL);
+    bku_eval_cstr(b, "var onlyB = 1;", NULL);
     show(b, "  B.onlyB", "typeof globalThis.onlyB");
     show(a, "  A.onlyB", "typeof globalThis.onlyB");
 
@@ -84,9 +84,9 @@ int main(void)
      * do not interfere; each reads back exactly what it wrote.
      */
     printf("\nindependent objects and shapes:\n");
-    jseu_eval_cstr(a,
+    bku_eval_cstr(a,
         "var o = {}; for (var i = 0; i < 200; i++) o['k' + i] = i;", NULL);
-    jseu_eval_cstr(b,
+    bku_eval_cstr(b,
         "var o = {}; for (var i = 0; i < 200; i++) o['k' + i] = i * 10;", NULL);
     show(a, "  A.o.k199", "o.k199");
     show(b, "  B.o.k199", "o.k199");
@@ -100,15 +100,15 @@ int main(void)
      * is why that costs nothing.
      */
     printf("\nindependent string interning:\n");
-    jseu_eval_cstr(a, "var s = 'shared-literal' + '';", NULL);
-    jseu_eval_cstr(b, "var s = 'shared-literal' + '';", NULL);
+    bku_eval_cstr(a, "var s = 'shared-literal' + '';", NULL);
+    bku_eval_cstr(b, "var s = 'shared-literal' + '';", NULL);
     show(a, "  A.s === literal", "s === 'shared-literal'");
     show(b, "  B.s === literal", "s === 'shared-literal'");
 
     /*
      * -------------------------------------------------------- 5. handles
      *
-     * A jse_value is an index into ONE runtime's registry, not a pointer to a
+     * A bk_value is an index into ONE runtime's registry, not a pointer to a
      * value, and the index is NOT tagged with which runtime it came from. Two
      * runtimes at the same allocation state hand out bit-identical handles, as
      * the first line below shows.
@@ -133,15 +133,15 @@ int main(void)
      * generation tag and make this section look safer than it is.
      */
     {
-        jse_runtime c = NULL, d = NULL;
-        jse_value   vc = JSE_INVALID_VALUE, vd = JSE_INVALID_VALUE;
+        bk_runtime c = NULL, d = NULL;
+        bk_value   vc = BK_INVALID_VALUE, vd = BK_INVALID_VALUE;
 
-        if (jse_open(&c) != JSE_OK || jse_open(&d) != JSE_OK ||
-            jseu_eval_cstr(c, "40 + 2", &vc) != JSE_OK ||
-            jseu_eval_cstr(d, "7", &vd) != JSE_OK) {
+        if (bk_open(&c) != BK_OK || bk_open(&d) != BK_OK ||
+            bku_eval_cstr(c, "40 + 2", &vc) != BK_OK ||
+            bku_eval_cstr(d, "7", &vd) != BK_OK) {
             fprintf(stderr, "setting up the handle demo failed\n");
-            jse_close(c);
-            jse_close(d);
+            bk_close(c);
+            bk_close(d);
             goto fail;
         }
 
@@ -150,20 +150,20 @@ int main(void)
 
         /* Correct use: each handle read by the runtime that issued it. */
         n = -1.0;
-        jse_get_number(c, vc, &n);
+        bk_get_number(c, vc, &n);
         printf("%-30s = %g\n", "  C's handle read by C", n);
         n = -1.0;
-        jse_get_number(d, vd, &n);
+        bk_get_number(d, vd, &n);
         printf("%-30s = %g\n", "  D's handle read by D", n);
 
         /*
          * The silent case. Both registries are in step, so D resolves C's
-         * handle and answers with its OWN value, 7, and returns JSE_OK.
+         * handle and answers with its OWN value, 7, and returns BK_OK.
          */
         n = -1.0;
-        status = jse_get_number(d, vc, &n);
+        status = bk_get_number(d, vc, &n);
         printf("%-30s = %s, n=%g  <-- D's value, not C's\n",
-               "  C's handle read by D", jseu_status_name(status), n);
+               "  C's handle read by D", bku_status_name(status), n);
 
         /*
          * The caught case, from the same pair. Freeing a handle in D moves its
@@ -172,15 +172,15 @@ int main(void)
          * relative state differs, which is why this is not a check you can
          * lean on.
          */
-        jse_value_free(d, vd);
+        bk_value_free(d, vd);
         n = -1.0;
-        status = jse_get_number(d, vc, &n);
+        status = bk_get_number(d, vc, &n);
         printf("%-30s = %s, n=%g  <-- caught, only by luck\n",
-               "  C's handle read by D again", jseu_status_name(status), n);
+               "  C's handle read by D again", bku_status_name(status), n);
 
-        jse_value_free(c, vc);
-        jse_close(c);
-        jse_close(d);
+        bk_value_free(c, vc);
+        bk_close(c);
+        bk_close(d);
     }
 
     /*
@@ -188,15 +188,15 @@ int main(void)
      * `n` is read out of A through A's own reader; it is a plain C double by
      * then and belongs to neither runtime.
      */
-    status = jseu_eval_cstr(a, "40 + 2", &from_a);
-    if (status != JSE_OK) {
-        fprintf(stderr, "eval in A failed: %s\n", jse_last_error(a));
+    status = bku_eval_cstr(a, "40 + 2", &from_a);
+    if (status != BK_OK) {
+        fprintf(stderr, "eval in A failed: %s\n", bk_last_error(a));
         goto fail;
     }
-    if (jse_get_number(a, from_a, &n) == JSE_OK) {
+    if (bk_get_number(a, from_a, &n) == BK_OK) {
         char src[64];
         snprintf(src, sizeof(src), "var moved = %.17g;", n);
-        jseu_eval_cstr(b, src, NULL);
+        bku_eval_cstr(b, src, NULL);
         show(b, "  moved A->B via C", "moved");
     }
 
@@ -207,20 +207,20 @@ int main(void)
      * other entirely alone.
      */
     printf("\nclosing A leaves B alone:\n");
-    jse_value_free(a, from_a);
-    from_a = JSE_INVALID_VALUE;
-    jse_close(a);
+    bk_value_free(a, from_a);
+    from_a = BK_INVALID_VALUE;
+    bk_close(a);
     a = NULL;
     show(b, "  B.tag after A closed", "tag + '/' + n + '/' + o.k199");
 
-    jse_close(b);
+    bk_close(b);
     return EXIT_SUCCESS;
 
 fail:
-    if (from_a != JSE_INVALID_VALUE) {
-        jse_value_free(a, from_a);
+    if (from_a != BK_INVALID_VALUE) {
+        bk_value_free(a, from_a);
     }
-    jse_close(a);
-    jse_close(b);
+    bk_close(a);
+    bk_close(b);
     return EXIT_FAILURE;
 }

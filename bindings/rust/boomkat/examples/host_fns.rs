@@ -6,7 +6,7 @@
 //! things a host actually needs: arguments and a return value, captured state,
 //! throwing, and calling a JS function back from Rust.
 
-use jse::{Error, Kind, Runtime};
+use boomkat::{Error, Kind, Runtime};
 use std::cell::Cell;
 
 fn main() -> Result<(), Error> {

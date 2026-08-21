@@ -6,11 +6,11 @@
 //! strings, surface a syntax error and a thrown exception as `Result::Err`,
 //! and let `Drop` clean everything up.
 
-use jse::{Kind, Runtime, Type};
+use boomkat::{Kind, Runtime, Type};
 
-fn main() -> Result<(), jse::Error> {
+fn main() -> Result<(), boomkat::Error> {
     let rt = Runtime::new()?;
-    println!("jse {}", Runtime::version());
+    println!("boomkat {}", Runtime::version());
 
     // A value comes back from the completion value of the snippet, exactly as
     // `eval()` would produce it.

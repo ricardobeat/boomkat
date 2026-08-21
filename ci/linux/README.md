@@ -1,6 +1,6 @@
 # Linux CI
 
-Builds the engine, runs the test suite, and validates the `jse_` embedding ABI's
+Builds the engine, runs the test suite, and validates the `bk_` embedding ABI's
 linking and language bindings on Linux, inside a container on a macOS host.
 
 Uses **Apple's `container` CLI**, not Docker.
@@ -31,9 +31,9 @@ Phases: `build`, `tests`, `test262`, `libs`, `smoke`, `link`, `initarray`,
 | `build` | `c3c build boomkat` produces a working binary |
 | `tests` | `bash test/run_local.sh`, the whole engine suite |
 | `test262` | `bash scripts/test262_gate.sh`, the full test262 suite with a zero-fail gate (needs the `test262/` submodule; ~15 min) |
-| `libs` | `make lib` and `make shared` produce `jse_static.a` and `libjse.so` |
+| `libs` | `make lib` and `make shared` produce `boomkat.a` and `boomkat.so` |
 | `smoke` | `make smoke` prints 42 (links the **static** archive) |
-| `link` | `ldd` has no unresolved deps; `nm -D` exports all 12 `jse_` symbols; the static archive links from plain `cc`; whether compiler-rt is required |
+| `link` | `ldd` has no unresolved deps; `nm -D` exports all 12 `bk_` symbols; the static archive links from plain `cc`; whether compiler-rt is required |
 | `initarray` | Static archive linked by **Zig** and by **rustc** — the ELF counterpart of the macOS init hazard |
 | `install` | `make install PREFIX=…`, then static and shared compiles against the prefix, and that the rpath is load-bearing |
 | `bindings` | C99 (static + shared), Python, Ruby, Zig, Rust, C3 |
@@ -94,6 +94,6 @@ The working tree is bind-mounted from macOS, so `out/`, `bindings/rust/target/`,
 `bindings/zig/.zig-cache/` and `bindings/c/out/example` may hold Mach-O files.
 The `bindings` phase clears the binding caches, but **`out/` is not cleared** —
 run `rm -rf out build` when switching platforms, or the suite will validate a
-stale macOS archive and report confusing failures. A macOS `jse_static.a`
-contains no `jse_`-prefixed ELF symbols, so it surfaces as "undefined reference
-to `jse_open`" from Rust rather than as an obvious platform error.
+stale macOS archive and report confusing failures. A macOS `boomkat.a`
+contains no `bk_`-prefixed ELF symbols, so it surfaces as "undefined reference
+to `bk_open`" from Rust rather than as an obvious platform error.

@@ -99,7 +99,7 @@ From `just bench`:
 
 ## Embedding / bindings
 
-The engine ships a `jse_` C ABI (`include/jse.h`, static `libjse.a` and a
+The engine ships a `bk_` C ABI (`include/boomkat.h`, static `libboomkat.a` and a
 shared library). See `docs/embedding.md`.
 
 Bindings in C3, Rust, Python, Ruby, and Zig

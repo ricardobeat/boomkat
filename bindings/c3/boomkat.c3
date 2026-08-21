@@ -2,7 +2,7 @@
 ///
 /// This is the *native* binding: it links the engine's C3 modules directly and
 /// speaks C3 optionals, so there is no C ABI round-trip, no integer handles,
-/// and no manual status-code checking. Use `include/jse.h` + `src/capi.c3`
+/// and no manual status-code checking. Use `include/boomkat.h` + `src/capi.c3`
 /// instead when the host is not C3 (see README.md).
 ///
 /// Usage sketch:
@@ -27,7 +27,7 @@
 ///     required in a loop, since an unreleased value holds its slot until
 ///     `close`. The registry grows on demand; only when 65535 values are live
 ///     at once does `root` report `JsError.VALUE_TABLE_FULL`.
-module jse;
+module boomkat;
 
 import boomkat::builtins;
 import boomkat::compiler;

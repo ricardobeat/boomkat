@@ -1,4 +1,4 @@
-//! Idiomatic Zig wrapper over the `jse_` C embedding ABI (see `include/jse.h`).
+//! Idiomatic Zig wrapper over the `bk_` C embedding ABI (see `include/boomkat.h`).
 //!
 //! Design notes:
 //!   - C status codes become a Zig error set, so every fallible call is `try`.
@@ -18,7 +18,7 @@
 const std = @import("std");
 
 pub const c = @cImport({
-    @cInclude("jse.h");
+    @cInclude("boomkat.h");
 });
 
 /// Every failure the ABI can report. `Syntax` and `Throw` carry a message
@@ -42,45 +42,45 @@ pub const Error = error{
 
 fn check(status: c_int) Error!void {
     return switch (status) {
-        c.JSE_OK => {},
-        c.JSE_ERR_NOMEM => Error.OutOfMemory,
-        c.JSE_ERR_SYNTAX => Error.Syntax,
-        c.JSE_ERR_THROW => Error.Throw,
-        c.JSE_ERR_INVALID => Error.Invalid,
-        c.JSE_ERR_TYPE => Error.WrongType,
-        c.JSE_ERR_FULL => Error.Full,
+        c.BK_OK => {},
+        c.BK_ERR_NOMEM => Error.OutOfMemory,
+        c.BK_ERR_SYNTAX => Error.Syntax,
+        c.BK_ERR_THROW => Error.Throw,
+        c.BK_ERR_INVALID => Error.Invalid,
+        c.BK_ERR_TYPE => Error.WrongType,
+        c.BK_ERR_FULL => Error.Full,
         else => Error.Internal,
     };
 }
 
-/// JS value types, mirroring `jse_type`.
+/// JS value types, mirroring `bk_type`.
 pub const Type = enum(c_int) {
-    undefined = c.JSE_TYPE_UNDEFINED,
-    null = c.JSE_TYPE_NULL,
-    boolean = c.JSE_TYPE_BOOLEAN,
-    number = c.JSE_TYPE_NUMBER,
-    string = c.JSE_TYPE_STRING,
-    object = c.JSE_TYPE_OBJECT,
-    function = c.JSE_TYPE_FUNCTION,
+    undefined = c.BK_TYPE_UNDEFINED,
+    null = c.BK_TYPE_NULL,
+    boolean = c.BK_TYPE_BOOLEAN,
+    number = c.BK_TYPE_NUMBER,
+    string = c.BK_TYPE_STRING,
+    object = c.BK_TYPE_OBJECT,
+    function = c.BK_TYPE_FUNCTION,
     /// symbol, bigint, ...
-    other = c.JSE_TYPE_OTHER,
+    other = c.BK_TYPE_OTHER,
 };
 
 /// Engine version, e.g. "0.1.0".
 pub fn version() [:0]const u8 {
-    return std.mem.span(c.jse_version());
+    return std.mem.span(c.bk_version());
 }
 
 /// Who resolves a `Value`'s handle.
 ///
 /// A handle indexes one runtime's registry, so reading it requires naming that
 /// runtime. Outside a callback you hold a `*Runtime`; inside one you hold a
-/// `jse_call_ctx` and no runtime, and only the context tier can resolve the
+/// `bk_call_ctx` and no runtime, and only the context tier can resolve the
 /// scope handles `Ctx.arg`/`.this`/`.newTarget` return. `Value` records which
 /// it has, so callers use the same four readers either way.
 const Owner = union(enum) {
     runtime: *Runtime,
-    ctx: c.jse_call_ctx,
+    ctx: c.bk_call_ctx,
 };
 
 /// A handle to a JS value.
@@ -101,7 +101,7 @@ const Owner = union(enum) {
 /// to move a value, read it out and write it back in.
 pub const Value = struct {
     owner: Owner,
-    handle: c.jse_value,
+    handle: c.bk_value,
     /// False for scope handles, which the engine reclaims on callback return.
     owned: bool = true,
 
@@ -110,16 +110,16 @@ pub const Value = struct {
     pub fn deinit(self: *Value) void {
         if (self.handle == 0 or !self.owned) return;
         switch (self.owner) {
-            .runtime => |r| c.jse_value_free(r.ptr, self.handle),
-            .ctx => |ctx| c.jse_value_free(c.jse_ctx_runtime(ctx), self.handle),
+            .runtime => |r| c.bk_value_free(r.ptr, self.handle),
+            .ctx => |ctx| c.bk_value_free(c.bk_ctx_runtime(ctx), self.handle),
         }
         self.handle = 0;
     }
 
     pub fn typeOf(self: Value) Type {
         return @enumFromInt(switch (self.owner) {
-            .runtime => |r| c.jse_type_of(r.ptr, self.handle),
-            .ctx => |ctx| c.jse_ctx_type_of(ctx, self.handle),
+            .runtime => |r| c.bk_type_of(r.ptr, self.handle),
+            .ctx => |ctx| c.bk_ctx_type_of(ctx, self.handle),
         });
     }
 
@@ -128,8 +128,8 @@ pub const Value = struct {
     pub fn toNumber(self: Value) Error!f64 {
         var out: f64 = undefined;
         try check(switch (self.owner) {
-            .runtime => |r| c.jse_get_number(r.ptr, self.handle, &out),
-            .ctx => |ctx| c.jse_ctx_get_number(ctx, self.handle, &out),
+            .runtime => |r| c.bk_get_number(r.ptr, self.handle, &out),
+            .ctx => |ctx| c.bk_ctx_get_number(ctx, self.handle, &out),
         });
         return out;
     }
@@ -138,8 +138,8 @@ pub const Value = struct {
     pub fn toBool(self: Value) Error!bool {
         var out: c_int = undefined;
         try check(switch (self.owner) {
-            .runtime => |r| c.jse_get_bool(r.ptr, self.handle, &out),
-            .ctx => |ctx| c.jse_ctx_get_bool(ctx, self.handle, &out),
+            .runtime => |r| c.bk_get_bool(r.ptr, self.handle, &out),
+            .ctx => |ctx| c.bk_ctx_get_bool(ctx, self.handle, &out),
         });
         return out != 0;
     }
@@ -168,22 +168,22 @@ pub const Value = struct {
         return .{ .owner = .{ .runtime = rt }, .handle = self.handle, .owned = self.owned };
     }
 
-    /// The two-call `jse_get_string` protocol, on whichever tier owns us.
+    /// The two-call `bk_get_string` protocol, on whichever tier owns us.
     fn readString(self: Value, buf: ?[*]u8, cap: usize, len: *usize) c_int {
         return switch (self.owner) {
-            .runtime => |r| c.jse_get_string(r.ptr, self.handle, buf, cap, len),
-            .ctx => |ctx| c.jse_ctx_get_string(ctx, self.handle, buf, cap, len),
+            .runtime => |r| c.bk_get_string(r.ptr, self.handle, buf, cap, len),
+            .ctx => |ctx| c.bk_ctx_get_string(ctx, self.handle, buf, cap, len),
         };
     }
 };
 
-/// Error kinds `Ctx.throwError` can raise, mirroring `jse_error_kind`.
+/// Error kinds `Ctx.throwError` can raise, mirroring `bk_error_kind`.
 pub const ErrorKind = enum(c_int) {
-    generic = c.JSE_ERROR,
-    type = c.JSE_ERROR_TYPE,
-    range = c.JSE_ERROR_RANGE,
-    reference = c.JSE_ERROR_REFERENCE,
-    syntax = c.JSE_ERROR_SYNTAX,
+    generic = c.BK_ERROR,
+    type = c.BK_ERROR_TYPE,
+    range = c.BK_ERROR_RANGE,
+    reference = c.BK_ERROR_REFERENCE,
+    syntax = c.BK_ERROR_SYNTAX,
 };
 
 /// Knobs for `Runtime.register`.
@@ -202,55 +202,55 @@ pub const RegisterOptions = struct {
 /// Everything reachable from a `Ctx` dies when the callback returns, so a
 /// `Ctx` must never be stored. Use `persist` to keep a value past the call.
 pub const Ctx = struct {
-    raw: c.jse_call_ctx,
+    raw: c.bk_call_ctx,
 
     /// How many arguments this call was actually made with.
     pub fn argc(self: Ctx) u32 {
-        return c.jse_argc(self.raw);
+        return c.bk_argc(self.raw);
     }
 
     /// Argument `i` as a scope handle. Reading past `argc` yields `undefined`,
     /// matching JS, so there is no bounds error to handle.
     pub fn arg(self: Ctx, i: u32) Value {
-        return .{ .owner = .{ .ctx = self.raw }, .handle = c.jse_arg(self.raw, i), .owned = false };
+        return .{ .owner = .{ .ctx = self.raw }, .handle = c.bk_arg(self.raw, i), .owned = false };
     }
 
     /// The `this` receiver. Strict semantics: an undefined receiver stays
     /// undefined rather than becoming the global object.
     pub fn this(self: Ctx) Value {
-        return .{ .owner = .{ .ctx = self.raw }, .handle = c.jse_this(self.raw), .owned = false };
+        return .{ .owner = .{ .ctx = self.raw }, .handle = c.bk_this(self.raw), .owned = false };
     }
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn newTarget(self: Ctx) Value {
-        return .{ .owner = .{ .ctx = self.raw }, .handle = c.jse_new_target(self.raw), .owned = false };
+        return .{ .owner = .{ .ctx = self.raw }, .handle = c.bk_new_target(self.raw), .owned = false };
     }
 
     /// True when invoked through `new` or `super()`.
     pub fn isConstruct(self: Ctx) bool {
-        return c.jse_is_construct(self.raw) != 0;
+        return c.bk_is_construct(self.raw) != 0;
     }
 
     /// Set the return value. A callback that sets none yields `undefined`.
     pub fn ret(self: Ctx, v: Value) void {
-        c.jse_return(self.raw, v.handle);
+        c.bk_return(self.raw, v.handle);
     }
 
     pub fn returnNumber(self: Ctx, d: f64) void {
-        c.jse_return_number(self.raw, d);
+        c.bk_return_number(self.raw, d);
     }
 
     pub fn returnBool(self: Ctx, b: bool) void {
-        c.jse_return_bool(self.raw, @intFromBool(b));
+        c.bk_return_bool(self.raw, @intFromBool(b));
     }
 
     pub fn returnNull(self: Ctx) void {
-        c.jse_return_null(self.raw);
+        c.bk_return_null(self.raw);
     }
 
     /// Return a fresh JS string copied from `utf8`.
     pub fn returnString(self: Ctx, utf8: []const u8) void {
-        c.jse_return_string(self.raw, utf8.ptr, utf8.len);
+        c.bk_return_string(self.raw, utf8.ptr, utf8.len);
     }
 
     /// Record a throw of a fresh `Error` of `kind`.
@@ -259,13 +259,13 @@ pub const Ctx = struct {
     /// normally. A recorded throw beats any return value set alongside it, so
     /// the usual shape is `ctx.throwError(...); return;`.
     pub fn throwError(self: Ctx, kind: ErrorKind, msg: [:0]const u8) void {
-        c.jse_throw_error(self.raw, @intFromEnum(kind), msg.ptr);
+        c.bk_throw_error(self.raw, @intFromEnum(kind), msg.ptr);
     }
 
     /// Record a throw of an arbitrary value. Same non-unwinding rule as
     /// `throwError`.
     pub fn throwValue(self: Ctx, v: Value) void {
-        c.jse_throw(self.raw, v.handle);
+        c.bk_throw(self.raw, v.handle);
     }
 
     /// The runtime this call is running in, for a host that needs to identify
@@ -282,7 +282,7 @@ pub const Ctx = struct {
     /// runtime while the callback is still on the stack corrupts the
     /// interpreter. Use `Ctx.call` to invoke JS from inside a host function.
     pub fn runtime(self: Ctx) Runtime {
-        return .{ .ptr = c.jse_ctx_runtime(self.raw) };
+        return .{ .ptr = c.bk_ctx_runtime(self.raw) };
     }
 
     /// Promote a scope handle to a runtime-owned one that outlives the call.
@@ -295,7 +295,7 @@ pub const Ctx = struct {
     pub fn persist(self: Ctx, v: Value) Value {
         return .{
             .owner = .{ .ctx = self.raw },
-            .handle = c.jse_value_persist(self.raw, v.handle),
+            .handle = c.bk_value_persist(self.raw, v.handle),
             .owned = true,
         };
     }
@@ -312,12 +312,12 @@ pub const Ctx = struct {
     /// it. Host recursion is bounded, so a runaway host -> JS -> host chain
     /// raises a RangeError rather than blowing the native stack.
     pub fn call(self: Ctx, func: Value, args: []const Value, this_val: ?Value) Error!Value {
-        var argv: [8]c.jse_value = undefined;
+        var argv: [8]c.bk_value = undefined;
         const buf = if (args.len <= argv.len) argv[0..args.len] else return Error.Full;
         for (args, 0..) |a, i| buf[i] = a.handle;
 
-        var out: c.jse_value = 0;
-        try check(c.jse_call(
+        var out: c.bk_value = 0;
+        try check(c.bk_call(
             self.raw,
             func.handle,
             if (buf.len == 0) null else buf.ptr,
@@ -334,13 +334,13 @@ pub const Ctx = struct {
 /// `func` may take `(Ctx)` or `(Ctx, *T)`, and may return `void` or an error
 /// union. A returned error becomes a JS `Error` carrying the error's name,
 /// because Zig errors cannot cross a C boundary.
-fn trampoline(comptime func: anytype) c.jse_host_fn {
+fn trampoline(comptime func: anytype) c.bk_host_fn {
     const info = @typeInfo(@TypeOf(func)).@"fn";
     if (info.params.len != 1 and info.params.len != 2)
         @compileError("host function must take (Ctx) or (Ctx, *T)");
 
     const Shim = struct {
-        fn invoke(raw: c.jse_call_ctx, udata: ?*anyopaque) callconv(.c) void {
+        fn invoke(raw: c.bk_call_ctx, udata: ?*anyopaque) callconv(.c) void {
             const ctx: Ctx = .{ .raw = raw };
             const result = if (info.params.len == 1)
                 func(ctx)
@@ -348,7 +348,7 @@ fn trampoline(comptime func: anytype) c.jse_host_fn {
                 func(ctx, @ptrCast(@alignCast(udata)));
 
             // Zig errors cannot unwind through C, so surface them as a throw.
-            // error.Throw is the exception: it means a nested jse_ call already
+            // error.Throw is the exception: it means a nested bk_ call already
             // recorded the real exception on this context, and re-throwing here
             // would replace a precise TypeError with a generic Error("Throw").
             if (@typeInfo(@TypeOf(result)) == .error_union) {
@@ -369,7 +369,7 @@ fn trampoline(comptime func: anytype) c.jse_host_fn {
 /// time -- the engine has no locking and enforces nothing -- but two threads
 /// each driving their own runtime share no state and are fine.
 pub const Runtime = struct {
-    ptr: c.jse_runtime,
+    ptr: c.bk_runtime,
 
     /// Create a runtime, independent of any already open.
     ///
@@ -377,8 +377,8 @@ pub const Runtime = struct {
     /// back to it, so keep it at a stable address (a local you never copy is
     /// fine; see the example).
     pub fn init() Error!Runtime {
-        var ptr: c.jse_runtime = null;
-        try check(c.jse_open(&ptr));
+        var ptr: c.bk_runtime = null;
+        try check(c.bk_open(&ptr));
         return .{ .ptr = ptr };
     }
 
@@ -386,7 +386,7 @@ pub const Runtime = struct {
     /// other runtimes are untouched.
     pub fn deinit(self: *Runtime) void {
         if (self.ptr == null) return;
-        c.jse_close(self.ptr);
+        c.bk_close(self.ptr);
         self.ptr = null;
     }
 
@@ -394,8 +394,8 @@ pub const Runtime = struct {
     /// `"40 + 2"` yields 42). Pending microtasks are drained before returning.
     /// Caller owns the returned `Value`, which belongs to this runtime.
     pub fn eval(self: *Runtime, src: []const u8) Error!Value {
-        var handle: c.jse_value = 0;
-        try check(c.jse_eval(self.ptr, src.ptr, src.len, &handle));
+        var handle: c.bk_value = 0;
+        try check(c.bk_eval(self.ptr, src.ptr, src.len, &handle));
         return .{ .owner = .{ .runtime = self }, .handle = handle };
     }
 
@@ -430,7 +430,7 @@ pub const Runtime = struct {
         comptime func: anytype,
         opts: RegisterOptions,
     ) Error!void {
-        try check(c.jse_register_fn(
+        try check(c.bk_register_fn(
             self.ptr,
             name.ptr,
             name.len,
@@ -459,20 +459,20 @@ pub const Runtime = struct {
 
     /// Run `src` purely for its side effects, discarding the result.
     pub fn exec(self: *Runtime, src: []const u8) Error!void {
-        try check(c.jse_eval(self.ptr, src.ptr, src.len, null));
+        try check(c.bk_eval(self.ptr, src.ptr, src.len, null));
     }
 
     /// Message describing the most recent failure. Empty when there is none.
     /// Borrowed from the runtime and invalidated by the next call, so copy it
     /// if you need to keep it.
     pub fn lastError(self: *Runtime) [:0]const u8 {
-        return std.mem.span(c.jse_last_error(self.ptr));
+        return std.mem.span(c.bk_last_error(self.ptr));
     }
 
     /// Run pending promise jobs. `eval` already drains, so this is only needed
     /// after resolving promises from host code.
     pub fn drainMicrotasks(self: *Runtime) void {
-        c.jse_drain_microtasks(self.ptr);
+        c.bk_drain_microtasks(self.ptr);
     }
 };
 
@@ -599,7 +599,7 @@ fn tTwice(ctx: Ctx) !void {
 
 /// Records which runtime the in-flight call belongs to, so the test can check
 /// `ctx.runtime()` against the runtime it evaluated through.
-fn tWhich(ctx: Ctx, seen: *c.jse_runtime) void {
+fn tWhich(ctx: Ctx, seen: *c.bk_runtime) void {
     seen.* = ctx.runtime().ptr;
     ctx.returnNumber(@floatFromInt(ctx.argc()));
 }
@@ -610,8 +610,8 @@ test "a callback reaches its own runtime, and registration is per-runtime" {
     var b = try Runtime.init();
     defer b.deinit();
 
-    var seen_a: c.jse_runtime = null;
-    var seen_b: c.jse_runtime = null;
+    var seen_a: c.bk_runtime = null;
+    var seen_b: c.bk_runtime = null;
     try a.registerWith("which", tWhich, &seen_a, .{});
     try b.registerWith("which", tWhich, &seen_b, .{});
     try a.register("sum", tSum, .{ .arity = 2 });

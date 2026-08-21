@@ -1,4 +1,4 @@
-# js.rb -- Ruby binding for the jse_ embedding ABI.
+# js.rb -- Ruby binding for the bk_ embedding ABI.
 #
 # Pure Ruby: it drives the shared library through the stdlib `fiddle`, so there
 # is no native gem to compile and no dependency on the `ffi` gem. Ruby 2.6 (the
@@ -25,7 +25,7 @@ require 'fiddle/import'
 module JS
   VERSION = '0.1.0'.freeze
 
-  # Status codes from jse.h. Success is 0; every failure is negative.
+  # Status codes from boomkat.h. Success is 0; every failure is negative.
   module Status
     OK       =  0
     NOMEM    = -1
@@ -37,7 +37,7 @@ module JS
     FULL     = -7
   end
 
-  # Error constructors jse_throw_error can raise, from jse_error_kind.
+  # Error constructors bk_throw_error can raise, from bk_error_kind.
   module ErrorKind
     ERROR     = 0
     TYPE      = 1
@@ -46,7 +46,7 @@ module JS
     SYNTAX    = 4
   end
 
-  # Value types reported by jse_type_of.
+  # Value types reported by bk_type_of.
   module Type
     UNDEFINED = 0
     NULL      = 1
@@ -61,7 +61,7 @@ module JS
   # Base of the exception hierarchy. Everything this binding raises is a JS::Error,
   # so `rescue JS::Error` catches any engine failure.
   class Error < StandardError
-    # The jse_status code behind this failure.
+    # The bk_status code behind this failure.
     attr_reader :status
 
     def initialize(message, status = nil)
@@ -126,7 +126,7 @@ module JS
       syntax: ErrorKind::SYNTAX
     }.freeze
 
-    # The jse_error_kind this becomes on the JS side.
+    # The bk_error_kind this becomes on the JS side.
     attr_reader :kind
 
     def initialize(message, kind = :error)
@@ -175,40 +175,40 @@ module JS
     extend Fiddle::Importer
 
     SIGNATURES = [
-      'int jse_open(void*)',
-      'void jse_close(void*)',
-      'const char* jse_version()',
-      'int jse_eval(void*, const char*, size_t, unsigned int*)',
-      'void jse_value_free(void*, unsigned int)',
-      'int jse_type_of(void*, unsigned int)',
-      'int jse_get_number(void*, unsigned int, double*)',
-      'int jse_get_bool(void*, unsigned int, int*)',
-      'int jse_get_string(void*, unsigned int, char*, size_t, size_t*)',
-      'const char* jse_last_error(void*)',
-      'int jse_last_error_code(void*)',
-      'void jse_drain_microtasks(void*)',
+      'int bk_open(void*)',
+      'void bk_close(void*)',
+      'const char* bk_version()',
+      'int bk_eval(void*, const char*, size_t, unsigned int*)',
+      'void bk_value_free(void*, unsigned int)',
+      'int bk_type_of(void*, unsigned int)',
+      'int bk_get_number(void*, unsigned int, double*)',
+      'int bk_get_bool(void*, unsigned int, int*)',
+      'int bk_get_string(void*, unsigned int, char*, size_t, size_t*)',
+      'const char* bk_last_error(void*)',
+      'int bk_last_error_code(void*)',
+      'void bk_drain_microtasks(void*)',
 
-      # Host functions. The jse_call_ctx is an opaque pointer; the readers above
-      # take a runtime, so a callback reads its arguments through the jse_ctx_*
+      # Host functions. The bk_call_ctx is an opaque pointer; the readers above
+      # take a runtime, so a callback reads its arguments through the bk_ctx_*
       # tier instead -- only that tier resolves a scope handle.
-      'int jse_register_fn(void*, const char*, size_t, void*, void*, int, int)',
-      'void* jse_ctx_runtime(void*)',
-      'int jse_ctx_type_of(void*, unsigned int)',
-      'int jse_ctx_get_number(void*, unsigned int, double*)',
-      'int jse_ctx_get_bool(void*, unsigned int, int*)',
-      'int jse_ctx_get_string(void*, unsigned int, char*, size_t, size_t*)',
-      'unsigned int jse_argc(void*)',
-      'unsigned int jse_arg(void*, unsigned int)',
-      'unsigned int jse_this(void*)',
-      'int jse_is_construct(void*)',
-      'void jse_return(void*, unsigned int)',
-      'void jse_return_number(void*, double)',
-      'void jse_return_bool(void*, int)',
-      'void jse_return_null(void*)',
-      'void jse_return_string(void*, const char*, size_t)',
-      'void jse_throw_error(void*, int, const char*)',
-      'unsigned int jse_value_persist(void*, unsigned int)',
-      'int jse_call(void*, unsigned int, const unsigned int*, unsigned int, unsigned int, unsigned int*)'
+      'int bk_register_fn(void*, const char*, size_t, void*, void*, int, int)',
+      'void* bk_ctx_runtime(void*)',
+      'int bk_ctx_type_of(void*, unsigned int)',
+      'int bk_ctx_get_number(void*, unsigned int, double*)',
+      'int bk_ctx_get_bool(void*, unsigned int, int*)',
+      'int bk_ctx_get_string(void*, unsigned int, char*, size_t, size_t*)',
+      'unsigned int bk_argc(void*)',
+      'unsigned int bk_arg(void*, unsigned int)',
+      'unsigned int bk_this(void*)',
+      'int bk_is_construct(void*)',
+      'void bk_return(void*, unsigned int)',
+      'void bk_return_number(void*, double)',
+      'void bk_return_bool(void*, int)',
+      'void bk_return_null(void*)',
+      'void bk_return_string(void*, const char*, size_t)',
+      'void bk_throw_error(void*, int, const char*)',
+      'unsigned int bk_value_persist(void*, unsigned int)',
+      'int bk_call(void*, unsigned int, const unsigned int*, unsigned int, unsigned int, unsigned int*)'
     ].freeze
 
     class << self
@@ -360,36 +360,36 @@ module JS
 
   # Which tier of the C reader API a handle must be resolved through.
   #
-  # A jse_value names a slot, and the slot table it indexes depends on where the
+  # A bk_value names a slot, and the slot table it indexes depends on where the
   # handle came from: a runtime's registry for an #eval result, one call's scope
   # for an argument. The two tiers take different first arguments -- a runtime
   # or a call context -- and neither accepts NULL, so a handle carries the tier
   # that can read it rather than the conversion code guessing.
   module Reader
-    # Resolves runtime-registry handles: what jse_eval and jse_call hand back.
+    # Resolves runtime-registry handles: what bk_eval and bk_call hand back.
     class Runtime
       def initialize(pointer)
         @p = pointer
       end
 
       def type_of(v)
-        Lib.jse_type_of(@p, v)
+        Lib.bk_type_of(@p, v)
       end
 
       def get_number(v, out)
-        Lib.jse_get_number(@p, v, out)
+        Lib.bk_get_number(@p, v, out)
       end
 
       def get_bool(v, out)
-        Lib.jse_get_bool(@p, v, out)
+        Lib.bk_get_bool(@p, v, out)
       end
 
       def get_string(v, buf, cap, len)
-        Lib.jse_get_string(@p, v, buf, cap, len)
+        Lib.bk_get_string(@p, v, buf, cap, len)
       end
     end
 
-    # Resolves scope handles -- jse_arg, jse_this -- which name a slot in the
+    # Resolves scope handles -- bk_arg, bk_this -- which name a slot in the
     # live call rather than in the runtime, and which the runtime tier cannot
     # see. It also resolves registry handles, so one host call needs only this.
     class Context
@@ -398,19 +398,19 @@ module JS
       end
 
       def type_of(v)
-        Lib.jse_ctx_type_of(@p, v)
+        Lib.bk_ctx_type_of(@p, v)
       end
 
       def get_number(v, out)
-        Lib.jse_ctx_get_number(@p, v, out)
+        Lib.bk_ctx_get_number(@p, v, out)
       end
 
       def get_bool(v, out)
-        Lib.jse_ctx_get_bool(@p, v, out)
+        Lib.bk_ctx_get_bool(@p, v, out)
       end
 
       def get_string(v, buf, cap, len)
-        Lib.jse_ctx_get_string(@p, v, buf, cap, len)
+        Lib.bk_ctx_get_string(@p, v, buf, cap, len)
       end
     end
   end
@@ -440,14 +440,14 @@ module JS
     # arity in either direction.
     def argc
       check_live!
-      Lib.jse_argc(@ctx)
+      Lib.bk_argc(@ctx)
     end
 
     # Argument `i` converted to Ruby. Reading past argc yields nil, matching
     # JS semantics for a missing argument.
     def arg(index)
       check_live!
-      @runtime.send(:handle_to_ruby, Lib.jse_arg(@ctx, index), self)
+      @runtime.send(:handle_to_ruby, Lib.bk_arg(@ctx, index), self)
     end
 
     # All arguments as a Ruby array.
@@ -458,13 +458,13 @@ module JS
     # The `this` receiver, converted. Strict semantics: a plain call sees nil.
     def this
       check_live!
-      @runtime.send(:handle_to_ruby, Lib.jse_this(@ctx), self)
+      @runtime.send(:handle_to_ruby, Lib.bk_this(@ctx), self)
     end
 
     # True when invoked through `new` or `super()`.
     def construct?
       check_live!
-      !Lib.jse_is_construct(@ctx).zero?
+      !Lib.bk_is_construct(@ctx).zero?
     end
 
     # Call a JS function handle with Ruby arguments. Used by JS::Callback;
@@ -480,19 +480,19 @@ module JS
       end
 
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
-      status = Lib.jse_call(@ctx, func_handle, argv, handles.size, 0, out)
+      status = Lib.bk_call(@ctx, func_handle, argv, handles.size, 0, out)
 
       if status != Status::OK
         # The callee's exception is already staged on this context, so letting
         # this escape the host function propagates the original JS error
         # untouched. CalleeThrow marks it as "already staged" so the trampoline
         # does not overwrite it with a re-derived one.
-        message = Lib.jse_last_error(@runtime.send(:pointer)).to_s
+        message = Lib.bk_last_error(@runtime.send(:pointer)).to_s
         message = "JS call failed (status #{status})" if message.empty?
         raise CalleeThrow.new(message, status)
       end
 
-      # jse_call hands back a runtime-owned handle. It is kept alive until this
+      # bk_call hands back a runtime-owned handle. It is kept alive until this
       # host call ends and tagged onto the converted value, so a result can be
       # fed straight into another callback -- f.call(f.call(x)) -- which is the
       # only way to chain calls when the ABI cannot construct values. The
@@ -508,7 +508,7 @@ module JS
     # refused, so move a value across by reading it out and writing it back in.
     def persist(handle)
       check_live!
-      Lib.jse_value_persist(@ctx, handle)
+      Lib.bk_value_persist(@ctx, handle)
     end
 
     def to_s
@@ -535,16 +535,16 @@ module JS
   end
 
   # Default search order for the shared library:
-  #   1. $JSE_LIBRARY
+  #   1. $BK_LIBRARY
   #   2. ../../out/ relative to this file (a working tree after `make shared`)
   #   3. the bare soname, letting the dynamic loader search system paths
   def self.default_library
-    return ENV['JSE_LIBRARY'] if ENV['JSE_LIBRARY'] && !ENV['JSE_LIBRARY'].empty?
+    return ENV['BK_LIBRARY'] if ENV['BK_LIBRARY'] && !ENV['BK_LIBRARY'].empty?
 
     ext  = RUBY_PLATFORM =~ /darwin/ ? 'dylib' : 'so'
     root = File.expand_path('../../..', File.dirname(__FILE__))
-    built = File.join(root, 'out', "libjse.#{ext}")
-    File.exist?(built) ? built : "libjse.#{ext}"
+    built = File.join(root, 'out', "boomkat.#{ext}")
+    File.exist?(built) ? built : "boomkat.#{ext}"
   end
 
   # Open a runtime. With a block, closes it afterwards and returns the block's
@@ -578,8 +578,8 @@ module JS
       Lib.load!(library || JS.default_library)
 
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP)
-      status = Lib.jse_open(out)
-      raise Error.new('jse_open failed', status) if status != Status::OK
+      status = Lib.bk_open(out)
+      raise Error.new('bk_open failed', status) if status != Status::OK
 
       @rt = out.ptr
       @reader = Reader::Runtime.new(@rt)
@@ -642,7 +642,7 @@ module JS
       @closures << closure
 
       bytes = name.to_s.dup.force_encoding(Encoding::BINARY)
-      status = Lib.jse_register_fn(
+      status = Lib.bk_register_fn(
         @rt, name.to_s, bytes.bytesize, closure, nil,
         declared, constructable ? 1 : 0
       )
@@ -655,7 +655,7 @@ module JS
 
     # Engine version, e.g. "0.1.0".
     def version
-      Lib.jse_version.to_s
+      Lib.bk_version.to_s
     end
 
     def closed?
@@ -670,12 +670,12 @@ module JS
     def eval(source, filename = nil)
       check_open!
 
-      # jse_eval takes a byte length, so measure bytes and not characters:
+      # bk_eval takes a byte length, so measure bytes and not characters:
       # any non-ASCII source would otherwise be truncated mid-string.
       bytes  = source.to_s.dup.force_encoding(Encoding::BINARY)
       handle = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
 
-      status = Lib.jse_eval(@rt, source.to_s, bytes.bytesize, handle)
+      status = Lib.bk_eval(@rt, source.to_s, bytes.bytesize, handle)
       raise_status!(status, filename) if status != Status::OK
 
       id = handle[0, Fiddle::SIZEOF_INT].unpack1('L')
@@ -683,7 +683,7 @@ module JS
         to_ruby(id)
       ensure
         # Handles are not garbage collected; the slot table holds 1024.
-        Lib.jse_value_free(@rt, id) if id != 0
+        Lib.bk_value_free(@rt, id) if id != 0
       end
     end
 
@@ -691,7 +691,7 @@ module JS
     def exec(source, filename = nil)
       check_open!
       bytes = source.to_s.dup.force_encoding(Encoding::BINARY)
-      status = Lib.jse_eval(@rt, source.to_s, bytes.bytesize, nil)
+      status = Lib.bk_eval(@rt, source.to_s, bytes.bytesize, nil)
       raise_status!(status, filename) if status != Status::OK
       self
     end
@@ -704,9 +704,9 @@ module JS
     # them will both hand out 65537. A handle this runtime does not hold raises
     # JS::Error rather than reading whatever occupies that slot.
     #
-    # jse_type_of reports an unheld handle as undefined, which is also what a
+    # bk_type_of reports an unheld handle as undefined, which is also what a
     # genuine `undefined` reads as, so the two are told apart by asking a
-    # reader: it answers JSE_ERR_INVALID for an unheld slot and JSE_ERR_TYPE
+    # reader: it answers BK_ERR_INVALID for an unheld slot and BK_ERR_TYPE
     # for a real undefined.
     def read(handle)
       check_open!
@@ -725,7 +725,7 @@ module JS
     # is only needed after resolving promises from outside the engine.
     def drain_microtasks
       check_open!
-      Lib.jse_drain_microtasks(@rt)
+      Lib.bk_drain_microtasks(@rt)
       self
     end
 
@@ -733,7 +733,7 @@ module JS
     def close
       return self if @closed
 
-      Lib.jse_close(@rt)
+      Lib.bk_close(@rt)
       @rt = nil
       @reader = nil
       @closed = true
@@ -757,8 +757,8 @@ module JS
       @rt
     end
 
-    # Wrap a Ruby block in the C callback shape jse_host_fn declares:
-    #   void (*)(jse_call_ctx ctx, void *udata)
+    # Wrap a Ruby block in the C callback shape bk_host_fn declares:
+    #   void (*)(bk_call_ctx ctx, void *udata)
     #
     # The udata parameter is unused -- Ruby closes over the block directly,
     # which is both simpler and safer than round-tripping an object through a
@@ -798,14 +798,14 @@ module JS
     def return_value(call, ctx, value)
       case value
       when nil            then # a callback that returns nothing yields undefined
-      when true, false    then Lib.jse_return_bool(ctx, value ? 1 : 0)
-      when Numeric        then Lib.jse_return_number(ctx, value.to_f)
+      when true, false    then Lib.bk_return_bool(ctx, value ? 1 : 0)
+      when Numeric        then Lib.bk_return_number(ctx, value.to_f)
       when String
         bytes = value.dup.force_encoding(Encoding::BINARY)
-        Lib.jse_return_string(ctx, value, bytes.bytesize)
+        Lib.bk_return_string(ctx, value, bytes.bytesize)
       when Symbol
         s = value.to_s
-        Lib.jse_return_string(ctx, s, s.dup.force_encoding(Encoding::BINARY).bytesize)
+        Lib.bk_return_string(ctx, s, s.dup.force_encoding(Encoding::BINARY).bytesize)
       when Callback       then # already a JS value; returning it is a no-op here
       else
         raise HostThrow.new(
@@ -815,12 +815,12 @@ module JS
       end
     end
 
-    # Resolve one JS::Callback#call argument to a handle jse_call can take.
+    # Resolve one JS::Callback#call argument to a handle bk_call can take.
     #
     # Only values that already live in the engine can be passed. The v1 ABI has
-    # no value constructors -- no jse_new_number, no jse_new_string -- so there
+    # no value constructors -- no bk_new_number, no bk_new_string -- so there
     # is no way to build a fresh JS value out of Ruby data. The one path that
-    # looks like it would work, evaluating a literal with jse_eval, re-enters
+    # looks like it would work, evaluating a literal with bk_eval, re-enters
     # the VM from inside a host callback and faults the native stack, so a Ruby
     # primitive is refused here with a clear message rather than crashing.
     #
@@ -857,13 +857,13 @@ module JS
       rescue StandardError
         exception.class.name.to_s
       end
-      # jse_throw_error takes a NUL-terminated C string, so a message with an
+      # bk_throw_error takes a NUL-terminated C string, so a message with an
       # embedded NUL would be silently truncated there; cut it here instead.
       message = message.split("\0", 2).first.to_s
       message = exception.class.name.to_s if message.empty?
-      Lib.jse_throw_error(ctx, kind, message)
+      Lib.bk_throw_error(ctx, kind, message)
     rescue Exception # rubocop:disable Lint/RescueException
-      Lib.jse_throw_error(ctx, ErrorKind::ERROR, 'host function failed')
+      Lib.bk_throw_error(ctx, ErrorKind::ERROR, 'host function failed')
     end
 
     # Map a Ruby exception class onto a JS error constructor. The pairs chosen
@@ -887,18 +887,18 @@ module JS
     end
 
     def free_handle(id)
-      Lib.jse_value_free(@rt, id) if id && id != 0 && !@closed
+      Lib.bk_value_free(@rt, id) if id && id != 0 && !@closed
     end
 
     # Convert a handle reached through a live host call -- an argument's scope
-    # handle, or a registry handle jse_call returned -- into Ruby, keeping the
+    # handle, or a registry handle bk_call returned -- into Ruby, keeping the
     # handle attached so the value can be passed back into JS. Functions become
     # JS::Callback so the host can call back into JS.
     #
     # Everything resolves through the call's context reader. A scope handle
     # names a slot in this call rather than in the runtime's registry, so the
-    # runtime tier cannot see it: read through it and jse_type_of reports
-    # UNDEFINED and every reader fails with JSE_ERR_INVALID.
+    # runtime tier cannot see it: read through it and bk_type_of reports
+    # UNDEFINED and every reader fails with BK_ERR_INVALID.
     def handle_to_ruby(id, call)
       return nil if id.zero?
 
@@ -908,26 +908,26 @@ module JS
       when Type::UNDEFINED, Type::NULL then nil
       when Type::BOOLEAN  then read_bool(id, reader)
       # Numbers and strings keep their handle, which the v1 ABI requires of
-      # anything passed to jse_call: it can only take values it already holds.
+      # anything passed to bk_call: it can only take values it already holds.
       when Type::NUMBER   then Tagged.wrap(read_number(id, reader), id)
       when Type::STRING   then Tagged.wrap(read_string(id, reader), id)
       when Type::FUNCTION then Callback.new(call, id)
       when Type::OTHER
-        # jse_type_of reports OTHER for a lightfunc -- the compact
+        # bk_type_of reports OTHER for a lightfunc -- the compact
         # representation the engine uses for many built-ins, where Math.sqrt
         # and friends live -- as well as for symbols and bigints. A lightfunc
         # is callable, so expose the whole class as a Callback and let
-        # jse_call's own TypeError reject the ones that are not.
+        # bk_call's own TypeError reject the ones that are not.
         Callback.new(call, id)
       else Opaque.new(type, id)
       end
     end
 
     # Turn a non-OK status into the matching exception, using the engine's
-    # message. jse_last_error owns its buffer and the next call overwrites it,
+    # message. bk_last_error owns its buffer and the next call overwrites it,
     # so copy the string out immediately.
     def raise_status!(status, filename = nil)
-      message = Lib.jse_last_error(@rt).to_s
+      message = Lib.bk_last_error(@rt).to_s
       message = "JS error (status #{status})" if message.empty?
       message = "#{filename}: #{message}" if filename
 
@@ -955,7 +955,7 @@ module JS
     def read_bool(id, reader)
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
       status = reader.get_bool(id, out)
-      raise Error.new('jse_get_bool failed', status) if status != Status::OK
+      raise Error.new('bk_get_bool failed', status) if status != Status::OK
 
       out[0, Fiddle::SIZEOF_INT].unpack1('l') != 0
     end
@@ -963,7 +963,7 @@ module JS
     def read_number(id, reader)
       out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE)
       status = reader.get_number(id, out)
-      raise Error.new('jse_get_number failed', status) if status != Status::OK
+      raise Error.new('bk_get_number failed', status) if status != Status::OK
 
       out[0, Fiddle::SIZEOF_DOUBLE].unpack1('d')
     end
@@ -974,14 +974,14 @@ module JS
     def read_string(id, reader)
       len = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T)
       status = reader.get_string(id, nil, 0, len)
-      raise Error.new('jse_get_string (measure) failed', status) if status != Status::OK
+      raise Error.new('bk_get_string (measure) failed', status) if status != Status::OK
 
       size = len[0, Fiddle::SIZEOF_SIZE_T].unpack1('J')
       return ''.dup.force_encoding(Encoding::UTF_8) if size.zero?
 
       buf = Fiddle::Pointer.malloc(size + 1)
       status = reader.get_string(id, buf, size + 1, len)
-      raise Error.new('jse_get_string (read) failed', status) if status != Status::OK
+      raise Error.new('bk_get_string (read) failed', status) if status != Status::OK
 
       buf[0, size].force_encoding(Encoding::UTF_8)
     end

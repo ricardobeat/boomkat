@@ -1,7 +1,7 @@
 # Python binding
 
 A pure-Python [`ctypes`](https://docs.python.org/3/library/ctypes.html) wrapper over the
-`jse_` C ABI (`include/jse.h`). There is no C extension and nothing to compile on the
+`bk_` C ABI (`include/boomkat.h`). There is no C extension and nothing to compile on the
 Python side. The module loads the engine's shared library at runtime.
 
 ## Prerequisites
@@ -19,9 +19,9 @@ From the repository root:
 make shared
 ```
 
-This produces `out/libjse.dylib` (macOS) or `out/libjse.so` (Linux). The binding finds
+This produces `out/libboomkat.dylib` (macOS) or `out/libboomkat.so` (Linux). The binding finds
 it automatically by walking up from its own location. To point at a library elsewhere,
-set `JSE_LIBRARY=/path/to/libjse.dylib` or pass `Runtime("/path/to/libjse.dylib")`.
+set `BK_LIBRARY=/path/to/libboomkat.dylib` or pass `Runtime("/path/to/libboomkat.dylib")`.
 
 ## Run
 
@@ -93,7 +93,7 @@ with Runtime() as rt:                 # closes the engine on exit, even on error
 Objects and functions cannot cross the boundary as data. Serialize them in JS first,
 with `rt.eval("JSON.stringify(obj)")`, and parse the string on the Python side.
 
-Errors raise `JsError`, carrying `.code` (the raw `jse_status` integer) and `.kind`
+Errors raise `JsError`, carrying `.code` (the raw `bk_status` integer) and `.kind`
 (a readable name such as `syntax error` or `uncaught exception`).
 
 ## Host functions
@@ -120,7 +120,7 @@ arguments as live `JsValue` references), `this`, `new_target`, `is_construct`, a
 
 Arguments arrive as *scope* handles, which name a slot in the call rather than in the
 runtime's value registry. The binding reads them through the ABI's context tier
-(`jse_ctx_type_of`, `jse_ctx_get_number`, `jse_ctx_get_bool`, `jse_ctx_get_string`),
+(`bk_ctx_type_of`, `bk_ctx_get_number`, `bk_ctx_get_bool`, `bk_ctx_get_string`),
 which is the only tier that resolves them.
 
 ### Throwing
@@ -143,7 +143,7 @@ traceback survives for logging even though JS only ever sees the message text.
 
 ### Calling JS back
 
-Function arguments arrive as callables. Invoking one runs it through `jse_call`, and
+Function arguments arrive as callables. Invoking one runs it through `bk_call`, and
 a throw from the callee propagates out with its class intact:
 
 ```python
@@ -165,8 +165,8 @@ Returns may be `float`/`int`, `str`, `bool`, `None`, or a `JsValue` from `call.r
 Arguments to a JS callback must be values *this call received*, either a `JsValue`
 from `call.raw` or a `call.args` entry passed through unchanged. `fn(x)` works;
 `fn(x + 1)` raises `JsError`, because this ABI version has no way to construct a
-JS value inside a callback (`jse_return_*` writes the return slot rather than
-producing a handle, and `jse_eval` must not be re-entered from a callback). Do the
+JS value inside a callback (`bk_return_*` writes the return slot rather than
+producing a handle, and `bk_eval` must not be re-entered from a callback). Do the
 arithmetic on the Python side of the result, or return data and let JS assemble the
 call. Returning a `dict` or `list` raises for the same reason; return
 `json.dumps(...)` and `JSON.parse` it in JS.
@@ -205,7 +205,7 @@ serialized, exactly as they do when leaving the engine for Python at all.
 ### Host functions
 
 `Call.runtime` is the runtime the callback is executing inside, resolved from the call
-context via `jse_ctx_runtime` rather than from whichever `Runtime` registered the
+context via `bk_ctx_runtime` rather than from whichever `Runtime` registered the
 function. Registering one Python callable in several runtimes therefore works, and each
 invocation can tell them apart:
 
@@ -234,6 +234,6 @@ freed memory.)
 No value construction inside a host function. As described above, callbacks can forward
 the arguments they were given, but cannot build new ones.
 
-`jse_eval` is not re-entrant. Do not call `rt.eval()` from inside a host function; it is
+`bk_eval` is not re-entrant. Do not call `rt.eval()` from inside a host function; it is
 a top-level entry point and re-entering it crashes the engine. Use a JS callback
 argument instead.

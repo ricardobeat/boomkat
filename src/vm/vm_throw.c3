@@ -139,7 +139,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
         // async function body, the throw does not propagate to the caller: it
         // rejects the function's Promise (which the caller already received) and
         // the async frame returns normally. Absorb it here. An interrupt is the
-        // exception: it must surface to the host as JSE_ERR_INTERRUPT, not settle
+        // exception: it must surface to the host as BK_ERR_INTERRUPT, not settle
         // the promise with an internal error the host never sees.
         if ((search_act.flags & ACT_FLAG_ASYNC) != 0 && search_act.async_promise != null
             && !local_only && !vm.heap.uncatchable_throw) {

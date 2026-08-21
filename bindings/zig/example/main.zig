@@ -2,7 +2,7 @@
 //! script surface as a Zig error, and expose Zig functions to JS.
 
 const std = @import("std");
-const js = @import("jse");
+const js = @import("boomkat");
 
 // --- host functions -------------------------------------------------------
 //
@@ -27,7 +27,7 @@ fn checkAge(ctx: js.Ctx) !void {
     ctx.returnBool(age >= 18);
 }
 
-/// mapTwice(f, x) -> f(f(x)): the host calling back into JS via jse_call.
+/// mapTwice(f, x) -> f(f(x)): the host calling back into JS via bk_call.
 /// If `f` throws, `ctx.call` yields error.Throw and the trampoline lets the
 /// callee's own exception propagate unchanged.
 fn mapTwice(ctx: js.Ctx) !void {
@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) !void {
     const out = &out_file.interface;
     defer out.flush() catch {};
 
-    try out.print("jse {s}\n", .{js.version()});
+    try out.print("boomkat {s}\n", .{js.version()});
 
     // The runtime owns the engine; `defer deinit` tears it down.
     var rt = try js.Runtime.init();

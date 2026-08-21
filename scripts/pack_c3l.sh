@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Assemble a jse.c3l library package from the engine source tree.
+# Assemble a boomkat.c3l library package from the engine source tree.
 #
 # Usage:  scripts/pack_c3l.sh [--link]
 #
-# Default mode copies all files into dist/jse.c3l/ (distributable).
-# Pass --link to create dist/jse.link.c3l/ with symlinks instead.
+# Default mode copies all files into dist/boomkat.c3l/ (distributable).
+# Pass --link to create dist/boomkat.link.c3l/ with symlinks instead.
 #
 # The resulting .c3l can be consumed by any C3 project:
 #
-#     c3c build my_app --libdir <parent-of-c3l> --lib jse
+#     c3c build my_app --libdir <parent-of-c3l> --lib boomkat
 #
 # or added to a project.json "dependencies" list.
 
@@ -16,11 +16,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 MODE="copy"
-C3L_DIR="dist/jse.c3l"
+C3L_DIR="dist/boomkat.c3l"
 
 if [[ "${1:-}" == "--link" ]]; then
     MODE="symlink"
-    C3L_DIR="dist/jse.link.c3l"
+    C3L_DIR="dist/boomkat.link.c3l"
 fi
 
 # --- clean slate ---------------------------------------------------------------
@@ -44,21 +44,21 @@ link_or_copy "src"
 link_or_copy "libregexp"
 link_or_copy "quickjs"
 
-# The public API binding: lives at bindings/c3/jse.c3, placed at the .c3l root
-# so it is compiled as `module jse` (its own declaration).
+# The public API binding: lives at bindings/c3/boomkat.c3, placed at the .c3l root
+# so it is compiled as `module boomkat` (its own declaration).
 if [[ "$MODE" == "copy" ]]; then
-    cp "bindings/c3/jse.c3" "$C3L_DIR/jse.c3"
+    cp "bindings/c3/boomkat.c3" "$C3L_DIR/boomkat.c3"
 else
-    ln -s "../../bindings/c3/jse.c3" "$C3L_DIR/jse.c3"
+    ln -s "../../bindings/c3/boomkat.c3" "$C3L_DIR/boomkat.c3"
 fi
 
 # --- manifest.json -------------------------------------------------------------
 cat > "$C3L_DIR/manifest.json" <<'MANIFEST'
 {
-    "provides": "jse",
+    "provides": "boomkat",
     "sources": [
         "src",
-        "jse.c3"
+        "boomkat.c3"
     ],
     "c-sources": [
         "libregexp/libregexp.c",

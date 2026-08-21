@@ -1,4 +1,4 @@
-"""Pure-Python ctypes binding for the jse_ embedding ABI (see include/jse.h).
+"""Pure-Python ctypes binding for the bk_ embedding ABI (see include/boomkat.h).
 
 No C extension, no build step: this module dlopen()s the shared library built
 by `make shared` and talks to its exported C symbols directly.
@@ -34,7 +34,7 @@ import weakref
 __all__ = ["Runtime", "JsError", "JsObject", "JsThrow", "JsValue",
            "JsFunction", "Call", "version"]
 
-# Status codes from jse.h. 0 is success; every error is negative.
+# Status codes from boomkat.h. 0 is success; every error is negative.
 _OK = 0
 _STATUS_NAMES = {
     -1: "out of memory",
@@ -46,7 +46,7 @@ _STATUS_NAMES = {
     -7: "buffer too small or slot table full",
 }
 
-# Value types from jse_type_of.
+# Value types from bk_type_of.
 _UNDEFINED, _NULL, _BOOLEAN, _NUMBER, _STRING, _OBJECT, _FUNCTION, _OTHER = range(8)
 
 _TYPE_NAMES = {
@@ -61,7 +61,7 @@ _TYPE_NAMES = {
 }
 
 
-# Error kinds for jse_throw_error, keyed by the Python exception the host
+# Error kinds for bk_throw_error, keyed by the Python exception the host
 # function raised. Anything unlisted becomes a plain Error.
 _ERROR, _ERROR_TYPE, _ERROR_RANGE, _ERROR_REFERENCE, _ERROR_SYNTAX = range(5)
 
@@ -77,7 +77,7 @@ _ERROR_KINDS = {
 class JsError(Exception):
     """A JS-side failure: syntax error, uncaught throw, or engine fault.
 
-    `code` is the raw jse_status integer; `kind` is a human-readable name for
+    `code` is the raw bk_status integer; `kind` is a human-readable name for
     it. The message is whatever the engine reported.
     """
 
@@ -118,18 +118,18 @@ class JsObject:
 
 
 def default_library_path():
-    """Locate libjse next to this checkout, as `make shared` leaves it."""
+    """Locate libboomkat next to this checkout, as `make shared` leaves it."""
     if sys.platform == "darwin":
-        name = "libjse.dylib"
+        name = "boomkat.dylib"
     elif sys.platform == "win32":
-        name = "jse.dll"
+        name = "boomkat.dll"
     else:
-        name = "libjse.so"
+        name = "boomkat.so"
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(root, "out", name)
 
 
-# The host callback signature: void (*)(jse_call_ctx ctx, void *udata).
+# The host callback signature: void (*)(bk_call_ctx ctx, void *udata).
 # CFUNCTYPE (not PYFUNCTYPE) is right here -- it still acquires the GIL around
 # the Python callback, which is what keeps this safe under CPython.
 _HOST_FN = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
@@ -144,49 +144,49 @@ def _declare(lib):
     rt, u32 = ctypes.c_void_p, ctypes.c_uint
     ctx = ctypes.c_void_p
     signatures = [
-        ("jse_open", [ctypes.POINTER(ctypes.c_void_p)], ctypes.c_int),
-        ("jse_close", [rt], None),
-        ("jse_version", [], ctypes.c_char_p),
-        ("jse_eval", [rt, ctypes.c_char_p, ctypes.c_size_t,
+        ("bk_open", [ctypes.POINTER(ctypes.c_void_p)], ctypes.c_int),
+        ("bk_close", [rt], None),
+        ("bk_version", [], ctypes.c_char_p),
+        ("bk_eval", [rt, ctypes.c_char_p, ctypes.c_size_t,
                       ctypes.POINTER(u32)], ctypes.c_int),
-        ("jse_value_free", [rt, u32], None),
-        ("jse_type_of", [rt, u32], ctypes.c_int),
-        ("jse_get_number", [rt, u32, ctypes.POINTER(ctypes.c_double)], ctypes.c_int),
-        ("jse_get_bool", [rt, u32, ctypes.POINTER(ctypes.c_int)], ctypes.c_int),
-        ("jse_get_string", [rt, u32, ctypes.c_char_p, ctypes.c_size_t,
+        ("bk_value_free", [rt, u32], None),
+        ("bk_type_of", [rt, u32], ctypes.c_int),
+        ("bk_get_number", [rt, u32, ctypes.POINTER(ctypes.c_double)], ctypes.c_int),
+        ("bk_get_bool", [rt, u32, ctypes.POINTER(ctypes.c_int)], ctypes.c_int),
+        ("bk_get_string", [rt, u32, ctypes.c_char_p, ctypes.c_size_t,
                             ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
         # The context tier of the same readers. A host callback holds a call
         # context and no runtime, and only these resolve the scope handles
-        # jse_arg/jse_this/jse_new_target return.
-        ("jse_ctx_type_of", [ctx, u32], ctypes.c_int),
-        ("jse_ctx_get_number", [ctx, u32, ctypes.POINTER(ctypes.c_double)],
+        # bk_arg/bk_this/bk_new_target return.
+        ("bk_ctx_type_of", [ctx, u32], ctypes.c_int),
+        ("bk_ctx_get_number", [ctx, u32, ctypes.POINTER(ctypes.c_double)],
          ctypes.c_int),
-        ("jse_ctx_get_bool", [ctx, u32, ctypes.POINTER(ctypes.c_int)],
+        ("bk_ctx_get_bool", [ctx, u32, ctypes.POINTER(ctypes.c_int)],
          ctypes.c_int),
-        ("jse_ctx_get_string", [ctx, u32, ctypes.c_char_p, ctypes.c_size_t,
+        ("bk_ctx_get_string", [ctx, u32, ctypes.c_char_p, ctypes.c_size_t,
                                 ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
-        ("jse_ctx_runtime", [ctx], ctypes.c_void_p),
-        ("jse_last_error", [rt], ctypes.c_char_p),
-        ("jse_last_error_code", [rt], ctypes.c_int),
-        ("jse_drain_microtasks", [rt], None),
+        ("bk_ctx_runtime", [ctx], ctypes.c_void_p),
+        ("bk_last_error", [rt], ctypes.c_char_p),
+        ("bk_last_error_code", [rt], ctypes.c_int),
+        ("bk_drain_microtasks", [rt], None),
         # Host functions.
-        ("jse_register_fn", [rt, ctypes.c_char_p, ctypes.c_size_t, _HOST_FN,
+        ("bk_register_fn", [rt, ctypes.c_char_p, ctypes.c_size_t, _HOST_FN,
                              ctypes.c_void_p, ctypes.c_int, ctypes.c_int],
          ctypes.c_int),
-        ("jse_argc", [ctx], ctypes.c_uint),
-        ("jse_arg", [ctx, u32], u32),
-        ("jse_this", [ctx], u32),
-        ("jse_new_target", [ctx], u32),
-        ("jse_is_construct", [ctx], ctypes.c_int),
-        ("jse_return", [ctx, u32], None),
-        ("jse_return_number", [ctx, ctypes.c_double], None),
-        ("jse_return_bool", [ctx, ctypes.c_int], None),
-        ("jse_return_null", [ctx], None),
-        ("jse_return_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], None),
-        ("jse_throw_error", [ctx, ctypes.c_int, ctypes.c_char_p], None),
-        ("jse_throw", [ctx, u32], None),
-        ("jse_value_persist", [ctx, u32], u32),
-        ("jse_call", [ctx, u32, ctypes.POINTER(u32), ctypes.c_uint, u32,
+        ("bk_argc", [ctx], ctypes.c_uint),
+        ("bk_arg", [ctx, u32], u32),
+        ("bk_this", [ctx], u32),
+        ("bk_new_target", [ctx], u32),
+        ("bk_is_construct", [ctx], ctypes.c_int),
+        ("bk_return", [ctx, u32], None),
+        ("bk_return_number", [ctx, ctypes.c_double], None),
+        ("bk_return_bool", [ctx, ctypes.c_int], None),
+        ("bk_return_null", [ctx], None),
+        ("bk_return_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], None),
+        ("bk_throw_error", [ctx, ctypes.c_int, ctypes.c_char_p], None),
+        ("bk_throw", [ctx, u32], None),
+        ("bk_value_persist", [ctx, u32], u32),
+        ("bk_call", [ctx, u32, ctypes.POINTER(u32), ctypes.c_uint, u32,
                       ctypes.POINTER(u32)], ctypes.c_int),
     ]
     for name, argtypes, restype in signatures:
@@ -197,17 +197,17 @@ def _declare(lib):
 
 
 def _load(path):
-    path = path or os.environ.get("JSE_LIBRARY") or default_library_path()
+    path = path or os.environ.get("BK_LIBRARY") or default_library_path()
     try:
         return _declare(ctypes.CDLL(path))
     except OSError as exc:
-        raise JsError(-5, "cannot load the jse shared library from %r "
+        raise JsError(-5, "cannot load the boomkat shared library from %r "
                           "(run `make shared` first): %s" % (path, exc)) from exc
 
 
 def version(path=None):
     """Engine version string. Does not require an open Runtime."""
-    return _load(path).jse_version().decode("utf-8")
+    return _load(path).bk_version().decode("utf-8")
 
 
 class JsValue:
@@ -272,8 +272,8 @@ class Call:
         self._live = True
         # Everything a callback reads goes through the context tier: its
         # arguments are scope handles, which the runtime tier cannot resolve.
-        self.reader = _Reader(lib, ctx, "jse_ctx_")
-        handles = tuple(lib.jse_arg(ctx, i) for i in range(lib.jse_argc(ctx)))
+        self.reader = _Reader(lib, ctx, "bk_ctx_")
+        handles = tuple(lib.bk_arg(ctx, i) for i in range(lib.bk_argc(ctx)))
         # `raw` keeps the live references, which is what a JS callback can be
         # handed back; `args` is the convenient plain-Python view of the same
         # arguments. A function argument appears in both, since calling one is
@@ -287,14 +287,14 @@ class Call:
     @property
     def this(self):
         """The `this` receiver. Strict semantics: undefined stays undefined."""
-        handle = self._lib.jse_this(self._ctx)
+        handle = self._lib.bk_this(self._ctx)
         value = self._wrap(handle, self.reader.type_of(handle))
         return value if isinstance(value, JsFunction) else value.to_python()
 
     @property
     def new_target(self):
         """new.target, or None on a plain call."""
-        handle = self._lib.jse_new_target(self._ctx)
+        handle = self._lib.bk_new_target(self._ctx)
         return self.reader.to_python(handle)
 
     @property
@@ -305,20 +305,20 @@ class Call:
     @property
     def is_construct(self):
         """True when invoked through `new` or `super()`."""
-        return bool(self._lib.jse_is_construct(self._ctx))
+        return bool(self._lib.bk_is_construct(self._ctx))
 
     def _wrap(self, handle, type_id):
-        # OTHER is treated as callable alongside FUNCTION because jse_ctx_type_of
+        # OTHER is treated as callable alongside FUNCTION because bk_ctx_type_of
         # has no lightfunc case: engine built-ins such as Math.abs are stored
         # as a tagged ordinal rather than an HObject, so they fall through to
-        # OTHER even though `typeof` says "function" and jse_call invokes them
+        # OTHER even though `typeof` says "function" and bk_call invokes them
         # fine. Symbols and bigints also land in OTHER, and calling one throws
         # a TypeError from JS -- the correct outcome anyway.
         cls = JsFunction if type_id in (_FUNCTION, _OTHER) else JsValue
         return cls(self, handle, type_id)
 
     def _invoke(self, func, args):
-        """Call a JS function from inside this host function, via jse_call."""
+        """Call a JS function from inside this host function, via bk_call."""
         if not self._live:
             raise JsError(-5, "this JS function outlived the host call it came "
                               "from; scope handles die when the callback returns")
@@ -326,27 +326,27 @@ class Call:
         for i, arg in enumerate(args):
             argv[i] = self._to_js(arg)
         out = ctypes.c_uint(0)
-        rc = self._lib.jse_call(self._ctx, func, argv, len(args), 0,
+        rc = self._lib.bk_call(self._ctx, func, argv, len(args), 0,
                                 ctypes.byref(out))
         if rc != _OK:
             # The throw is already recorded on this context. Signal it to the
             # trampoline, which returns promptly and lets the engine propagate
             # the original JS exception rather than a new one.
             raise _Propagate()
-        # jse_call hands back a runtime-owned handle, not a scope handle, but
+        # bk_call hands back a runtime-owned handle, not a scope handle, but
         # the context tier resolves both -- so read it through this call's
         # reader rather than reaching for the Runtime.
         try:
             return self.reader.to_python(out.value)
         finally:
-            self._lib.jse_value_free(self._runtime._rt, out.value)
+            self._lib.bk_value_free(self._runtime._rt, out.value)
 
     def _to_js(self, value):
-        """Handle for a Python value passed as a jse_call argument.
+        """Handle for a Python value passed as a bk_call argument.
 
-        This ABI gives a callback no way to mint a value: jse_return_* write
-        the return slot rather than yielding a handle, jse_call only resolves
-        handles that already exist, and jse_eval is a top-level entry point
+        This ABI gives a callback no way to mint a value: bk_return_* write
+        the return slot rather than yielding a handle, bk_call only resolves
+        handles that already exist, and bk_eval is a top-level entry point
         that must not be re-entered from inside a callback. So the arguments a
         host function can forward are the ones it was handed, identified by
         position via JsValue.
@@ -393,9 +393,9 @@ class _Reader:
     """One tier of the ABI's readers, bound to the thing that resolves handles.
 
     The ABI reads values through two parallel families. Outside a callback you
-    hold a runtime and call jse_get_number and friends; inside one you hold a
-    call context and call the jse_ctx_ forms. They are not interchangeable:
-    the handles jse_arg/jse_this/jse_new_target return name a slot in the
+    hold a runtime and call bk_get_number and friends; inside one you hold a
+    call context and call the bk_ctx_ forms. They are not interchangeable:
+    the handles bk_arg/bk_this/bk_new_target return name a slot in the
     call's scope rather than in the runtime's registry, so only the context
     tier can resolve them, and neither tier accepts a null first argument.
 
@@ -453,8 +453,8 @@ _OPEN_RUNTIMES = weakref.WeakValueDictionary()
 
 
 def _runtime_for(lib, ctx, fallback):
-    """The Runtime a callback is executing inside, per jse_ctx_runtime."""
-    pointer = lib.jse_ctx_runtime(ctx)
+    """The Runtime a callback is executing inside, per bk_ctx_runtime."""
+    pointer = lib.bk_ctx_runtime(ctx)
     return _OPEN_RUNTIMES.get(pointer, fallback)
 
 
@@ -478,22 +478,22 @@ class Runtime:
         # lifetime. ctypes does NOT keep one alive on its own: drop the last
         # Python reference and the object is collected, leaving the engine
         # holding a pointer to freed memory that it will happily call. Since
-        # jse_register_fn is permanent for the runtime, so is this list.
+        # bk_register_fn is permanent for the runtime, so is this list.
         self._trampolines = []
         # The most recent Python exception a host function raised. JS only ever
         # sees its text, so keeping the object here preserves the traceback for
         # an embedder that wants to re-raise or log it after eval() returns.
         self._last_host_exception = None
-        rc = self._lib.jse_open(ctypes.byref(self._rt))
+        rc = self._lib.bk_open(ctypes.byref(self._rt))
         if rc != _OK:
-            raise JsError(rc, "jse_open failed to create a runtime")
+            raise JsError(rc, "bk_open failed to create a runtime")
         # The runtime tier of the readers, for handles this Runtime owns.
-        self._reader = _Reader(self._lib, self._rt, "jse_")
+        self._reader = _Reader(self._lib, self._rt, "bk_")
         _OPEN_RUNTIMES[self._rt.value] = self
 
     @property
     def version(self):
-        return self._lib.jse_version().decode("utf-8")
+        return self._lib.bk_version().decode("utf-8")
 
     def eval(self, source):
         """Evaluate JS source and return its completion value.
@@ -504,7 +504,7 @@ class Runtime:
         self._check_open()
         encoded = source.encode("utf-8")
         handle = ctypes.c_uint(0)
-        rc = self._lib.jse_eval(self._rt, encoded, len(encoded), ctypes.byref(handle))
+        rc = self._lib.bk_eval(self._rt, encoded, len(encoded), ctypes.byref(handle))
         if rc != _OK:
             raise JsError(rc, self._error_message())
         try:
@@ -512,7 +512,7 @@ class Runtime:
         finally:
             # The handle occupies a slot in a fixed-size registry, so release
             # it even if conversion raised.
-            self._lib.jse_value_free(self._rt, handle.value)
+            self._lib.bk_value_free(self._rt, handle.value)
 
     def register(self, name, pyfunc, arity=None, constructable=False):
         """Bind a Python callable as the JS global `name`.
@@ -533,7 +533,7 @@ class Runtime:
         # between the two statements would already be fatal.
         self._trampolines.append(trampoline)
         encoded = name.encode("utf-8")
-        rc = self._lib.jse_register_fn(self._rt, encoded, len(encoded),
+        rc = self._lib.bk_register_fn(self._rt, encoded, len(encoded),
                                        trampoline, None, arity,
                                        1 if constructable else 0)
         if rc != _OK:
@@ -567,18 +567,18 @@ class Runtime:
             call = None
             try:
                 # A trampoline is created per registration, so `self` is the
-                # Runtime this callback was bound to. jse_ctx_runtime(ctx)
+                # Runtime this callback was bound to. bk_ctx_runtime(ctx)
                 # reports the same thing from the engine's side; consult it so
                 # `call.runtime` is what the engine says, not what the closure
                 # assumed.
                 call = Call(lib, ctx, _runtime_for(lib, ctx, self))
                 result = pyfunc(call)
             except _Propagate:
-                # jse_call already recorded the callee's throw on this context.
+                # bk_call already recorded the callee's throw on this context.
                 # Returning now lets the engine propagate that exception intact.
                 return
             except JsThrow as exc:
-                lib.jse_throw_error(ctx, _ERROR_KINDS[exc.kind],
+                lib.bk_throw_error(ctx, _ERROR_KINDS[exc.kind],
                                     str(exc).encode("utf-8"))
                 return
             except BaseException as exc:
@@ -587,7 +587,7 @@ class Runtime:
                 self._last_host_exception = exc
                 kind = _ERROR_KINDS.get(type(exc).__name__, _ERROR)
                 message = "%s: %s" % (type(exc).__name__, exc)
-                lib.jse_throw_error(ctx, kind, message.encode("utf-8"))
+                lib.bk_throw_error(ctx, kind, message.encode("utf-8"))
                 return
             finally:
                 if call is not None:
@@ -597,7 +597,7 @@ class Runtime:
             try:
                 self._set_return(ctx, result)
             except BaseException as exc:
-                lib.jse_throw_error(ctx, _ERROR,
+                lib.bk_throw_error(ctx, _ERROR,
                                     ("cannot return %r to JS: %s"
                                      % (type(result).__name__, exc)).encode("utf-8"))
 
@@ -610,18 +610,18 @@ class Runtime:
             return  # A callback that sets no return value yields undefined.
         if isinstance(result, bool):
             # Checked before int: bool is a subclass of int in Python.
-            lib.jse_return_bool(ctx, 1 if result else 0)
+            lib.bk_return_bool(ctx, 1 if result else 0)
         elif isinstance(result, (int, float)):
-            lib.jse_return_number(ctx, float(result))
+            lib.bk_return_number(ctx, float(result))
         elif isinstance(result, str):
             encoded = result.encode("utf-8")
-            lib.jse_return_string(ctx, encoded, len(encoded))
+            lib.bk_return_string(ctx, encoded, len(encoded))
         elif isinstance(result, JsValue):
             # Returning an argument straight back, or the result of a callback.
-            lib.jse_return(ctx, result._handle)
+            lib.bk_return(ctx, result._handle)
         elif isinstance(result, (list, dict, tuple)):
             # No ABI constructor builds an object or array inside a callback,
-            # and jse_eval must not be re-entered from one. Returning JSON text
+            # and bk_eval must not be re-entered from one. Returning JSON text
             # silently would make a dict arrive as a string, so say so instead:
             # the host stringifies deliberately and JS calls JSON.parse.
             raise TypeError("returning a %s would have to cross as JSON text; "
@@ -634,12 +634,12 @@ class Runtime:
     def drain_microtasks(self):
         """Run pending promise jobs. eval() already does this on its own."""
         self._check_open()
-        self._lib.jse_drain_microtasks(self._rt)
+        self._lib.bk_drain_microtasks(self._rt)
 
     def close(self):
         if self._rt:
             _OPEN_RUNTIMES.pop(self._rt.value, None)
-            self._lib.jse_close(self._rt)
+            self._lib.bk_close(self._rt)
             self._rt = ctypes.c_void_p()
 
     def __enter__(self):
@@ -654,7 +654,7 @@ class Runtime:
             raise JsError(-5, "this Runtime is closed")
 
     def _error_message(self):
-        raw = self._lib.jse_last_error(self._rt)
+        raw = self._lib.bk_last_error(self._rt)
         # The engine owns this buffer and overwrites it on the next call, so
         # decode (copy) immediately rather than holding the pointer.
         return raw.decode("utf-8", "replace") if raw else ""

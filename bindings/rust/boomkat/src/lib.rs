@@ -1,9 +1,9 @@
 //! Safe Rust bindings for the boomkat JavaScript engine.
 //!
 //! ```no_run
-//! use jse::{Kind, Runtime};
+//! use boomkat::{Kind, Runtime};
 //!
-//! # fn main() -> Result<(), jse::Error> {
+//! # fn main() -> Result<(), boomkat::Error> {
 //! let rt = Runtime::new()?;
 //!
 //! let v = rt.eval("[1, 2, 3].reduce((a, b) => a + b)")?;
@@ -36,9 +36,9 @@
 //! globals, objects, prototypes, shapes and interned strings:
 //!
 //! ```no_run
-//! # fn main() -> Result<(), jse::Error> {
-//! let a = jse::Runtime::new()?;
-//! let b = jse::Runtime::new()?;
+//! # fn main() -> Result<(), boomkat::Error> {
+//! let a = boomkat::Runtime::new()?;
+//! let b = boomkat::Runtime::new()?;
 //!
 //! a.eval_unit("globalThis.x = 'from A'")?;
 //! b.eval_unit("globalThis.x = 'from B'")?;
@@ -77,12 +77,12 @@
 //!
 //! ```compile_fail
 //! fn assert_sync<T: Sync>() {}
-//! assert_sync::<jse::Runtime>();
+//! assert_sync::<boomkat::Runtime>();
 //! ```
 //!
 //! ```compile_fail
 //! fn assert_send<T: Send>() {}
-//! assert_send::<jse::Value<'static>>();
+//! assert_send::<boomkat::Value<'static>>();
 //! ```
 //!
 //! # Host functions
@@ -90,8 +90,8 @@
 //! [`Runtime::register_fn`] binds a Rust closure as a JS global:
 //!
 //! ```no_run
-//! # fn main() -> Result<(), jse::Error> {
-//! # let rt = jse::Runtime::new()?;
+//! # fn main() -> Result<(), boomkat::Error> {
+//! # let rt = boomkat::Runtime::new()?;
 //! rt.register_fn("add", 2, |ctx| Ok(ctx.number(ctx.arg(0).as_number()? + ctx.arg(1).as_number()?)))?;
 //! assert_eq!(rt.eval("add(40, 2)")?.as_number()?, 42.0);
 //! # Ok(())
@@ -115,7 +115,7 @@ use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int, c_void};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use jse_sys as sys;
+use boomkat_sys as sys;
 
 /// Why a call failed.
 ///
@@ -146,13 +146,13 @@ pub enum Kind {
 impl Kind {
     fn from_status(status: c_int) -> Self {
         match status {
-            sys::JSE_ERR_NOMEM => Kind::OutOfMemory,
-            sys::JSE_ERR_SYNTAX => Kind::Syntax,
-            sys::JSE_ERR_THROW => Kind::Throw,
-            sys::JSE_ERR_INTERNAL => Kind::Internal,
-            sys::JSE_ERR_INVALID => Kind::Invalid,
-            sys::JSE_ERR_TYPE => Kind::Type,
-            sys::JSE_ERR_FULL => Kind::Full,
+            sys::BK_ERR_NOMEM => Kind::OutOfMemory,
+            sys::BK_ERR_SYNTAX => Kind::Syntax,
+            sys::BK_ERR_THROW => Kind::Throw,
+            sys::BK_ERR_INTERNAL => Kind::Internal,
+            sys::BK_ERR_INVALID => Kind::Invalid,
+            sys::BK_ERR_TYPE => Kind::Type,
+            sys::BK_ERR_FULL => Kind::Full,
             other => Kind::Unknown(other),
         }
     }
@@ -200,9 +200,9 @@ impl Error {
     /// [`Kind::Syntax`] keep their JS counterpart.
     fn throw_kind(&self) -> c_int {
         match self.kind {
-            Kind::Type => sys::JSE_ERROR_TYPE,
-            Kind::Syntax => sys::JSE_ERROR_SYNTAX,
-            _ => sys::JSE_ERROR,
+            Kind::Type => sys::BK_ERROR_TYPE,
+            Kind::Syntax => sys::BK_ERROR_SYNTAX,
+            _ => sys::BK_ERROR,
         }
     }
 
@@ -246,14 +246,14 @@ pub enum Type {
 impl Type {
     fn from_raw(raw: c_int) -> Self {
         match raw {
-            sys::JSE_TYPE_NULL => Type::Null,
-            sys::JSE_TYPE_BOOLEAN => Type::Boolean,
-            sys::JSE_TYPE_NUMBER => Type::Number,
-            sys::JSE_TYPE_STRING => Type::String,
-            sys::JSE_TYPE_OBJECT => Type::Object,
-            sys::JSE_TYPE_FUNCTION => Type::Function,
-            sys::JSE_TYPE_OTHER => Type::Other,
-            // JSE_TYPE_UNDEFINED, and anything unrecognised, which the ABI
+            sys::BK_TYPE_NULL => Type::Null,
+            sys::BK_TYPE_BOOLEAN => Type::Boolean,
+            sys::BK_TYPE_NUMBER => Type::Number,
+            sys::BK_TYPE_STRING => Type::String,
+            sys::BK_TYPE_OBJECT => Type::Object,
+            sys::BK_TYPE_FUNCTION => Type::Function,
+            sys::BK_TYPE_OTHER => Type::Other,
+            // BK_TYPE_UNDEFINED, and anything unrecognised, which the ABI
             // also reports as undefined.
             _ => Type::Undefined,
         }
@@ -279,7 +279,7 @@ impl Type {
 /// two runtimes share no state whatsoever. See the crate docs for the full
 /// argument.
 pub struct Runtime {
-    raw: sys::jse_runtime,
+    raw: sys::bk_runtime,
     /// `Send`, not `Sync`: a runtime may move between threads but must not be
     /// used from two at once. See the type's doc comment.
     _not_sync: PhantomData<std::cell::Cell<()>>,
@@ -300,11 +300,11 @@ impl Runtime {
     /// independent: each has its own globals, prototypes, objects and string
     /// intern table, and nothing is shared between them.
     pub fn new() -> Result<Self, Error> {
-        let mut raw: sys::jse_runtime = std::ptr::null_mut();
+        let mut raw: sys::bk_runtime = std::ptr::null_mut();
         // SAFETY: `raw` is a valid, writable out-parameter.
-        let status = unsafe { sys::jse_open(&mut raw) };
+        let status = unsafe { sys::bk_open(&mut raw) };
 
-        if status != sys::JSE_OK || raw.is_null() {
+        if status != sys::BK_OK || raw.is_null() {
             return Err(Error::new(Kind::from_status(status), ""));
         }
 
@@ -316,9 +316,9 @@ impl Runtime {
 
     /// The engine version, `"MAJOR.MINOR.PATCH"`.
     pub fn version() -> &'static str {
-        // SAFETY: jse_version returns a static, NUL-terminated string and is
+        // SAFETY: boomkat_version returns a static, NUL-terminated string and is
         // documented never to return null.
-        let s = unsafe { CStr::from_ptr(sys::jse_version()) };
+        let s = unsafe { CStr::from_ptr(sys::bk_version()) };
         s.to_str().unwrap_or("unknown")
     }
 
@@ -327,13 +327,13 @@ impl Runtime {
     ///
     /// Pending promise jobs are drained before this returns.
     pub fn eval(&self, src: &str) -> Result<Value<'_>, Error> {
-        let mut handle: sys::jse_value = sys::JSE_INVALID_VALUE;
+        let mut handle: sys::bk_value = sys::BK_INVALID_VALUE;
         // The ABI takes a pointer plus an explicit length, so interior NULs
         // are fine and no CString round-trip is needed.
         // SAFETY: `src` is a valid slice for `src.len()` bytes; `handle` is a
         // valid out-parameter; `self.raw` is a live runtime.
         let status = unsafe {
-            sys::jse_eval(
+            sys::bk_eval(
                 self.raw,
                 src.as_ptr() as *const c_char,
                 src.len(),
@@ -341,7 +341,7 @@ impl Runtime {
             )
         };
 
-        if status != sys::JSE_OK {
+        if status != sys::BK_OK {
             return Err(self.error(status));
         }
 
@@ -356,7 +356,7 @@ impl Runtime {
         // SAFETY: as `eval`, but with a null out-parameter, which the ABI
         // documents as "run for side effects".
         let status = unsafe {
-            sys::jse_eval(
+            sys::bk_eval(
                 self.raw,
                 src.as_ptr() as *const c_char,
                 src.len(),
@@ -364,7 +364,7 @@ impl Runtime {
             )
         };
 
-        if status != sys::JSE_OK {
+        if status != sys::BK_OK {
             return Err(self.error(status));
         }
         Ok(())
@@ -374,7 +374,7 @@ impl Runtime {
     /// returns; this is for the case where host code resolved a promise.
     pub fn drain_microtasks(&self) {
         // SAFETY: `self.raw` is a live runtime; the ABI guards re-entrancy.
-        unsafe { sys::jse_drain_microtasks(self.raw) }
+        unsafe { sys::bk_drain_microtasks(self.raw) }
     }
 
     /// Bind a Rust closure as a JS global function named `name`.
@@ -447,7 +447,7 @@ impl Runtime {
         // the required C signature; `boxed` outlives the runtime because it is
         // never freed. The engine only passes `udata` back, never derefs it.
         let status = unsafe {
-            sys::jse_register_fn(
+            sys::bk_register_fn(
                 self.raw,
                 name.as_ptr() as *const c_char,
                 name.len(),
@@ -458,7 +458,7 @@ impl Runtime {
             )
         };
 
-        if status != sys::JSE_OK {
+        if status != sys::BK_OK {
             // Registration failed, so the engine never took the pointer and we
             // still own it uniquely. Reclaim it rather than leaking on a path
             // that has no runtime-lifetime justification.
@@ -474,10 +474,10 @@ impl Runtime {
     /// Build an [`Error`] from a status, copying the engine's message out
     /// before the next call can clobber it.
     fn error(&self, status: c_int) -> Error {
-        // SAFETY: jse_last_error is documented never to return null, and its
-        // buffer is valid until the next jse_* call. We copy immediately.
+        // SAFETY: boomkat_last_error is documented never to return null, and its
+        // buffer is valid until the next boomkat_* call. We copy immediately.
         let msg = unsafe {
-            let p = sys::jse_last_error(self.raw);
+            let p = sys::bk_last_error(self.raw);
             if p.is_null() {
                 String::new()
             } else {
@@ -500,11 +500,11 @@ impl fmt::Debug for Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        // SAFETY: `self.raw` came from a successful jse_open and is closed
+        // SAFETY: `self.raw` came from a successful boomkat_open and is closed
         // exactly once, since Runtime is neither Copy nor Clone. Every Value
         // borrows self, so none can be alive here. Other runtimes are
         // untouched: closing one frees only its own heap.
-        unsafe { sys::jse_close(self.raw) };
+        unsafe { sys::bk_close(self.raw) };
     }
 }
 
@@ -514,7 +514,7 @@ impl Drop for Runtime {
 /// engine that produced it.
 pub struct Value<'rt> {
     rt: &'rt Runtime,
-    handle: sys::jse_value,
+    handle: sys::bk_value,
 }
 
 impl<'rt> Value<'rt> {
@@ -522,15 +522,15 @@ impl<'rt> Value<'rt> {
     pub fn type_of(&self) -> Type {
         // SAFETY: live runtime, live handle; the ABI reports undefined for
         // anything it does not recognise rather than faulting.
-        Type::from_raw(unsafe { sys::jse_type_of(self.rt.raw, self.handle) })
+        Type::from_raw(unsafe { sys::bk_type_of(self.rt.raw, self.handle) })
     }
 
     /// Read a number. Does not coerce: a non-number is [`Kind::Type`].
     pub fn as_number(&self) -> Result<f64, Error> {
         let mut out = 0.0f64;
         // SAFETY: live runtime and handle; `out` is a valid out-parameter.
-        let status = unsafe { sys::jse_get_number(self.rt.raw, self.handle, &mut out) };
-        if status != sys::JSE_OK {
+        let status = unsafe { sys::bk_get_number(self.rt.raw, self.handle, &mut out) };
+        if status != sys::BK_OK {
             return Err(self.rt.error(status));
         }
         Ok(out)
@@ -540,8 +540,8 @@ impl<'rt> Value<'rt> {
     pub fn as_bool(&self) -> Result<bool, Error> {
         let mut out: c_int = 0;
         // SAFETY: live runtime and handle; `out` is a valid out-parameter.
-        let status = unsafe { sys::jse_get_bool(self.rt.raw, self.handle, &mut out) };
-        if status != sys::JSE_OK {
+        let status = unsafe { sys::bk_get_bool(self.rt.raw, self.handle, &mut out) };
+        if status != sys::BK_OK {
             return Err(self.rt.error(status));
         }
         Ok(out != 0)
@@ -580,7 +580,7 @@ impl Drop for Value<'_> {
     fn drop(&mut self) {
         // SAFETY: live runtime; the ABI accepts 0 and already-freed handles,
         // and Value is not Copy/Clone, so this frees exactly once.
-        unsafe { sys::jse_value_free(self.rt.raw, self.handle) };
+        unsafe { sys::bk_value_free(self.rt.raw, self.handle) };
     }
 }
 
@@ -604,7 +604,7 @@ impl fmt::Debug for Value<'_> {
 /// It carries the call context it came from, because that is what names the
 /// runtime the handle belongs to. With several runtimes open a handle is an
 /// index into exactly one registry, so a reader that had to guess would answer
-/// with an unrelated value; every read here goes through `jse_ctx_*` instead.
+/// with an unrelated value; every read here goes through `boomkat_ctx_*` instead.
 ///
 /// A `HostValue` does not free anything on drop. Scope handles have nothing to
 /// free; a [`Ctx::call`] result is owned by its [`Retained`] guard, which frees
@@ -614,7 +614,7 @@ pub struct HostValue<'a> {
     repr: Repr,
     /// The call this value belongs to. Readers address the runtime through it;
     /// a host-built value has none to address, and never needs one.
-    ctx: sys::jse_call_ctx,
+    ctx: sys::bk_call_ctx,
     /// Invariant in `'a`: `HostValue<'long>` must not coerce to
     /// `HostValue<'short>` or vice versa, so no lifetime laundering can smuggle
     /// a handle out of the call it belongs to.
@@ -623,7 +623,7 @@ pub struct HostValue<'a> {
 
 /// What a [`HostValue`] stands for.
 ///
-/// The ABI has no "construct a value" entry point — only the `jse_return_*`
+/// The ABI has no "construct a value" entry point — only the `boomkat_return_*`
 /// setters, which are last-write-wins on the pending return value. So a value
 /// the host *builds* cannot be a handle yet. It is held as data and applied
 /// only if it is the one actually returned, which is what makes building
@@ -631,13 +631,13 @@ pub struct HostValue<'a> {
 #[derive(Clone, Copy)]
 enum Repr {
     /// An engine handle: an argument, `this`, or a [`Ctx::call`] result.
-    Handle(sys::jse_value),
+    Handle(sys::bk_value),
     /// A value built by the host, parked in the call's arena at this index.
     Built(usize),
 }
 
 impl<'a> HostValue<'a> {
-    fn handle(ctx: sys::jse_call_ctx, handle: sys::jse_value) -> Self {
+    fn handle(ctx: sys::bk_call_ctx, handle: sys::bk_value) -> Self {
         HostValue {
             repr: Repr::Handle(handle),
             ctx,
@@ -645,7 +645,7 @@ impl<'a> HostValue<'a> {
         }
     }
 
-    fn built(ctx: sys::jse_call_ctx, index: usize) -> Self {
+    fn built(ctx: sys::bk_call_ctx, index: usize) -> Self {
         HostValue {
             repr: Repr::Built(index),
             ctx,
@@ -655,7 +655,7 @@ impl<'a> HostValue<'a> {
 
     /// The engine handle behind this value, if it has one. Values the host
     /// built have no handle until they are returned.
-    fn raw(&self) -> Option<sys::jse_value> {
+    fn raw(&self) -> Option<sys::bk_value> {
         match self.repr {
             Repr::Handle(h) => Some(h),
             Repr::Built(_) => None,
@@ -678,7 +678,7 @@ impl<'a> HostValue<'a> {
             // SAFETY: live context for this call; the context tier is what
             // resolves scope handles, and it reports undefined for anything it
             // does not recognise rather than faulting.
-            Some(h) => Type::from_raw(unsafe { sys::jse_ctx_type_of(self.ctx, h) }),
+            Some(h) => Type::from_raw(unsafe { sys::bk_ctx_type_of(self.ctx, h) }),
             None => Type::Undefined,
         }
     }
@@ -688,8 +688,8 @@ impl<'a> HostValue<'a> {
         let handle = self.raw().ok_or_else(|| Error::new(Kind::Type, NOT_READABLE))?;
         let mut out = 0.0f64;
         // SAFETY: as `type_of`; `out` is a valid out-parameter.
-        let status = unsafe { sys::jse_ctx_get_number(self.ctx, handle, &mut out) };
-        if status != sys::JSE_OK {
+        let status = unsafe { sys::bk_ctx_get_number(self.ctx, handle, &mut out) };
+        if status != sys::BK_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a number"));
         }
         Ok(out)
@@ -700,8 +700,8 @@ impl<'a> HostValue<'a> {
         let handle = self.raw().ok_or_else(|| Error::new(Kind::Type, NOT_READABLE))?;
         let mut out: c_int = 0;
         // SAFETY: as `type_of`; `out` is a valid out-parameter.
-        let status = unsafe { sys::jse_ctx_get_bool(self.ctx, handle, &mut out) };
-        if status != sys::JSE_OK {
+        let status = unsafe { sys::bk_ctx_get_bool(self.ctx, handle, &mut out) };
+        if status != sys::BK_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a boolean"));
         }
         Ok(out != 0)
@@ -729,28 +729,28 @@ impl fmt::Debug for HostValue<'_> {
 /// reachable from it borrows `'a`, so the borrow checker rejects a value
 /// escaping into a longer-lived place.
 pub struct Ctx<'a> {
-    raw: sys::jse_call_ctx,
+    raw: sys::bk_call_ctx,
     /// The runtime this call belongs to, read off the context. Freeing a
     /// [`Ctx::call`] result needs it, and so does a host that wants to
     /// evaluate; see [`Ctx::runtime`].
-    rt: sys::jse_runtime,
+    rt: sys::bk_runtime,
     /// Values the host built, parked until one of them is returned. See
     /// [`Repr::Built`].
     built: std::cell::RefCell<Vec<Built>>,
     /// Slots handed to the call by [`Retained::keep`], freed when it returns.
     /// A [`Ctx::call`] result that is dropped normally never lands here.
-    kept: std::cell::RefCell<Vec<sys::jse_value>>,
+    kept: std::cell::RefCell<Vec<sys::bk_value>>,
     /// Invariant in `'a`, for the same reason as [`HostValue`].
     _call: PhantomData<*mut &'a ()>,
 }
 
 impl<'a> Ctx<'a> {
-    fn new(raw: sys::jse_call_ctx) -> Self {
+    fn new(raw: sys::bk_call_ctx) -> Self {
         Ctx {
             raw,
             // SAFETY: `raw` is the live context the engine handed the
             // trampoline; the ABI answers which runtime owns it.
-            rt: unsafe { sys::jse_ctx_runtime(raw) },
+            rt: unsafe { sys::bk_ctx_runtime(raw) },
             built: std::cell::RefCell::new(Vec::new()),
             kept: std::cell::RefCell::new(Vec::new()),
             _call: PhantomData,
@@ -767,33 +767,33 @@ impl<'a> Ctx<'a> {
     /// How many arguments JS passed. Unrelated to the registered arity.
     pub fn argc(&self) -> u32 {
         // SAFETY: `self.raw` is the live context for this call.
-        unsafe { sys::jse_argc(self.raw) }
+        unsafe { sys::bk_argc(self.raw) }
     }
 
     /// Argument `i`, or `undefined` at or past [`Ctx::argc`] — matching JS,
     /// where reading a missing argument is not an error.
     pub fn arg(&self, i: u32) -> HostValue<'a> {
         // SAFETY: the ABI documents out-of-range indices as yielding undefined.
-        HostValue::handle(self.raw, unsafe { sys::jse_arg(self.raw, i) })
+        HostValue::handle(self.raw, unsafe { sys::bk_arg(self.raw, i) })
     }
 
     /// The `this` receiver. Strict semantics: an undefined receiver stays
     /// undefined rather than becoming the global object.
     pub fn this(&self) -> HostValue<'a> {
         // SAFETY: live context.
-        HostValue::handle(self.raw, unsafe { sys::jse_this(self.raw) })
+        HostValue::handle(self.raw, unsafe { sys::bk_this(self.raw) })
     }
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn new_target(&self) -> HostValue<'a> {
         // SAFETY: live context.
-        HostValue::handle(self.raw, unsafe { sys::jse_new_target(self.raw) })
+        HostValue::handle(self.raw, unsafe { sys::bk_new_target(self.raw) })
     }
 
     /// Whether this invocation came through `new` or `super()`.
     pub fn is_construct(&self) -> bool {
         // SAFETY: live context.
-        unsafe { sys::jse_is_construct(self.raw) != 0 }
+        unsafe { sys::bk_is_construct(self.raw) != 0 }
     }
 
     /// Copy a value out of this call so it outlives the callback.
@@ -812,8 +812,8 @@ impl<'a> Ctx<'a> {
     /// runtimes open the handle names a slot in exactly one of them.
     ///
     /// ```no_run
-    /// # fn main() -> Result<(), jse::Error> {
-    /// # let rt = jse::Runtime::new()?;
+    /// # fn main() -> Result<(), boomkat::Error> {
+    /// # let rt = boomkat::Runtime::new()?;
     /// use std::cell::RefCell;
     /// let last = RefCell::new(None);
     /// rt.register_fn("remember", 1, move |ctx| {
@@ -828,8 +828,8 @@ impl<'a> Ctx<'a> {
             Error::new(Kind::Type, "a host-built value has no handle to persist")
         })?;
         // SAFETY: live context; `handle` came from this call.
-        let out = unsafe { sys::jse_value_persist(self.raw, handle) };
-        if out == sys::JSE_INVALID_VALUE {
+        let out = unsafe { sys::bk_value_persist(self.raw, handle) };
+        if out == sys::BK_INVALID_VALUE {
             return Err(Error::new(Kind::Full, "could not persist the value"));
         }
         Ok(Persisted {
@@ -893,21 +893,21 @@ impl<'a> Ctx<'a> {
         let not_passable = || Error::new(Kind::Type, "a host-built value cannot be passed to call");
 
         let func_handle = func.raw().ok_or_else(not_passable)?;
-        let raw_args: Vec<sys::jse_value> = args
+        let raw_args: Vec<sys::bk_value> = args
             .iter()
             .map(|v| v.raw().ok_or_else(not_passable))
             .collect::<Result<_, _>>()?;
         let this_handle = match this_val {
             Some(v) => v.raw().ok_or_else(not_passable)?,
-            None => sys::JSE_INVALID_VALUE,
+            None => sys::BK_INVALID_VALUE,
         };
-        let mut out: sys::jse_value = sys::JSE_INVALID_VALUE;
+        let mut out: sys::bk_value = sys::BK_INVALID_VALUE;
 
         // SAFETY: live context; `raw_args` is valid for its length (a null
         // pointer when empty is what the ABI wants for "no arguments");
         // `out` is a valid out-parameter.
         let status = unsafe {
-            sys::jse_call(
+            sys::bk_call(
                 self.raw,
                 func_handle,
                 if raw_args.is_empty() {
@@ -921,20 +921,20 @@ impl<'a> Ctx<'a> {
             )
         };
 
-        // Only JSE_ERR_THROW means the callee raised a JS exception, and only
-        // then has the engine staged it on this context. JSE_ERR_FULL and
-        // JSE_ERR_INVALID come back with nothing staged, so tagging them as an
+        // Only BK_ERR_THROW means the callee raised a JS exception, and only
+        // then has the engine staged it on this context. BK_ERR_FULL and
+        // BK_ERR_INVALID come back with nothing staged, so tagging them as an
         // already-recorded throw would make the trampoline suppress a message
         // that was never recorded -- the failure would vanish.
-        if status == sys::JSE_ERR_THROW {
+        if status == sys::BK_ERR_THROW {
             return Err(Error::new(Kind::Throw, CALLEE_THREW));
         }
-        if status != sys::JSE_OK {
+        if status != sys::BK_OK {
             let kind = Kind::from_status(status);
             return Err(Error::new(kind, match kind {
                 Kind::Full => "the value registry is full; release earlier call \
                                results before making more calls",
-                Kind::Invalid => "jse_call rejected its arguments",
+                Kind::Invalid => "bk_call rejected its arguments",
                 _ => kind.describe(),
             }));
         }
@@ -948,11 +948,11 @@ impl<'a> Ctx<'a> {
     }
 
     /// Free a runtime-owned handle produced by [`Ctx::call`].
-    fn release(&self, handle: sys::jse_value) {
-        // SAFETY: `handle` came from a successful `jse_call` on this context,
+    fn release(&self, handle: sys::bk_value) {
+        // SAFETY: `handle` came from a successful `boomkat_call` on this context,
         // so it names a runtime-owned slot in `self.rt`. `Retained` frees it
         // exactly once, on drop.
-        unsafe { sys::jse_value_free(self.rt, handle) };
+        unsafe { sys::bk_value_free(self.rt, handle) };
     }
 }
 
@@ -1035,8 +1035,8 @@ impl fmt::Debug for Retained<'_, '_> {
 /// A `Persisted` is not [`Send`]: it names a slot in one runtime, and that
 /// runtime must be driven from one thread at a time.
 pub struct Persisted {
-    rt: sys::jse_runtime,
-    handle: sys::jse_value,
+    rt: sys::bk_runtime,
+    handle: sys::bk_value,
 }
 
 impl Persisted {
@@ -1044,15 +1044,15 @@ impl Persisted {
     pub fn type_of(&self) -> Type {
         // SAFETY: the runtime this value was persisted into; an unknown handle
         // reports undefined rather than faulting.
-        Type::from_raw(unsafe { sys::jse_type_of(self.rt, self.handle) })
+        Type::from_raw(unsafe { sys::bk_type_of(self.rt, self.handle) })
     }
 
     /// Read a number. Does not coerce.
     pub fn as_number(&self) -> Result<f64, Error> {
         let mut out = 0.0f64;
         // SAFETY: live runtime and handle; `out` is a valid out-parameter.
-        let status = unsafe { sys::jse_get_number(self.rt, self.handle, &mut out) };
-        if status != sys::JSE_OK {
+        let status = unsafe { sys::bk_get_number(self.rt, self.handle, &mut out) };
+        if status != sys::BK_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a number"));
         }
         Ok(out)
@@ -1062,8 +1062,8 @@ impl Persisted {
     pub fn as_bool(&self) -> Result<bool, Error> {
         let mut out: c_int = 0;
         // SAFETY: live runtime and handle; `out` is a valid out-parameter.
-        let status = unsafe { sys::jse_get_bool(self.rt, self.handle, &mut out) };
-        if status != sys::JSE_OK {
+        let status = unsafe { sys::bk_get_bool(self.rt, self.handle, &mut out) };
+        if status != sys::BK_OK {
             return Err(Error::new(Kind::from_status(status), "value is not a boolean"));
         }
         Ok(out != 0)
@@ -1073,7 +1073,7 @@ impl Persisted {
     pub fn as_string(&self) -> Result<String, Error> {
         read_measured(
             // SAFETY: live runtime and handle; the measure-then-fill protocol.
-            |buf, cap, len| unsafe { sys::jse_get_string(self.rt, self.handle, buf, cap, len) },
+            |buf, cap, len| unsafe { sys::bk_get_string(self.rt, self.handle, buf, cap, len) },
             |status| Error::new(Kind::from_status(status), "value is not a string"),
         )
     }
@@ -1082,8 +1082,8 @@ impl Persisted {
 impl Drop for Persisted {
     fn drop(&mut self) {
         // SAFETY: `handle` is a registry slot in `self.rt` from
-        // `jse_value_persist`, freed exactly once since this is not Copy/Clone.
-        unsafe { sys::jse_value_free(self.rt, self.handle) };
+        // `boomkat_value_persist`, freed exactly once since this is not Copy/Clone.
+        unsafe { sys::bk_value_free(self.rt, self.handle) };
     }
 }
 
@@ -1096,11 +1096,11 @@ impl fmt::Debug for Persisted {
 /// Marker message for a failure that the engine has *already* recorded as a
 /// throw. The trampoline must not overwrite it with a second throw, which would
 /// replace the callee's real exception with a generic one.
-const CALLEE_THREW: &str = "\u{0}jse: exception already recorded";
+const CALLEE_THREW: &str = "\u{0}boomkat: exception already recorded";
 
 /// A value the host built, held as data until it is returned.
 ///
-/// The `jse_return_*` setters are last-write-wins on a single pending return
+/// The `boomkat_return_*` setters are last-write-wins on a single pending return
 /// value, so applying one eagerly would make the *last* value a closure built
 /// win over whichever it actually returned. Holding the data instead and
 /// applying it once, in the trampoline, is what makes
@@ -1115,17 +1115,17 @@ enum Built {
 
 impl Built {
     /// Set this as the call's return value. Called at most once per call.
-    fn apply(&self, raw: sys::jse_call_ctx) {
+    fn apply(&self, raw: sys::bk_call_ctx) {
         match self {
             // SAFETY: live context in every arm; the string pointer is valid
             // for its length across the call, which copies it into the engine.
-            Built::Number(n) => unsafe { sys::jse_return_number(raw, *n) },
-            Built::Bool(b) => unsafe { sys::jse_return_bool(raw, *b as c_int) },
-            Built::Null => unsafe { sys::jse_return_null(raw) },
+            Built::Number(n) => unsafe { sys::bk_return_number(raw, *n) },
+            Built::Bool(b) => unsafe { sys::bk_return_bool(raw, *b as c_int) },
+            Built::Null => unsafe { sys::bk_return_null(raw) },
             // A callback that sets no return value already yields undefined.
             Built::Undefined => {}
             Built::Str(s) => unsafe {
-                sys::jse_return_string(raw, s.as_ptr() as *const c_char, s.len())
+                sys::bk_return_string(raw, s.as_ptr() as *const c_char, s.len())
             },
         }
     }
@@ -1135,12 +1135,12 @@ impl Built {
 ///
 /// Used by [`Value::as_string`], which holds a runtime and can therefore report
 /// the engine's own message on failure.
-fn read_string(owner: &Runtime, handle: sys::jse_value) -> Result<String, Error> {
+fn read_string(owner: &Runtime, handle: sys::bk_value) -> Result<String, Error> {
     read_measured(
         |buf, cap, len| {
             // SAFETY: live runtime and handle; `buf`/`len` are valid for the
             // capacity given, which is 0 with a null buf on the measuring call.
-            unsafe { sys::jse_get_string(owner.raw, handle, buf, cap, len) }
+            unsafe { sys::bk_get_string(owner.raw, handle, buf, cap, len) }
         },
         |status| owner.error(status),
     )
@@ -1148,13 +1148,13 @@ fn read_string(owner: &Runtime, handle: sys::jse_value) -> Result<String, Error>
 
 /// As [`read_string`], but addressing the runtime through a call context.
 ///
-/// This is what a host callback uses: it holds a `jse_call_ctx` and no runtime,
+/// This is what a host callback uses: it holds a `boomkat_call_ctx` and no runtime,
 /// and only the context tier resolves the scope handles arguments carry. There
 /// is no runtime here to read a message from, so failures carry a generic one.
-fn read_ctx_string(ctx: sys::jse_call_ctx, handle: sys::jse_value) -> Result<String, Error> {
+fn read_ctx_string(ctx: sys::bk_call_ctx, handle: sys::bk_value) -> Result<String, Error> {
     read_measured(
         // SAFETY: live context and handle; as `read_string`.
-        |buf, cap, len| unsafe { sys::jse_ctx_get_string(ctx, handle, buf, cap, len) },
+        |buf, cap, len| unsafe { sys::bk_ctx_get_string(ctx, handle, buf, cap, len) },
         |status| Error::new(Kind::from_status(status), "value is not a string"),
     )
 }
@@ -1168,14 +1168,14 @@ fn read_measured(
     let mut len: usize = 0;
     // Measure. A null buffer asks for the byte length, excluding the NUL.
     let status = read(std::ptr::null_mut(), 0, &mut len);
-    if status != sys::JSE_OK {
+    if status != sys::BK_OK {
         return Err(fail(status));
     }
 
     // Fill. The ABI writes a trailing NUL, so ask for len + 1.
     let mut buf = vec![0u8; len + 1];
     let status = read(buf.as_mut_ptr() as *mut c_char, buf.len(), &mut len);
-    if status != sys::JSE_OK {
+    if status != sys::BK_OK {
         return Err(fail(status));
     }
 
@@ -1197,7 +1197,7 @@ fn read_measured(
 ///    already recorded engine-side; re-throwing over them would replace the
 ///    callee's real exception with a generic one.
 /// 3. **The returned value is the one applied.** Host-built values are held as
-///    data until here, because the `jse_return_*` setters are last-write-wins
+///    data until here, because the `boomkat_return_*` setters are last-write-wins
 ///    and would otherwise let a discarded value win. See [`Built`].
 /// 4. **Kept handles are released.** A [`Ctx::call`] result frees its slot when
 ///    its [`Retained`] guard drops, so most never reach here; the ones handed
@@ -1208,7 +1208,7 @@ fn read_measured(
 /// Called only by the engine, with the `udata` pointer this crate registered:
 /// a live `*mut F` from `Box::into_raw` that is never freed while the runtime
 /// lives.
-unsafe extern "C" fn trampoline<F>(raw: sys::jse_call_ctx, udata: *mut c_void)
+unsafe extern "C" fn trampoline<F>(raw: sys::bk_call_ctx, udata: *mut c_void)
 where
     F: for<'a> Fn(&Ctx<'a>) -> Result<HostValue<'a>, Error> + 'static,
 {
@@ -1232,7 +1232,7 @@ where
         // built along the way.
         Ok(Ok(v)) => match v.repr {
             // SAFETY: live context; the handle came from this call.
-            Repr::Handle(h) => unsafe { sys::jse_return(raw, h) },
+            Repr::Handle(h) => unsafe { sys::bk_return(raw, h) },
             // The index came from `Ctx::park` on this same context, so it is
             // always in bounds.
             Repr::Built(i) => ctx.built.borrow()[i].apply(raw),
@@ -1252,7 +1252,7 @@ where
         // a JS throw the script can catch, keeping the engine consistent.
         Err(payload) => {
             let msg = format!("host panic: {}", panic_message(&payload));
-            throw_message(raw, sys::JSE_ERROR, &msg);
+            throw_message(raw, sys::BK_ERROR, &msg);
         }
     }
 
@@ -1261,17 +1261,17 @@ where
     // than the registry ceiling. Scope handles are not in here; the engine reclaims
     // those when the call frame goes.
     for handle in ctx.kept.borrow().iter() {
-        // SAFETY: each handle came from a successful `jse_call` on this
+        // SAFETY: each handle came from a successful `boomkat_call` on this
         // context, is runtime-owned by `ctx.rt`, and is freed exactly once:
         // `keep` forgets the guard that would otherwise free it, and pushes it
         // here once.
-        unsafe { sys::jse_value_free(ctx.rt, *handle) };
+        unsafe { sys::bk_value_free(ctx.rt, *handle) };
     }
 }
 
 /// Record a JS throw carrying `msg`, tolerating a message with interior NULs by
 /// truncating at the first one — the ABI takes a NUL-terminated string.
-fn throw_message(raw: sys::jse_call_ctx, kind: c_int, msg: &str) {
+fn throw_message(raw: sys::bk_call_ctx, kind: c_int, msg: &str) {
     let cstr = CString::new(msg).unwrap_or_else(|e| {
         let upto = e.nul_position();
         // Position of a NUL byte is a valid UTF-8 boundary, so this cannot
@@ -1280,7 +1280,7 @@ fn throw_message(raw: sys::jse_call_ctx, kind: c_int, msg: &str) {
     });
     // SAFETY: live context; `cstr` is NUL-terminated and outlives the call,
     // which copies the message.
-    unsafe { sys::jse_throw_error(raw, kind, cstr.as_ptr()) };
+    unsafe { sys::bk_throw_error(raw, kind, cstr.as_ptr()) };
 }
 
 /// Best-effort text for a panic payload. `panic!("x")` and

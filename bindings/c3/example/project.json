@@ -20,7 +20,7 @@
       "type": "executable",
       "sources": [
         "../../../src",
-        "../jse.c3",
+        "../boomkat.c3",
         "host_functions.c3"
       ],
       "opt": "O2",
@@ -35,7 +35,7 @@
       "type": "executable",
       "sources": [
         "../../../src",
-        "../jse.c3",
+        "../boomkat.c3",
         "host_functions.c3"
       ],
       "opt": "O0",

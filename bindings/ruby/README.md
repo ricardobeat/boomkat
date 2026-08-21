@@ -1,8 +1,8 @@
 # Ruby binding
 
-Pure-Ruby binding to the `jse_` embedding ABI, built on the stdlib
+Pure-Ruby binding to the `bk_` embedding ABI, built on the stdlib
 [`fiddle`](https://docs.ruby-lang.org/en/master/Fiddle.html). It dlopens the
-shared library and calls the symbols `include/jse.h` declares, including the
+shared library and calls the symbols `include/boomkat.h` declares, including the
 host-function entry points that let JS call Ruby. There is no native gem to
 compile and no dependency on the `ffi` gem.
 
@@ -21,7 +21,7 @@ Build the shared library from the repository root:
 make shared
 ```
 
-That produces `out/libjse.dylib` (macOS) or `out/libjse.so` (Linux).
+That produces `out/boomkat.dylib` (macOS) or `out/boomkat.so` (Linux).
 
 ## Run
 
@@ -37,8 +37,8 @@ ruby bindings/ruby/examples/example.rb
 
 The binding finds the library by searching, in order:
 
-1. `$JSE_LIBRARY`, if set, for an installed or relocated build
-2. `out/libjse.{dylib,so}` relative to the repository root
+1. `$BK_LIBRARY`, if set, for an installed or relocated build
+2. `out/boomkat.{dylib,so}` relative to the repository root
 3. the bare soname, letting the dynamic loader search system paths
    (works after `make install PREFIX=…`)
 
@@ -133,7 +133,7 @@ Use `#exec` instead of `#eval` to run for side effects and skip the conversion.
 | `JS::LoadError`    | the shared library could not be found or loaded |
 | `JS::Error`        | base class of all of the above                  |
 
-Every one carries `#status`, the raw `jse_status` code. `JS::ThrowError` also
+Every one carries `#status`, the raw `bk_status` code. `JS::ThrowError` also
 exposes `#js_class` (`"TypeError"`, `"RangeError"`, …) so you can branch on the
 JS error class without parsing message text; it is `nil` when a non-`Error`
 value was thrown, as in `throw 42`.
@@ -203,7 +203,7 @@ end
 ### Calling JS from a host function
 
 A JS function argument arrives as a `JS::Callback`; `#call` runs it through
-`jse_call` and converts the result.
+`bk_call` and converts the result.
 
 ```ruby
 vm.register('twice') { |f, x| f.call(f.call(x)) }
@@ -215,7 +215,7 @@ Rescue `JS::CalleeThrow` to handle it in Ruby instead.
 
 Only values the engine already holds can be passed to a callback: an argument
 this call received, or a result an earlier `#call` returned. The v1 ABI has no
-value constructors (`jse_new_number` and friends do not exist), so a fresh Ruby
+value constructors (`bk_new_number` and friends do not exist), so a fresh Ruby
 object cannot become a JS value. Passing one raises a `TypeError` in JS rather
 than failing silently. Arguments therefore carry their handle along: a JS
 number arrives as a `JS::TaggedNumber`, which behaves as a `Float` but can also
@@ -287,7 +287,7 @@ These come from the v1 ABI, not from the binding:
 
 ### Known engine bug
 
-An arrow-function IIFE containing a loop loses call arguments under `jse_eval`:
+An arrow-function IIFE containing a loop loses call arguments under `bk_eval`:
 the callee sees `undefined`. It affects JS callees too, so it is not specific
 to host functions. The same source run as a script file does not reproduce it.
 

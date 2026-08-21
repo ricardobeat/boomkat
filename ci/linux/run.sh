@@ -12,7 +12,7 @@ set -uo pipefail
 
 cd "$(dirname "$0")/../.." || exit 1
 ROOT="$PWD"
-PREFIX="${PREFIX:-/tmp/jse-prefix}"
+PREFIX="${PREFIX:-/tmp/boomkat-prefix}"
 RESULTS=()
 FAILED=0
 
@@ -38,18 +38,18 @@ want() {
 # run standalone rather than depending on an earlier phase having created it.
 write_probe() {
     cat > /tmp/staticprobe.c <<'EOF'
-#include <jse.h>
+#include <boomkat.h>
 #include <stdio.h>
 #include <string.h>
 int main(void) {
-    jse_runtime rt;
-    if (jse_open(&rt) != JSE_OK) return 1;
+    bk_runtime rt;
+    if (bk_open(&rt) != BK_OK) return 1;
     const char *s = "6*7";
-    jse_value v; double n = 0;
-    if (jse_eval(rt, s, strlen(s), &v) != JSE_OK) return 1;
-    jse_get_number(rt, v, &n);
+    bk_value v; double n = 0;
+    if (bk_eval(rt, s, strlen(s), &v) != BK_OK) return 1;
+    bk_get_number(rt, v, &n);
     printf("%g\n", n);
-    jse_value_free(rt, v); jse_close(rt);
+    bk_value_free(rt, v); bk_close(rt);
     return n == 42.0 ? 0 : 1;
 }
 EOF
@@ -119,9 +119,9 @@ fi
 if want libs; then
     say "3. build both libraries (make lib / make shared)"
     timeout "$TIMEOUT" make lib 2>&1 | tail -2
-    [ -f out/jse_static.a ] && pass "out/jse_static.a" || fail "out/jse_static.a"
+    [ -f out/boomkat.a ] && pass "out/boomkat.a" || fail "out/boomkat.a"
     timeout "$TIMEOUT" make shared 2>&1 | tail -2
-    [ -f out/libjse.so ] && pass "out/libjse.so" || fail "out/libjse.so"
+    [ -f out/boomkat.so ] && pass "out/boomkat.so" || fail "out/boomkat.so"
 fi
 
 # ---------------------------------------------------------------------------
@@ -135,15 +135,15 @@ fi
 # ---------------------------------------------------------------------------
 if want link; then
     say "5a. ldd — shared library and a linked executable"
-    if [ -f out/libjse.so ]; then
-        ldd out/libjse.so
-        if ldd out/libjse.so 2>&1 | grep -q 'not found'; then
-            fail "libjse.so has unresolved deps"
+    if [ -f out/boomkat.so ]; then
+        ldd out/boomkat.so
+        if ldd out/boomkat.so 2>&1 | grep -q 'not found'; then
+            fail "boomkat.so has unresolved deps"
         else
-            pass "libjse.so deps all resolved"
+            pass "boomkat.so deps all resolved"
         fi
     else
-        skip "ldd libjse.so"
+        skip "ldd boomkat.so"
     fi
 
     timeout 120 just example-c-shared >/dev/null 2>&1
@@ -152,41 +152,41 @@ if want link; then
         if ldd bindings/c/out/example-shared 2>&1 | grep -q 'not found'; then
             fail "bindings/c/out/example-shared has unresolved deps"
         else
-            pass "bindings/c/out/example-shared deps all resolved (links libjse.so via rpath)"
+            pass "bindings/c/out/example-shared deps all resolved (links boomkat.so via rpath)"
         fi
-        ldd bindings/c/out/example-shared | grep -q 'libjse.so' \
-            && pass "bindings/c/out/example-shared genuinely resolves libjse.so" \
-            || fail "bindings/c/out/example-shared does not name libjse.so"
+        ldd bindings/c/out/example-shared | grep -q 'boomkat.so' \
+            && pass "bindings/c/out/example-shared genuinely resolves boomkat.so" \
+            || fail "bindings/c/out/example-shared does not name boomkat.so"
     else
         skip "ldd bindings/c/out/example-shared"
     fi
 
-    say "5b. nm -D — exported jse_ symbols on the shared library"
-    if [ -f out/libjse.so ]; then
-        exported=$(nm -D --defined-only out/libjse.so | awk '$2 ~ /^[TDBRW]$/ {print $3}' | sort)
-        jse_syms=$(printf '%s\n' "$exported" | grep -c '^jse_')
-        printf '%s\n' "$exported" | grep '^jse_' | sed 's/^/  /'
-        [ "$jse_syms" -ge 12 ] && pass "$jse_syms jse_ symbols exported (>= 12)" \
-                               || fail "only $jse_syms jse_ symbols exported"
+    say "5b. nm -D — exported bk_ symbols on the shared library"
+    if [ -f out/boomkat.so ]; then
+        exported=$(nm -D --defined-only out/boomkat.so | awk '$2 ~ /^[TDBRW]$/ {print $3}' | sort)
+        bk_syms=$(printf '%s\n' "$exported" | grep -c '^bk_')
+        printf '%s\n' "$exported" | grep '^bk_' | sed 's/^/  /'
+        [ "$bk_syms" -ge 12 ] && pass "$bk_syms boomkat symbols exported (>= 12)" \
+                               || fail "only $bk_syms boomkat symbols exported"
 
         # Everything the engine and its vendored C define is also exported: c3c
         # has no visibility control and no version script, so the whole module
         # graph (boomkat.*, lre_*, cr_*) lands in .dynsym. This is NOT a Linux
         # regression -- the macOS dylib exports ~2460 symbols for the same
         # reason -- so it is reported as a count, not failed on. What matters is
-        # that the 12 documented jse_ entry points are all present.
+        # that the 12 documented bk_ entry points are all present.
         total_n=$(printf '%s\n' "$exported" | grep -c . || true)
-        printf '  total exported symbols: %s (%s are jse_)\n' "$total_n" "$jse_syms"
+        printf '  total exported symbols: %s (%s are bk_)\n' "$total_n" "$bk_syms"
         printf '  note: c3c exports the whole module graph; macOS does the same.\n'
-        printf '  sample non-jse_ exports:\n'
-        printf '%s\n' "$exported" | grep -v '^jse_' | head -5 | sed 's/^/    /'
+        printf '  sample non-bk_ exports:\n'
+        printf '%s\n' "$exported" | grep -v "^bk_" | head -5 | sed 's/^/    /'
     else
-        skip "nm on libjse.so"
+        skip "nm on boomkat.so"
     fi
 
     say "5c. static archive links from plain cc"
     write_probe
-    if cc -std=c99 -Iinclude /tmp/staticprobe.c out/jse_static.a -lm -ldl ${RT_LIB:+"$RT_LIB"} \
+    if cc -std=c99 -Iinclude /tmp/staticprobe.c out/boomkat.a -lm -ldl ${RT_LIB:+"$RT_LIB"} \
            -o /tmp/staticprobe 2>/tmp/staticprobe.err; then
         out=$(/tmp/staticprobe)
         [ "$out" = "42" ] && pass "plain cc + static archive runs (printed $out)" \
@@ -200,7 +200,7 @@ if want link; then
     # no __muloti4, so this decides what an embedder must be told to pass. It is
     # reported either way rather than failed: needing compiler-rt is a genuine
     # platform constraint, not a defect the suite can fix.
-    if cc -std=c99 -Iinclude /tmp/staticprobe.c out/jse_static.a -lm -ldl \
+    if cc -std=c99 -Iinclude /tmp/staticprobe.c out/boomkat.a -lm -ldl \
            -o /tmp/staticprobe_nort 2>/tmp/nort.err; then
         pass "static archive links without compiler-rt (libgcc suffices)"
     else
@@ -213,14 +213,14 @@ fi
 # ---------------------------------------------------------------------------
 if want initarray; then
     say "5d. C3-runtime init hazard: foreign linker drives the final link"
-    # On macOS, linking out/jse_static.a into a Zig-built executable segfaults in
+    # On macOS, linking out/boomkat.a into a Zig-built executable segfaults in
     # __c3_runtime_startup before main, because Zig emits a second bogus
     # __mh_execute_header and the C3 runtime's constructor walk binds to it.
     # The ELF equivalent would be a mis-walked .init_array. Test it for real.
     # What the ELF equivalent of the macOS hazard would act on: the archive's
     # .init_array entries, which the C3 runtime's startup walk consumes.
     rm -rf /tmp/arx && mkdir -p /tmp/arx
-    (cd /tmp/arx && ar x "$ROOT/out/jse_static.a" 2>/dev/null)
+    (cd /tmp/arx && ar x "$ROOT/out/boomkat.a" 2>/dev/null)
     printf '  .init_array sections in the archive members:\n'
     find /tmp/arx -name '*.o' 2>/dev/null | while read -r o; do
         n=$(readelf -S "$o" 2>/dev/null | grep -c 'init_array')
@@ -230,30 +230,30 @@ if want initarray; then
     mkdir -p /tmp/zigstatic && cd /tmp/zigstatic || exit 1
     cat > main.zig <<'EOF'
 const std = @import("std");
-const c = @cImport({ @cInclude("jse.h"); });
+const c = @cImport({ @cInclude("boomkat.h"); });
 
 pub fn main() void {
-    var rt: c.jse_runtime = undefined;
-    if (c.jse_open(&rt) != c.JSE_OK) {
-        std.debug.print("jse_open failed\n", .{});
+    var rt: c.bk_runtime = undefined;
+    if (c.bk_open(&rt) != c.BK_OK) {
+        std.debug.print("bk_open failed\n", .{});
         return;
     }
     const src = "6*7";
-    var v: c.jse_value = undefined;
-    if (c.jse_eval(rt, src, src.len, &v) != c.JSE_OK) {
+    var v: c.bk_value = undefined;
+    if (c.bk_eval(rt, src, src.len, &v) != c.BK_OK) {
         std.debug.print("eval failed\n", .{});
-        c.jse_close(rt);
+        c.bk_close(rt);
         return;
     }
     var n: f64 = 0;
-    _ = c.jse_get_number(rt, v, &n);
+    _ = c.bk_get_number(rt, v, &n);
     std.debug.print("zig static: {d}\n", .{n});
-    c.jse_value_free(rt, v);
-    c.jse_close(rt);
+    c.bk_value_free(rt, v);
+    c.bk_close(rt);
 }
 EOF
     zig_cmd=(zig build-exe main.zig -lc
-             "-I$ROOT/include" "$ROOT/out/jse_static.a" -lm -ldl)
+             "-I$ROOT/include" "$ROOT/out/boomkat.a" -lm -ldl)
     [ -n "$RT_LIB" ] && zig_cmd+=("$RT_LIB")
     if timeout 300 "${zig_cmd[@]}" 2>/tmp/zigstatic.err; then
         zout=$(timeout 60 ./main 2>&1); zrc=$?
@@ -283,29 +283,29 @@ EOF
     cat > src/main.rs <<'EOF'
 use std::os::raw::{c_char, c_double, c_int, c_void};
 extern "C" {
-    fn jse_open(out: *mut *mut c_void) -> c_int;
-    fn jse_eval(rt: *mut c_void, src: *const c_char, len: usize, out: *mut u32) -> c_int;
-    fn jse_get_number(rt: *mut c_void, v: u32, out: *mut c_double) -> c_int;
-    fn jse_close(rt: *mut c_void);
+    fn bk_open(out: *mut *mut c_void) -> c_int;
+    fn bk_eval(rt: *mut c_void, src: *const c_char, len: usize, out: *mut u32) -> c_int;
+    fn bk_get_number(rt: *mut c_void, v: u32, out: *mut c_double) -> c_int;
+    fn bk_close(rt: *mut c_void);
 }
 fn main() {
     unsafe {
         let mut rt: *mut c_void = std::ptr::null_mut();
-        assert_eq!(jse_open(&mut rt), 0, "jse_open");
+        assert_eq!(bk_open(&mut rt), 0, "bk_open");
         let s = b"6*7";
         let mut v: u32 = 0;
-        assert_eq!(jse_eval(rt, s.as_ptr() as *const c_char, s.len(), &mut v), 0, "jse_eval");
+        assert_eq!(bk_eval(rt, s.as_ptr() as *const c_char, s.len(), &mut v), 0, "bk_eval");
         let mut n: c_double = 0.0;
-        jse_get_number(rt, v, &mut n);
+        bk_get_number(rt, v, &mut n);
         println!("rust static: {}", n);
-        jse_close(rt);
+        bk_close(rt);
     }
 }
 EOF
     # rustc passes -nodefaultlibs, so libc is not implicitly available to the
     # archive; the C3 runtime's atexit hook needs it named explicitly.
     rustc_args=(src/main.rs -o ruststatic -L "$ROOT/out"
-                -C link-arg="$ROOT/out/jse_static.a" -C link-arg=-lm -C link-arg=-ldl)
+                -C link-arg="$ROOT/out/boomkat.a" -C link-arg=-lm -C link-arg=-ldl)
     [ -n "$RT_LIB" ] && rustc_args+=(-C link-arg="$RT_LIB")
     rustc_args+=(-C link-arg=-lc)
     if timeout 300 rustc "${rustc_args[@]}" 2>/tmp/ruststatic.err; then
@@ -331,28 +331,28 @@ if want install; then
     timeout 120 make install PREFIX="$PREFIX" 2>&1 | tail -3
     ls -la "$PREFIX/lib" "$PREFIX/include" 2>&1 | sed 's/^/  /'
 
-    if cc -std=c99 -I"$PREFIX/include" /tmp/staticprobe.c "$PREFIX/lib/libjse.a" \
+    if cc -std=c99 -I"$PREFIX/include" /tmp/staticprobe.c "$PREFIX/lib/boomkat.a" \
            -lm -ldl ${RT_LIB:+"$RT_LIB"} -o /tmp/prefix_static 2>/tmp/ps.err; then
         o=$(cd /tmp && ./prefix_static)
-        [ "$o" = "42" ] && pass "installed static: -I\$PREFIX/include + libjse.a runs ($o)" \
+        [ "$o" = "42" ] && pass "installed static: -I\$PREFIX/include + boomkat.a runs ($o)" \
                         || fail "installed static printed '$o'"
     else
         head -5 /tmp/ps.err; fail "installed static link"
     fi
 
-    if cc -std=c99 -I"$PREFIX/include" /tmp/staticprobe.c -L"$PREFIX/lib" -ljse \
+    if cc -std=c99 -I"$PREFIX/include" /tmp/staticprobe.c -L"$PREFIX/lib" -lboomkat \
            -Wl,-rpath,"$PREFIX/lib" -lm -ldl -o /tmp/prefix_shared 2>/tmp/psh.err; then
         o=$(cd /tmp && ./prefix_shared)
-        [ "$o" = "42" ] && pass "installed shared: -ljse + rpath runs from any cwd ($o)" \
+        [ "$o" = "42" ] && pass "installed shared: -lboomkat + rpath runs from any cwd ($o)" \
                         || fail "installed shared printed '$o'"
-        ldd /tmp/prefix_shared | grep libjse | sed 's/^/  /'
+        ldd /tmp/prefix_shared | grep boomkat | sed 's/^/  /'
     else
         head -5 /tmp/psh.err; fail "installed shared link"
     fi
 
     # Without an rpath the loader must fail; prove the rpath is load-bearing
     # rather than the library merely being found on the default search path.
-    if cc -std=c99 -I"$PREFIX/include" /tmp/staticprobe.c -L"$PREFIX/lib" -ljse \
+    if cc -std=c99 -I"$PREFIX/include" /tmp/staticprobe.c -L"$PREFIX/lib" -lboomkat \
            -lm -ldl -o /tmp/prefix_norpath 2>/dev/null; then
         if (cd /tmp && ./prefix_norpath >/dev/null 2>&1); then
             printf '  note: runs without rpath (loader found it anyway)\n'
@@ -371,7 +371,7 @@ if want bindings; then
 
     # The C99 example builds against an installed prefix, so make sure one
     # exists even when the `install` phase was not selected.
-    [ -f "$PREFIX/include/jse.h" ] || timeout 120 make install PREFIX="$PREFIX" >/dev/null 2>&1
+    [ -f "$PREFIX/include/boomkat.h" ] || timeout 120 make install PREFIX="$PREFIX" >/dev/null 2>&1
 
     # The working tree is bind-mounted from the macOS host, so any build cache
     # in it holds Mach-O artifacts. Every one of these caches is keyed in a way
@@ -383,11 +383,11 @@ if want bindings; then
     if [ -d bindings/c ]; then
         # Exercise the install path: route the justfile at the staged prefix
         # populated by `make install PREFIX=$PREFIX` above, where the archive
-        # is named libjse.a rather than the engine's own jse_static.a.
+        # is named boomkat.a rather than the engine's own boomkat.a.
         if timeout 300 just example-c-static \
-                JSE_INCDIR="$PREFIX/include" \
-                JSE_LIBDIR="$PREFIX/lib" \
-                JSE_STATIC_LIB="$PREFIX/lib/libjse.a" \
+                BK_INCDIR="$PREFIX/include" \
+                BK_LIBDIR="$PREFIX/lib" \
+                BK_STATIC_LIB="$PREFIX/lib/boomkat.a" \
                 >/tmp/c99.log 2>&1; then
             tail -6 /tmp/c99.log | sed 's/^/  /'
             pass "binding: C (static)"
@@ -395,8 +395,8 @@ if want bindings; then
             tail -8 /tmp/c99.log | sed 's/^/  /'; fail "binding: C (static)"
         fi
         if timeout 300 just example-c-shared \
-                JSE_INCDIR="$PREFIX/include" \
-                JSE_LIBDIR="$PREFIX/lib" \
+                BK_INCDIR="$PREFIX/include" \
+                BK_LIBDIR="$PREFIX/lib" \
                 >/tmp/c99s.log 2>&1; then
             pass "binding: C (shared)"
         else
@@ -443,8 +443,8 @@ if want bindings; then
     fi
 
     # --- Rust --------------------------------------------------------------
-    if command -v cargo >/dev/null && [ -f bindings/rust/jse/Cargo.toml ]; then
-        if timeout 900 cargo run --manifest-path bindings/rust/jse/Cargo.toml \
+    if command -v cargo >/dev/null && [ -f bindings/rust/boomkat/Cargo.toml ]; then
+        if timeout 900 cargo run --manifest-path bindings/rust/boomkat/Cargo.toml \
                --example hello_js >/tmp/rs.log 2>&1; then
             tail -8 /tmp/rs.log | sed 's/^/  /'; pass "binding: Rust"
         else
@@ -455,10 +455,10 @@ if want bindings; then
     fi
 
     # --- C3 (native, does not go through the C ABI) ------------------------
-    if timeout 600 make -s jse_example_c3 >/dev/null 2>&1 \
-       || timeout 600 c3c build jse_example_c3 ${C3C_LDFLAGS:-} >/tmp/c3.log 2>&1 \
-       || timeout 600 c3c build jse_example_c3 ${RT_LIB:+-z "$RT_LIB"} >/tmp/c3.log 2>&1; then
-        if [ -x out/jse_example_c3 ] && timeout 120 ./out/jse_example_c3 >/tmp/c3run.log 2>&1; then
+    if timeout 600 make -s boomkat_example_c3 >/dev/null 2>&1 \
+       || timeout 600 c3c build boomkat_example_c3 ${C3C_LDFLAGS:-} >/tmp/c3.log 2>&1 \
+       || timeout 600 c3c build boomkat_example_c3 ${RT_LIB:+-z "$RT_LIB"} >/tmp/c3.log 2>&1; then
+        if [ -x out/boomkat_example_c3 ] && timeout 120 ./out/boomkat_example_c3 >/tmp/c3run.log 2>&1; then
             tail -8 /tmp/c3run.log | sed 's/^/  /'; pass "binding: C3 (native)"
         else
             tail -8 /tmp/c3run.log 2>/dev/null | sed 's/^/  /'; fail "binding: C3 (native, run)"

@@ -3230,7 +3230,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     }
 
     // Copy this/new.target/arguments into a scope the host addresses by
-    // handle. Copies rather than register references: a jse_call from inside
+    // handle. Copies rather than register references: a bk_call from inside
     // the handler can grow and realloc the valstack, which would leave
     // ctx.regs dangling (vm_calls.c3:1331 documents the same hazard for
     // builtins, which cope by refreshing — a host holding an opaque handle
@@ -3282,7 +3282,7 @@ fn uint host_argc(BuiltinContext* ctx) {
 /// Argument `i`, or undefined when `i >= argc`.
 ///
 /// Reads from the call scope rather than ctx.regs, so the value stays valid
-/// across a nested jse_call that reallocates the valstack.
+/// across a nested bk_call that reallocates the valstack.
 fn TVal host_arg(BuiltinContext* ctx, uint i) {
     TVal out;
     out.set_undefined();
@@ -3335,7 +3335,7 @@ fn void host_throw(BuiltinContext* ctx, TVal v) {
     ctx.should_throw = true;
 }
 
-/// Error kinds selectable by host_throw_error. Mirrors the JSE_ERROR_* values
+/// Error kinds selectable by host_throw_error. Mirrors the BK_ERROR_* values
 /// the C ABI exposes.
 const int HOST_ERR_ERROR     = 0;
 const int HOST_ERR_TYPE      = 1;

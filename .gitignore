@@ -23,3 +23,4 @@ test262_results
 # Internal commit-attribution analysis (private session/prompt data)
 .attrib/
 qemu_*.core
+__pycache__/

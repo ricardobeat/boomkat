@@ -1,11 +1,11 @@
 # Rust bindings for the boomkat JavaScript engine
 
-Two crates over the `jse_` C ABI (`include/jse.h`):
+Two crates over the `bk_` C ABI (`include/boomkat.h`):
 
 | Crate | What it is |
 |---|---|
-| `jse-sys` | Raw `extern "C"` declarations, one per header symbol. A `build.rs` finds and links the static archive. Everything is `unsafe`. |
-| `jse` | The safe wrapper: `Runtime`, `Value`, `Ctx`, `Result<_, Error>`, `Drop`. No raw pointer or handle is exposed. |
+| `boomkat-sys` | Raw `extern "C"` declarations, one per header symbol. A `build.rs` finds and links the static archive. Everything is `unsafe`. |
+| `boomkat` | The safe wrapper: `Runtime`, `Value`, `Ctx`, `Result<_, Error>`, `Drop`. No raw pointer or handle is exposed. |
 
 ## Prerequisites
 
@@ -14,17 +14,17 @@ Two crates over the `jse_` C ABI (`include/jse.h`):
 - The engine's static archive. Build it from the repo root:
 
   ```sh
-  make lib          # produces out/jse_static.a
+  make lib          # produces out/bk_static.a
   ```
 
   `build.rs` walks up from the crate looking for the checkout (the directory
-  containing `include/jse.h`) and links `out/jse_static.a` from it. To link
-  against an installed copy instead, set `JSE_LIB_DIR` to a directory holding
-  `libjse.a` or `jse_static.a`:
+  containing `include/boomkat.h`) and links `out/bk_static.a` from it. To link
+  against an installed copy instead, set `BK_LIB_DIR` to a directory holding
+  `libboomkat.a` or `bk_static.a`:
 
   ```sh
   make install PREFIX=/usr/local
-  JSE_LIB_DIR=/usr/local/lib cargo build
+  BK_LIB_DIR=/usr/local/lib cargo build
   ```
 
 The archive is self-contained: the vendored C (`libregexp`, `cutils`, `dtoa`)
@@ -48,7 +48,7 @@ cargo test
 `cargo run --example hello_js`:
 
 ```
-jse 0.1.0
+boomkat 0.1.0
 sum        = 10
 greeting   = hello world 😀
 its type   = String
@@ -108,7 +108,7 @@ ok
 ## Usage
 
 ```rust
-use jse::{Kind, Runtime};
+use boomkat::{Kind, Runtime};
 
 let rt = Runtime::new()?;
 
@@ -193,7 +193,7 @@ Three things this layer handles that the raw ABI leaves to the caller:
 - Reads inside a callback address the right runtime. A callback is handed a
   call context, not a runtime, and with several open there is no "the runtime"
   to fall back on — so `HostValue`'s readers go through the ABI's context tier
-  (`jse_ctx_get_number` and friends), which is also the only tier that resolves
+  (`bk_ctx_get_number` and friends), which is also the only tier that resolves
   the scope handles arguments carry. This is invisible from Rust: `ctx.arg(0)`
   carries its context, so `.as_number()` simply works.
 - `ctx.call` results are freed for you. Each comes back runtime-owned,
@@ -218,7 +218,7 @@ is `Fn` (the engine may re-enter it) rather than `FnMut`.
 - Slots are released on `Drop`, so the registry cannot be leaked into
   exhaustion by ordinary use.
 - Error messages are copied out of the engine's buffer immediately, since
-  that buffer is only valid until the next `jse_*` call.
+  that buffer is only valid until the next `bk_*` call.
 - `Runtime` is `Send` but not `Sync`, which is the engine's threading rule
   stated in the type system rather than in prose. See below.
 
@@ -239,7 +239,7 @@ assert_eq!(b.eval("x")?.as_string()?, "from B");
 ```
 
 A value belongs to the runtime that made it. The C ABI answers a handle from
-the wrong runtime with `JSE_ERR_INVALID` rather than resolving it against an
+the wrong runtime with `BK_ERR_INVALID` rather than resolving it against an
 unrelated value; in Rust the case cannot arise, because `Value<'rt>` borrows its
 runtime and no method on another accepts one. To move a value, read it out and
 write it back in. `cargo run --example two_runtimes` walks all of this.
@@ -277,10 +277,10 @@ These come from the C ABI, not from this binding.
 
 ## ABI fix made while writing this
 
-`jse_get_number`, `jse_get_bool`, and `jse_get_string` returned `JSE_ERR_TYPE`
-and `JSE_ERR_FULL` without ever touching the runtime's error state, so
-`jse_last_error` reported whatever the *previous* failure had left there: a
+`bk_get_number`, `bk_get_bool`, and `bk_get_string` returned `BK_ERR_TYPE`
+and `BK_ERR_FULL` without ever touching the runtime's error state, so
+`bk_last_error` reported whatever the *previous* failure had left there: a
 stale message, sometimes from an unrelated call. They now set a specific
 message on failure and clear it on success, matching what the header promises
 of every other entry point. Fixed in `src/capi.c3`; the contract is now spelled
-out in `include/jse.h` under `jse_last_error`.
+out in `include/boomkat.h` under `bk_last_error`.

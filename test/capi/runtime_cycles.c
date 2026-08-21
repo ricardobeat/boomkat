@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-#include "jse.h"
+#include "boomkat.h"
 /*
  * Repeated open/eval/close cycles, for the GC_STRESS + AddressSanitizer build.
  *
@@ -14,8 +14,8 @@
  * arraybuffer, generator, bound function, error, getter/setter, plus objects
  * carrying a property hash table and a private shape from a delete.
  *
- * Build the sanitized library with `make jse-stress`, then link this against
- * out/jse_stress.dylib. Mutating tearing_down to stay false makes this abort,
+ * Build the sanitized library with `make boomkat-stress`, then link this against
+ * out/bk_stress.dylib. Mutating tearing_down to stay false makes this abort,
  * which is what makes it worth running.
  */
 static const char *SRC =
@@ -31,12 +31,12 @@ static const char *SRC =
   "1";
 int main(void){
     for(int i=0;i<40;i++){
-        jse_runtime rt=NULL; jse_value v;
-        if(jse_open(&rt)!=JSE_OK){ printf("open failed at %d\n",i); return 1; }
-        if(jse_eval(rt,SRC,strlen(SRC),&v)!=JSE_OK){ printf("eval failed at %d: %s\n",i,jse_last_error(rt)); jse_close(rt); return 1; }
-        jse_value_free(rt,v);
-        jse_drain_microtasks(rt);
-        jse_close(rt);                 /* <- Heap.destroy, tearing_down path */
+        bk_runtime rt=NULL; bk_value v;
+        if(bk_open(&rt)!=BK_OK){ printf("open failed at %d\n",i); return 1; }
+        if(bk_eval(rt,SRC,strlen(SRC),&v)!=BK_OK){ printf("eval failed at %d: %s\n",i,bk_last_error(rt)); bk_close(rt); return 1; }
+        bk_value_free(rt,v);
+        bk_drain_microtasks(rt);
+        bk_close(rt);                 /* <- Heap.destroy, tearing_down path */
     }
     printf("40 open/eval/close cycles clean\n");
     return 0;

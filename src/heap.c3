@@ -111,7 +111,7 @@ alias CapiMarkFn = fn void(void*);
 /// The C ABI's interrupt callback, invoked by the VM at safepoints. Returns
 /// non-zero to abort the running script. Lives here rather than in the capi
 /// module so vm_execute can call it without importing capi (which imports vm).
-alias JseInterruptFn = fn int(void* runtime, void* opaque);
+alias BkInterruptFn = fn int(void* runtime, void* opaque);
 /// How many backward jumps between GC checks. Spacing them out stops loops
 /// from thrashing the collector.
 const uint  BWD_GC_INTERVAL        = 1024;
@@ -454,7 +454,7 @@ struct HostFnEntry {
 /// `values` is a real JS Array allocated through alloc_object, so it carries a
 /// temproot flag and its elements are marked transitively. That is what keeps
 /// arguments alive without spending a GC-root entry, and
-/// without referencing ctx.regs — a nested jse_call can realloc the valstack
+/// without referencing ctx.regs — a nested bk_call can realloc the valstack
 /// and leave a register pointer dangling (see vm_calls.c3:1331).
 ///
 /// `generation` is bumped every time a scope is popped, so a handle used after
@@ -738,7 +738,7 @@ struct Heap {
     void*               capi_roots;
 
     // The C ABI Runtime that owns this heap, or null when the heap was not
-    // created through jse_open. A host function receives a call context, which
+    // created through bk_open. A host function receives a call context, which
     // carries a heap, so this is how it reaches its runtime without a global
     // naming "the one runtime". Distinct from capi_roots, which happens to hold
     // the same pointer but means "what the GC should walk for host-held values":
@@ -747,7 +747,7 @@ struct Heap {
     CapiMarkFn          capi_mark;
 
     // The C ABI interrupt handler, polled at VM safepoints (vm_execute's
-    // vm_poll_interrupt). Set by jse_set_interrupt_handler, which reaches the
+    // vm_poll_interrupt). Set by bk_set_interrupt_handler, which reaches the
     // heap through the runtime; null means no handler and the poll is a single
     // compare. The handler runs on the engine thread and must not re-enter the
     // engine; opaque is never dereferenced here.
@@ -762,7 +762,7 @@ struct Heap {
     /// Set while an "interrupted" error is unwinding. vm_throw_value skips
     /// catch catchers while it is set, so script cannot swallow the abort;
     /// finally blocks still run. Cleared only at the host boundary when the
-    /// JSE_ERR_INTERRUPT status is handed out.
+    /// BK_ERR_INTERRUPT status is handed out.
     bool                uncatchable_throw;
 
     // Valstack window the GC scans for roots. valstack_base is refreshed on VM
@@ -2045,7 +2045,7 @@ fn HostFnEntry* Heap.host_fn_at(&self, uint slot) {
 // ============================================================================
 
 /// Slot 0 of every scope holds `this`; slot 1 holds new.target; arguments
-/// start at HOST_SCOPE_ARG0. Fixed offsets keep jse_this/jse_arg branch-free.
+/// start at HOST_SCOPE_ARG0. Fixed offsets keep bk_this/bk_arg branch-free.
 const uint HOST_SCOPE_THIS = 0;
 const uint HOST_SCOPE_NEW_TARGET = 1;
 const uint HOST_SCOPE_ARG0 = 2;
