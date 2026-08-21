@@ -873,7 +873,20 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
         if (slot_global_is_assign_op(tt) && prev_tt == TokenType.IDENTIFIER && prev_ident_len > 0) {
             int aidx = slot_global_find(&names[0], &name_lens[0], count,
                                         prev_ident[:prev_ident_len]);
-            if (aidx >= 0) { value_written[aidx] = true; }
+            if (aidx >= 0) {
+                value_written[aidx] = true;
+                // An assignment inside a paren group is ambiguous: the group may
+                // be an arrow's parameter list, whose default-value expressions
+                // compile to separate thunk functions. Such a thunk writes the
+                // name through the env chain, but a register-resident global is
+                // read from its home register, so the write would be lost
+                // (`((a = (g = 5)) => {})()` left g unchanged). We cannot tell an
+                // arrow param list from a plain grouping without lookahead to
+                // `=>`, so disqualify conservatively, matching the pass's
+                // soundness rule that every ambiguous case falls back to the
+                // guarded env path.
+                if (paren_depth > 0) { nested_ref[aidx] = true; }
+            }
         }
 
         if (tt == TokenType.IDENTIFIER) {
