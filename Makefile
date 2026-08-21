@@ -57,8 +57,19 @@ C3C ?= c3c
 #
 # --build-dir has to trail the target name for the same reason C3C_LDFLAGS does,
 # so recipes read `$(C3C_BUILD) <target> $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)`.
+#
+# --macos-min-version silences "object file was built for newer macOS version"
+# on every host: c3c's default link target is 11.0, but each Xcode SDK stamps the
+# C objects it compiles with its own floor (MACOSX_DEPLOYMENT_TARGET in the SDK's
+# SDKSettings.plist), so ld sees the mismatch and warns. Reading the SDK's own
+# value keeps the link flag and the object stamps in lockstep across machines;
+# the SDK rejects values lower than its floor, so we cannot pin a single number.
+# On hosts without `xcrun` (Linux CI, no Xcode), the lookup fails, the flag is
+# dropped, and c3c falls back to its default -- the same behaviour as before.
+SDK_MIN_MACOS ?= $(shell /usr/libexec/PlistBuddy -c "Print :DefaultProperties:MACOSX_DEPLOYMENT_TARGET" "$(shell xcrun --show-sdk-path)/SDKSettings.plist" 2>/dev/null)
+SDK_MIN_FLAG := $(if $(SDK_MIN_MACOS),--macos-min-version $(SDK_MIN_MACOS),)
 C3C_BUILD = d=$$(mktemp -d "$${TMPDIR:-/tmp}/boomkat-build.XXXXXX"); trap 'rm -rf "$$d"' EXIT; $(C3C) build
-C3C_BUILDFLAGS = --build-dir "$$d"
+C3C_BUILDFLAGS = --build-dir "$$d" $(SDK_MIN_FLAG)
 
 PREFIX ?= /usr/local
 
