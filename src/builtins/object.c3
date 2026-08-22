@@ -1511,9 +1511,17 @@ fn void builtin_object_isExtensible(BuiltinContext* ctx) {
         return;
     }
     TVal arg = ctx.regs[ctx.base_reg];
-    // ES5 §15.2.3.13: non-object arguments return true (always extensible)
-    if (!arg.is_object()) {
+    // A lightfunc is a built-in function object in a compact representation,
+    // not a primitive: it is extensible like any other function.
+    if (arg.is_lightfunc()) {
         ctx.result.set_boolean(true);
+        return;
+    }
+    // ES2015 §19.1.2.13 step 1: a non-object argument returns false. (ES5
+    // §15.2.3.13 threw a TypeError here; ES6 replaced the throw with false,
+    // and a primitive is never extensible either way.)
+    if (!arg.is_object()) {
+        ctx.result.set_boolean(false);
         return;
     }
     HObject* obj = (HObject*)arg.get_heapptr();

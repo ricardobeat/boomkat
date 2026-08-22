@@ -772,14 +772,19 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
     ctx.result.set_number(d);
 }
 
+// isNaN(number) / isFinite(number), ES2015 §18.2.2-3. Both take ToNumber(x)
+// first, so an object argument runs its valueOf/toString: the result must
+// reflect the coerced value, and a throwing valueOf must propagate rather than
+// be swallowed into NaN. builtin_to_number is the non-VM coercion and cannot
+// call user code, so it answers NaN for every plain object.
 fn void builtin_is_nan(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
+        ctx.result.set_boolean(true);
         return;
     }
-    TVal num;
-    builtin_to_number(&ctx.regs[ctx.base_reg], &num);
-    ctx.result.set_boolean((num.is_number()) ? math::is_nan(num.get_number()) : false);
+    double d = builtin_to_number_vm(ctx, &ctx.regs[ctx.base_reg]);
+    if (ctx.should_throw) return;
+    ctx.result.set_boolean(math::is_nan(d));
 }
 
 fn void builtin_is_finite(BuiltinContext* ctx) {
@@ -787,7 +792,8 @@ fn void builtin_is_finite(BuiltinContext* ctx) {
         ctx.result.set_boolean(false);
         return;
     }
-    double d = string_to_double(&ctx.regs[ctx.base_reg]);
+    double d = builtin_to_number_vm(ctx, &ctx.regs[ctx.base_reg]);
+    if (ctx.should_throw) return;
     ctx.result.set_boolean(!math::is_nan(d) && !math::is_inf(d));
 }
 
