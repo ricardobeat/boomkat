@@ -2584,6 +2584,17 @@ fn double builtin_to_number_getdouble(BuiltinContext* ctx, TVal* val) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a BigInt value to a number");
         return 0.0 / 0.0;
     }
+    // ToNumber(Symbol) throws TypeError (ES2022 §7.1.3), including a Symbol
+    // produced by the object's own @@toPrimitive/valueOf/toString: this is the
+    // tail of the ToPrimitive path in builtin_to_number_vm, which only checks
+    // the argument itself before coercing.
+    if (val.is_string()) {
+        HString* hs = (HString*)val.get_heapptr();
+        if (hs != null && hs.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a Symbol value to a number");
+            return 0.0 / 0.0;
+        }
+    }
     TVal num;
     builtin_to_number(val, &num);
     if (num.is_fastint()) return (double)num.get_fastint();
