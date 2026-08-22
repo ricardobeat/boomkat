@@ -201,9 +201,9 @@ fn int main(String[] args) {
         uint  col  = lx.err_col;
         usz   msg_len = (usz)((ZString)msg).len();
         if (msg_len > 0) {
-            io::eprintfn("%s: compile error at line %d:%d: %s", path, line, col, (ZString)msg);
+            io::eprintfn("%s: SyntaxError at line %d:%d: %s", path, line, col, (ZString)msg);
         } else {
-            io::eprintfn("%s: compile error at line %d:%d", path, line, col);
+            io::eprintfn("%s: SyntaxError at line %d:%d", path, line, col);
         }
         return 1;
     }

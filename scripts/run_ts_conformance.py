@@ -182,8 +182,9 @@ def engine_outcome(path, bin_path, timeout):
         return "missing"
     combined = res.stdout + res.stderr
     # The script path prints "SyntaxError: ..."; the ESM path prints
-    # "<file>: compile error at line X:Y: ...". Both mean the source failed
+    # "<file>: SyntaxError at line X:Y: ...". Both mean the source failed
     # to compile (vs. compiled-and-threw, which prints "Uncaught"/"VM error").
+    # "compile error" is still accepted for the debug CLI's wording.
     if "SyntaxError" in combined or "compile error" in combined:
         # Decorators are real runtime syntax under --erasableSyntaxOnly, not
         # type syntax, and are out of scope for this engine (plan 042). A

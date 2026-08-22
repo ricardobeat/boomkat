@@ -1310,7 +1310,7 @@ fn void CompilerContext.ensure_code_cap(&self) {
     uint new_cap = self.code_cap * 2;
     // Returning silently leaves emit() to hit the cap and drop instructions,
     // producing a truncated function with NO recorded error — the CLI then
-    // prints "compile error at line 0:0" with an empty message, naming neither
+    // prints "SyntaxError at line 0:0" with an empty message, naming neither
     // the cause nor a position. record_error (not set_compile_error) so the
     // current token's line/col is carried too.
     if (new_cap > MAX_CODE_HARD) {

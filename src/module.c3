@@ -798,11 +798,15 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         mem::copy(&name_buf[0], normalized.ptr, (sz)(name_copy));
         name_buf[name_copy] = 0;
         if (!quiet) {
+            // Name the error type, matching the script path in cli/boomkat.c3
+            // and the SyntaxError parked on the heap channel just below. A
+            // module parse failure IS a SyntaxError; printing a bare "compile
+            // error" left the type unrecoverable for anything reading stderr.
             if (msg_len > 0) {
-                io::eprintfn("%s: compile error at line %d:%d: %s",
+                io::eprintfn("%s: SyntaxError at line %d:%d: %s",
                              (ZString)name_buf[0..], line, col, (ZString)msg);
             } else {
-                io::eprintfn("%s: compile error at line %d:%d",
+                io::eprintfn("%s: SyntaxError at line %d:%d",
                              (ZString)name_buf[0..], line, col);
             }
         }
