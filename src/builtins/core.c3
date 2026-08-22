@@ -1373,6 +1373,11 @@ fn HObject* check_collection_class(BuiltinContext* ctx, hobject::ObjClass want, 
 // Symbol.iterator are fine, since only Symbol.for results are registered).
 fn bool can_be_held_weakly(Heap* heap, TVal val) {
     if (val.is_object() && val.get_heapptr() != null) return true;
+    // A LIGHTFUNC builtin is an Object, so CanBeHeldWeakly is true for it. It
+    // is also immortal -- its identity is a builtin index, not an allocation --
+    // so a weak reference to one simply never clears, which is the same
+    // observable behaviour as a strongly reachable target.
+    if (val.is_lightfunc()) return true;
     if (is_symbol_val(val)) {
         HString* sym = (HString*)val.get_heapptr();
         return symbol_registry_get_key(heap, sym) == null;
@@ -3967,6 +3972,107 @@ fn HObject* alloc_builtin_fn(Heap* heap, uint fn_index, char[] name, int length)
     fobj.prototype = heap.function_proto;
     set_func_ctor_name_length(fobj, heap, name, length);
     return fobj;
+}
+
+// ============================================================================
+// LIGHTFUNC promotion
+// ============================================================================
+
+// Return the one HObject that represents the builtin behind `fn_idx`,
+// materialising it on first use.
+//
+// Most builtins are stored as a LIGHTFUNC TVal whose whole payload is a builtin
+// index. That is enough to call them and it keeps startup from allocating an
+// object per builtin, but it means TVal.is_object() is false for JSON.parse,
+// Math.max and friends, so every operation that treats a function AS AN OBJECT
+// -- ToObject, instanceof, the `in` operator, Reflect.*, defining or assigning
+// a property, using it as a Map or WeakSet key -- has nothing to work with.
+// Promotion is the single place that turns such a value into the real thing,
+// so those operations can be written once against HObject instead of growing
+// another LIGHTFUNC special case each.
+//
+// Identity is the reason this is a cache and not a constructor. `JSON.parse ===
+// JSON.parse` holds today only because the builtin index *is* the value: two
+// loads of the same property yield bit-identical TVals. If promotion minted a
+// fresh object per call, the first program to use a builtin as an object would
+// see its identity split in two -- a far worse defect than the ones promotion
+// fixes. One slot per Builtin ordinal makes promotion idempotent, so an object
+// compared before and after promotion still compares equal.
+//
+// The cache array is allocated on the first promotion rather than at startup,
+// which preserves the point of LIGHTFUNC: a program that only ever calls its
+// builtins allocates nothing here. Heap.mark_roots treats the array as a GC
+// root, since a promoted builtin is usually reachable from nothing else.
+fn HObject* promote_builtin_fn(Heap* heap, uint fn_idx) {
+    // Host functions live above the builtin range and already are real
+    // FUNCTION objects, so they never reach promotion; a stray index would
+    // otherwise run off the end of the cache.
+    if (fn_idx >= Builtin.LAST.ordinal) return null;
+
+    if (heap.promoted_builtins == null) {
+        usz bytes = (usz)Builtin.LAST.ordinal * HObject*::size;
+        void* raw = heap.alloc_func(heap.heap_udata, bytes);
+        if (raw == null) return null;
+        mem::clear(raw, (sz)bytes);
+        heap.promoted_builtins = (HObject**)raw;
+        heap.promoted_builtin_capacity = Builtin.LAST.ordinal;
+    }
+
+    HObject* cached = heap.promoted_builtins[fn_idx];
+    if (cached != null) return cached;
+
+    BuiltinMeta meta = builtin_get_metadata(fn_idx);
+    // An internal-only ordinal carries an empty name and -1 arity. It has no
+    // JS-visible identity to promote, and ES2015 SS17 requires .name/.length,
+    // so fabricating an object for one would invent a function that no program
+    // can legitimately hold.
+    if (meta.arity < 0) return null;
+
+    HObject* fobj = alloc_builtin_fn(heap, fn_idx, meta.name, meta.arity);
+    if (fobj == null) return null;
+
+    // Published before anything else can allocate: alloc_builtin_fn's own
+    // allocations (the object, its shape, the interned name) can each trigger a
+    // GC, and until the cache slot names the object the only thing keeping it
+    // alive is its temproot flag.
+    heap.promoted_builtins[fn_idx] = fobj;
+    return fobj;
+}
+
+// The promoted object for `fn_idx` if one has already been minted, else null.
+//
+// Read paths use this rather than promote_builtin_fn: a mere property read must
+// not allocate, and a builtin that has never been used as an object has no own
+// properties beyond the .name/.length the LIGHTFUNC path already synthesises.
+// Once promotion HAS happened the object is the authority, because it is where
+// an assignment or defineProperty put the new property, and a read that kept
+// consulting the metadata table would not see it.
+fn HObject* promoted_builtin_fn(Heap* heap, uint fn_idx) @inline {
+    if (heap.promoted_builtins == null || fn_idx >= heap.promoted_builtin_capacity) return null;
+    return heap.promoted_builtins[fn_idx];
+}
+
+// promoted_builtin_fn for a TVal: the already-promoted object behind a
+// LIGHTFUNC, or null for anything else.
+fn HObject* promoted_lightfunc_obj(Heap* heap, TVal val) @inline {
+    if (!val.is_lightfunc()) return null;
+    return promoted_builtin_fn(heap, (uint)(usz)val.get_heapptr());
+}
+
+// Promote `val` in place when it is a LIGHTFUNC, so a caller that needs a real
+// object can go on to treat every callable uniformly. Any other value is left
+// exactly as it was, including an already-promoted OBJECT, which keeps this
+// safe to call on the way into a shared path without a tag test at each site.
+//
+// Returns false only when a LIGHTFUNC could not be promoted (allocation failure
+// or an internal-only ordinal), in which case `val` is untouched and the caller
+// should fall back to its non-object behaviour.
+fn bool promote_lightfunc_tval(Heap* heap, TVal* val) {
+    if (!val.is_lightfunc()) return true;
+    HObject* fobj = promote_builtin_fn(heap, (uint)(usz)val.get_heapptr());
+    if (fobj == null) return false;
+    val.set_object(fobj);
+    return true;
 }
 
 // test262 host globals: __evalScript, __detachArrayBuffer, and the $262

@@ -33,6 +33,11 @@ fn bool same_value_impl(TVal a, TVal b, bool zero_signs_distinct) {
             case STRING:    return ((hstring::HString*)a.get_heapptr()).equals_hstring(
                                        (hstring::HString*)b.get_heapptr());
             case OBJECT:    return a.get_heapptr() == b.get_heapptr();
+            // A LIGHTFUNC builtin is an Object whose identity is its builtin
+            // index rather than a pointer, so it compares the same way OBJECT
+            // does. Without this it falls to `default: false`, and a builtin
+            // used as a Map or Set key never matches itself on lookup.
+            case LIGHTFUNC: return a.get_heapptr() == b.get_heapptr();
             case BIGINT:    return a.get_bigint() == b.get_bigint();
             default: return false;
         }

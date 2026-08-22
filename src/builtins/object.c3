@@ -20,6 +20,14 @@ import boomkat::vm;
 // Returns the object directly for OBJECT type. Returns false for null/undefined.
 // Sets ctx.result and returns true on success. Returns false on allocation failure.
 fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
+    // ToObject on a LIGHTFUNC builtin hands back the function itself rather
+    // than a wrapper: it already IS an Object, and boxing it would be
+    // observable by both identity and typeof. It stays in LIGHTFUNC form for
+    // the same reason builtin_object does -- see the comment there.
+    if (val.is_lightfunc()) {
+        *ctx.result = val;
+        return true;
+    }
     // Already an object
     if (val.is_object()) {
         *ctx.result = val;
@@ -151,6 +159,19 @@ fn void builtin_object(BuiltinContext* ctx) {
 
     // Get the first argument
     TVal arg = ctx.regs[ctx.base_reg];
+
+    // ToObject on a value that is already an Object returns it unchanged
+    // (ES2015 SS7.1.13), and a LIGHTFUNC builtin IS a function object. It is
+    // returned in its LIGHTFUNC form rather than promoted, because the value
+    // the program holds elsewhere -- in the property it was read from, in
+    // another variable -- is that LIGHTFUNC, and `Object(JSON.parse) ===
+    // JSON.parse` has to hold against those. Promotion mints the object a
+    // property write or a Reflect call needs; it deliberately does not become
+    // the identity of the builtin.
+    if (arg.is_lightfunc()) {
+        *ctx.result = arg;
+        return;
+    }
 
     // null/undefined/not supplied → new empty object
     if (arg.is_null() || arg.is_undefined()) {
@@ -1053,6 +1074,11 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
 // Object (no ToObject coercion for primitives). Throws TypeError and returns
 // null if the argument is null, undefined, or any primitive.
 fn HObject* reflect_require_object(BuiltinContext* ctx, TVal arg, char[] msg) {
+    // A LIGHTFUNC builtin IS an Object per the spec, so it must satisfy the
+    // check rather than be rejected as a primitive. Promoting here covers all
+    // of Reflect at once, which is why the individual methods below need no
+    // LIGHTFUNC handling of their own.
+    promote_lightfunc_tval(ctx.heap, &arg);
     if (arg.is_null() || arg.is_undefined() || !arg.is_object()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, msg);
         return null;
@@ -2493,6 +2519,9 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         return;
     }
     TVal arg0 = ctx.regs[ctx.base_reg];
+    // Defining a property needs somewhere to put it, which a LIGHTFUNC has
+    // not got; promotion supplies the real function object the spec assumes.
+    promote_lightfunc_tval(ctx.heap, &arg0);
     if (!arg0.is_object()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.defineProperty called on non-object");
         return;
@@ -3688,6 +3717,9 @@ fn void builtin_object_isSealed(BuiltinContext* ctx) {
         return;
     }
     TVal arg = ctx.regs[ctx.base_reg];
+    // A LIGHTFUNC builtin is an ordinary extensible function object, so the
+    // non-object shortcut below must not claim it is sealed.
+    promote_lightfunc_tval(ctx.heap, &arg);
     // ES5 §15.2.3.11: non-object arguments return true
     if (!arg.is_object()) {
         ctx.result.set_boolean(true);
@@ -3739,6 +3771,9 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
         return;
     }
     TVal arg = ctx.regs[ctx.base_reg];
+    // A LIGHTFUNC builtin is an ordinary extensible function object, so the
+    // non-object shortcut below must not claim it is frozen.
+    promote_lightfunc_tval(ctx.heap, &arg);
     // ES5 §15.2.3.12: non-object arguments return true
     if (!arg.is_object()) {
         ctx.result.set_boolean(true);
