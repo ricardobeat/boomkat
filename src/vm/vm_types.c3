@@ -218,6 +218,17 @@ const uint ACT_FLAG_SUPER_CTOR     = 1u << 7;
 // incref and no track_heap_store. The return value overwrites that same slot,
 // so the write-back must not decref what it finds there. See resolve_call_var.
 const uint ACT_FLAG_BORROWED_CALLEE = 1u << 8;
+// The activation's this_binding holds a live value that the frame BORROWED
+// rather than incref'd: the caller keeps the owning reference for the whole
+// duration of the call, so nothing here may be decref'd on pop. It exists
+// purely to tell the GC that the slot is a real value and not the stale bits
+// a reused activation slot would otherwise carry, since activation_begin does
+// not clear this_binding and call_fn deliberately reuses activations[0]
+// without zeroing it. Refcount liveness is not reachability: a mark-and-sweep
+// safepoint that never marks a borrowed receiver will free it even at a
+// nonzero refcount, so the two must be flagged independently of
+// ACT_FLAG_THIS_OWNED, whose only job is to schedule the matching decref.
+const uint ACT_FLAG_THIS_VALID     = 1u << 9;
 
 // ============================================================================
 // Catcher, one entry in the exception handler chain

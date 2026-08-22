@@ -728,6 +728,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // Restore the generator's saved 'this' (e.g. boolean true/false for
                     // Boolean.prototype[Symbol.iterator] generators).
                     act.this_binding = gs_rb2.this_binding;  // raw copy, no stale-decref
+                    act.flags |= ACT_FLAG_THIS_VALID;
                 } else {
                     // The generator was created with an undefined or null `this`,
                     // so apply ES5 §10.4.3.
@@ -736,6 +737,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         this_val.set_object(vm.global_env.bindings);
                     }
                     act.this_binding = this_val;
+                    act.flags |= ACT_FLAG_THIS_VALID;
                 }
             } else if (target.is_arrow()) {
                 // Arrow functions have no receiver of their own, so `this` is
@@ -753,6 +755,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     arrow_this = super_walk_live_this(vm, &saved_acts[saved_act_count - 1]);
                 }
                 act.this_binding = arrow_this;
+                act.flags |= ACT_FLAG_THIS_VALID;
             } else {
                 // Not a resume, so ES5 §10.4.3 substitutes the global object for an
                 // undefined or null `this`.
@@ -764,7 +767,12 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 // Raw assign: this_val is kept alive by the caller for the duration
                 // of the call; the previous activation[0].this_binding bits are
                 // restored verbatim below, so refcounts stay balanced.
+                // ACT_FLAG_THIS_VALID publishes the slot to the GC without
+                // claiming ownership, so a safepoint inside the callee marks the
+                // receiver instead of sweeping it at a nonzero refcount; the
+                // restore below is unaffected because no decref is scheduled.
                 act.this_binding = this_val;
+                act.flags |= ACT_FLAG_THIS_VALID;
             }
 
             // For the initial (non-resume) call to a generator function, set up

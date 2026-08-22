@@ -61,13 +61,29 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
 // its registers or env chain. Each of these can be a value's only surviving
 // root across a safepoint GC:
 //
-//  - `this_binding` when the frame owns it. A getter or setter copies the
-//    receiver only here, since the registers are cleared and no argument slot
-//    holds it. A construct call parks the freshly allocated instance here by
-//    raw assignment, and under GC pressure inside the constructor body it is
-//    otherwise collected, after which its [[Prototype]] reads as freed memory.
-//    An ordinary call's `this` came from a register or env that still roots it,
-//    so deep non-method recursion skips this mark entirely.
+//  - `this_binding` when the frame owns it (ACT_FLAG_THIS_OWNED /
+//    ACT_FLAG_CONSTRUCT) or merely borrows a live one (ACT_FLAG_THIS_VALID).
+//    A getter or setter copies the receiver only here, since the registers are
+//    cleared and no argument slot holds it. A construct call parks the freshly
+//    allocated instance here by raw assignment, and under GC pressure inside
+//    the constructor body it is otherwise collected, after which its
+//    [[Prototype]] reads as freed memory.
+//
+//    A borrowed receiver needs the same mark even though the caller holds the
+//    owning reference. Refcount liveness is not reachability: the sweep frees
+//    every node the mark phase did not reach, whatever its refcount, so a
+//    receiver reachable ONLY through a borrowing frame's this_binding is
+//    collected at a nonzero refcount and the frame then runs against freed
+//    memory. That is the case for a re-entrant call_fn frame, whose receiver
+//    the caller may hold nowhere a register or env walk can see: the class
+//    field initializer that vm_init_private_members invokes receives the
+//    part-built instance solely as this_val, so a safepoint GC anywhere in the
+//    initializer (a direct eval's compile, for one) sweeps the instance out
+//    from under it and the brand stamped a moment earlier vanishes with it.
+//    The gate cannot simply be dropped: activation_begin does not clear
+//    this_binding and call_fn reuses activations[0] without zeroing it, so an
+//    unflagged slot may hold a previous frame's stale bits, and marking those
+//    would walk freed memory.
 //  - `new_target`, the constructor or newTarget object.
 //  - `async_promise`, the outer Promise of an async function or module, settled
 //    only after the body returns. This mark is not gated on ACT_FLAG_ASYNC, so
@@ -88,7 +104,7 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
 //
 // A null or undefined slot marks harmlessly, since every mark helper null-checks.
 fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
-    if ((act.flags & (ACT_FLAG_THIS_OWNED | ACT_FLAG_CONSTRUCT)) != 0) {
+    if ((act.flags & (ACT_FLAG_THIS_OWNED | ACT_FLAG_CONSTRUCT | ACT_FLAG_THIS_VALID)) != 0) {
         h.mark_tval(&act.this_binding);
     }
     if (act.new_target != null) { h.mark_hobject(act.new_target); }
