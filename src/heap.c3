@@ -4244,13 +4244,19 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
 // Run every queued job, including jobs enqueued while draining, such as when a
 // handler resolves another promise. A re-entrancy guard keeps a nested call
 // from starting a second drain.
-fn void Heap.drain_microtasks(&self, void* vm) {
+// `report` is false for the drains that Promise combinators run in the middle
+// of their own builtin, before they have returned the promise to the caller.
+// Running the jobs there is fine; REPORTING there is not -- a rejection is only
+// unhandled once the turn ends, and at that point user code has not had the
+// chance to attach a handler yet, so `Promise.all.call(P, [])` where P's
+// resolve throws would report a rejection the very next statement handles.
+fn void Heap.drain_microtasks(&self, void* vm, bool report = true) {
     if (self.microtask_draining) { return; }
     // An empty queue still has to fall through to the report: a top-level
     // `Promise.reject(x)` with no `.then` anywhere queues no job at all, and
     // is precisely the rejection most in need of reporting.
     if (self.microtask_count == 0) {
-        self.report_unhandled_rejections(vm);
+        if (report) self.report_unhandled_rejections(vm);
         return;
     }
     self.microtask_draining = true;
@@ -4317,7 +4323,7 @@ fn void Heap.drain_microtasks(&self, void* vm) {
         self.microtask_count = 0;
     }
 
-    self.report_unhandled_rejections(vm);
+    if (report) self.report_unhandled_rejections(vm);
 }
 
 // ============================================================================

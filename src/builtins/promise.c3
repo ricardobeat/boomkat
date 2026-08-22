@@ -2384,7 +2384,7 @@ fn void builtin_promise_all_resolve_element(BuiltinContext* ctx) {
                 // whose resolve/reject are independent of `outer`.
                 capability_invoke(heap, ctx.vm, state, &arr_val, true, ctx.this_val);
                 if (!heap.microtask_draining) {
-                    heap.drain_microtasks(ctx.vm);
+                    heap.drain_microtasks(ctx.vm, report: false);
                 }
             }
         }
@@ -2601,7 +2601,7 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
                 // (e.g. test262 "call-resolve-element") see the outer
                 // settled and any executor callback fired.
                 if (!heap.microtask_draining) {
-                    heap.drain_microtasks(ctx.vm);
+                    heap.drain_microtasks(ctx.vm, report: false);
                 }
             }
         }
@@ -2705,7 +2705,7 @@ fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
                 // the detailed comment in builtin_promise_race_resolve_element.
                 capability_invoke(heap, ctx.vm, state, &arr_val, true, ctx.this_val);
                 if (!heap.microtask_draining) {
-                    heap.drain_microtasks(ctx.vm);
+                    heap.drain_microtasks(ctx.vm, report: false);
                 }
             }
         }
@@ -2771,7 +2771,7 @@ fn void builtin_promise_any_resolve_element(BuiltinContext* ctx) {
             // its own throw, which must instead reject via the capability).
             capability_invoke(heap, ctx.vm, state, &value, true, ctx.this_val);
             if (!heap.microtask_draining) {
-                heap.drain_microtasks(ctx.vm);
+                heap.drain_microtasks(ctx.vm, report: false);
             }
         }
     }
@@ -2898,7 +2898,7 @@ fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
                 promise_trigger_reactions(outer, heap, ctx.vm);
                 capability_invoke(heap, ctx.vm, state, &agg_tv, false, ctx.this_val);
                 if (!heap.microtask_draining) {
-                    heap.drain_microtasks(ctx.vm);
+                    heap.drain_microtasks(ctx.vm, report: false);
                 }
             }
         }
@@ -3442,7 +3442,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         // Settlement is handled by capability_invoke below, see the
         // detailed comment in builtin_promise_race_resolve_element.
         capability_invoke(heap, ctx.vm, state, &arr_tv, true, ctx.this_val);
-        if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm);
+        if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm, report: false);
     }
 
     if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
@@ -3653,7 +3653,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         // Settlement is handled by capability_invoke below, see the
         // detailed comment in builtin_promise_race_resolve_element.
         capability_invoke(heap, ctx.vm, state, &arr_tv, true, ctx.this_val);
-        if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm);
+        if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm, report: false);
     }
 
     if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
@@ -3910,7 +3910,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
             promise_trigger_reactions(promise, heap, ctx.vm);
         }
         capability_invoke(heap, ctx.vm, state, &agg_tv, false, ctx.this_val);
-        if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm);
+        if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm, report: false);
     }
 
     if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
