@@ -122,19 +122,67 @@ Fixing `isExtensible` surfaced a wider gap. boomkat stores built-in functions as
 `TVal.is_object()` is false for `JSON.parse`, `Math.max`, `Object.keys` and friends.
 Several observable operations get this wrong:
 
-```js
-JSON.parse instanceof Function     // boomkat false, jsc true
-Object(JSON.parse) === JSON.parse  // boomkat false, jsc true
-Object.isFrozen(JSON.parse)        // boomkat true,  jsc false
-Array.prototype.map instanceof Function   // true — allocated differently
-```
+| Expression | boomkat | jsc | correct |
+| --- | --- | --- | --- |
+| `JSON.parse instanceof Function` | `false` | `true` | `true` |
+| `Object(JSON.parse) === JSON.parse` | `false` | `true` | `true` |
+| `typeof Object(JSON.parse)` | `"object"` | `"function"` | `"function"` |
+| `Object.isFrozen(JSON.parse)` | `true` | `false` | `false` |
+| `Array.prototype.map instanceof Function` | `true` | `true` | `true` |
 
-`object.c3` already carries an explicit `is_lightfunc()` branch in `getPrototypeOf`,
-`getOwnPropertyDescriptor`, `setPrototypeOf` and others, and `INSTANCEOF` has one in
-`vm_execute.c3` — but `@@hasInstance`, `ToObject` and `isFrozen`/`isSealed` do not, so
-coverage is piecemeal. The durable fix is to audit every operation that branches on
-`is_object()` and decide, once, whether a lightfunc belongs on the object side (it
-nearly always does).
+boomkat is the wrong column in every row but the last. `ToObject(v)` returns `v`
+unchanged when `v` is already an object (ES2015 §7.1.13, the Object case is "return the
+argument"), and a function is an object — so `Object(JSON.parse)` must be the same
+function. Because a lightfunc is not object-tagged, `ToObject` instead treats it as a
+primitive and BOXES it, which is why `typeof` flips from `function` to `object`.
+`Array.prototype.map` is allocated as a real HObject and behaves correctly throughout,
+which is the clearest evidence the defect is the representation and not the operations.
+
+#### Full extent, measured
+
+A 30-operation probe run against boomkat, jsc and v8 (`/tmp/lf_probe.js`, kept as
+`test/lightfunc_conformance.js` — see below) finds **15 operations where boomkat differs
+from BOTH reference engines**:
+
+| Operation | boomkat | jsc / v8 |
+| --- | --- | --- |
+| `Object(f) === f` | `false` | `true` |
+| `typeof Object(f)` | `"object"` | `"function"` |
+| `f instanceof Function` | `false` | `true` |
+| `f instanceof Object` | `false` | `true` |
+| `Object.isFrozen(f)` | `true` | `false` |
+| `Object.isSealed(f)` | `true` | `false` |
+| `Object.preventExtensions(f)` then `isExtensible` | `true` | `false` |
+| `Reflect.ownKeys(f)` | TypeError | `length,name` |
+| `Reflect.isExtensible(f)` | TypeError | `true` |
+| `Reflect.getPrototypeOf(f)` | TypeError | `true` |
+| `"name" in f` | TypeError | `true` |
+| `Object.defineProperty(f, …)` | TypeError | works |
+| `f.qq = 5` | TypeError | `5` |
+| `new WeakSet().add(f)` | TypeError | `true` |
+| `new Map().set(f,1).get(f)` | `undefined` | `1` |
+
+The same probe over a real HObject function (`Array.prototype.map`) and a user function
+matches jsc and v8 on **every one of the 30 operations**. The defect is therefore purely
+the representation, not the individual operations.
+
+#### Why patching call sites is the wrong fix
+
+`is_lightfunc()` already appears at **149 call sites across 25 files**. Every one is an
+ad-hoc branch, and the 15 failures above are precisely the sites nobody thought to
+cover — `Reflect.*`, the `in` operator, `[[Set]]`/`[[DefineOwnProperty]]`, and the
+WeakSet/Map key paths. Adding a 150th branch fixes one row and leaves the class of bug
+intact.
+
+The correct fix is a **canonical promotion path**: the first time a lightfunc is used as
+an object, materialise a real `HObject` for its builtin index, cache it keyed by that
+index, and return the same object every time thereafter. Identity depends on this cache
+— `JSON.parse === JSON.parse` is true today only because the builtin index *is* the
+value, so promotion must not mint a second object. With promotion in place the ad-hoc
+branches can be retired incrementally rather than extended.
+
+Cost: one HObject per builtin actually used as an object, allocated lazily, so the
+memory win that motivated lightfuncs is preserved for the common call-only case.
 
 This is how the `isExtensible` fix first regressed 7 `builtin.js` tests: the old code
 returned `true` for everything non-object, which was accidentally right for lightfuncs
