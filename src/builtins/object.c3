@@ -5052,6 +5052,149 @@ fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
     ctx.result.set_boolean(false);
 }
 
+// ---------------------------------------------------------------------------
+// Annex B §B.2.2 legacy accessor helpers on Object.prototype
+// ---------------------------------------------------------------------------
+
+// ToObject(this value) for the four legacy accessor methods, step 1 of
+// B.2.2.1-4. Returns null with a TypeError already thrown for null/undefined.
+// Note the key is NOT coerced here: __defineGetter__/__defineSetter__ must run
+// IsCallable BEFORE ToPropertyKey (B.2.2.1 step 2 precedes step 3), and a test
+// asserts the key's toString is never called for a non-callable getter.
+fn HObject* annexb_accessor_this(BuiltinContext* ctx) {
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+    if (this_val.is_null() || this_val.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype method called on null or undefined");
+        return null;
+    }
+    TVal obj_tv;
+    BuiltinContext sub = *ctx;
+    sub.result = &obj_tv;
+    if (!builtin_to_object(&sub, this_val)) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype method called on null or undefined");
+        return null;
+    }
+    if (sub.should_throw) { ctx.should_throw = true; ctx.throw_value = sub.throw_value; return null; }
+    // A LIGHTFUNC `this` has no HObject to hang properties off; ToObject hands
+    // it back unboxed, so there is nothing to walk or define on.
+    if (!obj_tv.is_object() || obj_tv.get_heapptr() == null) return null;
+    return (HObject*)obj_tv.get_heapptr();
+}
+
+fn bool annexb_is_callable(TVal v) {
+    if (v.is_lightfunc()) return true;
+    if (v.is_object() && v.get_heapptr() != null) {
+        return ((HObject*)v.get_heapptr()).is_callable();
+    }
+    return false;
+}
+
+// Shared body of __defineGetter__/__defineSetter__, Annex B §B.2.2.1/.2.
+// Goes through [[DefineOwnProperty]] rather than put_prop so a non-extensible
+// object, a non-configurable existing property, and a Proxy defineProperty
+// trap all behave per spec (DefinePropertyOrThrow, step 5).
+fn void annexb_define_accessor(BuiltinContext* ctx, bool want_getter) {
+    HObject* obj = annexb_accessor_this(ctx);
+    if (obj == null) { if (!ctx.should_throw) ctx.result.set_undefined(); return; }
+
+    TVal fn_val;
+    if (ctx.argc > 1) { fn_val = ctx.regs[ctx.base_reg + 1]; } else { fn_val.set_undefined(); }
+    // Step 2: IsCallable(getter) is false -> TypeError, BEFORE ToPropertyKey.
+    if (!annexb_is_callable(fn_val)) {
+        builtin_throw(ctx, ctx.heap.type_err_proto,
+            want_getter ? "Object.prototype.__defineGetter__: Expecting function"
+                        : "Object.prototype.__defineSetter__: Expecting function");
+        return;
+    }
+
+    // Step 3: key = ToPropertyKey(P).
+    TVal arg;
+    if (ctx.argc > 0) { arg = ctx.regs[ctx.base_reg]; } else { arg.set_undefined(); }
+    HString* key = builtin_to_property_key_vm(ctx, &arg);
+    if (key == null) { if (!ctx.should_throw) ctx.result.set_undefined(); return; }
+
+    // Step 4: desc = {[[Get/Set]]: fn, [[Enumerable]]: true, [[Configurable]]: true}.
+    // Only the one half is present, so DefineOwnProperty merges against any
+    // existing accessor and leaves its other half intact.
+    ProxyDesc desc;
+    desc.found = true;
+    desc.has_get = want_getter;
+    desc.has_set = !want_getter;
+    if (want_getter) { desc.getter = fn_val; } else { desc.setter = fn_val; }
+    desc.has_enumerable = true;    desc.enumerable = true;
+    desc.has_configurable = true;  desc.configurable = true;
+
+    bool ok = false;
+    if (!object_define_own(ctx.vm, ctx.heap, obj, key, &desc, &ok)) { proxy_ctx_ok(ctx); return; }
+    // Step 5: DefinePropertyOrThrow, a false result is a TypeError.
+    if (!ok) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot redefine property");
+        return;
+    }
+    ctx.result.set_undefined();
+}
+
+// Object.prototype.__defineGetter__, Annex B §B.2.2.1
+fn void builtin_object_proto_defineGetter(BuiltinContext* ctx) {
+    annexb_define_accessor(ctx, true);
+}
+
+// Object.prototype.__defineSetter__, Annex B §B.2.2.2
+fn void builtin_object_proto_defineSetter(BuiltinContext* ctx) {
+    annexb_define_accessor(ctx, false);
+}
+
+// Shared body of __lookupGetter__/__lookupSetter__, Annex B §B.2.2.3/.4.
+// The spec walks the chain with [[GetOwnProperty]] + [[GetPrototypeOf]], so
+// Proxy traps fire (and can throw) at every hop; find_accessor_proto reads
+// `.prototype` and the shape directly and would silently skip them. An own
+// DATA property shadows and yields undefined, which is why
+// `this.__lookupGetter__("#m")` is undefined for a private name: it is never
+// an own property at all.
+fn void annexb_lookup_accessor(BuiltinContext* ctx, bool want_getter) {
+    HObject* obj = annexb_accessor_this(ctx);
+    if (obj == null) { if (!ctx.should_throw) ctx.result.set_undefined(); return; }
+
+    TVal arg;
+    if (ctx.argc > 0) { arg = ctx.regs[ctx.base_reg]; } else { arg.set_undefined(); }
+    HString* key = builtin_to_property_key_vm(ctx, &arg);
+    if (key == null) { if (!ctx.should_throw) ctx.result.set_undefined(); return; }
+
+    HObject* cur = obj;
+    uint depth = 0;
+    while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
+        ProxyDesc pd;
+        if (!own_property_desc(ctx.vm, ctx.heap, cur, key, &pd)) { proxy_ctx_ok(ctx); return; }
+        if (pd.found) {
+            // Step 3.b: an accessor yields the requested half; a data property
+            // shadows the chain and yields undefined.
+            if (pd.is_accessor_desc()) {
+                *ctx.result = want_getter ? pd.getter : pd.setter;
+            } else {
+                ctx.result.set_undefined();
+            }
+            return;
+        }
+        // Step 3.c: O = O.[[GetPrototypeOf]]().
+        TVal proto_tv;
+        if (!object_get_proto(ctx.vm, ctx.heap, cur, &proto_tv)) { proxy_ctx_ok(ctx); return; }
+        if (!proto_tv.is_object() || proto_tv.get_heapptr() == null) break;
+        cur = (HObject*)proto_tv.get_heapptr();
+        depth++;
+    }
+    ctx.result.set_undefined();
+}
+
+// Object.prototype.__lookupGetter__, Annex B §B.2.2.3
+fn void builtin_object_proto_lookupGetter(BuiltinContext* ctx) {
+    annexb_lookup_accessor(ctx, true);
+}
+
+// Object.prototype.__lookupSetter__, Annex B §B.2.2.4
+fn void builtin_object_proto_lookupSetter(BuiltinContext* ctx) {
+    annexb_lookup_accessor(ctx, false);
+}
+
 // Object.prototype.propertyIsEnumerable, ES5 §15.2.4.7
 fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     // V = first argument, converted to string key
@@ -5393,6 +5536,28 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     TVal propisenum_tv;
     propisenum_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal);
     proto.put_prop(propisenum_key, propisenum_tv, hobject::PROP_FLAGS_WC, heap);
+
+    // Annex B §B.2.2.1-4 legacy accessor methods on Object.prototype.
+    // Non-enumerable like every other Object.prototype method.
+    HString* defget_key = builtin_intern_string(heap, "__defineGetter__");
+    TVal defget_tv;
+    defget_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_DEFINEGETTER.ordinal);
+    proto.put_prop(defget_key, defget_tv, hobject::PROP_FLAGS_WC, heap);
+
+    HString* defset_key = builtin_intern_string(heap, "__defineSetter__");
+    TVal defset_tv;
+    defset_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_DEFINESETTER.ordinal);
+    proto.put_prop(defset_key, defset_tv, hobject::PROP_FLAGS_WC, heap);
+
+    HString* lookget_key = builtin_intern_string(heap, "__lookupGetter__");
+    TVal lookget_tv;
+    lookget_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_LOOKUPGETTER.ordinal);
+    proto.put_prop(lookget_key, lookget_tv, hobject::PROP_FLAGS_WC, heap);
+
+    HString* lookset_key = builtin_intern_string(heap, "__lookupSetter__");
+    TVal lookset_tv;
+    lookset_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_LOOKUPSETTER.ordinal);
+    proto.put_prop(lookset_key, lookset_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .valueOf() method to Object.prototype (returns 'this')
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
