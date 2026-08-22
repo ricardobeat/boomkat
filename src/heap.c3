@@ -480,10 +480,26 @@ const usz[POOL_CLASS_COUNT] POOL_CLASS_SIZES = {
 // The pool that holds a request of `size` bytes, or -1 when it exceeds the
 // largest class and must go to the heap allocator.
 fn int pool_class_index(usz size) @inline {
+$if $feature(POOL_BYPASS):
+    // Debug builds send every block to the heap allocator rather than a size
+    // class. A pooled block is recycled through its pool's freelist and never
+    // reaches free(), so AddressSanitizer cannot poison it and a
+    // use-after-free reads memory that is still mapped -- returning whatever
+    // the pool has since handed out at that address. Reporting -1 for every
+    // size takes the allocator path that alloc, pool_alloc and pool_free
+    // already share for oversized blocks, so each block becomes a real
+    // alloc/free pair and ASan reports the offending read where it happens.
+    //
+    // Doing it here rather than at the three call sites keeps alloc and free
+    // agreeing on the classification, which is what makes the switch safe: a
+    // block allocated with bypass on must never be freed with it off.
+    return -1;
+$else
     for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
         if (size <= POOL_CLASS_SIZES[i]) return (int)i;
     }
     return -1;
+$endif
 }
 
 struct Heap {

@@ -7,6 +7,14 @@
 # use, and ASAN turns that into a use-after-poison abort at the exact read
 # instead of an intermittent segfault somewhere later.
 #
+# The target also builds with POOL_BYPASS, which is what makes the ASAN half of
+# that sentence true. Objects normally come from a FixedBlockPool whose frees
+# return blocks to a freelist and never reach free(), so ASAN has nothing to
+# poison and a use-after-free reads memory that is still mapped -- silently
+# seeing whichever object the pool has since handed out at that address. With
+# the bypass every object is a real alloc/free pair and the offending read is
+# reported where it happens.
+#
 # The list is deliberately short: this build is orders of magnitude slower than
 # the normal one, so it covers the tests that hold values across a suspension,
 # a microtask boundary, or a native-to-VM re-entry, which is where missed roots
@@ -24,6 +32,8 @@ TESTS=(
   test/async_gen_gc_lifetime.js
   test/env_chain_gc_lifetime.js
   test/proxy_ownkeys_gc_lifetime.js
+  test/class_fields_gc_lifetime.js
+  test/callback_gc_lifetime.js
 )
 
 # Generous per-test budget: a collection per allocation is slow enough that a

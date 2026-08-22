@@ -1910,11 +1910,28 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     // Try pool allocation first
     void* raw = null;
     bool from_pool = false;
+$if $feature(POOL_BYPASS):
+    // Debug builds route every object through the heap allocator instead of a
+    // FixedBlockPool, because a pooled free is invisible to AddressSanitizer.
+    // hobject_free returns a pooled object to its pool's freelist and never
+    // calls free(), so ASan has nothing to poison: a use-after-free on a
+    // pooled object reads memory that is still legitimately mapped, and
+    // silently sees whichever object the pool has since handed out at that
+    // address. That is exactly how a missed GC root corrupts state without
+    // tripping any sanitizer. Taking the fallback path below makes every
+    // object a genuine allocator alloc/free pair (flags.pool_fallback already
+    // routes hobject_free accordingly), so ASan sees the free and reports the
+    // offending read at the instruction that made it.
+    //
+    // This costs an allocator round-trip per object, so it belongs only in the
+    // asan/gc-stress targets, never in a build anyone measures.
+$else
     void* pool = pool_for_class(heap_ptr, cls);
     if (pool != null) {
         raw = ((mem::mempool::FixedBlockPool*)pool).alloc();
         from_pool = true;
     }
+$endif
 
     // Fall back to malloc when pool is exhausted or unavailable
     if (raw == null) {

@@ -230,6 +230,32 @@ const uint ACT_FLAG_BORROWED_CALLEE = 1u << 8;
 // ACT_FLAG_THIS_OWNED, whose only job is to schedule the matching decref.
 const uint ACT_FLAG_THIS_VALID     = 1u << 9;
 
+// Write this_binding as a BORROWED value: the caller holds the owning
+// reference for the whole call, so nothing is incref'd here and nothing is
+// decref'd on pop.
+//
+// Both setters exist so that publishing the slot to the GC is part of writing
+// it rather than a second step a call site has to remember. A raw
+// `act.this_binding = v` keeps the refcount right and still leaves the slot
+// invisible to the mark phase, which is not a mistake the reader of one call
+// site can see -- it looks correct, and only a collection at the wrong moment
+// reveals otherwise. Assigning the field directly is therefore reserved for
+// the two places that genuinely must (restoring a generator's saved receiver,
+// and clearing the slot); everywhere else goes through these.
+macro void Activation.set_this_borrowed(&self, TVal val) {
+    self.this_binding = val;
+    self.flags |= ACT_FLAG_THIS_VALID;
+}
+
+// Write this_binding as an OWNED value: the reference is taken here and
+// released when the activation is popped. `heap` is the heap whose
+// tval_copy_ref performs the incref.
+macro void Activation.set_this_owned(&self, void* heap, TVal val) {
+    TVal tmp = val;
+    ((heap::Heap*)heap).tval_copy_ref(&self.this_binding, &tmp);
+    self.flags |= ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+}
+
 // ============================================================================
 // Catcher, one entry in the exception handler chain
 // ============================================================================

@@ -119,7 +119,8 @@
       "single-module": true,
       "sanitize": "address",
       "features": [
-        "GC_STRESS"
+        "GC_STRESS",
+        "POOL_BYPASS"
       ]
     },
     "boomkat_threaded_asan": {

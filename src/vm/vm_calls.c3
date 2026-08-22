@@ -1066,8 +1066,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             // A plain overwrite takes no ownership, so handle_return will not decref.
                             new_act.this_binding = *this_src;
                         } else {
-                            vm.heap.tval_copy_ref(&new_act.this_binding, this_src);
-                            new_act.flags |= ACT_FLAG_THIS_OWNED;
+                            new_act.set_this_owned(vm.heap, *this_src);
                         }
                         (void)used_coerced;
                     }

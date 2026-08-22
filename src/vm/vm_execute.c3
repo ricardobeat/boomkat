@@ -727,8 +727,9 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 if (!gs_rb2.this_binding.is_undefined() && !gs_rb2.this_binding.is_null()) {
                     // Restore the generator's saved 'this' (e.g. boolean true/false for
                     // Boolean.prototype[Symbol.iterator] generators).
-                    act.this_binding = gs_rb2.this_binding;  // raw copy, no stale-decref
-                    act.flags |= ACT_FLAG_THIS_VALID;
+                    // Borrowed from the generator state, which owns it for as
+                    // long as the generator is alive, so no reference is taken.
+                    act.set_this_borrowed(gs_rb2.this_binding);
                 } else {
                     // The generator was created with an undefined or null `this`,
                     // so apply ES5 §10.4.3.
@@ -736,8 +737,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         && vm.global_env != null && vm.global_env.bindings != null) {
                         this_val.set_object(vm.global_env.bindings);
                     }
-                    act.this_binding = this_val;
-                    act.flags |= ACT_FLAG_THIS_VALID;
+                    act.set_this_borrowed(this_val);
                 }
             } else if (target.is_arrow()) {
                 // Arrow functions have no receiver of their own, so `this` is
@@ -754,8 +754,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 if (env::is_tdz_sentinel(&arrow_this) && saved_act_count > 0) {
                     arrow_this = super_walk_live_this(vm, &saved_acts[saved_act_count - 1]);
                 }
-                act.this_binding = arrow_this;
-                act.flags |= ACT_FLAG_THIS_VALID;
+                act.set_this_borrowed(arrow_this);
             } else {
                 // Not a resume, so ES5 §10.4.3 substitutes the global object for an
                 // undefined or null `this`.
@@ -771,8 +770,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 // claiming ownership, so a safepoint inside the callee marks the
                 // receiver instead of sweeping it at a nonzero refcount; the
                 // restore below is unaffected because no decref is scheduled.
-                act.this_binding = this_val;
-                act.flags |= ACT_FLAG_THIS_VALID;
+                act.set_this_borrowed(this_val);
             }
 
             // For the initial (non-resume) call to a generator function, set up
