@@ -310,6 +310,10 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     OBJECT_PROTO_HASOWNPROPERTY {"hasOwnProperty", 1, &builtin_object_proto_hasOwnProperty},
     OBJECT_PROTO_PROPERTYISENUMERABLE {"propertyIsEnumerable", 1, &builtin_object_proto_propertyIsEnumerable},
     OBJECT_PROTO_ISPROTOTYPEOF {"isPrototypeOf", 1, &builtin_object_proto_isPrototypeOf},
+    OBJECT_PROTO_DEFINEGETTER {"__defineGetter__", 2, &builtin_object_proto_defineGetter},
+    OBJECT_PROTO_DEFINESETTER {"__defineSetter__", 2, &builtin_object_proto_defineSetter},
+    OBJECT_PROTO_LOOKUPGETTER {"__lookupGetter__", 1, &builtin_object_proto_lookupGetter},
+    OBJECT_PROTO_LOOKUPSETTER {"__lookupSetter__", 1, &builtin_object_proto_lookupSetter},
     OBJECT_PROTO_TOLOCALESTRING {"toLocaleString", 0, &builtin_object_proto_toLocaleString},
     DATE_PROTO_TOLOCALESTRING {"toLocaleString", 0, &builtin_date_proto_toLocaleString},
     DATE_PROTO_TOLOCALEDATESTRING {"toLocaleDateString", 0, &builtin_date_proto_toLocaleDateString},
@@ -2584,10 +2588,9 @@ fn double builtin_to_number_getdouble(BuiltinContext* ctx, TVal* val) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a BigInt value to a number");
         return 0.0 / 0.0;
     }
-    // ToNumber(Symbol) throws TypeError (ES2022 §7.1.3), including a Symbol
-    // produced by the object's own @@toPrimitive/valueOf/toString: this is the
-    // tail of the ToPrimitive path in builtin_to_number_vm, which only checks
-    // the argument itself before coercing.
+    // ToNumber(Symbol) throws TypeError (ES2022 §7.1.3). This is the single
+    // check for both the direct argument and the primitive that
+    // builtin_to_number_vm's ToPrimitive produced, which routes back here.
     if (val.is_string()) {
         HString* hs = (HString*)val.get_heapptr();
         if (hs != null && hs.is_symbol()) {
@@ -2604,60 +2607,44 @@ fn double builtin_to_number_getdouble(BuiltinContext* ctx, TVal* val) {
 // ToNumber for builtins with VM access, calls ToPrimitive(value) then ToNumber.
 // This properly handles objects by calling valueOf() first, then toString().
 fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
-    if (val.is_fastint()) return (double)val.get_fastint();
-    if (val.get_tag() == types::TValTag.NUMBER) return val.get_number();
-    // ToNumber on a BigInt value must throw TypeError (ES2020 §7.1.4).
-    if (val.is_bigint()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a BigInt value to a number");
+    // Only the object case differs from the plain conversion: it needs
+    // ToPrimitive first. Everything else (including the BigInt and Symbol
+    // TypeErrors) is builtin_to_number_getdouble's job, and the ToPrimitive
+    // result below is handed back to it for exactly those checks.
+    if (!val.is_object() || ctx.vm == null) return builtin_to_number_getdouble(ctx, val);
+    Vm* vm_ptr = (Vm*)ctx.vm;
+    TVal prim = vm::to_primitive_value(vm_ptr, val, 2);  // hint "number"
+    if (vm_ptr.throw_pending) {
+        // Propagate the thrown error (TypeError from to_primitive_value).
+        ctx.should_throw = true;
+        ctx.throw_value = vm_ptr.throw_value;
+        vm_ptr.throw_pending = false;  // Clear so stale state doesn't re-fire.
         return 0.0 / 0.0;
     }
-    // ToNumber on a Symbol value must throw TypeError (ES2022 §7.1.3).
-    if (val.is_string()) {
-        HString* hs = (HString*)val.get_heapptr();
-        if (hs != null && hs.is_symbol()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a Symbol value to a number");
-            return 0.0 / 0.0;
-        }
-    }
-    if (val.is_object() && ctx.vm != null) {
-        Vm* vm_ptr = (Vm*)ctx.vm;
-        TVal prim = vm::to_primitive_value(vm_ptr, val, 2);  // hint "number"
-        if (vm_ptr.throw_pending) {
-            // Propagate the thrown error (TypeError from to_primitive_value).
-            ctx.should_throw = true;
-            ctx.throw_value = vm_ptr.throw_value;
-            vm_ptr.throw_pending = false;  // Clear so stale state doesn't re-fire.
-            return 0.0 / 0.0;
-        }
-        if (prim.is_object()) {
-            // Both valueOf and toString returned non-primitives, ES2022
-            // §7.1.1.1 step 3 throws TypeError. Synthesize a TypeError and
-            // flag it on the context so the calling builtin propagates.
-            HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-            if (try err = err_raw) {
-                err.prototype = ctx.heap.type_err_proto;
-                HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert object to primitive value");
-                if (msg_str != null) {
-                    TVal msg_val;
-                    msg_val.set_string(msg_str);
-                    HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
-                    if (msg_key != null) {
-                        err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-                    }
+    if (prim.is_object()) {
+        // Both valueOf and toString returned non-primitives, ES2022
+        // §7.1.1.1 step 3 throws TypeError. Synthesize a TypeError and
+        // flag it on the context so the calling builtin propagates.
+        HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
+        if (try err = err_raw) {
+            err.prototype = ctx.heap.type_err_proto;
+            HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert object to primitive value");
+            if (msg_str != null) {
+                TVal msg_val;
+                msg_val.set_string(msg_str);
+                HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
+                if (msg_key != null) {
+                    err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, ctx.heap);
                 }
-                TVal err_val;
-                err_val.set_object(err);
-                ctx.throw_value = err_val;
             }
-            ctx.should_throw = true;
-            return 0.0 / 0.0;
+            TVal err_val;
+            err_val.set_object(err);
+            ctx.throw_value = err_val;
         }
-        return builtin_to_number_getdouble(ctx, &prim);
+        ctx.should_throw = true;
+        return 0.0 / 0.0;
     }
-    TVal num;
-    builtin_to_number(val, &num);
-    if (num.is_fastint()) return (double)num.get_fastint();
-    return num.get_number();
+    return builtin_to_number_getdouble(ctx, &prim);
 }
 
 // ToString for builtins with VM access, calls ToPrimitive(value, "string") then ToString.
