@@ -110,6 +110,73 @@ excluded.
 | Temporal | ❌ | ❌ | ⚠️ partial (ng) | ❌ |
 | Built-in debugger protocol | ❌ | ❌ | ❌ | ✅ |
 
+## Unsupported
+
+What the engine does not implement, and why. Counts are test262 files excluded
+by `scripts/run_test262.py` (25.8% of the suite); see `docs/engine-scope.md`
+for the reasoning.
+
+### Sloppy mode
+
+The engine is strict-only: one execution mode, no runtime strictness flag.
+
+| | Status |
+|---|---|
+| `with` | ❌ rejected at parse time (181 tests) |
+| Implicit globals (`x = 1` undeclared) | ❌ ReferenceError |
+| Legacy octal literals `010`, escapes `'\101'` | ❌ SyntaxError |
+| Duplicate parameter names | ❌ SyntaxError |
+| Unqualified `delete x` | ❌ SyntaxError |
+| `arguments.callee` / `.caller` | ❌ (23 tests) |
+| Two-way `arguments` ↔ parameter binding | ❌ |
+| Sloppy `this` boxing (primitive → wrapper) | ❌ |
+| `flags: [noStrict]` tests | ❌ skipped (1313 tests) |
+
+Two deliberate exceptions, both spec-required rather than sloppy mode:
+
+- **Dynamic code reserved words.** An indirect `eval` or a `Function()` body is
+  non-strict per ES2024 §19.2.1.1 / §20.2.1.1 unless it has its own `"use
+  strict"`, so `eval`, `arguments` and the FutureReservedWords are legal
+  binding names there. Only identifier reservation relaxes — octals and the
+  rest above stay rejected. Direct `eval` inherits the caller's strictness and
+  so stays strict.
+- **`this`-substitution.** `Function('return this')()` yields the global
+  object (the UMD idiom). This is not a strictness distinction here: it is set
+  only on dynamic bodies, cleared by a `"use strict"` prologue, and never
+  inherited by nested functions.
+
+### Annex B
+
+Mostly unsupported (1086 tests excluded), because most of it is sloppy-mode
+behavior. The web-reality parts that are mode-independent **are** implemented:
+`__proto__`, `__defineGetter__` / `__defineSetter__` / `__lookupGetter__` /
+`__lookupSetter__`, `String.prototype.substr`, `RegExp.prototype.compile`,
+`escape` / `unescape`, and HTML-like comments (`<!--`, `-->`).
+
+Not implemented: `Date.prototype.getYear` / `setYear`, the
+`String.prototype` HTML methods (`anchor`, `big`, `blink`, …),
+`RegExp.$1`–`RegExp.$9` legacy statics, and block-scoped function
+semantics.
+
+### Out of scope
+
+| | Tests | Why |
+|---|---:|---|
+| Temporal | 4611 | Stage 3, still moving |
+| ECMA-402 (`intl402`) | 3341 | Separate specification |
+| test262 `staging/` | 1485 | Not normative |
+| Explicit resource management | 398 | Stage 3 (`using`, `DisposableStack`) |
+| Cross-realm | 179 | No second realm |
+| Multi-agent (`$262.agent`) | 114 | Needs threads; `Atomics` on one agent ships |
+| ShadowRealm | 64 | Stage 3 |
+| Decorators | 24 | Stage 3 |
+| Proper tail calls | 35 | Not implemented |
+| Arbitrary-precision `BigInt` | ~20 | int128 is the ceiling |
+
+Also excluded as still-moving proposals: `import-defer` (229),
+`source-phase-imports` (222), `joint-iteration` (82), `immutable-arraybuffer`
+(66), `await-dictionary` (63), `import-text` (6).
+
 ## Engine internals
 
 | | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
@@ -119,7 +186,8 @@ excluded.
 | `BigInt` representation | int128 | arbitrary | arbitrary | |
 | `Proxy` | full | full | full | subset |
 | `SharedArrayBuffer` | single agent | shared | shared | |
-| Sloppy mode, Annex B | rejected | supported | supported | supported |
+| Sloppy mode | rejected | supported | supported | supported |
+| Annex B | mode-independent parts only | supported | supported | supported |
 | RegExp engine | libregexp | libregexp | libregexp | built-in |
 | TypeScript stripping | erasable only | | | |
 | GC | refcount + MS | refcount + cycles | refcount + cycles | refcount + MS |

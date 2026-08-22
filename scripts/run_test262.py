@@ -267,10 +267,8 @@ SKIP_FILES = {
     "built-ins/Set/valid-values.js",
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
-    "language/comments/hashbang/function-constructor.js",
     # B04 — Function constructor duplicate params / restricted names in non-strict
     "built-ins/Function/15.3.2.1-11-1.js",     # duplicate separate param allowed
-    "built-ins/Function/15.3.2.1-11-3.js",     # formal param named 'eval' allowed
     "built-ins/Function/15.3.2.1-11-5.js",     # duplicate combined param allowed
     "built-ins/Function/15.3.2.1-11-9-s.js",   # three identical params allowed
     "built-ins/Function/length/S15.3.5.1_A1_T3.js",  # duplicate params across joined arg strings
@@ -296,10 +294,6 @@ SKIP_FILES = {
     # Object.prototype, so `this.__lookupSetter__(...)` throws
     # "undefined is not a function" before the test can assert
     # `sameValue(undefined)` on the return value.
-    "language/statements/class/elements/private-getter-is-not-a-own-property.js",
-    "language/statements/class/elements/private-setter-is-not-a-own-property.js",
-    "language/expressions/class/elements/private-getter-is-not-a-own-property.js",
-    "language/expressions/class/elements/private-setter-is-not-a-own-property.js",
     "language/comments/hashbang/use-strict.js",  # hashbang is not a directive prologue, so the body `with ({}) {}` stays sloppy; strict-only engine rejects `with` (AGENTS.md)
     # P7 — class-name-static-initializer-default-export.js and friends require
     # module-mode execution (`flags: [module]`). The runner doesn't currently
@@ -307,93 +301,40 @@ SKIP_FILES = {
     # a script and triggers a SyntaxError on `export default` before the
     # assertion runs. The engine behavior itself is correct (verified
     # manually with `--module`); the skip is a runner limitation.
-    "language/expressions/class/elements/class-name-static-initializer-default-export.js",
     # B17 — for-loop tests that depend on implicit globals (Sputnik 2009
     # era tests where `__in__deepest__loop = __in__deepest__loop` must not
     # throw ReferenceError). Our strict engine rejects implicit globals.
-    "language/statements/for/S12.6.3_A2.js",
-    "language/statements/for/S12.6.3_A10_T2.js",
-    "language/statements/for/S12.6.3_A10.1_T2.js",
     # B17 — relies on `toString = Object.prototype.toString` silently creating
     # an implicit global in sloppy mode; our strict engine throws ReferenceError
     # on the assignment, so the guarded `if (toString === ...)` block that
     # exercises String.prototype.split is never entered / the bare reference
     # throws uncaught. Unsatisfiable while strict-only.
-    "built-ins/String/prototype/split/checking-by-using-eval.js",
     # B46 — legacy Sputnik sort tests encoding pre-ES2019 implementation-defined
     # undefined placement; modern stable sort does not special-case undefined
     # when a comparator is supplied, so these expectations are unsatisfiable.
-    "built-ins/Array/prototype/sort/S15.4.4.11_A1.4_T2.js",
-    "built-ins/Array/prototype/sort/S15.4.4.11_A2.2_T3.js",
-    "built-ins/Array/prototype/sort/S15.4.4.11_A3_T2.js",
     # B46 — contradictory assertions (array[1] === 'b' plus '1' in array === false)
     # cannot both hold for any conformant [[Get]] / [[HasProperty]] implementation.
-    "built-ins/Array/prototype/sort/precise-getter-deletes-predecessor.js",
     # F1 — Function.prototype.apply/call ES5 §10.4.3 sloppy `this` substitution
     # (undefined/null thisArg -> global object; primitives -> ToObject wrapper).
     # Every test below calls Function("...").apply/call(...) and asserts on the
     # resulting global `this`; our strict-only engine compiles all code
     # (including Function()-created code) as strict, so `this` stays
     # undefined/null and never substitutes. Unsatisfiable while strict-only.
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T1.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T2.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T3.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T4.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T5.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T6.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T7.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T8.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T9.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A3_T10.js",
     "built-ins/Function/prototype/apply/S15.3.4.3_A5_T1.js",
     "built-ins/Function/prototype/apply/S15.3.4.3_A5_T2.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A5_T3.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A5_T4.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A7_T1.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A7_T2.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A7_T5.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A7_T7.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A7_T8.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T1.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T2.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T3.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T4.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T5.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T6.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T7.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T8.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T9.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A3_T10.js",
     "built-ins/Function/prototype/call/S15.3.4.4_A5_T1.js",
     "built-ins/Function/prototype/call/S15.3.4.4_A5_T2.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A5_T3.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A5_T4.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A6_T1.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A6_T2.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A6_T5.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A6_T7.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A6_T8.js",
     # BigInt64Array/BigUint64Array constructors — BigInt is out of scope
     # (see the built-ins/BigInt SKIP_DIRS entry); this test doesn't tag
     # `features: [BigInt]` so the feature filter above doesn't catch it.
-    "built-ins/TypedArrayConstructors/BigUint64Array/is-a-constructor.js",
     # S287 — Function() constructor bodies and indirect-eval'd source have no
     # "use strict" directive of their own and are non-strict per spec (they
     # don't inherit the caller's strictness); ES5 §11.6.2.2/§12.10.1 only
     # forbids `var eval`/`var arguments`/`eval = x`/`arguments++` etc. in
     # *strict* code. Our engine forces every compilation unit strict, so
     # these otherwise-legal non-strict constructs are rejected as SyntaxErrors.
-    "language/statements/variable/12.2.1-5-s.js",   # Function('var eval;')
     "language/statements/variable/12.2.1-9-s.js",   # indirect eval: var eval;
-    "language/statements/variable/12.2.1-16-s.js",  # Function('var arguments;')
-    "language/statements/variable/12.2.1-20-s.js",  # indirect eval: var arguments;
     "language/statements/variable/12.2.1-21-s.js",  # indirect eval: arguments = 42;
-    "language/statements/variable/12.2.1-6-s.js",   # Function('eval = 42;')
-    "language/statements/variable/12.2.1-17-s.js",  # Function('arguments = 42;')
-    "language/statements/variable/12.2.1-10-s.js",  # indirect eval: eval = 42;
-    "language/statements/function/13.0_4-17gs.js",  # Function('eval = 42;')
-    "language/statements/function/13.0-12-s.js",    # Function(" ", "eval = 42;")
-    "language/statements/function/13.0-17-s.js",    # eval("...new Function('eval = 42;')...")
     # C7a — Function constructor strict-only failures. The engine compiles all
     # code as strict (no sloppy mode), so these ES5/Sputnik-era tests asserting
     # sloppy-mode-only behavior cannot pass by design. Unlike the noStrict-flag
@@ -406,33 +347,23 @@ SKIP_FILES = {
     #        a strict-only engine produces strict bodies, so f() returns
     #        undefined, but the test's caller is non-strict where top-level
     #        `this` is the global object.
-    "built-ins/Function/S15.3.2.1_A3_T6.js",
-    "built-ins/Function/S15.3.2.1_A3_T8.js",
     # F2 — Function.call(mars, body) ES5 §15.3.1 — thisArg must be ignored AND
     # the resulting function's body must execute in sloppy mode so that `this`
     # inside `f()` falls back to the global object. The engine is strict-only
     # so every Function()-constructed body becomes strict, where `f()` leaves
     # `this` undefined and `this.color` / `this.godname` throw TypeError.
-    "built-ins/Function/S15.3_A3_T1.js",   # `this.godname=...; return this.color` — strict `this` is undefined
-    "built-ins/Function/S15.3_A3_T2.js",   # `return this.color` — relies on sloppy global substitution
-    "built-ins/Function/S15.3_A3_T5.js",   # `return this.planet` — strict `this` is undefined
-    "built-ins/Function/S15.3_A3_T6.js",   # `return this.planet` — strict `this` is undefined
     # F2b — Sputnik-era Function-constructor [[Call]] tests that exercise the
     # same sloppy-mode `this` substitution as F2 but via the constructor body
     # directly. The bodies do `this.y = N;` then assert `y === N` at the call
     # site; strict-only constructor bodies make `this` undefined so `this.y = N`
     # throws TypeError. Unsatisfiable while strict-only.
-    "built-ins/Function/S15.3.5_A2_T1.js",   # `Function("var x=1; this.y=2; return 'OK';")()` — strict this.y=2 throws
-    "built-ins/Function/S15.3.5_A2_T2.js",   # `new Function("arg1,arg2","...this.y=arg2;...")("1",2)` — same
     # F3 — Function() constructor `onlyStrict` tests assert the BODY is non-strict
     # (allowed duplicate params, `eval`/`arguments` as parameter names). The engine
     # forces every compilation unit strict, so these otherwise-legal non-strict
     # bodies are rejected with SyntaxError. Per ES5 §15.3.2.1 step 9, a non-strict
     # body is valid — but in this engine it's not.
     "built-ins/Function/15.3.2.1-11-2-s.js",  # Function('a','a','return;') — duplicate param
-    "built-ins/Function/15.3.2.1-11-4-s.js",  # Function('eval','return;') — eval as param name
     "built-ins/Function/15.3.2.1-11-6-s.js",  # Function('a,a','return a;') — duplicate combined param
-    "built-ins/Function/15.3.2.1-11-7-s.js",  # Function('arguments','return;') — arguments as param
     "built-ins/Function/15.3.2.1-11-8-s.js",  # Function('baz','qux','baz','return 0;') — duplicate param
     # F4 — function-code sloppy-mode tests. The engine is strict-only; these
     # ES5/Sputnik-era tests depend on `var`-shadowed-formal-parameter bindings
@@ -441,7 +372,6 @@ SKIP_FILES = {
     # spec-correct in the strict-only engine (the getter receives the
     # primitive, ES5 §10.4.3), and 10.4.3-1-103's `==` assertions pass either
     # way, so only the var-shadowing test stays here.
-    "language/function-code/S10.2.1_A5.2_T1.js",  # var x inside f(x) preserves param binding — sloppy-mode-only
     # D1 — Date constructor Sputnik month-rollover tests assert pre-epoch and
     # near-epoch month-overflow behavior (e.g. new Date(1899, 12) === new
     # Date(1900, 0)). The engine's date_utc_to_ms correctly handles month
@@ -453,12 +383,6 @@ SKIP_FILES = {
     # V8/SpiderMonkey themselves fail in the same environments. The engine's
     # underlying arithmetic matches Node.js exactly — verified — so this is
     # a tzdata-version sensitivity, not a runtime bug.
-    "built-ins/Date/S15.9.3.1_A5_T1.js",  # Date(year, month) — LMT precision (28s)
-    "built-ins/Date/S15.9.3.1_A5_T2.js",  # Date(year, month, date)
-    "built-ins/Date/S15.9.3.1_A5_T3.js",  # Date(year, month, date, hours)
-    "built-ins/Date/S15.9.3.1_A5_T4.js",  # Date(year, month, date, hours, minutes)
-    "built-ins/Date/S15.9.3.1_A5_T5.js",  # Date(year, month, date, hours, minutes, seconds)
-    "built-ins/Date/S15.9.3.1_A5_T6.js",  # Date(year, month, date, hours, minutes, seconds, ms)
     # Fixed-width BigInt (plan 056: int128, ~±1.7e38). These tests contain
     # decimal/hex/binary BigInt literals whose magnitude exceeds 2**127,
     # which this engine correctly rejects as a SyntaxError at parse time —

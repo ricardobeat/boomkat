@@ -38,8 +38,17 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 
 ## Deliberately out of scope
 
-- **Sloppy mode and Annex B.** `with`, legacy octal, implicit globals,
-  `arguments.callee`, `__defineGetter__`, HTML-like comments. Single-mode engine.
+- **Sloppy mode.** `with`, legacy octal, implicit globals, duplicate parameters,
+  unqualified `delete`, `arguments.callee`. Single-mode engine. Two spec-required
+  exceptions: an indirect `eval` / `Function()` body may bind the strict-mode
+  reserved words (only identifier reservation relaxes), and a dynamic body's
+  `this` substitutes to the global object for the UMD idiom.
+- **Most of Annex B**, because most of it is sloppy-mode behavior. The
+  mode-independent web-reality parts ship: `__proto__`, the
+  `__defineGetter__`/`__lookupGetter__` family, `String.prototype.substr`,
+  `RegExp.prototype.compile`, `escape`/`unescape`, HTML-like comments. Absent:
+  `Date.prototype.getYear`/`setYear`, the `String.prototype` HTML methods, the
+  `RegExp` legacy statics, block-scoped function semantics.
 - **ECMA-402.** A separate specification. `Date.prototype.toLocaleString` is
   ES5-conformant: with a locales or options argument it resolves the bag per
   ECMA-402 §11.1.2 against the engine's single locale, with no full locale
