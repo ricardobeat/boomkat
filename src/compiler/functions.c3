@@ -134,6 +134,13 @@ struct SeenParams {
     char[64][MAX_PARAMS] names;
     ushort[MAX_PARAMS]   lens;
     uint count;
+    // Strictness of the code the parameter list belongs to. `eval`/`arguments`
+    // and the FutureReservedWords are only restricted binding targets in
+    // strict code, so a non-strict eval/Function body accepts them. Set from
+    // the lexer at each declaration site; C3 zero-inits it to false, so a
+    // caller that forgets is permissive rather than wrongly rejecting -- the
+    // duplicate-name check below is unconditional either way.
+    bool strict;
 }
 
 // True if `name` is already a BoundName of this parameter list.
@@ -167,7 +174,7 @@ fn bool SeenParams.contains(&self, char[] name) {
 // weakens duplicate detection for pathological parameter lists; it never
 // accepts a restricted name.
 fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
-    if (!allow_restricted && is_restricted_name(name)) return COMPILE_ERROR~;
+    if (!allow_restricted && is_restricted_name(name, strict: self.strict)) return COMPILE_ERROR~;
     if (self.contains(name)) return COMPILE_ERROR~;
     if (self.count < MAX_PARAMS && name.len < 64) {
         for (usz k = 0; k < name.len; k++) {
@@ -383,7 +390,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             // AWAIT/YIELD key that reached this point was already cleared as a
             // legal identifier by shorthand_key_is_identifier_ref, and the
             // context-blind is_restricted_name would wrongly reject it.
-            if (prop_key_tt == TokenType.IDENTIFIER && is_restricted_name(prop_key)) {
+            if (prop_key_tt == TokenType.IDENTIFIER && is_restricted_name(prop_key, strict: self.lexer.reserved_words_strict)) {
                 return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
@@ -2208,7 +2215,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // recorded as hoisted, the statement pass skips the declaration
             // outright and never reaches expect_binding_identifier's own
             // check.
-            if (is_restricted_name(name_opt.str_value)) {
+            if (is_restricted_name(name_opt.str_value, strict: self.lexer.reserved_words_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
 
@@ -2819,7 +2826,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             // name is recorded as hoisted, the statement pass skips the
             // declaration outright and never reaches
             // expect_binding_identifier's own check.
-            if (is_restricted_name(name_opt.str_value)) {
+            if (is_restricted_name(name_opt.str_value, strict: self.lexer.reserved_words_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
 
@@ -3156,6 +3163,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams seen_params;
+    seen_params.strict = self.lexer.reserved_words_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] destruct_binds;
@@ -3803,6 +3811,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams inner_seen;
+    inner_seen.strict = self.lexer.reserved_words_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] inner_destruct_binds;
@@ -4240,7 +4249,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
         // rejected. Checked here rather than via expect_binding_identifier
         // because the name is optional and the `await` branch above has
         // already made its own enclosing-grammar decision.
-        if (name_tok.type == TokenType.IDENTIFIER && is_restricted_name(name_tok.str_value)) {
+        if (name_tok.type == TokenType.IDENTIFIER && is_restricted_name(name_tok.str_value, strict: self.lexer.reserved_words_strict)) {
             return self.fail("reserved word cannot be used as a binding identifier")~;
         }
         // Intern now: an escaped function-expression name borrows the
@@ -4500,6 +4509,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // FormalParameters (ES2015 §14.2.1): `(a, a) => a` and `(eval) => 1` are
     // SyntaxErrors here too.
     SeenParams arrow_seen;
+    arrow_seen.strict = self.lexer.reserved_words_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] arrow_destruct_binds;
@@ -5023,7 +5033,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // named "await"; `async function g(){ await => 1 }` still rejects.
         // The reparse path reaches the same answer via
         // expect_binding_identifier and arrow_ctx.forbid_await.
-        if (is_restricted_name(name, self.await_reserved_here())) {
+        if (is_restricted_name(name, self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
             return COMPILE_ERROR~;
         }
         for (ushort j = 0; j < i; j++) {

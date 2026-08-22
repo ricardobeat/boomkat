@@ -948,7 +948,16 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     caller_allows_super_call,
                                                     caller_forbids_arguments,
                                                     parent_super_name,
-                                                    parent_static_super_name);
+                                                    parent_static_super_name,
+                                                    // ES2024 §19.2.1.1 step 12:
+                                                    // direct eval inherits the
+                                                    // caller's strictness (every
+                                                    // activation here is strict);
+                                                    // an INDIRECT eval is
+                                                    // non-strict unless its own
+                                                    // prologue says otherwise.
+                                                    caller_has_direct_eval &&
+                                                        precheck_caller != null);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;
@@ -1113,7 +1122,9 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     lex.skip_hashbang();
     // want_completion: ScriptEvaluation's result is the Script's completion
     // value, which this hook returns to its caller.
-    CompiledFunction*? cf = compiler::compile(&lex, ctx.heap, true);
+    // Indirect eval: the Script is non-strict unless its own prologue opts in
+    // (ES2024 §19.2.1.1 step 12 with strictCaller = false).
+    CompiledFunction*? cf = compiler::compile(&lex, ctx.heap, true, true);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;

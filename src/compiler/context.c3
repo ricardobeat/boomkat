@@ -1250,8 +1250,12 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.slot_global_name_idxs.allocator = mem;
     self.slot_global_synced_name_idxs.allocator = mem;
 
-    // Strict-only engine: lexer always in strict mode (affects FutureReservedWord
-    // keyword recognition, implements/interface/package/private/protected/public).
+    // The engine is strict-only for Script and Module code, so the lexer starts
+    // strict (affects FutureReservedWord recognition, legacy octal literals and
+    // octal escapes). Dynamic code -- an INDIRECT eval or a Function() body
+    // without its own "use strict" -- is non-strict per ES2024 §19.2.1.1 and
+    // §20.2.1.1, and its entry point in entry.c3 lowers this after the
+    // directive prologue has been scanned.
     self.lexer.set_strict(true);
 }
 

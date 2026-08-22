@@ -633,15 +633,18 @@ fn void? CompilerContext.statement(&self) {
 //     must always reject.
 fn bool is_restricted_name(char[] name,
                            bool in_async_or_module = true,
-                           bool in_generator_or_blocked_yield = true) @inline {
+                           bool in_generator_or_blocked_yield = true,
+                           bool strict = true) @inline {
     switch (name.len) {
         case 3:
             // "let"
-            if (name[0] == 'l' && name[1] == 'e' && name[2] == 't') return true;
+            if (name[0] == 'l' && name[1] == 'e' && name[2] == 't') return strict;
             break;
         case 4:
-            // "eval", "null", "true"
-            if (name[0] == 'e' && name[1] == 'v' && name[2] == 'a' && name[3] == 'l') return true;
+            // "eval", "null", "true". `null`/`true` are ReservedWords in ALL
+            // code; `eval` is only a restricted binding target in strict code
+            // (ES2024 §13.1.1), which is what `Function('var eval;')` relies on.
+            if (name[0] == 'e' && name[1] == 'v' && name[2] == 'a' && name[3] == 'l') return strict;
             if (name[0] == 'n' && name[1] == 'u' && name[2] == 'l' && name[3] == 'l') return true;
             if (name[0] == 't' && name[1] == 'r' && name[2] == 'u' && name[3] == 'e') return true;
             break;
@@ -663,41 +666,41 @@ fn bool is_restricted_name(char[] name,
         case 6:
             // "static"
             if (name[0] == 's' && name[1] == 't' && name[2] == 'a' &&
-                name[3] == 't' && name[4] == 'i' && name[5] == 'c') return true;
+                name[3] == 't' && name[4] == 'i' && name[5] == 'c') return strict;
             break;
         case 7:
             // "package", "private", "public"
             if (name[0] == 'p' && name[1] == 'a' && name[2] == 'c' &&
                 name[3] == 'k' && name[4] == 'a' && name[5] == 'g' &&
-                name[6] == 'e') return true;
+                name[6] == 'e') return strict;
             if (name[0] == 'p' && name[1] == 'r' && name[2] == 'i' &&
                 name[3] == 'v' && name[4] == 'a' && name[5] == 't' &&
-                name[6] == 'e') return true;
+                name[6] == 'e') return strict;
             if (name[0] == 'p' && name[1] == 'u' && name[2] == 'b' &&
-                name[3] == 'l' && name[4] == 'i' && name[5] == 'c') return true;
+                name[3] == 'l' && name[4] == 'i' && name[5] == 'c') return strict;
             break;
         case 9:
             // "arguments", "interface"
             if (name[0] == 'a' && name[1] == 'r' && name[2] == 'g' &&
                 name[3] == 'u' && name[4] == 'm' && name[5] == 'e' &&
-                name[6] == 'n' && name[7] == 't' && name[8] == 's') return true;
+                name[6] == 'n' && name[7] == 't' && name[8] == 's') return strict;
             if (name[0] == 'i' && name[1] == 'n' && name[2] == 't' &&
                 name[3] == 'e' && name[4] == 'r' && name[5] == 'f' &&
-                name[6] == 'a' && name[7] == 'c' && name[8] == 'e') return true;
+                name[6] == 'a' && name[7] == 'c' && name[8] == 'e') return strict;
             break;
         case 10:
             // "implements"
             if (name[0] == 'i' && name[1] == 'm' && name[2] == 'p' &&
                 name[3] == 'l' && name[4] == 'e' && name[5] == 'm' &&
                 name[6] == 'e' && name[7] == 'n' && name[8] == 't' &&
-                name[9] == 's') return true;
+                name[9] == 's') return strict;
             break;
     }
     // "protected"
     if (name.len == 9 && name[0] == 'p' && name[1] == 'r' && name[2] == 'o' &&
         name[3] == 't' && name[4] == 'e' && name[5] == 'c' && name[6] == 't' &&
         name[7] == 'e' && name[8] == 'd') {
-        return true;
+        return strict;
     }
     return false;
 }
@@ -1819,6 +1822,9 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
 
     if (check_directives) {
         self.parse_directives()!;
+        // A dynamic (non-strict) Function body that opts back in with its own
+        // "use strict" must lex the REST of the body strictly.
+        if (self.saw_use_strict) self.lexer.set_strict(true);
     }
 
     // Instantiate the surviving declaration of every duplicated function name
@@ -1959,7 +1965,7 @@ fn void? CompilerContext.var_declaration(&self) {
                 self.record_error("expected a binding identifier after the declaration keyword");
                 return COMPILE_ERROR~;
             }
-            if (!ctx_keyword_ident && is_restricted_name(name_tok.str_value)) {
+            if (!ctx_keyword_ident && is_restricted_name(name_tok.str_value, strict: self.lexer.reserved_words_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
             // Intern now: an escaped identifier borrows the lexer's shared
@@ -6054,7 +6060,7 @@ fn void? CompilerContext.import_declaration(&self) {
                 // Without `as` the ImportSpecifier is a bare ImportedBinding,
                 // so the one name is both the export name and a binding and
                 // has to satisfy the BindingIdentifier restrictions too.
-                if (is_restricted_name(import_name_str)) {
+                if (is_restricted_name(import_name_str, strict: self.lexer.reserved_words_strict)) {
                     return self.fail("reserved word cannot be used as a binding identifier")~;
                 }
                 local_names[binding_count] = import_name_str;
@@ -6550,7 +6556,7 @@ fn void? CompilerContext.export_declaration(&self) {
 
         for (;;) {
             Token name_tok = self.expect(TokenType.IDENTIFIER)!;
-            if (is_restricted_name(name_tok.str_value)) {
+            if (is_restricted_name(name_tok.str_value, strict: self.lexer.reserved_words_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
             // Intern now: an escaped identifier borrows the lexer's shared
@@ -6637,6 +6643,7 @@ fn void? CompilerContext.compile_catch_array_pattern(&self, ushort catch_val_reg
 // this reuses it rather than growing a second duplicate-name walk.
 fn void? CompilerContext.check_pattern_bound_names_unique(&self, DestructBind[] binds, uint count) {
     SeenParams seen;
+    seen.strict = self.lexer.reserved_words_strict;
     seen.declare_destructured(binds, count)!;
 }
 

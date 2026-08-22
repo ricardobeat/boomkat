@@ -460,6 +460,19 @@ struct Lexer {
     Token pushed_back;
     bool has_pushed_back;
     bool strict_mode;
+    // Identifier-reservation strictness, split out from `strict_mode`.
+    //
+    // `strict_mode` also gates the lexical rules this engine rejects
+    // unconditionally (legacy octal literals and octal escapes -- see
+    // AGENTS.md "Strict-Only Mode"), so it stays pinned true. This flag
+    // governs ONLY whether the strict-mode reserved words (`eval`,
+    // `arguments`, `implements`, `interface`, `package`, `private`,
+    // `protected`, `public`) are restricted binding targets. Dynamic code
+    // whose strictness the spec decides by its own directive prologue -- an
+    // indirect eval, a Function() body -- lowers this one alone, so
+    // `Function('var eval;')` parses while `010` and `'\101'` stay
+    // SyntaxErrors.
+    bool reserved_words_strict;
     // True if a line terminator was skipped between the previous and next token.
     bool seen_line_term;
     // Set by the parser after consuming a `}` that closes a Block/function/
@@ -536,6 +549,7 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     lex.lookahead_token_start = 0;
     lex.has_pushed_back = false;
     lex.strict_mode = true;
+    lex.reserved_words_strict = true;
     lex.seen_line_term = false;
     lex.at_line_start = true;
     lex.html_comments = true;
@@ -1529,7 +1543,7 @@ fn Token? Lexer.scan_identifier(&self) {
 
     if (!has_escape) {
         char[] name = self.source[start_pos..self.pos-1];
-        if (try kw = lookup_keyword(name, self.strict_mode)) {
+        if (try kw = lookup_keyword(name, self.reserved_words_strict)) {
             Token tok = make_token(kw, start_line, start_col);
             tok.str_value = name;
             return tok;
@@ -1550,7 +1564,7 @@ fn Token? Lexer.scan_identifier(&self) {
     // catches the unescaped form; mirror that here so the slow path produces
     // the same token (the parser relies on keyword tokens to reject reserved
     // words in declaration positions; IDENTIFIER would slip through).
-    if (try kw = lookup_keyword(name, self.strict_mode)) {
+    if (try kw = lookup_keyword(name, self.reserved_words_strict)) {
         Token tok = make_token(kw, start_line, start_col);
         tok.str_value = name;
         tok.has_escape = true;
@@ -2591,6 +2605,8 @@ fn void Lexer.pushback(&self, Token tok) {
 // Enable or disable strict-mode keyword recognition.
 // When enabled, FutureReservedWords (implements, interface, package,
 // private, protected, public) are recognised as keywords.
+// Set identifier-reservation strictness. Deliberately does NOT touch
+// `strict_mode`: the octal rules it gates are unconditional in this engine.
 fn void Lexer.set_strict(&self, bool s) {
-    self.strict_mode = s;
+    self.reserved_words_strict = s;
 }

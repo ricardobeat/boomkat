@@ -157,7 +157,7 @@ fn Token? CompilerContext.expect_binding_identifier(&self) {
     TokenType next = self.peek_type();
     if (next == TokenType.IDENTIFIER) {
         Token tok = self.advance()!;
-        if (is_restricted_name(tok.str_value)) {
+        if (is_restricted_name(tok.str_value, strict: self.lexer.reserved_words_strict)) {
             return self.fail("reserved word cannot be used as a binding identifier")~;
         }
         return tok;

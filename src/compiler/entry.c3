@@ -20,7 +20,14 @@ import std::io;
 // eval uses, but deliberately NOT `in_eval_code`: this is global Script code,
 // so declaration instantiation and the global-slot pre-scan must behave
 // exactly as they do for an ordinary script.
-fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = false) {
+// `non_strict_source` opts a compilation unit out of the engine's strict-only
+// default. It is ONLY for dynamic code whose strictness the spec decides by
+// its own directive prologue: a Function() body (ES2024 §20.2.1.1 step 22
+// compiles it as non-strict FunctionBody) and an indirect eval's Script.
+// Top-level scripts and modules never pass it, so the strict-only invariant
+// the rest of the compiler relies on is unchanged for ordinary code.
+fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = false,
+                              bool non_strict_source = false) {
     // Reset error state for this top-level compilation.
     lex.err_msg[0] = 0;
     lex.err_line = 0;
@@ -47,8 +54,17 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     bool  saved_haspb = lex.has_pushed_back;
     bool  saved_slt   = lex.seen_line_term;
 
-    // Check for "use strict" directive prologue at program level
+    // Check for "use strict" directive prologue at program level.
+    // Scanned strict: the directive is a plain string literal, and nothing
+    // whose lexing differs between the modes can precede it.
     ctx.parse_directives()!;
+
+    // Dynamic non-strict source stays non-strict unless it opted back in with
+    // its own "use strict". The statement parse runs after the rewind below,
+    // so lowering the flag here governs the whole real parse.
+    if (non_strict_source && !ctx.saw_use_strict) {
+        ctx.lexer.set_strict(false);
+    }
 
     // GlobalDeclarationInstantiation static checks (ES2015 §15.1.11) must run
     // before ANY var/function/lexical binding is instantiated, so a collision
@@ -200,7 +216,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     bool  allow_super_call = false,
                                     bool  caller_forbids_arguments = false,
                                     char[] parent_super_name = {},
-                                    char[] parent_static_super_name = {}) {
+                                    char[] parent_static_super_name = {},
+                                    bool  caller_is_strict = true) {
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
@@ -314,8 +331,19 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     bool  saved_haspb = lex.has_pushed_back;
     bool  saved_slt   = lex.seen_line_term;
 
-    // Check for "use strict" directive prologue at eval level
+    // Check for "use strict" directive prologue at eval level.
+    // Scanned with the lexer still strict: the directive is a plain string
+    // literal, and nothing that differs between the two modes can appear
+    // before it.
     ctx.parse_directives()!;
+
+    // ES2024 §19.2.1.1 PerformEval step 12: eval code is strict when the
+    // CALLER is strict (direct eval only) or the source has its own "use
+    // strict". An indirect eval from strict code is therefore NON-strict, so
+    // `(0,eval)('var eval;')` is legal. The statement parse below runs after
+    // the rewind, so lowering the flag here governs the whole real parse.
+    bool eval_is_strict = caller_is_strict || ctx.saw_use_strict;
+    ctx.lexer.set_strict(eval_is_strict);
 
     // ES2024 §19.2.1.1: an eval's body is a Script, so its
     // LexicallyDeclaredNames must contain no duplicates. Checked here, before
@@ -394,6 +422,12 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.subst_global_this = dynamic;
+    // ES2024 §20.2.1.1 CreateDynamicFunction step 22: a Function() body is
+    // parsed as a NON-strict FunctionBody, so `Function('var eval;')` is legal.
+    // A "use strict" in the body raises it back in parse_directives, which runs
+    // after the FormalParameters -- matching the spec's separate productions,
+    // where a body directive cannot retroactively reject a parameter name.
+    if (dynamic) ctx.lexer.set_strict(false);
 
     // Parse function body
     ctx.parse_function_body(is_expr)!;
