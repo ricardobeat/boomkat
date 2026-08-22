@@ -526,6 +526,22 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // x &&= expr  →  if (!x) return x; x = expr; return expr;
     // x ??= expr  →  if (x != null && x != undefined) return x; x = expr; return expr;
     if (is_logical_and_assign || is_logical_or_assign || is_nullish_assign) {
+        // ES2022 §13.15.5: NamedEvaluation also applies to the RHS of a logical
+        // assignment whose LHS is a plain IdentifierReference. Save/bracket the
+        // slot here so the seed closes at this nesting level and the next
+        // statement doesn't pick up a stale name; the RHS's anonymous
+        // function/class/arrow consumer reads the slot before the `defer`
+        // restore runs.
+        NameEvalFrame _la_frame = self.save_name_eval();
+        defer self.restore_name_eval(_la_frame);
+        if (!lhs_was_member && (lhs_was_getvar || lhs_was_local_var)
+            && lhs_ident_name_len > 0) {
+            self.has_inferred_name = true;
+            self.inferred_name_len = lhs_ident_name_len;
+            for (ushort i = 0; i < lhs_ident_name_len; i++) {
+                self.inferred_name_buf[i] = lhs_ident_name_buf[i];
+            }
+        }
         // For member expressions, allocate a result register for the assigned value.
         // The short-circuit path returns the original LHS (left); the assign path returns RHS.
         ushort la_result = left;
@@ -5320,6 +5336,13 @@ fn ushort? CompilerContext.object_literal(&self) {
                         // Always overwrite the inherited inferred name (from var
                         // `o = ...`), the property key + get/set prefix is the
                         // more specific source.
+                        // Bracket ownership lives here: save the slot and
+                        // `defer` the restore. The body compile below closes the
+                        // bracket even on error paths, and independently of
+                        // whether the anonymous function/class/arrow consumer was
+                        // reached at all.
+                        NameEvalFrame _nef = self.save_name_eval();
+                        defer self.restore_name_eval(_nef);
                         char[] prefix = is_obj_getter ? "get " : "set ";
                         usz prop_len = prop_tok.str_value.len;
                         if (prefix.len + prop_len < 128) {
@@ -5369,16 +5392,6 @@ fn ushort? CompilerContext.object_literal(&self) {
                     self.is_generator = saved_is_generator;
                     self.is_user_generator = saved_is_user_generator;
                     self.is_async = saved_is_async;
-                    // The NameEvaluation bracket that seeded the slot above is
-                    // now closed: explicitly clear it. function_expr_body's
-                    // anonymous-function/class/arrow consumer is the only
-                    // consumer of the slot and always clears on take, but a
-                    // getter/setter body that is a non-anonymous expression
-                    // (e.g. `({ get foo() { return x } })`) leaves the slot
-                    // set with no downstream caller to clear it, so the
-                    // bracket must be closed here.
-                    self.has_inferred_name = false;
-                    self.inferred_name_len = 0;
 
                     if (!self.match(TokenType.COMMA)) {
                         break;
@@ -5409,6 +5422,11 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // ES2015 §14.3 / §14.1.20: method name inference. Always overwrite
                 // the inherited inferred name from the enclosing assignment, the
                 // property key is the more specific source for the function name.
+                // Bracket the slot via save/defer-restore (matching the
+                // getter/setter branch); the bracket closes on any exit path
+                // through the method body below.
+                NameEvalFrame _nef = self.save_name_eval();
+                defer self.restore_name_eval(_nef);
                 self.has_inferred_name = true;
                 self.inferred_name_len = (ushort)key_tok.str_value.len;
                 if (key_tok.str_value.len < 128) {

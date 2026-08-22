@@ -1098,6 +1098,43 @@ macro void CompilerContext.@check_member_reg(&self, char[] site, ushort reg) {
 // target. This is the only legal guard before any member_* accessor below.
 fn bool CompilerContext.last_was_member(&self) @inline => self.member.is_member();
 
+// Bracket the parser's inferred-name slot across a NamedEvaluation scope via
+// a save/defer-restore helper pair. Use:
+//
+//   NameEvalFrame _nef = self.save_name_eval();
+//   defer self.restore_name_eval(_nef);
+//   self.has_inferred_name = true;
+//   ... seed the slot for this seed point ...
+//   val = self.assignment_expr()!;
+//
+// The `defer` is what makes the bracket correct by construction: any exit path
+// (normal return, early return, fault, panic) closes the bracket at this
+// nesting level. The pattern replaces the prior "must remember to clear the
+// slot after the call returns" discipline that leaked through four seed
+// sites (`var P = print; P((function(){}).name)` observed the stale "P"
+// before that fix). Used at all ES2015 §14.1.20 SetFunctionName seed points:
+// var-init, plain `=`, logical-assignment, object-literal key, getter/setter
+// body, method-shorthand body, class field, `export default`.
+struct NameEvalFrame {
+    bool has;
+    ushort len;
+    char[128] buf;
+}
+
+fn NameEvalFrame CompilerContext.save_name_eval(&self) {
+    return {
+        .has = self.has_inferred_name,
+        .len = self.inferred_name_len,
+        .buf = self.inferred_name_buf,
+    };
+}
+
+fn void CompilerContext.restore_name_eval(&self, NameEvalFrame f) {
+    self.has_inferred_name = f.has;
+    self.inferred_name_len = f.len;
+    self.inferred_name_buf = f.buf;
+}
+
 // True when the recorded member is `super.x` / `super[k]`, whose store form is
 // PUTPROP_SUPER (receiver = this, not the recorded home-prototype base).
 fn bool CompilerContext.member_is_super(&self) @inline => self.member.is_super();

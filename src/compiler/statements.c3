@@ -2011,9 +2011,12 @@ fn void? CompilerContext.var_declaration(&self) {
             if (self.match(TokenType.ASSIGN)) {
                 // ES2015 §14.1.20 SetFunctionName: pass the var name to a
                 // following anonymous function expression so `var f = function(){}`
-                // gives f the name "f". Set the inferred name unconditionally
-                // (overwriting any stale value from a previous declarator in the
-                // same var statement); function_expr clears it after use.
+                // gives f the name "f". Bracket the slot via save/defer-restore
+                // so the seed closes at this nesting level no matter how the
+                // RHS resolves (named function, literal, empty body, or just a
+                // non-anonymous expression that the consumer couldn't clear).
+                NameEvalFrame _nef = self.save_name_eval();
+                defer self.restore_name_eval(_nef);
                 self.has_inferred_name = true;
                 ushort nlen = (ushort)name_tok.str_value.len;
                 if (nlen < 128) {
@@ -2028,13 +2031,6 @@ fn void? CompilerContext.var_declaration(&self) {
                 }
                 self.free_reg(val_reg);
                 has_init = true;
-                // Close the NameEvaluation bracket set above unconditionally
-                // (the RHS's anonymous function/class/arrow consumer clears
-                // the slot on take, but a non-anonymous RHS, an empty brace,
-                // or any other shape leaves the slot lingering into the next
-                // statement).
-                self.has_inferred_name = false;
-                self.inferred_name_len = 0;
             } else if (!already_declared) {
                 if (is_const) {
                     return COMPILE_ERROR~;
@@ -6258,6 +6254,12 @@ fn void? CompilerContext.export_declaration(&self) {
         // inferred name is "default" (ECMA-262 §16.2.3.7: NamedEvaluation with
         // "default"). Seed the inferred-name slot so the anonymous definition
         // picks it up; a named/non-anonymous expression clears it itself.
+        // Bracket ownership lives here: save the prior slot and `defer` restore
+        // so the bracket closes at this nesting level regardless of which RHS
+        // shape was compiled (matching the var-init path; see the longer note
+        // there).
+        NameEvalFrame _nef = self.save_name_eval();
+        defer self.restore_name_eval(_nef);
         self.has_inferred_name = true;
         self.inferred_name_len = 7; // "default"
         char[] dflt_infer = "default";
@@ -6266,10 +6268,6 @@ fn void? CompilerContext.export_declaration(&self) {
         uint def_name_idx = self.add_string_constant("*default*");
         self.emit_a_bc(Opcode.DECLVAR, (uint)val_reg, def_name_idx);
         self.free_reg(val_reg);
-        // Close the NameEvaluation bracket set above (matching the close in
-        // the var-init path).
-        self.has_inferred_name = false;
-        self.inferred_name_len = 0;
         // `export default <expr>` binds the synthetic `*default*` as a mutable
         // lexical binding initialized at THIS statement's position (§16.2.3.7 /
         // ExportDeclaration:ClassExpression is lexical). Before the statement
