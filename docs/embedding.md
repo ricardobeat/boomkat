@@ -138,7 +138,7 @@ Toolchain used for the macOS results in this document: `c3c` 0.8.2
 
 Linux is verified on linux/arm64 (Debian trixie, `c3c` 0.8.2 built from source
 against LLVM 19.1.7, GCC 14.2). Run it with `make linux-ci`; see
-[`ci/linux/README.md`](../ci/linux/README.md).
+[`scripts/linux/arm64/README.md`](../scripts/linux/arm64/README.md).
 
 | Area | Result |
 |---|---|

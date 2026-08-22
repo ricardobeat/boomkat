@@ -5,11 +5,11 @@
 # reproduces an x86-64-specific failure (dtoa rounding, 80-bit long double, and
 # other places arm64 and x86-64 differ).
 #
-# Unlike ci/linux (arm64), this image does NOT build c3c from source: c3c
+# Unlike scripts/linux/arm64 (arm64), this image does NOT build c3c from source: c3c
 # publishes an x86-64 Linux binary, and under a real Linux VM with working
 # binfmt (podman/QEMU, docker) its posix_spawn of the C compiler works. That
 # failure only happened under Apple's `container` amd64 emulation, which is why
-# ci/linux went arm64 + source. Here the prebuilt binary is enough.
+# scripts/linux/arm64 went arm64 + source. Here the prebuilt binary is enough.
 FROM --platform=linux/amd64 debian:trixie-slim
 
 ENV DEBIAN_FRONTEND=noninteractive

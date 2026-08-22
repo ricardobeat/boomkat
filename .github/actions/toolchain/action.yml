@@ -13,7 +13,7 @@ runs:
   using: composite
   steps:
     # c3c's official x86-64 Linux binary runs natively on ubuntu-latest, with no
-    # emulation, unlike the arm64 container in ci/linux. The version is fixed, so
+    # emulation, unlike the arm64 container in scripts/linux/arm64. The version is fixed, so
     # cache it.
     - name: Cache c3c
       id: cache-c3c

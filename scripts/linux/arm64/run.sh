@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Linux build / test / link-validation suite, run INSIDE the container image
-# built from ci/linux/Dockerfile. Drive it from the host with `make linux-ci`.
+# built from scripts/linux/arm64/Dockerfile. Drive it from the host with `make linux-ci`.
 #
 # Every phase reports PASS/FAIL on its own line and the script exits non-zero if
 # any phase failed, so a partial breakage cannot read as a green board.
 #
-# Usage (inside the container):  bash ci/linux/run.sh [phase ...]
+# Usage (inside the container):  bash scripts/linux/arm64/run.sh [phase ...]
 # With no arguments every phase runs. Named phases run only those.
 
 set -uo pipefail
 
-cd "$(dirname "$0")/../.." || exit 1
+cd "$(dirname "$0")/../../.." || exit 1
 ROOT="$PWD"
 PREFIX="${PREFIX:-/tmp/boomkat-prefix}"
 RESULTS=()

@@ -195,7 +195,7 @@ test-dozen-lines: out/dozen_lines
 	./out/dozen_lines
 
 # The smallest end-to-end check: static archive links, opens a context, evals
-# 6*7, prints 42. `make smoke` is what ci/linux/run.sh asserts on.
+# 6*7, prints 42. `make smoke` is what scripts/linux/arm64/run.sh asserts on.
 .PHONY: smoke
 smoke: out/boomkat.a test/capi/smoke.c include/boomkat.h
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/smoke.c \
@@ -258,7 +258,7 @@ install: out/boomkat.a out/boomkat.$(SHLIB_EXT)
 
 # ---- Linux CI ---------------------------------------------------------------
 # Build the Linux image and run the whole build/test/link-validation suite in
-# it. Uses Apple's `container` CLI (not docker). See ci/linux/README.md.
+# it. Uses Apple's `container` CLI (not docker). See scripts/linux/arm64/README.md.
 #
 # The container needs nothing bind-mounted beyond the worktree: every C source
 # the build compiles is checked in, under libregexp/ and vendor/dtoa/. quickjs/
@@ -280,10 +280,10 @@ CONTAINER_RUN = container run --rm --arch $(LINUX_ARCH) \
 .PHONY: linux-ci linux-ci-image linux-ci-shell
 
 linux-ci-image:
-	container build --arch $(LINUX_ARCH) -t $(LINUX_IMAGE) -f ci/linux/Dockerfile ci/linux
+	container build --arch $(LINUX_ARCH) -t $(LINUX_IMAGE) -f scripts/linux/arm64/Dockerfile scripts/linux/arm64
 
 linux-ci:
-	$(CONTAINER_RUN) bash ci/linux/run.sh $(PHASES)
+	$(CONTAINER_RUN) bash scripts/linux/arm64/run.sh $(PHASES)
 
 # Interactive shell in the same environment, for debugging a failing phase.
 linux-ci-shell:
@@ -305,10 +305,10 @@ X86_RUN = $(X86_ENGINE) run --rm --platform linux/amd64 \
 .PHONY: linux-x86-ci linux-x86-ci-image linux-x86-ci-shell
 
 linux-x86-ci-image:
-	$(X86_ENGINE) build --platform linux/amd64 -t $(X86_IMAGE) -f ci/linux-x86/Dockerfile ci/linux-x86
+	$(X86_ENGINE) build --platform linux/amd64 -t $(X86_IMAGE) -f scripts/linux/x86/Dockerfile scripts/linux/x86
 
 linux-x86-ci:
-	$(X86_RUN) bash ci/linux-x86/run.sh $(PHASES)
+	$(X86_RUN) bash scripts/linux/x86/run.sh $(PHASES)
 
 linux-x86-ci-shell:
 	$(X86_ENGINE) run --rm -it --platform linux/amd64 \

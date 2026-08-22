@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Linux/amd64 build + test suite, run INSIDE the image built from
-# ci/linux-x86/Dockerfile. Drive it from the host with `make linux-x86-ci`.
+# scripts/linux/x86/Dockerfile. Drive it from the host with `make linux-x86-ci`.
 #
 # This mirrors the x86-64 GitHub CI: build the engine, run the local test suite,
 # and run the test262 zero-fail gate. It exists to reproduce x86-64-specific
@@ -8,11 +8,11 @@
 # and `just` do rather than reimplementing them.
 #
 # Every phase prints PASS/FAIL on its own line and the script exits non-zero if
-# any phase failed. Usage: bash ci/linux-x86/run.sh [phase ...] (default: all).
+# any phase failed. Usage: bash scripts/linux/x86/run.sh [phase ...] (default: all).
 
 set -uo pipefail
 
-cd "$(dirname "$0")/../.." || exit 1
+cd "$(dirname "$0")/../../.." || exit 1
 
 RESULTS=()
 FAILED=0

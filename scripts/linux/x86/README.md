@@ -3,7 +3,7 @@
 Builds the engine and runs the local test suite and the test262 zero-fail gate
 on **linux/amd64**, inside an emulated container on an Apple Silicon host. This
 is the arch GitHub Actions runs, so it reproduces x86-64-specific failures that
-the native arm64 image in `ci/linux/` cannot (dtoa rounding, 80-bit long double,
+the native arm64 image in `scripts/linux/arm64/` cannot (dtoa rounding, 80-bit long double,
 and other places the two architectures differ).
 
 ## Running it
@@ -37,7 +37,7 @@ make linux-x86-ci X86_ENGINE=docker
 Apple's `container` CLI is **not** usable here: under its amd64 emulation c3c's
 `posix_spawn` of the C compiler fails before exec (errno 38, ENOSYS), so every
 link dies even though the compile commands succeed by hand. That is the whole
-reason `ci/linux/` went arm64 and builds c3c from source. A real Linux VM does
+reason `scripts/linux/arm64/` went arm64 and builds c3c from source. A real Linux VM does
 not have that problem, so this image just downloads the x86-64 binary.
 
 ## Emulation is slow
