@@ -1,8 +1,8 @@
 # Plan 077: Closing the Cross-Engine test262 Failures
 
 **Status:** In progress (session of 2026-08-22)
-**Baseline:** 37,878 / 38,020 = **99.63%** on the cross-engine strict-only subset
-**Rank:** 4th of 6 — jsc 99.94, v8 99.83, sm 99.67, **boomkat 99.63**, qjs 99.15, duk 41.18
+**Baseline:** 37,905 / 38,020 = **99.70%** on the cross-engine strict-only subset
+**Rank:** 3rd of 6 — jsc 99.94, v8 99.83, **boomkat 99.70**, sm 99.67, qjs 99.15, duk 41.18
 
 This plan works through the failures found by the cross-engine comparison harness in
 `../test262/tools/engine-compare`, which runs six engines over one fixed strict-mode
@@ -205,23 +205,88 @@ TypeError that never arrives. Not yet diagnosed; the shape suggests
 fault for private names in field initializers; these are likely the same root. Worth
 diagnosing together with B6.
 
-### B6. `VM_ERROR (at execute)` — 3 tests
+### B6. `VM_ERROR (at execute)` — 3 tests — FIXED, and it was a GC use-after-free
 
-```
-language/statements/class/elements/private-getter-visible-to-direct-eval-on-initializer.js
+Fixed in `9b5e82fa`. The three tests were the reliably-timed repro for a **general
+garbage-collection bug**, not a private-names or scoping defect.
+
+`mark_activation_fields` gated the GC mark of `Activation.this_binding` on
+`ACT_FLAG_THIS_OWNED | ACT_FLAG_CONSTRUCT`. `vm_call_fn_impl` sets neither: it
+raw-assigns the receiver and borrows the caller's reference. That keeps the refcount
+correct but never makes the slot a GC root, and the sweep frees whatever the mark phase
+did not reach regardless of refcount. `vm_init_private_members` hands the part-built
+instance to `__field_init__` as exactly such a borrowed receiver, reachable from no
+register and no environment. Compiling the eval body allocates, which trips a safepoint
+GC, and the instance is freed while live; its address is then recycled for a different
+object, so `CHK_BRAND` tests a stranger. Object-serial tagging confirmed it: serial 504
+was branded, serial 512 was checked, at the same address.
+
+The fix adds `ACT_FLAG_THIS_VALID` — "live but borrowed" — and marks the slot under it.
+Marking unconditionally is not available: `activation_begin` does not clear
+`this_binding` and `call_fn` reuses `activations[0]` without zeroing, so an unflagged
+slot holds stale bits. Widening `THIS_OWNED` instead would schedule a bogus decref,
+since every release site tests that flag specifically.
+
+**The scope dependence recorded in the first draft of this plan was a red herring.** The
+"works inside a function" row was GC timing, not safety — a function-scoped class fails
+identically once something allocates first:
+
+```js
+function f(){
+  var pad=[]; for (var i=0;i<3000;i++) pad.push({x:i}); pad=null;
+  class C { get #m(){ return "OK"; } v = eval("this.#m"); }
+  var r=[]; for (var j=0;j<200;j++) r.push(new C().v);
+  return r[199];
+}
 ```
 
-An internal VM fault rather than a wrong answer, so the **highest-value item here**
-regardless of test count: a fault reachable from ordinary source is a robustness problem
-before it is a conformance one. Diagnose first.
+Verified: faults at `8517d974`, returns `OK` at `9b5e82fa`.
+
+**This is broader than the three tests.** Any `call_fn` re-entry whose receiver is
+reachable only through the borrowed frame was exposed — builtin-invoked callbacks,
+getter/setter dispatch through `call_fn`, iterator-protocol calls. Re-measuring the
+cross-engine subset after the fix confirms it: **142 → 115 failures, 99.63% → 99.70%**.
+It closed **27 tests**, not the 3 that led to it.
+
+#### Why the existing tooling missed it, and what to change
+
+The engine already has the right instrument. `boomkat_gc_stress` (`-D GC_STRESS` plus
+ASan) collects at every allocation, which is exactly how a missed root is meant to
+surface. Two things blunted it:
+
+1. **Coverage.** `scripts/run_gc_stress.sh` runs four files
+   (`test_async_loops`, `async_gen_gc_lifetime`, `env_chain_gc_lifetime`,
+   `proxy_ownkeys_gc_lifetime`). None exercises a class field initializer, which is the
+   lifetime boundary this bug lives on. The script's own header says to add a test when
+   it "exercises a new lifetime boundary" — that instruction was right and simply had a
+   gap. A `class_fields_gc_lifetime.js` belongs in that list, along with the other
+   `call_fn` re-entry shapes above.
+
+2. **ASan cannot see these frees, which is the more important finding.** Objects are
+   allocated from `FixedBlockPool` and `hobject_free` returns them to that pool's
+   freelist rather than to libc. No `free()` ever happens, so ASan has nothing to poison
+   and no use-after-free to report. Confirmed empirically: under
+   `boomkat_gc_stress`, the minimal repro faults with `VM_ERROR` and ASan prints
+   **nothing** — the recycled-address read is invisible to it.
+
+   The fix is a debug-only allocator bypass: a build flag that makes `hobject_alloc`
+   skip `pool_for_class` (taking the existing `pool_fallback` path, which already routes
+   `hobject_free` to the real allocator) so every object is a genuine malloc/free pair
+   and ASan regains full use-after-free coverage. The plumbing exists — `pool_fallback`
+   is already a per-object flag and both paths are already exercised on pool exhaustion —
+   so this is a small change that turns ASan from blind to authoritative for the whole
+   object graph. **This is the highest-leverage follow-up in this plan**: it converts a
+   class of silent, timing-dependent corruption into a deterministic abort at the exact
+   offending read.
 
 ---
 
 ## C. Order of work
 
 1. **B3** — coercion/primitive bugs. ✅ Done, 9 tests.
-2. **B6** — the 3 VM faults. A crash-class bug outranks its test count.
-3. **B5** — class-element direct eval (~15), likely shares a root with B6.
+2. **B6** — the 3 VM faults. ✅ Done: a GC use-after-free, far broader than the 3 tests.
+3. **B5** — class-element direct eval (~15). Re-measure first: B6 was a GC bug reachable
+   from these same paths, so some of these may already be fixed.
 4. **B4** — function `name`/descriptors (13).
 5. **A1** — harness fix for unhandled rejections (24, benefits three engines).
 6. **B1/B2** — left open, with the reason recorded above.
@@ -240,5 +305,6 @@ behind JSC.
 | 2026-08-22 | `Object.isExtensible` returns false for primitives | 5 |
 | 2026-08-22 | `isNaN`/`isFinite` coerce via ToNumber (valueOf/toString, Symbol/BigInt throws) | 4 |
 | 2026-08-22 | `isExtensible` handles lightfuncs (fixes the 7 `builtin.js` tests the above regressed) | 0 |
+| 2026-08-22 | GC root for borrowed `this_binding` in `call_fn` frames (`9b5e82fa`) — a use-after-free, not a scoping bug | 3 |
 
 Full native suite after the above: **39,326 pass / 0 fail**.
