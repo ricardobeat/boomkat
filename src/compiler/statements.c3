@@ -2028,6 +2028,13 @@ fn void? CompilerContext.var_declaration(&self) {
                 }
                 self.free_reg(val_reg);
                 has_init = true;
+                // Close the NameEvaluation bracket set above unconditionally
+                // (the RHS's anonymous function/class/arrow consumer clears
+                // the slot on take, but a non-anonymous RHS, an empty brace,
+                // or any other shape leaves the slot lingering into the next
+                // statement).
+                self.has_inferred_name = false;
+                self.inferred_name_len = 0;
             } else if (!already_declared) {
                 if (is_const) {
                     return COMPILE_ERROR~;
@@ -6259,6 +6266,10 @@ fn void? CompilerContext.export_declaration(&self) {
         uint def_name_idx = self.add_string_constant("*default*");
         self.emit_a_bc(Opcode.DECLVAR, (uint)val_reg, def_name_idx);
         self.free_reg(val_reg);
+        // Close the NameEvaluation bracket set above (matching the close in
+        // the var-init path).
+        self.has_inferred_name = false;
+        self.inferred_name_len = 0;
         // `export default <expr>` binds the synthetic `*default*` as a mutable
         // lexical binding initialized at THIS statement's position (§16.2.3.7 /
         // ExportDeclaration:ClassExpression is lexical). Before the statement

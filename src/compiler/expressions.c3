@@ -5369,6 +5369,16 @@ fn ushort? CompilerContext.object_literal(&self) {
                     self.is_generator = saved_is_generator;
                     self.is_user_generator = saved_is_user_generator;
                     self.is_async = saved_is_async;
+                    // The NameEvaluation bracket that seeded the slot above is
+                    // now closed: explicitly clear it. function_expr_body's
+                    // anonymous-function/class/arrow consumer is the only
+                    // consumer of the slot and always clears on take, but a
+                    // getter/setter body that is a non-anonymous expression
+                    // (e.g. `({ get foo() { return x } })`) leaves the slot
+                    // set with no downstream caller to clear it, so the
+                    // bracket must be closed here.
+                    self.has_inferred_name = false;
+                    self.inferred_name_len = 0;
 
                     if (!self.match(TokenType.COMMA)) {
                         break;
@@ -5518,6 +5528,10 @@ fn ushort? CompilerContext.object_literal(&self) {
                 self.is_generator = saved_is_generator;
                 self.is_user_generator = saved_is_user_generator;
                 self.is_async = saved_is_async;
+                // Close the NameEvaluation bracket set by the key-setter above
+                // (see the matching comment in the getter/setter branch).
+                self.has_inferred_name = false;
+                self.inferred_name_len = 0;
             } else if (is_shorthand_key && (self.check(TokenType.COMMA) || self.check(TokenType.RBRACE))) {
                 // ES2015 §12.2.6.8: IdentifierReference shorthand property
                 // `{ cause }` is equivalent to `{ cause: cause }`, the value
