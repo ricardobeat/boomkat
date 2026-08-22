@@ -1,15 +1,12 @@
 name: Toolchain
-description: Install c3c and fetch the pinned QuickJS sources, both cached by version/ref.
+description: Install c3c, cached by version.
 
 # Versions come in as inputs. A composite action does not see the caller's
-# workflow-level `env` inside `with:` expressions, so the cache keys below would
-# be empty if they read env directly. The caller passes them explicitly.
+# workflow-level `env` inside `with:` expressions, so the cache key below would
+# be empty if it read env directly. The caller passes it explicitly.
 inputs:
   c3c-version:
     description: c3c release version to install.
-    required: true
-  quickjs-ref:
-    description: bellard/quickjs commit to check out for the vendored C sources.
     required: true
 
 runs:
@@ -35,19 +32,3 @@ runs:
     - name: Put c3c on PATH
       shell: bash
       run: echo "/opt/c3c" >> "$GITHUB_PATH"
-
-    # quickjs/ is gitignored, but project.json pulls cutils.c and dtoa.c from it.
-    # Key the cache on the pinned ref so a fresh clone only happens on a pin bump.
-    - name: Cache quickjs sources
-      id: cache-quickjs
-      uses: actions/cache@v4
-      with:
-        path: quickjs
-        key: quickjs-${{ inputs.quickjs-ref }}
-    - name: Fetch quickjs sources
-      if: steps.cache-quickjs.outputs.cache-hit != 'true'
-      shell: bash
-      run: |
-        rm -rf quickjs
-        git clone https://github.com/bellard/quickjs.git quickjs
-        git -C quickjs checkout "${{ inputs.quickjs-ref }}"

@@ -77,16 +77,16 @@ container builder start --cpus 6 --memory 12g
 Without this the `apt-get install` of the LLVM dev packages dies with
 `cannot allocate memory`.
 
-## quickjs/
+## C dependencies
 
-`quickjs/` is gitignored and is usually a symlink into another checkout. The
-container needs real files there, so `make linux-ci` bind-mounts it separately
-and moves the symlink aside for the duration of the run, restoring it after.
-Mounting onto an existing symlink fails with:
+Nothing outside the worktree has to be mounted. Every C source the build
+compiles is checked in: `libregexp/` and `vendor/dtoa/`.
 
-```
-mount failed with errno 17: failed to create directory 'quickjs'
-```
+`quickjs/` and `duktape/` are comparison engines, fetched on demand by
+`just fetch-engines` and built from source (`just build-quickjs` runs
+`make -C quickjs qjs`). The benchmarks and the differential library checks run
+them as an oracle, but no CI phase here does, so the container never needs
+them.
 
 ## Cross-platform build artifacts
 

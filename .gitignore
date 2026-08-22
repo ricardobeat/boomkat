@@ -1,6 +1,8 @@
 duktape
 *.dSYM
 out/
+# Upstream QuickJS checkout: a benchmark engine fetched by `just fetch-quickjs`.
+# The four files the BUILD needs are vendored in vendor/dtoa/ instead.
 quickjs/
 .antigravitycli
 .worktrees/

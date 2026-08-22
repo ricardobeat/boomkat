@@ -12,10 +12,9 @@ concurrency:
 
 env:
   C3C_VERSION: "0.8.2"
-  # bellard/quickjs pin. project.json sources cutils.c/dtoa.c from here (needed
-  # to build the engine); this is not the JS-corpus reference engine (see below).
-  QUICKJS_REF: "d73189dd5a582c19c565774bd56fed4e72d33c99"
   # quickjs-ng prebuilt binary used as out/qjs, the JS-corpus reference engine.
+  # The engine's own C dependencies are vendored in-tree (vendor/dtoa/), so no
+  # upstream checkout is needed to build.
   QJS_NG_VERSION: "v0.16.2"
   # TypeScript (tsc) version for the conformance and TS-library jobs. 7.x is the
   # Go rewrite, matching the conformance corpus layout the fetcher checks out.
@@ -61,7 +60,6 @@ jobs:
       - uses: ./.github/actions/toolchain
         with:
           c3c-version: ${{ env.C3C_VERSION }}
-          quickjs-ref: ${{ env.QUICKJS_REF }}
 
       # `make boomkat` and `make out/test262_runner` produce the binaries the
       # suite jobs consume.

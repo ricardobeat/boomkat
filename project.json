@@ -9,14 +9,14 @@
     "libregexp/libunicode.c",
     "libregexp/re_wrapper.c",
     "libregexp/unicode_wrapper.c",
-    "quickjs/cutils.c",
-    "quickjs/dtoa.c",
+    "vendor/dtoa/cutils.c",
+    "vendor/dtoa/dtoa.c",
     "src/dtoa_wrapper.c",
     "src/date_math.c"
   ],
   "cflags": "-O2",
   "c-include-dirs": [
-    "quickjs",
+    "vendor/dtoa",
     "libregexp"
   ],
   "targets": {

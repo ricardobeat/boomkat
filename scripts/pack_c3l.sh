@@ -42,7 +42,10 @@ link_or_copy() {
 # --- engine C3 sources + C dependencies ---------------------------------------
 link_or_copy "src"
 link_or_copy "libregexp"
-link_or_copy "quickjs"
+# Only the four vendored dtoa/cutils files, not the 45 MB upstream quickjs
+# checkout: that tree is a benchmark engine fetched on demand, and nothing in a
+# package build reads it.
+link_or_copy "vendor"
 
 # The public API binding: lives at bindings/c3/boomkat.c3, placed at the .c3l root
 # so it is compiled as `module boomkat` (its own declaration).
@@ -65,14 +68,14 @@ cat > "$C3L_DIR/manifest.json" <<'MANIFEST'
         "libregexp/libunicode.c",
         "libregexp/re_wrapper.c",
         "libregexp/unicode_wrapper.c",
-        "quickjs/cutils.c",
-        "quickjs/dtoa.c",
+        "vendor/dtoa/cutils.c",
+        "vendor/dtoa/dtoa.c",
         "src/dtoa_wrapper.c",
         "src/date_math.c"
     ],
     "cflags": "-O2",
     "c-include-dirs": [
-        "quickjs",
+        "vendor/dtoa",
         "libregexp"
     ],
     "targets": {

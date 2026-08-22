@@ -260,14 +260,12 @@ install: out/boomkat.a out/boomkat.$(SHLIB_EXT)
 # Build the Linux image and run the whole build/test/link-validation suite in
 # it. Uses Apple's `container` CLI (not docker). See ci/linux/README.md.
 #
-# quickjs/ is gitignored and is usually a symlink into another checkout. It is
-# bind-mounted separately because the container needs real files there, and the
-# symlink must be out of the way first: mounting onto an existing symlink fails
-# with "errno 17: failed to create directory 'quickjs'". The symlink is removed
-# before the run and restored after, so host builds keep working either way.
+# The container needs nothing bind-mounted beyond the worktree: every C source
+# the build compiles is checked in, under libregexp/ and vendor/dtoa/. quickjs/
+# is a comparison engine that benchmarks and the differential library checks
+# build from source on demand; no CI phase runs those, so it can stay out.
 LINUX_IMAGE ?= boomkat-linux-ci
 LINUX_ARCH  ?= arm64
-QUICKJS_DIR ?= $(realpath quickjs)
 
 # The default 2 GB container is not enough: `zig build` gets OOM-killed
 # (SIGKILL, reported only as "process terminated with signal KILL") and the
@@ -277,15 +275,7 @@ LINUX_CPUS   ?= 6
 
 CONTAINER_RUN = container run --rm --arch $(LINUX_ARCH) \
 	    --memory $(LINUX_MEMORY) --cpus $(LINUX_CPUS) \
-	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" $(LINUX_IMAGE)
-
-# Drop a quickjs symlink for the duration of the run, then put it back.
-define with_quickjs_unlinked
-	@if [ -L quickjs ]; then mv quickjs .quickjs.link; fi
-	$(1); rc=$$?; \
-	if [ -e .quickjs.link ]; then rmdir quickjs 2>/dev/null || true; mv .quickjs.link quickjs; fi; \
-	exit $$rc
-endef
+	    -v "$(CURDIR):/work" $(LINUX_IMAGE)
 
 .PHONY: linux-ci linux-ci-image linux-ci-shell
 
@@ -293,13 +283,13 @@ linux-ci-image:
 	container build --arch $(LINUX_ARCH) -t $(LINUX_IMAGE) -f ci/linux/Dockerfile ci/linux
 
 linux-ci:
-	$(call with_quickjs_unlinked,$(CONTAINER_RUN) bash ci/linux/run.sh $(PHASES))
+	$(CONTAINER_RUN) bash ci/linux/run.sh $(PHASES)
 
 # Interactive shell in the same environment, for debugging a failing phase.
 linux-ci-shell:
-	$(call with_quickjs_unlinked,container run --rm -it --arch $(LINUX_ARCH) \
+	container run --rm -it --arch $(LINUX_ARCH) \
 	    --memory $(LINUX_MEMORY) --cpus $(LINUX_CPUS) \
-	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" $(LINUX_IMAGE) bash)
+	    -v "$(CURDIR):/work" $(LINUX_IMAGE) bash
 
 # ---- Linux/amd64 CI (x86-64 via emulation) ----------------------------------
 #
@@ -310,7 +300,7 @@ linux-ci-shell:
 X86_IMAGE  ?= boomkat-linux-x86-ci
 X86_ENGINE ?= podman
 X86_RUN = $(X86_ENGINE) run --rm --platform linux/amd64 \
-	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" -w /work $(X86_IMAGE)
+	    -v "$(CURDIR):/work" -w /work $(X86_IMAGE)
 
 .PHONY: linux-x86-ci linux-x86-ci-image linux-x86-ci-shell
 
@@ -318,11 +308,11 @@ linux-x86-ci-image:
 	$(X86_ENGINE) build --platform linux/amd64 -t $(X86_IMAGE) -f ci/linux-x86/Dockerfile ci/linux-x86
 
 linux-x86-ci:
-	$(call with_quickjs_unlinked,$(X86_RUN) bash ci/linux-x86/run.sh $(PHASES))
+	$(X86_RUN) bash ci/linux-x86/run.sh $(PHASES)
 
 linux-x86-ci-shell:
-	$(call with_quickjs_unlinked,$(X86_ENGINE) run --rm -it --platform linux/amd64 \
-	    -v "$(CURDIR):/work" -v "$(QUICKJS_DIR):/work/quickjs" -w /work $(X86_IMAGE) bash)
+	$(X86_ENGINE) run --rm -it --platform linux/amd64 \
+	    -v "$(CURDIR):/work" -w /work $(X86_IMAGE) bash
 
 clean:
 	c3c clean
