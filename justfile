@@ -197,6 +197,17 @@ test-gc-stress:
     @make out/boomkat_gc_stress
     bash scripts/run_gc_stress.sh
 
+# Drive many Heap.reset() cycles with the engine's reset-crossing caches
+# populated, under ASAN. reset() runs only in the test262 worker between tests
+# and is unreachable from JS, so a cache that outlives the teardown while still
+# holding pointers into it is invisible to every other gate: such a bug passes
+# standalone, passes the conformance suite, and passes test-gc-stress, then
+# surfaces only as widespread MEMKILL in a full corpus run where each affected
+# test still passes under --single. This reproduces that boundary in seconds.
+test-heap-reset:
+    @make out/test262_runner_asan
+    bash scripts/run_heap_reset.sh
+
 # Assert that exiting a for-in early (break/return/throw) costs no more peak
 # RSS than running it to exhaustion. Lives outside test-local because it needs
 # /usr/bin/time -l rather than an in-script assertion — the engine exposes no

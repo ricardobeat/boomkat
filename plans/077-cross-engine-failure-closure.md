@@ -115,7 +115,7 @@ Both now route through `builtin_to_number_vm`, which runs valueOf/toString, thro
 TypeError for Symbol and BigInt, and propagates an abrupt completion. Output is
 byte-identical to JSC across the matrix in `/tmp/tn.js`.
 
-### B3a. Lightfuncs are not object-tagged — found in passing, NOT fixed
+### B3a. Lightfuncs are not object-tagged — FIXED
 
 Fixing `isExtensible` surfaced a wider gap. boomkat stores built-in functions as
 **lightfuncs**, a compact representation that is not OBJECT-tagged, so
@@ -165,6 +165,48 @@ from BOTH reference engines**:
 The same probe over a real HObject function (`Array.prototype.map`) and a user function
 matches jsc and v8 on **every one of the 30 operations**. The defect is therefore purely
 the representation, not the individual operations.
+
+#### Resolution
+
+Fixed by a lazy promotion path cached by `Builtin` ordinal (`promote_builtin_fn` in
+`src/builtins/core.c3`, cache on `Heap`, marked in `mark_roots`). The LIGHTFUNC form
+stays canonical — `ToObject` returns the LIGHTFUNC unchanged, since the value the
+program holds is that LIGHTFUNC and `Object(JSON.parse) === JSON.parse` must hold
+against it — and promotion only supplies the object a write or a `Reflect` call needs.
+Read paths consult the promoted object when one exists, so `JSON.parse.tag = 1` reads
+back.
+
+The Map/WeakSet rows turned out not to be a promotion problem at all: `strict_eq` and
+`same_value_impl` had an `OBJECT` identity arm and no `LIGHTFUNC` one, falling through
+to `default: false`. Promoting keys would have been the wrong fix, since a stored key
+would be an OBJECT while lookup passes a LIGHTFUNC.
+
+`test/lightfunc_conformance.js` now scores **57 / 0**, matching jsc and v8, and the
+whole 11-row identity matrix (including identity across promotion, and via aliases) is
+byte-identical to v8.
+
+#### A bug class none of the memory tooling could see
+
+The first complete version of the fix scored 57/57, passed the local suite, and passed
+GC_STRESS with POOL_BYPASS and ASan — while test262 dropped to **39,195 / 131**, almost
+all MEMKILL, and every one of those tests passed under `--single`.
+
+`Heap.reset` — the per-test teardown in the test262 worker — frees every object, but the
+promotion cache survived holding pointers into the heap it had just torn down. Because
+the cache is a GC root, the next `mark_roots` followed each stale pointer into freed
+memory.
+
+`reset()` is reachable only from `cli/test262_runner.c3`, never from JS, so **no `.js`
+test can exercise it**: this class passes standalone, passes conformance, and passes the
+gc-stress lane, then appears only as widespread MEMKILL across a full corpus — where the
+per-test `--single` reproduction also passes, which is a confusing signal to debug from.
+
+The gap is now closed by `test/heap_reset_lifetime.js` plus
+`scripts/run_heap_reset.sh` (`just test-heap-reset`), which feeds one test repeatedly to
+`--worker` so each line forces a reset with the caches populated. Validated by deleting
+the cache-clear in `Heap.reset`: the lane produces an ASan use-after-free report, and
+restoring the clear returns it to 40/40 clean — seconds instead of a 40-minute corpus
+run.
 
 #### Why patching call sites is the wrong fix
 
@@ -305,6 +347,9 @@ behind JSC.
 | 2026-08-22 | `Object.isExtensible` returns false for primitives | 5 |
 | 2026-08-22 | `isNaN`/`isFinite` coerce via ToNumber (valueOf/toString, Symbol/BigInt throws) | 4 |
 | 2026-08-22 | `isExtensible` handles lightfuncs (fixes the 7 `builtin.js` tests the above regressed) | 0 |
-| 2026-08-22 | GC root for borrowed `this_binding` in `call_fn` frames (`9b5e82fa`) — a use-after-free, not a scoping bug | 3 |
+| 2026-08-22 | GC root for borrowed `this_binding` in `call_fn` frames (`9b5e82fa`) — a use-after-free, not a scoping bug | 27 |
+| 2026-08-22 | POOL_BYPASS so ASan can see pooled frees; `this_binding` setters; two new gc-stress lifetime tests (`db4b40b7`) | 0 |
+| 2026-08-22 | LIGHTFUNC promotion path — builtins behave as real objects (`31d88c59`) | 0 in subset, 14 conformance rows |
+| 2026-08-22 | `just test-heap-reset` lane for caches that cross `Heap.reset` | 0 |
 
 Full native suite after the above: **39,326 pass / 0 fail**.
