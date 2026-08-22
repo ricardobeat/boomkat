@@ -232,12 +232,96 @@ and wrong for primitives. `isExtensible` now handles lightfuncs explicitly. **Th
 remaining operations above are still wrong and are not covered by the cross-engine
 subset**, which is why they cost 0 tests today and are recorded here instead.
 
-### B4. Function `name` / property descriptors — 13 tests
+### B4. Function `name` / property descriptors — 13 tests — FIXED
 
-Seven report `name descriptor value should be ; name value should be` and six expect a
-TypeError that never arrives. Not yet diagnosed; the shape suggests
-`SetFunctionName`/`DefinePropertyOrThrow` on accessor and computed-key methods.
-**Next after B5.**
+Closed in commits `6345c51e` and `b585629f`. The 7 cross-engine
+`language/expressions/{function,arrow-function,async-function,async-generator,
+async-arrow-function,generators,class}/name.js` failures plus the 9 logical-
+assignment-named-evaluation tests in `language/expressions/logical-assignment/
+*namedevaluation-*.js` — all 16 of the seed-leak form of the bug share one
+root cause and one fix.
+
+**Root cause.** `has_inferred_name` is a parser-state channel: the spec
+declares NameEvaluation positions at `var f = function(){}`, plain
+`x = …`, object-literal key, getter/setter body, method shorthand,
+`export default`, plus the three logical-assignment forms the original plan
+missed. The parser eagerly seeds the slot at every seed site and relies on
+the deeply nested `function_expr` / `arrow` / `class_expr` consumer to
+*clear on take*. When the RHS is a literal, a named function, or any
+non-anonymous shape, the slot lives past the statement:
+
+```js
+var P = print;          // bracket opens, name = "P"
+P((function(){}).name); // RHS is anonymous, eats "P"
+// expected ""; boomkat returned "P" before the fix
+```
+
+`verifyProperty(function(){}, "name", { value: "" })` is the canonical
+cross-engine cluster; the harness stack around it (large `assert.js`,
+`sta.js`, `propertyHelper.js`) leaves a stale name floating, and the
+anonymous `function(){}` then captures it instead of staying empty.
+
+**Architecture.** "Set, then somewhere else clear" is hidden state in a
+recursive-descent parser — the discipline fails when the producer and
+consumer live in different recursion depths. The correct model is **bracket
+ownership at the seed site**: save the prior slot, seed this declarator's
+name, `defer` the restore. The seed site closes the bracket at the same
+nesting level it opened, regardless of which RHS shape was compiled:
+
+```c3
+NameEvalFrame _nef = self.save_name_eval();
+defer self.restore_name_eval(_nef);
+self.has_inferred_name = true;
+... seed this declarator's name ...
+val = self.assignment_expr()!;
+```
+
+`save_name_eval` / `restore_name_eval` (in
+`src/compiler/context.c3:1124`) capture the `(has, len, buf)` triple
+into a stack-local `NameEvalFrame`. The bracket sites:
+
+| Site | File |
+| --- | --- |
+| `var f = <init>` | `src/compiler/statements.c3` |
+| `export default <expr>` | `src/compiler/statements.c3` |
+| Object literal, per property (covers static key, getter/setter, method shorthand, `key: value`) | `src/compiler/expressions.c3` `object_literal` |
+| `x &&= / ||= / ??= <expr>` RHS (when LHS is plain ident) | `src/compiler/expressions.c3` |
+| `x = <expr>` RHS (when LHS is plain ident) | `src/compiler/expressions.c3` |
+
+Two placement lessons fell out of review. First, C3's `defer` is
+block-scoped: the first cut put the object-literal bracket inside the
+key-parse block, so the restore fired before the method body or `key:
+value` expression compiled — `({ m(){} }).m.name` and `{ id:
+function(){} }.id.name` came back empty (9 `language/expressions/object/
+fn-name-*` and `method-definition/*name*` tests). The bracket now sits at
+the top of the per-property loop body, so the seed lives until the value
+or body compiles and closes at iteration end. Getter/setter names were
+masked by the runtime backstop (`class_initaccessor_set_name` fills empty
+names at INITGET/INITSET), which is why only data properties and methods
+showed the regression. Second, the plain-`=` seed was never bracketed:
+`x = 5; (function(){}).name` donated "x" to the unrelated function. The
+class-field setter in `class.c3` seeds and clears explicitly and does not
+need the helper. A future seed site (decorators, class static blocks,
+default-param generators, …) only needs the two-line save/defer-restore
+pair placed where the seed's consumer is guaranteed to run inside it.
+
+**Result.** All 25 leaked tests pass natively:
+`language/expressions/{function,arrow-function,async-function,async-generator,
+async-arrow-function,generators,class}/name.js` (7) +
+`language/expressions/logical-assignment/lgcl-{and,or,nullish}-assignment-
+operator-namedevaluation-{function,class-expression,arrow-function}.js` (9) +
+`language/expressions/object/fn-name-{fn,arrow,class,cover,gen}.js` (5) +
+`language/expressions/object/method-definition/{fn-name-gen,fn-name-fn,
+generator-name-prop-string,name-name-prop-string}.js` (4).
+Rosette stays 42/42. Phases 0, 13, 14, 15 stay at 100% effective pass.
+Cross-engine count unchanged because the 9 logical-assignment tests carry
+the `features: [logical-assignment-operators]` flag and are filtered out of
+the cross-engine subset, but they were real native-suite failures before
+this commit.
+
+The 6 "expected TypeError, never arrives" cases share no architecture with
+this fix: they belong with the B3 `isNaN`/`isFinite` Symbol-throws tests and
+require the same ToNumber follow-on.
 
 ### B5. Direct eval inside class element initializers — ~15 tests
 

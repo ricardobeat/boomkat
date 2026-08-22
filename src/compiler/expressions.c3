@@ -776,6 +776,13 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // is a simple IdentifierReference (not a member expression), pass the
     // name through for NamedEvaluation of an anonymous function/class/arrow
     // RHS. Member-expression LHS (`o.attr = fn`) must NOT be named.
+    // Bracket the slot around the RHS compile below: nothing past
+    // `assignment_expr()` here parses expressions, so the save/restore closes
+    // the seed on every exit path and a non-consuming RHS (literal, named
+    // function) cannot donate the name to a later statement's anonymous
+    // function (`x = 5; (function(){}).name` observed "x" before this).
+    NameEvalFrame _assign_nef = self.save_name_eval();
+    defer self.restore_name_eval(_assign_nef);
     if (is_assign && !lhs_was_member && (lhs_was_getvar || lhs_was_local_var)
         && lhs_ident_name_len > 0) {
         self.has_inferred_name = true;
@@ -5180,6 +5187,14 @@ fn ushort? CompilerContext.object_literal(&self) {
                 break;
             }
 
+            // Bracket the inferred-name slot per property: a seed set from
+            // this property's key (identifier/string key, get/set prefix)
+            // must live until the value or method body below compiles, then
+            // close at the end of the iteration so it cannot leak into the
+            // next key or past the literal.
+            NameEvalFrame _prop_nef = self.save_name_eval();
+            defer self.restore_name_eval(_prop_nef);
+
             // ES2015 §14.3: generator-method shorthand, `*m() { yield ... }`.
             // Save the generator + async flags; they are only overridden right
             // before compiling the method body below. Property keys, computed
@@ -5336,13 +5351,8 @@ fn ushort? CompilerContext.object_literal(&self) {
                         // Always overwrite the inherited inferred name (from var
                         // `o = ...`), the property key + get/set prefix is the
                         // more specific source.
-                        // Bracket ownership lives here: save the slot and
-                        // `defer` the restore. The body compile below closes the
-                        // bracket even on error paths, and independently of
-                        // whether the anonymous function/class/arrow consumer was
-                        // reached at all.
-                        NameEvalFrame _nef = self.save_name_eval();
-                        defer self.restore_name_eval(_nef);
+                        // The per-iteration bracket at the loop top owns the
+                        // slot; the body compile below runs inside it.
                         char[] prefix = is_obj_getter ? "get " : "set ";
                         usz prop_len = prop_tok.str_value.len;
                         if (prefix.len + prop_len < 128) {
@@ -5422,11 +5432,8 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // ES2015 §14.3 / §14.1.20: method name inference. Always overwrite
                 // the inherited inferred name from the enclosing assignment, the
                 // property key is the more specific source for the function name.
-                // Bracket the slot via save/defer-restore (matching the
-                // getter/setter branch); the bracket closes on any exit path
-                // through the method body below.
-                NameEvalFrame _nef = self.save_name_eval();
-                defer self.restore_name_eval(_nef);
+                // The per-iteration bracket at the loop top closes the seed when
+                // this property is done.
                 self.has_inferred_name = true;
                 self.inferred_name_len = (ushort)key_tok.str_value.len;
                 if (key_tok.str_value.len < 128) {
@@ -5546,10 +5553,6 @@ fn ushort? CompilerContext.object_literal(&self) {
                 self.is_generator = saved_is_generator;
                 self.is_user_generator = saved_is_user_generator;
                 self.is_async = saved_is_async;
-                // Close the NameEvaluation bracket set by the key-setter above
-                // (see the matching comment in the getter/setter branch).
-                self.has_inferred_name = false;
-                self.inferred_name_len = 0;
             } else if (is_shorthand_key && (self.check(TokenType.COMMA) || self.check(TokenType.RBRACE))) {
                 // ES2015 §12.2.6.8: IdentifierReference shorthand property
                 // `{ cause }` is equivalent to `{ cause: cause }`, the value
@@ -5612,8 +5615,6 @@ fn ushort? CompilerContext.object_literal(&self) {
                 }
                 ushort val_reg = self.assignment_expr()!;
                 bool computed_val_is_anon_fn_def = is_computed_key && !is_proto_key && !self.has_inferred_name;
-                self.has_inferred_name = false;
-                self.inferred_name_len = 0;
                 if (is_proto_key) {
                     // ES2015 §12.2.6.1: `__proto__: value` sets the object's [[Prototype]].
                     // Only object values and null are valid; non-objects are silently ignored.
