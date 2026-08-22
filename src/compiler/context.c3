@@ -2247,7 +2247,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.is_named_func_expr;
     func.flags.needs_env = !can_skip_env;
     func.flags.is_global = self.is_global;
-    func.flags.is_eval = self.eval_mode;
+    // eval_mode only means "accumulate a completion value", which a global
+    // Script also asks for ($262.evalScript). Whether this is EVAL code --
+    // which makes var/function bindings configurable (env_declare_var's `D`
+    // argument) -- is in_eval_code.
+    func.flags.is_eval = self.in_eval_code;
     func.flags.eval_src_strict = self.saw_use_strict;
     // Record whether this eval body may itself reference new.target, so a
     // nested direct eval inside it can inherit the permission (see

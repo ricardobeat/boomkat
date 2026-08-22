@@ -14,7 +14,13 @@ import std::io;
 
 // Compile a complete program (sequence of statements).
 // Returns the top-level CompiledFunction or a fault on error.
-fn CompiledFunction*? compile(Lexer* lex, void* heap) {
+// `want_completion` makes the Script evaluate to its completion value rather
+// than undefined, for hosts that observe it ($262.evalScript, ES2015 §18.2.1
+// ScriptEvaluation). It turns on the same completion-accumulator bookkeeping
+// eval uses, but deliberately NOT `in_eval_code`: this is global Script code,
+// so declaration instantiation and the global-slot pre-scan must behave
+// exactly as they do for an ordinary script.
+fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = false) {
     // Reset error state for this top-level compilation.
     lex.err_msg[0] = 0;
     lex.err_line = 0;
@@ -22,6 +28,13 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.is_global = true;
+    ctx.eval_mode = want_completion;
+    if (want_completion) {
+        ctx.eval_acc_reg = ctx.alloc_reg();
+        // Seed the accumulator so an empty Script, or one whose only
+        // statements are declarations, completes with undefined.
+        ctx.emit_abc(Opcode.LDUNDEF, (uint)ctx.eval_acc_reg, 0, 0);
+    }
 
     // Save lexer state before any pre-processing.
     uint saved_pos    = lex.pos;
@@ -118,8 +131,14 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap) {
     // Free any remaining scope_stack entries (top-level lexical declarations)
     ctx.pop_scope_to(0);
 
-    // Emit implicit "return undefined" at end of program
-    ctx.emit_simple(Opcode.RETUNDEF);
+    if (want_completion) {
+        // The accumulator holds the last value-producing statement's result,
+        // which is the Script's completion value.
+        ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0);
+    } else {
+        // Emit implicit "return undefined" at end of program
+        ctx.emit_simple(Opcode.RETUNDEF);
+    }
 
     return ctx.finish()!;;
 }

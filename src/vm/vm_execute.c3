@@ -1696,7 +1696,11 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
 // `*out_pending` is set to the pinned per-evaluation promise so the caller
 // can chain onto it instead; `true` is returned in that case too (not yet
 // known to have failed).
-fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env, HObject** out_pending) {
+// `out_completion`, when non-null, receives the body's completion value: the
+// Script completion $262.evalScript must return (ES2015 §18.2.1
+// ScriptEvaluation). Module callers pass null, since a module body evaluates
+// to undefined and has no completion to observe.
+fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env, HObject** out_pending, TVal* out_completion = null) {
     uint nregs = func.num_regs;
 
     // A module body nests another Vm.run with its own activation save area, so
@@ -1847,6 +1851,11 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     bool run_faulted = false;
     if (catch err = run_res) {
         run_faulted = true;
+    } else if (out_completion != null) {
+        // Take a reference while the value is still anchored by the inner
+        // frame: the register file is torn down below, and a raw struct copy
+        // would leave the caller holding a heap pointer it does not own.
+        vm.heap.tval_copy_ref(out_completion, &run_res);
     }
 
     if (is_async_body) {

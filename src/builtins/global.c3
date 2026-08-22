@@ -1105,7 +1105,9 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
     defer lex.free_arena();
     lex.skip_hashbang();
-    CompiledFunction*? cf = compiler::compile(&lex, ctx.heap);
+    // want_completion: ScriptEvaluation's result is the Script's completion
+    // value, which this hook returns to its caller.
+    CompiledFunction*? cf = compiler::compile(&lex, ctx.heap, true);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;
@@ -1130,7 +1132,12 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
 
     vm::Vm* eval_vm = (vm::Vm*)ctx.vm;
     HObject* pending = null;
-    bool? ok = eval_vm.execute_module_nested(func, ctx.global_env, &pending);
+    // ScriptEvaluation yields the script's completion value, which this hook
+    // returns; execute_module_nested hands it back with a reference already
+    // taken, so the result slot adopts it rather than copying again.
+    TVal completion;
+    completion.set_undefined();
+    bool? ok = eval_vm.execute_module_nested(func, ctx.global_env, &pending, &completion);
     if (catch err = ok) {
         ctx.result.set_undefined();
         return;
@@ -1152,9 +1159,13 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
         // eventual settlement, the pinning reference handed off is simply
         // released, matching the not-draining path's own transient pin.
         ctx.heap.decref(pending.as_header());
+        // A body that suspended on top-level await has no completion value to
+        // report yet, so the undefined initialiser stands.
     }
 
-    ctx.result.set_undefined();
+    // Move, not copy: execute_module_nested already took the reference this
+    // slot now owns, so builtin_store_result's incref would leak one.
+    *ctx.result = completion;
 }
 
 fn void uri_encode_byte(char* out, usz* offset, char b) {
