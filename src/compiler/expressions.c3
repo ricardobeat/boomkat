@@ -1168,9 +1168,8 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // survives to the post-RHS check_no_arrow_rhs() in the outer for-loop.
     bool saw_binary_op = false;
 
-    // ES2021 §13.13: `??` is not just another precedence level, it is a
-    // separate production whose operands may not be an unparenthesized
-    // `&&` / `||`:
+    // ES2021 §13.13: `??` is its own production, whose operands may not be
+    // an unparenthesized `&&` / `||`:
     //   CoalesceExpression : CoalesceExpressionHead ?? BitwiseORExpression
     //   ShortCircuitExpression : LogicalORExpression | CoalesceExpression
     // so `a && b ?? c` and `a ?? b || c` are both SyntaxErrors, in either
