@@ -5338,15 +5338,29 @@ fn void builtin_object_proto___proto___setter(BuiltinContext* ctx) {
     } else {
         proto_val.set_undefined();
     }
-    // §B.2.2.2 step 2: If proto is neither Object nor null, throw TypeError.
+    // §B.2.2.1.2 step 2: if proto is neither an Object nor null, RETURN
+    // undefined -- silently, without throwing and without touching the
+    // prototype. `({}).__proto__ = 42` is a no-op, not a TypeError.
     if (!proto_val.is_null() && !proto_val.is_object() && !proto_val.is_lightfunc()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__: prototype must be an object or null");
+        ctx.result.set_undefined();
         return;
     }
-    // LIGHTFUNC proto: not allowed by Annex B §B.2.2.2, throw TypeError.
+    // LIGHTFUNC is an internal compact representation for built-in function
+    // objects, and a function IS an Object, so it is a legal prototype.
+    // Materialize it before storing the [[Prototype]] (mirrors
+    // Object.setPrototypeOf above) -- the code below requires a real HObject.
     if (proto_val.is_lightfunc()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.__proto__: prototype must be an object or null");
-        return;
+        uint pf_idx = (uint)(usz)proto_val.get_heapptr();
+        BuiltinMeta pf_meta = builtin_get_metadata(pf_idx);
+        HObject* pf_func = alloc_builtin_fn(ctx.heap, pf_idx, pf_meta.name, pf_meta.arity);
+        if (pf_func == null) {
+            ctx.result.set_undefined();
+            return;
+        }
+        if (ctx.vm != null) {
+            pf_func.flags.constructable = vm::builtin_fn_is_constructor((Vm*)ctx.vm, pf_idx);
+        }
+        proto_val.set_object(pf_func);
     }
     // §B.2.2.2 step 3: ToObject(this); primitives return the primitive unchanged.
     if (!this_val.is_object() || this_val.get_heapptr() == null) {

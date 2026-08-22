@@ -170,7 +170,6 @@ SKIP_DIRS = {
     # pass; the rest are out of scope: arbitrary-precision literals (>2^127),
     # Reflect.construct-based is-a-constructor, and $262 cross-realm.
     "language/statements/with",        # sloppy-mode only, not supported
-    "language/statements/labeled",     # not supported
 }
 
 # Feature flags to skip (matched against test metadata `features: [...]`)
@@ -185,8 +184,6 @@ UNSUPPORTED_PATTERN = re.compile(
     r"await-dictionary|canonical-tz|"
     r"export-defer|immutable-arraybuffer|import-bytes|import-defer|import-text|"
     r"joint-iteration|nonextensible-applies-to-private|"
-    # Standard language features: Annex B (non-strict legacy)
-    r"__proto__|__getter__|__setter__|"
     # Standard language features: engine-specific pragmatics
     r"cross-realm|tail-call-optimization|caller|"
     # Non-standard feature token (not in test262/features.txt; structured-clone
