@@ -28,10 +28,9 @@ import std::io;
 // Unhandled rejection tracking
 // ============================================================================
 
-// Unhandled rejections reported while the current test runs. The CLI installs
-// the same tracker; without it here, a promise that rejects with nothing
-// watching it is entirely invisible to the suite and the test still scores
-// PASS.
+// Unhandled rejections reported while the current test runs. Without this
+// tracker, a promise that rejects with nothing watching it is invisible
+// to the suite and the test still scores PASS.
 int unhandled_rejection_count = 0;
 
 // Heap.set_rejection_tracker callback. Counts only — run_one_test prints the

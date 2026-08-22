@@ -17,9 +17,8 @@ import std::io;
 // Overflow sets a flag that finish() turns into a compile error. Callers
 // still get a usable chain head so parsing can continue to a clean stop
 // rather than compounding the failure here. Returning the chain unchanged
-// would leave `addr` unrecorded, so patch_chain never patched it and it
-// executed as `JUMP 0`: a fall-through to whatever followed, with no
-// diagnostic anywhere.
+// would leave `addr` unrecorded: patch_chain never patched it, it executed
+// as `JUMP 0`, and the fall-through passed without any diagnostic at all.
 fn uint CompilerContext.add_patch(&self, uint chain_head, uint addr) {
     if (self.patch_count >= MAX_PATCHES) {
         self.patch_overflow = true;

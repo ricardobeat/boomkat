@@ -182,8 +182,8 @@ fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import
 //
 // `export * from` is exempt: it contributes no ExportedName of its own (a name
 // it would have re-exported is instead dropped when ambiguous), which is why
-// star exports are registered through mod_register_star_export and never reach
-// this path.
+// star exports are registered through mod_register_star_export and never
+// reach this path.
 fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         if (str_eq(mod.exports[i].export_name, export_name)) return true;
@@ -300,8 +300,7 @@ fn bool CompilerContext.peek2_starts_binding(&self) {
 
 // Parse and compile a single statement, dispatching on token type.
 // After the statement completes, reclaim_stmt_regs releases any temporaries
-// stranded above the statement's base watermark by non-LIFO free patterns
-// (see reclaim_stmt_regs).
+// stranded above the statement's base watermark by non-LIFO free patterns.
 fn void? CompilerContext.statement(&self) {
     ushort stmt_base = self.next_reg;
     TokenType tt = self.peek_type();
@@ -866,7 +865,7 @@ fn void CompilerContext.hoist_lexical_tdz(&self) {
 // pre-scan: `export default function F(){}`, whose `F` is not in statement
 // position and so is never recorded by hoist_global_fn_decls. By the time the
 // declaration is parsed, any colliding `class`/`let`/`const` is already on
-// scope_stack.
+// the scope stack.
 fn void? CompilerContext.check_module_lexical_collision(&self, char[] name) {
     if (!self.is_module) return;
     for (uint i = 0; i < self.scope_depth; i++) {
@@ -981,8 +980,8 @@ fn void? CompilerContext.check_module_exports_resolvable(&self) {
 // Part of the check prologue that must precede every binding instantiation,
 // so a SyntaxError (existing var/lex binding or restricted global property)
 // throws with no observable side effects. Module top-level lexicals live in
-// the Module Environment Record, which has no such restriction, so this is
-// Script/eval only.
+// the Module Environment Record, which has no such restriction; this check
+// is for Script/eval only.
 fn void? CompilerContext.hoist_lexical_tdz_checks(&self) {
     if (self.is_module) return;
     self.check_script_duplicate_lexical_names()!;
@@ -1169,8 +1168,8 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
 // (ES2024 §13.2.1 / §15.7.11: a name cannot be both LexicallyDeclaredNames
 // and VarDeclaredNames). VarDeclaredNames recursively descends into nested
 // BlockStatements per §13.2.5, so var names at any brace_depth inside the
-// block contribute. Saves/restores lexer state so normal parsing can
-// proceed afterwards.
+// block contribute. Lexer state is saved and restored so normal parsing
+// can proceed afterwards.
 fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity) {
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
@@ -4501,8 +4500,8 @@ fn void? CompilerContext.emit_forof_loop_member(&self, ForLhsSnapshot lhs_snap, 
 }
 
 // Emit a for-in loop whose head LHS is a member expression, e.g.
-// `for (obj.prop in x) { ... }`. Same re-parse-per-iteration strategy
-// as emit_forof_loop_member.
+// `for (obj.prop in x) { ... }`. Uses the same re-parse-per-iteration
+// strategy as emit_forof_loop_member.
 fn void? CompilerContext.emit_forin_loop_member(&self, ForLhsSnapshot lhs_snap, ushort obj_reg, uint saved_scope, ushort saved_reg) {
     ushort key_reg = self.alloc_reg();
 
@@ -5355,14 +5354,13 @@ fn void? CompilerContext.break_statement(&self) {
             if (str_eq(self.labels[i].name, label_name)) {
                 uint loop_idx = self.labels[i].loop_index;
                 // Unwind the lex_env stack back to the labeled loop's depth.
-                // Same pattern as the unlabeled break below. Without this, a
-                // `break label`
-                // inside a labeled block with a `let` (which pushed a
-                // PUSH_LEX via block()) left the inner binding visible after
-                // the jump.  Patching jumps via pop_loop() targets the
-                // address AFTER the block's own POP_LEX (since break doesn't
-                // fall through), so we must pop here at the jump site to
-                // keep the runtime lex_env stack balanced.
+                // Same pattern as the unlabeled break below. Without this,
+                // a `break label` inside a labeled block with a `let`
+                // (which pushed a PUSH_LEX via block()) left the inner
+                // binding visible after the jump. Patching jumps via
+                // pop_loop() targets the address AFTER the block's own
+                // POP_LEX (since break doesn't fall through), so popping at
+                // the jump site keeps the runtime lex_env stack balanced.
                 int target_lex = self.loop_stack[loop_idx].saved_lex_depth;
                 while (self.cur_lex_depth > target_lex) {
                     self.emit_simple(Opcode.POP_LEX);

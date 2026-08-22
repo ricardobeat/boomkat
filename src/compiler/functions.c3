@@ -162,10 +162,10 @@ fn bool SeenParams.contains(&self, char[] name) {
 // `expect_binding_identifier`), where the enclosing-grammar check has already
 // decided the name is legal here.
 //
-// Names longer than 63 chars or beyond MAX_PARAMS entries are checked but not
-// recorded: the table is a fixed-size fast path, and overflow only weakens
-// duplicate detection for pathological parameter lists, never accepts a
-// restricted name.
+// Names longer than 63 chars or beyond MAX_PARAMS entries are checked but
+// not recorded: the table is a fixed-size fast path, and overflow only
+// weakens duplicate detection for pathological parameter lists; it never
+// accepts a restricted name.
 fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
     if (!allow_restricted && is_restricted_name(name)) return COMPILE_ERROR~;
     if (self.contains(name)) return COMPILE_ERROR~;
@@ -3014,9 +3014,8 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
 //
 // Shared by all four compilation entry points (`parse_function_body`,
 // `compile_inner_function`, `compile_arrow_inner_reparse`, and the arrow
-// bodies) because they must emit byte-identical prologues; a hand-rolled copy
-// in any one of them is a place the next parameter-scope fix has to be
-// applied again.
+// bodies) because they must emit byte-identical prologues; one shared copy
+// keeps the next parameter-scope fix from having to be reapplied everywhere.
 //
 // `param_name_indices` holds each param's string-constant index in
 // declaration order; `first_default_idx` is the 0-based arg index of the
@@ -3655,9 +3654,8 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
 // ensure_field_init_ctx does for static field initializers, but each block
 // gets its OWN function (own var/lex scope, own break/continue/label
 // space): per test262 static-init-scope-var-*, a `var` declared in one
-// block is invisible to sibling blocks and the enclosing scope, unlike the
-// single shared __static_init__ that static field initializers install
-// into.
+// block is invisible to sibling blocks and the enclosing scope, unlike
+// the single shared __static_init__ that static field initializers install.
 fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     CompilerContext block_ctx;
     block_ctx.init(self.lexer, self.heap);
@@ -3720,10 +3718,9 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
 }
 
 // Compile an inner function (parameters + body) into a sub-CompiledFunction.
-// If `is_named_expr` is true and `name` is non-empty, the resulting function
-// is tagged with `is_namebinding`, signalling the VM to bind `name` to the
-// function object in a fresh lexical environment at call time (per ES2015
-// §14.1.20 NamedEvaluation).
+// If `is_named_expr` is true and `name` is non-empty, tag the result with
+// `is_namebinding`, so the VM binds `name` to the function object in a
+// fresh lexical environment at call time (ES2015 §14.1.20 NamedEvaluation).
 fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false) {
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
@@ -4298,8 +4295,8 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
 //
 // so a getter takes no parameter at all and a setter takes exactly one, which
 // (being a FormalParameter, not a FormalParameterList) may not be a rest
-// parameter. Defaults and destructuring patterns ARE FormalParameters and
-// stay legal.
+// parameter. Defaults and destructuring patterns ARE FormalParameters, so
+// they stay legal.
 enum AccessorKind : int {
     NOT_ACCESSOR,
     GETTER,
@@ -4486,8 +4483,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
     // We're inside FormalParameters (arrow-function params); turn on the
     // gate so destructuring default values are correctly forbidden from
-    // containing `yield`/`await`; collect_*_param_binds does not set it
-    // itself.
+    // containing `yield`/`await`; collect_*_param_binds does not set it.
     arrow_ctx.in_formal_params = true;
 
     // Parse parameter list from source (including defaults and rest)
