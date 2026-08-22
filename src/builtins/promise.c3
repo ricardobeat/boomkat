@@ -1893,6 +1893,35 @@ fn void builtin_promise_with_resolvers(BuiltinContext* ctx) {
 // Promise.try(callbackfn, ...args), ES2026 §27.2.4.8 (Promise.try proposal)
 // ============================================================================
 
+// PromiseResolve(C, x) steps 2.a-b, the short-circuit half only: true when x
+// is already a promise whose observable `constructor` is C, meaning
+// PromiseResolve would hand x straight back. Split out from
+// promise_resolve_abstract because Promise.try must NOT run that function's
+// capability-creating half -- it holds a capability of its own already.
+// Reading `constructor` can run a getter, which may throw; ctx.should_throw
+// is set in that case and the caller bails.
+fn bool promise_try_is_own_promise(BuiltinContext* ctx, HObject* ctor, TVal value) {
+    Heap* heap = ctx.heap;
+    if (ctor == null) return false;
+    if (!value.is_object() || value.get_heapptr() == null) return false;
+    HObject* value_obj = (HObject*)value.get_heapptr();
+    if (value_obj.flags.obj_class != hobject::ObjClass.PROMISE) return false;
+
+    HString* constructor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
+    if (constructor_key == null) return false;
+    TVal value_ctor;
+    if (!promise_object_get(heap, ctx.vm, value_obj, constructor_key, &value_ctor)) {
+        if (heap.has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = heap.error_value;
+            heap.has_error = false;
+        }
+        return false;
+    }
+    return value_ctor.is_object() && value_ctor.get_heapptr() != null &&
+           (HObject*)value_ctor.get_heapptr() == ctor;
+}
+
 fn void builtin_promise_try(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 
@@ -1945,6 +1974,26 @@ fn void builtin_promise_try(BuiltinContext* ctx) {
         *ctx.result = cap_promise_tv;
         return;
     }
+
+    // Step 6.b: Return ? PromiseResolve(C, status.[[Value]]).
+    //
+    // Not "resolve the capability and return its promise": when the callback
+    // already handed back a promise whose constructor IS C, PromiseResolve
+    // returns that promise itself, so `Promise.try(() => p)` is `p` rather
+    // than a second promise chained to it. V8 and JSC ship this; the older
+    // always-wrap behaviour is what the avoids-wrap tests fail on.
+    //
+    // Only the short-circuit half of PromiseResolve is taken here. Its other
+    // half builds a fresh capability, which would call a subclass constructor
+    // a SECOND time on top of the one made above -- ctx-ctor.js pins that
+    // count at exactly 1. Every non-short-circuit value therefore goes through
+    // the capability already in hand, which resolves it identically (adopting
+    // thenables, wrapping plain values and foreign promises alike).
+    if (promise_try_is_own_promise(ctx, ctor_obj, status)) {
+        *ctx.result = status;
+        return;
+    }
+    if (ctx.should_throw) return;
 
     TVal r_args = status;
     if (heap.call_fn != null && ctx.vm != null) {
