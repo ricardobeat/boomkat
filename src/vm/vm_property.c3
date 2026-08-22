@@ -108,6 +108,22 @@ fn void getprop2_symbol_hop(Vm* vm, Dispatch* ds, TVal sym_val, HString* key, TV
 }
 
 // Sub-dispatch for GETPROP, GETPROPC, GETPROPC_CACHED, GETPROPC2, PUTPROP, DELPROP opcodes.
+// [[Get]] on a LIGHTFUNC that has already been promoted to a real function
+// object, which is where an assignment or a defineProperty on that builtin put
+// its own properties. Returns false when the builtin has never been promoted,
+// leaving the caller's metadata-based .name/.length/.prototype handling to run.
+//
+// The receiver passed to any accessor is the original LIGHTFUNC value rather
+// than the promoted object. Both denote the same function and the LIGHTFUNC is
+// what the program actually holds, so `this` stays === the value under test.
+fn bool lightfunc_promoted_getprop(Vm* vm, Dispatch* ds, TVal* lf, void* key,
+                                   TVal* dst, uint dst_reg) {
+    HObject* pf = builtins::promoted_lightfunc_obj(vm.heap, *lf);
+    if (pf == null || key == null) return false;
+    primitive_getprop(vm, ds, lf, pf, key, dst, dst_reg);
+    return true;
+}
+
 fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
@@ -520,6 +536,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // LIGHTFUNC: resolve .name and .length from metadata, other props from Function.prototype
                 uint fn_idx = (uint)(usz)rb.get_heapptr();
                 HString* key = get_prop_key(vm, rc);
+                // A promoted builtin owns its properties, so it answers the
+                // read before the metadata table, which knows only the three
+                // virtual ones.
+                if (lightfunc_promoted_getprop(vm, ds, rb, (void*)key, ra, (uint)insn.a)) {
+                    return (TVal){};
+                }
                 if (key != null) {
                     if (key.equals("name")) {
                         if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], fn_idx, 0)) {
@@ -854,6 +876,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 } else if (rb.is_lightfunc()) {
                     // LIGHTFUNC: resolve .name and .length from metadata, other props from Function.prototype
                     uint fn_idx = (uint)(usz)rb.get_heapptr();
+                    // A promoted builtin owns its properties, so consult it
+                    // before the metadata table, which knows only the three
+                    // virtual ones.
+                    if (lightfunc_promoted_getprop(vm, ds, rb, (void*)key_hstr, ra, (uint)insn.a)) {
+                        return (TVal){};
+                    }
                     if (key_hstr != null) {
                         if (key_hstr.equals("name")) {
                             if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], fn_idx, 0)) {
@@ -1172,6 +1200,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // LIGHTFUNC intermediate: resolve .name/.length/.prototype from metadata,
                     // other props from Function.prototype (mirrors GETPROPC lightfunc handling).
                     uint lf_fn_idx = (uint)(usz)mid_val.get_heapptr();
+                    // A promoted builtin owns its properties, so it answers the
+                    // read before the metadata table, which knows only the three
+                    // virtual ones.
+                    if (lightfunc_promoted_getprop(vm, ds, &mid_val, (void*)key2_hstr, ra2, dst2_reg)) {
+                        return (TVal){};
+                    }
                     if (key2_hstr != null) {
                         if (key2_hstr.equals("name")) {
                             if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], lf_fn_idx, 0)) {
@@ -1336,6 +1370,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 } else if (mid_val.is_lightfunc()) {
                     uint lf_fn_idx2 = (uint)(usz)mid_val.get_heapptr();
+                    // A promoted builtin owns its properties, so it answers the
+                    // read before the metadata table, which knows only the three
+                    // virtual ones.
+                    if (lightfunc_promoted_getprop(vm, ds, &mid_val, (void*)key2_hstr, ra2, dst2_reg)) {
+                        return (TVal){};
+                    }
                     if (key2_hstr != null) {
                         if (key2_hstr.equals("name")) {
                             if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], lf_fn_idx2, 0)) {
@@ -1440,7 +1480,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 TVal mid_val;
                 mid_val.set_undefined();
                 uint lf_fn_idx = (uint)(usz)rb.get_heapptr();
-                if (key1_hstr != null) {
+                // A promoted builtin owns its properties, so it answers hop 1
+                // before the metadata table, which knows only the three virtual
+                // ones. mid_val picks up the result so hop 2 continues from it.
+                if (lightfunc_promoted_getprop(vm, ds, rb, (void*)key1_hstr, ra, (uint)insn.a)) {
+                    mid_val = *ra;
+                } else if (key1_hstr != null) {
                     if (key1_hstr.equals("name")) {
                         if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], lf_fn_idx, 0)) {
                             builtins::BuiltinMeta lf_meta = builtins::builtin_get_metadata(lf_fn_idx);
@@ -1577,6 +1622,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // LIGHTFUNC intermediate: resolve .name/.length/.prototype from metadata,
                     // other props from Function.prototype (mirrors GETPROPC lightfunc handling).
                     uint lf_fn_idx2 = (uint)(usz)mid_val.get_heapptr();
+                    // A promoted builtin owns its properties, so it answers the
+                    // read before the metadata table, which knows only the three
+                    // virtual ones.
+                    if (lightfunc_promoted_getprop(vm, ds, &mid_val, (void*)key2_hstr, ra2, dst2_reg)) {
+                        return (TVal){};
+                    }
                     if (key2_hstr != null) {
                         if (key2_hstr.equals("name")) {
                             if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], lf_fn_idx2, 0)) {
@@ -1708,6 +1759,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 } else if (mid_val.is_lightfunc()) {
                     uint lf_fn_idx2 = (uint)(usz)mid_val.get_heapptr();
+                    // A promoted builtin owns its properties, so it answers the
+                    // read before the metadata table, which knows only the three
+                    // virtual ones.
+                    if (lightfunc_promoted_getprop(vm, ds, &mid_val, (void*)key2_hstr, ra2, dst2_reg)) {
+                        return (TVal){};
+                    }
                     if (key2_hstr != null) {
                         if (key2_hstr.equals("name")) {
                             if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], lf_fn_idx2, 0)) {
@@ -1827,6 +1884,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 } else if (mid_val.is_lightfunc()) {
                     uint lf_fn_idx2 = (uint)(usz)mid_val.get_heapptr();
+                    // A promoted builtin owns its properties, so it answers the
+                    // read before the metadata table, which knows only the three
+                    // virtual ones.
+                    if (lightfunc_promoted_getprop(vm, ds, &mid_val, (void*)key2_hstr, ra2, dst2_reg)) {
+                        return (TVal){};
+                    }
                     if (key2_hstr != null) {
                         if (key2_hstr.equals("name")) {
                             if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], lf_fn_idx2, 0)) {
@@ -1924,8 +1987,20 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
         }
 
         case Opcode.PUTPROP:
-            if (ra.is_object()) {
-                HObject* hobj = (HObject*)ra.get_heapptr();
+            // A LIGHTFUNC base carries no storage, so an assignment to one has
+            // nowhere to land and the primitive path below reports "Cannot
+            // create property on function". Promotion gives the write a real
+            // function object, after which the ordinary object path applies
+            // unchanged, including the caller/arguments poison pills.
+            //
+            // The promoted value stays a local rather than replacing the
+            // register: a register write owes an incref and a track_heap_store
+            // to stay within the frame's decref sweep, and the promotion cache
+            // makes recomputing it on the next assignment a single load.
+            TVal put_base = *ra;
+            builtins::promote_lightfunc_tval(vm.heap, &put_base);
+            if (put_base.is_object()) {
+                HObject* hobj = (HObject*)put_base.get_heapptr();
 
                 // ES5 strict mode: function.caller = ... and function.arguments = ...
                 // throw TypeError (AddRestrictedFunctionProperties poison pill).
@@ -2986,6 +3061,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (bit >= 0) {
                         heap::lf_mark_deleted(&vm.heap.lf_deleted_props[0], fn_idx, (uint)bit);
                     }
+                    // Once promoted, the builtin's own properties live on the
+                    // promoted object, and the virtual-property bitset says
+                    // nothing about them. The read path consults that object
+                    // first, so a delete that skipped it would leave the
+                    // property visible.
+                    HObject* pf = builtins::promoted_lightfunc_obj(vm.heap, *rb);
+                    if (pf != null) { pf.delete_prop((void*)key, ds.vm.heap); }
                 }
             }
             // For other primitives (number, string, boolean), the spec's

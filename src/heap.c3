@@ -552,6 +552,30 @@ struct Heap {
     uint         host_fn_count;
     uint         host_fn_capacity;
 
+    // Promoted-builtin cache: the one HObject that represents each LIGHTFUNC
+    // builtin, indexed by its Builtin ordinal, materialised on first use.
+    //
+    // Most builtins are stored as a bare LIGHTFUNC TVal carrying only a builtin
+    // index, which keeps startup from allocating an object per builtin. That
+    // representation is invisible to a plain call but wrong for every operation
+    // that treats a function as an object: ToObject, instanceof, `in`,
+    // Reflect.*, property assignment, and use as a Map/WeakSet key all need a
+    // real HObject with an identity. Promotion mints that object on demand.
+    //
+    // The cache is what makes promotion safe rather than merely convenient.
+    // `JSON.parse === JSON.parse` holds today only because the builtin index
+    // *is* the value, so two promotions of the same index must hand back the
+    // same pointer or identity breaks. One slot per ordinal makes promotion
+    // idempotent by construction.
+    //
+    // Unlike host_fns this IS a GC root (see mark_roots): a promoted object may
+    // be reachable from nothing else, and a swept-but-still-cached pointer would
+    // be a use-after-free on the next promotion of that ordinal. The array is
+    // allocated lazily on the first promotion, so a program that never uses a
+    // builtin as an object pays nothing.
+    HObject** promoted_builtins;
+    uint      promoted_builtin_capacity;
+
     // Stack of live host-call scopes; index host_scope_depth-1 is the
     // innermost. Scopes nest exactly as the C3 call stack does, so a
     // host -> JS -> host chain pushes one per level.
@@ -1089,6 +1113,8 @@ fn Heap*? create(
     h.host_fns              = null;
     h.host_fn_count         = 0;
     h.host_fn_capacity      = 0;
+    h.promoted_builtins     = null;
+    h.promoted_builtin_capacity = 0;
     h.host_scopes           = null;
     h.host_scope_depth      = 0;
     h.host_scope_capacity   = 0;
@@ -1571,6 +1597,14 @@ fn void Heap.destroy(&self) {
         self.host_fn_capacity = 0;
     }
 
+    // Only the index array is ours; the promoted objects themselves are
+    // ordinary heap objects already released by the sweep above.
+    if (self.promoted_builtins != null) {
+        self.free_func(self.heap_udata, (void*)self.promoted_builtins);
+        self.promoted_builtins = null;
+        self.promoted_builtin_capacity = 0;
+    }
+
     // The scope array objects themselves are ordinary heap objects, already
     // freed by the sweep above; only the stack that pointed at them is ours.
     if (self.host_scopes != null) {
@@ -1910,6 +1944,16 @@ fn void Heap.reset(&self) {
     }
 
     mem::clear(&self.lf_deleted_props[0], (sz)(LF_DELETED_WORDS * 8));
+
+    // Every promoted builtin was allocated in the heap this reset has just
+    // torn down, so the cache now holds only dangling pointers. It is also a
+    // GC root, which makes leaving them in place strictly worse than a leak:
+    // the next mark phase would follow each one into freed memory. The array
+    // itself is retained because the next run will promote into it again.
+    if (self.promoted_builtins != null) {
+        mem::clear((void*)self.promoted_builtins,
+                   (sz)((usz)self.promoted_builtin_capacity * HObject*::size));
+    }
 
     self.lj.lj_type = LjType.UNKNOWN;
     self.lj.iserror = false;
@@ -2980,6 +3024,19 @@ fn void Heap.mark_roots(&self) {
 
     // Values the C ABI's host holds handles to.
     if (self.capi_mark != null) self.capi_mark(self.capi_roots);
+
+    // Promoted builtin function objects. A promoted builtin is frequently
+    // reachable from nothing else -- the LIGHTFUNC value the program holds
+    // carries only an index, not the pointer -- so the cache is its sole root.
+    // Sweeping one while the cache still names it would leave a dangling
+    // pointer that the next promotion of that ordinal would hand straight back
+    // to script.
+    if (self.promoted_builtins != null) {
+        for (uint i = 0; i < self.promoted_builtin_capacity; i++) {
+            HObject* pf = self.promoted_builtins[i];
+            if (pf != null) { self.mark_hobject(pf); }
+        }
+    }
 
     // Built-in error prototypes.
     if (self.err_proto != null) { self.mark_hobject(self.err_proto); }

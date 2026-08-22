@@ -3177,6 +3177,13 @@ fn TVal? Vm.run(Vm* vm) {
             TVal rval = *rc;
             ra.set_boolean(false);
 
+            // OrdinaryHasInstance walks the LEFT operand's prototype chain and
+            // answers false for a non-Object. A LIGHTFUNC builtin is an Object,
+            // and its chain runs through Function.prototype, so it has to be
+            // promoted before that test rather than silently answering false
+            // for `JSON.parse instanceof Function`.
+            builtins::promote_lightfunc_tval(vm.heap, &lval);
+
             if (rval.is_lightfunc()) {
                 // LIGHTFUNC builtins are callable; look up their prototype
                 uint fn_idx = (uint)(usz)rval.get_heapptr();
@@ -3343,7 +3350,14 @@ fn TVal? Vm.run(Vm* vm) {
             //
             // NOTE: Read rb (key) BEFORE writing ra, because ra may alias rb
             // (compiler can emit IN r3, r3, r4 when result overwrites the key).
-            if (!rc.is_object()) {
+            // `in` requires an Object on the right, and a LIGHTFUNC builtin is
+            // one, so promote before the type test. The promoted value stays a
+            // local: writing it back into the register would need the store
+            // barrier and ownership tracking that a plain TVal copy does not do,
+            // and the cache makes re-promoting on the next iteration a lookup.
+            TVal rin = *rc;
+            builtins::promote_lightfunc_tval(vm.heap, &rin);
+            if (!rin.is_object()) {
                 ra.set_boolean(false);
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, "in requires an object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
@@ -3351,7 +3365,7 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
 
-            HObject* obj = (HObject*)rc.get_heapptr();
+            HObject* obj = (HObject*)rin.get_heapptr();
 
             // Proxy exotic: route through [[Has]].
             if (obj.flags.exotic_proxyobj) {
