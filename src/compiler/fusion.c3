@@ -240,8 +240,7 @@ fn int fusion_conditional_branch_target(Instruction* code, uint j) {
 //
 // The single source of truth for "can control arrive here from somewhere
 // other than the preceding instruction": every fusion pass needs exactly
-// this predicate, and three of them used to carry byte-identical private
-// copies. A pass that skips the bitset entirely silently miscompiles any
+// this predicate, and a private copy in one pass can drift. A pass that skips the bitset entirely silently miscompiles any
 // pattern where the trigger sits on one arm of a branch and the consumer
 // is the join point (a ternary's false arm feeding a binary operator is
 // the canonical case).

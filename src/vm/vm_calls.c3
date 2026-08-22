@@ -908,8 +908,9 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // needs_env=true → the function actually accesses its scope at
                         // runtime (closures / eval / arguments / default-or-rest params /
                         // captured locals), so allocate a fresh scope object.
-                        // Functions with plain parameters but needs_env=false no longer
-                        // need one: the compiler elides their param/local DECLVARs (see
+                        // Functions with plain parameters and needs_env=false
+                        // need no scope object: the compiler elides their
+                        // param/local DECLVARs (see
                         // the register-resident-locals pass in context.c3), so their
                         // bindings live purely in registers and cannot clobber the
                         // parent env. They reuse func.var_env (the parent) directly,

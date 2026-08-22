@@ -5049,8 +5049,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
 // directly in `primary_expr`'s IDENTIFIER case, so this function is only
 // reached when `primary_expr`'s default case sees a token that cannot start
 // any expression (e.g. EOF, a stray operator with no operand). That is a
-// syntax error, not a valid empty expression, silently emitting `undefined`
-// here previously masked things like a lone `++`/`+` at end of input.
+// syntax error, not a valid empty expression; emitting `undefined` here
+// would mask things like a lone `++`/`+` at end of input.
 fn ushort? CompilerContext.literal_keyword(&self) {
     return self.fail("unexpected token in expression")~;
 }

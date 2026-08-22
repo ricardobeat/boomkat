@@ -14,15 +14,12 @@ import std::io;
 
 // Add a patch address to a chain. Returns the new head.
 //
-// On overflow this used to return the chain unchanged, silently: the jump at
-// `addr` was never recorded, so patch_chain never patched it and it executed
-// as `JUMP 0` — a fall-through to whatever followed. A switch with more than
-// 256 clauses lost the `break` of every clause past the 256th and returned
-// the `default` arm's value instead, with no diagnostic anywhere.
-//
-// Overflow now sets a flag that finish() turns into a compile error. Callers
+// Overflow sets a flag that finish() turns into a compile error. Callers
 // still get a usable chain head so parsing can continue to a clean stop
-// rather than compounding the failure here.
+// rather than compounding the failure here. Returning the chain unchanged
+// would leave `addr` unrecorded, so patch_chain never patched it and it
+// executed as `JUMP 0`: a fall-through to whatever followed, with no
+// diagnostic anywhere.
 fn uint CompilerContext.add_patch(&self, uint chain_head, uint addr) {
     if (self.patch_count >= MAX_PATCHES) {
         self.patch_overflow = true;

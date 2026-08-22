@@ -2377,7 +2377,7 @@ fn void? CompilerContext.while_statement(&self) {
 // Copy a classic for-loop's lexical head bindings into a fresh environment
 // (ES2015 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
 // before the old environment is popped: after the pop, later bindings in a
-// multi-declarator head are no longer reachable.
+// multi-declarator head are unreachable.
 fn void CompilerContext.emit_create_per_iteration_env(&self,
     uint[] name_idxs, bool[] is_const, uint count)
 {
@@ -5355,8 +5355,8 @@ fn void? CompilerContext.break_statement(&self) {
             if (str_eq(self.labels[i].name, label_name)) {
                 uint loop_idx = self.labels[i].loop_index;
                 // Unwind the lex_env stack back to the labeled loop's depth.
-                // Same pattern as the unlabeled break below, the labeled
-                // branch was previously missing this, so a `break label`
+                // Same pattern as the unlabeled break below. Without this, a
+                // `break label`
                 // inside a labeled block with a `let` (which pushed a
                 // PUSH_LEX via block()) left the inner binding visible after
                 // the jump.  Patching jumps via pop_loop() targets the

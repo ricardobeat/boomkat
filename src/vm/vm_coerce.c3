@@ -949,12 +949,11 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
 // for lval must fully complete, including a Symbol-typed primitive throwing
 // TypeError before rval's ToPrimitive runs at all, so this resolves
 // lval all the way to numeric first, then rval, rather than ToPrimitive'ing
-// both up front. The opcode handlers in vm_execute.c3 previously checked
-// `rb.is_bigint() || rc.is_bigint()` on the RAW operands, which misses an
-// object whose valueOf/toString/Symbol.toPrimitive produces a BigInt (e.g.
-// `Object(1n) << 1n`), that object is neither a BigInt nor a number, so
-// it fell through to the plain-numeric path and threw or coerced wrongly
-// instead of being recognized as BigInt-typed.
+// both up front. Testing `rb.is_bigint() || rc.is_bigint()` on the RAW
+// operands would miss an object whose valueOf/toString/Symbol.toPrimitive
+// produces a BigInt (e.g. `Object(1n) << 1n`): that object is neither a
+// BigInt nor a number, so it falls through to the plain-numeric path and
+// throws or coerces wrongly instead of being recognized as BigInt-typed.
 //
 // Writes the ToNumeric'd results (BIGINT pass-through, everything else
 // converted to NUMBER) into *out_b/*out_c and returns true on success.

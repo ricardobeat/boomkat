@@ -78,7 +78,7 @@ const uint INLINE_SAVED_ACTS = 8;
 // buffers in array.c3 are both sized to what they actually hold instead of to a
 // worst case. With those bounded, a proxy trap, a sort comparator, a map
 // callback and a Symbol.toPrimitive all reach 511 on an 8 Mb main-thread stack,
-// where sort alone used to fault at 64.
+// so the buffers must cover at least that much.
 //
 // 128 keeps a wide margin under that measured ceiling, since a host embedding
 // may run the engine on a smaller stack, and still admits recursion far deeper
