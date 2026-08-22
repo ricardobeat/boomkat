@@ -8,7 +8,7 @@ Why this exists
 ---------------
 Capture-analysis and codegen changes can be semantically wrong while every
 conformance gate stays green. A change that wrongly decided a variable was not
-captured passed test262 at 50002/50002 and 100% of the local suite, and only
+captured passed the whole of test262 and 100% of the local suite, and only
 surfaced as a runtime TypeError deep inside a minified handlebars bundle.
 
 What localised it was diffing `boomkat_debug -c` output between the two builds

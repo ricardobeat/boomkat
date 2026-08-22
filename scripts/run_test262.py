@@ -572,6 +572,9 @@ PHASES = [
             "language/computed-property-names",
             "built-ins/Object", "built-ins/Array", "built-ins/Array/length",
             "built-ins/Reflect",
+            # `built-ins/Array/prototype` is deliberately absent: the prototype
+            # methods are Phase 6's subject. The longest-prefix rule below hands
+            # them there while the rest of `built-ins/Array` stays here.
         ],
     },
     {
@@ -585,8 +588,10 @@ PHASES = [
         "label": "Phase 5: Built-in Constructors",
         "dirs": [
             "built-ins/Boolean", "built-ins/String", "built-ins/Number",
-            "built-ins/Object", "built-ins/Array", "built-ins/Function",
+            "built-ins/Function",
             "built-ins/BigInt", "language/literals/bigint",
+            # Object and Array constructors live in Phase 3 (Object System);
+            # listing them here too would only make the same files run twice.
         ],
     },
     {
@@ -1113,16 +1118,36 @@ class Worker:
 # ---------------------------------------------------------------------------
 # Test262 runner
 # ---------------------------------------------------------------------------
+# Phase dirs nest: Phase 5 lists `built-ins/String` while Phase 6 lists
+# `built-ins/String/prototype`, so a naive recursive walk hands the prototype
+# tests to both phases and the suite runs — and counts — them twice. Ownership
+# is therefore decided by longest prefix: a file belongs to the phase whose
+# listed dir is the most specific match for its path. That keeps the phase
+# lists readable (no hand-maintained exclusions) while making the phases
+# disjoint, so `--phase N` runs a real slice and the full run's total is the
+# number of distinct test files.
+_DIR_OWNER = {}
+for _i, _p in enumerate(PHASES):
+    for _d in _p["dirs"]:
+        _DIR_OWNER[_d.strip("/")] = _i
+
 def build_phase_tests(phase_idx, es5_only=False):
     """Collect test files for a phase, applying skip filter. Recurses into subdirs."""
     phase = PHASES[phase_idx]
     tests = []
+    seen = set()
     skipped = 0
     for rel_dir in phase["dirs"]:
         full = os.path.join(TEST262_DIR, rel_dir)
         if not os.path.isdir(full):
             continue
         for dirpath, _dirnames, filenames in os.walk(full):
+            # Subtrees claimed by a more specific phase dir are that phase's
+            # to run; skipping the whole subtree here also saves the walk.
+            rel_dirpath = os.path.relpath(dirpath, TEST262_DIR)
+            if _DIR_OWNER.get(rel_dirpath.replace(os.sep, "/"), phase_idx) != phase_idx:
+                _dirnames[:] = []
+                continue
             for entry in filenames:
                 if not entry.endswith(".js"):
                     continue
@@ -1133,6 +1158,12 @@ def build_phase_tests(phase_idx, es5_only=False):
                 if entry.endswith("_FIXTURE.js"):
                     continue
                 path = os.path.join(dirpath, entry)
+                # A phase may list both a dir and one of its subdirs (e.g.
+                # `built-ins/Array` alongside `built-ins/Array/length`), which
+                # walks the inner tree twice; only the first visit counts.
+                if path in seen:
+                    continue
+                seen.add(path)
                 if should_skip(path, es5_only=es5_only):
                     skipped += 1
                     continue
