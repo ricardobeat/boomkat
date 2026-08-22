@@ -13,9 +13,8 @@ alias BkInt       = int;
 alias BkUint      = uint;
 // Platform-native size type.
 alias BkSize      = usz;
-// Value-stack index (signed so negative indices work).
 alias BkIdx       = int;
-// Compact signed integer for space-sensitive structures.
+// Signed so negative indices work.
 alias BkSmallInt  = short;
 // Compact unsigned integer.
 alias BkSmallUint = ushort;
@@ -39,19 +38,12 @@ const long   MIN_SAFE_INT    = -9007199254740991;
 // Fault codes (used with C3's faultdef / optional error handling)
 // ============================================================================
 
-// Memory allocation failure.
 faultdef ALLOC_ERROR;
-// ECMAScript TypeError.
 faultdef TYPE_ERROR;
-// ECMAScript RangeError.
 faultdef RANGE_ERROR;
-// ECMAScript SyntaxError.
 faultdef SYNTAX_ERROR;
-// ECMAScript ReferenceError.
 faultdef REFERENCE_ERROR;
-// ECMAScript URIError.
 faultdef URI_ERROR;
-// ECMAScript EvalError.
 faultdef EVAL_ERROR;
 // Internal engine error (bug or unrecoverable condition).
 faultdef INTERNAL_ERROR;
@@ -64,15 +56,12 @@ faultdef API_ERROR;
 
 // Discriminator for the payload stored inside a TVal.
 enum TValTag : char {
-    // ECMAScript undefined.
     UNDEFINED,
-    // ECMAScript null.
     NULL_VAL,
-    // ECMAScript boolean (true / false).
     BOOLEAN,
     // IEEE 754 double, the general ECMAScript number type.
     NUMBER,
-    // 48-bit fast integer optimisation path.
+    // 48-bit integer optimisation path.
     FASTINT,
     // Pointer to a heap-allocated HString.
     STRING,
@@ -91,8 +80,7 @@ enum TValTag : char {
     DELETED,
 }
 
-
-// FASTINT uses 48-bit signed integer range (fits in NaN-box payload).
+// 48-bit range fits the NaN-box payload.
 const long FASTINT_MIN = -140737488355328L;  // -2^47
 const long FASTINT_MAX =  140737488355327L;  //  2^47 - 1
 
@@ -144,8 +132,8 @@ macro ulong nanbox_encode_tagged(ulong tag, ulong payload) {
     return (tag << 48) | (payload & NANBOX_PAYLOAD_MASK);
 }
 
-// True if the value is a regular double (not a tagged NaN).
-// Doubles have bits 63-48 <= 0xFFF0; tagged values >= 0xFFF1.
+// Returns true when the value is a regular double (bits 63-48 <= 0xFFF0);
+// tagged values are >= 0xFFF1.
 macro bool nanbox_is_double(ulong v) {
     return (v >> 48) <= 0xFFF0;
 }
@@ -748,13 +736,9 @@ struct HeapHeader {
 
 // Returns the HType stored in the flags word.
 fn HType HeapHeader.get_type(&self)  { return self.flags.htype; }
-// Returns true when this header belongs to an object.
 fn bool  HeapHeader.is_object(&self) { return self.flags.htype == HType.OBJECT; }
-// Returns true when this header belongs to a string.
 fn bool  HeapHeader.is_string(&self) { return self.flags.htype == HType.STRING; }
-// Returns true when this header belongs to a buffer.
 fn bool  HeapHeader.is_buffer(&self) { return self.flags.htype == HType.BUFFER; }
-// Returns true when this header belongs to a BigInt box.
 fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; }
 
 // Take a reference to this heap object. Pinned strings keep their sentinel
@@ -771,40 +755,19 @@ fn void HeapHeader.incref(&self) @inline {
 // HeapHeader: flag accessors
 // ---------------------------------------------------------------------------
 
-// Marks the object as reachable (used by the mark phase).
 fn void HeapHeader.set_reachable(&self)     { self.flags.reachable = true; }
-// Clears the reachable flag (used before a new mark pass).
 fn void HeapHeader.clear_reachable(&self)   { self.flags.reachable = false; }
-// Returns true when the object has been marked reachable.
 fn bool HeapHeader.is_reachable(&self)      { return self.flags.reachable; }
-
-// Marks the object as a temporary root for incremental GC.
 fn void HeapHeader.set_temproot(&self)      { self.flags.temproot = true; }
-// Clears the temporary-root flag.
 fn void HeapHeader.clear_temproot(&self)    { self.flags.temproot = false; }
-// Returns true when the object is a temporary root.
 fn bool HeapHeader.is_temproot(&self)       { return self.flags.temproot; }
-
-// Marks the object as having a C finalizer.
 fn void HeapHeader.set_finalizable(&self)   { self.flags.finalizable = true; }
-// Clears the finalizable flag.
 fn void HeapHeader.clear_finalizable(&self) { self.flags.finalizable = false; }
-// Returns true when the object has a finalizer.
-fn bool HeapHeader.is_finalizable(&self)    { return self.flags.finalizable; }
-
-// Marks the object's finalizer as having already run.
 fn void HeapHeader.set_finalized(&self)     { self.flags.finalized = true; }
-// Clears the finalized flag (re-arms the finalizer).
+// Re-arms the finalizer.
 fn void HeapHeader.clear_finalized(&self)   { self.flags.finalized = false; }
-// Returns true when the finalizer has already executed.
-fn bool HeapHeader.is_finalized(&self)      { return self.flags.finalized; }
-
-// Marks the object as read-only.
 fn void HeapHeader.set_readonly(&self)      { self.flags.readonly = true; }
-// Clears the read-only flag.
 fn void HeapHeader.clear_readonly(&self)    { self.flags.readonly = false; }
-// Returns true when the object is read-only.
-fn bool HeapHeader.is_readonly(&self)       { return self.flags.readonly; }
 
 // Pin a string's refcount, so incref and decref do nothing and no sweep ever
 // frees it. Strings only; see STRING_PINNED_REFCOUNT for which ones and why.

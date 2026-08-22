@@ -225,8 +225,8 @@ fn HObject* super_walk_new_target(Vm* vm, Activation* act) {
 // True when `b` is the bindings object of a permanent global environment
 // record (the global object record or the top-level declarative record).
 // A binding in either is a permanent GC root for the life of the realm, so
-// a callee resolved there can be safely borrowed into a register without an
-// owning reference.
+// a callee resolved there can be safely borrowed into a register
+// without an owning reference.
 fn bool is_global_bindings(Vm* vm, HObject* b) @inline {
     return (vm.global_env != null && b == vm.global_env.bindings)
         || (vm.global_lex_env != null && b == vm.global_lex_env.bindings);
@@ -908,12 +908,13 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // needs_env=true → the function actually accesses its scope at
                         // runtime (closures / eval / arguments / default-or-rest params /
                         // captured locals), so allocate a fresh scope object.
-                        // Functions with plain parameters but needs_env=false no longer
-                        // need one: the compiler elides their param/local DECLVARs (see
-                        // the register-resident-locals pass in context.c3), so their
-                        // bindings live purely in registers and cannot clobber the
-                        // parent env. They reuse func.var_env (the parent) directly,
-                        // skipping the per-call scope HObject allocation entirely.
+                        // Functions with plain parameters and needs_env=false
+                        // need no scope object: the compiler elides their
+                        // param/local DECLVARs (see the register-resident-locals
+                        // pass in context.c3), so their bindings live purely
+                        // in registers and cannot clobber the parent env.
+                        // They reuse func.var_env (the parent) directly,
+                        // skipping the per-call scope HObject allocation.
                         fast_var_env = (*hobj_fast.extra_ptr()).func.var_env;
                         if (try fv_f = env::env_create_function_scope(vm.heap, (*hobj_fast.extra_ptr()).func.var_env)) { fast_var_env = fv_f; }
                     } else {

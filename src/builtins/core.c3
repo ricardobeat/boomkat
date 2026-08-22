@@ -1498,10 +1498,10 @@ fn int find_in_array_part(HObject* obj, TVal val, uint stride) {
 // find_in_array_part, but using the collection's hash index once it is worth
 // having one.
 //
-// Map/Set/WeakMap/WeakSet keep entries in array_part and used to scan it on
-// every add, has, get and delete, which made building a collection quadratic:
-// a 100k Set took 24s against QuickJS's 9ms, over 90% of it inside
-// same_value_zero.
+// Map/Set/WeakMap/WeakSet keep entries in array_part, and scanning it on
+// every add, has, get and delete makes building a collection quadratic:
+// a linear scan of a 100k Set costs 24s against QuickJS's 9ms, over 90% of
+// it inside same_value_zero.
 //
 // The index stores 1-based array_part indices rather than a copy of each key,
 // so array_part stays the single source of truth for iteration order,

@@ -1147,8 +1147,8 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // Only VALIDATION happens here. The actual bindings (including this
     // module's own self-imports) are installed later by execute_module's
     // live-binding loop, which runs after every module env's export/TDZ
-    // pre-declaration (below) has completed; installing them here, before that
-    // pre-declaration, used to shadow a self-imported `let`/`const`/`class`
+    // pre-declaration (below) has completed; installing them before that
+    // pre-declaration would shadow a self-imported `let`/`const`/`class`
     // export's TDZ sentinel with a premature `undefined` copy.
     if (!validate_imports(heap, mod)) return false;
     mark_type_only_req_modules(mod);
@@ -1702,17 +1702,17 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
     // inside the re-exporting module's own body (it is only observable
     // externally via ResolveExport / the module's namespace object, both of
     // which resolve indirect exports directly through the export-entry
-    // metadata. See resolve_export and resolve_export_binding_source).
-    // Declaring it here as a live accessor used to make it a spurious local
-    // identifier: an internal `B;` reference (where `export { A as B } from
-    // './x'` re-exports a not-yet-initialized `A`) would incorrectly resolve
-    // through this binding as a TDZ read instead of an unresolved-reference
-    // ReferenceError, and, because the accessor's getter runs via
-    // vm.heap.call_fn's re-entrant nested Vm.run (vm_call_fn_impl). A TDZ
-    // throw surfacing from a SECOND read of that same accessor inside an
+    // which resolve indirect exports directly through the export-entry
+    // metadata). Declaring one here as a live accessor instead makes it a
+    // spurious local identifier: an internal `B;` reference (where
+    // `export { A as B } from './x'` re-exports a not-yet-initialized `A`)
+    // resolves through this binding as a TDZ read rather than an
+    // unresolved-reference ReferenceError, and because the accessor's getter
+    // runs via vm.heap.call_fn's re-entrant nested Vm.run (vm_call_fn_impl),
+    // a TDZ throw surfacing from a second read of that same accessor inside an
     // enclosing catch handler (e.g. `catch (e) { arr.push(e.name, typeof B) }`)
-    // would escape past the still-live outer catcher instead of propagating
-    // as the plain uncaught-reference behavior real engines produce.
+    // escapes past the still-live outer catcher instead of propagating as the
+    // plain uncaught-reference behavior real engines produce.
 
     // Execute module body in its own env. A module compiled with top-level
     // await is async: run it through the async path so `await` suspends and
@@ -2630,8 +2630,8 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
         // reached through `export { x } from` may itself point at an
         // indirect or star-only export in the target module (a re-export
         // chain, possibly cyclic back through this very module), and a
-        // single level of indirection is not enough to reach the true owner
-        //. See the analogous named-import fix above.
+        // single level of indirection is not enough to reach the true owner.
+        // The named-import resolution below this loop works the same way.
         ExportBindingSource src = { null, {} };
         ResolveSetEntry[RESOLVE_SET_MAX] ns_rset;
         ResolveExportResult ns_rr = resolve_export(it.owner_mod, it.export_name, &ns_rset[0], 0);

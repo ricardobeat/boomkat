@@ -2341,8 +2341,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // records the HString* of that class's numbered __super__ binding (e.g.
     // "__super__0"). builtin_eval re-interns it into the eval context's
     // constant pool so direct `eval("super.x")` GETVARs the numbered
-    // binding instead of the literal "__super__" that no longer exists in
-    // the env chain; Object.setPrototypeOf's class sync (object.c3) writes
+    // binding instead of the literal "__super__", which is not in the
+    // env chain; Object.setPrototypeOf's class sync (object.c3) writes
     // the new [[Prototype]] under this name.
     if (self.super_name_idx != 0xFFFFFFFF) {
         func.super_binding_name = self.constants[self.super_name_idx].get_heapptr();

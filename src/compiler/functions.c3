@@ -125,12 +125,11 @@ struct DeferredTarget {
 // early-error checks every parameter must pass.
 //
 // Owned by each parameter-list parser (`parse_function_body`,
-// `compile_inner_function`, `compile_arrow_inner_reparse`) as a local. The
-// three used to hand-roll the same restricted-name / duplicate-name /
-// append-to-table sequence inline; the arrow copy simply omitted it, so
-// `(a, a) => a` and `(eval) => 1` compiled cleanly. Keeping the table and the
-// checks together in one type means a prologue cannot record a name without
-// also validating it.
+// `compile_inner_function`, `compile_arrow_inner_reparse`) as a local.
+// Keeping the table and the restricted-name / duplicate-name checks together
+// in one type means a prologue cannot record a name without also validating
+// it, so `(a, a) => a` and `(eval) => 1` cannot slip through an omitted copy
+// of the sequence.
 struct SeenParams {
     char[64][MAX_PARAMS] names;
     ushort[MAX_PARAMS]   lens;
@@ -163,10 +162,10 @@ fn bool SeenParams.contains(&self, char[] name) {
 // `expect_binding_identifier`), where the enclosing-grammar check has already
 // decided the name is legal here.
 //
-// Names longer than 63 chars or beyond MAX_PARAMS entries are checked but not
-// recorded: the table is a fixed-size fast path, and overflow only weakens
-// duplicate detection for pathological parameter lists, never accepts a
-// restricted name.
+// Names longer than 63 chars or beyond MAX_PARAMS entries are checked but
+// not recorded: the table is a fixed-size fast path, and overflow only
+// weakens duplicate detection for pathological parameter lists; it never
+// accepts a restricted name.
 fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
     if (!allow_restricted && is_restricted_name(name)) return COMPILE_ERROR~;
     if (self.contains(name)) return COMPILE_ERROR~;
@@ -208,9 +207,9 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
     // and statement destructuring (`let`/`const`/`var`/`for-in`/`for-of`/
     // `export var`) where the default value is an AssignmentExpression and the
     // gate must NOT apply. The caller is responsible for setting in_formal_params
-    // correctly before invoking us, we no longer override it here, since that
-    // was over-eager and broke destructuring statements inside async/generator
-    // functions (test262 module-code/top-level-await/syntax/export-var-*).
+    // correctly before invoking us; overriding it here would apply the gate to
+    // statement destructuring, breaking destructuring statements inside
+    // async/generator functions (test262 module-code/top-level-await/syntax/export-var-*).
 
     // A destructuring pattern in FormalParameters makes IsSimpleParameterList
     // false (ES §15.1.3). Recorded here, at the one point every destructured
@@ -1675,8 +1674,8 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
 //
 // A pattern declarator (`var [a] = ...`, `var {p: b} = ...`, and above all a
 // for-head `for (var [a] of ...)`) declares var-scoped names exactly like a
-// plain declarator does, but the pre-scan used to stop at the non-IDENTIFIER
-// first token and hoist nothing. For a plain statement that is masked, because
+// plain declarator does, so the pre-scan must look past the non-IDENTIFIER
+// first token. For a plain statement that is masked, because
 // var_declaration declares the names as it parses them. A for-head is not
 // masked: emit_forof/the for-in epilogue pop the head's scope entries at
 // pop_scope_to, so with no hoisted binding to fall back on the name is gone
@@ -2363,8 +2362,8 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             //
             //   * here is BEFORE PUSH_LEX, so the closure cannot capture a
             //     lexical binding declared in the body
-            //     (`const t = 1; function K(){ return t; }`), which is why the
-            //     statement pass used to re-emit at the textual position;
+            //     (`const t = 1; function K(){ return t; }`), and emitting at
+            //     the textual position cannot capture it either;
             //   * that textual re-emission creates a SECOND function object,
             //     so a property stored on the binding before it
             //     (`exports.c = c; function c(){} c.stat = 1`, the browserify
@@ -2611,7 +2610,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
     TemplateScan tscan;
     // See hoist_decls' pending_async_fn_kw_pos for why this is needed: the
     // async-detection branch pushes `function` back without rewinding
-    // lexer.pos, so the next iteration's `pos_before` no longer points at
+    // lexer.pos, so the next iteration's `pos_before` does not point at
     // `function`'s true start.
     uint pending_async_fn_kw_pos = 0xFFFFFFFF;
 
@@ -3015,9 +3014,8 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
 //
 // Shared by all four compilation entry points (`parse_function_body`,
 // `compile_inner_function`, `compile_arrow_inner_reparse`, and the arrow
-// bodies) because they must emit byte-identical prologues: each one that
-// hand-rolled its own copy is a place the next parameter-scope fix has to be
-// applied again, and historically was not.
+// bodies) because they must emit byte-identical prologues; one shared copy
+// keeps the next parameter-scope fix from having to be reapplied everywhere.
 //
 // `param_name_indices` holds each param's string-constant index in
 // declaration order; `first_default_idx` is the 0-based arg index of the
@@ -3133,8 +3131,8 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // We're inside FormalParameters; destructured patterns collect via
     // collect_*_param_binds and rely on in_formal_params being true so the
     // FormalParameter default-value gate at compile_default_expr applies. (The
-    // flag is no longer toggled inside the collect functions themselves, that
-    // was over-eager and broke destructuring STATEMENTS inside async/generator
+    // flag must not be toggled inside the collect functions themselves: that
+    // applies the gate to destructuring STATEMENTS inside async/generator
     // functions, where the default-value gate does NOT apply.)
     bool saved_in_fp = self.in_formal_params;
     self.in_formal_params = true;
@@ -3429,7 +3427,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
 // Whether any branch instruction in the freshly compiled body targets the
 // fall-off-end position (code_count). Such a branch would advance curr_pc to
-// code_end, which the VM no longer guards against per-instruction, so the
+// code_end, which the VM does not guard against per-instruction, so the
 // caller must append a terminating RETUNDEF to catch that path. Offset
 // decoding mirrors moveelim's jump-target scan (the authoritative branch set).
 fn bool CompilerContext.branch_targets_fall_off_end(&self) {
@@ -3656,9 +3654,8 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
 // ensure_field_init_ctx does for static field initializers, but each block
 // gets its OWN function (own var/lex scope, own break/continue/label
 // space): per test262 static-init-scope-var-*, a `var` declared in one
-// block is invisible to sibling blocks and the enclosing scope, unlike the
-// single shared __static_init__ that static field initializers install
-// into.
+// block is invisible to sibling blocks and the enclosing scope, unlike
+// the single shared __static_init__ that static field initializers install.
 fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     CompilerContext block_ctx;
     block_ctx.init(self.lexer, self.heap);
@@ -3721,10 +3718,9 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
 }
 
 // Compile an inner function (parameters + body) into a sub-CompiledFunction.
-// If `is_named_expr` is true and `name` is non-empty, the resulting function
-// is tagged with `is_namebinding`, signalling the VM to bind `name` to the
-// function object in a fresh lexical environment at call time (per ES2015
-// §14.1.20 NamedEvaluation).
+// If `is_named_expr` is true and `name` is non-empty, tag the result with
+// `is_namebinding`, so the VM binds `name` to the function object in a
+// fresh lexical environment at call time (ES2015 §14.1.20 NamedEvaluation).
 fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false) {
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
@@ -3788,8 +3784,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     // We're inside FormalParameters (inner function-method context); turn on
     // the gate so destructuring default values are correctly forbidden from
-    // containing `yield`/`await` (ES2017 §14.7). The collect_*_param_binds
-    // helpers no longer toggle this themselves.
+    // containing `yield`/`await` (ES2017 §14.7); collect_*_param_binds does
+    // not set it itself.
     inner_ctx.in_formal_params = true;
 
     // TypeScript generic type parameters `<T, U>` on the function itself.
@@ -4299,8 +4295,8 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
 //
 // so a getter takes no parameter at all and a setter takes exactly one, which
 // (being a FormalParameter, not a FormalParameterList) may not be a rest
-// parameter. Defaults and destructuring patterns ARE FormalParameters and
-// stay legal.
+// parameter. Defaults and destructuring patterns ARE FormalParameters, so
+// they stay legal.
 enum AccessorKind : int {
     NOT_ACCESSOR,
     GETTER,
@@ -4487,8 +4483,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
     // We're inside FormalParameters (arrow-function params); turn on the
     // gate so destructuring default values are correctly forbidden from
-    // containing `yield`/`await`. The collect_*_param_binds helpers no longer
-    // toggle this themselves.
+    // containing `yield`/`await`; collect_*_param_binds does not set it.
     arrow_ctx.in_formal_params = true;
 
     // Parse parameter list from source (including defaults and rest)
@@ -4503,7 +4498,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // BoundNames of this parameter list, with the FormalParameters early
     // errors. ArrowFormalParameters get the same treatment as any other
     // FormalParameters (ES2015 §14.2.1): `(a, a) => a` and `(eval) => 1` are
-    // SyntaxErrors, and this path used to omit the checks entirely.
+    // SyntaxErrors here too.
     SeenParams arrow_seen;
 
     // Destructured parameter binding tracking

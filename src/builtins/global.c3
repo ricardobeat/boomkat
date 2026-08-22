@@ -164,7 +164,7 @@ fn void console_print_args(BuiltinContext* ctx, bool use_stderr) {
 
 // Byte sink pair for the formatter, so a single implementation serves both the
 // stdout methods (log/info/debug/trace/dir) and the stderr ones (warn/error/
-// assert) instead of the two near-identical mirrors this file used to carry.
+// assert) in one implementation.
 struct ConsoleSink {
     bool use_stderr;
 }

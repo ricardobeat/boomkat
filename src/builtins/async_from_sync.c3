@@ -107,7 +107,7 @@ fn HObject* async_from_sync_get_wrapped(BuiltinContext* ctx) {
 }
 
 // Build the promise-fulfill / promise-reject pair of native reaction
-// closures used to finish AsyncFromSyncIteratorContinuation, and attach
+// closures that finish AsyncFromSyncIteratorContinuation, and attach
 // them to `value_promise`. `done` is baked into the fulfill closure so it
 // can build `{value, done}` once the (possibly-thenable) value settles.
 // Returns the outer promise the caller should hand back to `for await`.

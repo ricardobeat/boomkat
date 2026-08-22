@@ -1168,9 +1168,8 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // survives to the post-RHS check_no_arrow_rhs() in the outer for-loop.
     bool saw_binary_op = false;
 
-    // ES2021 §13.13: `??` is not just another precedence level, it is a
-    // separate production whose operands may not be an unparenthesized
-    // `&&` / `||`:
+    // ES2021 §13.13: `??` is its own production, whose operands may not be
+    // an unparenthesized `&&` / `||`:
     //   CoalesceExpression : CoalesceExpressionHead ?? BitwiseORExpression
     //   ShortCircuitExpression : LogicalORExpression | CoalesceExpression
     // so `a && b ?? c` and `a ?? b || c` are both SyntaxErrors, in either
@@ -5049,8 +5048,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
 // directly in `primary_expr`'s IDENTIFIER case, so this function is only
 // reached when `primary_expr`'s default case sees a token that cannot start
 // any expression (e.g. EOF, a stray operator with no operand). That is a
-// syntax error, not a valid empty expression, silently emitting `undefined`
-// here previously masked things like a lone `++`/`+` at end of input.
+// syntax error, not a valid empty expression; emitting `undefined` here
+// would mask things like a lone `++`/`+` at end of input.
 fn ushort? CompilerContext.literal_keyword(&self) {
     return self.fail("unexpected token in expression")~;
 }

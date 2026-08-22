@@ -240,11 +240,10 @@ fn int fusion_conditional_branch_target(Instruction* code, uint j) {
 //
 // The single source of truth for "can control arrive here from somewhere
 // other than the preceding instruction": every fusion pass needs exactly
-// this predicate, and three of them used to carry byte-identical private
-// copies. A pass that skips the bitset entirely silently miscompiles any
-// pattern where the trigger sits on one arm of a branch and the consumer
-// is the join point (a ternary's false arm feeding a binary operator is
-// the canonical case).
+// this predicate, and a private copy in one pass can drift. A pass that
+// skips the bitset entirely silently miscompiles any pattern where the
+// trigger sits on one arm of a branch and the consumer is the join point
+// (a ternary's false arm feeding a binary operator is the canonical case).
 //
 // Every pc-relative branch form belongs in the switch below, including ones
 // no in-compiler caller can currently observe. The set is JUMP/BREAK/CONTINUE
@@ -432,8 +431,7 @@ const FusionRule FUSION_ADDI_SUBI = {
 };
 
 // Run the declarative ADDI/SUBI fusion over `code[0..code_count)`.
-// Drop-in replacement for the hand-written pass at the same site in
-// CompilerContext.finish().
+// Replaces the hand-written pass at the same site in CompilerContext.finish().
 fn void fuse_addi_subi(Instruction* code, uint code_count, bool* jump_targets) {
     run_fusion_rule(code, code_count, jump_targets, FUSION_ADDI_SUBI);
 }
@@ -527,8 +525,8 @@ struct Fusion3Match {
 // Given the three physically-adjacent instructions of a candidate window,
 // report whether they fuse. `slot0`/`slot1`/`slot2` are `code[i]`,
 // `code[i+1]`, `code[i+2]`, no NOP-skipping; this pattern requires exact
-// adjacency. `ctx` mirrors the 2-slot driver's opaque per-rule pointer
-// (see `FusionTriggerFn`).
+// adjacency. `ctx` mirrors the opaque per-rule pointer of the 2-slot
+// driver (see `FusionTriggerFn`).
 alias Fusion3MatchFn = fn Fusion3Match(Instruction slot0, Instruction slot1, Instruction slot2, void* ctx);
 
 struct Fusion3Rule {
@@ -723,9 +721,8 @@ fn bool cmp_result_live_from(Instruction* code, uint code_count, bool* jump_targ
 
 // Run all compare→branch fusions over `code[0..code_count)`. `jump_targets`
 // is a caller-provided scratch buffer of at least `code_count` bools (kept out
-// of this module so fusion.c3 stays free of any heap dependency). Drop-in
-// replacement for the hand-written comparison→JMP_N* pass in
-// CompilerContext.finish().
+// of this module so fusion.c3 stays free of any heap dependency). Replaces
+// the hand-written comparison→JMP_N* pass in CompilerContext.finish().
 fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_targets) {
     if (code_count < 2) { return; }
 

@@ -59,7 +59,6 @@ fn void env_pool_free(Heap* h, EnvRecord* env) {
 // EnvRecord, one link in the scope chain
 // ============================================================================
 
-// One link in the scope chain.
 struct EnvRecord {
     // Parent scope (null for the global scope).
     EnvRecord* parent;
@@ -291,9 +290,9 @@ fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
 }
 
 // Declare an accessor binding in this environment alone. `accessor_value` must
-// be a boxed getter and setter pair from `hobject::hobject_create_accessors` or
-// the module-binding helper above it. Live module imports use this so a read
-// reaches the exporting module's current value rather than a snapshot.
+// be a boxed getter and setter pair from `hobject::hobject_create_accessors`.
+// Live module imports use this so that reading the name reaches the exporting
+// module's current value rather than a snapshot.
 fn bool env_declare_accessor(EnvRecord* env, void* key, TVal accessor_value) @inline {
     hobject::PropFlags flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = true };
     return env.bindings.put_prop(key, accessor_value, flags, env.heap);
@@ -384,8 +383,6 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
     return true;
 }
 
-// Combined lookup for PUTVAR: walks the lexical chain once.
-// Returns:
 // Store `val` into the nearest lexical binding named `key`, in one walk.
 //
 // Returns 1 when it updated the binding, 0 when the name is unbound here and

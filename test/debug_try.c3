@@ -13,11 +13,7 @@ fn int main(String[] args) {
         return 1;
     }
     
-    // Simple compile to check TRY encodings
-    // Read file
-    // ... this is too complex for a debug test
-    
-    // Just check that make_a_bc works for NOP
+    // Smoke-test the instruction encoding: make_a_bc for NOP.
     Instruction insn = bytecode::make_a_bc(Opcode.NOP, 0, 42);
     io::printfn("NOP raw: 0x%x", insn.to_raw());
     io::printfn("NOP op: %d (expect %d)", insn.op.ordinal, Opcode.NOP.ordinal);
