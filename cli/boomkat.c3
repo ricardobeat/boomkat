@@ -45,7 +45,15 @@ fn int main(String[] args) {
         defer vm::vm_destroy(mv);
         mhp.set_rejection_tracker(&cli_rejection_tracker, null);
         int rc = esm::run_module_file(mhp, mv, (char[])mpath);
-        if (rc != 0) io::eprintfn("module rc=%d", rc);
+        // rc 1 means the module body threw and the value is on the error
+        // channel; report it the way script mode does, so a module failure
+        // says WHAT failed instead of only that it did. rc 2 is a structural
+        // load/link failure with no thrown value, which has no more to say.
+        if (rc == 1 && (mhp.has_error || !mhp.error_value.is_undefined())) {
+            print_uncaught(mhp, &mhp.error_value);
+        } else if (rc != 0) {
+            io::eprintfn("module rc=%d", rc);
+        }
         if (rc == 0 && unhandled_rejection_count > 0) return 1;
         return rc;
     }
