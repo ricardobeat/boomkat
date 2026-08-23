@@ -1,7 +1,8 @@
 # Engine scope
 
 What this engine implements, what it does not, and why. For the test262 numbers
-themselves see `test262_results/latest.json`; for what the suite actually skips
+themselves see `test262_results/latest.json`; for how those compare against
+other engines see `test262-comparison.md`; for what the suite actually skips
 see `SKIP_DIRS` / `SKIP_FILES` / `UNSUPPORTED_PATTERN` in
 `scripts/run_test262.py`, which carry their reasoning inline and are the
 authority.
