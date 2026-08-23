@@ -2207,9 +2207,12 @@ fn void Heap.free_module_cache(&self) {
         void** cache = (void**)self.module_cache;
         for (uint i = 0; i < self.module_cache_count; i++) {
             if (cache[i] != null) {
+                // Release the module's own side allocations before the record.
+                esm::module_release_buffers(self, cache[i]);
                 self.free_func(self.heap_udata, cache[i]);
             }
         }
+        esm::module_release_batch_buffer(self);
         self.free_func(self.heap_udata, self.module_cache);
         self.module_cache = null;
         self.module_cache_count = 0;

@@ -4595,6 +4595,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
             }
             self.advance()!;  // consume 'await'
             ushort operand = self.unary_expr()!;
+            // A module's own top-level context is the only place an `await`
+            // makes the MODULE async (a nested async function compiles in its
+            // own context, where is_module is false). This is ECMA-262
+            // [[HasTLA]], which module evaluation order depends on.
+            if (self.is_module) self.saw_top_level_await = true;
             // AWAIT suspends the async function; LOAD_RESUME loads the settled value
             self.emit_abc(Opcode.AWAIT, (uint)operand, 0, 0);
             self.emit_abc(Opcode.LOAD_RESUME, (uint)operand, 0, 0);

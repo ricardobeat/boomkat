@@ -993,6 +993,10 @@ struct CompilerContext {
 
     // Module tracking, true when compiling an ESM module body.
     bool is_module;
+    // Set when an `await` is parsed in this module's own top-level context
+    // (ECMA-262 [[HasTLA]]). Module bodies always compile as async, so this is
+    // the only way to know whether one actually suspends.
+    bool saw_top_level_await;
     void* current_module;  // ModuleDef* (opaque to avoid import cycle)
 
     // True when the syntactic goal symbol is Module, set on the module-body

@@ -545,6 +545,9 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     CompiledFunction*? result = ctx.finish()!;
     if (try func = result) {
         func.flags.is_module = true;
+        // ECMA-262 [[HasTLA]]. Module bodies are always compiled async (see
+        // ctx.is_async above), so only this records whether one really awaits.
+        func.flags.has_tla = ctx.saw_top_level_await;
     }
     return result;
 }

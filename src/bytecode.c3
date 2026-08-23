@@ -1292,6 +1292,12 @@ bitstruct FuncFlags : uint {
     bool  is_generator  : 13;
     // Function is an async function.
     bool  is_async      : 14;
+    // Module body that actually contains a top-level `await` (ECMA-262
+    // [[HasTLA]]). Module bodies are ALWAYS compiled as async so that a
+    // top-level await has somewhere to suspend to, so is_async cannot answer
+    // this: only a body that really awaits evaluates asynchronously, and the
+    // module evaluation order depends on telling the two apart.
+    bool  has_tla       : 31;
     // The body contains a direct `eval()`, which blocks several optimisations.
     bool  has_direct_eval: 15;
     // Function is a constructor method.
@@ -1552,6 +1558,12 @@ macro bool CompiledFunction.is_generator(&self) {
 // Returns `true` when the function is async.
 macro bool CompiledFunction.is_async(&self) {
     return self.flags.is_async;
+}
+
+// ECMA-262 [[HasTLA]]: this body contains a top-level `await`, so its
+// evaluation genuinely suspends. See FuncFlags.has_tla.
+fn bool CompiledFunction.has_tla(&self) {
+    return self.flags.has_tla;
 }
 
 // Returns `true` when the function was written with a syntactic `*`

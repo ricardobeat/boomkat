@@ -38,10 +38,27 @@ enum ModuleStatus : char {
     LOADED,        // compiled, not yet linked
     LINKING,       // being linked
     LINKED,        // ready for evaluation
-    EVALUATING,    // being executed
+    EVALUATING,    // being executed; still on the DFS stack
+    // ECMA-262 ~evaluating-async~: the DFS traversal of this module is
+    // COMPLETE (it has left the stack and its component has a cycle root), but
+    // its body has not finished -- either it is suspended on a top-level await,
+    // or it is waiting for async dependencies to finish. Distinct from
+    // EVALUATING because a module in this state is no longer a cycle ancestor:
+    // an importer reaching it must WAIT for it, not treat it as part of its
+    // own strongly-connected component.
+    EVALUATING_ASYNC,
     EVALUATED,     // fully executed
     ERRORED,       // evaluation threw; eval_error holds the cached rejection reason
 }
+// ECMA-262 [[AsyncEvaluationOrder]]. UNSET before a module is known to be
+// async; ORDERED once it is, with async_eval_index holding its position in the
+// agent-wide sequence; DONE once its body has finished.
+enum AsyncEvalOrder : char {
+    UNSET,
+    ORDERED,
+    DONE,
+}
+
 
 // ============================================================================
 // Import/export metadata entries
@@ -184,24 +201,49 @@ struct ModuleDef {
     // marked by mark_roots since ModuleDefs live outside the GC-scanned heap.
     HObject*                      eval_promise;
 
-    // Approximation of ECMA-262 [[CycleRoot]] (§16.2.1.5.5 InnerModuleEvaluation
-    // step 11.c.iv.1 / the SCC-closing loop at the end of that algorithm): the
-    // other module in this module's strongly-connected import cycle that owns
-    // the cycle's shared async completion. Null means no cycle root was recorded
-    // (this module is not known to be part of a still-open cycle). Set on the
-    // NON-root member(s) of a two-module cycle the moment execute_module's DFS
-    // discovers the cycle (see execute_module's async_dep resolution): when
-    // `mod`'s dependency loop reaches a `dep` that is itself still EVALUATING
-    // because `dep` is `mod`'s own ancestor (a genuine back-edge, not merely a
-    // suspended async body. See the eval_promise==null distinction there),
-    // `dep` is mod's cycle root and mod.cycle_root is set to it. A later
-    // importer resolving async_dep against a pending dependency follows
-    // dep.cycle_root (if set) instead of dep itself, so it waits on the whole
-    // cycle's completion rather than one leaf of it. See Note 2 under
-    // InnerModuleEvaluation ("modules depending on a module of an asynchronous
-    // cycle ... will instead depend on the execution of the root of the cycle
-    // via [[CycleRoot]]").
+    // ECMA-262 [[CycleRoot]] (InnerModuleEvaluation step 16): the representative
+    // of this module's strongly-connected component. Every member of an SCC --
+    // not only the one that closed the cycle -- is stamped with the same root
+    // by the stack-popping loop that ends the DFS, which is what lets a cycle
+    // be treated as one unit: Evaluate() reads [[EvaluationError]] through the
+    // root, so one member's failure is every member's failure. Null until that
+    // loop runs.
     ModuleDef*                     cycle_root;
+
+    // Tarjan bookkeeping for the SCC search ([[DFSIndex]]/[[DFSAncestorIndex]]).
+    // dfs_index is discovery order; dfs_ancestor_index is the lowlink, the
+    // smallest index reachable from this subtree through a back-edge. They are
+    // equal exactly on the module that roots an SCC. `stack_prev` threads the
+    // DFS stack intrusively, so the traversal needs no side allocation.
+    uint                           dfs_index;
+    uint                           dfs_ancestor_index;
+    ModuleDef*                     stack_prev;
+    bool                           on_stack;
+
+    // ECMA-262 [[AsyncParentModules]]: reverse edges of the async dependency
+    // graph -- the modules whose evaluation is blocked on this one. Both halves
+    // of async settlement walk these: GatherAvailableAncestors to find whose
+    // last dependency just landed, AsyncModuleExecutionRejected to push a
+    // failure out to everyone transitively waiting. A forward-only search
+    // cannot answer either question.
+    ModuleDef**                    async_parents;
+    uint                           async_parent_count;
+    uint                           async_parent_cap;
+
+    // ECMA-262 [[PendingAsyncDependencies]]: how many async dependencies have
+    // yet to settle. The body runs when this reaches 0 -- a real count, so a
+    // module with several async dependencies waits for all of them.
+    uint                           pending_async_deps;
+
+    // ECMA-262 [[AsyncEvaluationOrder]]: ~unset~ before the module is known to
+    // be async, an integer once it is (assigned from a monotonic counter), and
+    // ~done~ once it has finished. The integer is what orders the bodies that
+    // become runnable together on one settlement, which is the whole reason
+    // the field is observable: sibling importers of a shared async dependency
+    // run in the order their DFS reached them, not in settlement order.
+    AsyncEvalOrder                 async_eval_order;
+    uint                           async_eval_index;
+
 }
 
 // ============================================================================
@@ -1300,15 +1342,14 @@ fn void module_settle_eval_promise(Heap* heap, Vm* vm, ModuleDef* mod, bool ok) 
 // reaction is a plain JS-visible-shaped object needing no new native-pointer
 // storage; heap_find_loaded_module recovers `mod` from it when the reaction
 // fires.
-const char[] MODULE_PENDING_FINISH_NAME_KEY = "\xFFmpf_name";
+const char[] MODULE_SETTLEMENT_NAME_KEY = "\xFFmpf_name";
 
 // Attach a reaction to `pending` (the per-call promise execute_module_async
 // or execute_module_nested handed back for a still-suspended async/TLA
 // body) that finalizes `mod` once it settles: transitions mod.status to
 // EVALUATED or ERRORED and settles mod.eval_promise with the real
-// namespace object or rejection reason. See module_pending_finish_run.
-// Until this fires, mod stays EVALUATING and mod.eval_promise stays
-// pending, so anything that already chained onto mod.eval_promise (a
+// namespace object or rejection reason. Until this fires, mod stays
+// EVALUATING_ASYNC and mod.eval_promise stays pending, so anything that already chained onto mod.eval_promise (a
 // dynamic import job, a sibling static import) observes the correct
 // settlement once it happens rather than the suspended activation's own
 // raw (always-undefined) completion value.
@@ -1319,34 +1360,20 @@ const char[] MODULE_PENDING_FINISH_NAME_KEY = "\xFFmpf_name";
 // the settled value as its sole argument, not the reaction object itself),
 // so per-instance data must live on the handler object, recovered via
 // ctx.callee_obj, which is the pattern builtin_dynamic_import_job uses.
-fn void module_attach_pending_finish(Heap* heap, ModuleDef* mod, HObject* pending) {
-    module_attach_named_reaction(heap, mod, pending,
-        Builtin.MODULE_PENDING_FINISH_FULFILLED.ordinal, Builtin.MODULE_PENDING_FINISH_REJECTED.ordinal);
+// Route `source`'s settlement into the async module handlers, so a suspended
+// body finishes through exactly the same path a dependency's settlement takes.
+fn void module_attach_async_settlement(Heap* heap, ModuleDef* mod, HObject* source) {
+    module_attach_named_reaction(heap, mod, source,
+        Builtin.MODULE_SETTLED_FULFILLED.ordinal, Builtin.MODULE_SETTLED_REJECTED.ordinal);
 }
 
-// Attach a reaction to `dep_prom` (a dependency's own persistent
-// eval_promise) that, once it settles, either runs mod's deferred
-// import-binding-resolution + body execution (module_execute_continue,
-// fulfilled case) or marks mod ERRORED with the propagated reason without
-// ever running its body (rejected case). See module_deferred_continue_run.
-// Used when execute_module finds mod has a still-pending async dependency:
-// mod's own ExecuteModule() step is deferred until that dependency settles,
-// per ECMA-262 §16.2.1.5.5 InnerModuleEvaluation's PendingAsyncDependencies
-// gating (see execute_module's doc comment for why this specific dependency
-// is the one waited on).
-fn void module_attach_deferred_continue(Heap* heap, ModuleDef* mod, HObject* dep_prom) {
-    module_attach_named_reaction(heap, mod, dep_prom,
-        Builtin.MODULE_DEFERRED_CONTINUE_FULFILLED.ordinal, Builtin.MODULE_DEFERRED_CONTINUE_REJECTED.ordinal);
-}
 
-// Shared reaction-building code for module_attach_pending_finish and
-// module_attach_deferred_continue: builds onFulfilled/onRejected handler
-// FUNCTION objects (carrying mod's name as a hidden prop; see
-// module_attach_pending_finish's doc comment for why) pointing at the given
-// builtin ordinals, and attaches them to `source`.
+// Build onFulfilled/onRejected handler FUNCTION objects for the given builtin
+// ordinals and attach them to `source`. Each carries mod's name as a hidden
+// property, since a builtin reaction has no capture to hold the module in.
 fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source,
                                       uint onf_ordinal, uint onr_ordinal) {
-    HString* name_key = heap.str_intern(MODULE_PENDING_FINISH_NAME_KEY);
+    HString* name_key = heap.str_intern(MODULE_SETTLEMENT_NAME_KEY);
     HString* name_str = heap.str_intern(mod.module_name);
     HString* onf_key = heap.str_intern("onFulfilled");
     HString* onr_key = heap.str_intern("onRejected");
@@ -1389,132 +1416,437 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     }
 }
 
-// Shared body for the MODULE_PENDING_FINISH_FULFILLED/REJECTED builtins:
-// looks `mod` up by the handler object's stashed module name and finalizes
-// it. `ok` selects which of the pair this is; the settled value (fulfilled
-// result or rejection reason) arrives as ctx's sole argument, per
-// PromiseReactionJob (§27.2.2.1).
-fn void module_pending_finish_run(BuiltinContext* ctx, bool ok) {
-    ctx.result.set_undefined();
-    Heap* heap = ctx.heap;
-    if (ctx.callee_obj == null) return;
-    HString* name_key = heap.str_intern(MODULE_PENDING_FINISH_NAME_KEY);
-    if (name_key == null) return;
+// The module a settlement reaction belongs to, recovered from the name the
+// handler object carries. Reactions are plain builtin closures, so the module
+// identity has to travel on the object rather than in a capture.
+fn ModuleDef* module_of_reaction(BuiltinContext* ctx) {
+    if (ctx.callee_obj == null) return null;
+    HString* name_key = ctx.heap.str_intern(MODULE_SETTLEMENT_NAME_KEY);
+    if (name_key == null) return null;
     char[] name = {};
     if (try nv = ctx.callee_obj.get_prop(name_key, ctx.heap)) {
         if (nv.is_string()) name = ((HString*)nv.get_heapptr()).get_data();
     }
-    if (name.len == 0) return;
-    ModuleDef* mod = heap_find_loaded_module(heap, name);
-    if (mod == null) return;
-    if (mod.status == ModuleStatus.EVALUATED || mod.status == ModuleStatus.ERRORED) return;
-    if (ok) {
-        mod.status = ModuleStatus.EVALUATED;
-        module_settle_eval_promise(heap, (Vm*)ctx.vm, mod, true);
-        call_on_module_evaluated(heap, mod);
-    } else {
-        // Capture the rejection reason (this handler's sole argument) into
-        // the same error channel module_record_eval_error reads, so it gets
-        // cached as mod.eval_error and propagated to mod.eval_promise's
-        // rejection exactly like a synchronously-thrown module body.
-        TVal reason; reason.set_undefined();
-        if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
-        heap.error_value.set_undefined();
-        heap.tval_copy_ref(&heap.error_value, &reason);
-        heap.has_error = true;
-        module_record_eval_error(heap, (Vm*)ctx.vm, mod);
-        heap.error_value.set_undefined();
-        heap.has_error = false;
-    }
+    if (name.len == 0) return null;
+    return heap_find_loaded_module(ctx.heap, name);
 }
 
-// PromiseReactionJob onFulfilled handler. See module_attach_pending_finish.
-fn void builtin_module_pending_finish_fulfilled(BuiltinContext* ctx) {
-    module_pending_finish_run(ctx, true);
-}
-
-// PromiseReactionJob onRejected handler. See module_attach_pending_finish.
-fn void builtin_module_pending_finish_rejected(BuiltinContext* ctx) {
-    module_pending_finish_run(ctx, false);
-}
-
-// Shared body for the MODULE_DEFERRED_CONTINUE_FULFILLED/REJECTED builtins
-// (see module_attach_deferred_continue): looks `mod` up by the handler
-// object's stashed module name. On fulfillment, the dependency that was
-// blocking mod has now settled successfully, run mod's deferred
-// module_execute_continue (import-binding resolution + body execution) for
-// real. On rejection, the dependency's failure propagates directly: mod
-// never gets to run its body at all, exactly mirroring a module whose own
-// body threw synchronously (module_record_eval_error), which is what makes
-// a rejecting dependency preempt an importer's subsequent statements (see
-// top-level-await/module-import-rejection-tick.js).
-fn void module_deferred_continue_run(BuiltinContext* ctx, bool ok) {
+// PromiseReactionJob onFulfilled for an async module body: the body ran to
+// completion, so hand it to AsyncModuleExecutionFulfilled, which finalizes it
+// and runs whatever ancestors that unblocked.
+fn void builtin_module_settled_fulfilled(BuiltinContext* ctx) {
     ctx.result.set_undefined();
-    Heap* heap = ctx.heap;
-    if (ctx.callee_obj == null) return;
-    HString* name_key = heap.str_intern(MODULE_PENDING_FINISH_NAME_KEY);
-    if (name_key == null) return;
-    char[] name = {};
-    if (try nv = ctx.callee_obj.get_prop(name_key, ctx.heap)) {
-        if (nv.is_string()) name = ((HString*)nv.get_heapptr()).get_data();
-    }
-    if (name.len == 0) return;
-    ModuleDef* mod = heap_find_loaded_module(heap, name);
+    ModuleDef* mod = module_of_reaction(ctx);
     if (mod == null) return;
-    if (mod.status != ModuleStatus.EVALUATING) return;  // already finalized some other way
-    if (ok) {
-        (void)module_execute_continue(heap, (Vm*)ctx.vm, mod);
-    } else {
-        TVal reason; reason.set_undefined();
-        if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
-        heap.error_value.set_undefined();
-        heap.tval_copy_ref(&heap.error_value, &reason);
-        heap.has_error = true;
-        module_record_eval_error(heap, (Vm*)ctx.vm, mod);
-        heap.error_value.set_undefined();
-        heap.has_error = false;
-    }
+    module_async_execution_fulfilled(ctx.heap, (Vm*)ctx.vm, mod);
 }
 
-// PromiseReactionJob onFulfilled handler. See module_attach_deferred_continue.
-fn void builtin_module_deferred_continue_fulfilled(BuiltinContext* ctx) {
-    module_deferred_continue_run(ctx, true);
+// PromiseReactionJob onRejected for an async module body. The rejection reason
+// is this handler's sole argument (§27.2.2.1) and becomes the evaluation error
+// for the module AND for everything transitively waiting on it.
+fn void builtin_module_settled_rejected(BuiltinContext* ctx) {
+    ctx.result.set_undefined();
+    ModuleDef* mod = module_of_reaction(ctx);
+    if (mod == null) return;
+    TVal reason; reason.set_undefined();
+    if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
+    module_async_execution_rejected(ctx.heap, (Vm*)ctx.vm, mod, &reason);
 }
 
-// PromiseReactionJob onRejected handler. See module_attach_deferred_continue.
-fn void builtin_module_deferred_continue_rejected(BuiltinContext* ctx) {
-    module_deferred_continue_run(ctx, false);
-}
-
-// Execute a module: run dependencies first, then resolve imports, then run body.
+// ============================================================================
+// Async module evaluation (ECMA-262 §16.2.1.6.1.3.x)
+// ============================================================================
 //
-// Per ECMA-262 §16.2.1.5.5 InnerModuleEvaluation, a module whose dependency
-// graph contains a still-pending async/TLA subgraph accumulates
-// [[PendingAsyncDependencies]] and does not call its own ExecuteModule()
-// until every such dependency has settled, its exports are only
-// observable, live, through the earlier-resolved import bindings once that
-// happens. `async_dep` records the LAST still-pending dependency seen after
-// the loop below; deferring mod's own import-binding-resolution + body
-// execution onto just one is sufficient to reproduce the same observable
-// ordering as tracking the full [[AsyncParentModules]] set (a real engine's
-// approach) for the common case of a single async dependency. See
-// top-level-await/fulfillment-order.js, rejection-order.js, and
-// module-import-rejection-tick.js.
+// A module with top-level await, or one that depends on such a module, cannot
+// finish inside the depth-first traversal that starts it: its body suspends,
+// or it has nothing to run until its dependencies land. The spec handles this
+// without ever blocking the traversal, using three pieces of state that this
+// section maintains together:
+//
+//   pending_async_deps  how many async dependencies are still outstanding.
+//                       Reaching 0 is what makes a body runnable.
+//   async_parents       reverse edges. When a module settles, this is how it
+//                       finds who was waiting on it -- forward edges cannot
+//                       answer that question.
+//   async_eval_index    a monotonic ticket taken when a module is first known
+//                       to be async. Several bodies can become runnable on one
+//                       settlement; they run in ticket order, which is DFS
+//                       discovery order, not settlement order.
+//
+// The observable consequence is that sibling importers of one shared async
+// dependency run in the order the traversal reached them. See
+// language/module-code/top-level-await/dfs-invariant.js.
+
+// The agent-wide [[ModuleAsyncEvaluationCount]]. Handed out in ascending order
+// and, as the spec permits, reset once no module is holding a ticket -- which
+// keeps the counter from growing without bound across many evaluations.
+uint module_async_eval_counter = 0;
+uint module_async_eval_outstanding = 0;
+
+// Non-zero while a batch of newly-runnable bodies is being executed. A
+// synchronous body finishing inside the batch was already accounted for by the
+// gather that built it, so it must settle without starting a batch of its own --
+// otherwise its ancestors would run ahead of its not-yet-reached siblings.
+uint module_batch_depth = 0;
+ModuleDef** module_batch_list = null;
+uint module_batch_count = 0;
+uint module_batch_cursor = 0;
+uint module_batch_cap = 0;
+
+// Append `mod` to the batch currently being assembled, growing it as needed.
+// Returns false only on allocation failure, where dropping the module is the
+// least-bad option: it stays pending rather than running out of order.
+fn bool module_batch_push(Heap* heap, ModuleDef* mod) {
+    if (module_batch_count == module_batch_cap) {
+        uint new_cap = module_batch_cap == 0 ? 8 : module_batch_cap * 2;
+        void* grown = heap.realloc_func(heap.heap_udata, (void*)module_batch_list,
+                                        (usz)new_cap * void*::size);
+        if (grown == null) return false;
+        module_batch_list = (ModuleDef**)grown;
+        module_batch_cap = new_cap;
+    }
+    module_batch_list[module_batch_count] = mod;
+    module_batch_count++;
+    return true;
+}
+
+// Release the side allocations a ModuleDef owns. Called just before the record
+// itself is freed; `raw` is the ModuleDef as the cache stores it.
+fn void module_release_buffers(Heap* heap, void* raw) {
+    if (raw == null) return;
+    ModuleDef* mod = (ModuleDef*)raw;
+    if (mod.async_parents != null) {
+        heap.free_func(heap.heap_udata, (void*)mod.async_parents);
+        mod.async_parents = null;
+        mod.async_parent_count = 0;
+        mod.async_parent_cap = 0;
+    }
+}
+
+// Release the shared batch buffer. It is reused across evaluations, so it is
+// freed with the module cache rather than after each batch.
+fn void module_release_batch_buffer(Heap* heap) {
+    if (module_batch_list != null) {
+        heap.free_func(heap.heap_udata, (void*)module_batch_list);
+        module_batch_list = null;
+    }
+    module_batch_count = 0;
+    module_batch_cursor = 0;
+    module_batch_cap = 0;
+}
+
+// ECMA-262 IncrementModuleAsyncEvaluationCount: give `mod` its place in the
+// async ordering. Idempotent, so a module that becomes async through several
+// dependencies still holds exactly one ticket.
+fn void module_take_async_order(ModuleDef* mod) {
+    if (mod.async_eval_order != AsyncEvalOrder.UNSET) return;
+    mod.async_eval_order = AsyncEvalOrder.ORDERED;
+    mod.async_eval_index = module_async_eval_counter;
+    module_async_eval_counter++;
+    module_async_eval_outstanding++;
+}
+
+// Retire `mod`'s ticket. Once none are outstanding the counter is unobservable,
+// so it rewinds to 0.
+fn void module_release_async_order(ModuleDef* mod) {
+    if (mod.async_eval_order != AsyncEvalOrder.ORDERED) return;
+    mod.async_eval_order = AsyncEvalOrder.DONE;
+    if (module_async_eval_outstanding > 0) module_async_eval_outstanding--;
+    if (module_async_eval_outstanding == 0) module_async_eval_counter = 0;
+}
+
+// The SCC representative whose evaluation state speaks for `mod` (Evaluate
+// step 3.a). A module in a cycle defers to its root; one that is not in a
+// cycle, or has not finished its traversal yet, speaks for itself.
+fn ModuleDef* module_cycle_root(ModuleDef* mod) {
+    if (mod == null) return null;
+    return mod.cycle_root != null ? mod.cycle_root : mod;
+}
+
+// True once `mod` has an outcome to report -- either it finished, or the
+// component it belongs to failed.
+fn bool module_is_settled(ModuleDef* mod) {
+    if (mod == null) return false;
+    if (mod.status == ModuleStatus.EVALUATED || mod.status == ModuleStatus.ERRORED) return true;
+    return module_cycle_root(mod).status == ModuleStatus.ERRORED;
+}
+
+// Record `parent` as blocked on `mod` ([[AsyncParentModules]]). Duplicates are
+// ignored: a diamond where one parent imports the same async module twice must
+// still decrement its pending count exactly once per distinct edge.
+fn bool module_add_async_parent(Heap* heap, ModuleDef* mod, ModuleDef* parent) {
+    if (mod == null || parent == null || mod == parent) return false;
+    for (uint i = 0; i < mod.async_parent_count; i++) {
+        if (mod.async_parents[i] == parent) return false;
+    }
+    if (mod.async_parent_count == mod.async_parent_cap) {
+        uint new_cap = mod.async_parent_cap == 0 ? 4 : mod.async_parent_cap * 2;
+        void* grown = heap.realloc_func(heap.heap_udata, (void*)mod.async_parents,
+                                        (usz)new_cap * void*::size);
+        if (grown == null) return false;
+        mod.async_parents = (ModuleDef**)grown;
+        mod.async_parent_cap = new_cap;
+    }
+    mod.async_parents[mod.async_parent_count] = parent;
+    mod.async_parent_count++;
+    return true;
+}
+
+// ECMA-262 GatherAvailableAncestors: `mod` has just finished, so every parent
+// waiting on it loses one outstanding dependency. Those that reach zero are
+// collected into `list` -- they are now runnable. A non-TLA parent that becomes
+// runnable is itself about to run synchronously, so recursion continues
+// through it to find what its completion in turn unblocks.
+fn void module_gather_available_ancestors(Heap* heap, ModuleDef* mod) {
+    for (uint i = 0; i < mod.async_parent_count; i++) {
+        ModuleDef* parent = mod.async_parents[i];
+        if (parent == null) continue;
+        // A parent whose component already failed is not runnable; the failure
+        // path settles it instead.
+        if (module_cycle_root(parent).status == ModuleStatus.ERRORED) continue;
+        bool seen = false;
+        for (uint j = 0; j < module_batch_count; j++) {
+            if (module_batch_list[j] == parent) { seen = true; break; }
+        }
+        if (seen) continue;
+        if (parent.pending_async_deps > 0) parent.pending_async_deps--;
+        if (parent.pending_async_deps != 0) continue;
+        if (!module_batch_push(heap, parent)) continue;
+        // A parent with its own top-level await will re-suspend when it runs,
+        // so its completion is a separate future event; only a synchronous
+        // parent's completion is already implied by this batch.
+        if (parent.func == null || !parent.func.has_tla()) {
+            module_gather_available_ancestors(heap, parent);
+        }
+    }
+}
+
+// Sort `list` by async_eval_index ascending -- the order the DFS discovered
+// these modules, which is the order their bodies must run in. Insertion sort:
+// the list is a handful of entries at most, and it is stable.
+fn void module_sort_exec_list(ModuleDef** list, uint count) {
+    for (uint i = 1; i < count; i++) {
+        ModuleDef* cur = list[i];
+        uint j = i;
+        while (j > 0 && list[j - 1].async_eval_index > cur.async_eval_index) {
+            list[j] = list[j - 1];
+            j--;
+        }
+        list[j] = cur;
+    }
+}
+
+// ECMA-262 AsyncModuleExecutionFulfilled: `mod`'s body has finished. Mark it
+// evaluated, settle whatever is waiting on it, then run every ancestor this
+// unblocked -- in async_eval_index order, which is what makes sibling
+// importers of a shared async dependency observe DFS order rather than
+// settlement order.
+fn void module_async_execution_fulfilled(Heap* heap, Vm* vm, ModuleDef* mod) {
+    if (mod.status == ModuleStatus.EVALUATED || mod.status == ModuleStatus.ERRORED) return;
+    module_finish_evaluated(heap, vm, mod);
+
+    // Everything this completion unblocks runs as ONE batch, in ticket order.
+    // A nested completion -- a synchronous ancestor finishing inside the batch
+    // below -- appends into the SAME list, which the loop is still walking, so
+    // its own unblocked ancestors get sorted in among the entries not yet
+    // reached instead of cutting ahead of them.
+    if (module_batch_depth > 0) {
+        module_gather_available_ancestors(heap, mod);
+        module_sort_exec_list(module_batch_list + module_batch_cursor,
+                              module_batch_count - module_batch_cursor);
+        return;
+    }
+
+    module_batch_count = 0;
+    module_batch_cursor = 0;
+    module_gather_available_ancestors(heap, mod);
+    module_sort_exec_list(module_batch_list, module_batch_count);
+
+    module_batch_depth++;
+    defer module_batch_depth--;
+    while (module_batch_cursor < module_batch_count) {
+        ModuleDef* ancestor = module_batch_list[module_batch_cursor];
+        module_batch_cursor++;
+        if (ancestor.status == ModuleStatus.EVALUATED ||
+            ancestor.status == ModuleStatus.ERRORED) continue;
+        // A TLA ancestor re-suspends and reports separately; a synchronous one
+        // finishes inline and folds its own unblocked ancestors into this list.
+        // Go through module_execute_continue, not module_run_body: this is the
+        // ancestor's FIRST chance to run, so its import bindings still have to
+        // be installed against the dependencies that just finished.
+        (void)module_execute_continue(heap, vm, ancestor);
+    }
+}
+
+// Mark `mod` finished and settle everything waiting on it.
+fn void module_finish_evaluated(Heap* heap, Vm* vm, ModuleDef* mod) {
+    module_release_async_order(mod);
+    mod.status = ModuleStatus.EVALUATED;
+    module_settle_eval_promise(heap, vm, mod, true);
+    call_on_module_evaluated(heap, mod);
+}
+
+// ECMA-262 AsyncModuleExecutionRejected: `mod` failed. Cache the error, settle
+// its waiters, and push the SAME error value out along the reverse edges so
+// every module transitively blocked on it reports the identical failure --
+// which is what a later import of any of them must re-reject with.
+fn void module_async_execution_rejected(Heap* heap, Vm* vm, ModuleDef* mod, TVal* error) {
+    if (mod.status == ModuleStatus.EVALUATED || mod.status == ModuleStatus.ERRORED) return;
+
+    module_release_async_order(mod);
+    mod.status = ModuleStatus.ERRORED;
+    if (!mod.has_eval_error) {
+        mod.eval_error.set_undefined();
+        heap.tval_copy_ref(&mod.eval_error, error);
+        mod.has_eval_error = true;
+    }
+    module_close_cycle(mod);
+    module_settle_eval_promise(heap, vm, mod, false);
+
+    for (uint i = 0; i < mod.async_parent_count; i++) {
+        ModuleDef* parent = mod.async_parents[i];
+        if (parent == null) continue;
+        module_async_execution_rejected(heap, vm, parent, error);
+    }
+}
+
+// ============================================================================
+// Tarjan strongly-connected components
+// ============================================================================
+//
+// The DFS that evaluates modules doubles as Tarjan's SCC search. A module is
+// pushed when its traversal begins and popped as part of a component when the
+// traversal that reached it completes; the component's root is the module whose
+// lowlink never escaped its own discovery index. Threading the stack through
+// stack_prev keeps this allocation-free.
+
+ModuleDef* module_dfs_stack = null;
+uint module_dfs_counter = 0;
+uint module_dfs_depth = 0;
+
+// Begin `mod`'s traversal: assign its discovery index, seed its lowlink, and
+// push it on the DFS stack.
+fn void module_dfs_push(ModuleDef* mod) {
+    mod.dfs_index = module_dfs_counter;
+    mod.dfs_ancestor_index = module_dfs_counter;
+    module_dfs_counter++;
+    mod.stack_prev = module_dfs_stack;
+    mod.on_stack = true;
+    module_dfs_stack = mod;
+}
+
+// ECMA-262 InnerModuleEvaluation step 16: if `mod` roots a component, pop it
+// and stamp every member -- `mod` included -- as belonging to `mod`. A member
+// that is still asynchronously evaluating leaves the stack with the rest (its
+// traversal IS finished) but takes EVALUATING_ASYNC rather than EVALUATED, so
+// a later importer waits for it instead of reading it as complete.
+fn void module_close_cycle(ModuleDef* mod) {
+    if (mod == null || !mod.on_stack) return;
+    if (mod.dfs_ancestor_index != mod.dfs_index) return;
+    while (true) {
+        ModuleDef* member = module_dfs_stack;
+        if (member == null) break;
+        module_dfs_stack = member.stack_prev;
+        member.stack_prev = null;
+        member.on_stack = false;
+        member.cycle_root = mod;
+        if (member.status == ModuleStatus.EVALUATING) {
+            member.status = ModuleStatus.EVALUATED;
+        }
+        if (member == mod) break;
+    }
+}
+
+// ECMA-262 ExecuteAsyncModule / ExecuteModule: run `mod`'s body, now that its
+// import bindings are in place and every async dependency has landed.
+//
+// Three shapes, one contract: the module either finishes here, or suspends and
+// finishes later through module_async_execution_fulfilled/rejected. Both paths
+// converge on the same status transition and the same waiter settlement, so no
+// caller has to know which happened.
+fn bool module_run_body(Heap* heap, Vm* vm, ModuleDef* mod) {
+    // Relative specifiers in a dynamic import() issued from this body resolve
+    // against this module, not against whoever triggered the evaluation.
+    char[] saved_module_name = heap.current_module_name;
+    heap.current_module_name = mod.module_name;
+    defer heap.current_module_name = saved_module_name;
+
+    if (mod.func != null) {
+        HObject* pending = null;
+        bool failed = false;
+
+        if (vm.run_depth > 0) {
+            // Mid-dispatch (reached from a dynamic import handled inline).
+            // execute_module_async/execute_in_env commandeer activations[0]
+            // and valstack[0]; only the nested entry point is re-entrant.
+            bool? ok = vm.execute_module_nested(mod.func, mod.env, &pending);
+            if (catch ok) { failed = true; } else { failed = !ok; }
+        } else if (mod.func.is_async()) {
+            bool? ok = vm.execute_module_async(mod.func, mod.env, &pending);
+            if (catch ok) { failed = true; } else { failed = !ok; }
+        } else {
+            TVal? res = vm.execute_in_env(mod.func, mod.env);
+            if (catch res) { failed = true; }
+        }
+
+        if (failed) return module_record_eval_error(heap, vm, mod);
+
+        if (pending != null) {
+            // Top-level await suspended. The module's traversal is complete
+            // even though its body is not, so it is already (or is about to
+            // be) EVALUATING_ASYNC; settlement arrives through the reactions
+            // attached here, which route into the same two handlers a
+            // dependency's settlement would.
+            module_ensure_eval_promise(heap, mod);
+            module_attach_async_settlement(heap, mod, pending);
+            // execute_module_async handed over its pinning reference; the
+            // reactions just attached hold their own through `pending`.
+            heap.decref(pending.as_header());
+            return true;
+        }
+    }
+
+    module_async_execution_fulfilled(heap, vm, mod);
+    return true;
+}
+
+// ECMA-262 §16.2.1.6.1.3 InnerModuleEvaluation: evaluate `mod`, recursing
+// through its dependencies first.
+//
+// This is also the Tarjan SCC search (see module_close_cycle). The two jobs
+// share one traversal because they need the same information: which modules are
+// still on the stack (cycle members) and which have finished (dependencies to
+// wait on or read errors from).
+//
+// Returns false only for a synchronous failure, with the thrown value on the
+// heap error channel. An asynchronous failure -- a rejected top-level await,
+// anywhere in the subgraph -- returns true here and reports later through
+// module_async_execution_rejected, because by then this call has long returned.
 fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
+    // A finished module speaks through its component's root: a sibling that ran
+    // its own body successfully before the root threw is EVALUATED, yet an
+    // import of it must still re-reject with the component's error.
+    ModuleDef* root = module_cycle_root(mod);
+    if (root.status == ModuleStatus.ERRORED) {
+        heap.error_value.set_undefined();
+        heap.tval_copy_ref(&heap.error_value, &root.eval_error);
+        heap.has_error = true;
+        return false;
+    }
     if (mod.status == ModuleStatus.EVALUATED) return true;
-    // A module whose evaluation previously threw must re-reject with the SAME
-    // cached error (ECMA-262 16.2.1.5.1 step 5). Restore it into the error
-    // channel and report failure without re-running the body.
     if (mod.status == ModuleStatus.ERRORED) {
         heap.error_value.set_undefined();
         heap.tval_copy_ref(&heap.error_value, &mod.eval_error);
         heap.has_error = true;
         return false;
     }
-    if (mod.status == ModuleStatus.EVALUATING) return true; // cycle guard
+    // Already being traversed (a cycle back-edge) or already async: either way
+    // its evaluation is under way and this call must not restart it.
+    if (mod.status == ModuleStatus.EVALUATING ||
+        mod.status == ModuleStatus.EVALUATING_ASYNC) return true;
 
-    // A JSON module has no body to run; its `default` binding was installed at
-    // resolve time. Nothing to evaluate.
+    // A JSON module has no body; its `default` binding was installed at resolve
+    // time, so it is complete the moment it is reached.
     if (mod.is_json) {
         mod.status = ModuleStatus.EVALUATED;
         call_on_module_evaluated(heap, mod);
@@ -1522,110 +1854,114 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     }
 
     mod.status = ModuleStatus.EVALUATING;
+    mod.pending_async_deps = 0;
+    module_dfs_push(mod);
+    module_dfs_depth++;
+    defer {
+        module_dfs_depth--;
+        if (module_dfs_depth == 0) module_dfs_counter = 0;
+    }
 
-    // Create module env if not already done, parented to the global env so
-    // that globals (console, Error, etc.) are visible inside modules.
+    // Parent the module env to the global env so globals stay visible inside
+    // the module. The normal pipeline links (and roots) this first; this branch
+    // only runs for a module evaluated without a prior link.
     if (mod.env == null) {
         EnvRecord*? env_opt = env::env_create_declarative(heap, vm.global_env);
         if (catch err = env_opt) return false;
         mod.env = env_opt;
-        // Register the env bindings as a GC root so that objects stored in module
-        // envs (e.g. exported functions) are not swept between module evaluations.
-        // (In the normal pipeline link_module creates + roots the env first, so
-        // this branch only runs for a module evaluated without a prior link.)
         if (mod.env.bindings != null) {
             heap.register_gc_root(mod.env.bindings.as_header());
         }
     }
 
-    // Execute dependencies first (so their exports are available). A
-    // type-only import statement was erased entirely (see
-    // mark_type_only_req_modules), so its target is not a dependency here.
-    ModuleDef* async_dep = null;
+    // Dependencies first, so their exports exist before the body runs. A
+    // type-only import was erased wholesale (mark_type_only_req_modules) and is
+    // not a dependency here.
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
-        if (rme.type_only) continue;
-        if (rme.resolved == null) continue;
+        if (rme.type_only || rme.resolved == null) continue;
         ModuleDef* dep = (ModuleDef*)rme.resolved;
-        if (dep.status == ModuleStatus.EVALUATING && dep.eval_promise == null) {
-            // Cycle guard about to be hit one level down (inside the
-            // execute_module(dep) call just below, at this function's own
-            // early `if (mod.status == ModuleStatus.EVALUATING) return true`):
-            // `dep` is genuinely still on the DFS call stack above this frame
-            // an ancestor of `mod`, meaning a real import-cycle back-edge, not
-            // a dependency that already suspended on its own TLA/async
-            // subgraph (that case has a non-null eval_promise and is handled
-            // by the branch below instead). `mod` therefore belongs to the
-            // strongly-connected cycle rooted at `dep`, record that so a
-            // LATER importer reaching `mod` through this same cycle (once it
-            // becomes async. See the async_dep resolution below) waits on
-            // `dep`, the cycle's root, instead of on `mod`.
-            mod.cycle_root = dep;
+
+        if (!execute_module(heap, vm, dep)) {
+            return module_record_eval_error(heap, vm, mod);
         }
-        if (dep.status != ModuleStatus.EVALUATED) {
-            if (!execute_module(heap, vm, dep)) {
+
+        // Step 11.c.iii/iv, the two mutually exclusive shapes of an edge:
+        if (dep.on_stack && dep.status == ModuleStatus.EVALUATING) {
+            // Back-edge to an ancestor still being traversed: `mod` and `dep`
+            // are in one component. Propagating the lowlink is what leaves
+            // dfs_ancestor_index == dfs_index on the component's root alone.
+            if (dep.dfs_ancestor_index < mod.dfs_ancestor_index) {
+                mod.dfs_ancestor_index = dep.dfs_ancestor_index;
+            }
+        } else if (dep.on_stack) {
+            // A cycle peer that has already finished its own descent and become
+            // async: it is still on the stack (the component is not closed yet)
+            // but it is genuinely running, so `mod` must wait for it exactly
+            // like any other async dependency. Without this a cycle's members
+            // all start before any of them finishes.
+            if (dep.dfs_ancestor_index < mod.dfs_ancestor_index) {
+                mod.dfs_ancestor_index = dep.dfs_ancestor_index;
+            }
+            if (dep.async_eval_order == AsyncEvalOrder.ORDERED) {
+                if (module_add_async_parent(heap, dep, mod)) {
+                    mod.pending_async_deps++;
+                }
+            }
+        } else {
+            // Cross-edge into a finished component. Its root owns the outcome.
+            ModuleDef* dep_root = module_cycle_root(dep);
+            if (dep_root.status == ModuleStatus.ERRORED) {
+                heap.error_value.set_undefined();
+                heap.tval_copy_ref(&heap.error_value, &dep_root.eval_error);
+                heap.has_error = true;
                 return module_record_eval_error(heap, vm, mod);
             }
-            // Only a dependency that GENUINELY suspended somewhere in its own
-            // subgraph (has a pending eval_promise, set exclusively by the
-            // pending != null / async_dep branches below) makes mod
-            // transitively async too. A dependency merely still EVALUATING
-            // because it is mod's own ancestor in an ordinary import cycle
-            // (dep is on the DFS call stack above this frame, cycle-guarded
-            // by the early `return true` at the top of this function) is not
-            // pending on anything, so it will reach EVALUATED normally once
-            // that outer frame's own body finishes, and must not be confused
-            // with an async/TLA subgraph.
-            //
-            // If `dep` belongs to a cycle whose root is some OTHER module
-            // (dep.cycle_root set, and not mod itself, mod itself is the
-            // cycle's root when dep.cycle_root == mod, which happens for the
-            // root's own view of its direct cycle member; see the branch
-            // above), that root is the real dependency mod's own execution
-            // must wait for, per ECMA-262 §16.2.1.5.5 step 11.c.iv.1 (a
-            // required module already through its own DFS is replaced by
-            // requiredModule.[[CycleRoot]]) and Note 2 ("modules depending on
-            // a module of an asynchronous cycle ... instead depend on the
-            // execution of the root of the cycle").
-            ModuleDef* wait_on = (dep.cycle_root != null && dep.cycle_root != mod)
-                ? dep.cycle_root : dep;
-            if (wait_on.eval_promise != null &&
-                builtins::promise_get_state(wait_on.eval_promise, builtins::PROMISE_PENDING)
-                    == builtins::PROMISE_PENDING) {
-                async_dep = wait_on;
+            // Still running means `mod` cannot run yet. Count the dependency
+            // and record the reverse edge that will decrement it again.
+            if (dep_root.async_eval_order == AsyncEvalOrder.ORDERED) {
+                if (module_add_async_parent(heap, dep_root, mod)) {
+                    mod.pending_async_deps++;
+                }
             }
         }
     }
 
-    if (async_dep != null) {
-        // mod has a pending async dependency: defer import-binding resolution
-        // AND body execution (module_execute_continue) until it settles,
-        // instead of running now, this is what actually makes a rejecting
-        // dependency preempt mod's own body (module-import-rejection-tick.js)
-        // while still letting an UNRELATED sibling module's evaluation
-        // proceed independently (async-module-does-not-block-sibling-modules.js
-        // That module has no dependency relationship to the pending one, so
-        // its own execute_module call never sees a non-null async_dep here).
-        HObject* dep_prom = module_ensure_eval_promise(heap, async_dep);
-        if (dep_prom != null) {
-            module_ensure_eval_promise(heap, mod);
-            module_attach_deferred_continue(heap, mod, dep_prom);
-            return true;
+    // A module with top-level await, or one waiting on async dependencies, gets
+    // its place in the async ordering now -- at DFS discovery time, which is
+    // precisely what makes the ordering observable as traversal order.
+    bool has_tla = mod.func != null && mod.func.has_tla();
+    if (has_tla || mod.pending_async_deps > 0) {
+        module_take_async_order(mod);
+        module_ensure_eval_promise(heap, mod);
+        // Mark async BEFORE running: a cycle peer whose descent reaches this
+        // module while its body is in flight must see a module that is running
+        // asynchronously (and so wait for it), not one still being traversed.
+        mod.status = ModuleStatus.EVALUATING_ASYNC;
+        // Only run now if nothing is outstanding; otherwise the last
+        // dependency to settle will run this body through
+        // module_async_execution_fulfilled.
+        if (mod.pending_async_deps == 0) {
+            if (!module_execute_continue(heap, vm, mod)) return false;
         }
-        // Allocation failure building the dependency's eval_promise: fall
-        // through and run mod now anyway rather than deadlocking, a
-        // degraded ordering guarantee is preferable to never settling.
+        // Traversal is complete either way: close the component so `mod` and
+        // its cycle peers leave the stack as EVALUATING_ASYNC rather than
+        // lingering as apparent cycle ancestors.
+        module_close_cycle(mod);
+        return true;
     }
 
-    return module_execute_continue(heap, vm, mod);
+    if (!module_execute_continue(heap, vm, mod)) return false;
+    module_close_cycle(mod);
+    return true;
 }
 
-// The part of module evaluation that must wait for every pending async
-// dependency to settle first: resolve import bindings, run mod's own body,
-// and finalize mod's status. Called either directly from execute_module (no
-// pending async dependency) or later from module_deferred_continue_run (via
-// a MODULE_DEFERRED_CONTINUE reaction) once the dependency that was
-// blocking it settles.
+// ECMA-262 InitializeEnvironment + ExecuteModule: resolve `mod`'s import
+// bindings against its now-evaluated dependencies, then run its body. Called
+// from execute_module when nothing blocks the module, and from the batch in
+// module_async_execution_fulfilled when the last dependency it was waiting on
+// finishes -- which is that module's first chance to bind, so both paths must
+// come through here rather than jumping straight to module_run_body.
 fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
     // Resolve import bindings against (now-executed) source modules. Both
     // `import * as ns` and named `import { x }` install LIVE accessor
@@ -1718,77 +2054,9 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
     // escapes past the still-live outer catcher instead of propagating as the
     // plain uncaught-reference behavior real engines produce.
 
-    // Execute module body in its own env. A module compiled with top-level
-    // await is async: run it through the async path so `await` suspends and
-    // the module's evaluation promise drives to settlement. A rejection (e.g.
-    // `await Promise.reject(e)`) surfaces `e` in heap.error_value.
-    //
-    // heap.current_module_name tracks the module whose body is currently
-    // running, so that relative specifiers in a dynamic import() issued from
-    // within the body (and not otherwise attributable via vm.current_func)
-    // resolve against the right base. Restore the previous value on every
-    // exit path.
-    char[] saved_module_name = heap.current_module_name;
-    heap.current_module_name = mod.module_name;
-    defer heap.current_module_name = saved_module_name;
-
-    if (mod.func != null) {
-        HObject* pending = null;
-        if (vm.run_depth > 0) {
-            // The VM is mid-dispatch (this execute_module call was reached
-            // from a dynamic import() handled inline). execute_module_async
-            // and execute_in_env take over activations[0]/valstack[0] and are
-            // unsafe to call here; execute_module_nested is re-entrant.
-            bool? ok = vm.execute_module_nested(mod.func, mod.env, &pending);
-            if (catch err = ok) {
-                return module_record_eval_error(heap, vm, mod);
-            }
-            if (!ok) {
-                return module_record_eval_error(heap, vm, mod);
-            }
-        } else if (mod.func.is_async()) {
-            bool? ok = vm.execute_module_async(mod.func, mod.env, &pending);
-            if (catch err = ok) {
-                return module_record_eval_error(heap, vm, mod);
-            }
-            if (!ok) {
-                return module_record_eval_error(heap, vm, mod);
-            }
-        } else {
-            TVal? res = vm.execute_in_env(mod.func, mod.env);
-            if (catch err = res) {
-                return module_record_eval_error(heap, vm, mod);
-            }
-        }
-
-        if (pending != null) {
-            // Top-level await suspended and this call could not pump the
-            // microtask queue to completion (it was itself reached from
-            // inside a drain. See execute_module_async/nested). The module
-            // stays EVALUATING; attach a reaction to the per-call `pending`
-            // promise that finalizes mod (transitions status, builds the
-            // namespace object, settles the persistent eval_promise) once the
-            // suspended body's reactions eventually run it to completion.
-            // See module_finish_pending_eval. Recorded as the module's
-            // async-completion source so a later execute_module() call for
-            // the same module (a sibling dynamic import, or the static DFS
-            // reaching it again) attaches to the SAME pending completion
-            // instead of re-running the body.
-            module_ensure_eval_promise(heap, mod);
-            module_attach_pending_finish(heap, mod, pending);
-            // Release the pinning reference execute_module_async/nested
-            // handed off: the reaction just attached holds its own
-            // reference via pending's own reaction list.
-            heap.decref(pending.as_header());
-            return true;
-        }
-    }
-
-    mod.status = ModuleStatus.EVALUATED;
-    module_settle_eval_promise(heap, vm, mod, true);
-    call_on_module_evaluated(heap, mod);
-    return true;
+    return module_run_body(heap, vm, mod);
 }
+
 
 // ============================================================================
 // Top-level entry point
