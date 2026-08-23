@@ -132,7 +132,9 @@ fn bool inspect_value(InspectCtx* ctx, TVal* val, int depth, StrBuf* out) {
             return inspect_append_number(out, val.get_number());
         case BIGINT: {
             char[48] buf;
-            char[] bs = hbigint::int128_to_decimal(val.get_bigint(), buf[..]);
+            char* heap_buf;
+            char[] bs = hbigint::hbigint_to_decimal(ctx.heap, val.get_bigint(), buf[..], &heap_buf);
+            defer if (heap_buf != null) ctx.heap.free((void*)heap_buf);
             if (!out.append_bytes(bs)) return false;
             return out.append_char('n');
         }

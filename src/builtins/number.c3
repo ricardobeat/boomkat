@@ -107,7 +107,7 @@ fn void builtin_number(BuiltinContext* ctx) {
         // through ToNumber, which would throw for a BigInt).
         TVal* n_arg = &ctx.regs[ctx.base_reg];
         if (n_arg.is_bigint()) {
-            num.set_number((double)n_arg.get_bigint());
+            num.set_number(n_arg.get_bigint().to_double());
         } else if (ctx.vm != null) {
             double d = builtin_to_number_vm(ctx, &ctx.regs[ctx.base_reg]);
             if (ctx.should_throw) return;

@@ -3,6 +3,7 @@ module boomkat::vm;
 import boomkat::types;
 import boomkat::hstring;
 import boomkat::hbigint;
+import boomkat::heap;
 import std::math;
 
 fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
@@ -51,17 +52,17 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
 
     // BigInt + Number (ES2020 §7.2.15 step 6/7): compare by mathematical value.
     if (a.is_bigint() && (b.is_number() || b.is_fastint())) {
-        return vm_bigint_cmp_number(a.get_bigint(), b.get_number_or_fastint()) == 0;
+        return vm_bigint_cmp_number(vm.heap, a.get_bigint(), b.get_number_or_fastint()) == 0;
     }
     if (b.is_bigint() && (a.is_number() || a.is_fastint())) {
-        return vm_bigint_cmp_number(b.get_bigint(), a.get_number_or_fastint()) == 0;
+        return vm_bigint_cmp_number(vm.heap, b.get_bigint(), a.get_number_or_fastint()) == 0;
     }
     // BigInt + String: parse the string as a BigInt; if it fails, not equal.
     if (a.is_bigint() && b.is_string()) {
-        return bigint_string_eq(a.get_bigint(), (HString*)b.get_heapptr());
+        return bigint_string_eq(vm.heap, a.get_bigint(), (HString*)b.get_heapptr());
     }
     if (b.is_bigint() && a.is_string()) {
-        return bigint_string_eq(b.get_bigint(), (HString*)a.get_heapptr());
+        return bigint_string_eq(vm.heap, b.get_bigint(), (HString*)a.get_heapptr());
     }
 
     // Object + Boolean/Number/String/BigInt -> ToPrimitive
@@ -86,22 +87,22 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
 // Compare a BigInt value against a string via StringToBigInt (ES2020
 // §7.1.14).  Returns true iff the string parses to a BigInt equal to `big`.
 // A string that fails to parse compares unequal (StringToBigInt → NaN).
-fn bool bigint_string_eq(int128 big, HString* s) {
+fn bool bigint_string_eq(Heap* hp, hbigint::HBigInt* big, HString* s) {
     if (s == null) return false;
-    int128? parsed = string_to_bigint(s.get_data());
+    hbigint::HBigInt*? parsed = string_to_bigint(hp, s.get_data());
     if (catch parsed) return false;
-    return parsed == big;
+    return hbigint::hbigint_eq(parsed, big);
 }
 
 // StringToBigInt: trim ECMAScript whitespace, accept an optional leading
 // sign for decimal, or a `0x`/`0o`/`0b` prefix (no sign).  The empty (or
 // all-whitespace) string is 0n.  Faults on any invalid character or overflow.
-fn int128? string_to_bigint(char[] raw) {
+fn hbigint::HBigInt*? string_to_bigint(Heap* hp, char[] raw) {
     usz lo = 0;
     usz hi = raw.len;
     while (lo < hi && is_ecma_whitespace(raw[lo])) lo++;
     while (hi > lo && is_ecma_whitespace(raw[hi - 1])) hi--;
-    if (lo == hi) return (int128)0;   // empty → 0n
+    if (lo == hi) return hbigint::hbigint_from_slimb(hp, 0);   // empty → 0n
     char[] t = raw[lo..hi - 1];
 
     bool neg = false;
@@ -122,8 +123,8 @@ fn int128? string_to_bigint(char[] raw) {
     foreach (char c : t[i..]) {
         if (c == '_') return hbigint::BIGINT_SYNTAX~;
     }
-    int128 mag = hbigint::parse_int128_radix(t[i..], radix)!;
-    return neg ? hbigint::bigint_neg(mag)! : mag;
+    hbigint::HBigInt* mag = hbigint::hbigint_parse_radix(hp, t[i..], radix)!;
+    return neg ? hbigint::hbigint_neg(hp, mag)! : mag;
 }
 
 // Strict equality check (same as SEQ).
@@ -146,7 +147,7 @@ fn bool strict_eq(TVal* a, TVal* b) @inline {
             // As for OBJECT: a LIGHTFUNC builtin's identity is its builtin
             // index, so two loads of the same builtin are the same value.
             case LIGHTFUNC: return a.get_heapptr() == b.get_heapptr();
-            case BIGINT:    return a.get_bigint() == b.get_bigint();
+            case BIGINT:    return hbigint::hbigint_eq(a.get_bigint(), b.get_bigint());
             default:        return false;
         }
     }

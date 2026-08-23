@@ -167,9 +167,9 @@ fn bool atomics_coerce_number(BuiltinContext* ctx, TVal* val, double* out) {
 fn bool atomics_coerce_bigint(BuiltinContext* ctx, TVal* val, int128* out) {
     *out = 0;
     bool ok;
-    int128 bv = builtin_to_bigint(ctx, val, &ok);
+    hbigint::HBigInt* bbox = builtin_to_bigint(ctx, val, &ok);
     if (!ok || ctx.should_throw) return false;
-    *out = bv;
+    *out = bbox.to_int128();
     return true;
 }
 
@@ -382,7 +382,7 @@ fn void atomics_set_bigint_result(BuiltinContext* ctx, hobject::ObjClass cls, in
     if (cls == hobject::ObjClass.BIGUINT64ARRAY) {
         v = (int128)(uint128)(ulong)(long)old;
     }
-    builtin_set_bigint_result(ctx, v);
+    builtin_set_bigint_result(ctx, hbigint::hbigint_alloc(ctx.heap, v) ?? null);
 }
 
 // ============================================================================
@@ -438,7 +438,7 @@ fn void builtin_atomics_store(BuiltinContext* ctx) {
         atomics_rmw_bigint(p, cls, AtomicOp.STORE, big_operand, 0, &old);
         // store returns the ToBigInt'd value itself (§25.4.3.13 step 3 returns
         // `v`), NOT the width-reinterpreted stored bits.
-        builtin_set_bigint_result(ctx, big_operand);
+        builtin_set_bigint_result(ctx, hbigint::hbigint_alloc(ctx.heap, big_operand) ?? null);
     } else {
         double old = 0.0;
         atomics_rmw_int(p, cls, AtomicOp.STORE, num_operand, 0.0, &old);

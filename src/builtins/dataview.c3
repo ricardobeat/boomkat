@@ -362,9 +362,9 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
                       || elem_class == hobject::ObjClass.BIGUINT64ARRAY);
     if (is_big_dv) {
         bool ok;
-        int128 bv = builtin_to_bigint(ctx, &val_arg, &ok);
+        hbigint::HBigInt* bbox = builtin_to_bigint(ctx, &val_arg, &ok);
         if (!ok || ctx.should_throw) return;
-        raw = (ulong)(long)bv;   // low 64 bits (wrap mod 2^64)
+        raw = (ulong)(long)bbox.to_int128();   // low 64 bits (wrap mod 2^64)
     } else {
         double d = ta_val_to_number(&val_arg, ctx);
         if (ctx.should_throw) return;

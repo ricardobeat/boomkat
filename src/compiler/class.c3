@@ -1379,10 +1379,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 char[64] b;
                 field_propname = format_field_number_key(method_name_num_value, &b);
             } else if (method_name_is_bigint) {
-                int128? parsed = hbigint::parse_bigint_literal(method_name_bigint_src);
+                Heap* bhp = (Heap*)self.heap;
+                hbigint::HBigInt*? parsed = hbigint::parse_bigint_literal(bhp, method_name_bigint_src);
                 if (catch p_err = parsed) return COMPILE_ERROR~;
                 char[48] b;
-                field_propname = hbigint::int128_to_radix(parsed, 10, &b);
+                char* bheap;
+                field_propname = hbigint::hbigint_to_decimal(bhp, parsed, b[..], &bheap);
             } else if (method_name.type == TokenType.STRING) {
                 field_propname = method_name.str_value;
             } else {

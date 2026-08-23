@@ -76,11 +76,13 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
     // TOPROPKEY targets) and intern so the returned slice outlives this call.
     if (tt == TokenType.BIGINT) {
         Token t = self.advance()!;
-        int128? parsed = hbigint::parse_bigint_literal(t.str_value);
+        Heap* hp = (Heap*)self.heap;
+        hbigint::HBigInt*? parsed = hbigint::parse_bigint_literal(hp, t.str_value);
         if (catch parsed) return COMPILE_ERROR~;
         char[48] buf;
-        char[] digits = hbigint::int128_to_radix(parsed, 10, buf[..]);
-        Heap* hp = (Heap*)self.heap;
+        char* dheap;
+        char[] digits = hbigint::hbigint_to_decimal(hp, parsed, buf[..], &dheap);
+        defer if (dheap != null) hp.free((void*)dheap);
         HString* hs = hp.str_intern(digits);
         if (hs == null) return COMPILE_ERROR~;
         return hs.get_data();

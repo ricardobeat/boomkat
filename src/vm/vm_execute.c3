@@ -1,6 +1,7 @@
 module boomkat::vm;
 
 import boomkat::types;
+import boomkat::hbigint;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hstring;
@@ -2936,7 +2937,7 @@ fn TVal? Vm.run(Vm* vm) {
                     case LIGHTFUNC: seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
                     case POINTER:   seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
                     case BUFFER:    seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
-                    case BIGINT:    seq_r = (rb.get_bigint() == rc.get_bigint()); break;
+                    case BIGINT:    seq_r = (hbigint::hbigint_eq(rb.get_bigint(), rc.get_bigint())); break;
                     default: break;
                 }
             } else if ((tag_b == NUMBER && tag_c == FASTINT) ||
@@ -2982,7 +2983,7 @@ fn TVal? Vm.run(Vm* vm) {
                     case LIGHTFUNC: sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
                     case POINTER:   sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
                     case BUFFER:    sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
-                    case BIGINT:    sneq_r = (rb.get_bigint() != rc.get_bigint()); break;
+                    case BIGINT:    sneq_r = (!hbigint::hbigint_eq(rb.get_bigint(), rc.get_bigint())); break;
                     default: break;
                 }
             } else if ((tag_b == NUMBER && tag_c == FASTINT) ||
@@ -3140,7 +3141,7 @@ fn TVal? Vm.run(Vm* vm) {
                         case LIGHTFUNC: seq = (rb.get_heapptr() == rc.get_heapptr());
                         case POINTER:   seq = (rb.get_heapptr() == rc.get_heapptr());
                         case BUFFER:    seq = (rb.get_heapptr() == rc.get_heapptr());
-                        case BIGINT:    seq = (rb.get_bigint() == rc.get_bigint());
+                        case BIGINT:    seq = (hbigint::hbigint_eq(rb.get_bigint(), rc.get_bigint()));
                         default: break;
                     }
                 } else if ((tag_b == NUMBER && tag_c == FASTINT) ||

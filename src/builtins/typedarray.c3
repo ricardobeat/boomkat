@@ -444,8 +444,9 @@ fn void ta_write_element(char* p, hobject::ObjClass cls, TVal* val, BuiltinConte
             // TypeError for Number/undefined/etc.), then store the low 64 bits
             // (two's complement wrap-around; BigInt64/BigUint64 share the store).
             bool ok;
-            int128 bv = builtin_to_bigint(ctx, val, &ok);
+            hbigint::HBigInt* bbox = builtin_to_bigint(ctx, val, &ok);
             if (!ok || ctx.should_throw) return;
+            int128 bv = bbox.to_int128();
             long lo = (long)bv;   // low 64 bits, wrapping mod 2^64
             mem::copy(p, &lo, (sz)(8));
             break;
@@ -473,9 +474,9 @@ fn TAScalar ta_coerce_element(hobject::ObjClass cls, TVal* val, BuiltinContext* 
     if (is_bigint_typed_array_class(cls)) {
         s.is_bigint = true;
         bool ok;
-        int128 bv = builtin_to_bigint(ctx, val, &ok);
+        hbigint::HBigInt* bbox = builtin_to_bigint(ctx, val, &ok);
         if (!ok || ctx.should_throw) return s;
-        s.big64 = (long)bv;
+        s.big64 = (long)bbox.to_int128();
     } else {
         s.is_bigint = false;
         s.num = ta_val_to_number(val, ctx);
@@ -2680,10 +2681,9 @@ fn int ta_numeric_compare(double a, double b) {
 // and BigInt arrays alike (BigInt values never lose precision through a double).
 fn int ta_default_compare(TVal* a, TVal* b) {
     if (a.is_bigint() && b.is_bigint()) {
-        int128 av = a.get_bigint();
-        int128 bv = b.get_bigint();
-        if (av < bv) return -1;
-        if (av > bv) return 1;
+        int cmp = hbigint::hbigint_cmp(a.get_bigint(), b.get_bigint());
+        if (cmp < 0) return -1;
+        if (cmp > 0) return 1;
         return 0;
     }
     double ad = a.is_fastint() ? (double)a.get_fastint() : a.get_number();

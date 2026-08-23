@@ -3,6 +3,7 @@ module boomkat::vm;
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hbigint;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::env;
@@ -242,9 +243,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                     ra.set_number((double)v);
                                 }
                             } else if (old_val.is_bigint()) {
-                                int128? nr = bigint_step(old_val.get_bigint(), is_inc);
+                                hbigint::HBigInt*? nr = bigint_step(vm.heap, old_val.get_bigint(), is_inc);
                                 if (catch nr) {
-                                    vm_set_range_error(vm, "BigInt value exceeds supported precision");
+                                    vm_set_range_error(vm, "BigInt is too large to allocate");
                                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                     return (TVal){};
                                 }
@@ -307,9 +308,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             ra.set_number((double)v);
                         }
                     } else if (old_val.is_bigint()) {
-                        int128? nr = bigint_step(old_val.get_bigint(), is_inc);
+                        hbigint::HBigInt*? nr = bigint_step(vm.heap, old_val.get_bigint(), is_inc);
                         if (catch nr) {
-                            vm_set_range_error(vm, "BigInt value exceeds supported precision");
+                            vm_set_range_error(vm, "BigInt is too large to allocate");
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }
@@ -476,9 +477,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             ra.set_number((double)v);
                         }
                     } else if (old_val.is_bigint()) {
-                        int128? nr = bigint_step(old_val.get_bigint(), is_inc);
+                        hbigint::HBigInt*? nr = bigint_step(vm.heap, old_val.get_bigint(), is_inc);
                         if (catch nr) {
-                            vm_set_range_error(vm, "BigInt value exceeds supported precision");
+                            vm_set_range_error(vm, "BigInt is too large to allocate");
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }

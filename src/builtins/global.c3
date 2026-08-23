@@ -37,7 +37,7 @@ fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
                     }
                     // toString returned a non-string primitive, fall through to print_tval
                     if (!str_result.is_object()) {
-                        print_tval(&str_result);
+                        print_tval(ctx.heap, &str_result);
                         return;
                     }
                 }
@@ -47,7 +47,7 @@ fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
         io::printf("[object Object]");
         return;
     }
-    print_tval(val);
+    print_tval(ctx.heap, val);
 }
 
 fn void builtin_print(BuiltinContext* ctx) {

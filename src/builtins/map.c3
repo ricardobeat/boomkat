@@ -1,6 +1,7 @@
 // Map constructor and Map.prototype methods.
 module boomkat::builtins;
 import boomkat::types;
+import boomkat::hbigint;
 import std::math;
 import boomkat::hstring;
 import boomkat::env;
@@ -38,7 +39,7 @@ fn bool same_value_impl(TVal a, TVal b, bool zero_signs_distinct) {
             // does. Without this it falls to `default: false`, and a builtin
             // used as a Map or Set key never matches itself on lookup.
             case LIGHTFUNC: return a.get_heapptr() == b.get_heapptr();
-            case BIGINT:    return a.get_bigint() == b.get_bigint();
+            case BIGINT:    return hbigint::hbigint_eq(a.get_bigint(), b.get_bigint());
             default: return false;
         }
     }

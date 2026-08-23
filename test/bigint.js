@@ -96,18 +96,43 @@ ok(String(255n) === "255", "String(bigint)");
 ok("v=" + 10n === "v=10", "string concat");
 ok(Object.prototype.toString.call(5n) === "[object BigInt]", "toStringTag");
 
-// --- BIGINT_MIN (-2^127) boundary: shift-count == MIN and value == MIN ---
-var MIN = -1n << 127n;
-ok(5n << MIN === 0n, "5n << MIN saturates to 0n");
-throws(function () { return 5n >> MIN; }, "RangeError", "5n >> MIN overflows");
-ok(-3n << MIN === -1n, "-3n << MIN saturates to -1n");
+// --- arbitrary precision: values far past 64 and 128 bits are exact ---
+var P127 = -1n << 127n;
+// Shifting right by a huge NEGATIVE count is a huge left shift, which cannot
+// be allocated and must raise RangeError rather than silently saturating.
+throws(function () { return 5n >> P127; }, "RangeError", "5n >> (-2^127) is an unallocatable left shift");
+ok(-3n << P127 === -1n, "-3n << P127 saturates to -1n");
 ok(5n >> 100n === 0n, "large right shift saturates to 0n");
 ok(-1n >> 200n === -1n, "large right shift of -1n saturates to -1n");
-ok(BigInt(-(2 ** 127)) === MIN, "BigInt(-(2^127)) == MIN (representable)");
-ok(~MIN === 170141183460469231731687303715884105727n, "~MIN == MAX (2^127-1)");
-throws(function () { return -MIN; }, "RangeError", "-MIN overflows");
-throws(function () { return MIN / -1n; }, "RangeError", "MIN / -1n overflows");
-ok(MIN % -1n === 0n, "MIN % -1n == 0n");
-ok(MIN >> 1n === -(2n ** 126n), "MIN >> 1n == -2^126");
+ok(~P127 === 170141183460469231731687303715884105727n, "~(-2^127) == 2^127-1");
+ok(-P127 === 170141183460469231731687303715884105728n, "-(-2^127) == 2^127");
+ok(P127 / -1n === 170141183460469231731687303715884105728n, "(-2^127) / -1n == 2^127");
+ok(P127 % -1n === 0n, "(-2^127) % -1n == 0n");
+ok(P127 >> 1n === -(2n ** 126n), "(-2^127) >> 1n == -2^126");
+
+// Past the old 128-bit ceiling entirely.
+ok(2n ** 128n === 340282366920938463463374607431768211456n, "2^128 exact");
+ok(2n ** 256n === 115792089237316195423570985008687907853269984665640564039457584007913129639936n, "2^256 exact");
+ok((2n ** 64n) * (2n ** 64n) === 2n ** 128n, "128-bit product exact");
+ok(1n << 200n === 2n ** 200n, "shift past 128 bits");
+ok((2n ** 200n) >> 200n === 1n, "shift back down is lossless");
+
+// Division and remainder truncate toward zero at any width.
+var BIG = 2n ** 300n + 12345n;
+ok(BIG / 1000n * 1000n + BIG % 1000n === BIG, "divmod identity at 300 bits");
+ok(-BIG / 1000n === -(BIG / 1000n), "division truncates toward zero");
+ok(-BIG % 1000n === -(BIG % 1000n), "remainder takes the dividend's sign");
+
+// Decimal round-trip of a large literal.
+var HUGE = 123456789012345678901234567890123456789012345678901234567890n;
+ok(String(HUGE) === "123456789012345678901234567890123456789012345678901234567890", "large decimal round-trip");
+ok(BigInt(String(HUGE)) === HUGE, "String -> BigInt round-trip");
+ok((2n ** 200n).toString(16) === "100000000000000000000000000000000000000000000000000", "hex of 2^200");
+
+// asIntN / asUintN are exact at widths past 128 bits.
+ok(BigInt.asUintN(64, -1n) === 18446744073709551615n, "asUintN(64, -1n)");
+ok(BigInt.asIntN(64, 2n ** 63n) === -9223372036854775808n, "asIntN(64, 2^63)");
+ok(BigInt.asUintN(200, -1n) === 2n ** 200n - 1n, "asUintN(200, -1n)");
+ok(BigInt.asIntN(129, 2n ** 128n) === -(2n ** 128n), "asIntN(129, 2^128)");
 
 console.log("passed=" + passed + " failed=" + failed);

@@ -899,7 +899,7 @@ fn void putc_stdout(char c, void* udata) {
     io::putchar(c);
 }
 
-fn void print_tval(TVal* val) {
+fn void print_tval(Heap* heap, TVal* val) {
     switch (val.get_tag()) {
         case UNDEFINED:
             io::printf("undefined");
@@ -950,7 +950,9 @@ fn void print_tval(TVal* val) {
             io::printf("[function]");
         case BIGINT:
             char[48] bbuf;
-            char[] bs = hbigint::int128_to_decimal(val.get_bigint(), bbuf[..]);
+            char* bheap;
+            char[] bs = hbigint::hbigint_to_decimal(heap, val.get_bigint(), bbuf[..], &bheap);
+            defer if (bheap != null) heap.free((void*)bheap);
             for (usz bi = 0; bi < bs.len; bi++) { io::putchar(bs[bi]); }
         default:
             io::printf("[unknown]");
@@ -1311,7 +1313,7 @@ fn bool builtin_to_boolean(TVal* val) {
         case FASTINT:
             return val.get_fastint() != 0;
         case BIGINT:
-            return val.get_bigint() != (int128)0;   // ToBoolean(0n) = false
+            return !val.get_bigint().is_zero();   // ToBoolean(0n) = false
         case STRING: {
             HString* s = (HString*)val.get_heapptr();
             return s != null && s.blen > 0;
@@ -2436,7 +2438,9 @@ fn HString* builtin_to_string(Heap* heap, TVal* val) {
             return builtin_intern_string(heap, "[function]");
         case BIGINT: {
             char[48] bbuf;
-            char[] bs = hbigint::int128_to_decimal(val.get_bigint(), bbuf[..]);
+            char* bheap;
+            char[] bs = hbigint::hbigint_to_decimal(heap, val.get_bigint(), bbuf[..], &bheap);
+            defer if (bheap != null) heap.free((void*)bheap);
             return builtin_intern_string(heap, bs);
         }
         default:

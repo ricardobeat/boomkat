@@ -1020,7 +1020,7 @@ fn bool array_strict_equals(TVal a, TVal b) {
                 hbigint::HBigInt* ba = (hbigint::HBigInt*)a.get_heapptr();
                 hbigint::HBigInt* bb = (hbigint::HBigInt*)b.get_heapptr();
                 if (ba == null || bb == null) return ba == bb;
-                return ba.value == bb.value;
+                return hbigint::hbigint_eq(ba, bb);
             }
             case OBJECT:
             case BUFFER:

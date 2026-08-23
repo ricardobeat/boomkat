@@ -25,13 +25,11 @@ import libc;
 // increfs; we drop the alloc's initial reference so the value is anchored
 // solely by the result slot (which the CALL handler copies out with incref).
 // On allocation failure, raises a RangeError.
-fn void builtin_set_bigint_result(BuiltinContext* ctx, int128 value) {
-    hbigint::HBigInt*? box_r = hbigint::hbigint_alloc(ctx.heap, value);
-    if (catch box_r) {
-        arr_throw_range_error(ctx, "BigInt allocation failed");
+fn void builtin_set_bigint_result(BuiltinContext* ctx, hbigint::HBigInt* box) {
+    if (box == null) {
+        arr_throw_range_error(ctx, "BigInt is too large to allocate");
         return;
     }
-    hbigint::HBigInt* box = box_r;
     ctx.result.set_bigint(box);
     ctx.heap.decref((types::HeapHeader*)box);
 }
@@ -43,26 +41,30 @@ fn void builtin_set_bigint_result(BuiltinContext* ctx, int128 value) {
 // Convert a value to an int128 BigInt per ToBigInt.  On failure sets
 // ctx.should_throw (TypeError / SyntaxError / RangeError) and returns 0.
 // `ok` is set false on any thrown path.
-fn int128 builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok) {
+fn hbigint::HBigInt* builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok) {
     *ok = true;
     switch (val.get_tag()) {
         case BIGINT:
             return val.get_bigint();
-        case BOOLEAN:
-            return val.get_boolean() ? (int128)1 : (int128)0;
+        case BOOLEAN: {
+            hbigint::HBigInt*? b = hbigint::hbigint_from_slimb(ctx.heap,
+                val.get_boolean() ? 1 : 0);
+            if (catch b) { *ok = false; return null; }
+            return b;
+        }
         case STRING: {
             HString* s = (HString*)val.get_heapptr();
             if (s != null && s.is_symbol()) {
                 *ok = false;
                 arr_throw_type_error(ctx, "Cannot convert a Symbol value to a BigInt");
-                return 0;
+                return null;
             }
             // StringToBigInt (§7.1.14): whitespace-trimmed integer literal.
-            int128? r = vm::string_to_bigint(s.get_data());
+            hbigint::HBigInt*? r = vm::string_to_bigint(ctx.heap, s.get_data());
             if (catch r) {
                 *ok = false;
                 builtin_throw(ctx, ctx.heap.syntax_err_proto, "Cannot convert string to a BigInt");
-                return 0;
+                return null;
             }
             return r;
         }
@@ -72,7 +74,7 @@ fn int128 builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok) {
             // constructor's Number path is handled separately, before this.)
             *ok = false;
             arr_throw_type_error(ctx, "Cannot convert a Number to a BigInt");
-            return 0;
+            return null;
         case OBJECT: {
             // ToPrimitive(number) then recurse.
             if (ctx.vm != null) {
@@ -82,7 +84,7 @@ fn int128 builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok) {
                     ctx.should_throw = true;
                     ctx.throw_value = ((vm::Vm*)ctx.vm).throw_value;
                     *ok = false;
-                    return 0;
+                    return null;
                 }
                 if (!prim.is_object()) {
                     return builtin_to_bigint(ctx, &prim, ok);
@@ -90,32 +92,25 @@ fn int128 builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok) {
             }
             *ok = false;
             arr_throw_type_error(ctx, "Cannot convert object to a BigInt");
-            return 0;
+            return null;
         }
         default:
             // undefined, null, symbol
             *ok = false;
             arr_throw_type_error(ctx, "Cannot convert value to a BigInt");
-            return 0;
+            return null;
     }
 }
 
 // NumberToBigInt (ES2020 §7.1.13 step for Number): the number must be an
-// integer; faults BIGINT_SYNTAX for non-integral, BIGINT_OVERFLOW for
-// magnitudes beyond int128 range.
-fn int128? number_to_bigint(double d) {
+// integer. A non-integral or non-finite value faults BIGINT_SYNTAX; there is no
+// magnitude limit, since every finite integral double is representable.
+fn hbigint::HBigInt*? number_to_bigint(Heap* hp, double d) {
     if (math::is_nan(d) || math::is_inf(d)) return hbigint::BIGINT_SYNTAX~;
     if (d != math::trunc(d)) return hbigint::BIGINT_SYNTAX~;
-    // Representable range is [-2^127, 2^127 − 1].  2^127 = 1.7014118346046923e38
-    // (not representable → reject `d >= 2^127`), but -2^127 IS representable as
-    // int128 BIGINT_MIN, so reject only `d < -2^127`.  The double -2^127 is
-    // exact and the next-lower double is a full ULP (~2^74) away, so a strict
-    // `<` cleanly admits exactly -2^127 while rejecting anything more negative.
-    if (d >= 1.7014118346046923e38 || d < -1.7014118346046923e38) {
-        return hbigint::BIGINT_OVERFLOW~;
-    }
-    return (int128)d;
+    return hbigint::hbigint_from_double(hp, d);
 }
+
 
 // ============================================================================
 // BigInt(value), ES2020 §20.2.1
@@ -148,10 +143,10 @@ fn void builtin_bigint(BuiltinContext* ctx) {
         }
     }
     if (prim.is_number() || prim.is_fastint()) {
-        int128? r = number_to_bigint(prim.get_number_or_fastint());
+        hbigint::HBigInt*? r = number_to_bigint(ctx.heap, prim.get_number_or_fastint());
         if (catch excuse = r) {
             if (excuse == hbigint::BIGINT_OVERFLOW) {
-                arr_throw_range_error(ctx, "BigInt value exceeds supported precision");
+                arr_throw_range_error(ctx, "BigInt is too large to allocate");
             } else {
                 arr_throw_range_error(ctx, "The number is not a safe integer and cannot be converted to a BigInt");
             }
@@ -162,7 +157,7 @@ fn void builtin_bigint(BuiltinContext* ctx) {
     }
 
     bool ok;
-    int128 v = builtin_to_bigint(ctx, &prim, &ok);
+    hbigint::HBigInt* v = builtin_to_bigint(ctx, &prim, &ok);
     if (!ok) return;
     builtin_set_bigint_result(ctx, v);
 }
@@ -186,56 +181,34 @@ fn bool bigint_read_bits(BuiltinContext* ctx, uint* out_bits) {
     return true;
 }
 
-// asUintN(bits, x): x modulo 2^bits, interpreted in [0, 2^bits).
+// asUintN(bits, x): x modulo 2^bits, read as unsigned. Exact at any width now
+// that values are unbounded, so it can only fail on allocation.
 fn void builtin_bigint_as_uintn(BuiltinContext* ctx) {
-    uint bits;
-    if (!bigint_read_bits(ctx, &bits)) return;
-    TVal undef; undef.set_undefined();
-    TVal* val_arg = ctx.argc > 1 ? &ctx.regs[ctx.base_reg + 1] : &undef;
-    bool ok;
-    int128 x = builtin_to_bigint(ctx, val_arg, &ok);
-    if (!ok) return;
-
-    if (bits == 0) { builtin_set_bigint_result(ctx, (int128)0); return; }
-    if (bits >= 128) {
-        // 2^bits > int128 range; a nonzero high part cannot be represented.
-        // Only exact fit is when x already lies in [0, 2^127) for bits==127+
-        // but a full unsigned 128-bit result overflows our fixed width.
-        if (bits == 128 && x >= 0) { builtin_set_bigint_result(ctx, x); return; }
-        arr_throw_range_error(ctx, "BigInt.asUintN result exceeds supported precision");
-        return;
-    }
-    // mod = x & (2^bits - 1), then reinterpret as unsigned magnitude.
-    int128 mask = ((int128)1 << bits) - 1;
-    int128 r = x & mask;   // r in [0, 2^bits) already (mask is positive)
-    // bits <= 127 ⇒ r < 2^127 ⇒ fits int128 as a non-negative value.
-    builtin_set_bigint_result(ctx, r);
+    bigint_as_common(ctx, false);
 }
 
-// asIntN(bits, x): x modulo 2^bits, interpreted in [-2^(bits-1), 2^(bits-1)).
+// asIntN(bits, x): x modulo 2^bits, read as signed.
 fn void builtin_bigint_as_intn(BuiltinContext* ctx) {
+    bigint_as_common(ctx, true);
+}
+
+// Shared body of asIntN / asUintN (ECMA-262 §21.2.2.1-2), which differ only in
+// how the retained low bits are interpreted.
+fn void bigint_as_common(BuiltinContext* ctx, bool is_signed) {
     uint bits;
     if (!bigint_read_bits(ctx, &bits)) return;
     TVal undef; undef.set_undefined();
     TVal* val_arg = ctx.argc > 1 ? &ctx.regs[ctx.base_reg + 1] : &undef;
     bool ok;
-    int128 x = builtin_to_bigint(ctx, val_arg, &ok);
+    hbigint::HBigInt* x = builtin_to_bigint(ctx, val_arg, &ok);
     if (!ok) return;
 
-    if (bits == 0) { builtin_set_bigint_result(ctx, (int128)0); return; }
-    if (bits >= 128) {
-        // 2^128 wrap is the identity on a 128-bit two's-complement value.
-        builtin_set_bigint_result(ctx, x);
+    hbigint::HBigInt*? r = hbigint::hbigint_as_n(ctx.heap, x, (ulong)bits, is_signed);
+    if (catch r) {
+        arr_throw_range_error(ctx, "BigInt is too large to allocate");
         return;
     }
-    int128 mask = ((int128)1 << bits) - 1;
-    int128 m = x & mask;                    // m in [0, 2^bits)
-    int128 sign_bit = (int128)1 << (bits - 1);
-    if ((m & sign_bit) != 0) {
-        // Negative in the signed interpretation: m - 2^bits.
-        m = m - ((int128)1 << bits);
-    }
-    builtin_set_bigint_result(ctx, m);
+    builtin_set_bigint_result(ctx, r);
 }
 
 // ============================================================================
@@ -244,7 +217,7 @@ fn void builtin_bigint_as_intn(BuiltinContext* ctx) {
 
 // thisBigIntValue (ES2020 §20.2.3.4): unwrap a BigInt primitive.  On failure
 // sets ctx.should_throw and returns false.
-fn bool bigint_this_value(BuiltinContext* ctx, int128* out_val) {
+fn bool bigint_this_value(BuiltinContext* ctx, hbigint::HBigInt** out_val) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_bigint()) {
         *out_val = this_val.get_bigint();
@@ -270,7 +243,7 @@ fn bool bigint_this_value(BuiltinContext* ctx, int128* out_val) {
 }
 
 fn void builtin_bigint_proto_toString(BuiltinContext* ctx) {
-    int128 v;
+    hbigint::HBigInt* v;
     if (!bigint_this_value(ctx, &v)) return;
 
     int radix = 10;
@@ -286,14 +259,36 @@ fn void builtin_bigint_proto_toString(BuiltinContext* ctx) {
         radix = (int)(long)radix_d;
     }
 
-    char[136] buf;   // up to 128 binary digits + sign + slack
-    char[] s = hbigint::int128_to_radix(v, (uint)radix, buf[..]);
+    // A small value formats on the stack; a large one allocates exactly the
+    // width its digits need.
+    char[160] buf;
+    usz need = hbigint::hbigint_string_cap(v, (uint)radix);
+    char[] out;
+    char* heap_buf = null;
+    if (need <= buf.len) {
+        out = buf[..];
+    } else {
+        void*? raw = ctx.heap.alloc(need);
+        if (catch raw) {
+            arr_throw_range_error(ctx, "BigInt is too large to allocate");
+            return;
+        }
+        heap_buf = (char*)raw;
+        out = heap_buf[0:need];
+    }
+    defer if (heap_buf != null) ctx.heap.free((void*)heap_buf);
+
+    char[]? s = hbigint::hbigint_to_radix(ctx.heap, v, (uint)radix, out);
+    if (catch s) {
+        arr_throw_range_error(ctx, "BigInt is too large to allocate");
+        return;
+    }
     HString* hs = builtin_intern_string(ctx.heap, s);
     ctx.result.set_string(hs);
 }
 
 fn void builtin_bigint_proto_valueOf(BuiltinContext* ctx) {
-    int128 v;
+    hbigint::HBigInt* v;
     if (!bigint_this_value(ctx, &v)) return;
     builtin_set_bigint_result(ctx, v);
 }

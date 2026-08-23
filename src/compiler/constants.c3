@@ -146,21 +146,16 @@ fn uint CompilerContext.add_number_constant(&self, double val) {
 fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     Heap* hp = (Heap*)self.heap;
 
-    int128? parsed = hbigint::parse_bigint_literal(digits);
-    if (catch excuse = parsed) {
+    // parse_bigint_literal both parses and boxes: it registers the value on the
+    // mark-and-sweep list and flags it a temproot, and the constant-pool slot
+    // below becomes its anchoring reference.
+    hbigint::HBigInt*? box_r = hbigint::parse_bigint_literal(hp, digits);
+    if (catch excuse = box_r) {
         if (excuse == hbigint::BIGINT_OVERFLOW) {
-            self.set_compile_error("BigInt value exceeds supported precision");
+            self.set_compile_error("BigInt literal is too large to allocate");
         } else {
             self.set_compile_error("Invalid BigInt literal");
         }
-        return COMPILE_ERROR~;
-    }
-
-    // Box the value.  hbigint_alloc registers it on the mark-and-sweep list and
-    // flags it a temproot; the constant-pool slot below is its anchoring ref.
-    hbigint::HBigInt*? box_r = hbigint::hbigint_alloc(hp, parsed);
-    if (catch box_r) {
-        self.set_compile_error("out of memory allocating BigInt");
         return COMPILE_ERROR~;
     }
     hbigint::HBigInt* box = box_r;

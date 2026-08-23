@@ -134,7 +134,7 @@ macro bool is_truthy(TVal* val) {
     // not nanboxing is enabled, checked once here instead of duplicating a
     // bit-level tag test in the nanbox branch below.
     if (val.is_bigint()) {
-        return val.get_bigint() != 0;
+        return !val.get_bigint().is_zero();
     }
 $if types::USE_NANBOX:
     ulong tag = val.bits >> 48;
@@ -469,9 +469,11 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
 
 // Convert a BigInt's int128 value to an interned decimal HString*.
 // (BigInt.prototype.toString handles non-decimal radices separately.)
-fn HString*? vm_bigint_to_string(Vm* vm, int128 val) {
+fn HString*? vm_bigint_to_string(Vm* vm, hbigint::HBigInt* val) {
     char[48] buf;
-    char[] s = hbigint::int128_to_decimal(val, buf[..]);
+    char* heap_buf;
+    char[] s = hbigint::hbigint_to_decimal(vm.heap, val, buf[..], &heap_buf);
+    defer if (heap_buf != null) vm.heap.free((void*)heap_buf);
     return vm.heap.str_intern(s);
 }
 
