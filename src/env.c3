@@ -11,13 +11,13 @@ import boomkat::heap;
 // EnvRecord pool
 // ============================================================================
 
-// Header of a pool block. Blocks link together so the heap can free them at
-// teardown, with `next` first so the Heap can hold the list as a void*.
+// Header of an EnvPoolBlock. Blocks link through `next` so Heap teardown
+// can free all blocks.
 struct EnvPoolBlock { void* next; }
 
 const uint ENV_POOL_BLOCK_SIZE = 64;
 
-// Allocate an EnvRecord from the pool.
+// Allocates an EnvRecord from the heap pool.
 fn EnvRecord*? env_pool_alloc(Heap* h) {
     if (h.env_freelist != null) {
         EnvRecord* env = (EnvRecord*)h.env_freelist;
@@ -26,7 +26,6 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
         return env;
     }
 
-    // The freelist is empty, so carve up a new block.
     usz block_sz = EnvPoolBlock::size + EnvRecord::size * ENV_POOL_BLOCK_SIZE;
     void* raw = h.alloc_func(h.heap_udata, block_sz);
     if (raw == null) return null;
@@ -36,7 +35,6 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     block.next = h.env_pool_blocks;
     h.env_pool_blocks = block;
 
-    // Records 1 to N-1 go on the freelist; record 0 is returned below.
     char* base = (char*)raw + EnvPoolBlock::size;
     for (uint i = 1; i < ENV_POOL_BLOCK_SIZE; i++) {
         EnvRecord* e = (EnvRecord*)(base + i * EnvRecord::size);
@@ -47,7 +45,7 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     return (EnvRecord*)base;
 }
 
-// Return an EnvRecord to the pool.
+// Returns an EnvRecord to the heap pool freelist.
 fn void env_pool_free(Heap* h, EnvRecord* env) {
     if (env == null) return;
     mem::clear(env, (sz)(EnvRecord::size));
@@ -62,17 +60,13 @@ fn void env_pool_free(Heap* h, EnvRecord* env) {
 struct EnvRecord {
     // Parent scope (null for the global scope).
     EnvRecord* parent;
-    // The object holding the bindings, mapping each name to its value.
+    // Object holding binding key-value pairs.
     HObject* bindings;
-    // Is this a declarative (not object) environment?
+    // True for declarative environments, false for object environments.
     bool is_declarative;
-    // Is this a function call boundary? When true, var-scope writes
-    // stop here and do not propagate to parent scopes.
+    // Function call boundary: var-scope writes do not propagate past this link.
     bool is_function_scope;
-    // The heap that owns `bindings`. Held here rather than passed to every
-    // accessor: an EnvRecord belongs to exactly one heap for its whole life,
-    // and the field lands in the padding after the two bools, so the struct
-    // does not grow.
+    // Owning heap for bindings and property operations.
     Heap* heap;
 }
 
@@ -80,7 +74,7 @@ struct EnvRecord {
 // Creation / destruction
 // ============================================================================
 
-// Create a var environment at a function boundary, setting is_function_scope.
+// Creates a function-scoped environment record.
 fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
@@ -99,7 +93,7 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
     return types::ALLOC_ERROR~;
 }
 
-// Create an object environment record.
+// Creates an object environment record.
 fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
@@ -118,7 +112,7 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
     return types::ALLOC_ERROR~;
 }
 
-// Create a new declarative environment record.
+// Creates a declarative environment record.
 fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
@@ -137,8 +131,7 @@ fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
     return types::ALLOC_ERROR~;
 }
 
-// Return an environment record and its parents to the pool. The walk is
-// iterative, so a deep scope chain cannot overflow the C stack.
+// Iteratively returns an environment record and its parent chain to the pool.
 fn void env_destroy(Heap* heap, EnvRecord* env) {
     EnvRecord* cur = env;
     while (cur != null) {
@@ -152,7 +145,7 @@ fn void env_destroy(Heap* heap, EnvRecord* env) {
 // Variable resolution: walking the scope chain
 // ============================================================================
 
-// Find a binding by walking outward through the scope chain.
+// Walks outward through the scope chain to find a binding.
 fn TVal? env_get(EnvRecord* env, void* key) {
     Heap* h = env.heap;
     EnvRecord* cur = env;
@@ -166,7 +159,7 @@ fn TVal? env_get(EnvRecord* env, void* key) {
     return hobject::PROP_NOT_FOUND~;
 }
 
-// Check whether a binding exists anywhere in the scope chain.
+// Checks if a binding exists anywhere in the scope chain.
 fn bool env_has(EnvRecord* env, void* key) @inline {
     Heap* h = env.heap;
     EnvRecord* cur = env;
@@ -183,9 +176,8 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
 // Mutation: set and declare
 // ============================================================================
 
-// Assign to a binding. An existing one is updated wherever in the chain it
-// lives; if the name is bound nowhere, a new binding appears in the immediate
-// environment.
+// Assigns to an existing binding anywhere in the chain, or creates a new
+// binding in `env` if unbound.
 fn bool env_put(EnvRecord* env, void* key, TVal val) {
     Heap* h = env.heap;
     EnvRecord* cur = env;
@@ -200,44 +192,29 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
         }
         cur = cur.parent;
     }
-    // Unbound everywhere, so create it here.
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
 }
 
-// Declare a binding in the given environment only (no chain walk).
+// Declares a binding in this environment alone.
 fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, env.heap);
 }
 
-// Declare a non-writable, enumerable binding (CreateImmutableBinding, ES2015
-// §8.1.1.1.3). `import * as ns` uses this (§16.2.1.6.2 step 8.b.ii): the
-// namespace object is bound once, and assigning to the local name afterwards
-// must throw a TypeError, as it would for a `const`.
+// Declares a non-writable, enumerable binding (CreateImmutableBinding,
+// ES2015 §8.1.1.1.3; used by namespace imports, §16.2.1.6.2).
 fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_EC, env.heap);
 }
 
-// Declare a `var` binding in this environment alone, with no chain walk.
+// Declares a `var` binding in this environment alone (CreateGlobalVarBinding,
+// ES2015 §8.1.1.4.15).
 //
-// On the global environment record the binding is non-configurable, per ES2015
-// §8.1.1.4.15 CreateGlobalVarBinding: a script-level var on the global object
-// is { writable: true, enumerable: true, configurable: false }, unlike a bare
-// `x = 1` assignment, which stays configurable. Function-scope var
-// environments are not observable as object properties, so configurability
-// there is immaterial and they keep the ordinary WEC flags.
+// Script global vars are non-configurable ({ writable: true, enumerable: true,
+// configurable: false }), while eval global vars (`is_eval_code = true`) remain
+// configurable. Function scopes always use standard WEC flags.
 //
-// `is_eval_code` is CreateGlobalVarBinding's `D` argument. eval's
-// EvalDeclarationInstantiation passes true (§18.2.1.2 step 16.a) and a Script's
-// GlobalDeclarationInstantiation passes false (§15.1.11 step 18.a), so
-// eval-created global bindings stay configurable and script-level ones do not.
-//
-// `is_bare` marks an initializer-less `var x;`, which CanDeclareGlobalVar steps
-// 4 and 5 skip once the property exists. It comes from the opcode, DECLVAR_HOIST
-// against DECLVAR, rather than from testing `val`, because a declaration can
-// legitimately store `undefined`, as `for (var v of [1, , 3])` does on a hole.
-//
-// FunctionDeclaration hoisting uses `env_declare_global_func` instead, since
-// CreateGlobalFunctionBinding treats an existing property differently.
+// `is_bare` marks initializer-less `var x;`, skipped when the property already
+// exists (CanDeclareGlobalVar steps 4-5).
 fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare) @inline {
     Heap* h = env.heap;
     if (is_global && is_bare && env.bindings.has_prop(key, h)) {
@@ -248,22 +225,13 @@ fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, boo
     return env.bindings.put_prop(key, val, flags, h);
 }
 
-// Instantiate a top-level FunctionDeclaration binding
+// Instantiates a top-level FunctionDeclaration binding
 // (CreateGlobalFunctionBinding, ES2024 §9.1.1.4.18).
 //
-// Outside a global Environment Record this is an ordinary declarative
-// binding, identical to `env_declare_var`. On the global object the
-// existing own property decides the descriptor:
-//
-//   - Absent, or present and configurable: define the whole descriptor as
-//     { value, writable: true, enumerable: true, configurable: D }, where D is
-//     true for eval code (§19.2.1.3) and false for Script code (§16.1.7), the
-//     same distinction `env_declare_var` draws with `is_eval_code`.
-//   - Present and non-configurable: replace the value alone and keep the
-//     current attributes, which is step 6's PropertyDescriptor{[[Value]]: V}.
-//     CanDeclareGlobalFunction, emitted as CHKGLOBALFUNC, has already rejected
-//     the illegal redefinitions, so anything arriving here is writable and
-//     enumerable.
+// In non-global scopes this creates an ordinary WEC binding. On the global
+// object, absent or configurable properties receive { value, W, E, C: D }
+// (where D is true for eval code), while existing non-configurable properties
+// update only their value and retain existing attributes.
 fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
     Heap* h = env.heap;
     if (!is_global) {
@@ -278,21 +246,18 @@ fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_glo
     return env.bindings.put_prop(key, val, flags, h);
 }
 
-// Declare a built-in global, which ES §17 requires to be
-// { writable: true, enumerable: false, configurable: true }.
+// Declares a built-in global property ({ W: true, E: false, C: true }, ES §17).
 fn bool env_declare_nonenum(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WC, env.heap);
 }
 
-// Declare an immutable global: `undefined`, `NaN`, and `Infinity` (ES5 §15.1).
+// Declares an immutable global constant: undefined, NaN, Infinity (ES5 §15.1).
 fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_NNC, env.heap);
 }
 
-// Declare an accessor binding in this environment alone. `accessor_value` must
-// be a boxed getter and setter pair from `hobject::hobject_create_accessors`.
-// Live module imports use this so that reading the name reaches the exporting
-// module's current value rather than a snapshot.
+// Declares an accessor binding in this environment alone, used for live module
+// imports (accessor_value holds a boxed getter/setter pair).
 fn bool env_declare_accessor(EnvRecord* env, void* key, TVal accessor_value) @inline {
     hobject::PropFlags flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = true };
     return env.bindings.put_prop(key, accessor_value, flags, env.heap);
@@ -302,22 +267,20 @@ fn bool env_declare_accessor(EnvRecord* env, void* key, TVal accessor_value) @in
 // TDZ sentinel for let/const declarations
 // ============================================================================
 
-// Marks a `let` or `const` binding that has not been initialized yet. GETVAR
-// throws a ReferenceError when it reads one, which is the temporal dead zone.
+// Temporal dead zone sentinel for uninitialized `let` and `const` bindings.
 fn TVal tdz_sentinel() {
     TVal tv;
 $if types::USE_NANBOX:
-    // UNDEFINED with a payload of 1, which real undefined never has, since its
-    // payload is 0.
+    // Encoded as TAG_UNDEFINED with payload 1 (standard undefined uses payload 0).
     tv.bits = types::nanbox_encode_tagged(types::TAG_UNDEFINED, 1);
 $else
     tv.tag     = UNDEFINED;
-    tv.pointer = (void*)(usz)1;  // any non-null pointer marks the sentinel
+    tv.pointer = (void*)(usz)1;
 $endif
     return tv;
 }
 
-// Returns true if the value is the TDZ sentinel.
+// Returns true if `tv` is the TDZ sentinel.
 fn bool is_tdz_sentinel(TVal* tv) @inline {
 $if types::USE_NANBOX:
     return !types::nanbox_is_double(tv.bits)
@@ -332,13 +295,12 @@ $endif
 // Lexical environment helpers (for let/const)
 // ============================================================================
 
-// Bind a name in this lexical record alone, leaving the parent chain untouched.
-// PUTLEX uses this for `let` and `const` declarations in the current block.
+// Declares a lexical binding in `lex_env` without traversing parent scopes.
 fn bool env_declare_lex(EnvRecord* lex_env, void* key, TVal val) @inline {
     return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, lex_env.heap);
 }
 
-// Check if a binding exists in the lexical environment chain.
+// Checks if a binding exists in the lexical environment chain.
 fn bool env_has_lex(EnvRecord* lex_env, void* key) @inline {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
@@ -351,9 +313,7 @@ fn bool env_has_lex(EnvRecord* lex_env, void* key) @inline {
     return false;
 }
 
-// Look up a binding `depth` records out from `env`, following that many parent
-// pointers and then looking the name up once. GETBOUND uses it for captures the
-// compiler already resolved.
+// Looks up a binding at a known static ancestor depth.
 fn TVal? env_get_at_depth(EnvRecord* env, uint depth, void* key) {
     EnvRecord* cur = env;
     for (uint i = 0; i < depth && cur != null; i++) {
@@ -367,9 +327,7 @@ fn TVal? env_get_at_depth(EnvRecord* env, uint depth, void* key) {
     return hobject::PROP_NOT_FOUND~;
 }
 
-// Whether assigning to this name in the lexical chain is allowed. An unbound
-// name can be created, so it is writable; a bound one answers with its own
-// flag, which is false for a `const`.
+// Checks if a binding in the lexical chain is writable (false for `const`).
 fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
@@ -383,15 +341,9 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
     return true;
 }
 
-// Store `val` into the nearest lexical binding named `key`, in one walk.
-//
-// Returns 1 when it updated the binding, 0 when the name is unbound here and
-// the caller should fall through to the var environment, -1 on a const
-// violation, and -2 for a TDZ read.
-//
-// -2 only happens under `check_tdz`, which PUTVAR_ASSIGN passes for a user
-// assignment. Ordinary PUTVAR leaves it false so it can initialize a binding
-// still holding the sentinel.
+// Stores `val` in the nearest existing lexical binding matching `key`.
+// Returns 1 on success, 0 if unbound (fall back to var environment),
+// -1 on const assignment violation, or -2 on TDZ access (when check_tdz is true).
 fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
@@ -405,8 +357,6 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
             if (!cur.bindings.get_prop_flags((uint)idx, h).writable) {
                 return -1;
             }
-            // Strings and BigInts are refcounted, so the old value is released
-            // and the new one taken.
             if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
             *pv = val;
             if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
