@@ -111,7 +111,13 @@ throwsRange("drop-negative", function () { [1].values().drop(-1); });
 throwsRange("drop-nan", function () { [1].values().drop(NaN); });
 t("take-fractional", arr([1, 2, 3].values().take(1.5).toArray()), "[1]");
 t("drop-fractional", arr([1, 2, 3].values().drop(0.9).toArray()), "[1,2,3]");
-t("drop-infinite", arr([1, 2].values().drop(1e100).toArray()), "[]");
+// Infinity means "drop everything" and is explicitly exempt from the
+// safe-integer bound; a FINITE limit above 2**53-1 is a RangeError as of
+// tc39/ecma262 #3683 (test262 #5065), which 1e100 is.
+t("drop-infinite", arr([1, 2].values().drop(Infinity).toArray()), "[]");
+throwsRange("drop-above-max-safe", function () { [1].values().drop(1e100); });
+throwsRange("drop-max-safe-plus-1", function () { [1].values().drop(Number.MAX_SAFE_INTEGER + 1); });
+t("drop-max-safe-ok", arr([1, 2].values().drop(Number.MAX_SAFE_INTEGER).toArray()), "[]");
 
 // 7. Callback validation happens up front, before any source pull.
 throwsType("map-non-callable", function () { [1].values().map(42); });

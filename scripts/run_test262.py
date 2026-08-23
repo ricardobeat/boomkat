@@ -184,6 +184,9 @@ UNSUPPORTED_PATTERN = re.compile(
     r"await-dictionary|canonical-tz|"
     r"export-defer|immutable-arraybuffer|import-bytes|import-defer|import-text|"
     r"joint-iteration|nonextensible-applies-to-private|"
+    # Iterator-helper proposals that landed in test262 after the ES2025 set
+    # this engine implements (chunks/windows, includes, join).
+    r"iterator-chunking|iterator-includes|Iterator\.prototype\.join|"
     # Standard language features: engine-specific pragmatics
     r"cross-realm|tail-call-optimization|caller|"
     # Non-standard feature token (not in test262/features.txt; structured-clone

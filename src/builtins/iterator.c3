@@ -1760,6 +1760,16 @@ fn bool iterhelper_validate_limit(BuiltinContext* ctx, HObject* this_obj, double
         iterhelper_iterator_close(ctx, this_obj, had_error);
         return false;
     }
+    // ES2025 §27.1.3.3.2 step 7 (tc39/ecma262 #3683, test262 #5065): a FINITE
+    // limit greater than 2**53-1 is a RangeError. Infinity is explicitly
+    // exempt -- it means "no limit" -- so the check is guarded on finiteness
+    // and runs before the truncation below, where the excess would be lost.
+    if (!math::is_inf(num_limit) && num_limit > 9007199254740991.0) {
+        builtin_throw(ctx, heap.range_err_proto, "Invalid limit");
+        bool had_error = ctx.should_throw;
+        iterhelper_iterator_close(ctx, this_obj, had_error);
+        return false;
+    }
     double int_limit = math::is_inf(num_limit) ? num_limit : math::trunc(num_limit);
     if (int_limit < 0) {
         builtin_throw(ctx, heap.range_err_proto, "Invalid limit");
