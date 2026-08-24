@@ -248,7 +248,7 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
 
     uint elem_size = dv_elem_size(elem_class);
     uint view_len = view_effective_byte_length(obj);
-    if (pos + elem_size > view_len) {
+    if ((ulong)pos + (ulong)elem_size > (ulong)view_len) {
         arraybuffer_throw_range_error(ctx, "DataView getter: offset out of bounds");
         return;
     }
@@ -410,7 +410,7 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
         return;
     }
     uint view_len = view_effective_byte_length(obj);
-    if (pos + elem_size > view_len) {
+    if ((ulong)pos + (ulong)elem_size > (ulong)view_len) {
         arraybuffer_throw_range_error(ctx, "DataView setter: offset out of bounds");
         return;
     }

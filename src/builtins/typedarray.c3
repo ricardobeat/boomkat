@@ -1896,6 +1896,7 @@ fn void builtin_ta_proto_indexOf(BuiltinContext* ctx) {
         // makes the tail read as undefined (handled by ta_read_element_checked).
         // Only detach short-circuits to -1.
         if (ta_buffer_truly_detached(obj)) { ctx.result.set_fastint(-1); return; }
+        if (from_d != from_d) from_d = 0.0;
         if (from_d >= (double)len) { ctx.result.set_fastint(-1); return; }
         if (from_d < 0.0) {
             double v = (double)len + from_d;
@@ -2012,6 +2013,7 @@ fn void builtin_ta_proto_includes(BuiltinContext* ctx) {
         // Get(O, k) reads undefined (ta_read_element_checked / IsValidIntegerIndex
         // returns false once detached), so SameValueZero(undefined, undefined)
         // matches at every index, do NOT special-case detach here.
+        if (from_d != from_d) from_d = 0.0;
         if (from_d >= (double)len) { ctx.result.set_boolean(false); return; }
         if (from_d < 0.0) {
             double v = (double)len + from_d;
@@ -2370,9 +2372,13 @@ fn void builtin_ta_proto_map(BuiltinContext* ctx) {
         elem = ta_read_element_checked(ctx.heap, obj, i);
         TVal mapped = ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        char* dp = res_base + (i << result_shift);
-        ta_write_element(dp, result_cls, &mapped, ctx);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (!ta_is_detached(result) && !view_is_out_of_bounds(result) && i < ta_element_count(result)) {
+            HObject* cur_res_buf = (*result.extra_ptr()).view.buffer;
+            char* cur_res_base = (*cur_res_buf.extra_ptr()).ab.data + (*result.extra_ptr()).view.byte_offset;
+            char* dp = cur_res_base + (i << result_shift);
+            ta_write_element(dp, result_cls, &mapped, ctx);
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        }
     }
     ctx.result.set_object(result);
 }
@@ -2949,8 +2955,10 @@ fn void builtin_ta_proto_with(BuiltinContext* ctx) {
     }
     src = (*buf.extra_ptr()).ab.data + byte_off;
 
-    // Copy all elements
-    if (len > 0) mem::copy(dst, src, (sz)((usz)(len * elem_sz)));
+    // Copy all elements up to live source length (shrunk source leaves remainder zeroed)
+    uint src_live_len = ta_element_count(obj);
+    uint copy_len = src_live_len < len ? src_live_len : len;
+    if (copy_len > 0) mem::copy(dst, src, (sz)((usz)(copy_len * elem_sz)));
 
     // Set the modified element, only when the index falls within the result
     // (whose length is the pre-coercion `len`). If the buffer grew during
@@ -3421,8 +3429,8 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 }
             }
 
-            // Write element only if not detached (mapper may have detached the buffer).
-            if (!ta_is_detached(target_obj)) {
+            // Write element only if not detached and within bounds (mapper may have resized/detached the buffer).
+            if (!ta_is_detached(target_obj) && !view_is_out_of_bounds(target_obj) && k < ta_element_count(target_obj)) {
                 HObject* res_buf2 = (*target_obj.extra_ptr()).view.buffer;
                 char* res_base2 = (*res_buf2.extra_ptr()).ab.data + (*target_obj.extra_ptr()).view.byte_offset;
                 char* dp = res_base2 + (k << res_shift);
@@ -3496,8 +3504,8 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
             }
         }
 
-        // Write element only if buffer is not detached (mapper may detach).
-        if (!ta_is_detached(target_obj2)) {
+        // Write element only if buffer is not detached and within bounds (mapper may resize/detach).
+        if (!ta_is_detached(target_obj2) && !view_is_out_of_bounds(target_obj2) && i < ta_element_count(target_obj2)) {
             HObject* res_buf3 = (*target_obj2.extra_ptr()).view.buffer;
             char* res_base3 = (*res_buf3.extra_ptr()).ab.data + (*target_obj2.extra_ptr()).view.byte_offset;
             char* dp2 = res_base3 + (i << res_shift2);
