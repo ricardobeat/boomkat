@@ -15,6 +15,14 @@ module boomkat::lib::temporal;
 
 import std::math;
 import std::core::ascii;
+import std::core::string;
+
+// ASCII case-insensitive equality, used to match the ISO calendar identifier
+// ("iso8601") and its `u-ca=` annotation values. `String` is a distinct inline
+// typedef, so the stdlib method needs an explicit cast.
+fn bool ci_equals(char[] a, char[] b) {
+    return ((String)a).compare_to_ignore_case((String)b) == 0;
+}
 
 // Parsed ISO date/time. When `has_time` is set the caller validates the time
 // fields again for its own type; date-only types drop them.
@@ -199,14 +207,20 @@ fn bool parse_iso_date_string(char[] text, ParsedIsoDateTime* out) {
 
     // --- Year ---
     long sign = 1;
+    bool signed_year = false;
     if (i < len && (text[i] == '+' || text[i] == '-')) {
         if (text[i] == '-') sign = -1;
+        signed_year = true;
         i += 1;
     }
+    // An unsigned year is exactly 4 digits (extended or basic `YYYYMMDD`);
+    // a signed year may be 4 or 6 digits (DateExtendedYear). Reading no more
+    // than these keeps a basic date's month/day from being mistaken for year
+    // digits.
     usz y_start = i;
-    while (digit_at(text, i) >= 0) i += 1;
+    while (digit_at(text, i) >= 0 && (i - y_start) < (usz)(signed_year ? 6 : 4)) i += 1;
     usz y_digits = i - y_start;
-    if (y_digits != 4 && y_digits != 6) return false;
+    if (y_digits != 4 && !(signed_year && y_digits == 6)) return false;
     long y = 0;
     for (usz k = y_start; k < i; k++) y = y * 10 + (long)digit_at(text, k);
     if (sign < 0 && y == 0) return false;

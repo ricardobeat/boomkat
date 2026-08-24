@@ -14,9 +14,9 @@ import std::math;
 // Days-in-month lookup
 // ============================================================================
 
-// Days in the given proleptic Gregorian month. February returns 29 so
-// leap-year validation is the caller's responsibility (see is_leap_year in
-// civil.c3). `m` is 1-based.
+// Days in the given proleptic Gregorian month of `y`. February returns 29 in
+// a leap year and 28 otherwise, so the result is always a valid day count for
+// that year. `m` is 1-based.
 fn int days_in_month(long y, int m) {
     switch (m) {
         case 1:
@@ -30,7 +30,7 @@ fn int days_in_month(long y, int m) {
         case 6:
         case 9:
         case 11: return 30;
-        case 2:  return 29;
+        case 2:  return is_leap_year(y) ? 29 : 28;
         default: return 0;
     }
 }
@@ -135,7 +135,7 @@ fn DateDifference difference_date(CivilDate start, CivilDate end, DifferenceUnit
         // A day that has already receded into the previous month is not a
         // whole month earned. Re-anchor the end one month back and widen the
         // day remainder by that month's length.
-        if ((day_diff > 0 ? 1 : -1) == -sign) {
+        if (sign * day_diff < 0) {
             long orig_dim = dim1;
             long ny = y1 + (-sign) / 12;
             long nm = m1 + (-sign) % 12;
@@ -153,7 +153,7 @@ fn DateDifference difference_date(CivilDate start, CivilDate end, DifferenceUnit
 
         if (year_diff != 0) {
             month_diff = m1 - m0;
-            if ((month_diff > 0 ? 1 : -1) == -sign) {
+            if (sign * month_diff < 0) {
                 long month_correct = sign < 0 ? -12 : 12;
                 y1 -= sign;
                 year_diff = y1 - y0;
