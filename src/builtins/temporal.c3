@@ -156,34 +156,13 @@ fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
         HString* s = (HString*)tv.get_heapptr();
         if (s != null) {
             char[] text = s.get_cstr()[:s.blen];
-            // "iso8601" = 7 chars, "gregory" = 7, "gregorian" = 9
-            if (text.len == 7) {
-                bool iso = true;
-                char[] target = "iso8601";
-                for (usz k = 0; k < 7; k++) {
-                    char c = text[k];
-                    if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
-                    if (c != target[k]) { iso = false; break; }
-                }
-                if (iso) { *out = ctx.heap.temporal_iso_calendar; return true; }
-                bool gr = true;
-                char[] gtarget = "gregory";
-                for (usz k = 0; k < 7; k++) {
-                    char c = text[k];
-                    if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
-                    if (c != gtarget[k]) { gr = false; break; }
-                }
-                if (gr) { *out = ctx.heap.temporal_iso_calendar; return true; }
-            }
-            if (text.len == 9) {
-                bool gr = true;
-                char[] gntarget = "gregorian";
-                for (usz k = 0; k < 9; k++) {
-                    char c = text[k];
-                    if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
-                    if (c != gntarget[k]) { gr = false; break; }
-                }
-                if (gr) { *out = ctx.heap.temporal_iso_calendar; return true; }
+            // "iso8601" is the only identifier; "gregory"/"gregorian" are
+            // accepted aliases of it. All matched ASCII case-insensitively.
+            if (temporal::ci_equals(text, "iso8601") ||
+                temporal::ci_equals(text, "gregory") ||
+                temporal::ci_equals(text, "gregorian")) {
+                *out = ctx.heap.temporal_iso_calendar;
+                return true;
             }
             builtin_throw(ctx, ctx.heap.range_err_proto, "unknown calendar identifier");
             return false;
@@ -496,20 +475,20 @@ fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite numbers");
             return;
         }
-        // Date units must be integers; time units may carry fractions.
+        // Date units must be integers; time units may carry fractions that
+        // fold into nanoseconds (whole remaining units plus the fraction).
         bool date_unit = k < 4;
         long whole = (long)math::trunc(val);
-        long frac_ns = (long)((val - (double)whole) * 1e9);
         switch (k) {
             case 0: d.years = whole; break;
             case 1: d.months = whole; break;
             case 2: d.weeks = whole; break;
             case 3: d.days = whole; break;
-            case 4: d.hours = whole; d.ns += (int)frac_ns * 3600; d.ns += (int)((val - (double)whole) * 3.6e12 - (double)frac_ns * 3600.0 + 0.5); break;
-            case 5: d.minutes = whole; d.ns += (int)frac_ns * 60; d.ns += (int)((val - (double)whole) * 6e10 - (double)frac_ns * 60.0 + 0.5); break;
-            case 6: d.seconds = whole; d.ns += (int)frac_ns; break;
-            case 7: d.ms = (int)whole; d.ns += (int)(frac_ns / 1_000_000); break;
-            case 8: d.us = (int)whole; d.ns += (int)(frac_ns / 1000); break;
+            case 4: d.hours = whole; d.ns += (int)((val - (double)whole) * 3.6e12); break;
+            case 5: d.minutes = whole; d.ns += (int)((val - (double)whole) * 6e10); break;
+            case 6: d.seconds = whole; d.ns += (int)((val - (double)whole) * 1e9); break;
+            case 7: d.ms = (int)whole; d.ns += (int)((val - (double)whole) * 1e6); break;
+            case 8: d.us = (int)whole; d.ns += (int)((val - (double)whole) * 1e3); break;
             default: d.ns = (int)whole; break;
         }
         if (date_unit && math::floor(val) != val) {

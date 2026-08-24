@@ -12,6 +12,7 @@
 module boomkat::lib::temporal;
 
 import std::math;
+import std::core::ascii;
 import libc;
 
 // Minimum buffer size to format any CivilDate: sign (1) + 6 digits + 2
@@ -104,9 +105,9 @@ fn usz format_duration(DurationParts d, char* buf, usz buf_size) {
 fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_ns) {
     usz start = *ip;
     if (*ip >= t.len) return false;
-    if (t[*ip] < '0' || t[*ip] > '9') return false;
+    if (!ascii::is_digit(t[*ip])) return false;
     long v = 0;
-    while (*ip < t.len && t[*ip] >= '0' && t[*ip] <= '9') {
+    while (*ip < t.len && ascii::is_digit(t[*ip])) {
         v = v * 10 + (long)(t[*ip] - '0');
         *ip += 1;
     }
@@ -116,13 +117,13 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_ns) {
         *ip += 1;
         long f = 0;
         int digits = 0;
-        while (digits < 9 && *ip < t.len && t[*ip] >= '0' && t[*ip] <= '9') {
+        while (digits < 9 && *ip < t.len && ascii::is_digit(t[*ip])) {
             f = f * 10 + (long)(t[*ip] - '0');
             *ip += 1;
             digits += 1;
         }
         if (digits == 0) return false;
-        if (*ip < t.len && t[*ip] >= '0' && t[*ip] <= '9') return false;
+        if (*ip < t.len && ascii::is_digit(t[*ip])) return false;
         while (digits < 9) { f *= 10; digits += 1; }
         *frac_ns = f;
     }

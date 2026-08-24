@@ -12,3 +12,12 @@
 module boomkat::lib::temporal;
 
 import std::math;
+import std::core::string;
+import std::core::ascii;
+
+// ASCII case-insensitive equality (the ISO calendar identifiers and their
+// `u-ca=` annotation values are matched case-insensitively). `String` is a
+// distinct inline typedef, so the stdlib method needs an explicit cast.
+fn bool ci_equals(char[] a, char[] b) {
+    return ((String)a).compare_to_ignore_case((String)b) == 0;
+}

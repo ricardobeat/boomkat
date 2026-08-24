@@ -14,6 +14,7 @@
 module boomkat::lib::temporal;
 
 import std::math;
+import std::core::ascii;
 
 // Parsed ISO date/time. When `has_time` is set the caller validates the time
 // fields again for its own type; date-only types drop them.
@@ -29,7 +30,7 @@ struct ParsedIsoDateTime {
 }
 
 fn int digit_at(char[] text, usz i) {
-    return (i < text.len && text[i] >= '0' && text[i] <= '9') ? text[i] - '0' : -1;
+    return (i < text.len && ascii::is_digit(text[i])) ? text[i] - '0' : -1;
 }
 
 fn bool parse_two_digits(char[] text, usz* i, int* out) {
@@ -150,7 +151,7 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
         usz key_start = *i;
         while (*i < text.len && text[*i] != '=' && text[*i] != ']') {
             char c = text[*i];
-            bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+            bool ok = ascii::is_lower(c) || ascii::is_digit(c) ||
                       c == '-' || c == '_' || c == '+' || c == '.' || c == '/';
             if (!ok) return false;
             *i += 1;
@@ -166,8 +167,8 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
             usz v_start = *i;
             while (*i < text.len && text[*i] != ']') {
                 char c = text[*i];
-                bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                          (c >= '0' && c <= '9') || c == '-';
+                bool ok = ascii::is_lower(c) || ascii::is_upper(c) ||
+                          ascii::is_digit(c) || c == '-';
                 if (!ok) return false;
                 *i += 1;
             }
@@ -248,22 +249,10 @@ fn bool parse_iso_date_string(char[] text, ParsedIsoDateTime* out) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len;
         if (!parse_annotations(text, &i, &cal_start, &cal_len)) return false;
-        if (cal_len == 0) {
-            // no calendar annotation: default iso8601 (no-op)
-        } else {
+        if (cal_len != 0) {
             // The only built-in calendar is iso8601 (ASCII case-insensitive).
             char[] cal = text[cal_start..cal_start + cal_len];
-            bool iso = true;
-            if (cal.len != 6) {
-                iso = false;
-            } else {
-                for (usz k = 0; k < 6; k++) {
-                    char c = cal[k];
-                    if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
-                    if (c != "iso8601"[k]) { iso = false; break; }
-                }
-            }
-            if (!iso) return false;
+            if (!ci_equals(cal, "iso8601")) return false;
         }
         if (i != len) return false;
     }
