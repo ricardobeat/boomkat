@@ -163,24 +163,64 @@ struct HObjectTemporal {
     int             int_a;         // year, hour, or yearRef — depends on obj_class
     int             int_b;         // month, minute, monthRef
     int             int_c;         // day, second, dayRef
-    int             int_d;         // ms, microsecond, (PlainTime nanosecond/1000)
-    int             int_e;         // µs, nanosecond (the two nano fields of PlainTime)
-    int             int_f;         // ns (high 16 bits) — packed with int_e for ns
+    int             int_d;         // ms, microsecond
+    int             int_e;         // µs
+    int             int_f;         // ns (PlainTime nanosecond, 0..999)
     HObject*        calendar;      // shared ISO Calendar object
     HObject*        timezone;      // shared TimeZone object (ZonedDateTime)
 }
 ```
 
+**Engine-wide size gate.** `alloc_size_for_class` (src/hobject.c3:781)
+routes every FUNCTION/REGEXP/PROMISE/DATE/etc. through
+`HObjectBase::size + HObjectExtra::size + INLINE_EXTRA`. The union is
+sized by its largest variant, so any variant that exceeds the current
+max grows every such object across the heap. A new variant at the top
+of the line is an engine-wide cost paid by every program.
+
+Phase 1 must therefore start with a baseline measurement and an assert
+holding the line:
+
+```c3
+// next to the HObjectTemporal struct declaration
+$assert HObjectTemporal::size <= HObjectFunction::size;
+```
+
+Baseline (default nanbox build, macOS arm64, 2026-08-24):
+
+| Struct | Size |
+|---|---|
+| `HObjectBase` | 80 |
+| `HObjectFunction` (current max) | 72 |
+| `HObjectIteratorHelper` | 64 |
+| `HObjectPromise` | 40 |
+| `HObjectBufferView` | 32 |
+| **`HObjectTemporal` (proposed)** | **48** |
+| `INLINE_EXTRA` | 32 |
+| `OBJ_SIZE_FUNC` | 184 |
+
+Proposed variant sits 24 B under the max, so adding it costs zero
+bytes engine-wide. The assert documents the constraint; if a future
+revision pushes `HObjectTemporal` over `HObjectFunction::size` (the
+union re-sizes to the new max), the build fails and the implementer
+is forced to either shrink the struct or re-examine the layout.
+
 **Why one variant, not nine:** the GC walker is one extra branch on
 `obj_class` instead of nine new variants in `HObjectExtra`. Total
-extra union size is bounded (4 ints + 1 BigInt ptr + 2 HObject* = 56 B),
+extra union size is bounded (1 ptr + 6 ints + 2 HObject* = 48 B),
 identical to the cost of one variant per type. **One variant is
 strictly smaller.**
 
-Packing: `PlainTime` uses `int_d..int_f` for ms/µs/ns; `PlainDate`
-uses `int_a..int_c` for year/month/day; `Instant` uses only `big_ns`;
-`Duration` uses `big_ns` for years (a BigInt too big to fit `int`).
-ZonedDateTime uses `big_ns` + `timezone`.
+If the assert ever fires: pack the six ints into two longs (40 B total)
+or move the variant out into a separate heap allocation. Both are
+fallbacks, not first choices — readability on the duration and
+time-field code matters more than 8 B saved on a union that isn't the
+max anyway.
+
+**Why no negative-year flag:** `ObjFlags` is a bitstruct : uint and
+bit 29 (has_indexed_named_prop, src/hobject.c3:253) is the highest in
+use. Two bits remain. The year sign is already in the slot (`int_a < 0`),
+so a flag would be redundant. Branch on the slot value in `toString`.
 
 ### Vendor: `vendor/tzdata/tzdata.bin`
 
@@ -365,22 +405,24 @@ pattern for the buffer-and-`builtin_intern_string` flow:
 ```c3
 fn void builtin_temporal_plain_date_proto_toString(BuiltinContext* ctx) {
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    long year = (long)obj.extra.temporal.int_a;
     char[32] buf;
     usz len;
-    if (obj.flags.is_negative_year) {
-        len = (usz)snprintf(&buf, 32, "-%06d-%02d-%02d",
-            -obj.extra.temporal.int_a, obj.extra.temporal.int_b, obj.extra.temporal.int_c);
+    // ISO 8601 extended years: a leading sign is required for |year| >= 10000,
+    // so 10000-01-01 formats as +010000-01-01, not 10000-01-01.
+    if (year < 0) {
+        len = (usz)snprintf(&buf, 32, "-%06ld-%02d-%02d",
+            -year, obj.extra.temporal.int_b, obj.extra.temporal.int_c);
+    } else if (year > 9999) {
+        len = (usz)snprintf(&buf, 32, "+%06ld-%02d-%02d",
+            year, obj.extra.temporal.int_b, obj.extra.temporal.int_c);
     } else {
-        len = (usz)snprintf(&buf, 32, "%04d-%02d-%02d",
-            obj.extra.temporal.int_a, obj.extra.temporal.int_b, obj.extra.temporal.int_c);
+        len = (usz)snprintf(&buf, 32, "%04ld-%02d-%02d",
+            year, obj.extra.temporal.int_b, obj.extra.temporal.int_c);
     }
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 ```
-
-A new `is_negative_year` `ObjFlags` bit is the single flag we add —
-distinguishes `"-002000-01-01"` from `"002000-01-01"` (extended-year
-ISO 8601, mandated for |year| ≥ 10000).
 
 ### GC safety
 
@@ -437,7 +479,8 @@ The existing `OP_ADD` etc. handle the rare integer cases. Spec ops like
 - `src/lib/temporal/lib.c3` — NEW, ~30 LOC. Module root + re-exports
   for convenience.
 - `src/hobject.c3` — add `TEMPORAL_*` to `ObjClass`, `HObjectTemporal`
-  to the extra union, one new flag `is_negative_year`.
+  to the extra union, the `$assert` holding the variant under
+  `HObjectFunction::size`. No new `ObjFlags` bits.
 - `src/heap.c3` — extend the GC walker to mark `HObjectTemporal` fields.
 - `src/builtins/date.c3` — remove the local `civil_from_seconds`,
   replace with `import boomkat::lib::temporal` + delegate. Net change:
@@ -449,7 +492,16 @@ The existing `OP_ADD` etc. handle the rare integer cases. Spec ops like
   from the IANA tarball (not committed; the *source* tarball is fetched
   at developer setup time, the *blob* is what ships).
 - `scripts/run_test262.py` — remove `built-ins/Temporal` from `SKIP_DIRS`
-  (line 160) and `Temporal` from `UNSUPPORTED_PATTERN` (line 181).
+  (line 160), update the comment on that line from "Stage 3 proposal" to
+  "Stage 4 (shipped in V8/Safari/JSC, see plans/080-temporal.md)", and
+  remove `Temporal` from `UNSUPPORTED_PATTERN` (line 181). The skip
+  removal is gated per Phase 1 sub-step.
+- `scripts/run_test262.py` — also update the `built-ins/BigInt` comment
+  near line 169: it claims a fixed-width int128 with 130/136 pass, which
+  predates commit b61e8d4f. The current implementation is the arbitrary-
+  precision limb-vector BigInt (`BIGINT_MAX_LIMBS = 1 << 26` at
+  `src/hbigint.c3:33`). Fix the comment so the runner and the engine
+  description agree.
 - `plans/040-test262-100-percent.md` — update phase table.
 - `docs/engine-scope.md` — Temporal graduates from "Stage 3 proposal"
   skip list to "supported, ISO + Gregorian only".
@@ -467,32 +519,95 @@ The existing `OP_ADD` etc. handle the rare integer cases. Spec ops like
 - Gate: `just rosetta` + `just test-local` stay green; binary size
   unchanged (no code delta, just file path).
 
-### Phase 1 — `lib/temporal/civil.{h,c3}` + Calendar skeleton
+### Phase 1a — Calendar + PlainDate only
 
-- Lift `civil_from_seconds` from `src/builtins/date.c3:64` into
-  `src/lib/temporal/civil.c3` (verbatim). Add `epoch_days_from_civil`.
-  Add CivilDate / CivilTime / CivilDateTime value types.
-- Update `date.c3` to import `boomkat::lib::temporal` and drop the
-  local copy. Net: −32 LOC.
-- Land `src/lib/temporal/calendar.c3` (ISO + Gregorian only).
-- Land `src/lib/temporal/duration.c3` + `instant.c3` + `iso8601.c3`.
-- Land `HObjectTemporal` extra + `TEMPORAL_PLAIN_DATE/TIME/DATETIME/YEARMONTH/MONTHDAY/DURATION`
-  + `is_negative_year` flag.
-- Land `src/lib/temporal/lib.c3` (module root).
-- Land `Temporal.Calendar` constructor + `.from` (returns the ISO
-  singleton).
-- Land `Temporal.PlainDate` / `PlainTime` / `PlainDateTime` /
-  `PlainYearMonth` / `PlainMonthDay` constructors + `from` + `compare` +
-  `with` + `add` + `subtract` + `until` + `since` + `equals`.
+- Land `HObjectTemporal` extra + `$assert HObjectTemporal::size <= HObjectFunction::size`
+  with baseline numbers recorded in the struct comment.
+- Land `TEMPORAL_CALENDAR` + `TEMPORAL_PLAIN_DATE` `ObjClass` values.
+  Two new entries; well under the 6-bit namespace budget, but recorded
+  as a stated cost: 9-11 Temporal classes will consume roughly a
+  quarter of the remaining `ObjClass` values (39 currently used of 64).
+- Land GC walker case for the two new classes.
+- Land `Temporal.Calendar` constructor + `.from` (returns the ISO singleton).
+- Land `Temporal.PlainDate` constructor + `from` + `compare` + `with` +
+  `add` + `subtract` + `until` + `since` + `equals` + `toString`.
+- Land ISO 8601 formatting for `PlainDate` in `lib/temporal/iso8601.c3`.
+- Lift `built-ins/Temporal/PlainDate` and `built-ins/Temporal/Calendar`
+  from `SKIP_DIRS` in `scripts/run_test262.py` (line 160) and from
+  `UNSUPPORTED_PATTERN` (line 181). Also update the Stage 3 comment at
+  `scripts/run_test262.py:160` to Stage 4 while editing that line.
+- Gate: `just test262` with those directories un-skipped reports zero
+  failures; total failures unchanged from baseline. ~810 tests.
+
+### Phase 1b — PlainTime + PlainDateTime
+
+- Land `TEMPORAL_PLAIN_TIME` + `TEMPORAL_PLAIN_DATETIME`.
+- Land `Temporal.PlainTime` constructor + `from` + `compare` + `with` +
+  `add` + `subtract` + `until` + `since` + `equals` + `toString`.
+- Land `Temporal.PlainDateTime` constructor + arithmetic + ISO 8601
+  formatting (already have the parts from 1a).
+- Lift matching test262 directories.
+- Gate: zero failures. ~830 tests.
+
+### Phase 1c — PlainYearMonth + PlainMonthDay
+
+- Land `TEMPORAL_PLAIN_YEARMONTH` + `TEMPORAL_PLAIN_MONTHDAY`.
+- Land both constructors + their `from` / `with` / `compare` / `until` /
+  `since` / `equals` / `toString`.
+- Lift matching test262 directories.
+- Gate: zero failures. ~460 tests.
+
+### Phase 1d — Duration + Instant (no relativeTo arithmetic)
+
+- Land `src/lib/temporal/duration.c3` + `instant.c3`.
+- Land `TEMPORAL_DURATION` `ObjClass`.
 - Land `Temporal.Duration` constructor + arithmetic + `round` / `total`
   (without `relativeTo`).
-- Land ISO 8601 `toString`.
-- Lift matching test262 directories in `SKIP_DIRS`. Expected: ~2,800
-  new pass / 0 new fail.
-- Gate: `just test262` with those directories un-skipped reports 100%
-  pass; total failures unchanged from baseline.
+- Lift `built-ins/Temporal/Duration` from the skip list.
+- Gate: zero failures. ~640 tests.
+
+`iso8601.c3` lands incrementally with whichever type first needs each
+formatter (1a needs PlainDate; 1b adds PlainTime / PlainDateTime; 1d
+adds Duration).
 
 ### Phase 2 — Instant + TimeZone + ZonedDateTime
+
+**Pre-checks (must verify before committing to the blob layout).**
+
+Three load-bearing assumptions need confirmation with throwaway probes
+before any tzdb code lands:
+
+1. **`std::sort::binarysearch` availability.** Verified
+   (stdlib `lib/c3/std/sort/binarysearch.c3`): the macro returns `sz`
+   and supports a `cmp = ...` slot whose signature is
+   `cmp(list_elem, element)` (by-value, no context needed for our
+   case). The struct element type needs `@operator(<)` defined or a
+   custom comparator. The tzdb lookup will use a `TransitionRecord`
+   struct with a `key` field; the comparator reads `key` and
+   dispatches on `<`. Documented in plan, no surprise.
+2. **`$embed` accepts ~430 KB files.** Verified with a 86 B file
+   (`const char[] X = $embed("/path")` works as expected, prints
+   `embed bytes: 86` matching `wc -c`). No size-limit flag is
+   documented in `c3-lang.org/language-fundamentals/embed`; the
+   constant lands in `.rodata` and the loader is the c3c codegen,
+   not the runtime. A 430 KB blob is well under any plausible limit,
+   but if a future build balks, the fallback is a generated
+   `tzdata.c3` source file with a `const char[430000] BLOB = { ... }`
+   initializer — different build characteristics (linear in source
+   size, requires the generator to run before every c3c invocation)
+   and decided up front if needed.
+3. **tzdata uncompressed figure.** 430 KB is the order of magnitude
+   for the full IANA tz data (Africa, Americas, Asia, Atlantic,
+   Australia, Europe, Indian, Pacific, `backward`). Exact figure
+   depends on the version (e.g. tzdata2025b). The build script
+   downloads the tarball, runs `zic` to compile, and reports the
+   binary size; the plan treats 430 KB ± 50 KB as the expected
+   range and records the measured size at Phase 2 start. If the
+   figure doubles (e.g. future tzdata expansions), we ship a
+   curated subset instead of the full database — same approach as
+   POSIX-only consumers.
+
+Then:
 
 - Land `vendor/tzdata/tzdata.bin` + `src/lib/temporal/tzdb.c3`.
 - Land `Temporal.Instant` constructor + arithmetic + `since` / `until` +
@@ -544,8 +659,13 @@ Per-phase:
 
 Always:
 
-- New C3 statics get `@test` cases in `src/temporal_arith.c3` (no JS
-  needed; the test262 fixtures will catch any divergence from spec).
+- New C3 statics get `@test` cases in the same file as the function
+  they exercise, under `src/lib/temporal/`. The `@test` framework
+  (`std::core::runtime_test`, see c3-lang reference) runs them under
+  `c3c test`. Each `civil.c3` / `calendar.c3` / `duration.c3` /
+  `instant.c3` file ships with its own minimal spec-locked cases
+  (Hinnant's reference round-trip tables for civil; polyfill spec
+  reference algorithms for the rest).
 - ASAN: `just build-asan` + `python3 scripts/run_test262.py
   --phase <n>` for each phase's lifted directories.
 
