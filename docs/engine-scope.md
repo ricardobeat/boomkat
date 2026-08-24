@@ -54,8 +54,11 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   ES5-conformant: with a locales or options argument it resolves the bag per
   ECMA-402 §11.1.2 against the engine's single locale, with no full locale
   data.
-- **Stage 3 proposals.** Temporal, decorators, ShadowRealm, explicit resource
-  management. These still move.
+- **Stage 3 proposals.** Decorators, ShadowRealm, explicit resource management.
+  These still move.
+- **Temporal.** `Temporal.Calendar` and `Temporal.PlainDate` with ISO 8601 and
+  proleptic Gregorian support. Non-ISO calendars, `Intl.DateTimeFormat`
+  formatters, and IANA timezone arithmetic are out of scope.
 - **Cross-realm behavior.** No second realm to be cross to.
 - **Multi-agent coordination.** `Atomics` is well defined on one agent and ships;
   what needs threads is the coordination surface, so test262 files driving a
@@ -63,8 +66,9 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   the whole directory being excluded. `CanBlockIsFalse` tests are skipped for the
   opposite reason: this engine's single agent can suspend.
 - **Proper tail calls.** Not implemented.
-- **Arbitrary-precision BigInt.** int128 is the ceiling, so the two
-  `bigint-and-number-extremes` tests are skip-listed.
+- **Arbitrary-precision BigInt.** Limb-vector BigInt with `BIGINT_MAX_LIMBS =
+  1 << 26` at `src/hbigint.c3:33`. The few `bigint-and-number-extremes` tests
+  that need a larger literal stay skip-listed.
 
 ## Two notes for anyone editing the skip list
 

@@ -778,6 +778,28 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     ERROR_PROTO_STACK_SET {"set stack", 1, &builtin_error_proto_stack_set},            // set Error.prototype.stack
     ESCAPE {"escape", 1, &builtin_escape},                                             // escape(string) (Annex B §B.2.1.1)
     UNESCAPE {"unescape", 1, &builtin_unescape},                                       // unescape(string) (Annex B §B.2.1.2)
+    // --- Temporal ---
+    TEMPORAL_CALENDAR_FROM {"from", 1, &builtin_temporal_calendar_from},
+    TEMPORAL_CALENDAR_PROTO_ID {"id", 0, &builtin_temporal_calendar_proto_id},
+    TEMPORAL_PLAIN_DATE_CTOR {"PlainDate", 3, &builtin_temporal_plain_date_ctor},
+    TEMPORAL_PLAIN_DATE_FROM {"from", 1, &builtin_temporal_plain_date_from},
+    TEMPORAL_PLAIN_DATE_COMPARE {"compare", 2, &builtin_temporal_plain_date_compare},
+    TEMPORAL_PLAIN_DATE_PROTO_YEAR {"year", 0, &builtin_temporal_plain_date_proto_year},
+    TEMPORAL_PLAIN_DATE_PROTO_MONTH {"month", 0, &builtin_temporal_plain_date_proto_month},
+    TEMPORAL_PLAIN_DATE_PROTO_DAY {"day", 0, &builtin_temporal_plain_date_proto_day},
+    TEMPORAL_PLAIN_DATE_PROTO_DAYOFWEEK {"dayOfWeek", 0, &builtin_temporal_plain_date_proto_dayOfWeek},
+    TEMPORAL_PLAIN_DATE_PROTO_DAYOFYEAR {"dayOfYear", 0, &builtin_temporal_plain_date_proto_dayOfYear},
+    TEMPORAL_PLAIN_DATE_PROTO_MONTHCODE {"monthCode", 0, &builtin_temporal_plain_date_proto_monthCode},
+    TEMPORAL_PLAIN_DATE_PROTO_INLEAPYEAR {"inLeapYear", 0, &builtin_temporal_plain_date_proto_inLeapYear},
+    TEMPORAL_PLAIN_DATE_PROTO_CALENDAR {"calendar", 0, &builtin_temporal_plain_date_proto_calendar},
+    TEMPORAL_PLAIN_DATE_PROTO_TOSTRING {"toString", 0, &builtin_temporal_plain_date_proto_toString},
+    TEMPORAL_PLAIN_DATE_PROTO_TOJSON {"toJSON", 0, &builtin_temporal_plain_date_proto_toJSON},
+    TEMPORAL_PLAIN_DATE_PROTO_EQUALS {"equals", 1, &builtin_temporal_plain_date_proto_equals},
+    TEMPORAL_PLAIN_DATE_PROTO_WITH {"with", 1, &builtin_temporal_plain_date_proto_with},
+    TEMPORAL_PLAIN_DATE_PROTO_ADD {"add", 1, &builtin_temporal_plain_date_proto_add},
+    TEMPORAL_PLAIN_DATE_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_plain_date_proto_subtract},
+    TEMPORAL_PLAIN_DATE_PROTO_UNTIL {"until", 1, &builtin_temporal_plain_date_proto_until},
+    TEMPORAL_PLAIN_DATE_PROTO_SINCE {"since", 1, &builtin_temporal_plain_date_proto_since},
     LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -2885,6 +2907,44 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
 // one. Several spec aliases (Annex B's String.prototype.trimLeft/trimRight,
 // Set.prototype.keys) require identity with their canonical counterpart, and
 // the alias keeps the original's `.name`.
+fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, uint fn_index) {
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
+    HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = func_raw) return false;
+    HObject* func_obj = func_raw;
+    (*func_obj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
+    func_obj.flags.callable = true;
+    func_obj.flags.constructable = false;
+    func_obj.prototype = heap.function_proto;
+    builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
+    HString* length_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    if (length_str != null) {
+        TVal len_tv;
+        len_tv.set_fastint((long)(meta.arity >= 0 ? meta.arity : 0));
+        func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+    HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
+    HString* name_val = builtin_intern_string(heap, name);
+    if (name_prop_key != null && name_val != null) {
+        TVal name_tv;
+        name_tv.set_string(name_val);
+        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+    TVal getter_tv;
+    getter_tv.set_object(func_obj);
+    TVal undef; undef.set_undefined();
+    TVal gs = hobject::hobject_create_accessors(heap, getter_tv, undef);
+    PropFlags pflags = {
+        .writable = true,
+        .enumerable = false,
+        .configurable = true,
+        .is_accessor = true
+    };
+    proto.put_prop(key, gs, pflags, heap);
+    return true;
+}
+
 fn bool alias_proto_method(HObject* proto, Heap* heap, char[] name, char[] alias_name) {
     HString* key = builtin_intern_string(heap, name);
     HString* alias_key = builtin_intern_string(heap, alias_name);
@@ -3876,6 +3936,11 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register DataView constructor and prototype (plan 049 stage 3)
     if (!register_dataview(global_env, heap)) return false;
+
+    // Register Temporal namespace
+    if (!setUpTemporalCalendar(heap)) return false;
+    if (!setUpTemporalPlainDate(heap)) return false;
+    if (!setUpTemporalNamespace(global_env, heap)) return false;
 
     // Wire all prototype chains to Object.prototype
     if (heap.number_proto != null) heap.number_proto.prototype = heap.object_proto;

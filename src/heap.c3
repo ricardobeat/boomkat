@@ -716,6 +716,10 @@ struct Heap {
     HObject* arraybuffer_proto; // ArrayBuffer.prototype
     HObject* sharedarraybuffer_proto; // SharedArrayBuffer.prototype
     HObject* dataview_proto; // DataView.prototype
+    // Shared ISO Calendar and PlainDate prototype, cached to avoid global
+    // environment lookups in constructor calls and alloc_plain_date.
+    HObject* temporal_iso_calendar;
+    HObject* temporal_plain_date_proto;
 
     // Generator resume state (set by .next()/.throw()/.return() builtins,
     // read by the VM CALL handler and YIELD/RET opcodes).

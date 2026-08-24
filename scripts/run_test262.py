@@ -157,7 +157,6 @@ SKIP_DIRS = {
     "intl402",                         # 3,337 — ECMA-402 (separate spec)
     "staging",                         # 1,493 — unstandardized proposals
     "harness",                         # 116   — test harness self-tests
-    "built-ins/Temporal",              # 4,603 — Stage 3 proposal
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
     "built-ins/DisposableStack",       # 93    — Stage 3
     "built-ins/AsyncDisposableStack",  # 104   — Stage 3
@@ -166,9 +165,9 @@ SKIP_DIRS = {
     # built-ins/SharedArrayBuffer + built-ins/Atomics: implemented single-agent
     # (no worker threads). Tests using the $262.agent multi-worker harness are
     # skipped per-file below (see AGENT_HARNESS_RE in skip_reason).
-    # built-ins/BigInt: now implemented (plan 056, fixed-width int128).  130/136
-    # pass; the rest are out of scope: arbitrary-precision literals (>2^127),
-    # Reflect.construct-based is-a-constructor, and $262 cross-realm.
+    # built-ins/BigInt: limb-vector BigInt (BIGINT_MAX_LIMBS = 1 << 26 at
+    # src/hbigint.c3:33). Skips are out of scope: arbitrary-precision
+    # literals (>2^53), Reflect.construct as constructor, and $262 cross-realm.
     "language/statements/with",        # sloppy-mode only, not supported
 }
 
@@ -178,7 +177,7 @@ UNSUPPORTED_PATTERN = re.compile(
     # Test-Harness Features (non-language features, tooling-specific)
     r"IsHTMLDDA|host-gc-required|"
     # Stage 3 Proposals (ratified language features not yet in all implementations)
-    r"Temporal|ShadowRealm|decorators|explicit-resource-management|"
+    r"ShadowRealm|decorators|explicit-resource-management|"
     r"legacy-regexp|"
     r"source-phase-imports|source-phase-imports-module-source|"
     r"await-dictionary|canonical-tz|"
