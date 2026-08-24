@@ -82,12 +82,29 @@ struct DateDifference {
 // Validation
 // ============================================================================
 
-// True if y/m/d is a valid proleptic Gregorian calendar date. Out-of-range
-// inputs (month 13, day 31 of February) return false. Negative years are
+// Temporal's date-level bounds (ES2025 Temporal, ISO calendar "IsValidISODate"):
+// the proleptic Gregorian range whose epoch-day count stays within ±100,000,000
+// days of the Unix epoch. -271821-04-19 and +275760-09-13 are the inclusive
+// lower and upper edges.
+const long ISO_DATE_MIN_YEAR  = -271821;
+const int  ISO_DATE_MIN_MONTH = 4;
+const int  ISO_DATE_MIN_DAY   = 19;
+const long ISO_DATE_MAX_YEAR  = 275760;
+const int  ISO_DATE_MAX_MONTH = 9;
+const int  ISO_DATE_MAX_DAY   = 13;
+
+// True if y/m/d is a valid proleptic Gregorian calendar date within the
+// Temporal range. Out-of-range inputs (month 13, day 31 of February, dates
+// outside -271821-04-19 .. +275760-09-13) return false. Negative years are
 // valid ISO 8601 extended years.
 fn bool is_valid_iso_date(long y, int m, int d) {
     if (m < 1 || m > 12) return false;
     if (d < 1) return false;
+    if (y < ISO_DATE_MIN_YEAR || y > ISO_DATE_MAX_YEAR) return false;
+    if (y == ISO_DATE_MIN_YEAR && (m < ISO_DATE_MIN_MONTH ||
+        (m == ISO_DATE_MIN_MONTH && d < ISO_DATE_MIN_DAY))) return false;
+    if (y == ISO_DATE_MAX_YEAR && (m > ISO_DATE_MAX_MONTH ||
+        (m == ISO_DATE_MAX_MONTH && d > ISO_DATE_MAX_DAY))) return false;
     // Days in month for proleptic Gregorian. February gets 29 days so leap
     // years can be detected by `is_leap_year` below.
     int dim;

@@ -163,6 +163,7 @@ enum ObjClass : char {
     // existing classes for new types.
     TEMPORAL_CALENDAR,        // Temporal.Calendar (the shared ISO singleton)
     TEMPORAL_PLAIN_DATE,      // Temporal.PlainDate
+    TEMPORAL_DURATION,        // Temporal.Duration
 }
 
 // How a callable object is invoked. HObject.callable_kind() infers it from
@@ -711,7 +712,8 @@ union HObjectExtra {
 //
 // Layout uses plain ints (no packing): PlainTime has six fields, each fits
 // an int trivially, and ns is 0..999. Year is stored as int, which covers
-// ±2 M years without overflow — well past the spec's range.
+// ±2 M years without overflow — well past the spec's range. Duration is the
+// widest user: ten integer fields (years..nanoseconds), each int32.
 //
 // big_ns is null for non-Instant types; calendar/timezone are null when
 // not in use for the given obj_class. PlainTime, PlainDate, PlainDateTime,
@@ -727,7 +729,7 @@ union HObjectExtra {
 //   HObjectIteratorHelper::size   = 64
 //   HObjectPromise::size          = 40
 //   HObjectBufferView::size       = 32
-//   HObjectTemporal::size         = 48  (24 B under the max, costs zero
+//   HObjectTemporal::size         = 64  (8 B under the max, costs zero
 //                                        engine-wide when added)
 //   INLINE_EXTRA                  = 32
 //   OBJ_SIZE_FUNC                 = 184
@@ -739,6 +741,10 @@ struct HObjectTemporal {
     int             int_d;
     int             int_e;
     int             int_f;
+    int             int_g;
+    int             int_h;
+    int             int_i;
+    int             int_j;
     HObject*        calendar;
     HObject*        timezone;
 }

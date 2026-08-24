@@ -39,95 +39,133 @@ fn int days_in_month(long y, int m) {
 // Date arithmetic
 // ============================================================================
 
-// Add `days` to a date. Result clamped by calendar overflow rules only if
-// `overflow` is REJECT; the REJECT-when-out-of-range check is the caller's
-// job (this function is purely arithmetic).
+// Add `days` to a date. Purely arithmetic; the caller validates range.
 fn CivilDate add_days(CivilDate d, long days) {
     return civil_date_from_epoch_days(epoch_days_from_civil(d.y, d.m, d.d) + days);
 }
 
-// Add `months` to a date, clamping the day-of-month if the result month is
-// shorter than the source month (Jan 31 + 1 month -> Feb 28/29). Negative
-// `months` and `months` beyond ±2^53 are accepted.
+// Add `months` to a date, clamping the day-of-month to the end of the result
+// month (Jan 31 + 1 month -> Feb 28/29). Year/month step is the ISO calendar's
+// addIsoMonths: truncating div/mod then re-normalizing to 1..12, which carries
+// negative deltas across year boundaries correctly (2020-01 minus 1 month ->
+// 2019-12). REJECT callers pre-validate; this function always clamps.
 fn CivilDate add_months(CivilDate d, long months, OverflowKind overflow) {
-    // Floor-divide months to normalize to a year-month pair.
-    long total = (long)d.m - 1 + months;          // 0-based month count
-    long new_year = d.y + total / 12;
-    long new_month0 = total % 12;                 // 0-based, may be negative
-    if (new_month0 < 0) {
-        new_month0 += 12;
-        new_year -= 1;
-    }
-    int new_month = (int)new_month0 + 1;         // back to 1-based
-
-    int dim = days_in_month(new_year, new_month);
+    long new_year = d.y + months / 12;
+    long new_month = (long)d.m + months % 12;
+    if (new_month < 1)  { new_year -= 1; new_month += 12; }
+    else if (new_month > 12) { new_year += 1; new_month -= 12; }
+    int dim = days_in_month(new_year, (int)new_month);
     int new_day = d.d;
-    if (new_day > dim) {
-        switch (overflow) {
-            case OverflowKind.REJECT:
-                // Caller is expected to have validated; we still clamp here so
-                // arithmetic on out-of-range inputs doesn't read out of the
-                // days_in_month switch.
-                new_day = dim;
-                break;
-            case OverflowKind.CONSTRAIN:
-                new_day = dim;
-                break;
-            default:
-                new_day = dim;
-                break;
-        }
-    }
-    return { .y = new_year, .m = new_month, .d = new_day };
+    if (new_day > dim) new_day = dim;
+    return { .y = new_year, .m = (int)new_month, .d = new_day };
 }
 
-// Difference between two dates, expressed as (years, months, days). Follows
-// the polyfill spec: years = calendar years between, then months = calendar
-// months between the resulting dates, then days = remaining days.
-fn DateDifference difference_date(CivilDate a, CivilDate b) {
-    // Sign follows b - a. Years are computed first by clamping the month/day
-    // and comparing to a, then months by clamping the day and comparing to
-    // the year-adjusted start, then days as the residual.
-    long sign = 1;
-    CivilDate start = a;
-    CivilDate end = b;
-    long epoch_a = epoch_days_from_civil(a.y, a.m, a.d);
-    long epoch_b = epoch_days_from_civil(b.y, b.m, b.d);
-    if (epoch_b < epoch_a) {
-        sign = -1;
-        start = b;
-        end = a;
+// Largest unit for difference_date, mirroring the polyfill's diffCalendarDates:
+// DAYS and WEEKS reduce to a whole epoch-day count; MONTHS and YEARS are
+// calendar-slot arithmetic with the day borrow rules.
+enum DifferenceUnit : int {
+    DAYS,
+    WEEKS,
+    MONTHS,
+    YEARS,
+}
+
+fn long diff_sign(CivilDate a, CivilDate b) {
+    if (a.y != b.y) return a.y < b.y ? 1 : -1;
+    if (a.m != b.m) return a.m < b.m ? 1 : -1;
+    long da = epoch_days_from_civil(a.y, a.m, a.d);
+    long db = epoch_days_from_civil(b.y, b.m, b.d);
+    if (da != db) return da < db ? 1 : -1;
+    return 0;
+}
+
+// Difference end - start as years/months/days per `unit`. Port of the
+// polyfill's diffCalendarDates for the ISO calendar (monthCodeNumber == month,
+// no leap months, 12 months per year). For WEEKS the caller splits the day
+// count into whole weeks (truncating div/mod) — both sides of that split are
+// the same sign, matching diffCalendarDates' divTrunc/modTrunc.
+fn DateDifference difference_date(CivilDate start, CivilDate end, DifferenceUnit unit) {
+    DateDifference r;
+    r.years = 0;
+    r.months = 0;
+    r.days = 0;
+
+    long start_days = epoch_days_from_civil(start.y, start.m, start.d);
+    long end_days   = epoch_days_from_civil(end.y, end.m, end.d);
+    long days = end_days - start_days;
+    if (days == 0) return r;
+
+    if (unit == DifferenceUnit.DAYS || unit == DifferenceUnit.WEEKS) {
+        r.days = days;
+        return r;
     }
 
-    long years = end.y - start.y;
-    if ((end.m < start.m) || (end.m == start.m && end.d < start.d)) {
-        years -= 1;
+    if (unit == DifferenceUnit.MONTHS) {
+        long sign = diff_sign(start, end);
+        long months = (end.y - start.y) * 12 + (long)(end.m - start.m);
+        CivilDate anchor = add_months(start, months, OverflowKind.CONSTRAIN);
+        // Back off a month if the anchor overshot the end. diffMonthSlots and
+        // addMonths are exact inverses for the ISO calendar, so that only
+        // happens on the day: Jan 31 -> Feb 28 is zero whole months + 3 days,
+        // not 1 month minus 1 day.
+        if (sign * (long)(start.d - end.d) > 0) {
+            months -= sign;
+            anchor = add_months(start, months, OverflowKind.CONSTRAIN);
+        }
+        r.months = months;
+        r.days = end_days - epoch_days_from_civil(anchor.y, anchor.m, anchor.d);
+        return r;
     }
 
-    CivilDate year_anchor = add_months(start, years * 12, OverflowKind.CONSTRAIN);
-    long year_anchor_days = epoch_days_from_civil(year_anchor.y, year_anchor.m, year_anchor.d);
-    long end_days = epoch_days_from_civil(end.y, end.m, end.d);
+    // largestUnit YEARS
+    long y0 = start.y;
+    long m0 = start.m;
+    long d0 = start.d;
+    long y1 = end.y;
+    long m1 = end.m;
+    long d1 = end.d;
+    long year_diff = y1 - y0;
+    long month_diff = m1 - m0;
+    long day_diff = d1 - d0;
 
-    long months = 0;
-    long months_days = year_anchor_days;
-    // Walk months up from the year anchor until stepping past `end`.
-    while (months_days < end_days) {
-        long next = epoch_days_from_civil(
-            (add_months(year_anchor, (months + 1) * 12, OverflowKind.CONSTRAIN)).y,
-            (add_months(year_anchor, (months + 1) * 12, OverflowKind.CONSTRAIN)).m,
-            (add_months(year_anchor, (months + 1) * 12, OverflowKind.CONSTRAIN)).d);
-        if (next > end_days) break;
-        months += 1;
-        months_days = next;
+    if (year_diff != 0 || month_diff != 0) {
+        long sign = year_diff != 0 ? (year_diff > 0 ? 1 : -1) : (month_diff > 0 ? 1 : -1);
+        long dim1 = days_in_month(y1, (int)m1);
+        long day_correct = 0;
+        // A day that has already receded into the previous month is not a
+        // whole month earned. Re-anchor the end one month back and widen the
+        // day remainder by that month's length.
+        if ((day_diff > 0 ? 1 : -1) == -sign) {
+            long orig_dim = dim1;
+            long ny = y1 + (-sign) / 12;
+            long nm = m1 + (-sign) % 12;
+            if (nm < 1)  { ny -= 1; nm += 12; }
+            else if (nm > 12) { ny += 1; nm -= 12; }
+            y1 = ny;
+            m1 = nm;
+            year_diff = y1 - y0;
+            month_diff = m1 - m0;
+            dim1 = days_in_month(y1, (int)m1);
+            day_correct = sign < 0 ? -orig_dim : dim1;
+        }
+        long d0_trunc = d0 < dim1 ? d0 : dim1;
+        day_diff = d1 - d0_trunc + day_correct;
+
+        if (year_diff != 0) {
+            month_diff = m1 - m0;
+            if ((month_diff > 0 ? 1 : -1) == -sign) {
+                long month_correct = sign < 0 ? -12 : 12;
+                y1 -= sign;
+                year_diff = y1 - y0;
+                month_diff = m1 - m0 + month_correct;
+            }
+        }
     }
 
-    long days = end_days - months_days;
-
-    return {
-        .years  = years * sign,
-        .months = months * sign,
-        .days   = days * sign,
-    };
+    r.years = year_diff;
+    r.months = month_diff;
+    r.days = day_diff;
+    return r;
 }
 
 // True iff the two dates fall on the same civil day.

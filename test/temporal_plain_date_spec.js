@@ -105,7 +105,9 @@ assertEq(w3.year, 2025, "with all year");
 assertEq(w3.month, 1, "with all month");
 assertEq(w3.day, 1, "with all day");
 
-assertThrows(() => new Temporal.PlainDate(2024, 1, 30).with({ month: 2 }), RangeError, "with Feb 30");
+const w4 = new Temporal.PlainDate(2024, 1, 30).with({ month: 2 });
+assertEq(w4.month, 2, "with constrain month");
+assertEq(w4.day, 29, "with constrain Feb 29");
 
 // add() / subtract()
 const a1 = new Temporal.PlainDate(2024, 7, 15).add({ days: 10 });
@@ -123,7 +125,9 @@ const a5 = new Temporal.PlainDate(2024, 7, 15).subtract({ days: 5 });
 assertEq(a5.day, 10, "sub days");
 
 // Cross-month-day overflow REJECT
-assertThrows(() => new Temporal.PlainDate(2024, 1, 31).add({ months: 1 }), RangeError, "add Jan31+1mo");
+const a6 = new Temporal.PlainDate(2024, 1, 31).add({ months: 1 });
+assertEq(a6.month, 2, "add Jan31+1mo constrain month");
+assertEq(a6.day, 29, "add Jan31+1mo constrain day");
 
 // until / since
 const u1 = new Temporal.PlainDate(2024, 7, 15).until(new Temporal.PlainDate(2024, 7, 25));

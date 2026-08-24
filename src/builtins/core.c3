@@ -779,8 +779,29 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     ESCAPE {"escape", 1, &builtin_escape},                                             // escape(string) (Annex B §B.2.1.1)
     UNESCAPE {"unescape", 1, &builtin_unescape},                                       // unescape(string) (Annex B §B.2.1.2)
     // --- Temporal ---
+    TEMPORAL_CALENDAR_CTOR {"Calendar", 1, &builtin_temporal_calendar_ctor},
     TEMPORAL_CALENDAR_FROM {"from", 1, &builtin_temporal_calendar_from},
     TEMPORAL_CALENDAR_PROTO_ID {"id", 0, &builtin_temporal_calendar_proto_id},
+    TEMPORAL_CALENDAR_PROTO_TOSTRING {"toString", 0, &builtin_temporal_calendar_proto_toString},
+    TEMPORAL_DURATION_CTOR {"Duration", 0, &builtin_temporal_duration_ctor},
+    TEMPORAL_DURATION_FROM {"from", 1, &builtin_temporal_duration_from},
+    TEMPORAL_DURATION_PROTO_YEARS {"years", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_MONTHS {"months", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_WEEKS {"weeks", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_DAYS {"days", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_HOURS {"hours", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_MINUTES {"minutes", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_SECONDS {"seconds", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_MILLISECONDS {"milliseconds", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_MICROSECONDS {"microseconds", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_NANOSECONDS {"nanoseconds", 0, &builtin_temporal_duration_getter},
+    TEMPORAL_DURATION_PROTO_SIGN {"sign", 0, &builtin_temporal_duration_proto_sign},
+    TEMPORAL_DURATION_PROTO_BLANK {"blank", 0, &builtin_temporal_duration_proto_blank},
+    TEMPORAL_DURATION_PROTO_NEGATED {"negated", 0, &builtin_temporal_duration_proto_negated},
+    TEMPORAL_DURATION_PROTO_ABS {"abs", 0, &builtin_temporal_duration_proto_abs},
+    TEMPORAL_DURATION_PROTO_TOSTRING {"toString", 0, &builtin_temporal_duration_proto_toString},
+    TEMPORAL_DURATION_PROTO_TOJSON {"toJSON", 0, &builtin_temporal_duration_proto_toJSON},
+    TEMPORAL_DURATION_PROTO_VALUEOF {"valueOf", 0, &builtin_temporal_duration_proto_valueOf},
     TEMPORAL_PLAIN_DATE_CTOR {"PlainDate", 3, &builtin_temporal_plain_date_ctor},
     TEMPORAL_PLAIN_DATE_FROM {"from", 1, &builtin_temporal_plain_date_from},
     TEMPORAL_PLAIN_DATE_COMPARE {"compare", 2, &builtin_temporal_plain_date_compare},
@@ -791,7 +812,17 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_PLAIN_DATE_PROTO_DAYOFYEAR {"dayOfYear", 0, &builtin_temporal_plain_date_proto_dayOfYear},
     TEMPORAL_PLAIN_DATE_PROTO_MONTHCODE {"monthCode", 0, &builtin_temporal_plain_date_proto_monthCode},
     TEMPORAL_PLAIN_DATE_PROTO_INLEAPYEAR {"inLeapYear", 0, &builtin_temporal_plain_date_proto_inLeapYear},
+    TEMPORAL_PLAIN_DATE_PROTO_CALENDARID {"calendarId", 0, &builtin_temporal_plain_date_proto_calendarId},
     TEMPORAL_PLAIN_DATE_PROTO_CALENDAR {"calendar", 0, &builtin_temporal_plain_date_proto_calendar},
+    TEMPORAL_PLAIN_DATE_PROTO_ERA {"era", 0, &builtin_temporal_plain_date_proto_era},
+    TEMPORAL_PLAIN_DATE_PROTO_ERAYEAR {"eraYear", 0, &builtin_temporal_plain_date_proto_eraYear},
+    TEMPORAL_PLAIN_DATE_PROTO_DAYSINMONTH {"daysInMonth", 0, &builtin_temporal_plain_date_proto_daysInMonth},
+    TEMPORAL_PLAIN_DATE_PROTO_DAYSINWEEK {"daysInWeek", 0, &builtin_temporal_plain_date_proto_daysInWeek},
+    TEMPORAL_PLAIN_DATE_PROTO_DAYSINYEAR {"daysInYear", 0, &builtin_temporal_plain_date_proto_daysInYear},
+    TEMPORAL_PLAIN_DATE_PROTO_MONTHSINYEAR {"monthsInYear", 0, &builtin_temporal_plain_date_proto_monthsInYear},
+    TEMPORAL_PLAIN_DATE_PROTO_WEEKOFYEAR {"weekOfYear", 0, &builtin_temporal_plain_date_proto_weekOfYear},
+    TEMPORAL_PLAIN_DATE_PROTO_YEAROFWEEK {"yearOfWeek", 0, &builtin_temporal_plain_date_proto_yearOfWeek},
+    TEMPORAL_PLAIN_DATE_PROTO_VALUEOF {"valueOf", 0, &builtin_temporal_plain_date_proto_valueOf},
     TEMPORAL_PLAIN_DATE_PROTO_TOSTRING {"toString", 0, &builtin_temporal_plain_date_proto_toString},
     TEMPORAL_PLAIN_DATE_PROTO_TOJSON {"toJSON", 0, &builtin_temporal_plain_date_proto_toJSON},
     TEMPORAL_PLAIN_DATE_PROTO_EQUALS {"equals", 1, &builtin_temporal_plain_date_proto_equals},
@@ -3939,6 +3970,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register Temporal namespace
     if (!setUpTemporalCalendar(heap)) return false;
+    if (!setUpTemporalDuration(heap)) return false;
     if (!setUpTemporalPlainDate(heap)) return false;
     if (!setUpTemporalNamespace(global_env, heap)) return false;
 

@@ -716,9 +716,11 @@ struct Heap {
     HObject* arraybuffer_proto; // ArrayBuffer.prototype
     HObject* sharedarraybuffer_proto; // SharedArrayBuffer.prototype
     HObject* dataview_proto; // DataView.prototype
-    // Shared ISO Calendar and PlainDate prototype, cached to avoid global
-    // environment lookups in constructor calls and alloc_plain_date.
+    // Shared ISO Calendar, Calendar prototype, and PlainDate prototype,
+    // cached to avoid global environment lookups in constructor calls.
     HObject* temporal_iso_calendar;
+    HObject* temporal_calendar_proto;
+    HObject* temporal_duration_proto;
     HObject* temporal_plain_date_proto;
 
     // Generator resume state (set by .next()/.throw()/.return() builtins,
@@ -3035,6 +3037,7 @@ fn void Heap.drain_gray(&self) {
                 self.mark_tval(&(*obj.extra_ptr()).err.captured_stack);
                 break;
             case ObjClass.TEMPORAL_CALENDAR:
+            case ObjClass.TEMPORAL_DURATION:
             case ObjClass.TEMPORAL_PLAIN_DATE:
                 self.mark_temporal(&(*obj.extra_ptr()).temporal);
                 break;
