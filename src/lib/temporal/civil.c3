@@ -60,6 +60,24 @@ struct BrokenDownTime {
     int  s;
 }
 
+// Calendar arithmetic overflow policy. REJECT means the constructor /
+// arithmetic throws a RangeError when the result would be out of range;
+// CONSTRAIN clamps day-of-month to the last valid day of the resulting
+// month. Spec terminology from TemporalOptions.
+enum OverflowKind : int {
+    REJECT,
+    CONSTRAIN,
+}
+
+// Result of difference_date / Temporal.PlainDate.prototype.until with the
+// largestUnit = "days" or finer — years / months / days carry independent
+// signs, matching the polyfill spec's "DifferenceDate" algorithm.
+struct DateDifference {
+    long years;
+    long months;
+    long days;
+}
+
 // ============================================================================
 // Validation
 // ============================================================================

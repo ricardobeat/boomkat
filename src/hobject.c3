@@ -16,6 +16,7 @@ module boomkat::hobject;
 
 import boomkat::types;
 import boomkat::hstring;
+import boomkat::hbigint;
 import boomkat::bytecode;
 import boomkat::env;
 import boomkat::re_bindings;
@@ -153,6 +154,15 @@ enum ObjClass : char {
     WRAP_FOR_VALID_ITERATOR,
     // Internal GC cell for boxed accessor pairs (getter + setter).
     GETTER_SETTER,
+    // Temporal proposal (Stage 4, shipped in V8/Safari/JSC). One shared
+    // HObjectTemporal variant backs every Temporal class; obj_class
+    // discriminates which internal slots are live. Adding 9-11 entries
+    // here consumes roughly a quarter of the remaining 6-bit ObjClass
+    // namespace (39 currently used of 64). Phases 1a/1b/1c/1d/2 of the
+    // Temporal plan add them incrementally; subsequent phases reuse the
+    // existing classes for new types.
+    TEMPORAL_CALENDAR,        // Temporal.Calendar (the shared ISO singleton)
+    TEMPORAL_PLAIN_DATE,      // Temporal.PlainDate
 }
 
 // How a callable object is invoked. HObject.callable_kind() infers it from
@@ -691,8 +701,49 @@ union HObjectExtra {
     HObjectProxy                 proxy;
     HObjectArrayBuffer           ab;
     HObjectBufferView            view;
+    HObjectTemporal              temporal;
     uint                         array_length;  // For ARRAY objects: dense-element count.
 }
+
+// Temporal objects (Temporal.PlainDate, .PlainTime, .Instant, etc.). One
+// shared variant for every Temporal class; `obj_class` discriminates which
+// fields are live.
+//
+// Layout uses plain ints (no packing): PlainTime has six fields, each fits
+// an int trivially, and ns is 0..999. Year is stored as int, which covers
+// ±2 M years without overflow — well past the spec's range.
+//
+// big_ns is null for non-Instant types; calendar/timezone are null when
+// not in use for the given obj_class. PlainTime, PlainDate, PlainDateTime,
+// PlainYearMonth, PlainMonthDay, Duration, Instant, ZonedDateTime, Calendar,
+// and TimeZone all share this variant.
+//
+// HObjectExtra is sized by its largest member and alloc_size_for_class
+// charges that to every FUNCTION/REGEXP/PROMISE/DATE object. This variant
+// must never become the max, or every such object grows engine-wide.
+//
+// Baseline (nanbox, default build, macOS arm64, 2026-08-24):
+//   HObjectFunction::size         = 72  (current max)
+//   HObjectIteratorHelper::size   = 64
+//   HObjectPromise::size          = 40
+//   HObjectBufferView::size       = 32
+//   HObjectTemporal::size         = 48  (24 B under the max, costs zero
+//                                        engine-wide when added)
+//   INLINE_EXTRA                  = 32
+//   OBJ_SIZE_FUNC                 = 184
+struct HObjectTemporal {
+    HBigInt*        big_ns;
+    int             int_a;
+    int             int_b;
+    int             int_c;
+    int             int_d;
+    int             int_e;
+    int             int_f;
+    HObject*        calendar;
+    HObject*        timezone;
+}
+
+$assert HObjectTemporal::size <= HObjectFunction::size;
 
 // The prefix every HObject variant starts with, which lets the GC walk the
 // heap lists and reach shapes and properties at fixed offsets. Its first

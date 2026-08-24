@@ -2838,6 +2838,19 @@ fn void Heap.mark_hobject(&self, HObject* obj) {
     }
 }
 
+// Mark the GC-traced fields of a Temporal object: the BigInt nanosecond
+// count (a GC leaf), the shared Calendar object, and the TimeZone object.
+// Fields are null when unused for the given obj_class, so the null checks
+// are the common case for PlainDate / PlainTime / Calendar.
+fn void Heap.mark_temporal(&self, HObjectTemporal* t) {
+    if (t.big_ns != null) {
+        HeapHeader* hdr = (HeapHeader*)t.big_ns;
+        if (!hdr.is_reachable()) { hdr.set_reachable(); }
+    }
+    if (t.calendar != null) { self.mark_hobject(t.calendar); }
+    if (t.timezone != null) { self.mark_hobject(t.timezone); }
+}
+
 /**
  * Pop objects off the gray stack and follow their outgoing references: the
  * prototype, named properties, array elements, wrapped primitive, and
@@ -3016,6 +3029,10 @@ fn void Heap.drain_gray(&self) {
                 break;
             case ObjClass.ERROR:
                 self.mark_tval(&(*obj.extra_ptr()).err.captured_stack);
+                break;
+            case ObjClass.TEMPORAL_CALENDAR:
+            case ObjClass.TEMPORAL_PLAIN_DATE:
+                self.mark_temporal(&(*obj.extra_ptr()).temporal);
                 break;
             default:
                 break;
