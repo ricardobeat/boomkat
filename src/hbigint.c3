@@ -19,7 +19,7 @@ module boomkat::hbigint;
 
 import boomkat::types;
 import boomkat::heap;
-import boomkat::bigmath;
+import boomkat::lib::bigmath;
 
 alias Limb = bigmath::Limb;
 const int LIMB_BITS = bigmath::LIMB_BITS;

@@ -10,7 +10,7 @@
 // Ibarra Corretge), whose limb kernels are Knuth's classical algorithms. That
 // implementation is validated against test262, and the division kernel here was
 // checked limb-for-limb against it on randomized inputs before being adopted.
-module boomkat::bigmath;
+module boomkat::lib::bigmath;
 
 alias Limb = uint;
 alias DLimb = ulong;      // double-width accumulator for mul/div
