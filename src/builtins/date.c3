@@ -9,6 +9,7 @@ import boomkat::vm;
 import boomkat::heap;
 import boomkat::hstring;
 import boomkat::hobject;
+import boomkat::lib::temporal;
 import std::time;
 
 // ES2015+ §21.4.1.14 MakeTime: ((h*msPerHour + m*msPerMinute) + s*msPerSecond) + milli,
@@ -53,45 +54,20 @@ fn long date_floor_mod_field(double time_val, long unit_ms, long modulus) {
     return r;
 }
 
-// Convert a Unix time (seconds since 1970-01-01 UTC, may be negative) into
-// proleptic-Gregorian UTC broken-down fields. Pure integer calendar math
-// (Howard Hinnant's days-from-civil), so it is reliable across the full
-// ECMAScript date range without relying on libc's historical tzdata, the
-// same rationale the surrounding code already applied to gmtime_r.
-//
-// Outputs match the previous gmtime_r usage: `year` is the full year,
-// `month` is 0-based (0=January), `wday` is 0-based with 0=Sunday.
+// `civil_from_seconds` lives in boomkat::lib::temporal (plan 080); date.c3
+// and builtins/temporal.c3 share one implementation via that lift. The
+// pointer-out API below keeps the existing call sites in this file stable;
+// the Temporal builtins consume the struct-returning version directly.
 fn void civil_from_seconds(long secs, long* year, long* month, long* day,
                            long* wday, long* hour, long* minute, long* second) {
-    // Split into whole days and the second-of-day, flooring toward -inf so
-    // negative epoch times land on the correct civil day.
-    long days = secs / 86400;
-    long rem  = secs % 86400;
-    if (rem < 0) { rem += 86400; days -= 1; }
-
-    *hour   = rem / 3600;
-    *minute = (rem % 3600) / 60;
-    *second = rem % 60;
-
-    // Day of week: 1970-01-01 was a Thursday (4). Euclidean mod keeps it 0..6.
-    long w = (days % 7 + 4) % 7;
-    if (w < 0) { w += 7; }
-    *wday = w;
-
-    // days-from-civil, inverted (Hinnant). Shift epoch to 0000-03-01.
-    long z = days + 719468;
-    long era = (z >= 0 ? z : z - 146096) / 146097;
-    long doe = z - era * 146097;                       // [0, 146096]
-    long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;  // [0, 399]
-    long y = yoe + era * 400;
-    long doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    long mp = (5 * doy + 2) / 153;                      // [0, 11] (Mar=0)
-    long d = doy - (153 * mp + 2) / 5 + 1;              // [1, 31]
-    long m = mp < 10 ? mp + 3 : mp - 9;                 // [1, 12]
-
-    *year  = y + (m <= 2 ? 1 : 0);
-    *month = m - 1;                                     // 0-based
-    *day   = d;
+    temporal::BrokenDownTime t = temporal::civil_from_seconds(secs);
+    *year  = t.y;
+    *month = (long)t.m;
+    *day   = (long)t.d;
+    *wday  = (long)t.wday;
+    *hour  = (long)t.h;
+    *minute = (long)t.mi;
+    *second = (long)t.s;
 }
 
 // ES5 §15.9.1.1 thisTimeValue(value): throw TypeError if not a Date object.
