@@ -2471,6 +2471,87 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
         case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDARID:
             ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
             return;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTHCODE: {
+            int m = (int)obj.extra.temporal.long_b;
+            char[5] buf;
+            usz len;
+            if (m < 10) {
+                len = (usz)libc::snprintf(&buf, 5, "M0%d", m);
+            } else {
+                len = (usz)libc::snprintf(&buf, 5, "M%d", m);
+            }
+            ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+            return;
+        }
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYOFWEEK: {
+            long y = (long)obj.extra.temporal.long_a;
+            int m = (int)obj.extra.temporal.long_b;
+            int d = (int)obj.extra.temporal.long_c;
+            long days = temporal::epoch_days_from_civil(y, m, d);
+            long dow = ((days % 7) + 4) % 7;
+            if (dow <= 0) dow += 7;
+            ctx.result.set_number((double)dow);
+            return;
+        }
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYOFYEAR: {
+            long y = (long)obj.extra.temporal.long_a;
+            long jan1 = temporal::epoch_days_from_civil(y, (int)1, (int)1);
+            long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) - jan1 + 1;
+            ctx.result.set_number((double)doy);
+            return;
+        }
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WEEKOFYEAR: {
+            long y = (long)obj.extra.temporal.long_a;
+            int m = (int)obj.extra.temporal.long_b;
+            int d = (int)obj.extra.temporal.long_c;
+            long doy = temporal::epoch_days_from_civil(y, m, d) - temporal::epoch_days_from_civil(y, 1, 1) + 1;
+            long dow = ((temporal::epoch_days_from_civil(y, m, d) % 7) + 4) % 7;
+            if (dow <= 0) dow += 7;
+            long week = (doy - dow + 10) / 7;
+            if (week < 1) {
+                week = iso_weeks_in_year(y - 1);
+            } else if (week > iso_weeks_in_year(y)) {
+                week = 1;
+            }
+            ctx.result.set_number((double)week);
+            return;
+        }
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_YEAROFWEEK: {
+            long y = (long)obj.extra.temporal.long_a;
+            int m = (int)obj.extra.temporal.long_b;
+            int d = (int)obj.extra.temporal.long_c;
+            long doy = temporal::epoch_days_from_civil(y, m, d) - temporal::epoch_days_from_civil(y, 1, 1) + 1;
+            long dow = ((temporal::epoch_days_from_civil(y, m, d) % 7) + 4) % 7;
+            if (dow <= 0) dow += 7;
+            long week = (doy - dow + 10) / 7;
+            long week_year = y;
+            if (week < 1) { week_year = y - 1; }
+            else if (week > iso_weeks_in_year(y)) { week_year = y + 1; }
+            ctx.result.set_number((double)week_year);
+            return;
+        }
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINWEEK:
+            ctx.result.set_number(7.0);
+            return;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINMONTH: {
+            int m = (int)obj.extra.temporal.long_b;
+            long y = (long)obj.extra.temporal.long_a;
+            ctx.result.set_number((double)temporal::days_in_month((int)y, m));
+            return;
+        }
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINYEAR: {
+            long y = (long)obj.extra.temporal.long_a;
+            ctx.result.set_number(temporal::is_leap_year(y) ? 366.0 : 365.0);
+            return;
+        }
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTHSINYEAR:
+            ctx.result.set_number(12.0);
+            return;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_INLEAPYEAR: {
+            long y = (long)obj.extra.temporal.long_a;
+            ctx.result.set_number(temporal::is_leap_year(y) ? 1.0 : 0.0);
+            return;
+        }
         default: break;
     }
     ctx.result.set_number(val);
@@ -3292,6 +3373,72 @@ fn void builtin_temporal_plain_yearmonth_proto_eraYear(BuiltinContext* ctx) {
     ctx.result.set_undefined();
 }
 
+fn void builtin_temporal_plain_yearmonth_proto_dayOfWeek(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = plain_yearmonth_y(obj);
+    int m = plain_yearmonth_m(obj);
+    // PlainYearMonth represents "any" day of month; ISO spec uses day 1 of the month
+    // for calendar-derived getters (consistent with calendar arithmetic).
+    long days = temporal::epoch_days_from_civil(y, m, 1);
+    long dow = ((days % 7) + 4) % 7;
+    if (dow <= 0) dow += 7;
+    ctx.result.set_number((double)dow);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_dayOfYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = plain_yearmonth_y(obj);
+    int m = plain_yearmonth_m(obj);
+    long doy = temporal::epoch_days_from_civil(y, m, 1) - temporal::epoch_days_from_civil(y, 1, 1) + 1;
+    ctx.result.set_number((double)doy);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_weekOfYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = plain_yearmonth_y(obj);
+    int m = plain_yearmonth_m(obj);
+    long days = temporal::epoch_days_from_civil(y, m, 1);
+    long doy = days - temporal::epoch_days_from_civil(y, 1, 1) + 1;
+    long dow = ((days % 7) + 4) % 7;
+    if (dow <= 0) dow += 7;
+    long week = (doy - dow + 10) / 7;
+    if (week < 1) {
+        week = iso_weeks_in_year(y - 1);
+    } else if (week > iso_weeks_in_year(y)) {
+        week = 1;
+    }
+    ctx.result.set_number((double)week);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_yearOfWeek(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = plain_yearmonth_y(obj);
+    int m = plain_yearmonth_m(obj);
+    long days = temporal::epoch_days_from_civil(y, m, 1);
+    long doy = days - temporal::epoch_days_from_civil(y, 1, 1) + 1;
+    long dow = ((days % 7) + 4) % 7;
+    if (dow <= 0) dow += 7;
+    long week = (doy - dow + 10) / 7;
+    long week_year = y;
+    if (week < 1) { week_year = y - 1; }
+    else if (week > iso_weeks_in_year(y)) { week_year = y + 1; }
+    ctx.result.set_number((double)week_year);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_daysInWeek(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    ctx.result.set_number(7.0);
+}
+
 fn void builtin_temporal_plain_yearmonth_proto_valueOf(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
@@ -3893,6 +4040,89 @@ fn void builtin_temporal_plain_monthday_proto_daysInMonth(BuiltinContext* ctx) {
     ctx.result.set_number((double)temporal::days_in_month((long)plain_monthday_year(obj), (int)plain_monthday_m(obj)));
 }
 
+fn void builtin_temporal_plain_monthday_proto_dayOfWeek(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    // PlainMonthDay carries year implicitly as ISO reference year for ISO calendar.
+    long y = (long)plain_monthday_year(obj);
+    int m = (int)plain_monthday_m(obj);
+    int d = (int)plain_monthday_d(obj);
+    long days = temporal::epoch_days_from_civil(y, m, d);
+    long dow = ((days % 7) + 4) % 7;
+    if (dow <= 0) dow += 7;
+    ctx.result.set_number((double)dow);
+}
+
+fn void builtin_temporal_plain_monthday_proto_dayOfYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = (long)plain_monthday_year(obj);
+    int m = (int)plain_monthday_m(obj);
+    int d = (int)plain_monthday_d(obj);
+    long doy = temporal::epoch_days_from_civil(y, m, d) - temporal::epoch_days_from_civil(y, 1, 1) + 1;
+    ctx.result.set_number((double)doy);
+}
+
+fn void builtin_temporal_plain_monthday_proto_daysInWeek(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    ctx.result.set_number(7.0);
+}
+
+fn void builtin_temporal_plain_monthday_proto_daysInYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = (long)plain_monthday_year(obj);
+    ctx.result.set_number(temporal::is_leap_year(y) ? 366.0 : 365.0);
+}
+
+fn void builtin_temporal_plain_monthday_proto_monthsInYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    ctx.result.set_number(12.0);
+}
+
+fn void builtin_temporal_plain_monthday_proto_weekOfYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = (long)plain_monthday_year(obj);
+    int m = (int)plain_monthday_m(obj);
+    int d = (int)plain_monthday_d(obj);
+    long days = temporal::epoch_days_from_civil(y, m, d);
+    long doy = days - temporal::epoch_days_from_civil(y, 1, 1) + 1;
+    long dow = ((days % 7) + 4) % 7;
+    if (dow <= 0) dow += 7;
+    long week = (doy - dow + 10) / 7;
+    if (week < 1) {
+        week = iso_weeks_in_year(y - 1);
+    } else if (week > iso_weeks_in_year(y)) {
+        week = 1;
+    }
+    ctx.result.set_number((double)week);
+}
+
+fn void builtin_temporal_plain_monthday_proto_yearOfWeek(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = (long)plain_monthday_year(obj);
+    int m = (int)plain_monthday_m(obj);
+    int d = (int)plain_monthday_d(obj);
+    long days = temporal::epoch_days_from_civil(y, m, d);
+    long doy = days - temporal::epoch_days_from_civil(y, 1, 1) + 1;
+    long dow = ((days % 7) + 4) % 7;
+    if (dow <= 0) dow += 7;
+    long week = (doy - dow + 10) / 7;
+    long week_year = y;
+    if (week < 1) { week_year = y - 1; }
+    else if (week > iso_weeks_in_year(y)) { week_year = y + 1; }
+    ctx.result.set_number((double)week_year);
+}
+
 fn void builtin_temporal_plain_monthday_proto_valueOf(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
@@ -4419,6 +4649,16 @@ fn bool setUpTemporalPlainDateTime(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "nanosecond", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "calendar", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "calendarId", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDARID.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYOFWEEK.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "dayOfYear", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYOFYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "monthCode", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTHCODE.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "inLeapYear", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_INLEAPYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInMonth", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINMONTH.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInWeek", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINWEEK.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInYear", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "monthsInYear", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTHSINYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "weekOfYear", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WEEKOFYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_YEAROFWEEK.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOJSON.ordinal)) return false;
@@ -4490,6 +4730,11 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "calendar", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_CALENDAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "era", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ERA.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "eraYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ERAYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYOFWEEK.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "dayOfYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYOFYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "weekOfYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WEEKOFYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAROFWEEK.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINWEEK.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOJSON.ordinal)) return false;
@@ -4559,6 +4804,13 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "eraYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_ERAYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "inLeapYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_INLEAPYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "daysInMonth", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYSINMONTH.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYOFWEEK.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "dayOfYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYOFYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInWeek", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYSINWEEK.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYSINYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "monthsInYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTHSINYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "weekOfYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_WEEKOFYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_YEAROFWEEK.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOJSON.ordinal)) return false;
