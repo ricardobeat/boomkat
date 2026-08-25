@@ -1,13 +1,16 @@
 // Temporal built-ins layer. Adapts boomkat::lib::temporal value types to
 // HObject, TVal, and BuiltinContext: the ISO Calendar singleton, PlainDate
-// with ISO 8601 parsing/formatting and proleptic Gregorian arithmetic, and a
-// Duration value type for until/since results and add/subtract inputs.
+// with ISO 8601 parsing/formatting and proleptic Gregorian arithmetic,
+// PlainTime and PlainDateTime with the same calendar basis, and a Duration
+// value type for until/since results and add/subtract inputs.
 //
 // All date fields travel as an HObject of class TEMPORAL_* with the shared
 // HObjectTemporal union variant: int_a..int_c hold year/month/day for
-// PlainDate, int_a..int_j hold the ten Duration fields, and `calendar` holds
-// the shared ISO Calendar object. Getters are native accessors; nothing here
-// allocates through the JS heap except the objects themselves.
+// PlainDate and the date half of PlainDateTime, int_a..int_f hold the six
+// time fields for PlainTime, int_d..int_i hold the time fields for
+// PlainDateTime, int_a..int_j hold the ten Duration fields, and `calendar`
+// holds the shared ISO Calendar object. Getters are native accessors;
+// nothing here allocates through the JS heap except the objects themselves.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -50,6 +53,42 @@ fn HObject*? alloc_plain_date(Heap* hp, temporal::CivilDate d, HObject* calendar
     return obj;
 }
 
+// Slot layout for TEMPORAL_PLAIN_TIME: int_a..int_f carry the six time
+// fields (hour..nanosecond). The object carries no calendar; PlainTime is
+// intentionally calendar-independent per the spec.
+fn HObject*? alloc_plain_time(Heap* hp, temporal::CivilTime t) {
+    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_TIME);
+    if (catch err = raw) return err~;
+    HObject* obj = raw;
+    obj.extra.temporal.int_a = t.h;
+    obj.extra.temporal.int_b = t.mi;
+    obj.extra.temporal.int_c = t.s;
+    obj.extra.temporal.int_d = t.ms;
+    obj.extra.temporal.int_e = t.us;
+    obj.extra.temporal.int_f = t.ns;
+    return obj;
+}
+
+// Slot layout for TEMPORAL_PLAIN_DATETIME: int_a..int_c carry y/m/d and
+// int_d..int_i carry h/mi/s/ms/us/ns. Year is signed via int (covers the
+// full Temporal range; the spec caps at ±271821).
+fn HObject*? alloc_plain_datetime(Heap* hp, temporal::CivilDateTime dt, HObject* calendar) {
+    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_DATETIME);
+    if (catch err = raw) return err~;
+    HObject* obj = raw;
+    obj.extra.temporal.int_a = (int)dt.date.y;
+    obj.extra.temporal.int_b = dt.date.m;
+    obj.extra.temporal.int_c = dt.date.d;
+    obj.extra.temporal.int_d = dt.time.h;
+    obj.extra.temporal.int_e = dt.time.mi;
+    obj.extra.temporal.int_f = dt.time.s;
+    obj.extra.temporal.int_g = dt.time.ms;
+    obj.extra.temporal.int_h = dt.time.us;
+    obj.extra.temporal.int_i = dt.time.ns;
+    obj.extra.temporal.calendar = calendar;
+    return obj;
+}
+
 fn HObject*? alloc_duration(Heap* hp, temporal::DurationParts d) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_DURATION);
     if (catch err = raw) return err~;
@@ -72,6 +111,31 @@ fn temporal::CivilDate plain_date_value(HObject* obj) {
         .y = (long)obj.extra.temporal.int_a,
         .m = obj.extra.temporal.int_b,
         .d = obj.extra.temporal.int_c,
+    };
+}
+
+fn temporal::CivilTime plain_time_value(HObject* obj) {
+    return {
+        .h  = obj.extra.temporal.int_a,
+        .mi = obj.extra.temporal.int_b,
+        .s  = obj.extra.temporal.int_c,
+        .ms = obj.extra.temporal.int_d,
+        .us = obj.extra.temporal.int_e,
+        .ns = obj.extra.temporal.int_f,
+    };
+}
+
+fn temporal::CivilDateTime plain_datetime_value(HObject* obj) {
+    return {
+        .date = plain_date_value(obj),
+        .time = {
+            .h  = obj.extra.temporal.int_d,
+            .mi = obj.extra.temporal.int_e,
+            .s  = obj.extra.temporal.int_f,
+            .ms = obj.extra.temporal.int_g,
+            .us = obj.extra.temporal.int_h,
+            .ns = obj.extra.temporal.int_i,
+        },
     };
 }
 
@@ -331,6 +395,158 @@ fn bool fields_to_valid_date(BuiltinContext* ctx, temporal::CivilDate fields,
     return true;
 }
 
+// Read a PlainTime property bag. `keep_missing` mirrors bag_to_fields: when
+// true, missing fields fall back to `cur` (used by with()). Sub-second
+// precision is read from a single fractional `seconds` argument so callers
+// pass `null` for the other sub-second fields, per the polyfill spec.
+fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
+                           temporal::CivilTime cur, temporal::CivilTime* out) {
+    Vm* v = (Vm*)ctx.vm;
+    TVal h_v  = prop_or_undefined(bag, ctx.heap, "hour");
+    TVal mi_v = prop_or_undefined(bag, ctx.heap, "minute");
+    TVal s_v  = prop_or_undefined(bag, ctx.heap, "second");
+    TVal ms_v = prop_or_undefined(bag, ctx.heap, "millisecond");
+    TVal us_v = prop_or_undefined(bag, ctx.heap, "microsecond");
+    TVal ns_v = prop_or_undefined(bag, ctx.heap, "nanosecond");
+
+    int  h  = cur.h;
+    int  mi = cur.mi;
+    int  s  = cur.s;
+    int  ms = cur.ms;
+    int  us = cur.us;
+    int  ns = cur.ns;
+
+    long lv;
+    if (!h_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &h_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "hour is not an integral number");
+            return false;
+        }
+        h = (int)lv;
+    } else if (!keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing hour property");
+        return false;
+    }
+    if (!mi_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &mi_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "minute is not an integral number");
+            return false;
+        }
+        mi = (int)lv;
+    } else if (!keep_missing) {
+        mi = 0;
+    }
+    if (!s_v.is_undefined()) {
+        // Seconds allow a fractional part per the spec: take it as ms+us+ns.
+        double d = vm::vm_to_number(v, &s_v);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+        if (math::is_nan(d) || math::is_inf(d)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second is not a finite number");
+            return false;
+        }
+        if (d < 0 || d > 60) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second out of range");
+            return false;
+        }
+        long whole = (long)math::trunc(d);
+        double frac = d - (double)whole;
+        if (whole == 60) { whole = 59; frac = 0; }
+        s = (int)whole;
+        // Translate the fractional part to ms/us/ns with rounding.
+        long frac_ns = (long)math::trunc(frac * 1_000_000_000.0);
+        if (frac_ns < 0) frac_ns = 0;
+        if (frac_ns > 999_999_999) frac_ns = 999_999_999;
+        ms = (int)(frac_ns / 1_000_000);
+        us = (int)((frac_ns / 1000) % 1000);
+        ns = (int)(frac_ns % 1000);
+        // Explicit millisecond/microsecond/nanosecond properties override the
+        // fractional second, per spec: the explicit one wins.
+        if (!ms_v.is_undefined() || !us_v.is_undefined() || !ns_v.is_undefined()) {
+            ms = 0; us = 0; ns = 0;
+        }
+    } else if (!keep_missing) {
+        s = 0;
+    }
+    if (!ms_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &ms_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
+            return false;
+        }
+        ms = (int)lv;
+    } else if (!keep_missing) {
+        ms = 0;
+    }
+    if (!us_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &us_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
+            return false;
+        }
+        us = (int)lv;
+    } else if (!keep_missing) {
+        us = 0;
+    }
+    if (!ns_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &ns_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
+            return false;
+        }
+        ns = (int)lv;
+    } else if (!keep_missing) {
+        ns = 0;
+    }
+
+    out.h = h;
+    out.mi = mi;
+    out.s = s;
+    out.ms = ms;
+    out.us = us;
+    out.ns = ns;
+    return true;
+}
+
+// Validate h/m/s/ms/us/ns as a Temporal time and write it into `out`. Leap
+// seconds (s == 60) collapse to 59 here per spec.
+fn bool fields_to_valid_time(BuiltinContext* ctx, temporal::CivilTime fields, temporal::CivilTime* out) {
+    if (fields.h  < 0 || fields.h  > 23) { builtin_throw(ctx, ctx.heap.range_err_proto, "hour out of range"); return false; }
+    if (fields.mi < 0 || fields.mi > 59) { builtin_throw(ctx, ctx.heap.range_err_proto, "minute out of range"); return false; }
+    if (fields.s  < 0 || fields.s  > 60) { builtin_throw(ctx, ctx.heap.range_err_proto, "second out of range"); return false; }
+    if (fields.ms < 0 || fields.ms > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond out of range"); return false; }
+    if (fields.us < 0 || fields.us > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond out of range"); return false; }
+    if (fields.ns < 0 || fields.ns > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond out of range"); return false; }
+    if (fields.s == 60 && (fields.ms != 0 || fields.us != 0 || fields.ns != 0)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "leap second cannot have a fractional part");
+        return false;
+    }
+    temporal::CivilTime v = fields;
+    if (v.s == 60) v.s = 59;
+    *out = v;
+    return true;
+}
+
+// Read a PlainDateTime property bag: y/m/d + the six time fields. Missing
+// date fields default to `cur_date`; missing time fields default to
+// `cur_time` (00:00:00 for the constructor, the current time for `with`).
+fn bool bag_to_datetime_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
+                                temporal::CivilDate cur_date, temporal::CivilTime cur_time,
+                                temporal::CivilDateTime* out) {
+    Vm* v = (Vm*)ctx.vm;
+    temporal::CivilDate date_fields;
+    long _ep;
+    if (!bag_to_fields(ctx, bag, keep_missing, cur_date, &date_fields, &_ep)) {
+        return false;
+    }
+    temporal::CivilTime t;
+    if (!bag_to_time_fields(ctx, bag, keep_missing, cur_time, &t)) return false;
+    out.date = date_fields;
+    out.time = t;
+    return true;
+}
+
 // ToTemporalDate: convert an until/since/compare argument into a PlainDate
 // HObject. Returns the argument itself when it already is one (identity
 // preserved, matching the spec's fast path).
@@ -374,11 +590,18 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
     return null;
 }
 
-// Read the `largestUnit` and companion options for until/since. Only
-// date-level units exist for PlainDate; rounding to sub-units is a later
-// phase, so increments > 1 are validated and then ignored.
-fn bool read_diff_options(BuiltinContext* ctx, int options_index, temporal::DifferenceUnit* largest) {
-    *largest = temporal::DifferenceUnit.DAYS;
+// Read the `largestUnit` and companion options for until/since. The allowed
+// unit set depends on the type carrying the difference: PlainDate callers
+// use DAYS/WEEKS/MONTHS/YEARS; PlainTime and PlainDateTime also accept
+// HOURS/MINUTES/SECONDS (sub-day granularity). `default_largest` selects
+// the type-specific default (DAYS for PlainDate/PlainDateTime, HOURS for
+// PlainTime). Rounding beyond plain date-level increments is a later phase,
+// so increment values > 1 are validated and then ignored.
+fn bool read_diff_options(BuiltinContext* ctx, int options_index,
+                          temporal::DifferenceUnit default_largest,
+                          temporal::DifferenceUnit* largest,
+                          bool accept_time_units) {
+    *largest = default_largest;
     if (ctx.argc <= options_index) return true;
     TVal ov = ctx.regs[ctx.base_reg + options_index];
     if (ov.is_undefined()) return true;
@@ -400,13 +623,20 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index, temporal::Diff
         else if (v == "month" || v == "months") { *largest = temporal::DifferenceUnit.MONTHS; }
         else if (v == "week" || v == "weeks") { *largest = temporal::DifferenceUnit.WEEKS; }
         else if (v == "day" || v == "days") { *largest = temporal::DifferenceUnit.DAYS; }
+        else if (accept_time_units && (v == "hour" || v == "hours")) { *largest = temporal::DifferenceUnit.HOURS; }
+        else if (accept_time_units && (v == "minute" || v == "minutes")) { *largest = temporal::DifferenceUnit.MINUTES; }
+        else if (accept_time_units && (v == "second" || v == "seconds")) { *largest = temporal::DifferenceUnit.SECONDS; }
         else {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit must be year, month, week, or day");
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid largestUnit");
             return false;
         }
     }
 
-    // smallestUnit must be no finer than day, and no larger than largestUnit.
+    // smallestUnit must be no finer than the smallest allowed by the type,
+    // and no larger than largestUnit. Date-only types stop at day; time-aware
+    // types can go down to nanoseconds but the difference algorithms in
+    // lib/temporal stop at seconds (smaller units land with `round` in a
+    // later phase).
     TVal sv = prop_or_undefined(opts, ctx.heap, "smallestUnit");
     if (!sv.is_undefined()) {
         if (!sv.is_string()) {
@@ -420,8 +650,11 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index, temporal::Diff
         else if (v == "month" || v == "months") { small = temporal::DifferenceUnit.MONTHS; }
         else if (v == "week" || v == "weeks") { small = temporal::DifferenceUnit.WEEKS; }
         else if (v == "day" || v == "days") { small = temporal::DifferenceUnit.DAYS; }
+        else if (accept_time_units && (v == "hour" || v == "hours")) { small = temporal::DifferenceUnit.HOURS; }
+        else if (accept_time_units && (v == "minute" || v == "minutes")) { small = temporal::DifferenceUnit.MINUTES; }
+        else if (accept_time_units && (v == "second" || v == "seconds")) { small = temporal::DifferenceUnit.SECONDS; }
         else {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit must be year, month, week, or day");
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
             return false;
         }
         if (small > *largest) {
@@ -463,6 +696,12 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index, temporal::Diff
         }
     }
     return true;
+}
+
+// Back-compat wrapper: PlainDate calls read_diff_options with no time units.
+// Reads the option bag and writes `largestUnit`. Defaults to DAYS.
+fn bool read_date_diff_options(BuiltinContext* ctx, int options_index, temporal::DifferenceUnit* largest) {
+    return read_diff_options(ctx, options_index, temporal::DifferenceUnit.DAYS, largest, false);
 }
 
 // ============================================================================
@@ -1340,7 +1579,7 @@ fn void plain_date_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     }
 
     temporal::DifferenceUnit largest;
-    if (!read_diff_options(ctx, 1, &largest)) return;
+    if (!read_date_diff_options(ctx, 1, &largest)) return;
 
     temporal::CivilDate a = plain_date_value(obj);
     temporal::CivilDate b = plain_date_value(other);
@@ -1377,6 +1616,1291 @@ fn void builtin_temporal_plain_date_proto_since(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     plain_date_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
+}
+
+// ============================================================================
+// Temporal.PlainTime
+// ============================================================================
+
+fn void builtin_temporal_plain_time_ctor(BuiltinContext* ctx) {
+    if (!ctx.is_constructor) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime requires new");
+        return;
+    }
+    Vm* v = (Vm*)ctx.vm;
+    temporal::CivilTime t = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+    if (ctx.argc >= 1) {
+        long h_lv;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 0), &h_lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "hour is not an integral number");
+            return;
+        }
+        t.h = (int)h_lv;
+    }
+    if (ctx.argc >= 2) {
+        long mi;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 1), &mi)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "minute is not an integral number");
+            return;
+        }
+        t.mi = (int)mi;
+    }
+    if (ctx.argc >= 3) {
+        long s;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 2), &s)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second is not an integral number");
+            return;
+        }
+        t.s = (int)s;
+    }
+    if (ctx.argc >= 4) {
+        long ms;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 3), &ms)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
+            return;
+        }
+        t.ms = (int)ms;
+    }
+    if (ctx.argc >= 5) {
+        long us;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 4), &us)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
+            return;
+        }
+        t.us = (int)us;
+    }
+    if (ctx.argc >= 6) {
+        long ns;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 5), &ns)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
+            return;
+        }
+        t.ns = (int)ns;
+    }
+
+    temporal::CivilTime valid;
+    if (!fields_to_valid_time(ctx, t, &valid)) return;
+
+    HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_time_proto);
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.from requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    Vm* v = (Vm*)ctx.vm;
+
+    temporal::CivilTime result;
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        char[] text = s.get_cstr()[:s.blen];
+        // Time-only inputs use parse_iso_time_string; full date-time strings
+        // are accepted too and the date portion is discarded.
+        temporal::ParsedIsoDateTime p;
+        bool ok = temporal::parse_iso_time_string(text, &p);
+        if (!ok) {
+            temporal::ParsedIsoDateTime full_p;
+            ok = temporal::parse_iso_date_string(text, &full_p);
+            if (!ok || !full_p.has_time) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainTime.from: invalid ISO time string");
+                return;
+            }
+            p = full_p;
+        }
+        result = { .h = p.hour, .mi = p.minute, .s = p.second, .ms = 0, .us = 0, .ns = (int)p.nanos };
+        // Convert nanos (0..999_999_999) into ms/us/ns fields.
+        result.ms = (int)(p.nanos / 1_000_000);
+        result.us = (int)((p.nanos / 1000) % 1000);
+        result.ns = (int)(p.nanos % 1000);
+        if (!temporal::is_valid_time(result.h, result.mi, result.s, result.ms, result.us, result.ns)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainTime.from: out of range");
+            return;
+        }
+    } else if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
+            ctx.result.set_object(o);
+            return;
+        }
+        temporal::CivilTime fields;
+        temporal::CivilTime cur = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+        if (!bag_to_time_fields(ctx, o, false, cur, &fields)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
+        if (!fields_to_valid_time(ctx, fields, &result)) {
+            return;
+        }
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.from: argument must be a string or object");
+        return;
+    }
+
+    HObject*? obj_o = alloc_plain_time(ctx.heap, result);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_plain_time_compare(BuiltinContext* ctx) {
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.compare requires two arguments");
+        return;
+    }
+    TVal* av = arg_at(ctx, 0);
+    TVal* bv = arg_at(ctx, 1);
+    if (!av.is_object() || av.get_heapptr() == null ||
+        !bv.is_object() || bv.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.compare: arguments must be PlainTime");
+        return;
+    }
+    HObject* a = (HObject*)av.get_heapptr();
+    HObject* b = (HObject*)bv.get_heapptr();
+    if (a.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_TIME ||
+        b.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.compare: arguments must be PlainTime");
+        return;
+    }
+    ctx.result.set_fastint((long)temporal::time_compare(plain_time_value(a), plain_time_value(b)));
+}
+
+// One getter per PlainTime field, dispatched on the builtin fn index.
+fn void builtin_temporal_plain_time_getter(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    double val = 0.0;
+    switch ((Builtin)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index) {
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_HOUR:       val = (double)obj.extra.temporal.int_a; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MINUTE:     val = (double)obj.extra.temporal.int_b; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_SECOND:     val = (double)obj.extra.temporal.int_c; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.int_d; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.int_e; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.int_f; break;
+        default: break;
+    }
+    ctx.result.set_number(val);
+}
+
+fn void builtin_temporal_plain_time_proto_valueOf(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime cannot be converted to a primitive value");
+}
+
+fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilTime t = plain_time_value(obj);
+
+    int ns_digits = -1;  // smallest non-zero
+    if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
+        TVal ov = ctx.regs[ctx.base_reg];
+        if (!ov.is_object() || ov.get_heapptr() == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+            return;
+        }
+        HObject* opts = (HObject*)ov.get_heapptr();
+        TVal fd = prop_or_undefined(opts, ctx.heap, "fractionalSecondDigits");
+        if (!fd.is_undefined()) {
+            if (fd.is_number() || fd.is_fastint()) {
+                Vm* v = (Vm*)ctx.vm;
+                double d = vm::vm_to_number(v, &fd);
+                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+                if (math::is_nan(d) || d < 0 || d > 9 || math::floor(d) != d) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                    return;
+                }
+                ns_digits = (int)d;
+            } else if (fd.is_string()) {
+                HString* s = (HString*)fd.get_heapptr();
+                char[] v = s.get_cstr()[:s.blen];
+                if (v == "auto") {
+                    ns_digits = -1;
+                } else {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                    return;
+                }
+            } else {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or string");
+                return;
+            }
+        }
+        TVal su = prop_or_undefined(opts, ctx.heap, "smallestUnit");
+        if (!su.is_undefined()) {
+            if (!su.is_string()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit must be a string");
+                return;
+            }
+            HString* s = (HString*)su.get_heapptr();
+            char[] v = s.get_cstr()[:s.blen];
+            // Map smallestUnit to ns_digits: "hour"=0, "minute"=0, "second"=0,
+            // "millisecond"=3, "microsecond"=6, "nanosecond"=9.
+            if (v == "hour" || v == "hours" || v == "minute" || v == "minutes" || v == "second" || v == "seconds") {
+                if (ns_digits < 0) ns_digits = 0;
+            } else if (v == "millisecond" || v == "milliseconds") {
+                if (ns_digits < 0) ns_digits = 3;
+            } else if (v == "microsecond" || v == "microseconds") {
+                if (ns_digits < 0) ns_digits = 6;
+            } else if (v == "nanosecond" || v == "nanoseconds") {
+                if (ns_digits < 0) ns_digits = 9;
+            } else {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
+                return;
+            }
+        }
+    }
+
+    char[32] buf;
+    usz len = temporal::format_civil_time(t, &buf, 32, ns_digits);
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+}
+
+fn void builtin_temporal_plain_time_proto_toJSON(BuiltinContext* ctx) {
+    builtin_temporal_plain_time_proto_toString(ctx);
+}
+
+fn void builtin_temporal_plain_time_proto_equals(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    HObject* other = (HObject*)arg.get_heapptr();
+    if (other.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    ctx.result.set_boolean(temporal::time_equals(plain_time_value(obj), plain_time_value(other)));
+}
+
+// Convert an until/since argument into a PlainTime HObject.
+fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
+    Vm* v = (Vm*)ctx.vm;
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) return o;
+        temporal::CivilTime fields;
+        temporal::CivilTime cur = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+        if (!bag_to_time_fields(ctx, o, false, cur, &fields)) return null;
+        temporal::CivilTime valid;
+        if (!fields_to_valid_time(ctx, fields, &valid)) return null;
+        HObject*? res = alloc_plain_time(ctx.heap, valid);
+        if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+        HObject* r = res;
+        r.prototype = ctx.heap.temporal_plain_time_proto;
+        return r;
+    }
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        if (!temporal::parse_iso_date_string(text, &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO time string");
+            return null;
+        }
+        if (!p.has_time) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "string has no time portion");
+            return null;
+        }
+        temporal::CivilTime t = {
+            .h = p.hour,
+            .mi = p.minute,
+            .s = p.second,
+            .ms = (int)(p.nanos / 1_000_000),
+            .us = (int)((p.nanos / 1000) % 1000),
+            .ns = (int)(p.nanos % 1000),
+        };
+        if (!temporal::is_valid_time(t.h, t.mi, t.s, t.ms, t.us, t.ns)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "time is out of range");
+            return null;
+        }
+        HObject*? res = alloc_plain_time(ctx.heap, t);
+        if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+        HObject* r = res;
+        r.prototype = ctx.heap.temporal_plain_time_proto;
+        return r;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainTime, string, or object");
+    return null;
+}
+
+fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.prototype.with requires a fields bag");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires an object");
+        return;
+    }
+    HObject* bag = (HObject*)arg.get_heapptr();
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    Vm* v = (Vm*)ctx.vm;
+
+    temporal::CivilTime cur = plain_time_value(obj);
+    temporal::CivilTime fields;
+    if (!bag_to_time_fields(ctx, bag, true, cur, &fields)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    temporal::CivilTime valid;
+    if (!fields_to_valid_time(ctx, fields, &valid)) return;
+    HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.result.set_object(obj2);
+}
+
+fn void builtin_temporal_plain_time_proto_add(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "add requires a duration");
+        return;
+    }
+    temporal::DurationParts dur;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+
+    // Combine hours/minutes/seconds/ms/us/ns into one nanosecond delta, then
+    // split into whole seconds + leftover nanos for the carry-aware add.
+    long extra_ns = (long)dur.ns + (long)dur.us * 1000 + (long)dur.ms * 1_000_000 +
+                    dur.seconds * 1_000_000_000L + dur.minutes * 60_000_000_000L +
+                    dur.hours * 3_600_000_000_000L;
+    long carry_seconds = extra_ns / 1_000_000_000L;
+    long carry_ns = extra_ns - carry_seconds * 1_000_000_000L;
+
+    temporal::CivilTime cur = plain_time_value(obj);
+    // Add carry_ns to cur.ns, normalize into [0, 1e9), track the carry.
+    long total_ns = (long)cur.ns + carry_ns;
+    if (total_ns >= 1_000_000_000) {
+        carry_seconds += 1;
+        total_ns -= 1_000_000_000;
+    } else if (total_ns < 0) {
+        carry_seconds -= 1;
+        total_ns += 1_000_000_000;
+    }
+    // combine cur.ms/us (unchanged by carry_ns beyond the ns bump)
+    long full_subsec = ((long)cur.ms * 1_000_000L) + ((long)cur.us * 1000L) + total_ns;
+    long day_bump = 0;
+    long _day;
+    temporal::CivilTime result = temporal::add_seconds_to_time(cur, carry_seconds, &_day);
+    // day_bump is dropped per spec: PlainTime.add cannot cross midnight into
+    // a different date. The carry still affects hour/minute/second.
+    (void)day_bump;
+    result.ms = (int)(full_subsec / 1_000_000);
+    full_subsec -= (long)result.ms * 1_000_000;
+    result.us = (int)(full_subsec / 1000);
+    full_subsec -= (long)result.us * 1000;
+    result.ns = (int)full_subsec;
+
+    if (!temporal::is_valid_time(result.h, result.mi, result.s, result.ms, result.us, result.ns)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "result time is out of range");
+        return;
+    }
+    HObject*? obj_o = alloc_plain_time(ctx.heap, result);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.result.set_object(obj2);
+}
+
+fn void builtin_temporal_plain_time_proto_subtract(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract requires a duration");
+        return;
+    }
+    temporal::DurationParts dur;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+
+    long extra_ns = (long)dur.ns + (long)dur.us * 1000 + (long)dur.ms * 1_000_000 +
+                    dur.seconds * 1_000_000_000L + dur.minutes * 60_000_000_000L +
+                    dur.hours * 3_600_000_000_000L;
+    long carry_seconds = -(extra_ns / 1_000_000_000L);
+    long carry_ns = -(extra_ns - (-carry_seconds) * 1_000_000_000L);
+
+    temporal::CivilTime cur = plain_time_value(obj);
+    long total_ns = (long)cur.ns + carry_ns;
+    if (total_ns >= 1_000_000_000) {
+        carry_seconds += 1;
+        total_ns -= 1_000_000_000;
+    } else if (total_ns < 0) {
+        carry_seconds -= 1;
+        total_ns += 1_000_000_000;
+    }
+    long full_subsec = ((long)cur.ms * 1_000_000L) + ((long)cur.us * 1000L) + total_ns;
+    long _day;
+    temporal::CivilTime result = temporal::add_seconds_to_time(cur, carry_seconds, &_day);
+    result.ms = (int)(full_subsec / 1_000_000);
+    full_subsec -= (long)result.ms * 1_000_000;
+    result.us = (int)(full_subsec / 1000);
+    full_subsec -= (long)result.us * 1000;
+    result.ns = (int)full_subsec;
+
+    if (!temporal::is_valid_time(result.h, result.mi, result.s, result.ms, result.us, result.ns)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "result time is out of range");
+        return;
+    }
+    HObject*? obj_o = alloc_plain_time(ctx.heap, result);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.result.set_object(obj2);
+}
+
+fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "until/since requires another time");
+        return;
+    }
+    HObject*? other_o = plain_time_from_arg(ctx, arg_at(ctx, 0));
+    if (ctx.should_throw) return;
+    HObject* other = other_o!!;
+
+    temporal::DifferenceUnit largest;
+    if (!read_diff_options(ctx, 1, temporal::DifferenceUnit.HOURS, &largest, true)) return;
+
+    temporal::CivilTime a = plain_time_value(obj);
+    temporal::CivilTime b = plain_time_value(other);
+    temporal::CivilTime start = flipped ? b : a;
+    temporal::CivilTime end   = flipped ? a : b;
+
+    // Time-only difference: convert to a nanosecond delta then split into the
+    // chosen unit ladder. Days/weeks/months/years are not meaningful for
+    // PlainTime, but we accept them in the option (rejected above if not).
+    long start_ns = ((long)start.h * 3600 + (long)start.mi * 60 + (long)start.s) * 1_000_000_000L
+                  + (long)start.ms * 1_000_000L + (long)start.us * 1000L + (long)start.ns;
+    long end_ns   = ((long)end.h  * 3600 + (long)end.mi  * 60 + (long)end.s ) * 1_000_000_000L
+                  + (long)end.ms  * 1_000_000L + (long)end.us  * 1000L + (long)end.ns;
+    long delta = end_ns - start_ns;
+
+    temporal::DurationParts dur;
+    dur.years = 0; dur.months = 0; dur.weeks = 0; dur.days = 0;
+    if (largest == temporal::DifferenceUnit.SECONDS) {
+        long secs = delta / 1_000_000_000L;
+        long rem = delta - secs * 1_000_000_000L;
+        dur.seconds = secs;
+        dur.ms = (int)(rem / 1_000_000);
+        rem -= (long)dur.ms * 1_000_000;
+        dur.us = (int)(rem / 1000);
+        rem -= (long)dur.us * 1000;
+        dur.ns = (int)rem;
+    } else if (largest == temporal::DifferenceUnit.MINUTES) {
+        long mins = delta / 60_000_000_000L;
+        long rem = delta - mins * 60_000_000_000L;
+        dur.minutes = mins;
+        dur.seconds = rem / 1_000_000_000L;
+        rem -= dur.seconds * 1_000_000_000L;
+        dur.ms = (int)(rem / 1_000_000);
+        rem -= (long)dur.ms * 1_000_000;
+        dur.us = (int)(rem / 1000);
+        rem -= (long)dur.us * 1000;
+        dur.ns = (int)rem;
+    } else {  // HOURS (default for PlainTime after SECONDS/MINUTES/HOURS enum ordering)
+        long hours = delta / 3_600_000_000_000L;
+        long rem = delta - hours * 3_600_000_000_000L;
+        dur.hours = hours;
+        dur.minutes = rem / 60_000_000_000L;
+        rem -= dur.minutes * 60_000_000_000L;
+        dur.seconds = rem / 1_000_000_000L;
+        rem -= dur.seconds * 1_000_000_000L;
+        dur.ms = (int)(rem / 1_000_000);
+        rem -= (long)dur.ms * 1_000_000;
+        dur.us = (int)(rem / 1000);
+        rem -= (long)dur.us * 1000;
+        dur.ns = (int)rem;
+    }
+
+    HObject*? dur_o = alloc_duration(ctx.heap, dur);
+    if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* dur_obj = dur_o;
+    dur_obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(dur_obj);
+}
+
+fn void builtin_temporal_plain_time_proto_until(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    plain_time_until_since(ctx, (HObject*)this_val.get_heapptr(), false);
+}
+
+fn void builtin_temporal_plain_time_proto_since(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    plain_time_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
+}
+
+// ============================================================================
+// Temporal.PlainDateTime
+// ============================================================================
+
+fn void builtin_temporal_plain_datetime_ctor(BuiltinContext* ctx) {
+    if (!ctx.is_constructor) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime requires new");
+        return;
+    }
+    Vm* v = (Vm*)ctx.vm;
+
+    long y = 0;
+    long m = 1;
+    long d = 1;
+    int  h = 0;
+    int  mi = 0;
+    int  s = 0;
+    int  ms = 0;
+    int  us = 0;
+    int  ns = 0;
+
+    if (ctx.argc >= 1) {
+        if (!to_integer_with_truncation(v, arg_at(ctx, 0), &y)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
+            return;
+        }
+    }
+    if (ctx.argc >= 2) {
+        if (!to_integer_with_truncation(v, arg_at(ctx, 1), &m)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+            return;
+        }
+    }
+    if (ctx.argc < 3) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDateTime requires year, month, and day");
+        return;
+    }
+    if (ctx.argc >= 3) {
+        if (!to_integer_with_truncation(v, arg_at(ctx, 2), &d)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+            return;
+        }
+    }
+    if (ctx.argc >= 4) {
+        long lv;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 3), &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "hour is not an integral number");
+            return;
+        }
+        h = (int)lv;
+    }
+    if (ctx.argc >= 5) {
+        long lv;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 4), &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "minute is not an integral number");
+            return;
+        }
+        mi = (int)lv;
+    }
+    if (ctx.argc >= 6) {
+        long lv;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 5), &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second is not an integral number");
+            return;
+        }
+        s = (int)lv;
+    }
+    if (ctx.argc >= 7) {
+        long lv;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 6), &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
+            return;
+        }
+        ms = (int)lv;
+    }
+    if (ctx.argc >= 8) {
+        long lv;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 7), &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
+            return;
+        }
+        us = (int)lv;
+    }
+    if (ctx.argc >= 9) {
+        long lv;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 8), &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
+            return;
+        }
+        ns = (int)lv;
+    }
+
+    HObject* calendar = ctx.heap.temporal_iso_calendar;
+    if (ctx.argc >= 10) {
+        if (!calendar_from_arg(ctx, arg_at(ctx, 9), &calendar)) return;
+    }
+
+    if (!temporal::is_valid_iso_date(y, (int)m, (int)d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDateTime: invalid ISO date");
+        return;
+    }
+    temporal::CivilTime t = { .h = h, .mi = mi, .s = s, .ms = ms, .us = us, .ns = ns };
+    temporal::CivilTime valid_t;
+    if (!fields_to_valid_time(ctx, t, &valid_t)) return;
+
+    temporal::CivilDateTime dt = { .date = { .y = y, .m = (int)m, .d = (int)d }, .time = valid_t };
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, dt, calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_datetime_proto);
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.from requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    Vm* v = (Vm*)ctx.vm;
+
+    temporal::CivilDateTime result;
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        if (!temporal::parse_iso_date_string(text, &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDateTime.from: invalid ISO date-time string");
+            return;
+        }
+        if (!p.has_time) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDateTime.from: string has no time portion");
+            return;
+        }
+        temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
+        int dim = temporal::days_in_month(d.y, d.m);
+        if (d.d > dim) {
+            if (overflow == temporal::OverflowKind.REJECT) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
+                return;
+            }
+            d.d = dim;
+        }
+        if (!temporal::is_valid_iso_date(d.y, d.m, d.d)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
+            return;
+        }
+        temporal::CivilTime t = {
+            .h = p.hour, .mi = p.minute, .s = p.second,
+            .ms = (int)(p.nanos / 1_000_000),
+            .us = (int)((p.nanos / 1000) % 1000),
+            .ns = (int)(p.nanos % 1000),
+        };
+        if (!temporal::is_valid_time(t.h, t.mi, t.s, t.ms, t.us, t.ns)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "time is out of range");
+            return;
+        }
+        result = { .date = d, .time = t };
+    } else if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            ctx.result.set_object(o);
+            return;
+        }
+        HObject* calendar = ctx.heap.temporal_iso_calendar;
+        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
+        if (!cal_v.is_undefined()) {
+            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return;
+        }
+        temporal::CivilDateTime fields;
+        if (!bag_to_datetime_fields(ctx, o, false, { .y = 0, .m = 1, .d = 1 },
+                                    { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
+        temporal::CivilDate valid_d;
+        if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
+        temporal::CivilTime valid_t;
+        if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
+        result = { .date = valid_d, .time = valid_t };
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.from: argument must be a string or object");
+        return;
+    }
+
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, ctx.heap.temporal_iso_calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_plain_datetime_compare(BuiltinContext* ctx) {
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.compare requires two arguments");
+        return;
+    }
+    TVal* av = arg_at(ctx, 0);
+    TVal* bv = arg_at(ctx, 1);
+    if (!av.is_object() || av.get_heapptr() == null || !bv.is_object() || bv.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.compare: arguments must be PlainDateTime");
+        return;
+    }
+    HObject* a = (HObject*)av.get_heapptr();
+    HObject* b = (HObject*)bv.get_heapptr();
+    if (a.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_DATETIME ||
+        b.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.compare: arguments must be PlainDateTime");
+        return;
+    }
+    temporal::CivilDateTime ad = plain_datetime_value(a);
+    temporal::CivilDateTime bd = plain_datetime_value(b);
+    int cmp = temporal::date_compare(ad.date, bd.date);
+    if (cmp == 0) cmp = temporal::time_compare(ad.time, bd.time);
+    ctx.result.set_fastint((long)cmp);
+}
+
+// One getter per PlainDateTime field, dispatched on the builtin fn index.
+fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    double val = 0.0;
+    switch ((Builtin)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index) {
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_YEAR:        val = (double)(long)obj.extra.temporal.int_a; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTH:       val = (double)obj.extra.temporal.int_b; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAY:         val = (double)obj.extra.temporal.int_c; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_HOUR:        val = (double)obj.extra.temporal.int_d; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MINUTE:      val = (double)obj.extra.temporal.int_e; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SECOND:      val = (double)obj.extra.temporal.int_f; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.int_g; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.int_h; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.int_i; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDAR:
+            ctx.result.set_object(obj.extra.temporal.calendar);
+            return;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDARID:
+            ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
+            return;
+        default: break;
+    }
+    ctx.result.set_number(val);
+}
+
+fn void builtin_temporal_plain_datetime_proto_valueOf(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime cannot be converted to a primitive value");
+}
+
+fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilDateTime dt = plain_datetime_value(obj);
+
+    int ns_digits = -1;
+    bool show_calendar = false;
+    bool critical = false;
+    if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
+        TVal ov = ctx.regs[ctx.base_reg];
+        if (!ov.is_object() || ov.get_heapptr() == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+            return;
+        }
+        HObject* opts = (HObject*)ov.get_heapptr();
+        TVal cn = prop_or_undefined(opts, ctx.heap, "calendarName");
+        if (!cn.is_undefined()) {
+            if (!cn.is_string()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "calendarName must be a string");
+                return;
+            }
+            HString* s = (HString*)cn.get_heapptr();
+            char[] v = s.get_cstr()[:s.blen];
+            if (v == "auto") { show_calendar = false; }
+            else if (v == "always") { show_calendar = true; }
+            else if (v == "critical") { show_calendar = true; critical = true; }
+            else if (v == "never") { show_calendar = false; }
+            else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName"); return; }
+        }
+        TVal fd = prop_or_undefined(opts, ctx.heap, "fractionalSecondDigits");
+        if (!fd.is_undefined()) {
+            if (fd.is_number() || fd.is_fastint()) {
+                Vm* v = (Vm*)ctx.vm;
+                double d = vm::vm_to_number(v, &fd);
+                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+                if (math::is_nan(d) || d < 0 || d > 9 || math::floor(d) != d) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                    return;
+                }
+                ns_digits = (int)d;
+            } else if (fd.is_string()) {
+                HString* s = (HString*)fd.get_heapptr();
+                char[] v = s.get_cstr()[:s.blen];
+                if (!(v == "auto")) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                    return;
+                }
+                ns_digits = -1;
+            } else {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or string");
+                return;
+            }
+        }
+        TVal su = prop_or_undefined(opts, ctx.heap, "smallestUnit");
+        if (!su.is_undefined()) {
+            if (!su.is_string()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit must be a string");
+                return;
+            }
+            HString* s = (HString*)su.get_heapptr();
+            char[] v = s.get_cstr()[:s.blen];
+            if (v == "minute" || v == "minutes") {
+                if (ns_digits < 0) ns_digits = 0;
+            } else if (v == "second" || v == "seconds") {
+                if (ns_digits < 0) ns_digits = 0;
+            } else if (v == "millisecond" || v == "milliseconds") {
+                if (ns_digits < 0) ns_digits = 3;
+            } else if (v == "microsecond" || v == "microseconds") {
+                if (ns_digits < 0) ns_digits = 6;
+            } else if (v == "nanosecond" || v == "nanoseconds") {
+                if (ns_digits < 0) ns_digits = 9;
+            } else {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
+                return;
+            }
+        }
+    }
+
+    char[64] buf;
+    usz len = temporal::format_civil_datetime(dt, &buf, 64, ns_digits);
+    if (show_calendar) {
+        char[] ann = critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]";
+        for (usz k = 0; k < ann.len; k++) buf[len++] = ann[k];
+    }
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+}
+
+fn void builtin_temporal_plain_datetime_proto_toJSON(BuiltinContext* ctx) {
+    builtin_temporal_plain_datetime_proto_toString(ctx);
+}
+
+fn void builtin_temporal_plain_datetime_proto_equals(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    HObject* other = (HObject*)arg.get_heapptr();
+    if (other.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
+    temporal::CivilDateTime a = plain_datetime_value(obj);
+    temporal::CivilDateTime b = plain_datetime_value(other);
+    ctx.result.set_boolean(same_cal && temporal::date_equals(a.date, b.date) && temporal::time_equals(a.time, b.time));
+}
+
+fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
+    Vm* v = (Vm*)ctx.vm;
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) return o;
+        HObject* calendar = ctx.heap.temporal_iso_calendar;
+        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
+        if (!cal_v.is_undefined()) {
+            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return null;
+        }
+        temporal::CivilDateTime fields;
+        if (!bag_to_datetime_fields(ctx, o, false, { .y = 0, .m = 1, .d = 1 },
+                                    { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields)) return null;
+        temporal::CivilDate valid_d;
+        if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return null;
+        temporal::CivilTime valid_t;
+        if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return null;
+        temporal::CivilDateTime dt = { .date = valid_d, .time = valid_t };
+        HObject*? res = alloc_plain_datetime(ctx.heap, dt, calendar);
+        if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+        HObject* r = res;
+        r.prototype = ctx.heap.temporal_plain_datetime_proto;
+        return r;
+    }
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        if (!temporal::parse_iso_date_string(text, &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date-time string");
+            return null;
+        }
+        if (!p.has_time) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "string has no time portion");
+            return null;
+        }
+        temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
+        if (!temporal::is_valid_iso_date(d.y, d.m, d.d)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
+            return null;
+        }
+        temporal::CivilTime t = {
+            .h = p.hour, .mi = p.minute, .s = p.second,
+            .ms = (int)(p.nanos / 1_000_000),
+            .us = (int)((p.nanos / 1000) % 1000),
+            .ns = (int)(p.nanos % 1000),
+        };
+        temporal::CivilDateTime dt = { .date = d, .time = t };
+        HObject*? res = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+        if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+        HObject* r = res;
+        r.prototype = ctx.heap.temporal_plain_datetime_proto;
+        return r;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainDateTime, string, or object");
+    return null;
+}
+
+fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.prototype.with requires a fields bag");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires an object");
+        return;
+    }
+    HObject* bag = (HObject*)arg.get_heapptr();
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    Vm* v = (Vm*)ctx.vm;
+
+    temporal::CivilDateTime cur = plain_datetime_value(obj);
+    temporal::CivilDateTime fields;
+    if (!bag_to_datetime_fields(ctx, bag, true, cur.date, cur.time, &fields)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    temporal::CivilDate valid_d;
+    if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) return;
+    temporal::CivilTime valid_t;
+    if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
+    temporal::CivilDateTime result = { .date = valid_d, .time = valid_t };
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.result.set_object(obj2);
+}
+
+fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "add requires a duration");
+        return;
+    }
+    temporal::DurationParts dur;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+
+    temporal::CivilDateTime cur = plain_datetime_value(obj);
+    long extra_ns = dur.ns + ((long)dur.us * 1000) + ((long)dur.ms * 1_000_000) +
+                    (dur.seconds * 1_000_000_000L) + (dur.minutes * 60_000_000_000L) +
+                    (dur.hours * 3_600_000_000_000L);
+    long whole_days = extra_ns / 86_400_000_000_000L;
+    long rem_ns = extra_ns - whole_days * 86_400_000_000_000L;
+    long sec_part = rem_ns / 1_000_000_000L;
+    long ns_part = rem_ns - sec_part * 1_000_000_000L;
+    long total_months = dur.years * 12 + dur.months;
+    long total_days = dur.weeks * 7 + dur.days + whole_days;
+
+    temporal::CivilDate after_months;
+    if (overflow == temporal::OverflowKind.REJECT) {
+        temporal::CivilDate m = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
+        if (cur.date.d > temporal::days_in_month(m.y, m.m)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
+            return;
+        }
+        after_months = { .y = m.y, .m = m.m, .d = cur.date.d };
+    } else {
+        after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
+    }
+    temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
+    if (!temporal::is_valid_iso_date(date_part.y, date_part.m, date_part.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
+        return;
+    }
+
+    long day_bump = 0;
+    temporal::CivilTime time_part = temporal::add_seconds_to_time(cur.time, sec_part, &day_bump);
+    // day_bump is dropped per spec: PlainDateTime.add cannot cross a date
+    // boundary into the next day. The carry still affects hour/minute/second.
+    long total_n = (long)cur.time.ns + ns_part;
+    if (total_n >= 1_000_000_000) {
+        long _d;
+        time_part = temporal::add_seconds_to_time(time_part, 1, &_d);
+        total_n -= 1_000_000_000;
+    } else if (total_n < 0) {
+        long _d;
+        time_part = temporal::add_seconds_to_time(time_part, -1, &_d);
+        total_n += 1_000_000_000;
+    }
+    long full_subsec = ((long)cur.time.ms * 1_000_000L) + ((long)cur.time.us * 1000L) + total_n;
+    time_part.ms = (int)(full_subsec / 1_000_000);
+    full_subsec -= (long)time_part.ms * 1_000_000;
+    time_part.us = (int)(full_subsec / 1000);
+    full_subsec -= (long)time_part.us * 1000;
+    time_part.ns = (int)full_subsec;
+
+    temporal::CivilDateTime result = { .date = date_part, .time = time_part };
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.result.set_object(obj2);
+}
+
+fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract requires a duration");
+        return;
+    }
+    temporal::DurationParts dur;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+
+    temporal::CivilDateTime cur = plain_datetime_value(obj);
+    long extra_ns = dur.ns + ((long)dur.us * 1000) + ((long)dur.ms * 1_000_000) +
+                    (dur.seconds * 1_000_000_000L) + (dur.minutes * 60_000_000_000L) +
+                    (dur.hours * 3_600_000_000_000L);
+    long whole_days = -(extra_ns / 86_400_000_000_000L);
+    long rem_ns = -(extra_ns - (-whole_days) * 86_400_000_000_000L);
+    long sec_part = rem_ns / 1_000_000_000L;
+    long ns_part = rem_ns - sec_part * 1_000_000_000L;
+    long total_months = -(dur.years * 12 + dur.months);
+    long total_days = -(dur.weeks * 7 + dur.days) + whole_days;
+
+    temporal::CivilDate after_months;
+    if (overflow == temporal::OverflowKind.REJECT) {
+        temporal::CivilDate m = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
+        if (cur.date.d > temporal::days_in_month(m.y, m.m)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
+            return;
+        }
+        after_months = { .y = m.y, .m = m.m, .d = cur.date.d };
+    } else {
+        after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
+    }
+    temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
+    if (!temporal::is_valid_iso_date(date_part.y, date_part.m, date_part.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
+        return;
+    }
+
+    long day_bump = 0;
+    temporal::CivilTime time_part = temporal::add_seconds_to_time(cur.time, sec_part, &day_bump);
+    long total_n = (long)cur.time.ns + ns_part;
+    if (total_n >= 1_000_000_000) {
+        long _d;
+        time_part = temporal::add_seconds_to_time(time_part, 1, &_d);
+        total_n -= 1_000_000_000;
+    } else if (total_n < 0) {
+        long _d;
+        time_part = temporal::add_seconds_to_time(time_part, -1, &_d);
+        total_n += 1_000_000_000;
+    }
+    long full_subsec = ((long)cur.time.ms * 1_000_000L) + ((long)cur.time.us * 1000L) + total_n;
+    time_part.ms = (int)(full_subsec / 1_000_000);
+    full_subsec -= (long)time_part.ms * 1_000_000;
+    time_part.us = (int)(full_subsec / 1000);
+    full_subsec -= (long)time_part.us * 1000;
+    time_part.ns = (int)full_subsec;
+
+    temporal::CivilDateTime result = { .date = date_part, .time = time_part };
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.result.set_object(obj2);
+}
+
+fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "until/since requires another date-time");
+        return;
+    }
+    HObject*? other_o = plain_datetime_from_arg(ctx, arg_at(ctx, 0));
+    if (ctx.should_throw) return;
+    HObject* other = other_o!!;
+
+    HObject* this_cal = obj.extra.temporal.calendar;
+    HObject* other_cal = other.extra.temporal.calendar;
+    if (this_cal != other_cal || this_cal == null) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "calendars do not match");
+        return;
+    }
+
+    temporal::DifferenceUnit largest;
+    if (!read_diff_options(ctx, 1, temporal::DifferenceUnit.DAYS, &largest, true)) return;
+
+    temporal::CivilDateTime a = plain_datetime_value(obj);
+    temporal::CivilDateTime b = plain_datetime_value(other);
+    temporal::CivilDateTime start = flipped ? b : a;
+    temporal::CivilDateTime end   = flipped ? a : b;
+
+    // Date part first, then time leftover at the chosen granularity. For
+    // largestUnit at the date level (days..years), use difference_date with
+    // the chosen unit so the result is years/months/days. For largestUnit
+    // finer than days (hours..seconds), use days-only difference_date and
+    // convert the time delta at the chosen granularity.
+    temporal::DifferenceUnit date_unit = largest;
+    if (largest < temporal::DifferenceUnit.DAYS) date_unit = temporal::DifferenceUnit.DAYS;
+    temporal::DateDifference ddiff = temporal::difference_date(start.date, end.date, date_unit);
+    long start_epoch = temporal::epoch_days_from_civil(start.date.y, start.date.m, start.date.d) * 86_400L
+                     + (long)start.time.h * 3600 + (long)start.time.mi * 60 + (long)start.time.s;
+    long end_epoch   = temporal::epoch_days_from_civil(end.date.y,   end.date.m,   end.date.d)   * 86_400L
+                     + (long)end.time.h * 3600 + (long)end.time.mi * 60 + (long)end.time.s;
+    long start_ns = start_epoch * 1_000_000_000L + (long)start.time.ms * 1_000_000L + (long)start.time.us * 1000L + (long)start.time.ns;
+    long end_ns   = end_epoch   * 1_000_000_000L + (long)end.time.ms   * 1_000_000L + (long)end.time.us   * 1000L + (long)end.time.ns;
+    long total_delta = end_ns - start_ns;
+    long days_total = total_delta / 86_400_000_000_000L;
+    long rem_ns = total_delta - days_total * 86_400_000_000_000L;
+
+    temporal::DurationParts dur;
+    dur.years = 0;
+    dur.months = 0;
+    dur.weeks = 0;
+    if (largest == temporal::DifferenceUnit.DAYS) {
+        // Day-only output: total delta in ns / ns-per-day gives the right count
+        // (the date diff and time delta agree for same-time-of-day inputs).
+        dur.days = days_total;
+        dur.hours = 0; dur.minutes = 0; dur.seconds = 0;
+        dur.ms = 0; dur.us = 0; dur.ns = 0;
+    } else if (largest == temporal::DifferenceUnit.MONTHS ||
+               largest == temporal::DifferenceUnit.YEARS ||
+               largest == temporal::DifferenceUnit.WEEKS) {
+        // Months/years/weeks split: y/m/d from difference_date.
+        dur.years = ddiff.years;
+        dur.months = ddiff.months;
+        if (largest == temporal::DifferenceUnit.WEEKS) {
+            dur.weeks = ddiff.days / 7;
+            dur.days = ddiff.days % 7;
+        } else {
+            dur.days = ddiff.days;
+        }
+        dur.hours = 0; dur.minutes = 0; dur.seconds = 0;
+        dur.ms = 0; dur.us = 0; dur.ns = 0;
+    } else if (largest == temporal::DifferenceUnit.HOURS) {
+        long hours = rem_ns / 3_600_000_000_000L;
+        rem_ns -= hours * 3_600_000_000_000L;
+        dur.hours = hours;
+        dur.minutes = rem_ns / 60_000_000_000L;
+        rem_ns -= dur.minutes * 60_000_000_000L;
+        dur.seconds = rem_ns / 1_000_000_000L;
+        rem_ns -= dur.seconds * 1_000_000_000L;
+        dur.ms = (int)(rem_ns / 1_000_000);
+        rem_ns -= (long)dur.ms * 1_000_000;
+        dur.us = (int)(rem_ns / 1000);
+        rem_ns -= (long)dur.us * 1000;
+        dur.ns = (int)rem_ns;
+    } else if (largest == temporal::DifferenceUnit.MINUTES) {
+        long mins = rem_ns / 60_000_000_000L;
+        rem_ns -= mins * 60_000_000_000L;
+        dur.minutes = mins;
+        dur.seconds = rem_ns / 1_000_000_000L;
+        rem_ns -= dur.seconds * 1_000_000_000L;
+        dur.ms = (int)(rem_ns / 1_000_000);
+        rem_ns -= (long)dur.ms * 1_000_000;
+        dur.us = (int)(rem_ns / 1000);
+        rem_ns -= (long)dur.us * 1000;
+        dur.ns = (int)rem_ns;
+    } else {
+        long secs = rem_ns / 1_000_000_000L;
+        rem_ns -= secs * 1_000_000_000L;
+        dur.seconds = secs;
+        dur.ms = (int)(rem_ns / 1_000_000);
+        rem_ns -= (long)dur.ms * 1_000_000;
+        dur.us = (int)(rem_ns / 1000);
+        rem_ns -= (long)dur.us * 1000;
+        dur.ns = (int)rem_ns;
+    }
+
+    HObject*? dur_o = alloc_duration(ctx.heap, dur);
+    if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* dur_obj = dur_o;
+    dur_obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(dur_obj);
+}
+
+fn void builtin_temporal_plain_datetime_proto_until(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    plain_datetime_until_since(ctx, (HObject*)this_val.get_heapptr(), false);
+}
+
+fn void builtin_temporal_plain_datetime_proto_since(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    plain_datetime_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
 }
 
 // ============================================================================
@@ -1582,6 +3106,141 @@ fn bool setUpTemporalPlainDate(Heap* heap) {
     return true;
 }
 
+fn bool setUpTemporalPlainTime(Heap* heap) {
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return false;
+    HObject* proto = proto_raw;
+    proto.prototype = heap.object_proto;
+
+    HString* tag_key = ensure_tostringtag_symbol(heap);
+    if (tag_key != null) {
+        TVal tag_tv;
+        tag_tv.set_string(builtin_intern_string(heap, "Temporal.PlainTime"));
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return false;
+    HObject* ctor = ctor_raw;
+    ctor.prototype = heap.function_proto;
+    ctor.flags.constructable = true;
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.TEMPORAL_PLAIN_TIME_CTOR.ordinal;
+
+    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal constructor_tv;
+    constructor_tv.set_object(ctor);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    TVal proto_tv;
+    proto_tv.set_object(proto);
+    PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    proto_pflags.is_accessor = false;
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    TVal length_tv;
+    length_tv.set_fastint(0);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
+
+    set_func_ctor_name(ctor, heap, "PlainTime");
+
+    if (!register_proto_getter_accessor(proto, heap, "hour", Builtin.TEMPORAL_PLAIN_TIME_PROTO_HOUR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "minute", Builtin.TEMPORAL_PLAIN_TIME_PROTO_MINUTE.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "second", Builtin.TEMPORAL_PLAIN_TIME_PROTO_SECOND.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "millisecond", Builtin.TEMPORAL_PLAIN_TIME_PROTO_MILLISECOND.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "microsecond", Builtin.TEMPORAL_PLAIN_TIME_PROTO_MICROSECOND.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "nanosecond", Builtin.TEMPORAL_PLAIN_TIME_PROTO_NANOSECOND.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_TIME_PROTO_VALUEOF.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_TIME_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_TIME_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_TIME_PROTO_EQUALS.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_TIME_PROTO_WITH.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_TIME_PROTO_ADD.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_TIME_PROTO_SUBTRACT.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_TIME_PROTO_UNTIL.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_TIME_PROTO_SINCE.ordinal)) return false;
+
+    if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_TIME_FROM.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_TIME_COMPARE.ordinal)) return false;
+
+    heap.temporal_plain_time_proto = proto;
+    return true;
+}
+
+fn bool setUpTemporalPlainDateTime(Heap* heap) {
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return false;
+    HObject* proto = proto_raw;
+    proto.prototype = heap.object_proto;
+
+    HString* tag_key = ensure_tostringtag_symbol(heap);
+    if (tag_key != null) {
+        TVal tag_tv;
+        tag_tv.set_string(builtin_intern_string(heap, "Temporal.PlainDateTime"));
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return false;
+    HObject* ctor = ctor_raw;
+    ctor.prototype = heap.function_proto;
+    ctor.flags.constructable = true;
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.TEMPORAL_PLAIN_DATETIME_CTOR.ordinal;
+
+    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal constructor_tv;
+    constructor_tv.set_object(ctor);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    TVal proto_tv;
+    proto_tv.set_object(proto);
+    PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    proto_pflags.is_accessor = false;
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    TVal length_tv;
+    length_tv.set_fastint(3);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
+
+    set_func_ctor_name(ctor, heap, "PlainDateTime");
+
+    if (!register_proto_getter_accessor(proto, heap, "year", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_YEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "month", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTH.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "day", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAY.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "hour", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_HOUR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "minute", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MINUTE.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "second", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SECOND.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "millisecond", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MILLISECOND.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "microsecond", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MICROSECOND.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "nanosecond", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "calendar", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "calendarId", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDARID.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_VALUEOF.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_EQUALS.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WITH.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_ADD.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SUBTRACT.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_UNTIL.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SINCE.ordinal)) return false;
+
+    if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_DATETIME_FROM.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_DATETIME_COMPARE.ordinal)) return false;
+
+    heap.temporal_plain_datetime_proto = proto;
+    return true;
+}
+
 fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     HObject*? ns_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ns_raw) return false;
@@ -1598,8 +3257,8 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     // getOwnPropertyNames for the namespace must include every public name,
     // even the types that have not landed yet; they surface as undefined
     // values (non-enumerable) so no test observes a gap.
-    char[][] stub_names = { "Instant", "PlainTime", "PlainDateTime", "ZonedDateTime", "PlainYearMonth", "PlainMonthDay" };
-    for (int k = 0; k < 6; k++) {
+    char[][] stub_names = { "Instant", "ZonedDateTime", "PlainYearMonth", "PlainMonthDay" };
+    for (int k = 0; k < 4; k++) {
         HString* key = heap.str_intern(stub_names[k]);
         if (key == null) return false;
         TVal undef;
@@ -1612,11 +3271,12 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     now_undef.set_undefined();
     ns.put_prop(now_key, now_undef, hobject::PROP_FLAGS_NWC, heap);
 
-    // Real constructors: PlainDate, Calendar, Duration. The namespace wiring
-    // walks back through each prototype's .constructor property.
+    // Real constructors: PlainDate, Calendar, Duration, PlainTime, PlainDateTime.
+    // The namespace wiring walks back through each prototype's .constructor property.
     HString* ctor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal undef;
     undef.set_undefined();
+
     HString* pd_prop_key = builtin_intern_string(heap, "PlainDate");
     TVal ctor_tv = heap.temporal_plain_date_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (ctor_tv.is_object() && ctor_tv.get_heapptr() != null) {
@@ -1633,6 +3293,18 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     TVal dur_ctor = heap.temporal_duration_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (dur_ctor.is_object() && dur_ctor.get_heapptr() != null) {
         ns.put_prop(dur_key, dur_ctor, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HString* pt_key = builtin_intern_string(heap, "PlainTime");
+    TVal pt_ctor = heap.temporal_plain_time_proto.get_prop((void*)ctor_key, heap) ?? undef;
+    if (pt_ctor.is_object() && pt_ctor.get_heapptr() != null) {
+        ns.put_prop(pt_key, pt_ctor, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HString* pdt_key = builtin_intern_string(heap, "PlainDateTime");
+    TVal pdt_ctor = heap.temporal_plain_datetime_proto.get_prop((void*)ctor_key, heap) ?? undef;
+    if (pdt_ctor.is_object() && pdt_ctor.get_heapptr() != null) {
+        ns.put_prop(pdt_key, pdt_ctor, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal ns_tv;

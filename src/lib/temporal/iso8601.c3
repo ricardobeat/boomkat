@@ -197,3 +197,71 @@ fn bool parse_duration(char[] text, DurationParts* out) {
     }
     return true;
 }
+
+// Minimum buffer size to format any CivilTime: hours (2) + : + minutes (2)
+// + : + seconds (2) + . + 9-digit fraction + 1 = 19. The PlainTime builtin
+// uses a 32-byte buffer.
+const int ISO8601_TIME_BUFSIZE = 19;
+
+// Format a CivilTime as ISO 8601 wall-clock time (`HH:MM:SS[.ffff...]`).
+// Trailing-zero trimming matches the spec's smallestUnit / fraction digits
+// options: if `truncate_nanos` is non-null, the sub-second fraction is
+// rendered only down to that digit count (round-to-nearest, ties to even
+// not required for PlainTime's fixed-precision surface). `ns_digits` is
+// the count of fractional digits to render (0..9); pass -1 for "round-trip
+// smallest non-zero".
+fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
+    int h  = t.h;
+    int mi = t.mi;
+    int s  = t.s;
+    int ms = t.ms;
+    int us = t.us;
+    int ns = t.ns;
+
+    if (ns_digits < 0) {
+        // Trim trailing zeros to the smallest non-zero digit. Spec: omit the
+        // decimal point entirely when the fractional part is zero.
+        if (ms == 0 && us == 0 && ns == 0) {
+            ns_digits = 0;
+        } else if (ns != 0) {
+            ns_digits = 9;
+        } else if (us != 0) {
+            ns_digits = 6;
+        } else {
+            ns_digits = 3;
+        }
+    }
+    if (ns_digits == 0) {
+        return (usz)libc::snprintf(buf, buf_size, "%02d:%02d:%02d", h, mi, s);
+    }
+
+    long frac = ((long)ms * 1000 + (long)us) * 1000 + (long)ns;
+    char[10] frac_buf;
+    libc::snprintf(&frac_buf, 10, "%09ld", frac);
+    int trim_to = ns_digits;
+    if (trim_to > 9) trim_to = 9;
+    // When the caller asks for a specific number of fractional digits (the
+    // fractionalSecondDigits option), honor it exactly: round by truncating
+    // past `trim_to`. When ns_digits was auto-derived (the trim trail) only
+    // drop trailing zeros.
+    int cut = trim_to;
+    frac_buf[cut] = '\0';
+    return (usz)libc::snprintf(buf, buf_size, "%02d:%02d:%02d.%s", h, mi, s, &frac_buf);
+}
+
+// Format a CivilDateTime as `YYYY-MM-DDTHH:MM:SS[.ffff...]` (or with the
+// extended-year leading sign for |year| >= 10000). `ns_digits` follows
+// the same convention as format_civil_time.
+fn usz format_civil_datetime(CivilDateTime dt, char* buf, usz buf_size, int ns_digits) {
+    char[ISO8601_DATE_BUFSIZE + 1] date_buf;
+    usz date_len = format_civil_date(dt.date, &date_buf, ISO8601_DATE_BUFSIZE);
+    // date_len <= 13; copy into buf then append time
+    for (usz k = 0; k < date_len; k++) buf[k] = date_buf[k];
+    usz off = date_len;
+    buf[off++] = 'T';
+    char[ISO8601_TIME_BUFSIZE + 1] time_buf;
+    usz time_len = format_civil_time(dt.time, &time_buf, ISO8601_TIME_BUFSIZE, ns_digits);
+    for (usz k = 0; k < time_len && (off + k) < buf_size; k++) buf[off + k] = time_buf[k];
+    off += time_len;
+    return off;
+}

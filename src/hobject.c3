@@ -163,6 +163,8 @@ enum ObjClass : char {
     // existing classes for new types.
     TEMPORAL_CALENDAR,        // Temporal.Calendar (the shared ISO singleton)
     TEMPORAL_PLAIN_DATE,      // Temporal.PlainDate
+    TEMPORAL_PLAIN_TIME,      // Temporal.PlainTime
+    TEMPORAL_PLAIN_DATETIME,  // Temporal.PlainDateTime
     TEMPORAL_DURATION,        // Temporal.Duration
 }
 
@@ -715,10 +717,18 @@ union HObjectExtra {
 // ±2 M years without overflow — well past the spec's range. Duration is the
 // widest user: ten integer fields (years..nanoseconds), each int32.
 //
-// big_ns is null for non-Instant types; calendar/timezone are null when
-// not in use for the given obj_class. PlainTime, PlainDate, PlainDateTime,
-// PlainYearMonth, PlainMonthDay, Duration, Instant, ZonedDateTime, Calendar,
-// and TimeZone all share this variant.
+// Slot assignments (obj_class -> int_a..int_j):
+//   PLAIN_DATE      int_a..int_c = y/m/d
+//   PLAIN_TIME      int_a..int_f = h/mi/s/ms/us/ns
+//   PLAIN_DATETIME  int_a..int_c = y/m/d; int_d..int_i = h/mi/s/ms/us/ns
+//   DURATION        int_a..int_j = years..nanoseconds
+//   PLAIN_YEARMONTH int_a..int_b = y/m
+//   PLAIN_MONTHDAY  int_b..int_c = m/d
+//   INSTANT         big_ns = ns since epoch (BigInt limb vector)
+//
+// PlainTime, PlainDate, PlainDateTime, PlainYearMonth, PlainMonthDay,
+// Duration, Instant, ZonedDateTime, Calendar, and TimeZone all share this
+// variant.
 //
 // HObjectExtra is sized by its largest member and alloc_size_for_class
 // charges that to every FUNCTION/REGEXP/PROMISE/DATE object. This variant

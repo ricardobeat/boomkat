@@ -831,6 +831,47 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_PLAIN_DATE_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_plain_date_proto_subtract},
     TEMPORAL_PLAIN_DATE_PROTO_UNTIL {"until", 1, &builtin_temporal_plain_date_proto_until},
     TEMPORAL_PLAIN_DATE_PROTO_SINCE {"since", 1, &builtin_temporal_plain_date_proto_since},
+    TEMPORAL_PLAIN_TIME_CTOR {"PlainTime", 0, &builtin_temporal_plain_time_ctor},
+    TEMPORAL_PLAIN_TIME_FROM {"from", 1, &builtin_temporal_plain_time_from},
+    TEMPORAL_PLAIN_TIME_COMPARE {"compare", 2, &builtin_temporal_plain_time_compare},
+    TEMPORAL_PLAIN_TIME_PROTO_HOUR {"hour", 0, &builtin_temporal_plain_time_getter},
+    TEMPORAL_PLAIN_TIME_PROTO_MINUTE {"minute", 0, &builtin_temporal_plain_time_getter},
+    TEMPORAL_PLAIN_TIME_PROTO_SECOND {"second", 0, &builtin_temporal_plain_time_getter},
+    TEMPORAL_PLAIN_TIME_PROTO_MILLISECOND {"millisecond", 0, &builtin_temporal_plain_time_getter},
+    TEMPORAL_PLAIN_TIME_PROTO_MICROSECOND {"microsecond", 0, &builtin_temporal_plain_time_getter},
+    TEMPORAL_PLAIN_TIME_PROTO_NANOSECOND {"nanosecond", 0, &builtin_temporal_plain_time_getter},
+    TEMPORAL_PLAIN_TIME_PROTO_VALUEOF {"valueOf", 0, &builtin_temporal_plain_time_proto_valueOf},
+    TEMPORAL_PLAIN_TIME_PROTO_TOSTRING {"toString", 0, &builtin_temporal_plain_time_proto_toString},
+    TEMPORAL_PLAIN_TIME_PROTO_TOJSON {"toJSON", 0, &builtin_temporal_plain_time_proto_toJSON},
+    TEMPORAL_PLAIN_TIME_PROTO_EQUALS {"equals", 1, &builtin_temporal_plain_time_proto_equals},
+    TEMPORAL_PLAIN_TIME_PROTO_WITH {"with", 1, &builtin_temporal_plain_time_proto_with},
+    TEMPORAL_PLAIN_TIME_PROTO_ADD {"add", 1, &builtin_temporal_plain_time_proto_add},
+    TEMPORAL_PLAIN_TIME_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_plain_time_proto_subtract},
+    TEMPORAL_PLAIN_TIME_PROTO_UNTIL {"until", 1, &builtin_temporal_plain_time_proto_until},
+    TEMPORAL_PLAIN_TIME_PROTO_SINCE {"since", 1, &builtin_temporal_plain_time_proto_since},
+    TEMPORAL_PLAIN_DATETIME_CTOR {"PlainDateTime", 3, &builtin_temporal_plain_datetime_ctor},
+    TEMPORAL_PLAIN_DATETIME_FROM {"from", 1, &builtin_temporal_plain_datetime_from},
+    TEMPORAL_PLAIN_DATETIME_COMPARE {"compare", 2, &builtin_temporal_plain_datetime_compare},
+    TEMPORAL_PLAIN_DATETIME_PROTO_YEAR {"year", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_MONTH {"month", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_DAY {"day", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_HOUR {"hour", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_MINUTE {"minute", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_SECOND {"second", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_MILLISECOND {"millisecond", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_MICROSECOND {"microsecond", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND {"nanosecond", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_CALENDAR {"calendar", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_CALENDARID {"calendarId", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_VALUEOF {"valueOf", 0, &builtin_temporal_plain_datetime_proto_valueOf},
+    TEMPORAL_PLAIN_DATETIME_PROTO_TOSTRING {"toString", 0, &builtin_temporal_plain_datetime_proto_toString},
+    TEMPORAL_PLAIN_DATETIME_PROTO_TOJSON {"toJSON", 0, &builtin_temporal_plain_datetime_proto_toJSON},
+    TEMPORAL_PLAIN_DATETIME_PROTO_EQUALS {"equals", 1, &builtin_temporal_plain_datetime_proto_equals},
+    TEMPORAL_PLAIN_DATETIME_PROTO_WITH {"with", 1, &builtin_temporal_plain_datetime_proto_with},
+    TEMPORAL_PLAIN_DATETIME_PROTO_ADD {"add", 1, &builtin_temporal_plain_datetime_proto_add},
+    TEMPORAL_PLAIN_DATETIME_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_plain_datetime_proto_subtract},
+    TEMPORAL_PLAIN_DATETIME_PROTO_UNTIL {"until", 1, &builtin_temporal_plain_datetime_proto_until},
+    TEMPORAL_PLAIN_DATETIME_PROTO_SINCE {"since", 1, &builtin_temporal_plain_datetime_proto_since},
     LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -3972,6 +4013,8 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!setUpTemporalCalendar(heap)) return false;
     if (!setUpTemporalDuration(heap)) return false;
     if (!setUpTemporalPlainDate(heap)) return false;
+    if (!setUpTemporalPlainTime(heap)) return false;
+    if (!setUpTemporalPlainDateTime(heap)) return false;
     if (!setUpTemporalNamespace(global_env, heap)) return false;
 
     // Wire all prototype chains to Object.prototype

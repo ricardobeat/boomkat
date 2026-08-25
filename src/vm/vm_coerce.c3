@@ -366,6 +366,8 @@ fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
             // %AsyncFunction% / %AsyncGeneratorFunction% intrinsic constructor.
             return true;
         case builtins::Builtin.TEMPORAL_PLAIN_DATE_CTOR.ordinal:
+        case builtins::Builtin.TEMPORAL_PLAIN_TIME_CTOR.ordinal:
+        case builtins::Builtin.TEMPORAL_PLAIN_DATETIME_CTOR.ordinal:
         case builtins::Builtin.TEMPORAL_CALENDAR_CTOR.ordinal:
         case builtins::Builtin.TEMPORAL_DURATION_CTOR.ordinal:
             return true;

@@ -64,6 +64,9 @@ fn CivilDate add_months(CivilDate d, long months, OverflowKind overflow) {
 // DAYS and WEEKS reduce to a whole epoch-day count; MONTHS and YEARS are
 // calendar-slot arithmetic with the day borrow rules.
 enum DifferenceUnit : int {
+    SECONDS,
+    MINUTES,
+    HOURS,
     DAYS,
     WEEKS,
     MONTHS,

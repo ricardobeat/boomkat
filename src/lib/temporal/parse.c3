@@ -272,3 +272,34 @@ fn bool parse_iso_date_string(char[] text, ParsedIsoDateTime* out) {
     }
     return true;
 }
+
+// Parse a time-only ISO 8601 string (`HH[:MM[:SS[.frac]]]`, optional `Z` or
+// `±HH:MM` offset). Used by Temporal.PlainTime.from when the input is a bare
+// time string. Returns false on grammar violations.
+fn bool parse_iso_time_string(char[] text, ParsedIsoDateTime* out) {
+    usz i = 0;
+    if (!parse_time(text, &i, &out.hour, &out.minute, &out.second, &out.nanos)) return false;
+    out.has_time = true;
+    if (out.hour == 24) {
+        if (out.minute != 0 || out.second != 0 || out.nanos != 0) return false;
+        out.hour = 0;
+    }
+    if (out.minute > 59) return false;
+    if (out.second > 60) return false;
+    if (out.second == 60) out.second = 59;
+    if (!parse_offset(text, &i)) return false;
+    if (i < text.len) {
+        if (text[i] != '[') return false;
+        usz cal_start, cal_len;
+        if (!parse_annotations(text, &i, &cal_start, &cal_len)) return false;
+        if (cal_len != 0) {
+            char[] cal = text[cal_start..cal_start + cal_len];
+            if (!ci_equals(cal, "iso8601")) return false;
+        }
+        if (i != text.len) return false;
+    }
+    out.year = 0;
+    out.month = 1;
+    out.day = 1;
+    return true;
+}

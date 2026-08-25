@@ -722,6 +722,8 @@ struct Heap {
     HObject* temporal_calendar_proto;
     HObject* temporal_duration_proto;
     HObject* temporal_plain_date_proto;
+    HObject* temporal_plain_time_proto;
+    HObject* temporal_plain_datetime_proto;
 
     // Generator resume state (set by .next()/.throw()/.return() builtins,
     // read by the VM CALL handler and YIELD/RET opcodes).
@@ -3039,6 +3041,8 @@ fn void Heap.drain_gray(&self) {
             case ObjClass.TEMPORAL_CALENDAR:
             case ObjClass.TEMPORAL_DURATION:
             case ObjClass.TEMPORAL_PLAIN_DATE:
+            case ObjClass.TEMPORAL_PLAIN_TIME:
+            case ObjClass.TEMPORAL_PLAIN_DATETIME:
                 self.mark_temporal(&(*obj.extra_ptr()).temporal);
                 break;
             default:
@@ -3135,6 +3139,10 @@ fn void Heap.mark_roots(&self) {
     if (self.dataview_proto != null) { self.mark_hobject(self.dataview_proto); }
     if (self.temporal_iso_calendar != null) { self.mark_hobject(self.temporal_iso_calendar); }
     if (self.temporal_calendar_proto != null) { self.mark_hobject(self.temporal_calendar_proto); }
+    if (self.temporal_duration_proto != null) { self.mark_hobject(self.temporal_duration_proto); }
+    if (self.temporal_plain_date_proto != null) { self.mark_hobject(self.temporal_plain_date_proto); }
+    if (self.temporal_plain_time_proto != null) { self.mark_hobject(self.temporal_plain_time_proto); }
+    if (self.temporal_plain_datetime_proto != null) { self.mark_hobject(self.temporal_plain_datetime_proto); }
 
     // Every live slot on the VM value stack, from base to top, can reference a
     // heap object or string.

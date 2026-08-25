@@ -235,3 +235,75 @@ fn long floor_mod_field(double time_val, long unit_ms, long modulus) {
     if (r < 0) r += modulus;
     return r;
 }
+
+// ============================================================================
+// CivilTime validation + arithmetic
+// ============================================================================
+
+// True if h/mi/s/ms/us/ns is a valid wall-clock time. The spec's
+// IsValidTime (ES2025 Temporal) accepts h ∈ [0, 23], mi ∈ [0, 59], s ∈
+// [0, 60] (leap-second tolerated, collapsed to 59 by callers), and the
+// sub-second triple must total < 1_000_000_000. A bare "24:00" is not
+// valid here — parse_iso_date_string normalizes it to 00:00 of the next
+// day before handing off, and the constructor lifts the next-day
+// arithmetic to the caller.
+fn bool is_valid_time(int h, int mi, int s, int ms, int us, int ns) {
+    if (h  < 0 || h  > 23) return false;
+    if (mi < 0 || mi > 59) return false;
+    if (s  < 0 || s  > 60) return false;
+    if (ms < 0 || ms > 999) return false;
+    if (us < 0 || us > 999) return false;
+    if (ns < 0 || ns > 999) return false;
+    if (s == 60 && (ms != 0 || us != 0 || ns != 0)) return false;
+    return true;
+}
+
+// Add `seconds` (which may be negative) to a CivilTime, returning a fresh
+// CivilTime that wraps midnight as needed. `out_day_delta` receives the
+// number of whole days to advance (negative = rewind) the carrying date.
+// Sub-second resolution is preserved bit-exactly: seconds bump the field,
+// and ms/us/ns are carried through unchanged.
+fn CivilTime add_seconds_to_time(CivilTime t, long seconds, long* out_day_delta) {
+    long total = (long)t.h * 3600 + (long)t.mi * 60 + (long)t.s + seconds;
+    long day = total / 86400;
+    long rem = total % 86400;
+    if (rem < 0) { rem += 86400; day -= 1; }
+    *out_day_delta = day;
+    return {
+        .h  = (int)(rem / 3600),
+        .mi = (int)((rem % 3600) / 60),
+        .s  = (int)(rem % 60),
+        .ms = t.ms,
+        .us = t.us,
+        .ns = t.ns,
+    };
+}
+
+// Difference between two times in seconds. A later `b` yields a positive
+// result; the two times are treated as wall-clock times on the same day.
+// Sub-seconds are dropped (RoundToHour/Minute/Second handle granularity
+// reductions in the prototype methods).
+fn long diff_seconds(CivilTime a, CivilTime b) {
+    return ((long)b.h  - (long)a.h ) * 3600
+         + ((long)b.mi - (long)a.mi) * 60
+         +  (long)b.s  - (long)a.s;
+}
+
+// Equality on CivilTime. Sub-seconds are compared exactly so add() round
+// trips with until() at second precision.
+fn bool time_equals(CivilTime a, CivilTime b) {
+    return a.h  == b.h  && a.mi == b.mi && a.s  == b.s
+        && a.ms == b.ms && a.us == b.us && a.ns == b.ns;
+}
+
+// Compare two times: -1 / 0 / +1 for a < b / a == b / a > b. Sub-seconds
+// break ties.
+fn int time_compare(CivilTime a, CivilTime b) {
+    if (a.h  != b.h ) return a.h  < b.h  ? -1 : 1;
+    if (a.mi != b.mi) return a.mi < b.mi ? -1 : 1;
+    if (a.s  != b.s ) return a.s  < b.s  ? -1 : 1;
+    if (a.ms != b.ms) return a.ms < b.ms ? -1 : 1;
+    if (a.us != b.us) return a.us < b.us ? -1 : 1;
+    if (a.ns != b.ns) return a.ns < b.ns ? -1 : 1;
+    return 0;
+}
