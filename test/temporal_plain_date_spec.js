@@ -13,7 +13,8 @@ function assertThrows(fn, kind, msg) {
 
 // Constructor
 assertEq(new Temporal.PlainDate(2024, 7, 15).day, 15, "ctor");
-assertEq(new Temporal.PlainDate(2024).day, 1, "ctor default day");
+assertThrows(() => new Temporal.PlainDate(2024), RangeError, "ctor requires month and day");
+assertThrows(() => new Temporal.PlainDate(2024, 1), RangeError, "ctor requires day");
 assertThrows(() => new Temporal.PlainDate(2023, 2, 29), RangeError, "Feb 29 not leap");
 assertThrows(() => new Temporal.PlainDate(2024, 13, 1), RangeError, "month 13");
 assertThrows(() => new Temporal.PlainDate(2024, 4, 31), RangeError, "Apr 31");

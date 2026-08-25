@@ -143,6 +143,10 @@ fn bool read_overflow_option(BuiltinContext* ctx, int options_index, temporal::O
 // anything else throws TypeError (spec: unknown calendar names are RangeError,
 // non-string non-calendar values TypeError).
 fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
+    if (tv.is_undefined()) {
+        *out = ctx.heap.temporal_iso_calendar;
+        return true;
+    }
     if (tv.is_object() && tv.get_heapptr() != null) {
         HObject* o = (HObject*)tv.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_CALENDAR) {
@@ -155,6 +159,11 @@ fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
     if (tv.is_string()) {
         HString* s = (HString*)tv.get_heapptr();
         if (s != null) {
+            // Symbols share the STRING tag but are not calendar identifiers.
+            if (s.is_symbol()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "symbol is not a valid calendar");
+                return false;
+            }
             char[] text = s.get_cstr()[:s.blen];
             // "iso8601" is the only identifier; "gregory"/"gregorian" are
             // accepted aliases of it. All matched ASCII case-insensitively.
@@ -750,6 +759,10 @@ fn void builtin_temporal_plain_date_ctor(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
             return;
         }
+    }
+    if (ctx.argc < 3) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDate requires year, month, and day");
+        return;
     }
     if (ctx.argc >= 3) {
         if (!to_integer_with_truncation(v, arg_at(ctx, 2), &d)) {
