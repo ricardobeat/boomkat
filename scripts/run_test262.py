@@ -820,7 +820,6 @@ PHASES = [
     {
         "label": "Phase 26: Temporal (Phase 2 — Instant/TimeZone/ZonedDateTime/Plain types)",
         # Mirror plan 080 §"Phase 2". Excludes:
-        #   built-ins/Temporal/Now — Phase 3 (not yet implemented)
         #   built-ins/Temporal/Duration/prototype/round with relativeTo — Phase 4
         # The longest-prefix rule below scopes subdirs: any subdir listed here
         # takes its parent over (so listing `built-ins/Temporal/Instant` runs
@@ -829,6 +828,11 @@ PHASES = [
         "dirs": [
             "built-ins/Temporal/Duration",
             "built-ins/Temporal/Instant",
+            # Temporal.Now — Phase 3: instant / timeZoneId / plainDateISO /
+            # plainDateTimeISO / plainTimeISO / zonedDateTimeISO. The ISO-string
+            # forms these accept (offset / bracket zone / IANA name) are
+            # exercised by the test262 timezone-string-* files.
+            "built-ins/Temporal/Now",
             "built-ins/Temporal/PlainDate",
             "built-ins/Temporal/PlainDateTime",
             "built-ins/Temporal/PlainMonthDay",

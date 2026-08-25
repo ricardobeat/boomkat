@@ -80,6 +80,39 @@ fn bool tzdb_zone_exists(String zone_name) {
     return tzdb_zone_index(zone_name) >= 0;
 }
 
+// Convenience wrapper: returns the offset (in seconds) of the case-folded
+// zone at `epoch_sec`, or -1 if unknown. Used by Temporal.Now so that an
+// upper- or mixed-case zone string ("Utc", "AMERICA/new_york") resolves to
+// the canonical tzdb entry. The canonical name is written into `canonical_buf`
+// for the caller to attach to the resulting ZDT (so `timeZoneId` reports the
+// canonical spelling).
+fn int tzdb_offset_for_zone_ci(String zone_name, long epoch_sec, char* canonical_buf, usz buf_cap) {
+    int idx = tzdb_zone_index(zone_name);
+    if (idx < 0) {
+        // Find a case-fold match.
+        for (usz k = 0; k < TZDB_ZONES.len; k++) {
+            String cand = TZDB_ZONES[k].name;
+            if (cand.len != zone_name.len) continue;
+            bool match = true;
+            for (usz i = 0; i < cand.len; i++) {
+                char a = cand[i];
+                char b = zone_name[i];
+                if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
+                if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
+                if (a != b) { match = false; break; }
+            }
+            if (match) { idx = (int)k; break; }
+        }
+    }
+    if (idx < 0) return -1;
+    String canon = TZDB_ZONES[idx].name;
+    if (canonical_buf != null && buf_cap > 0) {
+        usz n = canon.len < buf_cap ? canon.len : buf_cap;
+        for (usz i = 0; i < n; i++) canonical_buf[i] = canon[i];
+    }
+    return tzdb_offset_for_zone_at(canon, epoch_sec);
+}
+
 // Returns the zone's offset from UTC (in seconds) at the given instant
 // (Unix epoch seconds, UTC). Returns 0 if the zone is not recognized —
 // the spec says throw RangeError, but the engine callers will validate

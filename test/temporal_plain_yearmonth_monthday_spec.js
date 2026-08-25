@@ -243,7 +243,7 @@ assertEq(typeof Temporal.Instant.prototype.add, "function", "Temporal.Instant.pr
 assertEq(typeof Temporal.TimeZone, "function", "Temporal.TimeZone is a function");
 assertEq(typeof Temporal.TimeZone.prototype.getOffsetNanosecondsFor, "function", "getOffsetNanosecondsFor");
 assertEq(typeof Temporal.ZonedDateTime, "function", "Temporal.ZonedDateTime is a function");
-assertEq(typeof Temporal.Now, "undefined", "Temporal.Now still stub");
+assertEq(typeof Temporal.Now, "object", "Temporal.Now is implemented (Phase 3)");
 
 console.log("Pass: " + pass + " Fail: " + fail);
 if (fail > 0) process.exit(1);

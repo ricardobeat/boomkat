@@ -30,8 +30,11 @@ extern fn double boomkat_date_make_date(double day, double time_within_day);
 
 // Helper: get current time in milliseconds since epoch.
 fn double date_now_ms() {
-    // time::now() is microseconds since the Unix epoch.
-    return (double)((long)time::now()) / 1000.0;
+    // time::now() is microseconds since the Unix epoch. ES2015+ §20.3.3.1
+    // requires Date.now() to return an integer time value, so truncate the
+    // sub-millisecond fraction rather than carrying it as a float.
+    long micros = (long)time::now();
+    return (double)(micros / 1000L);
 }
 
 // Convert an epoch time value in milliseconds to whole seconds, flooring

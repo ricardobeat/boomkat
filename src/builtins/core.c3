@@ -960,6 +960,12 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_ZONEDDATETIME_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_zoneddatetime_proto_subtract},
     TEMPORAL_ZONEDDATETIME_PROTO_UNTIL {"until", 1, &builtin_temporal_zoneddatetime_proto_until},
     TEMPORAL_ZONEDDATETIME_PROTO_SINCE {"since", 1, &builtin_temporal_zoneddatetime_proto_since},
+    TEMPORAL_NOW_INSTANT {"instant", 0, &builtin_temporal_now_instant},
+    TEMPORAL_NOW_TIME_ZONE_ID {"timeZoneId", 0, &builtin_temporal_now_time_zone_id},
+    TEMPORAL_NOW_PLAIN_DATE_ISO {"plainDateISO", 0, &builtin_temporal_now_plain_date_iso},
+    TEMPORAL_NOW_PLAIN_DATE_TIME_ISO {"plainDateTimeISO", 0, &builtin_temporal_now_plain_date_time_iso},
+    TEMPORAL_NOW_PLAIN_TIME_ISO {"plainTimeISO", 0, &builtin_temporal_now_plain_time_iso},
+    TEMPORAL_NOW_ZONED_DATE_TIME_ISO {"zonedDateTimeISO", 0, &builtin_temporal_now_zoned_date_time_iso},
     LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
