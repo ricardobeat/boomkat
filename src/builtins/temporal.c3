@@ -5015,27 +5015,129 @@ fn void builtin_temporal_instant_proto_epochNanoseconds(BuiltinContext* ctx) {
 }
 
 // toString / toJSON / valueOf for Instant.
+//
+// Fractional-second output. `digits` is -1 for "auto" (the minimal number of
+// digits with trailing zeros trimmed and no rounding), 0 for none, or 1..9
+// for a fixed width (lower digits truncated, the Temporal default
+// roundingMode). Appends the leading "." plus the padded fraction starting at
+// buf; returns the number of characters appended (0 if there is no fraction).
+fn int format_fractional_seconds(char* buf, long ns_rem, int digits) {
+    if (ns_rem < 0) ns_rem = -ns_rem;
+    if (ns_rem == 0) return 0;
+    int d = digits;
+    if (d < 0) {
+        // auto: needed digits then drop trailing zeros.
+        d = 9;
+        long x = ns_rem;
+        while (x > 1 && x % 10 == 0) { x /= 10; d--; }
+        if (d <= 0) return 0;
+    }
+    if (d > 9) d = 9;
+    // Truncate to `d` digits (the default roundingMode is "trunc").
+    long divisor = 1;
+    for (int i = 0; i < 9 - d; i++) divisor *= 10;
+    long v = ns_rem / divisor;
+    if (v == 0) return 0;
+    buf[0] = '.';
+    char[16] tmp;
+    int k = 0;
+    long x = v;
+    while (x > 0) { tmp[k] = (char)('0' + (int)(x % 10)); k++; x /= 10; }
+    while (k < d) { tmp[k] = '0'; k++; }
+    for (int i = 0; i < k; i++) buf[1 + i] = tmp[k - 1 - i];
+    return 1 + k;
+}
+
+// Resolve the fractional-second precision for a Temporal toString(options)
+// bag. `digits` (-1 = auto, 0..9 = fixed) is set from `fractionalSecondDigits`
+// or, if `smallestUnit` is given, its implied width (hour/minute/second -> 0,
+// millisecond -> 3, microsecond -> 6, nanosecond -> 9). Returns false on a
+// malformed option (after throwing).
+fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits) {
+    *digits = -1;  // auto when no options
+    if (ctx.argc <= options_index) return true;
+    TVal ov = ctx.regs[ctx.base_reg + options_index];
+    if (ov.is_undefined()) return true;
+    if (!ov.is_object() || ov.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+        return false;
+    }
+    HObject* opts = (HObject*)ov.get_heapptr();
+
+    TVal su = prop_or_undefined(opts, ctx.heap, "smallestUnit");
+    if (!su.is_undefined()) {
+        if (!su.is_string()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit option must be a string");
+            return false;
+        }
+        HString* s = (HString*)su.get_heapptr();
+        char[] v = s.get_cstr()[:s.blen];
+        if (v == "hour" || v == "minute" || v == "second") { *digits = 0; return true; }
+        if (v == "millisecond") { *digits = 3; return true; }
+        if (v == "microsecond") { *digits = 6; return true; }
+        if (v == "nanosecond")  { *digits = 9; return true; }
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for Instant.toString");
+        return false;
+    }
+
+    TVal f = prop_or_undefined(opts, ctx.heap, "fractionalSecondDigits");
+    if (!f.is_undefined()) {
+        if (f.is_string()) {
+            HString* s = (HString*)f.get_heapptr();
+            char[] v = s.get_cstr()[:s.blen];
+            if (v == "auto") { *digits = -1; return true; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
+            return false;
+        }
+        double dv = builtin_to_number_getdouble(ctx, &f);
+        if (dv < 0 || dv > 9 || dv != (double)((long)dv)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
+            return false;
+        }
+        *digits = (int)dv;
+        return true;
+    }
+    return true;
+}
+
 fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
-    // ISO 8601: YYYY-MM-DDTHH:mm:ss.sssZ (UTC instant). For the basic Phase
-    // 2 work we don't implement the fractional-second control from the
-    // options bag; we always emit `.000Z` and round nanoseconds to seconds.
-    // Sub-second precision lands with Phase 3 (the options / fractional
-    // unit machinery).
-    double secs;
-    if (!bigint_to_epoch_number(b, &secs, ctx)) return;
-    long whole_secs = (long)math::floor(secs / 1e9);
+    int digits;
+    if (!to_string_precision(ctx, 0, &digits)) return;
+
+    // Whole seconds and sub-second remainder, split toward zero. Read the
+    // epoch-nanosecond value directly via to_int128 (no allocation), so no GC
+    // can sweep a temporary BigInt between the read and the format.
+    long whole_secs;
+    long ns_rem;
+    if (b.fits_int128()) {
+        int128 total = b.to_int128();
+        long sec_trunc = (long)(total / 1000000000);
+        ns_rem = (long)(total - (int128)sec_trunc * 1000000000);
+        whole_secs = sec_trunc;
+    } else {
+        // Out of int128 range: fall back to the double approximation (the
+        // output is only ever whole seconds at this magnitude anyway).
+        double secs;
+        if (!bigint_to_epoch_number(b, &secs, ctx)) return;
+        whole_secs = (long)math::floor(secs / 1e9);
+        ns_rem = 0;
+    }
     temporal::BrokenDownTime bd = temporal::civil_from_seconds(whole_secs);
-    char[40] buf;
-    int n = libc::snprintf(&buf, 40, "%04ld-%02ld-%02ldT%02ld:%02ld:%02dZ",
-        bd.y, (long)bd.m + 1, (long)bd.d,
-        (long)bd.h, (long)bd.mi, bd.s);
+
+    char[48] buf;
+    int n = libc::snprintf(&buf, 40, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+        bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    n += format_fractional_seconds(&buf[n], ns_rem, digits);
+    buf[n] = 'Z';
+    n++;
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
 }
 
 fn void builtin_temporal_instant_proto_toJSON(BuiltinContext* ctx) {
+    // toJSON uses "auto" precision, i.e. toString() with no options.
     builtin_temporal_instant_proto_toString(ctx);
 }
 
@@ -5858,44 +5960,24 @@ fn void format_offset_seconds(char* buf, int off) {
     libc::snprintf(buf + 1, 6, "%02d:%02d", hh, mm);
 }
 
-fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    HObject* tz = obj.extra.temporal.timezone;
-    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
-    double secs_d;
-    if (!bigint_to_epoch_number(b, &secs_d, ctx)) return;
-    long epoch_secs = (long)math::floor(secs_d / 1e9);
-    String zone = tz == null ? "" : timezone_name(tz);
-    int off = 0;
-    if (tz != null) {
-        off = temporal::tzdb_offset_for_zone_at(zone, epoch_secs);
+// Format a ZonedDateTime as an ISO string: wall time in the zone's current
+// offset with fractional seconds, the ±HH:MM offset, and (unless drop_zone) the
+// [Zone] bracket. `digits` is -1 for auto or 0..9. Reads epoch nanoseconds via
+// to_int128 so sub-second precision survives beyond 2^53.
+fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, int digits, bool drop_zone) {
+    long epoch_secs;
+    long ns_rem;
+    if (b.fits_int128()) {
+        int128 total = b.to_int128();
+        long sec_trunc = (long)(total / 1000000000);
+        ns_rem = (long)(total - (int128)sec_trunc * 1000000000);
+        epoch_secs = sec_trunc;
+    } else {
+        double s_d;
+        if (!bigint_to_epoch_number(b, &s_d, ctx)) return;
+        epoch_secs = (long)math::floor(s_d / 1e9);
+        ns_rem = 0;
     }
-    long local_secs = epoch_secs + off;
-    temporal::BrokenDownTime bd = temporal::civil_from_seconds(local_secs);
-    char[64] buf;
-    int n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
-        bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
-    format_offset_seconds(&buf[n], off);
-    n += 6;
-    if (zone.len > 0 && zone.ptr != null) {
-        int zn = libc::snprintf(&buf[n], 64 - (usz)n, "[%s]", (char*)zone.ptr);
-        n += zn;
-    }
-    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
-}
-
-fn void builtin_temporal_zoneddatetime_proto_toJSON(BuiltinContext* ctx) {
-    // toJSON strips the trailing [Zone] and the offset for a string that
-    // still round-trips through ZonedDateTime.from in the same zone. Phase 2
-    // keeps the offset but drops the zone bracket.
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    HObject* tz = obj.extra.temporal.timezone;
-    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
-    double secs_d;
-    if (!bigint_to_epoch_number(b, &secs_d, ctx)) return;
-    long epoch_secs = (long)math::floor(secs_d / 1e9);
     String zone = tz == null ? "" : timezone_name(tz);
     int off = 0;
     if (tz != null) off = temporal::tzdb_offset_for_zone_at(zone, epoch_secs);
@@ -5904,9 +5986,30 @@ fn void builtin_temporal_zoneddatetime_proto_toJSON(BuiltinContext* ctx) {
     char[64] buf;
     int n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
         bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    n += format_fractional_seconds(&buf[n], ns_rem, digits);
     format_offset_seconds(&buf[n], off);
     n += 6;
+    if (!drop_zone && zone.len > 0 && zone.ptr != null) {
+        int zn = libc::snprintf(&buf[n], 64 - (usz)n, "[%s]", (char*)zone.ptr);
+        n += zn;
+    }
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
+}
+
+fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    int digits;
+    if (!to_string_precision(ctx, 0, &digits)) return;
+    zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, digits, false);
+}
+
+fn void builtin_temporal_zoneddatetime_proto_toJSON(BuiltinContext* ctx) {
+    // toJSON keeps the offset but drops the [Zone] bracket and uses auto
+    // precision, so the string round-trips through from() in the same zone.
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, -1, true);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {

@@ -30,6 +30,17 @@ assertEq(epoch.epochMicroseconds, 0, "epoch.epochMicroseconds");
 assertEq(epoch.epochNanoseconds, 0n, "epoch.epochNanoseconds");
 assertEq(epoch.toString(), "1970-01-01T00:00:00Z", "epoch.toString"); // auto precision, no fraction
 
+// Fractional-second precision (auto trims trailing zeros; a fixed width or
+// smallestUnit truncates, the Temporal default roundingMode).
+var frac = new Temporal.Instant(1000000001n);         // 1s + 1ns
+assertEq(frac.toString(), "1970-01-01T00:00:01.000000001Z", "frac auto (1ns)");
+assertEq(frac.toString({ fractionalSecondDigits: 9 }), "1970-01-01T00:00:01.000000001Z", "frac 9 digits");
+assertEq(frac.toString({ fractionalSecondDigits: 3 }), "1970-01-01T00:00:01Z", "frac trunc to 0");
+assertEq(frac.toString({ smallestUnit: "millisecond" }), "1970-01-01T00:00:01Z", "frac ms unit trunc");
+var frac500 = new Temporal.Instant(1000500000000n);    // 500ms past the epoch minute
+assertEq(frac500.toString(), "1970-01-01T00:16:40.5Z", "frac auto (500ms trim)");
+assertEq(frac500.toString({ smallestUnit: "nanosecond" }), "1970-01-01T00:16:40.500000000Z", "frac ns unit");
+
 var one = new Temporal.Instant(1000000000n);       // epoch + 1 s
 assertEq(one.epochSeconds, 1, "one.epochSeconds");
 assertEq(one.epochMilliseconds, 1000, "one.epochMilliseconds");
