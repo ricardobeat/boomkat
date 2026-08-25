@@ -1284,6 +1284,18 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     } else {
                         ra2.set_undefined();
                     }
+                } else if (mid_val.is_bigint()) {
+                    // BIGINT intermediate: auto-box for hop 2 (the system
+                    // primitives cover every other boxed type; a BigInt here,
+                    // e.g. `obj.ns.toString()` where `ns` is a BigInt accessor,
+                    // fell through to the undefined else-branch below).
+                    if (key2_hstr != null && vm.heap.bigint_proto != null) {
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bigint_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
+                    } else {
+                        ra2.set_undefined();
+                    }
                 } else if (mid_val.is_boolean()) {
                     // BOOLEAN intermediate: auto-box for hop 2.
                     if (key2_hstr != null && vm.heap.bool_proto != null) {
@@ -1703,6 +1715,18 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // NUMBER intermediate: auto-box for hop 2.
                     if (key2_hstr != null && vm.heap.number_proto != null) {
                         primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
+                        if (vm.has_error) return VM_ERROR~;
+                        if (ds.needs_restart) return (TVal){};
+                    } else {
+                        ra2.set_undefined();
+                    }
+                } else if (mid_val.is_bigint()) {
+                    // BIGINT intermediate: auto-box for hop 2 (the system
+                    // primitives cover every other boxed type; a BigInt here,
+                    // e.g. `obj.ns.toString()` where `ns` is a BigInt accessor,
+                    // fell through to the undefined else-branch below).
+                    if (key2_hstr != null && vm.heap.bigint_proto != null) {
+                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bigint_proto, key2_hstr, ra2, dst2_reg);
                         if (vm.has_error) return VM_ERROR~;
                         if (ds.needs_restart) return (TVal){};
                     } else {
