@@ -5224,6 +5224,89 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
+// Build a Duration whose time seconds are the difference between two
+// Instants' epoch-ns BigInts, with milliseconds/microseconds/nanoseconds for
+// the sub-second remainder. This is TimeDurationFromEpochNanoseconds with
+// largestUnit "second" (truncation toward zero). `out` receives a refcount-1
+// Duration object or null on failure.
+fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigint::HBigInt* b, HObject** out) {
+    hbigint::HBigInt*? diff_o = hbigint::hbigint_addsub(ctx.heap, a, b, true);
+    if (catch err = diff_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "difference overflow"); return false; }
+    hbigint::HBigInt* diff = diff_o;
+    temporal::DurationParts dp = {};
+    hbigint::HBigInt*? one_o = hbigint::hbigint_from_slimb(ctx.heap, 1000000000);
+    if (catch err = one_o) { ctx.heap.decref((types::HeapHeader*)diff); builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return false; }
+    hbigint::HBigInt* one = one_o;
+    hbigint::HBigInt* q = null;
+    hbigint::HBigInt* r = null;
+    if (catch err = hbigint::hbigint_divrem(ctx.heap, diff, one, &q, &r)) {
+        ctx.heap.decref((types::HeapHeader*)one);
+        ctx.heap.decref((types::HeapHeader*)diff);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed");
+        return false;
+    }
+    ctx.heap.decref((types::HeapHeader*)one);
+    ctx.heap.decref((types::HeapHeader*)diff);
+    if (q == null || r == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return false; }
+    dp.seconds = (long)q.to_int128();
+    int128 rv = r.to_int128();
+    dp.ms = (int)(rv / 1000000);
+    int128 rem = rv - (int128)dp.ms * 1000000;
+    dp.us = (int)(rem / 1000);
+    dp.ns = (int)(rem - (int128)dp.us * 1000);
+    ctx.heap.decref((types::HeapHeader*)q);
+    ctx.heap.decref((types::HeapHeader*)r);
+    HObject*? dur_o = alloc_duration(ctx.heap, dp);
+    if (catch err = dur_o) {
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return false;
+    }
+    *out = dur_o;
+    return true;
+}
+
+// this.since(other[, options]) = this - other, as a Duration in seconds.
+fn void builtin_temporal_instant_proto_since(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "since requires an Instant argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "since: argument is not a Temporal.Instant");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    HObject* other = (HObject*)arg.get_heapptr();
+    HObject* dur;
+    if (!instant_ns_diff_duration(ctx, self.extra.temporal.big_ns, other.extra.temporal.big_ns, &dur)) return;
+    dur.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(dur);
+}
+
+// this.until(other[, options]) = other - this, as a Duration in seconds.
+fn void builtin_temporal_instant_proto_until(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "until requires an Instant argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "until: argument is not a Temporal.Instant");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    HObject* other = (HObject*)arg.get_heapptr();
+    HObject* dur;
+    if (!instant_ns_diff_duration(ctx, other.extra.temporal.big_ns, self.extra.temporal.big_ns, &dur)) return;
+    dur.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(dur);
+}
+
 // Helper: convert a BigInt to a double representing nanoseconds. The result
 // is precise for any BigInt whose absolute value fits in 2^53 (~285 years
 // of nanoseconds). Throws RangeError if the magnitude is too large.
@@ -5401,6 +5484,8 @@ fn bool setUpTemporalInstant(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_INSTANT_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_INSTANT_PROTO_ADD.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_INSTANT_PROTO_SUBTRACT.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_INSTANT_PROTO_SINCE.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_INSTANT_PROTO_UNTIL.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_INSTANT_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "fromEpochSeconds", Builtin.TEMPORAL_INSTANT_FROM_EPOCH_SECONDS.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "fromEpochMilliseconds", Builtin.TEMPORAL_INSTANT_FROM_EPOCH_MILLISECONDS.ordinal)) return false;

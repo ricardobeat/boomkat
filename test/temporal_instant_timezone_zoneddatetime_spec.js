@@ -57,6 +57,18 @@ var dur = new Temporal.Duration(0, 0, 0, 0, 0, 0, 1, 0, 0, 0);
 assertEq(one.add(dur).equals(new Temporal.Instant(2000000000n)), true, "one.add(1s)");
 assertEq(one.subtract(dur).equals(epoch), true, "one.subtract(1s)");
 
+// since / until compute the difference as a Duration (largestUnit "second").
+var big = new Temporal.Instant(3000000000n);
+var sdiff = big.since(one);
+assertEq(sdiff.seconds, 2, "big.since(one).seconds");
+assertEq(sdiff.milliseconds, 0, "big.since(one).ms");
+var udiff = big.until(one);
+assertEq(udiff.seconds, -2, "big.until(one).seconds");
+var sub = new Temporal.Instant(1000001500n).since(one);
+assertEq(sub.seconds, 0, "sub.seconds");
+assertEq(sub.microseconds, 1, "sub.microseconds");
+assertEq(sub.nanoseconds, 500, "sub.nanoseconds");
+
 // valueOf throws (not coercible to primitive).
 var threw = false;
 try { var _v = one + 1; } catch (e) { threw = true; }
