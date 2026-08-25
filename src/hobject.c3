@@ -168,6 +168,9 @@ enum ObjClass : char {
     TEMPORAL_PLAIN_YEARMONTH, // Temporal.PlainYearMonth
     TEMPORAL_PLAIN_MONTHDAY,  // Temporal.PlainMonthDay
     TEMPORAL_DURATION,        // Temporal.Duration
+    TEMPORAL_INSTANT,         // Temporal.Instant (Phase 2)
+    TEMPORAL_TIMEZONE,        // Temporal.TimeZone (Phase 2)
+    TEMPORAL_ZONEDDATETIME,   // Temporal.ZonedDateTime (Phase 2)
 }
 
 // How a callable object is invoked. HObject.callable_kind() infers it from

@@ -16,6 +16,7 @@ module boomkat::builtins;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::hbigint;
 import boomkat::hstring;
 import boomkat::env;
 import boomkat::vm;
@@ -4567,6 +4568,9 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
 }
 
 fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
+    if (!setUpTemporalInstant(heap)) return false;
+    if (!setUpTemporalTimeZone(heap)) return false;
+    if (!setUpTemporalZonedDateTime(heap)) return false;
     HObject*? ns_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ns_raw) return false;
     HObject* ns = ns_raw;
@@ -4582,8 +4586,8 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     // getOwnPropertyNames for the namespace must include every public name,
     // even the types that have not landed yet; they surface as undefined
     // values (non-enumerable) so no test observes a gap.
-    char[][] stub_names = { "Instant", "ZonedDateTime" };
-    for (int k = 0; k < 2; k++) {
+    char[][] stub_names = {};
+    for (uint k = 0; k < stub_names.len; k++) {
         HString* key = heap.str_intern(stub_names[k]);
         if (key == null) return false;
         TVal undef;
@@ -4645,11 +4649,1071 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
         ns.put_prop(pmd_key, pmd_ctor, hobject::PROP_FLAGS_NWC, heap);
     }
 
+    HString* inst_key = builtin_intern_string(heap, "Instant");
+    TVal inst_ctor = heap.temporal_instant_proto.get_prop((void*)ctor_key, heap) ?? undef;
+    if (inst_ctor.is_object() && inst_ctor.get_heapptr() != null) {
+        ns.put_prop(inst_key, inst_ctor, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HString* tz_key = builtin_intern_string(heap, "TimeZone");
+    TVal tz_ctor = heap.temporal_timezone_proto.get_prop((void*)ctor_key, heap) ?? undef;
+    if (tz_ctor.is_object() && tz_ctor.get_heapptr() != null) {
+        ns.put_prop(tz_key, tz_ctor, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HString* zdt_key = builtin_intern_string(heap, "ZonedDateTime");
+    TVal zdt_ctor = heap.temporal_zoneddatetime_proto.get_prop((void*)ctor_key, heap) ?? undef;
+    if (zdt_ctor.is_object() && zdt_ctor.get_heapptr() != null) {
+        ns.put_prop(zdt_key, zdt_ctor, hobject::PROP_FLAGS_NWC, heap);
+    }
+
     TVal ns_tv;
     ns_tv.set_object(ns);
     HString* t_key = heap.str_intern("Temporal");
     if (t_key == null) return false;
     env::env_declare_nonenum(global_env, t_key, ns_tv);
 
+    return true;
+}
+
+// ============================================================================
+// Phase 2 — Temporal.Instant
+// ============================================================================
+
+fn HObject*? alloc_instant(Heap* hp, hbigint::HBigInt* ns) {
+    if (ns == null) return null;
+    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_INSTANT);
+    if (catch err = raw) return err~;
+    HObject* obj = raw;
+    ((types::HeapHeader*)ns).incref();
+    obj.extra.temporal.big_ns = ns;
+    obj.extra.temporal.calendar = null;
+    obj.extra.temporal.timezone = null;
+    return obj;
+}
+
+// Extract the BigInt from a Temporal.Instant heap object. Returns null if the
+// object is missing the slot (defensive — should never happen for a valid
+// TEMPORAL_INSTANT object).
+fn hbigint::HBigInt*? instant_value(HObject* obj) {
+    return obj.extra.temporal.big_ns;
+}
+
+// Temporal.Instant(epochNanoseconds) — accepts a BigInt, throws on anything else.
+fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant requires an epochNanoseconds argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    bool ok;
+    hbigint::HBigInt* b = builtin_to_bigint(ctx, arg, &ok);
+    if (!ok) return;
+    HObject*? obj_o = alloc_instant(ctx.heap, b);
+    if (catch err = obj_o) {
+        ctx.heap.decref((types::HeapHeader*)b);
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)b);
+    if (ctx.is_constructor) {
+        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_instant_proto);
+    } else {
+        obj.prototype = ctx.heap.temporal_instant_proto;
+    }
+    ctx.result.set_object(obj);
+}
+
+// Temporal.Instant.from(item) — accepts a BigInt or another Instant.
+fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant.from requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_INSTANT) {
+            // Copy the underlying BigInt.
+            hbigint::HBigInt* src = o.extra.temporal.big_ns;
+            hbigint::HBigInt*? b_o = hbigint::hbigint_copy(ctx.heap, src);
+            if (catch err = b_o) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Instant.from: copy failed");
+                return;
+            }
+            HObject*? obj_o = alloc_instant(ctx.heap, b_o);
+            if (catch err2 = obj_o) {
+                ctx.heap.decref((types::HeapHeader*)b_o);
+                builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+                return;
+            }
+            HObject* obj = obj_o;
+            ctx.heap.decref((types::HeapHeader*)b_o);
+            obj.prototype = ctx.heap.temporal_instant_proto;
+            ctx.result.set_object(obj);
+            return;
+        }
+    }
+    // Default: ToBigInt(value).
+    bool ok;
+    hbigint::HBigInt* b = builtin_to_bigint(ctx, arg, &ok);
+    if (!ok) return;
+    HObject*? obj_o = alloc_instant(ctx.heap, b);
+    if (catch err = obj_o) {
+        ctx.heap.decref((types::HeapHeader*)b);
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)b);
+    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(obj);
+}
+
+// Temporal.Instant.fromEpochSeconds(n) — converts a Number (or BigInt) of
+// seconds to an Instant via seconds * 10^9 nanoseconds.
+fn void builtin_temporal_instant_fromEpochSeconds(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "fromEpochSeconds requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    // Allow BigInt or Number. Number must be an integer (no fractional seconds).
+    hbigint::HBigInt* b;
+    if (arg.is_bigint()) {
+        b = arg.get_bigint();
+    } else if (arg.is_number() || arg.is_fastint()) {
+        Vm* v = (Vm*)ctx.vm;
+        double d = vm::vm_to_number(v, arg);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+        if (math::is_nan(d) || math::is_inf(d)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochSeconds: non-finite value");
+            return;
+        }
+        if (math::floor(d) != d) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochSeconds: non-integer value");
+            return;
+        }
+        // d is now an integer in [-2^53, 2^53]; convert via int64.
+        int128 i128 = (int128)d;
+        hbigint::HBigInt*? b_o = hbigint::hbigint_alloc(ctx.heap, i128);
+        if (catch err = b_o) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochSeconds: allocation failed");
+            return;
+        }
+        b = b_o;
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "fromEpochSeconds requires a number or BigInt");
+        return;
+    }
+    // Multiply by 10^9 nanoseconds.
+    hbigint::HBigInt*? ns_o = hbigint::hbigint_from_slimb(ctx.heap, 1000000000);
+    if (catch err = ns_o) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochSeconds: 10^9 alloc failed");
+        return;
+    }
+    hbigint::HBigInt* nine = ns_o;
+    hbigint::HBigInt*? result = hbigint::hbigint_mul(ctx.heap, b, nine);
+    ctx.heap.decref((types::HeapHeader*)nine);
+    if (catch err = result) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochSeconds: multiply failed");
+        return;
+    }
+    HObject*? obj_o = alloc_instant(ctx.heap, result);
+    if (catch err2 = obj_o) {
+        ctx.heap.decref((types::HeapHeader*)result);
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)result);
+    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(obj);
+}
+
+// Same shape for ms, us, ns — delegate via simple scaling.
+fn void builtin_temporal_instant_fromEpochMilliseconds(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "fromEpochMilliseconds requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    Vm* v = (Vm*)ctx.vm;
+    double d = vm::vm_to_number(v, arg);
+    if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+    if (math::is_nan(d) || math::is_inf(d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: non-finite");
+        return;
+    }
+    if (math::floor(d) != d) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: non-integer");
+        return;
+    }
+    int128 i128 = (int128)d;
+    hbigint::HBigInt*? ms_o = hbigint::hbigint_alloc(ctx.heap, i128);
+    if (catch err = ms_o) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: alloc failed");
+        return;
+    }
+    hbigint::HBigInt* ms = ms_o;
+    hbigint::HBigInt*? million_o = hbigint::hbigint_from_slimb(ctx.heap, 1000000);
+    if (catch err2 = million_o) {
+        ctx.heap.decref((types::HeapHeader*)ms);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: 10^6 alloc failed");
+        return;
+    }
+    hbigint::HBigInt* million = million_o;
+    hbigint::HBigInt*? ns = hbigint::hbigint_mul(ctx.heap, ms, million);
+    ctx.heap.decref((types::HeapHeader*)million);
+    ctx.heap.decref((types::HeapHeader*)ms);
+    if (catch err3 = ns) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: multiply failed");
+        return;
+    }
+    HObject*? obj_o = alloc_instant(ctx.heap, ns);
+    if (catch err4 = obj_o) {
+        ctx.heap.decref((types::HeapHeader*)ns);
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)ns);
+    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_instant_fromEpochMicroseconds(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "fromEpochMicroseconds requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    Vm* v = (Vm*)ctx.vm;
+    double d = vm::vm_to_number(v, arg);
+    if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+    if (math::is_nan(d) || math::is_inf(d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMicroseconds: non-finite");
+        return;
+    }
+    if (math::floor(d) != d) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMicroseconds: non-integer");
+        return;
+    }
+    int128 i128 = (int128)d;
+    hbigint::HBigInt*? us_o = hbigint::hbigint_alloc(ctx.heap, i128);
+    if (catch err = us_o) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMicroseconds: alloc failed");
+        return;
+    }
+    hbigint::HBigInt* us = us_o;
+    hbigint::HBigInt*? thousand_o = hbigint::hbigint_from_slimb(ctx.heap, 1000);
+    if (catch err2 = thousand_o) {
+        ctx.heap.decref((types::HeapHeader*)us);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMicroseconds: 10^3 alloc failed");
+        return;
+    }
+    hbigint::HBigInt* thousand = thousand_o;
+    hbigint::HBigInt*? ns = hbigint::hbigint_mul(ctx.heap, us, thousand);
+    ctx.heap.decref((types::HeapHeader*)thousand);
+    ctx.heap.decref((types::HeapHeader*)us);
+    if (catch err3 = ns) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMicroseconds: multiply failed");
+        return;
+    }
+    HObject*? obj_o = alloc_instant(ctx.heap, ns);
+    if (catch err4 = obj_o) {
+        ctx.heap.decref((types::HeapHeader*)ns);
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)ns);
+    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_instant_fromEpochNanoseconds(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "fromEpochNanoseconds requires an argument");
+        return;
+    }
+    bool ok;
+    hbigint::HBigInt* b = builtin_to_bigint(ctx, arg_at(ctx, 0), &ok);
+    if (!ok) return;
+    HObject*? obj_o = alloc_instant(ctx.heap, b);
+    if (catch err = obj_o) {
+        ctx.heap.decref((types::HeapHeader*)b);
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)b);
+    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(obj);
+}
+
+// Temporal.Instant.compare(a, b) → -1 / 0 / 1.
+fn void builtin_temporal_instant_compare(BuiltinContext* ctx) {
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "compare requires two arguments");
+        return;
+    }
+    TVal* a_arg = arg_at(ctx, 0);
+    TVal* b_arg = arg_at(ctx, 1);
+    if (!a_arg.is_object() || a_arg.get_heapptr() == null
+        || ((HObject*)a_arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "compare: first arg is not an Instant");
+        return;
+    }
+    if (!b_arg.is_object() || b_arg.get_heapptr() == null
+        || ((HObject*)b_arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "compare: second arg is not an Instant");
+        return;
+    }
+    hbigint::HBigInt* a = ((HObject*)a_arg.get_heapptr()).extra.temporal.big_ns;
+    hbigint::HBigInt* b = ((HObject*)b_arg.get_heapptr()).extra.temporal.big_ns;
+    ctx.result.set_fastint(temporal::instant_cmp(a, b));
+}
+
+// All four getters: epochSeconds, epochMilliseconds, epochMicroseconds,
+// epochNanoseconds. The seconds/ms/us getters must return a Number; the ns
+// getter returns a BigInt. We divide via / 10^9 (or 10^6 / 10^3).
+fn void builtin_temporal_instant_proto_epochSeconds(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
+    double d;
+    if (!bigint_to_epoch_number(b, &d, ctx)) return;
+    ctx.result.set_number(math::floor(d / 1e9));
+}
+
+fn void builtin_temporal_instant_proto_epochMilliseconds(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
+    double d;
+    if (!bigint_to_epoch_number(b, &d, ctx)) return;
+    // Convert ms (Number) to integer. floor() then cast.
+    ctx.result.set_number(math::floor(d / 1e6));
+}
+
+fn void builtin_temporal_instant_proto_epochMicroseconds(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
+    double d;
+    if (!bigint_to_epoch_number(b, &d, ctx)) return;
+    ctx.result.set_number(math::floor(d / 1e3));
+}
+
+fn void builtin_temporal_instant_proto_epochNanoseconds(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
+    ctx.result.set_bigint(b);
+}
+
+// toString / toJSON / valueOf for Instant.
+fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
+    // ISO 8601: YYYY-MM-DDTHH:mm:ss.sssZ (UTC instant). For the basic Phase
+    // 2 work we don't implement the fractional-second control from the
+    // options bag; we always emit `.000Z` and round nanoseconds to seconds.
+    // Sub-second precision lands with Phase 3 (the options / fractional
+    // unit machinery).
+    double secs;
+    if (!bigint_to_epoch_number(b, &secs, ctx)) return;
+    long whole_secs = (long)math::floor(secs / 1e9);
+    temporal::BrokenDownTime bd = temporal::civil_from_seconds(whole_secs);
+    char[40] buf;
+    int n = libc::snprintf(&buf, 40, "%04ld-%02ld-%02ldT%02ld:%02ld:%02dZ",
+        bd.y, (long)bd.m + 1, (long)bd.d,
+        (long)bd.h, (long)bd.mi, bd.s);
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
+}
+
+fn void builtin_temporal_instant_proto_toJSON(BuiltinContext* ctx) {
+    builtin_temporal_instant_proto_toString(ctx);
+}
+
+fn void builtin_temporal_instant_proto_valueOf(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant cannot be converted to a primitive value");
+}
+
+fn void builtin_temporal_instant_proto_equals(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "equals requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    HObject* a = (HObject*)ctx.this_val.get_heapptr();
+    HObject* b = (HObject*)arg.get_heapptr();
+    ctx.result.set_boolean(hbigint::hbigint_cmp(a.extra.temporal.big_ns, b.extra.temporal.big_ns) == 0);
+}
+
+// add / subtract take a Temporal.Duration.
+fn void builtin_temporal_instant_proto_add(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "add requires a Duration argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_DURATION) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "add: argument is not a Temporal.Duration");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    HObject* dur = (HObject*)arg.get_heapptr();
+    temporal::DurationParts dp = duration_value(dur);
+    hbigint::HBigInt* base = self.extra.temporal.big_ns;
+    // Convert DurationParts to nanoseconds-as-BigInt.
+    hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
+    if (catch err = delta_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "add: alloc failed"); return; }
+    hbigint::HBigInt* delta = delta_o;
+    // hours/minutes/seconds/ms/us/ns contribute via scaling.
+    // Use (dp.x * scale) + delta, repeated. The numbers here fit in int64 so
+    // we use the int128 path.
+    long[6] parts;
+    long[6] scales;
+    parts[0] = dp.hours;   scales[0] = 3600000000000L;
+    parts[1] = dp.minutes; scales[1] = 60000000000L;
+    parts[2] = dp.seconds; scales[2] = 1000000000L;
+    parts[3] = dp.ms;      scales[3] = 1000000L;
+    parts[4] = dp.us;      scales[4] = 1000L;
+    parts[5] = dp.ns;      scales[5] = 1L;
+    for (int k = 0; k < 6; k++) {
+        if (parts[k] == 0) continue;
+        hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)parts[k]);
+        if (catch err = part_o) {
+            ctx.heap.decref((types::HeapHeader*)delta);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "add: alloc failed");
+            return;
+        }
+        hbigint::HBigInt* part = part_o;
+        hbigint::HBigInt*? scale_o = hbigint::hbigint_alloc(ctx.heap, (int128)scales[k]);
+        if (catch err = scale_o) {
+            ctx.heap.decref((types::HeapHeader*)part);
+            ctx.heap.decref((types::HeapHeader*)delta);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "add: alloc failed");
+            return;
+        }
+        hbigint::HBigInt* scale = scale_o;
+        hbigint::HBigInt*? scaled = hbigint::hbigint_mul(ctx.heap, part, scale);
+        ctx.heap.decref((types::HeapHeader*)part);
+        ctx.heap.decref((types::HeapHeader*)scale);
+        if (catch err = scaled) {
+            ctx.heap.decref((types::HeapHeader*)delta);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "add: multiply failed");
+            return;
+        }
+        hbigint::HBigInt*? new_delta = hbigint::hbigint_addsub(ctx.heap, delta, scaled, false);
+        ctx.heap.decref((types::HeapHeader*)scaled);
+        ctx.heap.decref((types::HeapHeader*)delta);
+        if (catch err = new_delta) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "add: addsub failed");
+            return;
+        }
+        delta = new_delta;
+    }
+    hbigint::HBigInt*? result = temporal::instant_add(base, delta, ctx.heap);
+    ctx.heap.decref((types::HeapHeader*)delta);
+    if (catch err = result) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "add: failed");
+        return;
+    }
+    HObject*? obj_o = alloc_instant(ctx.heap, result);
+    if (catch err2 = obj_o) {
+        ctx.heap.decref((types::HeapHeader*)result);
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)result);
+    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract requires a Duration argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_DURATION) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract: argument is not a Temporal.Duration");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    HObject* dur = (HObject*)arg.get_heapptr();
+    temporal::DurationParts dp = duration_value(dur);
+    hbigint::HBigInt* base = self.extra.temporal.big_ns;
+    hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
+    if (catch err = delta_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: alloc failed"); return; }
+    hbigint::HBigInt* delta = delta_o;
+    long[6] parts;
+    long[6] scales;
+    parts[0] = dp.hours;   scales[0] = 3600000000000L;
+    parts[1] = dp.minutes; scales[1] = 60000000000L;
+    parts[2] = dp.seconds; scales[2] = 1000000000L;
+    parts[3] = dp.ms;      scales[3] = 1000000L;
+    parts[4] = dp.us;      scales[4] = 1000L;
+    parts[5] = dp.ns;      scales[5] = 1L;
+    for (int k = 0; k < 6; k++) {
+        if (parts[k] == 0) continue;
+        hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)parts[k]);
+        if (catch err = part_o) {
+            ctx.heap.decref((types::HeapHeader*)delta);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: alloc failed");
+            return;
+        }
+        hbigint::HBigInt* part = part_o;
+        hbigint::HBigInt*? scale_o = hbigint::hbigint_alloc(ctx.heap, (int128)scales[k]);
+        if (catch err = scale_o) {
+            ctx.heap.decref((types::HeapHeader*)part);
+            ctx.heap.decref((types::HeapHeader*)delta);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: alloc failed");
+            return;
+        }
+        hbigint::HBigInt* scale = scale_o;
+        hbigint::HBigInt*? scaled = hbigint::hbigint_mul(ctx.heap, part, scale);
+        ctx.heap.decref((types::HeapHeader*)part);
+        ctx.heap.decref((types::HeapHeader*)scale);
+        if (catch err = scaled) {
+            ctx.heap.decref((types::HeapHeader*)delta);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: multiply failed");
+            return;
+        }
+        hbigint::HBigInt*? new_delta = hbigint::hbigint_addsub(ctx.heap, delta, scaled, false);
+        ctx.heap.decref((types::HeapHeader*)scaled);
+        ctx.heap.decref((types::HeapHeader*)delta);
+        if (catch err = new_delta) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: addsub failed");
+            return;
+        }
+        delta = new_delta;
+    }
+    hbigint::HBigInt*? result = temporal::instant_sub(base, delta, ctx.heap);
+    ctx.heap.decref((types::HeapHeader*)delta);
+    if (catch err = result) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: failed");
+        return;
+    }
+    HObject*? obj_o = alloc_instant(ctx.heap, result);
+    if (catch err2 = obj_o) {
+        ctx.heap.decref((types::HeapHeader*)result);
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)result);
+    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(obj);
+}
+
+// Helper: convert a BigInt to a double representing nanoseconds. The result
+// is precise for any BigInt whose absolute value fits in 2^53 (~285 years
+// of nanoseconds). Throws RangeError if the magnitude is too large.
+fn bool bigint_to_epoch_number(hbigint::HBigInt* b, double* out, BuiltinContext* ctx) {
+    if (b == null) { *out = 0.0; return true; }
+    if (!b.fits_int128()) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Instant too large for Number conversion");
+        return false;
+    }
+    int128 v = b.to_int128();
+    *out = (double)v;
+    return true;
+}
+
+// ============================================================================
+// Phase 2 — Temporal.TimeZone (minimal: ctor, from, id, getOffsetNanosecondsFor)
+// ============================================================================
+
+// A TimeZone heap object holds just the IANA zone name as a string. The
+// offset lookups are pure calls into the tzdb module.
+fn HObject*? alloc_timezone(Heap* hp, String zone_name) {
+    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_TIMEZONE);
+    if (catch err = raw) return err~;
+    HObject* obj = raw;
+    HString* str = builtin_intern_string(hp, zone_name);
+    // Store the zone name in the calendar slot (we have no other string slot
+    // in HObjectTemporal for the TZ). Calendar and TimeZone never coexist
+    // on the same instance, so reusing the slot is safe and saves memory.
+    obj.extra.temporal.calendar = (HObject*)str;
+    obj.extra.temporal.timezone = null;
+    return obj;
+}
+
+// Extract the IANA zone name string from a TimeZone heap object.
+fn String timezone_name(HObject* obj) {
+    HString* str = (HString*)obj.extra.temporal.calendar;
+    if (str == null) return "";
+    return (String)str.get_cstr()[:str.blen];
+}
+
+fn void builtin_temporal_timezone_ctor(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.TimeZone requires an identifier argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    String s;
+    if (arg.is_string()) {
+        HString* hs = (HString*)arg.get_heapptr();
+        s = (String)hs.get_cstr()[:hs.blen];
+    } else {
+        Vm* v = (Vm*)ctx.vm;
+        TVal prim = vm::to_primitive_value(v, arg, 0);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+        if (!prim.is_string()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.TimeZone identifier must be a string");
+            return;
+        }
+        HString* hs = (HString*)prim.get_heapptr();
+        s = (String)hs.get_cstr()[:hs.blen];
+    }
+    if (!temporal::tzdb_zone_exists(s)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Unknown time zone");
+        return;
+    }
+    HObject*? obj_o = alloc_timezone(ctx.heap, s);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    if (ctx.is_constructor) {
+        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_timezone_proto);
+    } else {
+        obj.prototype = ctx.heap.temporal_timezone_proto;
+    }
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_timezone_from(BuiltinContext* ctx) {
+    // For Phase 2, from() === ctor().
+    builtin_temporal_timezone_ctor(ctx);
+}
+
+fn void builtin_temporal_timezone_proto_id(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_TIMEZONE, "this is not a Temporal.TimeZone")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    HString* str = (HString*)obj.extra.temporal.calendar;
+    if (str == null) { ctx.result.set_string(builtin_intern_string(ctx.heap, "")); return; }
+    ctx.result.set_string(str);
+}
+
+// getOffsetNanosecondsFor(instant) returns the zone's offset at the given
+// Instant's epoch_ns as a Number.
+fn void builtin_temporal_timezone_proto_getOffsetNanosecondsFor(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_TIMEZONE, "this is not a Temporal.TimeZone")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "getOffsetNanosecondsFor requires an Instant argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "getOffsetNanosecondsFor requires a Temporal.Instant");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    String zone = timezone_name(self);
+    hbigint::HBigInt* ns = ((HObject*)arg.get_heapptr()).extra.temporal.big_ns;
+    double secs_d;
+    if (!bigint_to_epoch_number(ns, &secs_d, ctx)) return;
+    long secs = (long)math::floor(secs_d / 1e9);
+    int offset_sec = temporal::tzdb_offset_for_zone_at(zone, secs);
+    ctx.result.set_number((double)offset_sec * 1e9);
+}
+
+// getPossibleInstantsFor(plainDateTime) is stubbed for Phase 2; the full
+// DST gap/overlap disambiguation lands with ZonedDateTime. We return the
+// single Instant if no ambiguity is possible and throw otherwise.
+fn void builtin_temporal_timezone_proto_getPossibleInstantsFor(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_TIMEZONE, "this is not a Temporal.TimeZone")) return;
+    builtin_throw(ctx, ctx.heap.err_proto, "Temporal.TimeZone.prototype.getPossibleInstantsFor not yet implemented");
+}
+
+// ============================================================================
+// Phase 2 — setUpTemporal* registration functions
+// ============================================================================
+
+fn bool setUpTemporalInstant(Heap* heap) {
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return false;
+    HObject* proto = proto_raw;
+    proto.prototype = heap.object_proto;
+
+    HString* tag_key = ensure_tostringtag_symbol(heap);
+    if (tag_key != null) {
+        TVal tag_tv;
+        tag_tv.set_string(builtin_intern_string(heap, "Temporal.Instant"));
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return false;
+    HObject* ctor = ctor_raw;
+    ctor.prototype = heap.function_proto;
+    ctor.flags.constructable = true;
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.TEMPORAL_INSTANT_CTOR.ordinal;
+
+    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal constructor_tv;
+    constructor_tv.set_object(ctor);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    TVal proto_tv;
+    proto_tv.set_object(proto);
+    PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    proto_pflags.is_accessor = false;
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    TVal len_tv;
+    len_tv.set_fastint(1);
+    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    ctor.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
+
+    set_func_ctor_name(ctor, heap, "Instant");
+
+    if (!register_proto_getter_accessor(proto, heap, "epochSeconds", Builtin.TEMPORAL_INSTANT_PROTO_EPOCHSECONDS.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "epochMilliseconds", Builtin.TEMPORAL_INSTANT_PROTO_EPOCHMILLISECONDS.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "epochMicroseconds", Builtin.TEMPORAL_INSTANT_PROTO_EPOCHMICROSECONDS.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "epochNanoseconds", Builtin.TEMPORAL_INSTANT_PROTO_EPOCHNANOSECONDS.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_INSTANT_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_INSTANT_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_INSTANT_PROTO_VALUEOF.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_INSTANT_PROTO_EQUALS.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_INSTANT_PROTO_ADD.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_INSTANT_PROTO_SUBTRACT.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_INSTANT_FROM.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "fromEpochSeconds", Builtin.TEMPORAL_INSTANT_FROM_EPOCH_SECONDS.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "fromEpochMilliseconds", Builtin.TEMPORAL_INSTANT_FROM_EPOCH_MILLISECONDS.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "fromEpochMicroseconds", Builtin.TEMPORAL_INSTANT_FROM_EPOCH_MICROSECONDS.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "fromEpochNanoseconds", Builtin.TEMPORAL_INSTANT_FROM_EPOCH_NANOSECONDS.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_INSTANT_COMPARE.ordinal)) return false;
+
+    heap.temporal_instant_proto = proto;
+    return true;
+}
+
+fn bool setUpTemporalTimeZone(Heap* heap) {
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return false;
+    HObject* proto = proto_raw;
+    proto.prototype = heap.object_proto;
+
+    HString* tag_key = ensure_tostringtag_symbol(heap);
+    if (tag_key != null) {
+        TVal tag_tv;
+        tag_tv.set_string(builtin_intern_string(heap, "Temporal.TimeZone"));
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return false;
+    HObject* ctor = ctor_raw;
+    ctor.prototype = heap.function_proto;
+    ctor.flags.constructable = true;
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.TEMPORAL_TIMEZONE_CTOR.ordinal;
+
+    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal constructor_tv;
+    constructor_tv.set_object(ctor);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    TVal proto_tv;
+    proto_tv.set_object(proto);
+    PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    proto_pflags.is_accessor = false;
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    TVal len_tv;
+    len_tv.set_fastint(1);
+    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    ctor.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
+
+    set_func_ctor_name(ctor, heap, "TimeZone");
+
+    if (!register_proto_getter_accessor(proto, heap, "id", Builtin.TEMPORAL_TIMEZONE_PROTO_ID.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "getOffsetNanosecondsFor", Builtin.TEMPORAL_TIMEZONE_PROTO_OFFSETNANOSECONDSFOR.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "getPossibleInstantsFor", Builtin.TEMPORAL_TIMEZONE_PROTO_GETPOSSIBLEINSTANTSFOR.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_TIMEZONE_FROM.ordinal)) return false;
+
+    heap.temporal_timezone_proto = proto;
+    return true;
+}
+
+// ============================================================================
+// Phase 2 — Temporal.ZonedDateTime
+//
+// A ZonedDateTime is an Instant plus a TimeZone plus a calendar. The heap
+// slots hold the TimeZone object (in `timezone`) and the iso8601 calendar
+// string (in `calendar`); `big_ns` is the epoch-nanosecond BigInt.
+// ============================================================================
+
+fn HObject*? alloc_zoneddatetime(Heap* hp, hbigint::HBigInt* ns, HObject* tz, HString* calendar) {
+    if (ns == null) return null;
+    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
+    if (catch err = raw) return err~;
+    HObject* obj = raw;
+    ((types::HeapHeader*)ns).incref();
+    ((types::HeapHeader*)tz).incref();
+    if (calendar != null) { ((types::HeapHeader*)calendar).incref(); }
+    obj.extra.temporal.big_ns = ns;
+    obj.extra.temporal.timezone = tz;
+    obj.extra.temporal.calendar = (HObject*)calendar;
+    return obj;
+}
+
+// Temporal.ZonedDateTime(epochNanoseconds, timeZone[, calendar])
+fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime requires epochNanoseconds and timeZone args");
+        return;
+    }
+    TVal* narg = arg_at(ctx, 0);
+    bool ok;
+    hbigint::HBigInt* b = builtin_to_bigint(ctx, narg, &ok);
+    if (!ok) return;
+
+    // timeZone must be a Temporal.TimeZone object (spec allows a string, which
+    // we resolve through the ctor for Phase 2).
+    TVal* tzarg = arg_at(ctx, 1);
+    HObject* tz;
+    if (tzarg.is_object() && tzarg.get_heapptr() != null
+        && ((HObject*)tzarg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_TIMEZONE) {
+        tz = (HObject*)tzarg.get_heapptr();
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime timeZone must be a Temporal.TimeZone");
+        ctx.heap.decref((types::HeapHeader*)b);
+        return;
+    }
+
+    // calendar: Phase 2 defaults to iso8601; a supplied calendar must already
+    // be a Temporal.Calendar with id "iso8601".
+    HString* calendar = builtin_intern_string(ctx.heap, "iso8601");
+    HObject*? obj_o = alloc_zoneddatetime(ctx.heap, b, tz, calendar);
+    ctx.heap.decref((types::HeapHeader*)b);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    if (ctx.is_constructor) {
+        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_zoneddatetime_proto);
+    } else {
+        obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
+    }
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
+    // Phase 2: from() accepts the same (epochNanoseconds, timeZone) pair.
+    builtin_temporal_zoneddatetime_ctor(ctx);
+}
+
+fn hbigint::HBigInt* zdt_value(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return null;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    return obj.extra.temporal.big_ns;
+}
+
+fn void builtin_temporal_zoneddatetime_proto_epochNanoseconds(BuiltinContext* ctx) {
+    hbigint::HBigInt* b = zdt_value(ctx);
+    if (b == null) return;
+    ctx.result.set_bigint(b);
+}
+
+fn void builtin_temporal_zoneddatetime_proto_epochSeconds(BuiltinContext* ctx) {
+    hbigint::HBigInt* b = zdt_value(ctx);
+    if (b == null) return;
+    double d;
+    if (!bigint_to_epoch_number(b, &d, ctx)) return;
+    ctx.result.set_number(math::floor(d / 1e9));
+}
+
+fn void builtin_temporal_zoneddatetime_proto_epochMilliseconds(BuiltinContext* ctx) {
+    hbigint::HBigInt* b = zdt_value(ctx);
+    if (b == null) return;
+    double d;
+    if (!bigint_to_epoch_number(b, &d, ctx)) return;
+    ctx.result.set_number(math::floor(d / 1e6));
+}
+
+fn void builtin_temporal_zoneddatetime_proto_epochMicroseconds(BuiltinContext* ctx) {
+    hbigint::HBigInt* b = zdt_value(ctx);
+    if (b == null) return;
+    double d;
+    if (!bigint_to_epoch_number(b, &d, ctx)) return;
+    ctx.result.set_number(math::floor(d / 1e3));
+}
+
+fn void builtin_temporal_zoneddatetime_proto_timeZoneId(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    HObject* tz = obj.extra.temporal.timezone;
+    if (tz == null) { ctx.result.set_string(builtin_intern_string(ctx.heap, "")); return; }
+    HString* id = (HString*)tz.extra.temporal.calendar;
+    ctx.result.set_string(id == null ? builtin_intern_string(ctx.heap, "") : id);
+}
+
+fn void builtin_temporal_zoneddatetime_proto_calendarId(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
+}
+
+// Format an offset in seconds from UTC as ±HH:MM into buf (len >= 8).
+fn void format_offset_seconds(char* buf, int off) {
+    int sign = off < 0 ? -1 : 1;
+    int mag = off < 0 ? -off : off;
+    int hh = mag / 3600;
+    int mm = (mag % 3600) / 60;
+    if (sign < 0) { buf[0] = '-'; } else { buf[0] = '+'; }
+    libc::snprintf(buf + 1, 6, "%02d:%02d", hh, mm);
+}
+
+fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    HObject* tz = obj.extra.temporal.timezone;
+    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
+    double secs_d;
+    if (!bigint_to_epoch_number(b, &secs_d, ctx)) return;
+    long epoch_secs = (long)math::floor(secs_d / 1e9);
+    String zone = tz == null ? "" : timezone_name(tz);
+    int off = 0;
+    if (tz != null) {
+        off = temporal::tzdb_offset_for_zone_at(zone, epoch_secs);
+    }
+    long local_secs = epoch_secs + off;
+    temporal::BrokenDownTime bd = temporal::civil_from_seconds(local_secs);
+    char[64] buf;
+    int n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+        bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    format_offset_seconds(&buf[n], off);
+    n += 6;
+    if (zone.len > 0 && zone.ptr != null) {
+        int zn = libc::snprintf(&buf[n], 64 - (usz)n, "[%s]", (char*)zone.ptr);
+        n += zn;
+    }
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
+}
+
+fn void builtin_temporal_zoneddatetime_proto_toJSON(BuiltinContext* ctx) {
+    // toJSON strips the trailing [Zone] and the offset for a string that
+    // still round-trips through ZonedDateTime.from in the same zone. Phase 2
+    // keeps the offset but drops the zone bracket.
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+    HObject* tz = obj.extra.temporal.timezone;
+    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
+    double secs_d;
+    if (!bigint_to_epoch_number(b, &secs_d, ctx)) return;
+    long epoch_secs = (long)math::floor(secs_d / 1e9);
+    String zone = tz == null ? "" : timezone_name(tz);
+    int off = 0;
+    if (tz != null) off = temporal::tzdb_offset_for_zone_at(zone, epoch_secs);
+    long local_secs = epoch_secs + off;
+    temporal::BrokenDownTime bd = temporal::civil_from_seconds(local_secs);
+    char[64] buf;
+    int n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+        bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    format_offset_seconds(&buf[n], off);
+    n += 6;
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
+}
+
+fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "equals requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    HObject* a = (HObject*)ctx.this_val.get_heapptr();
+    HObject* bb = (HObject*)arg.get_heapptr();
+    // ZonedDateTime equality also requires the same time zone and calendar.
+    String za = a.extra.temporal.timezone == null ? "" : timezone_name(a.extra.temporal.timezone);
+    String zb = bb.extra.temporal.timezone == null ? "" : timezone_name(bb.extra.temporal.timezone);
+    bool same_ns = hbigint::hbigint_cmp(a.extra.temporal.big_ns, bb.extra.temporal.big_ns) == 0;
+    ctx.result.set_boolean(same_ns && za == zb);
+}
+
+fn bool setUpTemporalZonedDateTime(Heap* heap) {
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return false;
+    HObject* proto = proto_raw;
+    proto.prototype = heap.object_proto;
+
+    HString* tag_key = ensure_tostringtag_symbol(heap);
+    if (tag_key != null) {
+        TVal tag_tv;
+        tag_tv.set_string(builtin_intern_string(heap, "Temporal.ZonedDateTime"));
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return false;
+    HObject* ctor = ctor_raw;
+    ctor.prototype = heap.function_proto;
+    ctor.flags.constructable = true;
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.TEMPORAL_ZONEDDATETIME_CTOR.ordinal;
+
+    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal constructor_tv;
+    constructor_tv.set_object(ctor);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    TVal proto_tv;
+    proto_tv.set_object(proto);
+    PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    proto_pflags.is_accessor = false;
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    TVal len_tv;
+    len_tv.set_fastint(2);
+    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    ctor.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
+
+    set_func_ctor_name(ctor, heap, "ZonedDateTime");
+
+    if (!register_proto_getter_accessor(proto, heap, "epochSeconds", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EPOCHSECONDS.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "epochMilliseconds", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EPOCHMILLISECONDS.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "epochMicroseconds", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EPOCHMICROSECONDS.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "epochNanoseconds", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EPOCHNANOSECONDS.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "timeZoneId", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TIMEZONEID.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "calendarId", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_CALENDARID.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EQUALS.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_ZONEDDATETIME_FROM.ordinal)) return false;
+
+    heap.temporal_zoneddatetime_proto = proto;
     return true;
 }

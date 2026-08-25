@@ -121,11 +121,23 @@ def parse_tzif(path: str) -> tuple[int, list[tuple[int, int]], list[str]]:
         total_off = offsets[idx]
         transitions.append((t, total_off))
 
-    # Initial offset = the offset of the last type (no transitions == that offset)
-    # Actually: initial_offset_sec is the offset used for instants BEFORE the first transition.
-    # That's the offset associated with the type BEFORE the first transition. In TZif, the type
-    # index used for "no transition" is typecnt - 1 (the LST or LOCAL rule).
-    initial_offset = offsets[-1] if offsets else 0
+    # Initial offset = the offset in effect at the Unix epoch (t=0). The
+    # generator truncates the transition list at t=0 (dropping pre-1970 entries),
+    # and the lookup falls back to initial_offset for instants before the first
+    # kept transition. So initial_offset must be the standard offset at epoch,
+    # not offsets[-1]: the last type is a POSIX-rule-derived DST entry for many
+    # zones (e.g. America/New_York -> -4h EDT), which would misreport a winter
+    # date as daylight saving time.
+    initial_offset = 0
+    for t, off in transitions:
+        if t <= 0:
+            initial_offset = off
+        else:
+            break
+    if not transitions or transitions[0][0] > 0:
+        # No transition at or before epoch: the offset listed for the first
+        # transition also applies in [0, first_transition).
+        initial_offset = transitions[0][1] if transitions else (offsets[-1] if offsets else 0)
 
     # Extract unique abbreviations for the abbrevs pool
     used_abbrs = set()

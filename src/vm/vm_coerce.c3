@@ -372,6 +372,9 @@ fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
         case builtins::Builtin.TEMPORAL_PLAIN_MONTHDAY_CTOR.ordinal:
         case builtins::Builtin.TEMPORAL_CALENDAR_CTOR.ordinal:
         case builtins::Builtin.TEMPORAL_DURATION_CTOR.ordinal:
+        case builtins::Builtin.TEMPORAL_INSTANT_CTOR.ordinal:
+        case builtins::Builtin.TEMPORAL_TIMEZONE_CTOR.ordinal:
+        case builtins::Builtin.TEMPORAL_ZONEDDATETIME_CTOR.ordinal:
             return true;
         default:
             return false;

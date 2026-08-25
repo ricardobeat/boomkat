@@ -237,8 +237,12 @@ assertEq(md.toString({ calendarName: "always" }), "1972-03-15[u-ca=iso8601]", "m
 
 assertTrue(typeof Temporal.PlainYearMonth === "function", "Temporal.PlainYearMonth is a function");
 assertTrue(typeof Temporal.PlainMonthDay === "function", "Temporal.PlainMonthDay is a function");
-assertEq(typeof Temporal.Instant, "undefined", "Temporal.Instant still stub");
-assertEq(typeof Temporal.ZonedDateTime, "undefined", "Temporal.ZonedDateTime still stub");
+assertEq(typeof Temporal.Instant, "function", "Temporal.Instant is a function");
+assertEq(typeof Temporal.Instant.prototype.toJSON, "function", "Temporal.Instant.prototype.toJSON");
+assertEq(typeof Temporal.Instant.prototype.add, "function", "Temporal.Instant.prototype.add");
+assertEq(typeof Temporal.TimeZone, "function", "Temporal.TimeZone is a function");
+assertEq(typeof Temporal.TimeZone.prototype.getOffsetNanosecondsFor, "function", "getOffsetNanosecondsFor");
+assertEq(typeof Temporal.ZonedDateTime, "function", "Temporal.ZonedDateTime is a function");
 assertEq(typeof Temporal.Now, "undefined", "Temporal.Now still stub");
 
 console.log("Pass: " + pass + " Fail: " + fail);
