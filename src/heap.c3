@@ -3133,6 +3133,8 @@ fn void Heap.mark_roots(&self) {
     if (self.arraybuffer_proto != null) { self.mark_hobject(self.arraybuffer_proto); }
     if (self.sharedarraybuffer_proto != null) { self.mark_hobject(self.sharedarraybuffer_proto); }
     if (self.dataview_proto != null) { self.mark_hobject(self.dataview_proto); }
+    if (self.temporal_iso_calendar != null) { self.mark_hobject(self.temporal_iso_calendar); }
+    if (self.temporal_calendar_proto != null) { self.mark_hobject(self.temporal_calendar_proto); }
 
     // Every live slot on the VM value stack, from base to top, can reference a
     // heap object or string.
