@@ -5930,6 +5930,191 @@ fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
     ctx.result.set_boolean(same_ns && za == zb);
 }
 
+// Convert a Duration's time components to an epoch-nanosecond BigInt delta
+// (hours..nanoseconds only; the calendar units are ignored for Phase 2, which
+// matches Temporal.Instant.add semantics for pure time arithmetic).
+fn bool duration_to_ns_delta(BuiltinContext* ctx, temporal::DurationParts dp, hbigint::HBigInt** out) {
+    hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
+    if (catch err = delta_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return false; }
+    hbigint::HBigInt* delta = delta_o;
+    long[6] parts;
+    long[6] scales;
+    parts[0] = dp.hours;   scales[0] = 3600000000000L;
+    parts[1] = dp.minutes; scales[1] = 60000000000L;
+    parts[2] = dp.seconds; scales[2] = 1000000000L;
+    parts[3] = dp.ms;      scales[3] = 1000000L;
+    parts[4] = dp.us;      scales[4] = 1000L;
+    parts[5] = dp.ns;      scales[5] = 1L;
+    for (int k = 0; k < 6; k++) {
+        if (parts[k] == 0) continue;
+        hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)parts[k]);
+        if (catch err = part_o) { ctx.heap.decref((types::HeapHeader*)delta); builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return false; }
+        hbigint::HBigInt* part = part_o;
+        hbigint::HBigInt*? scale_o = hbigint::hbigint_alloc(ctx.heap, (int128)scales[k]);
+        if (catch err = scale_o) {
+            ctx.heap.decref((types::HeapHeader*)part);
+            ctx.heap.decref((types::HeapHeader*)delta);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed");
+            return false;
+        }
+        hbigint::HBigInt* scale = scale_o;
+        hbigint::HBigInt*? scaled = hbigint::hbigint_mul(ctx.heap, part, scale);
+        ctx.heap.decref((types::HeapHeader*)part);
+        ctx.heap.decref((types::HeapHeader*)scale);
+        if (catch err = scaled) { ctx.heap.decref((types::HeapHeader*)delta); builtin_throw(ctx, ctx.heap.range_err_proto, "multiply failed"); return false; }
+        hbigint::HBigInt*? new_delta = hbigint::hbigint_addsub(ctx.heap, delta, scaled, false);
+        ctx.heap.decref((types::HeapHeader*)scaled);
+        ctx.heap.decref((types::HeapHeader*)delta);
+        if (catch err = new_delta) { builtin_throw(ctx, ctx.heap.range_err_proto, "addsub failed"); return false; }
+        delta = new_delta;
+    }
+    *out = delta;
+    return true;
+}
+
+// Build a ZonedDateTime from an epoch-ns BigInt, a TimeZone object, and the
+// zone's calendar String, setting the correct prototype.
+fn void zdt_from_parts(BuiltinContext* ctx, hbigint::HBigInt* ns, HObject* tz, HString* cal) {
+    HObject*? obj_o = alloc_zoneddatetime(ctx.heap, ns, tz, cal);
+    if (catch err = obj_o) { ctx.heap.decref((types::HeapHeader*)ns); builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    ctx.heap.decref((types::HeapHeader*)ns);
+    obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
+    ctx.result.set_object(obj);
+}
+
+// this.withTimeZone(timeZone) — same instant, different zone.
+fn void builtin_temporal_zoneddatetime_proto_withTimeZone(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "withTimeZone requires a Temporal.TimeZone");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_TIMEZONE) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "withTimeZone requires a Temporal.TimeZone");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    HObject* new_tz = (HObject*)arg.get_heapptr();
+    ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
+    zdt_from_parts(ctx, self.extra.temporal.big_ns, new_tz, (HString*)self.extra.temporal.calendar);
+}
+
+// this.withCalendar(calendar) — Phase 2 accepts only the iso8601 calendar;
+// a non-iso8601 or non-Calendar argument throws.
+fn void builtin_temporal_zoneddatetime_proto_withCalendar(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "withCalendar requires a Temporal.Calendar");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (arg.is_object() && arg.get_heapptr() != null
+        && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_CALENDAR) {
+        // This engine supports only the iso8601 calendar, so any Calendar
+        // object is acceptable here.
+        HObject* self = (HObject*)ctx.this_val.get_heapptr();
+        ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
+        ((types::HeapHeader*)self.extra.temporal.timezone).incref();
+        zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
+        return;
+    }
+    // Spec accepts a string calendar id too; Phase 2 supports only iso8601.
+    if (arg.is_string()) {
+        HString* hs = (HString*)arg.get_heapptr();
+        String s = (String)hs.get_cstr()[:hs.blen];
+        if (s != "iso8601") {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "unsupported calendar");
+            return;
+        }
+        HObject* self = (HObject*)ctx.this_val.get_heapptr();
+        ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
+        ((types::HeapHeader*)self.extra.temporal.timezone).incref();
+        zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
+        return;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "withCalendar requires a Temporal.Calendar");
+}
+
+fn void builtin_temporal_zoneddatetime_proto_add(BuiltinContext* ctx) {
+    zdt_add_sub(ctx, false);
+}
+
+fn void builtin_temporal_zoneddatetime_proto_subtract(BuiltinContext* ctx) {
+    zdt_add_sub(ctx, true);
+}
+
+// this.add(duration) / this.subtract(duration) — add the Duration's time delta
+// to the underlying instant, keeping the zone and calendar.
+fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "requires a Temporal.Duration");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_DURATION) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument is not a Temporal.Duration");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    temporal::DurationParts dp = duration_value((HObject*)arg.get_heapptr());
+    hbigint::HBigInt* delta;
+    if (!duration_to_ns_delta(ctx, dp, &delta)) return;
+    hbigint::HBigInt* base = self.extra.temporal.big_ns;
+    ((types::HeapHeader*)base).incref();
+    hbigint::HBigInt*? result;
+    if (subtract) {
+        result = temporal::instant_sub(base, delta, ctx.heap);
+    } else {
+        result = temporal::instant_add(base, delta, ctx.heap);
+    }
+    ctx.heap.decref((types::HeapHeader*)delta);
+    ctx.heap.decref((types::HeapHeader*)base);
+    if (catch err = result) { builtin_throw(ctx, ctx.heap.range_err_proto, "failed"); return; }
+    ((types::HeapHeader*)self.extra.temporal.timezone).incref();
+    zdt_from_parts(ctx, result, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
+}
+
+// this.until(other) / this.since(other) — elapsed time difference as a
+// Duration in seconds. Phase 2 uses the raw epoch-nanosecond difference
+// (identical to Temporal.Instant.until/since), which is exact for the elapsed
+// duration between the two instants; calendar-unit math lands later.
+fn void builtin_temporal_zoneddatetime_proto_until(BuiltinContext* ctx) {
+    zdt_until_since(ctx, true);
+}
+
+fn void builtin_temporal_zoneddatetime_proto_since(BuiltinContext* ctx) {
+    zdt_until_since(ctx, false);
+}
+
+fn void zdt_until_since(BuiltinContext* ctx, bool until) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "requires a Temporal.ZonedDateTime");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument is not a Temporal.ZonedDateTime");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    HObject* other = (HObject*)arg.get_heapptr();
+    hbigint::HBigInt* a;
+    hbigint::HBigInt* b;
+    if (until) { a = other.extra.temporal.big_ns; b = self.extra.temporal.big_ns; }
+    else       { a = self.extra.temporal.big_ns;  b = other.extra.temporal.big_ns; }
+    HObject* dur;
+    if (!instant_ns_diff_duration(ctx, a, b, &dur)) return;
+    dur.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(dur);
+}
+
 fn bool setUpTemporalZonedDateTime(Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
@@ -5981,6 +6166,12 @@ fn bool setUpTemporalZonedDateTime(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOJSON.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EQUALS.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "withTimeZone", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_WITHTIMEZONE.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "withCalendar", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_WITHCALENDAR.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_ADD.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_SUBTRACT.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_UNTIL.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_SINCE.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_ZONEDDATETIME_FROM.ordinal)) return false;
 
     heap.temporal_zoneddatetime_proto = proto;

@@ -156,5 +156,28 @@ assertFalse(zsummer.equals(zutc), "zsummer != zutc");
 // toJSON keeps the offset, drops the zone bracket.
 assertEq(zsummer.toJSON(), "2024-07-14T19:33:20-04:00", "zsummer.toJSON");
 
+// withTimeZone keeps the instant, changes the zone.
+var zutc2 = zsummer.withTimeZone(utc);
+assertEq(zutc2.timeZoneId, "UTC", "withTimeZone id");
+assertEq(zutc2.epochSeconds, zsummer.epochSeconds, "withTimeZone preserves epoch");
+
+// withCalendar (iso8601) keeps the instant and zone.
+var isoCal = new Temporal.Calendar("iso8601");
+var zcal = zsummer.withCalendar(isoCal);
+assertEq(zcal.calendarId, "iso8601", "withCalendar id");
+assertEq(zcal.epochSeconds, zsummer.epochSeconds, "withCalendar preserves epoch");
+
+// add / subtract take a Duration (time delta on the instant).
+var zdur = new Temporal.Duration(0, 0, 0, 0, 0, 0, 1, 0, 0, 0);
+assertEq(zsummer.add(zdur).epochSeconds, zsummer.epochSeconds + 1, "zdt add 1s");
+assertEq(zsummer.subtract(zdur).epochSeconds, zsummer.epochSeconds - 1, "zdt subtract 1s");
+
+// until / since give the elapsed difference as a Duration.
+var zlater = new Temporal.ZonedDateTime(1721000001000000000n, nyc);
+var zu = zsummer.until(zlater);
+assertEq(zu.seconds, 1, "zdt until seconds");
+var zs = zsummer.since(zlater);
+assertEq(zs.seconds, -1, "zdt since seconds");
+
 console.log("Pass: " + pass + " Fail: " + fail);
 if (fail > 0) process.exit(1);
