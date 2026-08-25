@@ -649,7 +649,34 @@ PHASES = [
             "language/export",
         ],
     },
-]   
+    {
+        "label": "Phase 26: Temporal (Phase 2 — Instant/TimeZone/ZonedDateTime/Plain types)",
+        # Mirror plan 080 §"Phase 2". Excludes:
+        #   built-ins/Temporal/Now — Phase 3 (not yet implemented)
+        #   built-ins/Temporal/Duration/prototype/round with relativeTo — Phase 4
+        # The longest-prefix rule below scopes subdirs: any subdir listed here
+        # takes its parent over (so listing `built-ins/Temporal/Instant` runs
+        # every test under it, and the runner skips tests with feature flags
+        # the suite can't satisfy).
+        "dirs": [
+            "built-ins/Temporal/Duration",
+            "built-ins/Temporal/Instant",
+            "built-ins/Temporal/PlainDate",
+            "built-ins/Temporal/PlainDateTime",
+            "built-ins/Temporal/PlainMonthDay",
+            "built-ins/Temporal/PlainTime",
+            "built-ins/Temporal/PlainYearMonth",
+            "built-ins/Temporal/ZonedDateTime",
+            # `built-ins/Temporal/Calendar` — top-level (id, toString) lives
+            # here too; full dateFromFields/mergeFields is Phase 4.
+            "built-ins/Temporal/Calendar",
+            "built-ins/Temporal/getOwnPropertyNames.js",
+            "built-ins/Temporal/keys.js",
+            "built-ins/Temporal/prop-desc.js",
+            "built-ins/Temporal/toStringTag",
+        ],
+    },
+]
 
 # ---------------------------------------------------------------------------
 # Phase number → array index mapping

@@ -41,7 +41,7 @@ fn int days_in_month(long y, int m) {
 
 // Add `days` to a date. Purely arithmetic; the caller validates range.
 fn CivilDate add_days(CivilDate d, long days) {
-    return civil_date_from_epoch_days(epoch_days_from_civil(d.y, d.m, d.d) + days);
+    return civil_date_from_epoch_days(epoch_days_from_civil(d.y, (int)d.m, (int)d.d) + days);
 }
 
 // Add `months` to a date, clamping the day-of-month to the end of the result
@@ -55,9 +55,9 @@ fn CivilDate add_months(CivilDate d, long months, OverflowKind overflow) {
     if (new_month < 1)  { new_year -= 1; new_month += 12; }
     else if (new_month > 12) { new_year += 1; new_month -= 12; }
     int dim = days_in_month(new_year, (int)new_month);
-    int new_day = d.d;
+    int new_day = (int)d.d;
     if (new_day > dim) new_day = dim;
-    return { .y = new_year, .m = (int)new_month, .d = new_day };
+    return { .y = new_year, .m = (long)new_month, .d = (long)new_day };
 }
 
 // Largest unit for difference_date, mirroring the polyfill's diffCalendarDates:
@@ -76,8 +76,8 @@ enum DifferenceUnit : int {
 fn long diff_sign(CivilDate a, CivilDate b) {
     if (a.y != b.y) return a.y < b.y ? 1 : -1;
     if (a.m != b.m) return a.m < b.m ? 1 : -1;
-    long da = epoch_days_from_civil(a.y, a.m, a.d);
-    long db = epoch_days_from_civil(b.y, b.m, b.d);
+    long da = epoch_days_from_civil(a.y, (int)a.m, (int)a.d);
+    long db = epoch_days_from_civil(b.y, (int)b.m, (int)b.d);
     if (da != db) return da < db ? 1 : -1;
     return 0;
 }
@@ -93,8 +93,8 @@ fn DateDifference difference_date(CivilDate start, CivilDate end, DifferenceUnit
     r.months = 0;
     r.days = 0;
 
-    long start_days = epoch_days_from_civil(start.y, start.m, start.d);
-    long end_days   = epoch_days_from_civil(end.y, end.m, end.d);
+    long start_days = epoch_days_from_civil(start.y, (int)start.m, (int)start.d);
+    long end_days   = epoch_days_from_civil(end.y, (int)end.m, (int)end.d);
     long days = end_days - start_days;
     if (days == 0) return r;
 
@@ -116,7 +116,7 @@ fn DateDifference difference_date(CivilDate start, CivilDate end, DifferenceUnit
             anchor = add_months(start, months, OverflowKind.CONSTRAIN);
         }
         r.months = months;
-        r.days = end_days - epoch_days_from_civil(anchor.y, anchor.m, anchor.d);
+        r.days = end_days - epoch_days_from_civil(anchor.y, (int)anchor.m, (int)anchor.d);
         return r;
     }
 

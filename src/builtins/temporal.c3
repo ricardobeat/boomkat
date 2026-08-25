@@ -5,12 +5,13 @@
 // value type for until/since results and add/subtract inputs.
 //
 // All date fields travel as an HObject of class TEMPORAL_* with the shared
-// HObjectTemporal union variant: int_a..int_c hold year/month/day for
-// PlainDate and the date half of PlainDateTime, int_a..int_f hold the six
-// time fields for PlainTime, int_d..int_i hold the time fields for
-// PlainDateTime, int_a..int_j hold the ten Duration fields, and `calendar`
-// holds the shared ISO Calendar object. Getters are native accessors;
-// nothing here allocates through the JS heap except the objects themselves.
+// HObjectTemporal union variant: long_a..long_c hold year/month/day for
+// PlainDate and the date half of PlainDateTime, long_a..long_f hold the six
+// time fields for PlainTime, long_d..long_i hold the time fields for
+// PlainDateTime, long_a..long_g + int_h..int_j hold the ten Duration fields,
+// and `calendar` holds the shared ISO Calendar object. Getters are native
+// accessors; nothing here allocates through the JS heap except the objects
+// themselves.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -47,73 +48,73 @@ fn HObject*? alloc_plain_date(Heap* hp, temporal::CivilDate d, HObject* calendar
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_DATE);
     if (catch err = raw) return err~;
     HObject* obj = raw;
-    obj.extra.temporal.int_a = (int)d.y;
-    obj.extra.temporal.int_b = d.m;
-    obj.extra.temporal.int_c = d.d;
+    obj.extra.temporal.long_a = (long)d.y;
+    obj.extra.temporal.long_b = d.m;
+    obj.extra.temporal.long_c = d.d;
     obj.extra.temporal.calendar = calendar;
     return obj;
 }
 
-// Slot layout for TEMPORAL_PLAIN_TIME: int_a..int_f carry the six time
+// Slot layout for TEMPORAL_PLAIN_TIME: long_a..long_f carry the six time
 // fields (hour..nanosecond). The object carries no calendar; PlainTime is
 // intentionally calendar-independent per the spec.
 fn HObject*? alloc_plain_time(Heap* hp, temporal::CivilTime t) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_TIME);
     if (catch err = raw) return err~;
     HObject* obj = raw;
-    obj.extra.temporal.int_a = t.h;
-    obj.extra.temporal.int_b = t.mi;
-    obj.extra.temporal.int_c = t.s;
-    obj.extra.temporal.int_d = t.ms;
-    obj.extra.temporal.int_e = t.us;
-    obj.extra.temporal.int_f = t.ns;
+    obj.extra.temporal.long_a = t.h;
+    obj.extra.temporal.long_b = t.mi;
+    obj.extra.temporal.long_c = t.s;
+    obj.extra.temporal.long_d = t.ms;
+    obj.extra.temporal.long_e = t.us;
+    obj.extra.temporal.long_f = t.ns;
     return obj;
 }
 
-// Slot layout for TEMPORAL_PLAIN_DATETIME: int_a..int_c carry y/m/d and
-// int_d..int_i carry h/mi/s/ms/us/ns. Year is signed via int (covers the
+// Slot layout for TEMPORAL_PLAIN_DATETIME: long_a..long_c carry y/m/d and
+// long_d..long_i carry h/mi/s/ms/us/ns. Year is signed via int (covers the
 // full Temporal range; the spec caps at ±271821).
 fn HObject*? alloc_plain_datetime(Heap* hp, temporal::CivilDateTime dt, HObject* calendar) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_DATETIME);
     if (catch err = raw) return err~;
     HObject* obj = raw;
-    obj.extra.temporal.int_a = (int)dt.date.y;
-    obj.extra.temporal.int_b = dt.date.m;
-    obj.extra.temporal.int_c = dt.date.d;
-    obj.extra.temporal.int_d = dt.time.h;
-    obj.extra.temporal.int_e = dt.time.mi;
-    obj.extra.temporal.int_f = dt.time.s;
-    obj.extra.temporal.int_g = dt.time.ms;
-    obj.extra.temporal.int_h = dt.time.us;
-    obj.extra.temporal.int_i = dt.time.ns;
+    obj.extra.temporal.long_a = (long)dt.date.y;
+    obj.extra.temporal.long_b = dt.date.m;
+    obj.extra.temporal.long_c = dt.date.d;
+    obj.extra.temporal.long_d = dt.time.h;
+    obj.extra.temporal.long_e = dt.time.mi;
+    obj.extra.temporal.long_f = dt.time.s;
+    obj.extra.temporal.long_g = dt.time.ms;
+    obj.extra.temporal.int_h = (int)dt.time.us;
+    obj.extra.temporal.int_i = (int)dt.time.ns;
     obj.extra.temporal.calendar = calendar;
     return obj;
 }
 
-// Slot layout for TEMPORAL_PLAIN_YEARMONTH: int_a..int_c carry y/m/d. The
+// Slot layout for TEMPORAL_PLAIN_YEARMONTH: long_a..long_c carry y/m/d. The
 // `day` slot is a reference day used only to answer daysInMonth/inLeapYear;
 // it does not participate in equality or comparison. Year is signed via int.
 fn HObject*? alloc_plain_yearmonth(Heap* hp, long y, int m, int reference_day, HObject* calendar) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH);
     if (catch err = raw) return err~;
     HObject* obj = raw;
-    obj.extra.temporal.int_a = (int)y;
-    obj.extra.temporal.int_b = m;
-    obj.extra.temporal.int_c = reference_day;
+    obj.extra.temporal.long_a = (long)y;
+    obj.extra.temporal.long_b = m;
+    obj.extra.temporal.long_c = reference_day;
     obj.extra.temporal.calendar = calendar;
     return obj;
 }
 
-// Slot layout for TEMPORAL_PLAIN_MONTHDAY: int_a..int_c carry y/m/d. The
+// Slot layout for TEMPORAL_PLAIN_MONTHDAY: long_a..long_c carry y/m/d. The
 // `year` slot is a reference year used only for calendar-related properties
 // (era, eraYear, inLeapYear); it does not participate in equality.
 fn HObject*? alloc_plain_monthday(Heap* hp, int reference_year, int m, int d, HObject* calendar) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY);
     if (catch err = raw) return err~;
     HObject* obj = raw;
-    obj.extra.temporal.int_a = reference_year;
-    obj.extra.temporal.int_b = m;
-    obj.extra.temporal.int_c = d;
+    obj.extra.temporal.long_a = reference_year;
+    obj.extra.temporal.long_b = m;
+    obj.extra.temporal.long_c = d;
     obj.extra.temporal.calendar = calendar;
     return obj;
 }
@@ -122,13 +123,13 @@ fn HObject*? alloc_duration(Heap* hp, temporal::DurationParts d) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_DURATION);
     if (catch err = raw) return err~;
     HObject* obj = raw;
-    obj.extra.temporal.int_a = (int)d.years;
-    obj.extra.temporal.int_b = (int)d.months;
-    obj.extra.temporal.int_c = (int)d.weeks;
-    obj.extra.temporal.int_d = (int)d.days;
-    obj.extra.temporal.int_e = (int)d.hours;
-    obj.extra.temporal.int_f = (int)d.minutes;
-    obj.extra.temporal.int_g = (int)d.seconds;
+    obj.extra.temporal.long_a = (long)d.years;
+    obj.extra.temporal.long_b = (long)d.months;
+    obj.extra.temporal.long_c = (long)d.weeks;
+    obj.extra.temporal.long_d = (long)d.days;
+    obj.extra.temporal.long_e = (long)d.hours;
+    obj.extra.temporal.long_f = (long)d.minutes;
+    obj.extra.temporal.long_g = (long)d.seconds;
     obj.extra.temporal.int_h = d.ms;
     obj.extra.temporal.int_i = d.us;
     obj.extra.temporal.int_j = d.ns;
@@ -137,20 +138,20 @@ fn HObject*? alloc_duration(Heap* hp, temporal::DurationParts d) {
 
 fn temporal::CivilDate plain_date_value(HObject* obj) {
     return {
-        .y = (long)obj.extra.temporal.int_a,
-        .m = obj.extra.temporal.int_b,
-        .d = obj.extra.temporal.int_c,
+        .y = (long)obj.extra.temporal.long_a,
+        .m = obj.extra.temporal.long_b,
+        .d = obj.extra.temporal.long_c,
     };
 }
 
 fn temporal::CivilTime plain_time_value(HObject* obj) {
     return {
-        .h  = obj.extra.temporal.int_a,
-        .mi = obj.extra.temporal.int_b,
-        .s  = obj.extra.temporal.int_c,
-        .ms = obj.extra.temporal.int_d,
-        .us = obj.extra.temporal.int_e,
-        .ns = obj.extra.temporal.int_f,
+        .h  = obj.extra.temporal.long_a,
+        .mi = obj.extra.temporal.long_b,
+        .s  = obj.extra.temporal.long_c,
+        .ms = obj.extra.temporal.long_d,
+        .us = obj.extra.temporal.long_e,
+        .ns = obj.extra.temporal.long_f,
     };
 }
 
@@ -158,10 +159,10 @@ fn temporal::CivilDateTime plain_datetime_value(HObject* obj) {
     return {
         .date = plain_date_value(obj),
         .time = {
-            .h  = obj.extra.temporal.int_d,
-            .mi = obj.extra.temporal.int_e,
-            .s  = obj.extra.temporal.int_f,
-            .ms = obj.extra.temporal.int_g,
+            .h  = obj.extra.temporal.long_d,
+            .mi = obj.extra.temporal.long_e,
+            .s  = obj.extra.temporal.long_f,
+            .ms = obj.extra.temporal.long_g,
             .us = obj.extra.temporal.int_h,
             .ns = obj.extra.temporal.int_i,
         },
@@ -170,25 +171,25 @@ fn temporal::CivilDateTime plain_datetime_value(HObject* obj) {
 
 // Extract the canonical year/month and reference day from a PlainYearMonth
 // object. The reference day is what `day` returns; it isn't part of equality.
-fn long plain_yearmonth_y(HObject* obj) { return (long)obj.extra.temporal.int_a; }
-fn int  plain_yearmonth_m(HObject* obj) { return obj.extra.temporal.int_b; }
-fn int  plain_yearmonth_day(HObject* obj) { return obj.extra.temporal.int_c; }
+fn long plain_yearmonth_y(HObject* obj) { return (long)obj.extra.temporal.long_a; }
+fn int  plain_yearmonth_m(HObject* obj) { return (int)obj.extra.temporal.long_b; }
+fn int  plain_yearmonth_day(HObject* obj) { return (int)obj.extra.temporal.long_c; }
 
 // Extract the reference year/month/day from a PlainMonthDay object. The
 // reference year is what `year` returns; it isn't part of equality.
-fn int  plain_monthday_year(HObject* obj) { return obj.extra.temporal.int_a; }
-fn int  plain_monthday_m(HObject* obj) { return obj.extra.temporal.int_b; }
-fn int  plain_monthday_d(HObject* obj) { return obj.extra.temporal.int_c; }
+fn int  plain_monthday_year(HObject* obj) { return (int)obj.extra.temporal.long_a; }
+fn int  plain_monthday_m(HObject* obj) { return (int)obj.extra.temporal.long_b; }
+fn int  plain_monthday_d(HObject* obj) { return (int)obj.extra.temporal.long_c; }
 
 fn temporal::DurationParts duration_value(HObject* obj) {
     temporal::DurationParts d;
-    d.years   = obj.extra.temporal.int_a;
-    d.months  = obj.extra.temporal.int_b;
-    d.weeks   = obj.extra.temporal.int_c;
-    d.days    = obj.extra.temporal.int_d;
-    d.hours   = obj.extra.temporal.int_e;
-    d.minutes = obj.extra.temporal.int_f;
-    d.seconds = obj.extra.temporal.int_g;
+    d.years   = obj.extra.temporal.long_a;
+    d.months  = obj.extra.temporal.long_b;
+    d.weeks   = obj.extra.temporal.long_c;
+    d.days    = obj.extra.temporal.long_d;
+    d.hours   = obj.extra.temporal.long_e;
+    d.minutes = obj.extra.temporal.long_f;
+    d.seconds = obj.extra.temporal.long_g;
     d.ms      = obj.extra.temporal.int_h;
     d.us      = obj.extra.temporal.int_i;
     d.ns      = obj.extra.temporal.int_j;
@@ -403,8 +404,8 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
 fn bool fields_to_valid_date(BuiltinContext* ctx, temporal::CivilDate fields,
                              temporal::OverflowKind overflow, temporal::CivilDate* out) {
     long y = fields.y;
-    int m = fields.m;
-    int d = fields.d;
+    int m = (int)fields.m;
+    int d = (int)fields.d;
 
     if (m < 1) {
         if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
@@ -418,7 +419,7 @@ fn bool fields_to_valid_date(BuiltinContext* ctx, temporal::CivilDate fields,
         if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day"); return false; }
         d = 1;
     }
-    int dim = temporal::days_in_month(y, m);
+    int dim = temporal::days_in_month(y, (int)m);
     if (d > dim) {
         if (overflow == temporal::OverflowKind.REJECT) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
@@ -426,7 +427,7 @@ fn bool fields_to_valid_date(BuiltinContext* ctx, temporal::CivilDate fields,
         }
         d = dim;
     }
-    if (!temporal::is_valid_iso_date(y, m, d)) {
+    if (!temporal::is_valid_iso_date(y, (int)m, (int)d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
         return false;
     }
@@ -450,12 +451,12 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     TVal us_v = prop_or_undefined(bag, ctx.heap, "microsecond");
     TVal ns_v = prop_or_undefined(bag, ctx.heap, "nanosecond");
 
-    int  h  = cur.h;
-    int  mi = cur.mi;
-    int  s  = cur.s;
-    int  ms = cur.ms;
-    int  us = cur.us;
-    int  ns = cur.ns;
+    int  h  = (int)cur.h;
+    int  mi = (int)cur.mi;
+    int  s  = (int)cur.s;
+    int  ms = (int)cur.ms;
+    int  us = (int)cur.us;
+    int  ns = (int)cur.ns;
 
     long lv;
     if (!h_v.is_undefined()) {
@@ -617,7 +618,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
             return null;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
-        if (!temporal::is_valid_iso_date(d.y, d.m, d.d)) {
+        if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
             return null;
         }
@@ -866,13 +867,13 @@ fn void builtin_temporal_duration_getter(BuiltinContext* ctx) {
     HObject* obj = (HObject*)this_val.get_heapptr();
     double val = 0.0;
     switch ((Builtin)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index) {
-        case Builtin.TEMPORAL_DURATION_PROTO_YEARS:        val = (double)obj.extra.temporal.int_a; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MONTHS:       val = (double)obj.extra.temporal.int_b; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_WEEKS:        val = (double)obj.extra.temporal.int_c; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_DAYS:         val = (double)obj.extra.temporal.int_d; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_HOURS:        val = (double)obj.extra.temporal.int_e; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MINUTES:      val = (double)obj.extra.temporal.int_f; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_SECONDS:      val = (double)obj.extra.temporal.int_g; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_YEARS:        val = (double)obj.extra.temporal.long_a; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_MONTHS:       val = (double)obj.extra.temporal.long_b; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_WEEKS:        val = (double)obj.extra.temporal.long_c; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_DAYS:         val = (double)obj.extra.temporal.long_d; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_HOURS:        val = (double)obj.extra.temporal.long_e; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_MINUTES:      val = (double)obj.extra.temporal.long_f; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_SECONDS:      val = (double)obj.extra.temporal.long_g; break;
         case Builtin.TEMPORAL_DURATION_PROTO_MILLISECONDS: val = (double)obj.extra.temporal.int_h; break;
         case Builtin.TEMPORAL_DURATION_PROTO_MICROSECONDS: val = (double)obj.extra.temporal.int_i; break;
         case Builtin.TEMPORAL_DURATION_PROTO_NANOSECONDS:  val = (double)obj.extra.temporal.int_j; break;
@@ -1090,7 +1091,7 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
             return;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
-        int dim = temporal::days_in_month(d.y, d.m);
+        int dim = temporal::days_in_month(d.y, (int)d.m);
         if (d.d > dim) {
             if (overflow == temporal::OverflowKind.REJECT) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
@@ -1098,7 +1099,7 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
             }
             d.d = dim;
         }
-        if (!temporal::is_valid_iso_date(d.y, d.m, d.d)) {
+        if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
             return;
         }
@@ -1158,21 +1159,21 @@ fn void builtin_temporal_plain_date_proto_year(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)(long)obj.extra.temporal.int_a);
+    ctx.result.set_number((double)(long)obj.extra.temporal.long_a);
 }
 
 fn void builtin_temporal_plain_date_proto_month(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)obj.extra.temporal.int_b);
+    ctx.result.set_number((double)obj.extra.temporal.long_b);
 }
 
 fn void builtin_temporal_plain_date_proto_day(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)obj.extra.temporal.int_c);
+    ctx.result.set_number((double)obj.extra.temporal.long_c);
 }
 
 fn void builtin_temporal_plain_date_proto_dayOfWeek(BuiltinContext* ctx) {
@@ -1180,7 +1181,7 @@ fn void builtin_temporal_plain_date_proto_dayOfWeek(BuiltinContext* ctx) {
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     long days = temporal::epoch_days_from_civil(
-        (long)obj.extra.temporal.int_a, obj.extra.temporal.int_b, obj.extra.temporal.int_c);
+        (long)obj.extra.temporal.long_a, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c);
     // 1970-01-01 = Thursday = ISO 4; ((d % 7) + 4) % 7 maps [0..6] -> [4,5,6,7,1,2,3].
     long w = ((days % 7) + 4) % 7;
     if (w <= 0) w += 7;
@@ -1191,9 +1192,9 @@ fn void builtin_temporal_plain_date_proto_dayOfYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    long y = (long)obj.extra.temporal.int_a;
-    long jan1 = temporal::epoch_days_from_civil(y, 1, 1);
-    long doy = temporal::epoch_days_from_civil(y, obj.extra.temporal.int_b, obj.extra.temporal.int_c) - jan1 + 1;
+    long y = (long)obj.extra.temporal.long_a;
+    long jan1 = temporal::epoch_days_from_civil(y, (int)1, (int)1);
+    long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) - jan1 + 1;
     ctx.result.set_number((double)doy);
 }
 
@@ -1201,7 +1202,7 @@ fn void builtin_temporal_plain_date_proto_monthCode(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    int m = obj.extra.temporal.int_b;
+    int m = (int)obj.extra.temporal.long_b;
     char[5] buf;
     usz len;
     if (m < 10) {
@@ -1216,7 +1217,7 @@ fn void builtin_temporal_plain_date_proto_inLeapYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_boolean(temporal::is_leap_year((long)obj.extra.temporal.int_a));
+    ctx.result.set_boolean(temporal::is_leap_year((long)obj.extra.temporal.long_a));
 }
 
 fn void builtin_temporal_plain_date_proto_calendarId(BuiltinContext* ctx) {
@@ -1253,7 +1254,7 @@ fn void builtin_temporal_plain_date_proto_daysInMonth(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)temporal::days_in_month((long)obj.extra.temporal.int_a, obj.extra.temporal.int_b));
+    ctx.result.set_number((double)temporal::days_in_month((long)obj.extra.temporal.long_a, (int)obj.extra.temporal.long_b));
 }
 
 fn void builtin_temporal_plain_date_proto_daysInWeek(BuiltinContext* ctx) {
@@ -1266,7 +1267,7 @@ fn void builtin_temporal_plain_date_proto_daysInYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number(temporal::is_leap_year((long)obj.extra.temporal.int_a) ? 366.0 : 365.0);
+    ctx.result.set_number(temporal::is_leap_year((long)obj.extra.temporal.long_a) ? 366.0 : 365.0);
 }
 
 fn void builtin_temporal_plain_date_proto_monthsInYear(BuiltinContext* ctx) {
@@ -1278,7 +1279,7 @@ fn void builtin_temporal_plain_date_proto_monthsInYear(BuiltinContext* ctx) {
 fn long iso_weeks_in_year(long year) {
     // ISO 8601: a year has 53 weeks iff Jan 1 is a Thursday, or Jan 1 is a
     // Wednesday in a leap year.
-    long jan1_dow = ((temporal::epoch_days_from_civil(year, 1, 1) % 7) + 4) % 7;
+    long jan1_dow = ((temporal::epoch_days_from_civil(year, (int)1, (int)1) % 7) + 4) % 7;
     if (jan1_dow <= 0) jan1_dow += 7;
     if (jan1_dow == 4 || (jan1_dow == 3 && temporal::is_leap_year(year))) return 53;
     return 52;
@@ -1288,10 +1289,10 @@ fn void builtin_temporal_plain_date_proto_weekOfYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    long y = (long)obj.extra.temporal.int_a;
-    long doy = temporal::epoch_days_from_civil(y, obj.extra.temporal.int_b, obj.extra.temporal.int_c) -
-               temporal::epoch_days_from_civil(y, 1, 1) + 1;
-    long dow = ((temporal::epoch_days_from_civil(y, obj.extra.temporal.int_b, obj.extra.temporal.int_c) % 7) + 4) % 7;
+    long y = (long)obj.extra.temporal.long_a;
+    long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) -
+               temporal::epoch_days_from_civil(y, (int)1, (int)1) + 1;
+    long dow = ((temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) % 7) + 4) % 7;
     if (dow <= 0) dow += 7;
     long week = (doy - dow + 10) / 7;
     if (week < 1) {
@@ -1306,10 +1307,10 @@ fn void builtin_temporal_plain_date_proto_yearOfWeek(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    long y = (long)obj.extra.temporal.int_a;
-    long doy = temporal::epoch_days_from_civil(y, obj.extra.temporal.int_b, obj.extra.temporal.int_c) -
-               temporal::epoch_days_from_civil(y, 1, 1) + 1;
-    long dow = ((temporal::epoch_days_from_civil(y, obj.extra.temporal.int_b, obj.extra.temporal.int_c) % 7) + 4) % 7;
+    long y = (long)obj.extra.temporal.long_a;
+    long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) -
+               temporal::epoch_days_from_civil(y, (int)1, (int)1) + 1;
+    long dow = ((temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) % 7) + 4) % 7;
     if (dow <= 0) dow += 7;
     long week = (doy - dow + 10) / 7;
     long week_year = y;
@@ -1537,7 +1538,7 @@ fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
     if (overflow == temporal::OverflowKind.REJECT) {
         // Reject requires the intermediate month step to be representable.
         temporal::CivilDate m = temporal::add_months(cur, total_months, temporal::OverflowKind.CONSTRAIN);
-        if (cur.d > temporal::days_in_month(m.y, m.m)) {
+        if (cur.d > temporal::days_in_month(m.y, (int)m.m)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
             return;
         }
@@ -1546,7 +1547,7 @@ fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
         after_months = temporal::add_months(cur, total_months, temporal::OverflowKind.CONSTRAIN);
     }
     temporal::CivilDate result = temporal::add_days(after_months, total_days);
-    if (!temporal::is_valid_iso_date(result.y, result.m, result.d)) {
+    if (!temporal::is_valid_iso_date(result.y, (int)result.m, (int)result.d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
         return;
     }
@@ -1581,7 +1582,7 @@ fn void builtin_temporal_plain_date_proto_subtract(BuiltinContext* ctx) {
     temporal::CivilDate after_months;
     if (overflow == temporal::OverflowKind.REJECT) {
         temporal::CivilDate m = temporal::add_months(cur, total_months, temporal::OverflowKind.CONSTRAIN);
-        if (cur.d > temporal::days_in_month(m.y, m.m)) {
+        if (cur.d > temporal::days_in_month(m.y, (int)m.m)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
             return;
         }
@@ -1590,7 +1591,7 @@ fn void builtin_temporal_plain_date_proto_subtract(BuiltinContext* ctx) {
         after_months = temporal::add_months(cur, total_months, temporal::OverflowKind.CONSTRAIN);
     }
     temporal::CivilDate result = temporal::add_days(after_months, total_days);
-    if (!temporal::is_valid_iso_date(result.y, result.m, result.d)) {
+    if (!temporal::is_valid_iso_date(result.y, (int)result.m, (int)result.d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
         return;
     }
@@ -1768,7 +1769,7 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
         result.ms = (int)(p.nanos / 1_000_000);
         result.us = (int)((p.nanos / 1000) % 1000);
         result.ns = (int)(p.nanos % 1000);
-        if (!temporal::is_valid_time(result.h, result.mi, result.s, result.ms, result.us, result.ns)) {
+        if (!temporal::is_valid_time((int)result.h, (int)result.mi, (int)result.s, (int)result.ms, (int)result.us, (int)result.ns)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainTime.from: out of range");
             return;
         }
@@ -1828,12 +1829,12 @@ fn void builtin_temporal_plain_time_getter(BuiltinContext* ctx) {
     HObject* obj = (HObject*)this_val.get_heapptr();
     double val = 0.0;
     switch ((Builtin)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index) {
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_HOUR:       val = (double)obj.extra.temporal.int_a; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MINUTE:     val = (double)obj.extra.temporal.int_b; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_SECOND:     val = (double)obj.extra.temporal.int_c; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.int_d; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.int_e; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.int_f; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_HOUR:       val = (double)obj.extra.temporal.long_a; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MINUTE:     val = (double)obj.extra.temporal.long_b; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_SECOND:     val = (double)obj.extra.temporal.long_c; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_d; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.long_e; break;
+        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.long_f; break;
         default: break;
     }
     ctx.result.set_number(val);
@@ -1977,7 +1978,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
             .us = (int)((p.nanos / 1000) % 1000),
             .ns = (int)(p.nanos % 1000),
         };
-        if (!temporal::is_valid_time(t.h, t.mi, t.s, t.ms, t.us, t.ns)) {
+        if (!temporal::is_valid_time((int)t.h, (int)t.mi, (int)t.s, (int)t.ms, (int)t.us, (int)t.ns)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "time is out of range");
             return null;
         }
@@ -2069,7 +2070,7 @@ fn void builtin_temporal_plain_time_proto_add(BuiltinContext* ctx) {
     full_subsec -= (long)result.us * 1000;
     result.ns = (int)full_subsec;
 
-    if (!temporal::is_valid_time(result.h, result.mi, result.s, result.ms, result.us, result.ns)) {
+    if (!temporal::is_valid_time((int)result.h, (int)result.mi, (int)result.s, (int)result.ms, (int)result.us, (int)result.ns)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "result time is out of range");
         return;
     }
@@ -2117,7 +2118,7 @@ fn void builtin_temporal_plain_time_proto_subtract(BuiltinContext* ctx) {
     full_subsec -= (long)result.us * 1000;
     result.ns = (int)full_subsec;
 
-    if (!temporal::is_valid_time(result.h, result.mi, result.s, result.ms, result.us, result.ns)) {
+    if (!temporal::is_valid_time((int)result.h, (int)result.mi, (int)result.s, (int)result.ms, (int)result.us, (int)result.ns)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "result time is out of range");
         return;
     }
@@ -2357,7 +2358,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             return;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
-        int dim = temporal::days_in_month(d.y, d.m);
+        int dim = temporal::days_in_month(d.y, (int)d.m);
         if (d.d > dim) {
             if (overflow == temporal::OverflowKind.REJECT) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
@@ -2365,7 +2366,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             }
             d.d = dim;
         }
-        if (!temporal::is_valid_iso_date(d.y, d.m, d.d)) {
+        if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
             return;
         }
@@ -2375,7 +2376,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             .us = (int)((p.nanos / 1000) % 1000),
             .ns = (int)(p.nanos % 1000),
         };
-        if (!temporal::is_valid_time(t.h, t.mi, t.s, t.ms, t.us, t.ns)) {
+        if (!temporal::is_valid_time((int)t.h, (int)t.mi, (int)t.s, (int)t.ms, (int)t.us, (int)t.ns)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "time is out of range");
             return;
         }
@@ -2449,13 +2450,13 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
     HObject* obj = (HObject*)this_val.get_heapptr();
     double val = 0.0;
     switch ((Builtin)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index) {
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_YEAR:        val = (double)(long)obj.extra.temporal.int_a; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTH:       val = (double)obj.extra.temporal.int_b; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAY:         val = (double)obj.extra.temporal.int_c; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_HOUR:        val = (double)obj.extra.temporal.int_d; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MINUTE:      val = (double)obj.extra.temporal.int_e; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SECOND:      val = (double)obj.extra.temporal.int_f; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.int_g; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_YEAR:        val = (double)(long)obj.extra.temporal.long_a; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTH:       val = (double)obj.extra.temporal.long_b; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAY:         val = (double)obj.extra.temporal.long_c; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_HOUR:        val = (double)obj.extra.temporal.long_d; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MINUTE:      val = (double)obj.extra.temporal.long_e; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SECOND:      val = (double)obj.extra.temporal.long_f; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_g; break;
         case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.int_h; break;
         case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.int_i; break;
         case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDAR:
@@ -2629,7 +2630,7 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
             return null;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
-        if (!temporal::is_valid_iso_date(d.y, d.m, d.d)) {
+        if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
             return null;
         }
@@ -2713,7 +2714,7 @@ fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
     temporal::CivilDate after_months;
     if (overflow == temporal::OverflowKind.REJECT) {
         temporal::CivilDate m = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
-        if (cur.date.d > temporal::days_in_month(m.y, m.m)) {
+        if (cur.date.d > temporal::days_in_month(m.y, (int)m.m)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
             return;
         }
@@ -2722,7 +2723,7 @@ fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
         after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
     }
     temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
-    if (!temporal::is_valid_iso_date(date_part.y, date_part.m, date_part.d)) {
+    if (!temporal::is_valid_iso_date(date_part.y, (int)date_part.m, (int)date_part.d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
         return;
     }
@@ -2783,7 +2784,7 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
     temporal::CivilDate after_months;
     if (overflow == temporal::OverflowKind.REJECT) {
         temporal::CivilDate m = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
-        if (cur.date.d > temporal::days_in_month(m.y, m.m)) {
+        if (cur.date.d > temporal::days_in_month(m.y, (int)m.m)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
             return;
         }
@@ -2792,7 +2793,7 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
         after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
     }
     temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
-    if (!temporal::is_valid_iso_date(date_part.y, date_part.m, date_part.d)) {
+    if (!temporal::is_valid_iso_date(date_part.y, (int)date_part.m, (int)date_part.d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
         return;
     }
@@ -2856,9 +2857,9 @@ fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipp
     temporal::DifferenceUnit date_unit = largest;
     if (largest < temporal::DifferenceUnit.DAYS) date_unit = temporal::DifferenceUnit.DAYS;
     temporal::DateDifference ddiff = temporal::difference_date(start.date, end.date, date_unit);
-    long start_epoch = temporal::epoch_days_from_civil(start.date.y, start.date.m, start.date.d) * 86_400L
+    long start_epoch = temporal::epoch_days_from_civil(start.date.y, (int)start.date.m, (int)start.date.d) * 86_400L
                      + (long)start.time.h * 3600 + (long)start.time.mi * 60 + (long)start.time.s;
-    long end_epoch   = temporal::epoch_days_from_civil(end.date.y,   end.date.m,   end.date.d)   * 86_400L
+    long end_epoch   = temporal::epoch_days_from_civil(end.date.y, (int)end.date.m, (int)end.date.d)   * 86_400L
                      + (long)end.time.h * 3600 + (long)end.time.mi * 60 + (long)end.time.s;
     long start_ns = start_epoch * 1_000_000_000L + (long)start.time.ms * 1_000_000L + (long)start.time.us * 1000L + (long)start.time.ns;
     long end_ns   = end_epoch   * 1_000_000_000L + (long)end.time.ms   * 1_000_000L + (long)end.time.us   * 1000L + (long)end.time.ns;
@@ -3050,7 +3051,7 @@ fn bool fields_to_valid_yearmonth(BuiltinContext* ctx, long y, int m, int d,
         if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day"); return false; }
         d = 1;
     }
-    int dim = temporal::days_in_month(y, m);
+    int dim = temporal::days_in_month(y, (int)m);
     if (d > dim) {
         if (overflow == temporal::OverflowKind.REJECT) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
@@ -3058,7 +3059,7 @@ fn bool fields_to_valid_yearmonth(BuiltinContext* ctx, long y, int m, int d,
         }
         d = dim;
     }
-    if (!temporal::is_valid_iso_date(y, m, d)) {
+    if (!temporal::is_valid_iso_date(y, (int)m, (int)d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
         return false;
     }
@@ -3232,7 +3233,7 @@ fn void builtin_temporal_plain_yearmonth_proto_daysInMonth(BuiltinContext* ctx) 
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)temporal::days_in_month(plain_yearmonth_y(obj), plain_yearmonth_m(obj)));
+    ctx.result.set_number((double)temporal::days_in_month(plain_yearmonth_y(obj), (int)plain_yearmonth_m(obj)));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_daysInYear(BuiltinContext* ctx) {
@@ -3677,7 +3678,7 @@ fn bool fields_to_valid_monthday(BuiltinContext* ctx, int y, int m, int d,
         if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day"); return false; }
         d = 1;
     }
-    int dim = temporal::days_in_month((long)y, m);
+    int dim = temporal::days_in_month((long)y, (int)m);
     if (d > dim) {
         if (overflow == temporal::OverflowKind.REJECT) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
@@ -3883,7 +3884,7 @@ fn void builtin_temporal_plain_monthday_proto_daysInMonth(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)temporal::days_in_month((long)plain_monthday_year(obj), plain_monthday_m(obj)));
+    ctx.result.set_number((double)temporal::days_in_month((long)plain_monthday_year(obj), (int)plain_monthday_m(obj)));
 }
 
 fn void builtin_temporal_plain_monthday_proto_valueOf(BuiltinContext* ctx) {
@@ -4038,10 +4039,10 @@ fn void plain_monthday_until_since(BuiltinContext* ctx, HObject* obj, bool flipp
     // 1971 is the year before the 1972 default. Either way the day delta
     // is computed as a difference of two CivilDates.
     long yref = (long)(temporal::is_leap_year((long)y) ? y : y);
-    long epoch_a = temporal::epoch_days_from_civil(yref, am, ad);
-    long epoch_b = temporal::epoch_days_from_civil(yref, bm, bd);
+    long epoch_a = temporal::epoch_days_from_civil(yref, (int)am, (int)ad);
+    long epoch_b = temporal::epoch_days_from_civil(yref, (int)bm, (int)bd);
     long forward = epoch_b - epoch_a;
-    long year_days = temporal::epoch_days_from_civil(yref + 1, 1, 1) - temporal::epoch_days_from_civil(yref, 1, 1);
+    long year_days = temporal::epoch_days_from_civil(yref + 1, (int)1, (int)1) - temporal::epoch_days_from_civil(yref, (int)1, (int)1);
     long backward = forward > 0 ? forward - year_days : forward + year_days;
     long chosen;
     if (forward == 0) {
@@ -5554,7 +5555,7 @@ fn void builtin_temporal_timezone_proto_getPossibleInstantsFor(BuiltinContext* c
     String zone = timezone_name(self);
     HObject* pdt = (HObject*)arg.get_heapptr();
     temporal::CivilDateTime c = plain_datetime_value(pdt);
-    long wall_secs = temporal::epoch_days_from_civil(c.date.y, c.date.m, c.date.d) * 86400
+    long wall_secs = temporal::epoch_days_from_civil(c.date.y, (int)c.date.m, (int)c.date.d) * 86400
         + (long)c.time.h * 3600 + (long)c.time.mi * 60 + (long)c.time.s;
     long frac_ns = (long)c.time.ms * 1000000 + (long)c.time.us * 1000 + (long)c.time.ns;
     double naive_ns = (double)wall_secs * 1e9 + (double)frac_ns;
@@ -6077,7 +6078,7 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
 
     // New wall time as naive UTC epoch nanos.
-    long wall_secs = temporal::epoch_days_from_civil(valid_d.y, valid_d.m, valid_d.d) * 86400
+    long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
         + (long)valid_t.h * 3600 + (long)valid_t.mi * 60 + (long)valid_t.s;
     long wfrac = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
     double naive_ns = (double)wall_secs * 1e9 + (double)wfrac;

@@ -25,8 +25,8 @@ const int ISO8601_DATE_BUFSIZE = 14;
 // ISO8601_DATE_BUFSIZE bytes), returns the byte count, no NUL terminator.
 fn usz format_civil_date(CivilDate d, char* buf, usz buf_size) {
     long year = d.y;
-    int month = d.m;
-    int day = d.d;
+    int month = (int)d.m;
+    int day = (int)d.d;
 
     if (year < 0) {
         return (usz)libc::snprintf(buf, buf_size, "-%06ld-%02d-%02d", -year, month, day);
@@ -211,12 +211,12 @@ const int ISO8601_TIME_BUFSIZE = 19;
 // the count of fractional digits to render (0..9); pass -1 for "round-trip
 // smallest non-zero".
 fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
-    int h  = t.h;
-    int mi = t.mi;
-    int s  = t.s;
-    int ms = t.ms;
-    int us = t.us;
-    int ns = t.ns;
+    int h  = (int)t.h;
+    int mi = (int)t.mi;
+    int s  = (int)t.s;
+    int ms = (int)t.ms;
+    int us = (int)t.us;
+    int ns = (int)t.ns;
 
     if (ns_digits < 0) {
         // Trim trailing zeros to the smallest non-zero digit. Spec: omit the

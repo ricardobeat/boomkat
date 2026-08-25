@@ -6,7 +6,9 @@
 // layer can stay thin.
 //
 // Memory layout: the heap object (HObjectTemporal variant) carries the
-// BigInt in the `big_ns` slot; the `int_a..int_j` slots are unused. The
+// BigInt in the `big_ns` slot; the `long_a..long_g` and `int_h..int_j` slots
+// are unused. The `calendar` and `timezone` pointers likewise go unused on
+// an Instant.
 // GC walker marks `big_ns` via the standard HObjectTemporal path.
 module boomkat::lib::temporal;
 

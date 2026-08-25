@@ -21,23 +21,29 @@ import std::math;
 // ============================================================================
 
 // Proleptic Gregorian calendar date. `y` is the full year (signed long);
-// `m` is 1-based (1=Jan, 12=Dec); `d` is 1-based (1..31). Use the validate
-// helpers below before constructing from user input.
+// `m` is 1-based (1=Jan, 12=Dec); `d` is 1-based (1..31). `m`/`d` are long
+// to match the CivilTime fields so a copy out of HObjectTemporal doesn't
+// narrow, and the same struct can hold calendar arithmetic intermediates.
+// Use the validate helpers below before constructing from user input.
 struct CivilDate {
     long y;
-    int  m;
-    int  d;
+    long m;
+    long d;
 }
 
 // Wall-clock time-of-day with sub-second precision. Fields are zero on
-// absence; nanosecond resolution spans [0, 999_999_999].
+// absence; nanosecond resolution spans [0, 999_999_999]. The fields are long
+// (rather than int) so a value copied straight out of HObjectTemporal's
+// long slots doesn't narrow, and the same struct can hold intermediate
+// arithmetic results like `epoch_seconds + offset` without overflow at the
+// spec boundary values.
 struct CivilTime {
-    int h;
-    int mi;
-    int s;
-    int ms;
-    int us;
-    int ns;
+    long h;
+    long mi;
+    long s;
+    long ms;
+    long us;
+    long ns;
 }
 
 // Composed date + time. Always carries both; for date-only or time-only
@@ -49,11 +55,11 @@ struct CivilDateTime {
 
 // Returned by `civil_from_seconds`. `wday` is 0-based with 0=Sunday, matching
 // the existing Date convention so Date and Temporal agree on day-of-week
-// arithmetic without translation.
+// arithmetic without translation. y/m/d are long to match CivilDate.
 struct BrokenDownTime {
     long y;
-    int  m;     // 0-based (0=Jan, 11=Dec)
-    int  d;
+    long m;     // 0-based (0=Jan, 11=Dec)
+    long d;
     int  wday;  // 0=Sunday
     int  h;
     int  mi;
@@ -171,8 +177,8 @@ fn CivilDate civil_date_from_epoch_days(long days) {
     long m = mp < 10 ? mp + 3 : mp - 9;                 // [1, 12]
     return {
         .y = y + (m <= 2 ? 1 : 0),
-        .m = (int)(m - 1) + 1,                          // to 1-based (1=Jan)
-        .d = (int)d,
+        .m = (m - 1) + 1,                          // to 1-based (1=Jan)
+        .d = d,
     };
 }
 

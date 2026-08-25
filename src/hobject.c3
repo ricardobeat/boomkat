@@ -717,46 +717,49 @@ union HObjectExtra {
 // shared variant for every Temporal class; `obj_class` discriminates which
 // fields are live.
 //
-// Layout uses plain ints (no packing): PlainTime has six fields, each fits
-// an int trivially, and ns is 0..999. Year is stored as int, which covers
-// ±2 M years without overflow — well past the spec's range. Duration is the
-// widest user: ten integer fields (years..nanoseconds), each int32.
-//
-// Slot assignments (obj_class -> int_a..int_j):
-//   PLAIN_DATE      int_a..int_c = y/m/d
-//   PLAIN_TIME      int_a..int_f = h/mi/s/ms/us/ns
-//   PLAIN_DATETIME  int_a..int_c = y/m/d; int_d..int_i = h/mi/s/ms/us/ns
-//   DURATION        int_a..int_j = years..nanoseconds
-//   PLAIN_YEARMONTH int_a..int_b = y/m
-//   PLAIN_MONTHDAY  int_b..int_c = m/d
+// Slot assignments (obj_class -> long_a..long_g, int_h..int_j):
+//   PLAIN_DATE      long_a..long_c = y/m/d
+//   PLAIN_TIME      long_a..long_f = h/mi/s/ms/us/ns
+//   PLAIN_DATETIME  long_a..long_c = y/m/d; long_d..long_i = h/mi/s/ms/us/ns
+//   DURATION        long_a..long_g = years..seconds; int_h..int_j = ms/us/ns
+//   PLAIN_YEARMONTH long_a..long_b = y/m
+//   PLAIN_MONTHDAY  long_a..long_b = m/d
 //   INSTANT         big_ns = ns since epoch (BigInt limb vector)
+//
+// long_a..long_g are 64-bit because the Duration constructor accepts values up
+// to 2^32 - 1 in each of the seven calendar/time units (years through
+// seconds), which exceed int32. Plain types only need int32 range but share
+// the slots. ms/us/ns are 0..999 and stay int32.
 //
 // PlainTime, PlainDate, PlainDateTime, PlainYearMonth, PlainMonthDay,
 // Duration, Instant, ZonedDateTime, Calendar, and TimeZone all share this
 // variant.
 //
 // HObjectExtra is sized by its largest member and alloc_size_for_class
-// charges that to every FUNCTION/REGEXP/PROMISE/DATE object. This variant
-// must never become the max, or every such object grows engine-wide.
+// charges that to every FUNCTION/REGEXP/PROMISE object. Widening the seven
+// leading slots from int to long pushed HObjectTemporal from 64 to 92 bytes,
+// making it the union's max; every FUNCTION/REGEXP/PROMISE object now pays
+// +20 bytes. The widening is required for Temporal.Duration, whose seven
+// calendar/time-unit fields accept values up to 2^32 - 1 per spec.
 //
-// Baseline (nanbox, default build, macOS arm64, 2026-08-24):
-//   HObjectFunction::size         = 72  (current max)
+// Baseline (nanbox, default build, macOS arm64, 2026-08-25):
+//   HObjectTemporal::size         = 92  (current max; +20 B over previous
+//                                        HObjectFunction-led layout)
+//   HObjectFunction::size         = 72
 //   HObjectIteratorHelper::size   = 64
 //   HObjectPromise::size          = 40
 //   HObjectBufferView::size       = 32
-//   HObjectTemporal::size         = 64  (8 B under the max, costs zero
-//                                        engine-wide when added)
 //   INLINE_EXTRA                  = 32
-//   OBJ_SIZE_FUNC                 = 184
+//   OBJ_SIZE_FUNC                 = 204
 struct HObjectTemporal {
     HBigInt*        big_ns;
-    int             int_a;
-    int             int_b;
-    int             int_c;
-    int             int_d;
-    int             int_e;
-    int             int_f;
-    int             int_g;
+    long            long_a;
+    long            long_b;
+    long            long_c;
+    long            long_d;
+    long            long_e;
+    long            long_f;
+    long            long_g;
     int             int_h;
     int             int_i;
     int             int_j;
@@ -764,7 +767,10 @@ struct HObjectTemporal {
     HObject*        timezone;
 }
 
-$assert HObjectTemporal::size <= HObjectFunction::size;
+// HObjectTemporal is now the union's max. The 92-byte size must be kept
+// below HObjectFunction by other means if any other variant grows; today
+// it does not.
+$assert HObjectTemporal::size > HObjectFunction::size;
 
 // The prefix every HObject variant starts with, which lets the GC walk the
 // heap lists and reach shapes and properties at fixed offsets. Its first
