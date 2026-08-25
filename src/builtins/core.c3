@@ -940,6 +940,8 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_TIMEZONE_PROTO_ID {"id", 0, &builtin_temporal_timezone_proto_id},
     TEMPORAL_TIMEZONE_PROTO_OFFSETNANOSECONDSFOR {"getOffsetNanosecondsFor", 1, &builtin_temporal_timezone_proto_getOffsetNanosecondsFor},
     TEMPORAL_TIMEZONE_PROTO_GETPOSSIBLEINSTANTSFOR {"getPossibleInstantsFor", 1, &builtin_temporal_timezone_proto_getPossibleInstantsFor},
+    TEMPORAL_TIMEZONE_PROTO_GETNEXTTRANSITION {"getNextTransition", 1, &builtin_temporal_timezone_proto_getNextTransition},
+    TEMPORAL_TIMEZONE_PROTO_GETPREVIOUSTRANSITION {"getPreviousTransition", 1, &builtin_temporal_timezone_proto_getPreviousTransition},
     TEMPORAL_ZONEDDATETIME_CTOR {"ZonedDateTime", 2, &builtin_temporal_zoneddatetime_ctor},
     TEMPORAL_ZONEDDATETIME_FROM {"from", 1, &builtin_temporal_zoneddatetime_from},
     TEMPORAL_ZONEDDATETIME_PROTO_EPOCHSECONDS {"epochSeconds", 0, &builtin_temporal_zoneddatetime_proto_epochSeconds},

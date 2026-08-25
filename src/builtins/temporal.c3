@@ -5420,12 +5420,194 @@ fn void builtin_temporal_timezone_proto_getOffsetNanosecondsFor(BuiltinContext* 
     ctx.result.set_number((double)offset_sec * 1e9);
 }
 
-// getPossibleInstantsFor(plainDateTime) is stubbed for Phase 2; the full
-// DST gap/overlap disambiguation lands with ZonedDateTime. We return the
-// single Instant if no ambiguity is possible and throw otherwise.
+// Append an offset value to the deduplicated candidate list (in place).
+fn void tz_cand_add(int[] cand, int* nc, int o) {
+    int n = *nc;
+    for (int k = 0; k < n; k++) {
+        if (cand[k] == o) return;
+    }
+    if (n < 8) { cand[n] = o; *nc = n + 1; }
+}
+
+// getPossibleInstantsFor(plainDateTime) resolves a wall-clock PlainDateTime in
+// this zone to the concrete UTC instants it can denote. The wall time in a
+// DST overlap maps to two instants; a gap (a wall time that does not exist,
+// e.g. the hour skipped at spring-forward) maps to none. Unique wall times
+// map to one. Naive resolution: treat the wall clock as UTC, compare the
+// offset iteratively, and disambiguate by determinism (offsetBefore vs the
+// offsets at the candidate instants).
 fn void builtin_temporal_timezone_proto_getPossibleInstantsFor(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_TIMEZONE, "this is not a Temporal.TimeZone")) return;
-    builtin_throw(ctx, ctx.heap.err_proto, "Temporal.TimeZone.prototype.getPossibleInstantsFor not yet implemented");
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "getPossibleInstantsFor requires a PlainDateTime argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "getPossibleInstantsFor requires a Temporal.PlainDateTime");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    String zone = timezone_name(self);
+    HObject* pdt = (HObject*)arg.get_heapptr();
+    temporal::CivilDateTime c = plain_datetime_value(pdt);
+    long wall_secs = temporal::epoch_days_from_civil(c.date.y, c.date.m, c.date.d) * 86400
+        + (long)c.time.h * 3600 + (long)c.time.mi * 60 + (long)c.time.s;
+    long frac_ns = (long)c.time.ms * 1000000 + (long)c.time.us * 1000 + (long)c.time.ns;
+    double naive_ns = (double)wall_secs * 1e9 + (double)frac_ns;
+
+    // Candidate UTC offsets: the offset in effect at the naive wall time, plus
+    // the offsets of every transition within a 2-day window. In an overlap or a
+    // gap the DST flip bracketing the wall time contributes its pre/post
+    // offsets here; each candidate is then tested for self-consistency below.
+    int[8] cand;
+    int nc = 0;
+    tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
+    temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
+    long window = 2 * 86400;
+    for (usz i = 0; i < trans.len; i++) {
+        if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
+            tz_cand_add(cand[..], &nc, trans[i].offset_sec);
+        }
+    }
+    if (nc == 0) tz_cand_add(cand[..], &nc, 0);
+
+    // For each candidate offset, the hypothetical instant is naive - offset;
+    // keep it only if the zone's offset there really is that offset (i.e. the
+    // instant round-trips to the wall time).
+    double[4] hits;
+    int nh = 0;
+    for (int k = 0; k < nc; k++) {
+        double e_ns = naive_ns - (double)cand[k] * 1e9;
+        long e_sec = (long)math::floor(e_ns / 1e9);
+        if (temporal::tzdb_offset_for_zone_at(zone, e_sec) != cand[k]) continue;
+        bool dup = false;
+        for (int j = 0; j < nh; j++) {
+            if (hits[j] == e_ns) { dup = true; break; }
+        }
+        if (!dup && nh < 4) { hits[nh] = e_ns; nh++; }
+    }
+
+    // Sort ascending by epoch (an overlap yields the two instants in order).
+    for (int i = 0; i < nh; i++) {
+        for (int j = i + 1; j < nh; j++) {
+            if (hits[j] < hits[i]) { double t = hits[i]; hits[i] = hits[j]; hits[j] = t; }
+        }
+    }
+
+    HObject*? arr_o = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = arr_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* arr = arr_o;
+    arr.prototype = ctx.heap.array_proto;
+    for (int i = 0; i < nh; i++) {
+        hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, hits[i]);
+        if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+        HObject*? inst_o = alloc_instant(ctx.heap, big_o);
+        ctx.heap.decref((types::HeapHeader*)big_o);
+        if (catch err2 = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+        HObject* inst = inst_o;
+        inst.prototype = ctx.heap.temporal_instant_proto;
+        TVal tv;
+        tv.set_object(inst);
+        if (!arr.set_array_idx((uint)i, tv, ctx.heap)) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    }
+    *arr.array_len_ptr() = (uint)nh;
+    ctx.result.set_object(arr);
+}
+
+// Both transition methods collapse consecutive transitions whose UTC offset
+// does not actually change (abbreviation-only edits in the IANA source), and
+// treat the zone's pre-history initial offset as the offset before the first
+// recorded transition.
+
+// getNextTransition(startingInstant) — first later transition that changes
+// the UTC offset, or undefined if there is none.
+fn void builtin_temporal_timezone_proto_getNextTransition(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_TIMEZONE, "this is not a Temporal.TimeZone")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "getNextTransition requires an Instant argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "getNextTransition requires a Temporal.Instant");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    String zone = timezone_name(self);
+    hbigint::HBigInt* start = ((HObject*)arg.get_heapptr()).extra.temporal.big_ns;
+    double s_d;
+    if (!bigint_to_epoch_number(start, &s_d, ctx)) return;
+    long start_sec = (long)math::floor(s_d / 1e9);
+    bool start_has_sub = s_d - (double)start_sec * 1e9 != 0.0;
+
+    temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
+    int prev_off = temporal::tzdb_zone_initial_offset(zone);
+    for (usz i = 0; i < trans.len; i++) {
+        if (trans[i].offset_sec == prev_off) continue;   // no real offset change
+        prev_off = trans[i].offset_sec;
+        bool after = trans[i].epoch_sec > start_sec
+            || (trans[i].epoch_sec == start_sec && start_has_sub);
+        if (!after) continue;
+        double ns = (double)trans[i].epoch_sec * 1e9;
+        hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, ns);
+        if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+        HObject*? inst_o = alloc_instant(ctx.heap, big_o);
+        ctx.heap.decref((types::HeapHeader*)big_o);
+        if (catch err2 = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+        HObject* inst = inst_o;
+        inst.prototype = ctx.heap.temporal_instant_proto;
+        ctx.result.set_object(inst);
+        return;
+    }
+    // No transition after the start instant.
+    ctx.result.set_undefined();
+}
+
+// getPreviousTransition(startingInstant) — last earlier transition that
+// changes the UTC offset, or undefined if there is none.
+fn void builtin_temporal_timezone_proto_getPreviousTransition(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_TIMEZONE, "this is not a Temporal.TimeZone")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "getPreviousTransition requires an Instant argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null
+        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "getPreviousTransition requires a Temporal.Instant");
+        return;
+    }
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    String zone = timezone_name(self);
+    hbigint::HBigInt* start = ((HObject*)arg.get_heapptr()).extra.temporal.big_ns;
+    double s_d;
+    if (!bigint_to_epoch_number(start, &s_d, ctx)) return;
+    long start_sec = (long)math::floor(s_d / 1e9);
+    bool start_has_sub = s_d - (double)start_sec * 1e9 != 0.0;
+
+    temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
+    int prev_off = temporal::tzdb_zone_initial_offset(zone);
+    long last_epoch = -1;
+    for (usz i = 0; i < trans.len; i++) {
+        if (trans[i].offset_sec == prev_off) continue;   // no real offset change
+        prev_off = trans[i].offset_sec;
+        bool before = trans[i].epoch_sec < start_sec
+            || (trans[i].epoch_sec == start_sec && start_has_sub);
+        if (before) last_epoch = trans[i].epoch_sec;
+    }
+    if (last_epoch < 0) { ctx.result.set_undefined(); return; }
+    double ns = (double)last_epoch * 1e9;
+    hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, ns);
+    if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+    HObject*? inst_o = alloc_instant(ctx.heap, big_o);
+    ctx.heap.decref((types::HeapHeader*)big_o);
+    if (catch err2 = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* inst = inst_o;
+    inst.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(inst);
 }
 
 // ============================================================================
@@ -5542,6 +5724,8 @@ fn bool setUpTemporalTimeZone(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "id", Builtin.TEMPORAL_TIMEZONE_PROTO_ID.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "getOffsetNanosecondsFor", Builtin.TEMPORAL_TIMEZONE_PROTO_OFFSETNANOSECONDSFOR.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "getPossibleInstantsFor", Builtin.TEMPORAL_TIMEZONE_PROTO_GETPOSSIBLEINSTANTSFOR.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "getNextTransition", Builtin.TEMPORAL_TIMEZONE_PROTO_GETNEXTTRANSITION.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "getPreviousTransition", Builtin.TEMPORAL_TIMEZONE_PROTO_GETPREVIOUSTRANSITION.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_TIMEZONE_FROM.ordinal)) return false;
 
     heap.temporal_timezone_proto = proto;

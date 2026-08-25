@@ -109,3 +109,21 @@ fn int tzdb_offset_for_zone_at(String zone_name, long epoch_sec) {
     }
     return trans[pos - 1].offset_sec;
 }
+
+// The zone's offset (in seconds) that applied before its first recorded
+// transition. 0 if the zone is unknown.
+fn int tzdb_zone_initial_offset(String zone_name) {
+    int idx = tzdb_zone_index(zone_name);
+    if (idx < 0) return 0;
+    return TZDB_ZONES[idx].initial_offset_sec;
+}
+
+// The zone's sorted transition list (epoch_sec, offset_sec) pairs. Returns an
+// empty array if the zone is unknown. Consecutive same-offset entries
+// (abbreviation-only changes in the source tzdata) can occur; callers that
+// need "offset actually changed" semantics must collapse them.
+fn TzdbTransition[] tzdb_zone_transitions(String zone_name) {
+    int idx = tzdb_zone_index(zone_name);
+    if (idx < 0) return {};
+    return TZDB_ZONES[idx].transitions;
+}

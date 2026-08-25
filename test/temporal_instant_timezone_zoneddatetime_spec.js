@@ -105,6 +105,33 @@ threw = false;
 try { var _bad = new Temporal.TimeZone("Not/AZone"); } catch (e) { threw = true; }
 assertEq(threw, true, "unknown zone throws");
 
+// getPossibleInstantsFor resolves a wall-clock PlainDateTime to instants.
+var jan15 = new Temporal.PlainDateTime(2024, 1, 15, 12, 0, 0);
+var winterInst = nyc.getPossibleInstantsFor(jan15);
+assertEq(winterInst.length, 1, "winter unique instant count");
+assertEq(winterInst[0].toString(), "2024-01-15T17:00:00Z", "winter instant (EST)");
+var jul15 = new Temporal.PlainDateTime(2024, 7, 15, 12, 0, 0);
+var summerInst = nyc.getPossibleInstantsFor(jul15);
+assertEq(summerInst.length, 1, "summer unique instant count");
+assertEq(summerInst[0].toString(), "2024-07-15T16:00:00Z", "summer instant (EDT)");
+// Spring-forward gap 2024-03-10 02:30 does not exist in NY.
+var gap = new Temporal.PlainDateTime(2024, 3, 10, 2, 30, 0);
+assertEq(nyc.getPossibleInstantsFor(gap).length, 0, "spring-forward gap has no instants");
+// Fall-back overlap 2024-11-03 01:30 happens twice.
+var ov = new Temporal.PlainDateTime(2024, 11, 3, 1, 30, 0);
+var ovInsts = nyc.getPossibleInstantsFor(ov);
+assertEq(ovInsts.length, 2, "fall-back overlap has two instants");
+assertEq(ovInsts[0].toString(), "2024-11-03T05:30:00Z", "overlap EDT instant");
+assertEq(ovInsts[1].toString(), "2024-11-03T06:30:00Z", "overlap EST instant");
+
+// getNextTransition / getPreviousTransition skip abbreviation-only changes.
+var epoch = new Temporal.Instant(0n);
+assertEq(nyc.getNextTransition(epoch).toString(), "1970-04-26T07:00:00Z", "next transition after epoch");
+var in2024 = new Temporal.Instant(1721000000000000000n);
+assertEq(nyc.getPreviousTransition(in2024).toString(), "2024-03-10T07:00:00Z", "prev transition before 2024-07");
+var year2100 = new Temporal.Instant(4102444800000000000n);
+assertEq(nyc.getNextTransition(year2100), undefined, "no transition after 2100");
+
 // ============================================================================
 // Temporal.ZonedDateTime
 // ============================================================================
