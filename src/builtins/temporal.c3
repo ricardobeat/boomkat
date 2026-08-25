@@ -4611,61 +4611,61 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     HString* pd_prop_key = builtin_intern_string(heap, "PlainDate");
     TVal ctor_tv = heap.temporal_plain_date_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (ctor_tv.is_object() && ctor_tv.get_heapptr() != null) {
-        ns.put_prop(pd_prop_key, ctor_tv, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(pd_prop_key, ctor_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* cal_key = builtin_intern_string(heap, "Calendar");
     TVal cal_ctor = heap.temporal_calendar_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (cal_ctor.is_object() && cal_ctor.get_heapptr() != null) {
-        ns.put_prop(cal_key, cal_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(cal_key, cal_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* dur_key = builtin_intern_string(heap, "Duration");
     TVal dur_ctor = heap.temporal_duration_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (dur_ctor.is_object() && dur_ctor.get_heapptr() != null) {
-        ns.put_prop(dur_key, dur_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(dur_key, dur_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* pt_key = builtin_intern_string(heap, "PlainTime");
     TVal pt_ctor = heap.temporal_plain_time_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (pt_ctor.is_object() && pt_ctor.get_heapptr() != null) {
-        ns.put_prop(pt_key, pt_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(pt_key, pt_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* pdt_key = builtin_intern_string(heap, "PlainDateTime");
     TVal pdt_ctor = heap.temporal_plain_datetime_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (pdt_ctor.is_object() && pdt_ctor.get_heapptr() != null) {
-        ns.put_prop(pdt_key, pdt_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(pdt_key, pdt_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* pym_key = builtin_intern_string(heap, "PlainYearMonth");
     TVal pym_ctor = heap.temporal_plain_yearmonth_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (pym_ctor.is_object() && pym_ctor.get_heapptr() != null) {
-        ns.put_prop(pym_key, pym_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(pym_key, pym_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* pmd_key = builtin_intern_string(heap, "PlainMonthDay");
     TVal pmd_ctor = heap.temporal_plain_monthday_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (pmd_ctor.is_object() && pmd_ctor.get_heapptr() != null) {
-        ns.put_prop(pmd_key, pmd_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(pmd_key, pmd_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* inst_key = builtin_intern_string(heap, "Instant");
     TVal inst_ctor = heap.temporal_instant_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (inst_ctor.is_object() && inst_ctor.get_heapptr() != null) {
-        ns.put_prop(inst_key, inst_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(inst_key, inst_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* tz_key = builtin_intern_string(heap, "TimeZone");
     TVal tz_ctor = heap.temporal_timezone_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (tz_ctor.is_object() && tz_ctor.get_heapptr() != null) {
-        ns.put_prop(tz_key, tz_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(tz_key, tz_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* zdt_key = builtin_intern_string(heap, "ZonedDateTime");
     TVal zdt_ctor = heap.temporal_zoneddatetime_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (zdt_ctor.is_object() && zdt_ctor.get_heapptr() != null) {
-        ns.put_prop(zdt_key, zdt_ctor, hobject::PROP_FLAGS_NWC, heap);
+        ns.put_prop(zdt_key, zdt_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     TVal ns_tv;
@@ -4701,7 +4701,14 @@ fn hbigint::HBigInt*? instant_value(HObject* obj) {
 }
 
 // Temporal.Instant(epochNanoseconds) — accepts a BigInt, throws on anything else.
+// The ns value is range-checked against ±86400 * 10^17 (the ISO 8601 range
+// ±100_000_000 days from the epoch), and the call is rejected when it is not
+// invoked with `new` (per spec §`TemporalInstant` step 1).
 fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
+    if (!ctx.is_constructor) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant must be called with new");
+        return;
+    }
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant requires an epochNanoseconds argument");
         return;
@@ -4711,26 +4718,33 @@ fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
     hbigint::HBigInt* b = builtin_to_bigint(ctx, arg, &ok);
     if (!ok) return;
     // builtin_to_bigint returns a borrowed reference: for a BigInt argument the
-    // caller's register (or constant pool) still owns it, so we take our own
-    // ref for the stored value (alloc_instant increfs) and do NOT release it.
-    // Releasing it here would leave the Instant pointing at a BigInt freed
-    // when the argument register dies (positive literals are masked by the
-    // constant pool's permanent ref; a negated register literal is not).
+    // caller's register (or constant pool) still owns it, so we do NOT release
+    // it on any path. alloc_instant increfs the stored copy; on throw paths the
+    // caller's register cleanup frees the original. Decref'ing here would
+    // double-free a register BigInt whose VM cleanup runs after the throw
+    // returns (caught the segfault via `try { new Instant(lim + 1n) }`).
+    if (!b.fits_int128()) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.Instant: epochNanoseconds is out of range");
+        return;
+    }
+    int128 v = b.to_int128();
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    if (v < -ns_limit || v > ns_limit) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.Instant: epochNanoseconds is outside the representable range");
+        return;
+    }
     HObject*? obj_o = alloc_instant(ctx.heap, b);
     if (catch err = obj_o) {
         builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
         return;
     }
     HObject* obj = obj_o;
-    if (ctx.is_constructor) {
-        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_instant_proto);
-    } else {
-        obj.prototype = ctx.heap.temporal_instant_proto;
-    }
+    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_instant_proto);
     ctx.result.set_object(obj);
 }
 
-// Temporal.Instant.from(item) — accepts a BigInt or another Instant.
+// Temporal.Instant.from(item) — accepts a BigInt, an ISO string, or another
+// Instant. Strings are parsed via the same path as ToTemporalInstant.
 fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant.from requires an argument");
@@ -4759,6 +4773,22 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
             ctx.result.set_object(obj);
             return;
         }
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant.from: non-Instant object argument");
+        return;
+    }
+    if (arg.is_string()) {
+        hbigint::HBigInt* b;
+        if (!to_temporal_instant(ctx, arg, &b)) return;
+        defer ctx.heap.decref((types::HeapHeader*)b);
+        HObject*? obj_o = alloc_instant(ctx.heap, b);
+        if (catch err = obj_o) {
+            builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+            return;
+        }
+        HObject* obj = obj_o;
+        obj.prototype = ctx.heap.temporal_instant_proto;
+        ctx.result.set_object(obj);
+        return;
     }
     // Default: ToBigInt(value).
     bool ok;
@@ -4838,7 +4868,7 @@ fn void builtin_temporal_instant_fromEpochSeconds(BuiltinContext* ctx) {
 // Same shape for ms, us, ns — delegate via simple scaling.
 fn void builtin_temporal_instant_fromEpochMilliseconds(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "fromEpochMilliseconds requires an argument");
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: missing argument");
         return;
     }
     TVal* arg = arg_at(ctx, 0);
@@ -4854,6 +4884,14 @@ fn void builtin_temporal_instant_fromEpochMilliseconds(BuiltinContext* ctx) {
         return;
     }
     int128 i128 = (int128)d;
+    // ES262 §TemporalInstant: ms must stay within the range that fits in ns
+    // after multiplication. Limit is the same ±86400 * 1e9 ns / 1e3 ms =
+    // ±8.64e15 ms.
+    int128 ms_limit = (int128)86400L * (int128)100000000L * (int128)1000L;
+    if (i128 < -ms_limit || i128 > ms_limit) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: out of representable range");
+        return;
+    }
     hbigint::HBigInt*? ms_o = hbigint::hbigint_alloc(ctx.heap, i128);
     if (catch err = ms_o) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: alloc failed");
@@ -4944,6 +4982,16 @@ fn void builtin_temporal_instant_fromEpochNanoseconds(BuiltinContext* ctx) {
     bool ok;
     hbigint::HBigInt* b = builtin_to_bigint(ctx, arg_at(ctx, 0), &ok);
     if (!ok) return;
+    if (!b.fits_int128()) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochNanoseconds: out of range");
+        return;
+    }
+    int128 v = b.to_int128();
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    if (v < -ns_limit || v > ns_limit) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochNanoseconds: outside the representable range");
+        return;
+    }
     HObject*? obj_o = alloc_instant(ctx.heap, b);
     if (catch err = obj_o) {
         builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
@@ -5115,9 +5163,17 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     long ns_rem;
     if (b.fits_int128()) {
         int128 total = b.to_int128();
+        // Truncate toward zero: sign of remainder follows dividend's sign.
+        // For a negative total, floor the second so ns_rem is non-negative
+        // (e.g. -1500000001 ns = -2 sec + 999999999 ns, not -1 sec + -500000001 ns).
         long sec_trunc = (long)(total / 1000000000);
-        ns_rem = (long)(total - (int128)sec_trunc * 1000000000);
+        long rem_trunc = (long)(total - (int128)sec_trunc * 1000000000);
+        if (rem_trunc < 0) {
+            sec_trunc -= 1;
+            rem_trunc += 1000000000;
+        }
         whole_secs = sec_trunc;
+        ns_rem = rem_trunc;
     } else {
         // Out of int128 range: fall back to the double approximation (the
         // output is only ever whole seconds at this magnitude anyway).
@@ -5128,9 +5184,22 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     }
     temporal::BrokenDownTime bd = temporal::civil_from_seconds(whole_secs);
 
-    char[48] buf;
-    int n = libc::snprintf(&buf, 40, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
-        bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    // Year formatting per spec §`GetISOPartsFromEpoch`: 0 ≤ year ≤ 9999 renders
+    // as a 4-digit unsigned year; year < 0 or year > 9999 renders as a 6-digit
+    // signed year with `-` or `+` prefix.
+    char[64] buf;
+    int n;
+    long y = bd.y;
+    if (y >= 0 && y <= 9999) {
+        n = libc::snprintf(&buf, 40, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+            y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    } else if (y < 0) {
+        n = libc::snprintf(&buf, 40, "-%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+            -y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    } else {
+        n = libc::snprintf(&buf, 40, "+%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+            y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    }
     n += format_fractional_seconds(&buf[n], ns_rem, digits);
     buf[n] = 'Z';
     n++;

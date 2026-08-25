@@ -51,7 +51,7 @@ assertEq(one.epochNanoseconds, 1000000000n, "one.epochNanoseconds");
 // negated register literal was freed while the Instant still referenced it).
 var negBig = new Temporal.Instant(-1500000000n);   // -1.5 s
 assertEq(negBig.epochNanoseconds, -1500000000n, "negBig.epochNanoseconds");
-assertEq(negBig.toString(), "1969-12-31T23:59:59.5Z", "negative instant toString");
+assertEq(negBig.toString(), "1969-12-31T23:59:58.5Z", "negative instant toString (floor)");
 assertEq(negBig.epochSeconds, -2, "negative instant epochSeconds (floor)");
 assertEq(Temporal.Instant.fromEpochSeconds(1).equals(one), true, "fromEpochSeconds(1).equals(one)");
 assertEq(Temporal.Instant.fromEpochMilliseconds(1000).equals(one), true, "fromEpochMilliseconds(1000)");
@@ -219,6 +219,27 @@ assertEq(zwith.toString(), "2024-07-14T09:33:20-04:00[America/New_York]", "zdt w
 assertEq(zwith.timeZoneId, "America/New_York", "zdt with keeps zone");
 var zwin = zsummer.with({ year: 2025, month: 1, day: 15, hour: 10, minute: 0 });
 assertEq(zwin.toString(), "2025-01-15T10:00:20-05:00[America/New_York]", "zdt with winter offset (EST)");
+
+// Temporal.Instant constructor: must be called with new; range-checked.
+var threwNoNew = false;
+try { Temporal.Instant(0n); } catch (e) { threwNoNew = e instanceof TypeError; }
+assertEq(threwNoNew, true, "Instant() without new throws TypeError");
+var limit = 8640000000000000000000n;
+var threwOver = false;
+try { new Temporal.Instant(limit + 1n); } catch (e) { threwOver = e instanceof RangeError; }
+assertEq(threwOver, true, "new Instant(limit+1n) throws RangeError");
+
+// Temporal.Instant.from accepts an ISO string.
+var fromstr = Temporal.Instant.from("2022-07-01T12:34:56Z");
+assertEq(fromstr.epochNanoseconds, 1656678896000000000n, "Instant.from ISO string ns");
+var threwBadStr = false;
+try { Temporal.Instant.from("not an iso"); } catch (e) { threwBadStr = e instanceof RangeError; }
+assertEq(threwBadStr, true, "Instant.from(bad string) throws RangeError");
+
+// Year formatting in toString: 4-digit unsigned for 0..9999, 6-digit signed
+// for years outside that range.
+assertEq(new Temporal.Instant(0n).toString(), "1970-01-01T00:00:00Z", "epoch toString");
+assertEq(new Temporal.Instant(-13849764999999999n).toString(), "1969-07-24T16:50:35.000000001Z", "negative toString floor");
 
 console.log("Pass: " + pass + " Fail: " + fail);
 if (fail > 0) process.exit(1);
