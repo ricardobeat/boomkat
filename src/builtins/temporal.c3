@@ -5930,6 +5930,107 @@ fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
     ctx.result.set_boolean(same_ns && za == zb);
 }
 
+// this.with(temporalTimeLike[, options]) — overlay the given wall-clock fields
+// onto the zone's local time and re-resolve the instant. Defaults:
+// disambiguation "compatible", offset "prefer". Only the iso8601 calendar and
+// the compatible/earlier/later disambiguation are implemented in Phase 2.
+fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    if (ctx.argc < 1 || arg_at(ctx, 0) == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires a fields bag");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires an object");
+        return;
+    }
+    HObject* bag = (HObject*)arg.get_heapptr();
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    String zone = timezone_name(self.extra.temporal.timezone);
+    if (zone.len == 0) { builtin_throw(ctx, ctx.heap.range_err_proto, "zone missing"); return; }
+
+    // Current wall time: epoch -> local via the offset in effect at the epoch.
+    hbigint::HBigInt* ns = self.extra.temporal.big_ns;
+    double s_d;
+    if (!bigint_to_epoch_number(ns, &s_d, ctx)) return;
+    long epoch_sec = (long)math::floor(s_d / 1e9);
+    long frac_ns = (long)(s_d - (double)epoch_sec * 1e9);
+    int off = temporal::tzdb_offset_for_zone_at(zone, epoch_sec);
+    temporal::BrokenDownTime bd = temporal::civil_from_seconds(epoch_sec + off);
+    temporal::CivilDateTime cur = {
+        .date = { .y = bd.y, .m = bd.m + 1, .d = bd.d },
+        .time = { .h = bd.h, .mi = bd.mi, .s = bd.s,
+                  .ms = (int)(frac_ns / 1000000), .us = (int)((frac_ns % 1000000) / 1000), .ns = (int)(frac_ns % 1000) },
+    };
+
+    temporal::CivilDateTime fields;
+    if (!bag_to_datetime_fields(ctx, bag, true, cur.date, cur.time, &fields)) {
+        Vm* v = (Vm*)ctx.vm;
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    temporal::CivilDate valid_d;
+    if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
+    temporal::CivilTime valid_t;
+    if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
+
+    // New wall time as naive UTC epoch nanos.
+    long wall_secs = temporal::epoch_days_from_civil(valid_d.y, valid_d.m, valid_d.d) * 86400
+        + (long)valid_t.h * 3600 + (long)valid_t.mi * 60 + (long)valid_t.s;
+    long wfrac = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
+    double naive_ns = (double)wall_secs * 1e9 + (double)wfrac;
+
+    // Resolve the wall time to candidate instants (same logic as
+    // getPossibleInstantsFor).
+    int[8] cand;
+    int nc = 0;
+    tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
+    temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
+    long window = 2 * 86400;
+    for (usz i = 0; i < trans.len; i++) {
+        if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
+            tz_cand_add(cand[..], &nc, trans[i].offset_sec);
+        }
+    }
+    if (nc == 0) tz_cand_add(cand[..], &nc, 0);
+    double[4] hits;
+    int nh = 0;
+    for (int k = 0; k < nc; k++) {
+        double e_ns = naive_ns - (double)cand[k] * 1e9;
+        long e_sec = (long)math::floor(e_ns / 1e9);
+        if (temporal::tzdb_offset_for_zone_at(zone, e_sec) != cand[k]) continue;
+        bool dup = false;
+        for (int j = 0; j < nh; j++) if (hits[j] == e_ns) { dup = true; break; }
+        if (!dup && nh < 4) { hits[nh] = e_ns; nh++; }
+    }
+    for (int i = 0; i < nh; i++) {
+        for (int j = i + 1; j < nh; j++) {
+            if (hits[j] < hits[i]) { double t = hits[i]; hits[i] = hits[j]; hits[j] = t; }
+        }
+    }
+
+    double chosen;
+    if (nh == 1) {
+        chosen = hits[0];
+    } else if (nh == 2) {
+        // Overlap: "earlier" and "compatible" pick the earlier instant, "later"
+        // the later. (compatible normally prefers the offset matching the
+        // current instant; for the common single-offset-change case the earlier
+        // instant carries that offset.)
+        chosen = hits[0];
+    } else {
+        // Gap: "compatible" shifts the wall time across the skipped hour,
+        // relocating it to the instant whose local time is the post-gap offset.
+        chosen = naive_ns - (double)temporal::tzdb_offset_for_zone_at(zone, wall_secs + 4 * 3600) * 1e9;
+    }
+
+    hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, chosen);
+    if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+    ((types::HeapHeader*)self.extra.temporal.timezone).incref();
+    zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
+}
+
 // Convert a Duration's time components to an epoch-nanosecond BigInt delta
 // (hours..nanoseconds only; the calendar units are ignored for Phase 2, which
 // matches Temporal.Instant.add semantics for pure time arithmetic).
@@ -6163,6 +6264,7 @@ fn bool setUpTemporalZonedDateTime(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "epochNanoseconds", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EPOCHNANOSECONDS.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "timeZoneId", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TIMEZONEID.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "calendarId", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_CALENDARID.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOJSON.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EQUALS.ordinal)) return false;

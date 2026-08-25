@@ -948,6 +948,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_ZONEDDATETIME_PROTO_EPOCHMILLISECONDS {"epochMilliseconds", 0, &builtin_temporal_zoneddatetime_proto_epochMilliseconds},
     TEMPORAL_ZONEDDATETIME_PROTO_EPOCHMICROSECONDS {"epochMicroseconds", 0, &builtin_temporal_zoneddatetime_proto_epochMicroseconds},
     TEMPORAL_ZONEDDATETIME_PROTO_EPOCHNANOSECONDS {"epochNanoseconds", 0, &builtin_temporal_zoneddatetime_proto_epochNanoseconds},
+    TEMPORAL_ZONEDDATETIME_PROTO_WITH {"with", 1, &builtin_temporal_zoneddatetime_proto_with},
     TEMPORAL_ZONEDDATETIME_PROTO_TIMEZONEID {"timeZoneId", 0, &builtin_temporal_zoneddatetime_proto_timeZoneId},
     TEMPORAL_ZONEDDATETIME_PROTO_CALENDARID {"calendarId", 0, &builtin_temporal_zoneddatetime_proto_calendarId},
     TEMPORAL_ZONEDDATETIME_PROTO_TOSTRING {"toString", 0, &builtin_temporal_zoneddatetime_proto_toString},

@@ -179,5 +179,12 @@ assertEq(zu.seconds, 1, "zdt until seconds");
 var zs = zsummer.since(zlater);
 assertEq(zs.seconds, -1, "zdt since seconds");
 
+// with overlays wall-clock fields and re-resolves the zone offset.
+var zwith = zsummer.with({ hour: 9 });
+assertEq(zwith.toString(), "2024-07-14T09:33:20-04:00[America/New_York]", "zdt with hour");
+assertEq(zwith.timeZoneId, "America/New_York", "zdt with keeps zone");
+var zwin = zsummer.with({ year: 2025, month: 1, day: 15, hour: 10, minute: 0 });
+assertEq(zwin.toString(), "2025-01-15T10:00:20-05:00[America/New_York]", "zdt with winter offset (EST)");
+
 console.log("Pass: " + pass + " Fail: " + fail);
 if (fail > 0) process.exit(1);
