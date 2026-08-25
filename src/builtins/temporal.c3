@@ -4709,14 +4709,18 @@ fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
     bool ok;
     hbigint::HBigInt* b = builtin_to_bigint(ctx, arg, &ok);
     if (!ok) return;
+    // builtin_to_bigint returns a borrowed reference: for a BigInt argument the
+    // caller's register (or constant pool) still owns it, so we take our own
+    // ref for the stored value (alloc_instant increfs) and do NOT release it.
+    // Releasing it here would leave the Instant pointing at a BigInt freed
+    // when the argument register dies (positive literals are masked by the
+    // constant pool's permanent ref; a negated register literal is not).
     HObject*? obj_o = alloc_instant(ctx.heap, b);
     if (catch err = obj_o) {
-        ctx.heap.decref((types::HeapHeader*)b);
         builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
         return;
     }
     HObject* obj = obj_o;
-    ctx.heap.decref((types::HeapHeader*)b);
     if (ctx.is_constructor) {
         obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_instant_proto);
     } else {
@@ -4761,12 +4765,10 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
     if (!ok) return;
     HObject*? obj_o = alloc_instant(ctx.heap, b);
     if (catch err = obj_o) {
-        ctx.heap.decref((types::HeapHeader*)b);
         builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
         return;
     }
     HObject* obj = obj_o;
-    ctx.heap.decref((types::HeapHeader*)b);
     obj.prototype = ctx.heap.temporal_instant_proto;
     ctx.result.set_object(obj);
 }
@@ -4943,12 +4945,10 @@ fn void builtin_temporal_instant_fromEpochNanoseconds(BuiltinContext* ctx) {
     if (!ok) return;
     HObject*? obj_o = alloc_instant(ctx.heap, b);
     if (catch err = obj_o) {
-        ctx.heap.decref((types::HeapHeader*)b);
         builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
         return;
     }
     HObject* obj = obj_o;
-    ctx.heap.decref((types::HeapHeader*)b);
     obj.prototype = ctx.heap.temporal_instant_proto;
     ctx.result.set_object(obj);
 }
@@ -5876,7 +5876,6 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
         tz = (HObject*)tzarg.get_heapptr();
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime timeZone must be a Temporal.TimeZone");
-        ctx.heap.decref((types::HeapHeader*)b);
         return;
     }
 
@@ -5884,7 +5883,6 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
     // be a Temporal.Calendar with id "iso8601".
     HString* calendar = builtin_intern_string(ctx.heap, "iso8601");
     HObject*? obj_o = alloc_zoneddatetime(ctx.heap, b, tz, calendar);
-    ctx.heap.decref((types::HeapHeader*)b);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     if (ctx.is_constructor) {

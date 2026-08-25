@@ -47,7 +47,12 @@ assertEq(one.epochMilliseconds, 1000, "one.epochMilliseconds");
 assertEq(one.epochMicroseconds, 1000000, "one.epochMicroseconds");
 assertEq(one.epochNanoseconds, 1000000000n, "one.epochNanoseconds");
 
-// from + fromEpoch* land on the same instant.
+// Negative instants (regression: the ctor released a borrowed BigInt, so a
+// negated register literal was freed while the Instant still referenced it).
+var negBig = new Temporal.Instant(-1500000000n);   // -1.5 s
+assertEq(negBig.epochNanoseconds, -1500000000n, "negBig.epochNanoseconds");
+assertEq(negBig.toString(), "1969-12-31T23:59:59.5Z", "negative instant toString");
+assertEq(negBig.epochSeconds, -2, "negative instant epochSeconds (floor)");
 assertEq(Temporal.Instant.fromEpochSeconds(1).equals(one), true, "fromEpochSeconds(1).equals(one)");
 assertEq(Temporal.Instant.fromEpochMilliseconds(1000).equals(one), true, "fromEpochMilliseconds(1000)");
 assertEq(Temporal.Instant.fromEpochMicroseconds(1000000).equals(one), true, "fromEpochMicroseconds(1000000)");
