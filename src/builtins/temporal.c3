@@ -89,6 +89,34 @@ fn HObject*? alloc_plain_datetime(Heap* hp, temporal::CivilDateTime dt, HObject*
     return obj;
 }
 
+// Slot layout for TEMPORAL_PLAIN_YEARMONTH: int_a..int_c carry y/m/d. The
+// `day` slot is a reference day used only to answer daysInMonth/inLeapYear;
+// it does not participate in equality or comparison. Year is signed via int.
+fn HObject*? alloc_plain_yearmonth(Heap* hp, long y, int m, int reference_day, HObject* calendar) {
+    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH);
+    if (catch err = raw) return err~;
+    HObject* obj = raw;
+    obj.extra.temporal.int_a = (int)y;
+    obj.extra.temporal.int_b = m;
+    obj.extra.temporal.int_c = reference_day;
+    obj.extra.temporal.calendar = calendar;
+    return obj;
+}
+
+// Slot layout for TEMPORAL_PLAIN_MONTHDAY: int_a..int_c carry y/m/d. The
+// `year` slot is a reference year used only for calendar-related properties
+// (era, eraYear, inLeapYear); it does not participate in equality.
+fn HObject*? alloc_plain_monthday(Heap* hp, int reference_year, int m, int d, HObject* calendar) {
+    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY);
+    if (catch err = raw) return err~;
+    HObject* obj = raw;
+    obj.extra.temporal.int_a = reference_year;
+    obj.extra.temporal.int_b = m;
+    obj.extra.temporal.int_c = d;
+    obj.extra.temporal.calendar = calendar;
+    return obj;
+}
+
 fn HObject*? alloc_duration(Heap* hp, temporal::DurationParts d) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_DURATION);
     if (catch err = raw) return err~;
@@ -138,6 +166,18 @@ fn temporal::CivilDateTime plain_datetime_value(HObject* obj) {
         },
     };
 }
+
+// Extract the canonical year/month and reference day from a PlainYearMonth
+// object. The reference day is what `day` returns; it isn't part of equality.
+fn long plain_yearmonth_y(HObject* obj) { return (long)obj.extra.temporal.int_a; }
+fn int  plain_yearmonth_m(HObject* obj) { return obj.extra.temporal.int_b; }
+fn int  plain_yearmonth_day(HObject* obj) { return obj.extra.temporal.int_c; }
+
+// Extract the reference year/month/day from a PlainMonthDay object. The
+// reference year is what `year` returns; it isn't part of equality.
+fn int  plain_monthday_year(HObject* obj) { return obj.extra.temporal.int_a; }
+fn int  plain_monthday_m(HObject* obj) { return obj.extra.temporal.int_b; }
+fn int  plain_monthday_d(HObject* obj) { return obj.extra.temporal.int_c; }
 
 fn temporal::DurationParts duration_value(HObject* obj) {
     temporal::DurationParts d;
@@ -2904,6 +2944,1153 @@ fn void builtin_temporal_plain_datetime_proto_since(BuiltinContext* ctx) {
 }
 
 // ============================================================================
+// Temporal.PlainYearMonth
+// ============================================================================
+
+// `bag_to_yearmonth_fields` reads year + month(/monthCode) from a plain
+// object and writes a CivilDate whose `d` slot is the reference day. The
+// reference day is fixed at 1 for the constructor; `with()` passes the
+// current reference day through `cur_day`. The spec accepts era/eraYear for
+// non-ISO calendars; the single-ISO-calendar engine rejects them.
+fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
+                                long cur_y, int cur_m, int cur_day,
+                                long* out_y, int* out_m, int* out_day) {
+    Vm* v = (Vm*)ctx.vm;
+    TVal year_v  = prop_or_undefined(bag, ctx.heap, "year");
+    TVal month_v = prop_or_undefined(bag, ctx.heap, "month");
+    TVal mc_v    = prop_or_undefined(bag, ctx.heap, "monthCode");
+    TVal day_v   = prop_or_undefined(bag, ctx.heap, "day");
+    TVal cal_v   = prop_or_undefined(bag, ctx.heap, "calendar");
+    TVal era_v   = prop_or_undefined(bag, ctx.heap, "era");
+    TVal era_y_v = prop_or_undefined(bag, ctx.heap, "eraYear");
+
+    if (!era_v.is_undefined() || !era_y_v.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "era/eraYear are not supported by the ISO calendar");
+        return false;
+    }
+    if (!cal_v.is_undefined()) {
+        HObject* cal;
+        if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+    }
+
+    long y = cur_y;
+    if (!year_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &year_v, &y)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
+            return false;
+        }
+    } else if (!keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing year property");
+        return false;
+    }
+
+    int m = cur_m;
+    if (month_v.is_undefined() && mc_v.is_undefined()) {
+        if (!keep_missing) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
+            return false;
+        }
+    } else {
+        long mv = 0;
+        bool have_month = false;
+        if (!month_v.is_undefined()) {
+            if (!to_integer_with_truncation(v, &month_v, &mv)) {
+                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+                builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+                return false;
+            }
+            have_month = true;
+        }
+        if (!mc_v.is_undefined()) {
+            int mci;
+            if (!parse_month_code(ctx, mc_v, &mci)) return false;
+            if (have_month && mv != mci) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
+                return false;
+            }
+            m = mci;
+        } else if (have_month) {
+            m = (int)mv;
+        }
+    }
+
+    int d = cur_day;
+    if (!day_v.is_undefined()) {
+        long dv;
+        if (!to_integer_with_truncation(v, &day_v, &dv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+            return false;
+        }
+        d = (int)dv;
+    }
+
+    *out_y = y;
+    *out_m = m;
+    *out_day = d;
+    return true;
+}
+
+// Constrain or reject the (year, month, day) triple into a valid CivilDate.
+// Day overflow against the resulting month is clamped (CONSTRAIN) or rejected.
+fn bool fields_to_valid_yearmonth(BuiltinContext* ctx, long y, int m, int d,
+                                   temporal::OverflowKind overflow,
+                                   long* out_y, int* out_m, int* out_d) {
+    if (m < 1) {
+        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
+        m = 1;
+    }
+    if (m > 12) {
+        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
+        m = 12;
+    }
+    if (d < 1) {
+        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day"); return false; }
+        d = 1;
+    }
+    int dim = temporal::days_in_month(y, m);
+    if (d > dim) {
+        if (overflow == temporal::OverflowKind.REJECT) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
+            return false;
+        }
+        d = dim;
+    }
+    if (!temporal::is_valid_iso_date(y, m, d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
+        return false;
+    }
+    *out_y = y;
+    *out_m = m;
+    *out_d = d;
+    return true;
+}
+
+fn void builtin_temporal_plain_yearmonth_ctor(BuiltinContext* ctx) {
+    if (!ctx.is_constructor) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth requires new");
+        return;
+    }
+    Vm* v = (Vm*)ctx.vm;
+    long y = 0;
+    int m = 1;
+    int d = 1;
+
+    if (ctx.argc >= 1) {
+        if (!to_integer_with_truncation(v, arg_at(ctx, 0), &y)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
+            return;
+        }
+    }
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainYearMonth requires year and month");
+        return;
+    }
+    long m_lv;
+    if (!to_integer_with_truncation(v, arg_at(ctx, 1), &m_lv)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+        builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+        return;
+    }
+    m = (int)m_lv;
+
+    if (ctx.argc >= 3) {
+        long d_lv;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 2), &d_lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+            return;
+        }
+        d = (int)d_lv;
+    }
+
+    HObject* calendar = ctx.heap.temporal_iso_calendar;
+    if (ctx.argc >= 4) {
+        if (!calendar_from_arg(ctx, arg_at(ctx, 3), &calendar)) return;
+    }
+
+    long vy; int vm; int vd;
+    if (!fields_to_valid_yearmonth(ctx, y, m, d, temporal::OverflowKind.REJECT, &vy, &vm, &vd)) return;
+
+    HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, vy, vm, vd, calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_yearmonth_proto);
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth.from requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    Vm* v = (Vm*)ctx.vm;
+
+    long vy = 0; int vm = 1; int vd = 1;
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        if (!temporal::parse_iso_yearmonth_string(text, &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainYearMonth.from: invalid ISO year-month string");
+            return;
+        }
+        vy = p.year; vm = p.month; vd = p.day;
+        if (!fields_to_valid_yearmonth(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
+    } else if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH) {
+            ctx.result.set_object(o);
+            return;
+        }
+        HObject* calendar = ctx.heap.temporal_iso_calendar;
+        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
+        if (!cal_v.is_undefined()) {
+            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return;
+        }
+        long y; int m; int d;
+        if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
+        if (!fields_to_valid_yearmonth(ctx, y, m, d, overflow, &vy, &vm, &vd)) return;
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth.from: argument must be a string or object");
+        return;
+    }
+
+    HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, vy, vm, vd, ctx.heap.temporal_iso_calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_plain_yearmonth_compare(BuiltinContext* ctx) {
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth.compare requires two arguments");
+        return;
+    }
+    HObject*? a_o = plain_yearmonth_from_arg(ctx, arg_at(ctx, 0));
+    if (ctx.should_throw) return;
+    HObject*? b_o = plain_yearmonth_from_arg(ctx, arg_at(ctx, 1));
+    if (ctx.should_throw) return;
+    long ay = plain_yearmonth_y(a_o!!);
+    long by = plain_yearmonth_y(b_o!!);
+    int am = plain_yearmonth_m(a_o!!);
+    int bm = plain_yearmonth_m(b_o!!);
+    int cmp = 0;
+    if (ay != by) { cmp = ay < by ? -1 : 1; }
+    else if (am != bm) { cmp = am < bm ? -1 : 1; }
+    ctx.result.set_fastint((long)cmp);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_year(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)plain_yearmonth_y(obj));
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_month(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)plain_yearmonth_m(obj));
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_monthCode(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    int m = plain_yearmonth_m(obj);
+    char[5] buf;
+    usz len;
+    if (m < 10) {
+        len = (usz)libc::snprintf(&buf, 5, "M0%d", m);
+    } else {
+        len = (usz)libc::snprintf(&buf, 5, "M%d", m);
+    }
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_day(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)plain_yearmonth_day(obj));
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_daysInMonth(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)temporal::days_in_month(plain_yearmonth_y(obj), plain_yearmonth_m(obj)));
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_daysInYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number(temporal::is_leap_year(plain_yearmonth_y(obj)) ? 366.0 : 365.0);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_monthsInYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    ctx.result.set_number(12.0);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_inLeapYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_boolean(temporal::is_leap_year(plain_yearmonth_y(obj)));
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_calendarId(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_calendar(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    HObject* cal = obj.extra.temporal.calendar;
+    if (cal != null) {
+        ctx.result.set_object(cal);
+    } else {
+        ctx.result.set_object(ctx.heap.temporal_iso_calendar);
+    }
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_era(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    ctx.result.set_undefined();
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_eraYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    ctx.result.set_undefined();
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_valueOf(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth cannot be converted to a primitive number");
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_toString(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    long y = plain_yearmonth_y(obj);
+    int m = plain_yearmonth_m(obj);
+
+    bool show_calendar = false;
+    bool critical = false;
+    if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
+        TVal ov = ctx.regs[ctx.base_reg];
+        if (!ov.is_object() || ov.get_heapptr() == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+            return;
+        }
+        HObject* opts = (HObject*)ov.get_heapptr();
+        TVal cn = prop_or_undefined(opts, ctx.heap, "calendarName");
+        if (!cn.is_undefined()) {
+            if (!cn.is_string()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "calendarName must be a string");
+                return;
+            }
+            HString* s = (HString*)cn.get_heapptr();
+            char[] v = s.get_cstr()[:s.blen];
+            if (v == "auto") { show_calendar = false; }
+            else if (v == "always") { show_calendar = true; }
+            else if (v == "critical") { show_calendar = true; critical = true; }
+            else if (v == "never") { show_calendar = false; }
+            else {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName");
+                return;
+            }
+        }
+    }
+
+    char[48] buf;
+    usz len;
+    if (y < 0) {
+        len = (usz)libc::snprintf(&buf, 48, "-%06ld-%02d", -y, m);
+    } else if (y > 9999) {
+        len = (usz)libc::snprintf(&buf, 48, "+%06ld-%02d", y, m);
+    } else {
+        len = (usz)libc::snprintf(&buf, 48, "%04ld-%02d", y, m);
+    }
+    if (show_calendar) {
+        char[] ann = critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]";
+        for (usz k = 0; k < ann.len; k++) buf[len++] = ann[k];
+    }
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_toJSON(BuiltinContext* ctx) {
+    builtin_temporal_plain_yearmonth_proto_toString(ctx);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_equals(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* other = (HObject*)arg.get_heapptr();
+        if (other.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH) {
+            long ay = plain_yearmonth_y(obj);
+            long by = plain_yearmonth_y(other);
+            int am = plain_yearmonth_m(obj);
+            int bm = plain_yearmonth_m(other);
+            bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
+            ctx.result.set_boolean(same_cal && ay == by && am == bm);
+            return;
+        }
+    }
+    ctx.result.set_boolean(false);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires a fields bag");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires an object");
+        return;
+    }
+    HObject* bag = (HObject*)arg.get_heapptr();
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    Vm* v = (Vm*)ctx.vm;
+
+    long y; int m; int d;
+    if (!bag_to_yearmonth_fields(ctx, bag, true,
+                                  plain_yearmonth_y(obj), plain_yearmonth_m(obj), plain_yearmonth_day(obj),
+                                  &y, &m, &d)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    long vy; int vm; int vd;
+    if (!fields_to_valid_yearmonth(ctx, y, m, d, overflow, &vy, &vm, &vd)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, vy, vm, vd, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.result.set_object(obj2);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_add(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "add requires a duration");
+        return;
+    }
+    temporal::DurationParts dur;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+
+    long cur_y = plain_yearmonth_y(obj);
+    int cur_m = plain_yearmonth_m(obj);
+    int cur_d = plain_yearmonth_day(obj);
+    long total_months = dur.years * 12 + dur.months;
+    // Reference day may need re-clamping if month rollover changes month length.
+    long after_y = cur_y + total_months / 12;
+    long after_m = (long)cur_m + total_months % 12;
+    if (after_m < 1)  { after_y -= 1; after_m += 12; }
+    else if (after_m > 12) { after_y += 1; after_m -= 12; }
+    int dim = temporal::days_in_month(after_y, (int)after_m);
+    int new_d = cur_d > dim ? dim : cur_d;
+    // Reject requires the reference day to remain representable.
+    if (overflow == temporal::OverflowKind.REJECT && cur_d > dim) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
+        return;
+    }
+    if (!temporal::is_valid_iso_date(after_y, (int)after_m, new_d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
+        return;
+    }
+    HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, after_y, (int)after_m, new_d, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.result.set_object(obj2);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_subtract(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract requires a duration");
+        return;
+    }
+    temporal::DurationParts dur;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+
+    long cur_y = plain_yearmonth_y(obj);
+    int cur_m = plain_yearmonth_m(obj);
+    int cur_d = plain_yearmonth_day(obj);
+    long total_months = -(dur.years * 12 + dur.months);
+    long after_y = cur_y + total_months / 12;
+    long after_m = (long)cur_m + total_months % 12;
+    if (after_m < 1)  { after_y -= 1; after_m += 12; }
+    else if (after_m > 12) { after_y += 1; after_m -= 12; }
+    int dim = temporal::days_in_month(after_y, (int)after_m);
+    int new_d = cur_d > dim ? dim : cur_d;
+    if (overflow == temporal::OverflowKind.REJECT && cur_d > dim) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
+        return;
+    }
+    if (!temporal::is_valid_iso_date(after_y, (int)after_m, new_d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
+        return;
+    }
+    HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, after_y, (int)after_m, new_d, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.result.set_object(obj2);
+}
+
+// PlainYearMonth.until/since share the difference_date routine. Only date-level
+// units are accepted (years, months) since there is no day component.
+fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "until/since requires another year-month");
+        return;
+    }
+    HObject*? other_o = plain_yearmonth_from_arg(ctx, arg_at(ctx, 0));
+    if (ctx.should_throw) return;
+    HObject* other = other_o!!;
+
+    HObject* this_cal = obj.extra.temporal.calendar;
+    HObject* other_cal = other.extra.temporal.calendar;
+    if (this_cal != other_cal || this_cal == null) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "calendars do not match");
+        return;
+    }
+
+    temporal::DifferenceUnit largest;
+    if (!read_diff_options(ctx, 1, temporal::DifferenceUnit.MONTHS, &largest, false)) return;
+    // Only year/month units are accepted here.
+    if (largest != temporal::DifferenceUnit.YEARS && largest != temporal::DifferenceUnit.MONTHS) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "PlainYearMonth.until/since largestUnit must be 'years' or 'months'");
+        return;
+    }
+
+    long a_y = plain_yearmonth_y(obj);
+    int  a_m = plain_yearmonth_m(obj);
+    long b_y = plain_yearmonth_y(other);
+    int  b_m = plain_yearmonth_m(other);
+    long start_y = flipped ? b_y : a_y;
+    int  start_m = flipped ? b_m : a_m;
+    long end_y   = flipped ? a_y : b_y;
+    int  end_m   = flipped ? a_m : b_m;
+
+    // Use a synthetic CivilDate with day=1 so difference_date handles the
+    // year/month split identically to the PlainDate path.
+    temporal::CivilDate start = { .y = start_y, .m = start_m, .d = 1 };
+    temporal::CivilDate end   = { .y = end_y,   .m = end_m,   .d = 1 };
+    temporal::DateDifference diff = temporal::difference_date(start, end, largest);
+
+    temporal::DurationParts dur;
+    dur.years = diff.years;
+    dur.months = diff.months;
+    dur.weeks = 0;
+    dur.days = 0;
+    dur.hours = 0; dur.minutes = 0; dur.seconds = 0;
+    dur.ms = 0; dur.us = 0; dur.ns = 0;
+
+    HObject*? dur_o = alloc_duration(ctx.heap, dur);
+    if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* dur_obj = dur_o;
+    dur_obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(dur_obj);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_until(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    plain_yearmonth_until_since(ctx, (HObject*)this_val.get_heapptr(), false);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_since(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    plain_yearmonth_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
+}
+
+// ToTemporalYearMonth: identity-preserving PlainYearMonth coercion used by
+// compare/until/since. Strings are rejected (those call from); only the
+// matching class is taken.
+fn HObject*? plain_yearmonth_from_arg(BuiltinContext* ctx, TVal* arg) {
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH) return o;
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument is not a Temporal.PlainYearMonth");
+        return null;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainYearMonth");
+    return null;
+}
+
+// ============================================================================
+// Temporal.PlainMonthDay
+// ============================================================================
+
+// PlainMonthDay: monthCode/day with an optional reference year for calendar-
+// specific leap-year checks. The reference year default is a leap year
+// (1972) per the polyfill so Feb 29 is recognized as valid; spec lets the
+// caller override.
+fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
+                                int cur_y, int cur_m, int cur_d,
+                                int* out_y, int* out_m, int* out_d) {
+    Vm* v = (Vm*)ctx.vm;
+    TVal year_v  = prop_or_undefined(bag, ctx.heap, "year");
+    TVal month_v = prop_or_undefined(bag, ctx.heap, "month");
+    TVal mc_v    = prop_or_undefined(bag, ctx.heap, "monthCode");
+    TVal day_v   = prop_or_undefined(bag, ctx.heap, "day");
+    TVal cal_v   = prop_or_undefined(bag, ctx.heap, "calendar");
+    TVal era_v   = prop_or_undefined(bag, ctx.heap, "era");
+    TVal era_y_v = prop_or_undefined(bag, ctx.heap, "eraYear");
+
+    if (!era_v.is_undefined() || !era_y_v.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "era/eraYear are not supported by the ISO calendar");
+        return false;
+    }
+    if (!cal_v.is_undefined()) {
+        HObject* cal;
+        if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+    }
+
+    int y = cur_y;
+    if (!year_v.is_undefined()) {
+        long yl;
+        if (!to_integer_with_truncation(v, &year_v, &yl)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
+            return false;
+        }
+        y = (int)yl;
+    } else if (!keep_missing) {
+        y = 1972;  // default reference year: a leap year so Feb 29 is valid
+    }
+
+    int m = cur_m;
+    if (month_v.is_undefined() && mc_v.is_undefined()) {
+        if (!keep_missing) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
+            return false;
+        }
+    } else {
+        long mv = 0;
+        bool have_month = false;
+        if (!month_v.is_undefined()) {
+            if (!to_integer_with_truncation(v, &month_v, &mv)) {
+                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+                builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+                return false;
+            }
+            have_month = true;
+        }
+        if (!mc_v.is_undefined()) {
+            int mci;
+            if (!parse_month_code(ctx, mc_v, &mci)) return false;
+            if (have_month && mv != mci) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
+                return false;
+            }
+            m = mci;
+        } else if (have_month) {
+            m = (int)mv;
+        }
+    }
+
+    int d = cur_d;
+    if (!day_v.is_undefined()) {
+        long dl;
+        if (!to_integer_with_truncation(v, &day_v, &dl)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+            return false;
+        }
+        d = (int)dl;
+    } else if (!keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing day property");
+        return false;
+    }
+
+    *out_y = y;
+    *out_m = m;
+    *out_d = d;
+    return true;
+}
+
+// Constrain or reject (year, month, day) into a valid CivilDate. The year is
+// only used for calendar checks (Feb 29 requires a leap year); outside that
+// case the value is unchanged.
+fn bool fields_to_valid_monthday(BuiltinContext* ctx, int y, int m, int d,
+                                   temporal::OverflowKind overflow,
+                                   int* out_y, int* out_m, int* out_d) {
+    if (m < 1) {
+        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
+        m = 1;
+    }
+    if (m > 12) {
+        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
+        m = 12;
+    }
+    if (d < 1) {
+        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day"); return false; }
+        d = 1;
+    }
+    int dim = temporal::days_in_month((long)y, m);
+    if (d > dim) {
+        if (overflow == temporal::OverflowKind.REJECT) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
+            return false;
+        }
+        d = dim;
+    }
+    *out_y = y;
+    *out_m = m;
+    *out_d = d;
+    return true;
+}
+
+fn void builtin_temporal_plain_monthday_ctor(BuiltinContext* ctx) {
+    if (!ctx.is_constructor) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay requires new");
+        return;
+    }
+    Vm* v = (Vm*)ctx.vm;
+    int m = 1;
+    int d = 1;
+    if (ctx.argc >= 1) {
+        long ml;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 0), &ml)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+            return;
+        }
+        m = (int)ml;
+    }
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay requires month and day");
+        return;
+    }
+    long dl;
+    if (!to_integer_with_truncation(v, arg_at(ctx, 1), &dl)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+        builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+        return;
+    }
+    d = (int)dl;
+
+    HObject* calendar = ctx.heap.temporal_iso_calendar;
+    if (ctx.argc >= 3) {
+        if (!calendar_from_arg(ctx, arg_at(ctx, 2), &calendar)) return;
+    }
+
+    int y = 1972;  // default reference year (leap year)
+    int vy; int vm; int vd;
+    if (!fields_to_valid_monthday(ctx, y, m, d, temporal::OverflowKind.REJECT, &vy, &vm, &vd)) return;
+
+    HObject*? obj_o = alloc_plain_monthday(ctx.heap, vy, vm, vd, calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_monthday_proto);
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_plain_monthday_from(BuiltinContext* ctx) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay.from requires an argument");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    Vm* v = (Vm*)ctx.vm;
+
+    int vy = 1972; int vm = 1; int vd = 1;
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        if (!temporal::parse_iso_monthday_string(text, &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay.from: invalid ISO month-day string");
+            return;
+        }
+        vy = 1972; vm = p.month; vd = p.day;
+        if (!fields_to_valid_monthday(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
+    } else if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY) {
+            ctx.result.set_object(o);
+            return;
+        }
+        HObject* calendar = ctx.heap.temporal_iso_calendar;
+        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
+        if (!cal_v.is_undefined()) {
+            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return;
+        }
+        int y; int m; int d;
+        if (!bag_to_monthday_fields(ctx, o, false, 1972, 1, 1, &y, &m, &d)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
+        if (!fields_to_valid_monthday(ctx, y, m, d, overflow, &vy, &vm, &vd)) return;
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay.from: argument must be a string or object");
+        return;
+    }
+
+    HObject*? obj_o = alloc_plain_monthday(ctx.heap, vy, vm, vd, ctx.heap.temporal_iso_calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_plain_monthday_proto;
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_plain_monthday_compare(BuiltinContext* ctx) {
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay.compare requires two arguments");
+        return;
+    }
+    HObject*? a_o = plain_monthday_from_arg(ctx, arg_at(ctx, 0));
+    if (ctx.should_throw) return;
+    HObject*? b_o = plain_monthday_from_arg(ctx, arg_at(ctx, 1));
+    if (ctx.should_throw) return;
+    int am = plain_monthday_m(a_o!!);
+    int bm = plain_monthday_m(b_o!!);
+    int ad = plain_monthday_d(a_o!!);
+    int bd = plain_monthday_d(b_o!!);
+    int cmp = 0;
+    if (am != bm) { cmp = am < bm ? -1 : 1; }
+    else if (ad != bd) { cmp = ad < bd ? -1 : 1; }
+    ctx.result.set_fastint((long)cmp);
+}
+
+fn void builtin_temporal_plain_monthday_proto_year(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)plain_monthday_year(obj));
+}
+
+fn void builtin_temporal_plain_monthday_proto_month(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)plain_monthday_m(obj));
+}
+
+fn void builtin_temporal_plain_monthday_proto_monthCode(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    int m = plain_monthday_m(obj);
+    char[5] buf;
+    usz len;
+    if (m < 10) {
+        len = (usz)libc::snprintf(&buf, 5, "M0%d", m);
+    } else {
+        len = (usz)libc::snprintf(&buf, 5, "M%d", m);
+    }
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+}
+
+fn void builtin_temporal_plain_monthday_proto_day(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)plain_monthday_d(obj));
+}
+
+fn void builtin_temporal_plain_monthday_proto_calendarId(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
+}
+
+fn void builtin_temporal_plain_monthday_proto_calendar(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    HObject* cal = obj.extra.temporal.calendar;
+    if (cal != null) {
+        ctx.result.set_object(cal);
+    } else {
+        ctx.result.set_object(ctx.heap.temporal_iso_calendar);
+    }
+}
+
+fn void builtin_temporal_plain_monthday_proto_era(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    ctx.result.set_undefined();
+}
+
+fn void builtin_temporal_plain_monthday_proto_eraYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    ctx.result.set_undefined();
+}
+
+fn void builtin_temporal_plain_monthday_proto_inLeapYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_boolean(temporal::is_leap_year((long)plain_monthday_year(obj)));
+}
+
+fn void builtin_temporal_plain_monthday_proto_daysInMonth(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)temporal::days_in_month((long)plain_monthday_year(obj), plain_monthday_m(obj)));
+}
+
+fn void builtin_temporal_plain_monthday_proto_valueOf(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay cannot be converted to a primitive number");
+}
+
+fn void builtin_temporal_plain_monthday_proto_toString(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    int y = plain_monthday_year(obj);
+    int m = plain_monthday_m(obj);
+    int d = plain_monthday_d(obj);
+
+    bool show_calendar = false;
+    bool critical = false;
+    if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
+        TVal ov = ctx.regs[ctx.base_reg];
+        if (!ov.is_object() || ov.get_heapptr() == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+            return;
+        }
+        HObject* opts = (HObject*)ov.get_heapptr();
+        TVal cn = prop_or_undefined(opts, ctx.heap, "calendarName");
+        if (!cn.is_undefined()) {
+            if (!cn.is_string()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "calendarName must be a string");
+                return;
+            }
+            HString* s = (HString*)cn.get_heapptr();
+            char[] v = s.get_cstr()[:s.blen];
+            if (v == "auto") { show_calendar = false; }
+            else if (v == "always") { show_calendar = true; }
+            else if (v == "critical") { show_calendar = true; critical = true; }
+            else if (v == "never") { show_calendar = false; }
+            else {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName");
+                return;
+            }
+        }
+    }
+
+    char[48] buf;
+    usz len;
+    if (y < 0) {
+        len = (usz)libc::snprintf(&buf, 48, "-%06d-%02d-%02d", -y, m, d);
+    } else if (y > 9999) {
+        len = (usz)libc::snprintf(&buf, 48, "+%06d-%02d-%02d", y, m, d);
+    } else {
+        len = (usz)libc::snprintf(&buf, 48, "%04d-%02d-%02d", y, m, d);
+    }
+    if (show_calendar) {
+        char[] ann = critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]";
+        for (usz k = 0; k < ann.len; k++) buf[len++] = ann[k];
+    }
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+}
+
+fn void builtin_temporal_plain_monthday_proto_toJSON(BuiltinContext* ctx) {
+    builtin_temporal_plain_monthday_proto_toString(ctx);
+}
+
+fn void builtin_temporal_plain_monthday_proto_equals(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* other = (HObject*)arg.get_heapptr();
+        if (other.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY) {
+            int am = plain_monthday_m(obj);
+            int bm = plain_monthday_m(other);
+            int ad = plain_monthday_d(obj);
+            int bd = plain_monthday_d(other);
+            bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
+            ctx.result.set_boolean(same_cal && am == bm && ad == bd);
+            return;
+        }
+    }
+    ctx.result.set_boolean(false);
+}
+
+fn void builtin_temporal_plain_monthday_proto_with(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires a fields bag");
+        return;
+    }
+    TVal* arg = arg_at(ctx, 0);
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires an object");
+        return;
+    }
+    HObject* bag = (HObject*)arg.get_heapptr();
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    Vm* v = (Vm*)ctx.vm;
+
+    int y; int m; int d;
+    if (!bag_to_monthday_fields(ctx, bag, true,
+                                plain_monthday_year(obj), plain_monthday_m(obj), plain_monthday_d(obj),
+                                &y, &m, &d)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    int vy; int vm; int vd;
+    if (!fields_to_valid_monthday(ctx, y, m, d, overflow, &vy, &vm, &vd)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    HObject*? obj_o = alloc_plain_monthday(ctx.heap, vy, vm, vd, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_monthday_proto;
+    ctx.result.set_object(obj2);
+}
+
+// PlainMonthDay.until/since: difference in days between the two month/day
+// pairs, anchored to the reference year. The spec chooses the smaller of the
+// forward and backward arc around the year (so Dec 25 -> Jan 1 is 7 days,
+// not 358).
+fn void plain_monthday_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) {
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "until/since requires another month-day");
+        return;
+    }
+    HObject*? other_o = plain_monthday_from_arg(ctx, arg_at(ctx, 0));
+    if (ctx.should_throw) return;
+    HObject* other = other_o!!;
+
+    HObject* this_cal = obj.extra.temporal.calendar;
+    HObject* other_cal = other.extra.temporal.calendar;
+    if (this_cal != other_cal || this_cal == null) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "calendars do not match");
+        return;
+    }
+
+    int am = plain_monthday_m(obj);
+    int ad = plain_monthday_d(obj);
+    int bm = plain_monthday_m(other);
+    int bd = plain_monthday_d(other);
+    int y = plain_monthday_year(obj);
+    // Use a non-leap reference year so Feb 29 (if any) coerces to Feb 28;
+    // 1971 is the year before the 1972 default. Either way the day delta
+    // is computed as a difference of two CivilDates.
+    long yref = (long)(temporal::is_leap_year((long)y) ? y : y);
+    long epoch_a = temporal::epoch_days_from_civil(yref, am, ad);
+    long epoch_b = temporal::epoch_days_from_civil(yref, bm, bd);
+    long forward = epoch_b - epoch_a;
+    long year_days = temporal::epoch_days_from_civil(yref + 1, 1, 1) - temporal::epoch_days_from_civil(yref, 1, 1);
+    long backward = forward > 0 ? forward - year_days : forward + year_days;
+    long chosen;
+    if (forward == 0) {
+        chosen = 0;
+    } else if (math::abs(forward) <= math::abs(backward)) {
+        chosen = forward;
+    } else {
+        chosen = backward;
+    }
+    if (flipped) chosen = -chosen;
+
+    temporal::DurationParts dur;
+    dur.years = 0;
+    dur.months = 0;
+    dur.weeks = 0;
+    dur.days = chosen;
+    dur.hours = 0; dur.minutes = 0; dur.seconds = 0;
+    dur.ms = 0; dur.us = 0; dur.ns = 0;
+
+    HObject*? dur_o = alloc_duration(ctx.heap, dur);
+    if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* dur_obj = dur_o;
+    dur_obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(dur_obj);
+}
+
+fn void builtin_temporal_plain_monthday_proto_until(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    plain_monthday_until_since(ctx, (HObject*)this_val.get_heapptr(), false);
+}
+
+fn void builtin_temporal_plain_monthday_proto_since(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    plain_monthday_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
+}
+
+fn HObject*? plain_monthday_from_arg(BuiltinContext* ctx, TVal* arg) {
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY) return o;
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument is not a Temporal.PlainMonthDay");
+        return null;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainMonthDay");
+    return null;
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -3241,6 +4428,144 @@ fn bool setUpTemporalPlainDateTime(Heap* heap) {
     return true;
 }
 
+fn bool setUpTemporalPlainYearMonth(Heap* heap) {
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return false;
+    HObject* proto = proto_raw;
+    proto.prototype = heap.object_proto;
+
+    HString* tag_key = ensure_tostringtag_symbol(heap);
+    if (tag_key != null) {
+        TVal tag_tv;
+        tag_tv.set_string(builtin_intern_string(heap, "Temporal.PlainYearMonth"));
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return false;
+    HObject* ctor = ctor_raw;
+    ctor.prototype = heap.function_proto;
+    ctor.flags.constructable = true;
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.TEMPORAL_PLAIN_YEARMONTH_CTOR.ordinal;
+
+    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal constructor_tv;
+    constructor_tv.set_object(ctor);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    TVal proto_tv;
+    proto_tv.set_object(proto);
+    PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    proto_pflags.is_accessor = false;
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    TVal length_tv;
+    length_tv.set_fastint(2);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
+
+    set_func_ctor_name(ctor, heap, "PlainYearMonth");
+
+    if (!register_proto_getter_accessor(proto, heap, "year", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "month", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTH.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "monthCode", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHCODE.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "day", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAY.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInMonth", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINMONTH.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "monthsInYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHSINYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "inLeapYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_INLEAPYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "calendarId", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_CALENDARID.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "calendar", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_CALENDAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "era", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ERA.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "eraYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ERAYEAR.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_VALUEOF.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_EQUALS.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WITH.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ADD.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_SUBTRACT.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_UNTIL.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_SINCE.ordinal)) return false;
+
+    if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_YEARMONTH_FROM.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_YEARMONTH_COMPARE.ordinal)) return false;
+
+    heap.temporal_plain_yearmonth_proto = proto;
+    return true;
+}
+
+fn bool setUpTemporalPlainMonthDay(Heap* heap) {
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return false;
+    HObject* proto = proto_raw;
+    proto.prototype = heap.object_proto;
+
+    HString* tag_key = ensure_tostringtag_symbol(heap);
+    if (tag_key != null) {
+        TVal tag_tv;
+        tag_tv.set_string(builtin_intern_string(heap, "Temporal.PlainMonthDay"));
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return false;
+    HObject* ctor = ctor_raw;
+    ctor.prototype = heap.function_proto;
+    ctor.flags.constructable = true;
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.TEMPORAL_PLAIN_MONTHDAY_CTOR.ordinal;
+
+    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal constructor_tv;
+    constructor_tv.set_object(ctor);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    TVal proto_tv;
+    proto_tv.set_object(proto);
+    PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    proto_pflags.is_accessor = false;
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    TVal length_tv;
+    length_tv.set_fastint(2);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
+
+    set_func_ctor_name(ctor, heap, "PlainMonthDay");
+
+    if (!register_proto_getter_accessor(proto, heap, "year", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_YEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "month", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTH.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "monthCode", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTHCODE.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "day", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_DAY.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "calendarId", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_CALENDARID.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "calendar", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_CALENDAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "era", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_ERA.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "eraYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_ERAYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "inLeapYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_INLEAPYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInMonth", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYSINMONTH.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_VALUEOF.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_EQUALS.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_WITH.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_UNTIL.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_SINCE.ordinal)) return false;
+
+    if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_MONTHDAY_FROM.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_MONTHDAY_COMPARE.ordinal)) return false;
+
+    heap.temporal_plain_monthday_proto = proto;
+    return true;
+}
+
 fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     HObject*? ns_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ns_raw) return false;
@@ -3257,8 +4582,8 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     // getOwnPropertyNames for the namespace must include every public name,
     // even the types that have not landed yet; they surface as undefined
     // values (non-enumerable) so no test observes a gap.
-    char[][] stub_names = { "Instant", "ZonedDateTime", "PlainYearMonth", "PlainMonthDay" };
-    for (int k = 0; k < 4; k++) {
+    char[][] stub_names = { "Instant", "ZonedDateTime" };
+    for (int k = 0; k < 2; k++) {
         HString* key = heap.str_intern(stub_names[k]);
         if (key == null) return false;
         TVal undef;
@@ -3271,7 +4596,8 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     now_undef.set_undefined();
     ns.put_prop(now_key, now_undef, hobject::PROP_FLAGS_NWC, heap);
 
-    // Real constructors: PlainDate, Calendar, Duration, PlainTime, PlainDateTime.
+    // Real constructors: PlainDate, Calendar, Duration, PlainTime, PlainDateTime,
+    // PlainYearMonth, PlainMonthDay.
     // The namespace wiring walks back through each prototype's .constructor property.
     HString* ctor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal undef;
@@ -3305,6 +4631,18 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     TVal pdt_ctor = heap.temporal_plain_datetime_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (pdt_ctor.is_object() && pdt_ctor.get_heapptr() != null) {
         ns.put_prop(pdt_key, pdt_ctor, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HString* pym_key = builtin_intern_string(heap, "PlainYearMonth");
+    TVal pym_ctor = heap.temporal_plain_yearmonth_proto.get_prop((void*)ctor_key, heap) ?? undef;
+    if (pym_ctor.is_object() && pym_ctor.get_heapptr() != null) {
+        ns.put_prop(pym_key, pym_ctor, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HString* pmd_key = builtin_intern_string(heap, "PlainMonthDay");
+    TVal pmd_ctor = heap.temporal_plain_monthday_proto.get_prop((void*)ctor_key, heap) ?? undef;
+    if (pmd_ctor.is_object() && pmd_ctor.get_heapptr() != null) {
+        ns.put_prop(pmd_key, pmd_ctor, hobject::PROP_FLAGS_NWC, heap);
     }
 
     TVal ns_tv;

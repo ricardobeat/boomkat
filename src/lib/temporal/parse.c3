@@ -273,6 +273,96 @@ fn bool parse_iso_date_string(char[] text, ParsedIsoDateTime* out) {
     return true;
 }
 
+// Parse a year-month string (`YYYY-MM`, optional basic `YYYYMM`, optional
+// `±YYYYYY-MM`). The day field is left at 1 by default. Used by
+// Temporal.PlainYearMonth.from when the input is a string.
+fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
+    usz len = text.len;
+    usz i = 0;
+
+    long sign = 1;
+    bool signed_year = false;
+    if (i < len && (text[i] == '+' || text[i] == '-')) {
+        if (text[i] == '-') sign = -1;
+        signed_year = true;
+        i += 1;
+    }
+    usz y_start = i;
+    while (i < len && digit_at(text, i) >= 0 && (i - y_start) < (usz)(signed_year ? 6 : 4)) i += 1;
+    usz y_digits = i - y_start;
+    if (y_digits != 4 && !(signed_year && y_digits == 6)) return false;
+    long y = 0;
+    for (usz k = y_start; k < i; k++) y = y * 10 + (long)digit_at(text, k);
+    if (sign < 0 && y == 0) return false;
+    out.year = sign * y;
+
+    bool date_sep = false;
+    if (i < len && text[i] == '-') { date_sep = true; i += 1; }
+    if (!parse_two_digits(text, &i, &out.month)) return false;
+    if (date_sep && i < len && digit_at(text, i) >= 0) return false;  // YYYY-MM-DD is a date string, not year-month
+    if (i < len) {
+        if (text[i] != '[') return false;
+        usz cal_start, cal_len;
+        if (!parse_annotations(text, &i, &cal_start, &cal_len)) return false;
+        if (cal_len != 0) {
+            char[] cal = text[cal_start..cal_start + cal_len];
+            if (!ci_equals(cal, "iso8601")) return false;
+        }
+        if (i != len) return false;
+    }
+    out.day = 1;
+    out.has_time = false;
+    out.hour = 0;
+    out.minute = 0;
+    out.second = 0;
+    out.nanos = 0;
+    return true;
+}
+
+// Parse a month-day string (`--MM-DD` per ISO 8601, or bare `MM-DD`).
+// The `--` prefix is the standard ISO 8601 "no year" marker for month-day
+// strings. The year field is left at 0; the reference year default in the
+// caller (1972) fills it in.
+fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
+    usz len = text.len;
+    usz i = 0;
+
+    // Optional `--` prefix marks a year-less month-day string.
+    bool has_year_omitted = false;
+    if (i + 1 < len && text[i] == '-' && text[i + 1] == '-') {
+        has_year_omitted = true;
+        i += 2;
+    }
+
+    usz m_start = i;
+    while (i < len && digit_at(text, i) >= 0 && (i - m_start) < 2) i += 1;
+    if (i - m_start != 2) return false;
+    long m = (long)digit_at(text, m_start) * 10 + (long)digit_at(text, m_start + 1);
+    out.month = (int)m;
+
+    if (i >= len || text[i] != '-') return false;
+    i += 1;
+    if (!parse_two_digits(text, &i, &out.day)) return false;
+    if (i < len) {
+        if (text[i] != '[') return false;
+        usz cal_start, cal_len;
+        if (!parse_annotations(text, &i, &cal_start, &cal_len)) return false;
+        if (cal_len != 0) {
+            char[] cal = text[cal_start..cal_start + cal_len];
+            if (!ci_equals(cal, "iso8601")) return false;
+        }
+        if (i != len) return false;
+    }
+    out.year = 0;
+    out.has_time = false;
+    out.hour = 0;
+    out.minute = 0;
+    out.second = 0;
+    out.nanos = 0;
+    (void)has_year_omitted;
+    return true;
+}
+
 // Parse a time-only ISO 8601 string (`HH[:MM[:SS[.frac]]]`, optional `Z` or
 // `±HH:MM` offset). Used by Temporal.PlainTime.from when the input is a bare
 // time string. Returns false on grammar violations.

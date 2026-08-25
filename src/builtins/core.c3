@@ -872,6 +872,50 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_PLAIN_DATETIME_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_plain_datetime_proto_subtract},
     TEMPORAL_PLAIN_DATETIME_PROTO_UNTIL {"until", 1, &builtin_temporal_plain_datetime_proto_until},
     TEMPORAL_PLAIN_DATETIME_PROTO_SINCE {"since", 1, &builtin_temporal_plain_datetime_proto_since},
+    TEMPORAL_PLAIN_YEARMONTH_CTOR {"PlainYearMonth", 2, &builtin_temporal_plain_yearmonth_ctor},
+    TEMPORAL_PLAIN_YEARMONTH_FROM {"from", 1, &builtin_temporal_plain_yearmonth_from},
+    TEMPORAL_PLAIN_YEARMONTH_COMPARE {"compare", 2, &builtin_temporal_plain_yearmonth_compare},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAR {"year", 0, &builtin_temporal_plain_yearmonth_proto_year},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTH {"month", 0, &builtin_temporal_plain_yearmonth_proto_month},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHCODE {"monthCode", 0, &builtin_temporal_plain_yearmonth_proto_monthCode},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAY {"day", 0, &builtin_temporal_plain_yearmonth_proto_day},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINMONTH {"daysInMonth", 0, &builtin_temporal_plain_yearmonth_proto_daysInMonth},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINYEAR {"daysInYear", 0, &builtin_temporal_plain_yearmonth_proto_daysInYear},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHSINYEAR {"monthsInYear", 0, &builtin_temporal_plain_yearmonth_proto_monthsInYear},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_INLEAPYEAR {"inLeapYear", 0, &builtin_temporal_plain_yearmonth_proto_inLeapYear},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_CALENDARID {"calendarId", 0, &builtin_temporal_plain_yearmonth_proto_calendarId},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_CALENDAR {"calendar", 0, &builtin_temporal_plain_yearmonth_proto_calendar},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_ERA {"era", 0, &builtin_temporal_plain_yearmonth_proto_era},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_ERAYEAR {"eraYear", 0, &builtin_temporal_plain_yearmonth_proto_eraYear},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_VALUEOF {"valueOf", 0, &builtin_temporal_plain_yearmonth_proto_valueOf},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_TOSTRING {"toString", 0, &builtin_temporal_plain_yearmonth_proto_toString},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_TOJSON {"toJSON", 0, &builtin_temporal_plain_yearmonth_proto_toJSON},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_EQUALS {"equals", 1, &builtin_temporal_plain_yearmonth_proto_equals},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_WITH {"with", 1, &builtin_temporal_plain_yearmonth_proto_with},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_ADD {"add", 1, &builtin_temporal_plain_yearmonth_proto_add},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_plain_yearmonth_proto_subtract},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_UNTIL {"until", 1, &builtin_temporal_plain_yearmonth_proto_until},
+    TEMPORAL_PLAIN_YEARMONTH_PROTO_SINCE {"since", 1, &builtin_temporal_plain_yearmonth_proto_since},
+    TEMPORAL_PLAIN_MONTHDAY_CTOR {"PlainMonthDay", 2, &builtin_temporal_plain_monthday_ctor},
+    TEMPORAL_PLAIN_MONTHDAY_FROM {"from", 1, &builtin_temporal_plain_monthday_from},
+    TEMPORAL_PLAIN_MONTHDAY_COMPARE {"compare", 2, &builtin_temporal_plain_monthday_compare},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_YEAR {"year", 0, &builtin_temporal_plain_monthday_proto_year},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTH {"month", 0, &builtin_temporal_plain_monthday_proto_month},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTHCODE {"monthCode", 0, &builtin_temporal_plain_monthday_proto_monthCode},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_DAY {"day", 0, &builtin_temporal_plain_monthday_proto_day},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_CALENDARID {"calendarId", 0, &builtin_temporal_plain_monthday_proto_calendarId},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_CALENDAR {"calendar", 0, &builtin_temporal_plain_monthday_proto_calendar},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_ERA {"era", 0, &builtin_temporal_plain_monthday_proto_era},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_ERAYEAR {"eraYear", 0, &builtin_temporal_plain_monthday_proto_eraYear},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_INLEAPYEAR {"inLeapYear", 0, &builtin_temporal_plain_monthday_proto_inLeapYear},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYSINMONTH {"daysInMonth", 0, &builtin_temporal_plain_monthday_proto_daysInMonth},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_VALUEOF {"valueOf", 0, &builtin_temporal_plain_monthday_proto_valueOf},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_TOSTRING {"toString", 0, &builtin_temporal_plain_monthday_proto_toString},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_TOJSON {"toJSON", 0, &builtin_temporal_plain_monthday_proto_toJSON},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_EQUALS {"equals", 1, &builtin_temporal_plain_monthday_proto_equals},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_WITH {"with", 1, &builtin_temporal_plain_monthday_proto_with},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_UNTIL {"until", 1, &builtin_temporal_plain_monthday_proto_until},
+    TEMPORAL_PLAIN_MONTHDAY_PROTO_SINCE {"since", 1, &builtin_temporal_plain_monthday_proto_since},
     LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -4015,6 +4059,8 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!setUpTemporalPlainDate(heap)) return false;
     if (!setUpTemporalPlainTime(heap)) return false;
     if (!setUpTemporalPlainDateTime(heap)) return false;
+    if (!setUpTemporalPlainYearMonth(heap)) return false;
+    if (!setUpTemporalPlainMonthDay(heap)) return false;
     if (!setUpTemporalNamespace(global_env, heap)) return false;
 
     // Wire all prototype chains to Object.prototype

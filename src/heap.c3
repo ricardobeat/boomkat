@@ -724,6 +724,8 @@ struct Heap {
     HObject* temporal_plain_date_proto;
     HObject* temporal_plain_time_proto;
     HObject* temporal_plain_datetime_proto;
+    HObject* temporal_plain_yearmonth_proto;
+    HObject* temporal_plain_monthday_proto;
 
     // Generator resume state (set by .next()/.throw()/.return() builtins,
     // read by the VM CALL handler and YIELD/RET opcodes).
@@ -3043,6 +3045,8 @@ fn void Heap.drain_gray(&self) {
             case ObjClass.TEMPORAL_PLAIN_DATE:
             case ObjClass.TEMPORAL_PLAIN_TIME:
             case ObjClass.TEMPORAL_PLAIN_DATETIME:
+            case ObjClass.TEMPORAL_PLAIN_YEARMONTH:
+            case ObjClass.TEMPORAL_PLAIN_MONTHDAY:
                 self.mark_temporal(&(*obj.extra_ptr()).temporal);
                 break;
             default:
@@ -3143,6 +3147,8 @@ fn void Heap.mark_roots(&self) {
     if (self.temporal_plain_date_proto != null) { self.mark_hobject(self.temporal_plain_date_proto); }
     if (self.temporal_plain_time_proto != null) { self.mark_hobject(self.temporal_plain_time_proto); }
     if (self.temporal_plain_datetime_proto != null) { self.mark_hobject(self.temporal_plain_datetime_proto); }
+    if (self.temporal_plain_yearmonth_proto != null) { self.mark_hobject(self.temporal_plain_yearmonth_proto); }
+    if (self.temporal_plain_monthday_proto != null) { self.mark_hobject(self.temporal_plain_monthday_proto); }
 
     // Every live slot on the VM value stack, from base to top, can reference a
     // heap object or string.

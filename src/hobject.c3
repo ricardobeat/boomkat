@@ -165,6 +165,8 @@ enum ObjClass : char {
     TEMPORAL_PLAIN_DATE,      // Temporal.PlainDate
     TEMPORAL_PLAIN_TIME,      // Temporal.PlainTime
     TEMPORAL_PLAIN_DATETIME,  // Temporal.PlainDateTime
+    TEMPORAL_PLAIN_YEARMONTH, // Temporal.PlainYearMonth
+    TEMPORAL_PLAIN_MONTHDAY,  // Temporal.PlainMonthDay
     TEMPORAL_DURATION,        // Temporal.Duration
 }
 
