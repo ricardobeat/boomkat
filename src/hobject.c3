@@ -751,6 +751,10 @@ union HObjectExtra {
 //   HObjectBufferView::size       = 32
 //   INLINE_EXTRA                  = 32
 //   OBJ_SIZE_FUNC                 = 204
+// All ten Duration slots are widened to `long` so values up to 2^32 - 1 fit
+// without overflow. ms/us/ns are usually small (0..999) but can hold the
+// whole diff when `largestUnit` is finer than seconds. PlainTime / PlainDate
+// fields continue to use `long` too (see slot assignments below).
 struct HObjectTemporal {
     HBigInt*        big_ns;
     long            long_a;
@@ -760,9 +764,9 @@ struct HObjectTemporal {
     long            long_e;
     long            long_f;
     long            long_g;
-    int             int_h;
-    int             int_i;
-    int             int_j;
+    long            long_h;
+    long            long_i;
+    long            long_j;
     HObject*        calendar;
     HObject*        timezone;
 }

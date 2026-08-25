@@ -393,3 +393,144 @@ fn bool parse_iso_time_string(char[] text, ParsedIsoDateTime* out) {
     out.day = 1;
     return true;
 }
+
+// Result of `parse_iso_instant_string`. The caller computes the UTC ns from
+// these fields: `epoch_days * 86400 * 1e9 + sec_of_day * 1e9 + nanos -
+// offset_seconds * 1e9`.
+struct ParsedIsoInstant {
+    long y;
+    int  m;
+    int  d;
+    int  hour;
+    int  minute;
+    int  second;
+    long nanos;
+    long offset_seconds;
+}
+
+// Parse a full date+time ISO string with a mandatory `Z` or offset. Plain
+// date or plain time without an offset is rejected — an Instant must be a
+// moment. Used by ToTemporalInstant for Instant.since/Instant.until.
+fn bool parse_iso_instant_string(char[] text, ParsedIsoInstant* out) {
+    usz len = text.len;
+    usz i = 0;
+
+    // --- Date: year / month / day (extended form `YYYY-MM-DD` or basic
+    // `YYYYMMDD`; signed `±YYYYYY-MM-DD` accepted) ---
+    long sign = 1;
+    bool signed_year = false;
+    if (i < len && (text[i] == '+' || text[i] == '-')) {
+        if (text[i] == '-') sign = -1;
+        signed_year = true;
+        i += 1;
+    }
+    usz y_start = i;
+    while (digit_at(text, i) >= 0 && (i - y_start) < (usz)(signed_year ? 6 : 4)) i += 1;
+    usz y_digits = i - y_start;
+    if (y_digits != 4 && !(signed_year && y_digits == 6)) return false;
+    long y = 0;
+    for (usz k = y_start; k < i; k++) y = y * 10 + (long)digit_at(text, k);
+    if (sign < 0 && y == 0) return false;
+    out.y = sign * y;
+
+    bool date_sep = false;
+    if (i < len && text[i] == '-') { date_sep = true; i += 1; }
+    int month;
+    if (!parse_two_digits(text, &i, &month)) return false;
+    if (month < 1 || month > 12) return false;
+    // Day: extended form requires another '-' before the two digits, basic
+    // form requires the next two chars to be digits.
+    if (i < len && text[i] == '-') {
+        if (!date_sep) return false;
+        i += 1;
+    } else {
+        if (date_sep) return false;
+        // Basic form: require two more digits, no separator before time.
+        if (!parse_two_digits(text, &i, &month)) return false; // would re-read; bail
+        // Actually, rewind and parse the day as the next two digits.
+        i -= 2;
+    }
+    int day;
+    if (!parse_two_digits(text, &i, &day)) return false;
+
+    // --- Time separator (T or space) ---
+    if (i >= len || (text[i] != 'T' && text[i] != ' ')) return false;
+    i += 1;
+
+    int hour, mi, s;
+    long nanos;
+    if (!parse_time(text, &i, &hour, &mi, &s, &nanos)) return false;
+    if (hour == 24) {
+        if (mi != 0 || s != 0 || nanos != 0) return false;
+        hour = 0;
+    }
+    if (mi > 59) return false;
+    if (s > 60) return false;
+    if (s == 60) s = 59;
+
+    // --- Offset: required for an Instant ---
+    if (i >= len) return false;
+    long off_sec = 0;
+    if (text[i] == 'Z' || text[i] == 'z') {
+        i += 1;
+    } else if (text[i] == '+' || text[i] == '-') {
+        bool negative = (text[i] == '-');
+        i += 1;
+        int oh;
+        int omi = 0;
+        if (!parse_two_digits(text, &i, &oh)) return false;
+        bool sep = false;
+        if (i < len && text[i] == ':') { sep = true; i += 1; }
+        else if (digit_at(text, i) < 0) { /* ±HH, no minutes */ }
+        if (digit_at(text, i) >= 0) {
+            if (!parse_two_digits(text, &i, &omi)) return false;
+            // optional :SS[.frac] in extended offset form (±HH:MM:SS.fff)
+            if (i < len && text[i] == ':' && sep) {
+                i += 1;
+                int os;
+                if (!parse_two_digits(text, &i, &os)) return false;
+                if (i < len && text[i] == '.') {
+                    if (!parse_fraction(text, &i, &nanos)) return false;
+                }
+            } else if (i < len && text[i] == '.' && !sep) {
+                // basic offset form ±HHMM.frac or ±HH.frac — sub-minute only
+                // after HHMM; an HH-only basic offset cannot carry a fraction.
+                if (omi == 0 && omi != 0) return false; // unreachable; keep parser explicit
+                i += 1;
+                if (!parse_fraction(text, &i, &nanos)) return false;
+            } else if (!sep && i < len && digit_at(text, i) >= 0) {
+                // basic offset form ±HHMMSS.frac — SS attached directly.
+                int os;
+                if (!parse_two_digits(text, &i, &os)) return false;
+                if (i < len && text[i] == '.') {
+                    if (!parse_fraction(text, &i, &nanos)) return false;
+                }
+            }
+        }
+        if (oh > 23) return false;
+        long off = (long)oh * 3600 + (long)omi * 60;
+        off_sec = negative ? -off : off;
+    } else {
+        return false;
+    }
+
+    if (i < len) {
+        if (text[i] != '[') return false;
+        usz cal_start, cal_len;
+        if (!parse_annotations(text, &i, &cal_start, &cal_len)) return false;
+        if (cal_len != 0) {
+            char[] cal = text[cal_start..cal_start + cal_len];
+            if (!ci_equals(cal, "iso8601")) return false;
+        }
+        if (i != len) return false;
+    }
+
+    out.m = month;
+    out.d = day;
+    out.hour = hour;
+    out.minute = mi;
+    out.second = s;
+    out.nanos = nanos;
+    out.offset_seconds = off_sec;
+    return true;
+}

@@ -85,6 +85,24 @@ assertEq(sub.seconds, 0, "sub.seconds");
 assertEq(sub.microseconds, 1, "sub.microseconds");
 assertEq(sub.nanoseconds, 500, "sub.nanoseconds");
 
+// largestUnit scales the chosen unit; sub-units are truncated toward zero.
+var hdiff = new Temporal.Instant(3601500000000n).since(one, { largestUnit: "seconds" });
+assertEq(hdiff.seconds, 3600, "largestUnit seconds .seconds");
+assertEq(hdiff.milliseconds, 500, "largestUnit seconds .milliseconds");
+
+// ToTemporalInstant: string argument is parsed as ISO instant.
+var fromstr = new Temporal.Instant(0n).since("1970-01-01T00:00:01Z");
+assertEq(fromstr.seconds, -1, "since accepts ISO string");
+
+// ToTemporalInstant: non-objects / non-strings throw TypeError; empty /
+// unparseable strings throw RangeError.
+var threwType = false, threwRange = false;
+try { new Temporal.Instant(0n).since(undefined); } catch (e) { threwType = e instanceof TypeError; }
+try { new Temporal.Instant(0n).since(""); } catch (e) { threwRange = e instanceof RangeError; }
+assertEq(threwType, true, "since(undefined) -> TypeError");
+assertEq(threwRange, true, "since('') -> RangeError");
+
+
 // valueOf throws (not coercible to primitive).
 var threw = false;
 try { var _v = one + 1; } catch (e) { threw = true; }

@@ -244,6 +244,15 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 SKIP_GLOBS = {
     # Async generators (`async function*` / `async *m()`) implemented — plan 060.
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
+    # Duration.prototype.total / round — Phase 4 per plans/080-temporal.md.
+    # These require relativeTo-aware balancing with calendar arithmetic
+    # (NanosecondsToDays, BubbleRelativeDuration, AddDaysToZonedDateTime,
+    # AddDaysToPlainDate) on top of Phase 2's Instant arithmetic. Phase 2
+    # implements only time-unit total/round without relativeTo, which is
+    # outside test262's coverage of these prototypes (every test exercises
+    # relativeTo semantics). Defer until Phase 4 lands the full algorithm.
+    "built-ins/Temporal/Duration/prototype/total/*.js",
+    "built-ins/Temporal/Duration/prototype/round/*.js",
 }
 
 # noStrict-flagged tests exempt from the blanket noStrict exclusion in

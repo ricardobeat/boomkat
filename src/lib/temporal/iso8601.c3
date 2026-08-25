@@ -48,9 +48,9 @@ struct DurationParts {
     long hours;
     long minutes;
     long seconds;
-    int  ms;
-    int  us;
-    int  ns;
+    long ms;
+    long us;
+    long ns;
 }
 
 // Format a DurationParts as ISO 8601. All zero -> "PT0S". The seconds field

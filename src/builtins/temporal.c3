@@ -85,8 +85,8 @@ fn HObject*? alloc_plain_datetime(Heap* hp, temporal::CivilDateTime dt, HObject*
     obj.extra.temporal.long_e = dt.time.mi;
     obj.extra.temporal.long_f = dt.time.s;
     obj.extra.temporal.long_g = dt.time.ms;
-    obj.extra.temporal.int_h = (int)dt.time.us;
-    obj.extra.temporal.int_i = (int)dt.time.ns;
+    obj.extra.temporal.long_h = (int)dt.time.us;
+    obj.extra.temporal.long_i = (int)dt.time.ns;
     obj.extra.temporal.calendar = calendar;
     return obj;
 }
@@ -130,9 +130,9 @@ fn HObject*? alloc_duration(Heap* hp, temporal::DurationParts d) {
     obj.extra.temporal.long_e = (long)d.hours;
     obj.extra.temporal.long_f = (long)d.minutes;
     obj.extra.temporal.long_g = (long)d.seconds;
-    obj.extra.temporal.int_h = d.ms;
-    obj.extra.temporal.int_i = d.us;
-    obj.extra.temporal.int_j = d.ns;
+    obj.extra.temporal.long_h = d.ms;
+    obj.extra.temporal.long_i = d.us;
+    obj.extra.temporal.long_j = d.ns;
     return obj;
 }
 
@@ -163,8 +163,8 @@ fn temporal::CivilDateTime plain_datetime_value(HObject* obj) {
             .mi = obj.extra.temporal.long_e,
             .s  = obj.extra.temporal.long_f,
             .ms = obj.extra.temporal.long_g,
-            .us = obj.extra.temporal.int_h,
-            .ns = obj.extra.temporal.int_i,
+            .us = obj.extra.temporal.long_h,
+            .ns = obj.extra.temporal.long_i,
         },
     };
 }
@@ -190,9 +190,9 @@ fn temporal::DurationParts duration_value(HObject* obj) {
     d.hours   = obj.extra.temporal.long_e;
     d.minutes = obj.extra.temporal.long_f;
     d.seconds = obj.extra.temporal.long_g;
-    d.ms      = obj.extra.temporal.int_h;
-    d.us      = obj.extra.temporal.int_i;
-    d.ns      = obj.extra.temporal.int_j;
+    d.ms      = obj.extra.temporal.long_h;
+    d.us      = obj.extra.temporal.long_i;
+    d.ns      = obj.extra.temporal.long_j;
     return d;
 }
 
@@ -777,9 +777,9 @@ fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
             case 4: d.hours = whole; d.ns += (int)((val - (double)whole) * 3.6e12); break;
             case 5: d.minutes = whole; d.ns += (int)((val - (double)whole) * 6e10); break;
             case 6: d.seconds = whole; d.ns += (int)((val - (double)whole) * 1e9); break;
-            case 7: d.ms = (int)whole; d.ns += (int)((val - (double)whole) * 1e6); break;
-            case 8: d.us = (int)whole; d.ns += (int)((val - (double)whole) * 1e3); break;
-            default: d.ns = (int)whole; break;
+            case 7: d.ms = whole; d.ns += (int)((val - (double)whole) * 1e6); break;
+            case 8: d.us = whole; d.ns += (int)((val - (double)whole) * 1e3); break;
+            default: d.ns = whole; break;
         }
         if (date_unit && math::floor(val) != val) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "years/months/weeks/days must be integers");
@@ -843,9 +843,9 @@ fn void builtin_temporal_duration_from(BuiltinContext* ctx) {
                     case 4: d.hours = whole; d.ns += (int)((val - (double)whole) * 3.6e12); break;
                     case 5: d.minutes = whole; d.ns += (int)((val - (double)whole) * 6e10); break;
                     case 6: d.seconds = whole; d.ns += (int)((val - (double)whole) * 1e9); break;
-                    case 7: d.ms = (int)whole; d.ns += (int)((val - (double)whole) * 1e6); break;
-                    case 8: d.us = (int)whole; d.ns += (int)((val - (double)whole) * 1e3); break;
-                    default: d.ns = (int)whole; break;
+                    case 7: d.ms = whole; d.ns += (int)((val - (double)whole) * 1e6); break;
+                    case 8: d.us = whole; d.ns += (int)((val - (double)whole) * 1e3); break;
+                    default: d.ns = whole; break;
                 }
             }
         }
@@ -874,9 +874,9 @@ fn void builtin_temporal_duration_getter(BuiltinContext* ctx) {
         case Builtin.TEMPORAL_DURATION_PROTO_HOURS:        val = (double)obj.extra.temporal.long_e; break;
         case Builtin.TEMPORAL_DURATION_PROTO_MINUTES:      val = (double)obj.extra.temporal.long_f; break;
         case Builtin.TEMPORAL_DURATION_PROTO_SECONDS:      val = (double)obj.extra.temporal.long_g; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MILLISECONDS: val = (double)obj.extra.temporal.int_h; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MICROSECONDS: val = (double)obj.extra.temporal.int_i; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_NANOSECONDS:  val = (double)obj.extra.temporal.int_j; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_MILLISECONDS: val = (double)obj.extra.temporal.long_h; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_MICROSECONDS: val = (double)obj.extra.temporal.long_i; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_NANOSECONDS:  val = (double)obj.extra.temporal.long_j; break;
         default: break;
     }
     ctx.result.set_number(val);
@@ -2457,8 +2457,8 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
         case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MINUTE:      val = (double)obj.extra.temporal.long_e; break;
         case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SECOND:      val = (double)obj.extra.temporal.long_f; break;
         case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_g; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.int_h; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.int_i; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.long_h; break;
+        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.long_i; break;
         case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDAR:
             ctx.result.set_object(obj.extra.temporal.calendar);
             return;
@@ -5327,17 +5327,20 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-// Build a Duration whose time seconds are the difference between two
-// Instants' epoch-ns BigInts, with milliseconds/microseconds/nanoseconds for
-// the sub-second remainder. This is TimeDurationFromEpochNanoseconds with
-// largestUnit "second" (truncation toward zero). `out` receives a refcount-1
-// Duration object or null on failure.
-fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigint::HBigInt* b, HObject** out) {
+// Build a Duration whose time units are the difference between two Instants'
+// epoch-ns BigInts. `largest_unit_ns` is the unit ns (3600*1e9 for hours,
+// 60*1e9 for minutes, 1e9 for seconds, 1e6 for ms, etc.). The duration is
+// balanced so the chosen unit holds the whole number and the sub-units carry
+// the remainder. Negative differences produce all-negative components. The
+// default `largest_unit_ns = 1e9` (seconds) is what the engine returned
+// before largestUnit was supported.
+// `out` receives a refcount-1 Duration object or null on failure.
+fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigint::HBigInt* b, long largest_unit_ns, HObject** out) {
+    if (largest_unit_ns <= 0) largest_unit_ns = 1000000000;
     hbigint::HBigInt*? diff_o = hbigint::hbigint_addsub(ctx.heap, a, b, true);
     if (catch err = diff_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "difference overflow"); return false; }
     hbigint::HBigInt* diff = diff_o;
-    temporal::DurationParts dp = {};
-    hbigint::HBigInt*? one_o = hbigint::hbigint_from_slimb(ctx.heap, 1000000000);
+    hbigint::HBigInt*? one_o = hbigint::hbigint_alloc(ctx.heap, (int128)largest_unit_ns);
     if (catch err = one_o) { ctx.heap.decref((types::HeapHeader*)diff); builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return false; }
     hbigint::HBigInt* one = one_o;
     hbigint::HBigInt* q = null;
@@ -5351,12 +5354,54 @@ fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigi
     ctx.heap.decref((types::HeapHeader*)one);
     ctx.heap.decref((types::HeapHeader*)diff);
     if (q == null || r == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return false; }
-    dp.seconds = (long)q.to_int128();
+    temporal::DurationParts dp = {};
+    long subsec_per_unit = 1000000000L / largest_unit_ns;
+    int128 qv = q.to_int128();
     int128 rv = r.to_int128();
-    dp.ms = (int)(rv / 1000000);
-    int128 rem = rv - (int128)dp.ms * 1000000;
-    dp.us = (int)(rem / 1000);
-    dp.ns = (int)(rem - (int128)dp.us * 1000);
+    // The quotient is in `largest_unit_ns` units, the remainder in ns. Convert
+    // the quotient to the smallest sensible field. For seconds (default),
+    // dp.seconds = q; for ms, dp.milliseconds = q; etc.
+    switch (largest_unit_ns) {
+        case 3600000000000L: dp.hours = (long)qv; break;
+        case 60000000000L:   dp.minutes = (long)qv; break;
+        case 1000000000L:    dp.seconds = (long)qv; break;
+        case 1000000L:       dp.ms = (long)qv; break;
+        case 1000L:          dp.us = (long)qv; break;
+        case 1L:             dp.ns = (long)qv; rv = 0; break;
+        default:
+            // Shouldn't happen — fallback to seconds.
+            dp.seconds = (long)qv;
+            subsec_per_unit = 1;
+            largest_unit_ns = 1000000000;
+            break;
+    }
+    if (largest_unit_ns != 1L) {
+        // Re-distribute remainder (in ns) across the sub-units of the chosen
+        // largestUnit. rv is in ns (always < `largest_unit_ns`); the values
+        // fit in long so we work in long for the redistribution arithmetic.
+        long rv_ns = (long)rv;
+        long ms = rv_ns / 1000000;
+        long rem_us = rv_ns - ms * 1000000;
+        long us = rem_us / 1000;
+        long ns = rem_us - us * 1000;
+        if (largest_unit_ns == 1000000000L) {
+            dp.ms = ms; dp.us = us; dp.ns = ns;
+        } else if (largest_unit_ns == 60000000000L) {
+            dp.seconds = (long)(ms / 1000); dp.ms = ms % 1000; dp.us = us; dp.ns = ns;
+        } else if (largest_unit_ns == 3600000000000L) {
+            long min_total = ms / (60 * 1000);
+            long ms_in_h = ms - min_total * 60 * 1000;
+            long sec_total = ms_in_h / 1000;
+            long ms_rem = ms_in_h - sec_total * 1000;
+            dp.minutes = min_total;
+            dp.seconds = sec_total;
+            dp.ms = ms_rem; dp.us = us; dp.ns = ns;
+        } else if (largest_unit_ns == 1000000L) {
+            dp.us = us; dp.ns = ns;
+        } else if (largest_unit_ns == 1000L) {
+            dp.ns = ns;
+        }
+    }
     ctx.heap.decref((types::HeapHeader*)q);
     ctx.heap.decref((types::HeapHeader*)r);
     HObject*? dur_o = alloc_duration(ctx.heap, dp);
@@ -5368,23 +5413,126 @@ fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigi
     return true;
 }
 
-// this.since(other[, options]) = this - other, as a Duration in seconds.
+// Resolve `largestUnit` from an options bag at `ctx.regs[ctx.base_reg +
+// options_index]` to a number of nanoseconds. Returns 0 and emits the
+// appropriate error (TypeError / RangeError) on bad input. The default for
+// Instant is 1e9 (seconds); for PlainDate/Time/DateTime/ZDT, defaults vary
+// per type. The Instant case accepts only the six time units; calendar units
+// are rejected because Instants are point-in-time.
+fn bool read_instant_largest_unit_ns(BuiltinContext* ctx, int options_index, long* out) {
+    *out = 1000000000L;
+    if (ctx.argc <= options_index) return true;
+    TVal ov = ctx.regs[ctx.base_reg + options_index];
+    if (ov.is_undefined()) return true;
+    if (!ov.is_object() || ov.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+        return false;
+    }
+    HObject* opts = (HObject*)ov.get_heapptr();
+    TVal val = prop_or_undefined(opts, ctx.heap, "largestUnit");
+    if (val.is_undefined()) return true;
+    if (!val.is_string()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "largestUnit must be a string");
+        return false;
+    }
+    HString* s = (HString*)val.get_heapptr();
+    String str = s ? (String)s.get_cstr()[:s.blen] : "";
+    if (ci_eq(str, "hour") || ci_eq(str, "hours"))         { *out = 3600000000000L; return true; }
+    if (ci_eq(str, "minute") || ci_eq(str, "minutes"))     { *out = 60000000000L; return true; }
+    if (ci_eq(str, "second") || ci_eq(str, "seconds"))     { *out = 1000000000L; return true; }
+    if (ci_eq(str, "millisecond") || ci_eq(str, "milliseconds")) { *out = 1000000L; return true; }
+    if (ci_eq(str, "microsecond") || ci_eq(str, "microseconds")) { *out = 1000L; return true; }
+    if (ci_eq(str, "nanosecond") || ci_eq(str, "nanoseconds"))   { *out = 1L; return true; }
+    builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not a valid value");
+    return false;
+}
+
+// Case-insensitive slice compare. The stdlib helper expects String; here we
+// already have a `String` (char[] alias) and need an inline `==` test.
+fn bool ci_eq(String a, char[] b) {
+    if (a.len != b.len) return false;
+    for (usz k = 0; k < a.len; k++) {
+        char ca = a[k];
+        char cb = b[k];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb - 'A' + 'a');
+        if (ca != cb) return false;
+    }
+    return true;
+}
+
+// ToTemporalInstant(arg): coerce arg to a Temporal.Instant epoch-ns BigInt.
+// On success the returned BigInt is incref'd (refcount-1) and ownership passes
+// to the caller. On failure the function returns false after throwing.
+//   - Object with class TEMPORAL_INSTANT: copy its big_ns.
+//   - String: parse as ISO instant string. Failures throw RangeError.
+//   - All other primitives and generic objects: throw TypeError.
+//   - Symbol: throw TypeError.
+fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** out) {
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_INSTANT) {
+            hbigint::HBigInt*? b_o = hbigint::hbigint_copy(ctx.heap, o.extra.temporal.big_ns);
+            if (catch err = b_o) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Instant copy failed");
+                return false;
+            }
+            *out = b_o;
+            return true;
+        }
+        builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to an Instant");
+        return false;
+    }
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO string");
+            return false;
+        }
+        String str = (String)s.get_cstr()[:s.blen];
+        temporal::ParsedIsoInstant p;
+        if (!temporal::parse_iso_instant_string(str, &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO string");
+            return false;
+        }
+        if (!temporal::is_valid_iso_date(p.y, (int)p.m, (int)p.d)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date");
+            return false;
+        }
+        long ed = temporal::epoch_days_from_civil(p.y, (int)p.m, (int)p.d);
+        long sec_of_day = (long)p.hour * 3600 + (long)p.minute * 60 + (long)p.second;
+        int128 ns128 = (int128)ed * 86400L * 1000000000L;
+        ns128 += (int128)sec_of_day * 1000000000L;
+        ns128 += (int128)p.nanos;
+        ns128 -= (int128)p.offset_seconds * 1000000000L;
+        hbigint::HBigInt*? b_o = hbigint::hbigint_alloc(ctx.heap, ns128);
+        if (catch err = b_o) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Instant alloc failed");
+            return false;
+        }
+        *out = b_o;
+        return true;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to an Instant");
+    return false;
+}
+
+// this.since(other[, options]) = this - other, as a Duration in seconds (or
+// other time units when largestUnit is set).
 fn void builtin_temporal_instant_proto_since(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "since requires an Instant argument");
         return;
     }
-    TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null
-        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "since: argument is not a Temporal.Instant");
-        return;
-    }
+    hbigint::HBigInt* other_ns;
+    if (!to_temporal_instant(ctx, arg_at(ctx, 0), &other_ns)) return;
+    defer ctx.heap.decref((types::HeapHeader*)other_ns);
+    long largest_unit_ns;
+    if (!read_instant_largest_unit_ns(ctx, 1, &largest_unit_ns)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
-    HObject* other = (HObject*)arg.get_heapptr();
     HObject* dur;
-    if (!instant_ns_diff_duration(ctx, self.extra.temporal.big_ns, other.extra.temporal.big_ns, &dur)) return;
+    if (!instant_ns_diff_duration(ctx, self.extra.temporal.big_ns, other_ns, largest_unit_ns, &dur)) return;
     dur.prototype = ctx.heap.temporal_duration_proto;
     ctx.result.set_object(dur);
 }
@@ -5396,16 +5544,14 @@ fn void builtin_temporal_instant_proto_until(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "until requires an Instant argument");
         return;
     }
-    TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null
-        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "until: argument is not a Temporal.Instant");
-        return;
-    }
+    hbigint::HBigInt* other_ns;
+    if (!to_temporal_instant(ctx, arg_at(ctx, 0), &other_ns)) return;
+    defer ctx.heap.decref((types::HeapHeader*)other_ns);
+    long largest_unit_ns;
+    if (!read_instant_largest_unit_ns(ctx, 1, &largest_unit_ns)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
-    HObject* other = (HObject*)arg.get_heapptr();
     HObject* dur;
-    if (!instant_ns_diff_duration(ctx, other.extra.temporal.big_ns, self.extra.temporal.big_ns, &dur)) return;
+    if (!instant_ns_diff_duration(ctx, other_ns, self.extra.temporal.big_ns, largest_unit_ns, &dur)) return;
     dur.prototype = ctx.heap.temporal_duration_proto;
     ctx.result.set_object(dur);
 }
@@ -6313,7 +6459,7 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     if (until) { a = other.extra.temporal.big_ns; b = self.extra.temporal.big_ns; }
     else       { a = self.extra.temporal.big_ns;  b = other.extra.temporal.big_ns; }
     HObject* dur;
-    if (!instant_ns_diff_duration(ctx, a, b, &dur)) return;
+    if (!instant_ns_diff_duration(ctx, a, b, 1000000000L, &dur)) return;
     dur.prototype = ctx.heap.temporal_duration_proto;
     ctx.result.set_object(dur);
 }
