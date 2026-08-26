@@ -6738,13 +6738,169 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
+// Settings shared by every until/since method, resolved from the options bag.
+struct DiffSettings {
+    TemporalUnit largest;
+    TemporalUnit smallest;
+    TemporalRoundMode mode;
+    double increment;
+}
+
+// Read largestUnit / smallestUnit / roundingIncrement / roundingMode for an
+// until/since call.
+//
+// Property reads happen in the spec's order (largestUnit, roundingIncrement,
+// roundingMode, smallestUnit) because each one can run user code through a
+// getter or valueOf, and test262 observes the sequence.
+//
+// `fallback_smallest` is the finest unit the receiver can express and
+// `default_largest` the coarsest unit it reports by default; `min_unit` and
+// `max_unit` bound what the receiver accepts at all, so a PlainTime rejects
+// "day" and a PlainYearMonth rejects "hour". For `since` the caller negates
+// the resulting Duration, but the rounding mode is negated here instead, since
+// rounding must happen in the direction of the original difference.
+//
+// Returns false after throwing.
+fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
+                           TemporalUnit min_unit, TemporalUnit max_unit,
+                           TemporalUnit default_largest, TemporalUnit fallback_smallest,
+                           bool negate_mode, DiffSettings* out) {
+    out.largest = default_largest;
+    out.smallest = fallback_smallest;
+    out.mode = TemporalRoundMode.TRUNC;
+    out.increment = 1;
+
+    HObject* opts = null;
+    if (ctx.argc > options_index) {
+        TVal ov = ctx.regs[ctx.base_reg + options_index];
+        if (!ov.is_undefined()) {
+            if (!ov.is_object() || ov.get_heapptr() == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+                return false;
+            }
+            opts = (HObject*)ov.get_heapptr();
+        }
+    }
+
+    bool largest_given = false;
+    bool smallest_given = false;
+
+    if (opts != null) {
+        TVal lu_v = prop_or_undefined_pa(ctx, opts, "largestUnit");
+        if (ctx.should_throw) return false;
+        if (!lu_v.is_undefined()) {
+            HString* s = builtin_to_string_vm(ctx, &lu_v);
+            if (ctx.should_throw) return false;
+            char[] str = s.get_cstr()[:s.blen];
+            if (str != "auto") {
+                if (!parse_unit_str(str, &out.largest)) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not a valid value");
+                    return false;
+                }
+                if (out.largest < min_unit || out.largest > max_unit) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not supported by this type");
+                    return false;
+                }
+                largest_given = true;
+            }
+        }
+
+        TVal ri_v = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
+        if (ctx.should_throw) return false;
+        if (!ri_v.is_undefined()) {
+            Vm* v = (Vm*)ctx.vm;
+            double ri = vm::vm_to_number(v, &ri_v);
+            if (v.throw_pending) {
+                ctx.should_throw = true;
+                ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
+                v.throw_pending = false;
+                return false;
+            }
+            if (math::is_nan(ri) || math::is_inf(ri) || ri < 1 || math::floor(ri) != ri) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+                return false;
+            }
+            out.increment = ri;
+        }
+
+        TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
+        if (ctx.should_throw) return false;
+        if (!rm_v.is_undefined()) {
+            HString* s = builtin_to_string_vm(ctx, &rm_v);
+            if (ctx.should_throw) return false;
+            if (!parse_rm_str(s.get_cstr()[:s.blen], &out.mode)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
+                return false;
+            }
+        }
+
+        TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+        if (ctx.should_throw) return false;
+        if (!su_v.is_undefined()) {
+            HString* s = builtin_to_string_vm(ctx, &su_v);
+            if (ctx.should_throw) return false;
+            char[] str = s.get_cstr()[:s.blen];
+            if (str != "auto") {
+                if (!parse_unit_str(str, &out.smallest)) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit is not a valid value");
+                    return false;
+                }
+                if (out.smallest < min_unit || out.smallest > max_unit) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit is not supported by this type");
+                    return false;
+                }
+                smallest_given = true;
+            }
+        }
+    }
+
+    // An explicit smallestUnit coarser than the default widens largestUnit to
+    // match, so `{smallestUnit: "hour"}` alone still reports hours.
+    if (smallest_given && !largest_given && out.smallest < out.largest) {
+        out.largest = out.smallest;
+    }
+    if (out.largest > out.smallest) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit must be coarser than largestUnit");
+        return false;
+    }
+
+    long max_incr = max_round_incr(out.smallest);
+    if (max_incr > 0) {
+        // The increment must divide the unit evenly, and cannot span a whole
+        // unit — 60 minutes is not a legal minute increment.
+        if (out.increment > (double)max_incr
+            || (double)max_incr / out.increment != math::floor((double)max_incr / out.increment)
+            || out.increment == (double)max_incr) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
+            return false;
+        }
+    } else if (out.increment != 1) {
+        // Calendar units and "day" admit no increment other than 1.
+        builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
+        return false;
+    }
+
+    if (negate_mode) out.mode = negate_round_mode(out.mode);
+    return true;
+}
+
+// Mirror a rounding mode about zero, so rounding a negated difference lands on
+// the same instant as rounding the difference itself.
+fn TemporalRoundMode negate_round_mode(TemporalRoundMode m) {
+    switch (m) {
+        case TemporalRoundMode.CEIL:       return TemporalRoundMode.FLOOR;
+        case TemporalRoundMode.FLOOR:      return TemporalRoundMode.CEIL;
+        case TemporalRoundMode.HALF_CEIL:  return TemporalRoundMode.HALF_FLOOR;
+        case TemporalRoundMode.HALF_FLOOR: return TemporalRoundMode.HALF_CEIL;
+        default: return m;
+    }
+}
+
 // Build a Duration whose time units are the difference between two Instants'
 // epoch-ns BigInts. `largest_unit_ns` is the unit ns (3600*1e9 for hours,
 // 60*1e9 for minutes, 1e9 for seconds, 1e6 for ms, etc.). The duration is
 // balanced so the chosen unit holds the whole number and the sub-units carry
-// the remainder. Negative differences produce all-negative components. The
-// default `largest_unit_ns = 1e9` (seconds) is what the engine returned
-// before largestUnit was supported.
+// the remainder. Negative differences produce all-negative components.
 // `out` receives a refcount-1 Duration object or null on failure.
 fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigint::HBigInt* b, long largest_unit_ns, HObject** out) {
     if (largest_unit_ns <= 0) largest_unit_ns = 1000000000;
@@ -8105,9 +8261,50 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
 }
 
-// Convert a Duration's time components to an epoch-nanosecond BigInt delta
-// (hours..nanoseconds only; the calendar units are ignored for Phase 2, which
-// matches Temporal.Instant.add semantics for pure time arithmetic).
+// Resolve a wall-clock time in `zone` to an epoch-nanosecond instant, using
+// the "compatible" disambiguation: an ambiguous time in a fall-back overlap
+// takes the earlier instant, and a time skipped by a spring-forward gap moves
+// to the post-gap offset.
+// Offsets are whole seconds, so the result is computed as an int128 to keep
+// nanosecond precision: epoch-ns of a modern date exceeds what a double can
+// represent exactly.
+fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns) {
+    if (zone.len == 0 || zone.ptr == null) {
+        return (int128)wall_secs * 1000000000 + (int128)wall_frac_ns;
+    }
+
+    // Any offset in force near the wall time is a candidate; keep the ones
+    // that map back to a matching offset, which drops the phantom readings a
+    // transition creates.
+    int[8] cand;
+    int nc = 0;
+    tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
+    temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
+    long window = 2 * 86400;
+    for (usz i = 0; i < trans.len; i++) {
+        if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
+            tz_cand_add(cand[..], &nc, trans[i].offset_sec);
+        }
+    }
+    if (nc == 0) tz_cand_add(cand[..], &nc, 0);
+
+    // An overlap yields several valid offsets; "compatible" wants the earliest
+    // instant, which is the largest offset.
+    int chosen_off = 0;
+    bool found = false;
+    for (int k = 0; k < nc; k++) {
+        if (temporal::tzdb_offset_for_zone_at(zone, wall_secs - cand[k]) != cand[k]) continue;
+        if (!found || cand[k] > chosen_off) { chosen_off = cand[k]; found = true; }
+    }
+    // A gap skips the wall time entirely; shift it past the transition.
+    if (!found) chosen_off = temporal::tzdb_offset_for_zone_at(zone, wall_secs + 4 * 3600);
+
+    return (int128)(wall_secs - chosen_off) * 1000000000 + (int128)wall_frac_ns;
+}
+
+// Convert a Duration's time components (hours..nanoseconds) to an
+// epoch-nanosecond BigInt delta. Calendar units carry no fixed nanosecond
+// length and are the caller's to resolve against a date.
 fn bool duration_to_ns_delta(BuiltinContext* ctx, temporal::DurationParts dp, hbigint::HBigInt** out) {
     hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
     if (catch err = delta_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return false; }
@@ -8237,10 +8434,48 @@ fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
     }
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     temporal::DurationParts dp = duration_value((HObject*)arg.get_heapptr());
-    hbigint::HBigInt* delta;
-    if (!duration_to_ns_delta(ctx, dp, &delta)) return;
+    long sign = subtract ? -1 : 1;
+
     hbigint::HBigInt* base = self.extra.temporal.big_ns;
     ((types::HeapHeader*)base).incref();
+
+    // Years, months, weeks and days move the wall-clock date, so they are
+    // applied on the local axis and re-resolved against the zone; a day across
+    // a DST boundary is then a calendar day rather than a fixed 24 hours.
+    if (dp.years != 0 || dp.months != 0 || dp.weeks != 0 || dp.days != 0) {
+        long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
+        zdt_wall_fields(self, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
+        temporal::CivilDate d = { .y = wy, .m = wm, .d = wd };
+        if (dp.years != 0)  d = temporal::add_months(d, sign * dp.years * 12, temporal::OverflowKind.CONSTRAIN);
+        if (dp.months != 0) d = temporal::add_months(d, sign * dp.months, temporal::OverflowKind.CONSTRAIN);
+        long day_shift = sign * (dp.weeks * 7 + dp.days);
+        if (day_shift != 0) d = temporal::add_days(d, day_shift);
+
+        long wall_secs = temporal::epoch_days_from_civil(d.y, (int)d.m, (int)d.d) * 86400
+            + (long)wh * 3600 + (long)wmi * 60 + (long)ws;
+        long wall_frac = (long)wms * 1000000 + (long)wus * 1000 + (long)wns;
+        String zone = self.extra.temporal.timezone == null ? "" : timezone_name(self.extra.temporal.timezone);
+        int128 moved = zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+
+        hbigint::HBigInt*? moved_o = hbigint::hbigint_alloc(ctx.heap, moved);
+        ctx.heap.decref((types::HeapHeader*)base);
+        if (catch err = moved_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+        base = moved_o;
+    }
+
+    // The time components are an exact elapsed-nanosecond shift on the instant.
+    temporal::DurationParts time_only = {};
+    time_only.hours = dp.hours;
+    time_only.minutes = dp.minutes;
+    time_only.seconds = dp.seconds;
+    time_only.ms = dp.ms;
+    time_only.us = dp.us;
+    time_only.ns = dp.ns;
+    hbigint::HBigInt* delta;
+    if (!duration_to_ns_delta(ctx, time_only, &delta)) {
+        ctx.heap.decref((types::HeapHeader*)base);
+        return;
+    }
     hbigint::HBigInt*? result;
     if (subtract) {
         result = temporal::instant_sub(base, delta, ctx.heap);
@@ -8254,10 +8489,8 @@ fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
     zdt_from_parts(ctx, result, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
 }
 
-// this.until(other) / this.since(other) — elapsed time difference as a
-// Duration in seconds. Phase 2 uses the raw epoch-nanosecond difference
-// (identical to Temporal.Instant.until/since), which is exact for the elapsed
-// duration between the two instants; calendar-unit math lands later.
+// this.until(other) / this.since(other) — the difference as a Duration, in the
+// units named by the options bag. Defaults to hours.
 fn void builtin_temporal_zoneddatetime_proto_until(BuiltinContext* ctx) {
     zdt_until_since(ctx, true);
 }
@@ -8280,12 +8513,101 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     }
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     HObject* other = (HObject*)arg.get_heapptr();
+
+    DiffSettings ds;
+    if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.NANOSECOND,
+                            TemporalUnit.HOUR, TemporalUnit.NANOSECOND, !until, &ds)) return;
+
+    // Both zones must agree for a calendar-unit difference to mean anything:
+    // the wall-clock breakdown below is only defined against a single zone.
+    if (is_cal_unit(ds.largest) || ds.largest == TemporalUnit.DAY) {
+        String za = self.extra.temporal.timezone == null ? "" : timezone_name(self.extra.temporal.timezone);
+        String zb = other.extra.temporal.timezone == null ? "" : timezone_name(other.extra.temporal.timezone);
+        if (za != zb) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "cannot compute calendar units across different time zones");
+            return;
+        }
+    }
+
     hbigint::HBigInt* a;
     hbigint::HBigInt* b;
     if (until) { a = other.extra.temporal.big_ns; b = self.extra.temporal.big_ns; }
     else       { a = self.extra.temporal.big_ns;  b = other.extra.temporal.big_ns; }
-    HObject* dur;
-    if (!instant_ns_diff_duration(ctx, a, b, 1000000000L, &dur)) return;
+
+    if (!is_cal_unit(ds.largest) && ds.largest != TemporalUnit.DAY) {
+        HObject* dur;
+        if (!instant_ns_diff_duration(ctx, a, b, unit_ns_divisor(ds.largest), &dur)) return;
+        dur.prototype = ctx.heap.temporal_duration_proto;
+        ctx.result.set_object(dur);
+        return;
+    }
+
+    // Calendar-unit path: difference the wall-clock dates, then carry whatever
+    // time is left over. Working on the local axis keeps a DST day one calendar
+    // day even though it is not 24 hours of elapsed time.
+    HObject* from = until ? self : other;
+    HObject* to   = until ? other : self;
+    long fy, fm, fd; int fh, fmi, fs, fms, fus, fns, foff;
+    long ty, tm, td; int th, tmi, ts, tms, tus, tns, toff;
+    zdt_wall_fields(from, &fy, &fm, &fd, &fh, &fmi, &fs, &fms, &fus, &fns, &foff);
+    zdt_wall_fields(to, &ty, &tm, &td, &th, &tmi, &ts, &tms, &tus, &tns, &toff);
+
+    long from_tod = (long)fh * 3600000000000L + (long)fmi * 60000000000L + (long)fs * 1000000000L
+                  + (long)fms * 1000000L + (long)fus * 1000L + (long)fns;
+    long to_tod = (long)th * 3600000000000L + (long)tmi * 60000000000L + (long)ts * 1000000000L
+                + (long)tms * 1000000L + (long)tus * 1000L + (long)tns;
+
+    temporal::CivilDate start = { .y = fy, .m = fm, .d = fd };
+    temporal::CivilDate end = { .y = ty, .m = tm, .d = td };
+    long tod_delta = to_tod - from_tod;
+
+    // Borrow a day when the wall time of day runs backwards, so the date
+    // difference counts only whole days.
+    long sign = 1;
+    if (end.y < start.y
+        || (end.y == start.y && (end.m < start.m || (end.m == start.m && end.d < start.d)))
+        || (end.y == start.y && end.m == start.m && end.d == start.d && tod_delta < 0)) {
+        sign = -1;
+    }
+    if (sign > 0 && tod_delta < 0) {
+        tod_delta += 86400000000000L;
+        end = temporal::add_days(end, -1);
+    } else if (sign < 0 && tod_delta > 0) {
+        tod_delta -= 86400000000000L;
+        end = temporal::add_days(end, 1);
+    }
+
+    temporal::DifferenceUnit du;
+    switch (ds.largest) {
+        case TemporalUnit.YEAR:  du = temporal::DifferenceUnit.YEARS; break;
+        case TemporalUnit.MONTH: du = temporal::DifferenceUnit.MONTHS; break;
+        case TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
+        default:                 du = temporal::DifferenceUnit.DAYS; break;
+    }
+    temporal::DateDifference dd = temporal::difference_date(start, end, du);
+
+    temporal::DurationParts dp = {};
+    dp.years = dd.years;
+    dp.months = dd.months;
+    dp.days = dd.days;
+    if (ds.largest == TemporalUnit.WEEK) {
+        dp.weeks = dd.days / 7;
+        dp.days = dd.days % 7;
+    }
+    dp.hours = tod_delta / 3600000000000L;
+    long rem = tod_delta % 3600000000000L;
+    dp.minutes = rem / 60000000000L;
+    rem %= 60000000000L;
+    dp.seconds = rem / 1000000000L;
+    rem %= 1000000000L;
+    dp.ms = rem / 1000000L;
+    rem %= 1000000L;
+    dp.us = rem / 1000L;
+    dp.ns = rem % 1000L;
+
+    HObject*? dur_o = alloc_duration(ctx.heap, dp);
+    if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* dur = dur_o;
     dur.prototype = ctx.heap.temporal_duration_proto;
     ctx.result.set_object(dur);
 }
