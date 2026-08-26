@@ -1252,7 +1252,26 @@ fn bool parse_rm_str(char[] s, TemporalRoundMode* out) {
 }
 
 fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
-    if (incr == 1) return x;
+    if (incr == 1) {
+        // Round to nearest integer.
+        switch (mode) {
+            case TemporalRoundMode.CEIL:       return math::ceil(x);
+            case TemporalRoundMode.FLOOR:      return math::floor(x);
+            case TemporalRoundMode.EXPAND:     return (x >= 0) ? math::ceil(x) : math::floor(x);
+            case TemporalRoundMode.TRUNC:      return (x >= 0) ? math::floor(x) : math::ceil(x);
+            case TemporalRoundMode.HALF_CEIL:  { double f = math::floor(x); return (x - f >= 0.5) ? f + 1 : f; }
+            case TemporalRoundMode.HALF_FLOOR: { double f = math::floor(x); return (x - f > 0.5) ? f + 1 : f; }
+            case TemporalRoundMode.HALF_EXPAND: { double f = math::floor(x); return (x - f >= 0.5) ? f + 1 : f; }
+            case TemporalRoundMode.HALF_TRUNC: { double f = math::floor(x); return (x - f > 0.5) ? f + 1 : f; }
+            case TemporalRoundMode.HALF_EVEN: {
+                double f = math::floor(x);
+                double frac = x - f;
+                if (frac < 0.5) return f;
+                if (frac > 0.5) return f + 1;
+                return (math::floor(f / 2) * 2 == f) ? f : f + 1;
+            }
+        }
+    }
     double q = x / incr;
     double r1, r2;
     if (x >= 0) {
@@ -7476,12 +7495,14 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoZonedDateTime p = { .year = 0, .month = 0, .day = 0, .hour = 0, .minute = 0, .second = 0, .nanos = 0, .offset_seconds = 0 };
         if (!temporal::parse_iso_zoneddatetime_string(text, &p)) {
+            io::printn("PARSE FAILED");
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: invalid ISO string");
             return;
         }
         // Resolve timezone from annotation or offset.
         HObject* tz;
         if (p.timezone.len > 0) {
+            io::printn("TZ_ANNO");
             char[] tz_id = p.timezone;
             if (temporal::tzdb_zone_exists((String)tz_id)) {
                 HObject*? tz_o = alloc_timezone(ctx.heap, (String)tz_id);
@@ -7496,11 +7517,12 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             char[8] off_buf;
             long mag = p.offset_seconds < 0 ? -p.offset_seconds : p.offset_seconds;
             off_buf[0] = p.offset_seconds >= 0 ? '+' : '-';
-            off_buf[1] = (char)('0' + (int)(mag / 3600));
-            off_buf[2] = ':';
-            off_buf[3] = (char)('0' + (int)((mag % 3600) / 60 / 10));
-            off_buf[4] = (char)('0' + (int)((mag % 3600) / 60 % 10));
-            off_buf[5] = 0;
+            off_buf[1] = (char)('0' + (int)(mag / 3600 / 10));
+            off_buf[2] = (char)('0' + (int)(mag / 3600 % 10));
+            off_buf[3] = ':';
+            off_buf[4] = (char)('0' + (int)((mag % 3600) / 60 / 10));
+            off_buf[5] = (char)('0' + (int)((mag % 3600) / 60 % 10));
+            off_buf[6] = 0;
             HObject*? tz_o = alloc_timezone(ctx.heap, (String)off_buf[:5]);
             if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             tz = tz_o;
