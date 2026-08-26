@@ -1224,6 +1224,93 @@ fn TemporalUnit default_largest_unit(temporal::DurationParts d) {
     return TemporalUnit.NANOSECOND;
 }
 
+// Split a signed nanosecond count across the time units from `largest` down to
+// nanoseconds. The value has already been rounded to smallestUnit by the
+// caller, so the units below it come out zero on their own.
+//
+// Division truncates toward zero in C3, so a negative delta yields uniformly
+// negative fields — which is what a Duration wants.
+fn temporal::DurationParts time_ns_split(long v, TemporalUnit largest) {
+    temporal::DurationParts dp = {};
+    if (largest <= TemporalUnit.HOUR) {
+        dp.hours = v / 3_600_000_000_000L;
+        v %= 3_600_000_000_000L;
+    }
+    if (largest <= TemporalUnit.MINUTE) {
+        dp.minutes = v / 60_000_000_000L;
+        v %= 60_000_000_000L;
+    }
+    if (largest <= TemporalUnit.SECOND) {
+        dp.seconds = v / 1_000_000_000L;
+        v %= 1_000_000_000L;
+    }
+    if (largest <= TemporalUnit.MILLISECOND) {
+        dp.ms = v / 1_000_000L;
+        v %= 1_000_000L;
+    }
+    if (largest <= TemporalUnit.MICROSECOND) {
+        dp.us = v / 1000L;
+        v %= 1000L;
+    }
+    dp.ns = v;
+    return dp;
+}
+
+// Round a signed nanosecond count to a multiple of `incr_ns`, by magnitude.
+//
+// until/since round the difference's absolute value and reapply the sign, so
+// "trunc" always moves toward zero regardless of direction. Working on the
+// magnitude keeps that straightforward; the sign-aware modes (ceil, floor and
+// their half-* forms) flip for a negative value.
+fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
+    bool neg = v < 0;
+    long mag = neg ? -v : v;
+    if (neg) mode = mode_for_negative_magnitude(mode);
+
+    long q = mag / incr_ns;
+    long r = mag - q * incr_ns;
+    if (r != 0) {
+        switch (mode) {
+            case TemporalRoundMode.TRUNC:
+            case TemporalRoundMode.FLOOR: break;
+            case TemporalRoundMode.EXPAND:
+            case TemporalRoundMode.CEIL: q += 1; break;
+            default: {
+                long twice = r * 2;
+                if (twice > incr_ns) {
+                    q += 1;
+                } else if (twice == incr_ns) {
+                    switch (mode) {
+                        case TemporalRoundMode.HALF_TRUNC:
+                        case TemporalRoundMode.HALF_FLOOR: break;
+                        case TemporalRoundMode.HALF_EXPAND:
+                        case TemporalRoundMode.HALF_CEIL: q += 1; break;
+                        case TemporalRoundMode.HALF_EVEN: if ((q & 1) != 0) q += 1; break;
+                        default: break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    long out = q * incr_ns;
+    return neg ? -out : out;
+}
+
+// Map a rounding mode to the one that gives the same result when applied to a
+// negative value's magnitude. Only the directional modes flip: on a magnitude,
+// "toward negative infinity" means "toward zero" and vice versa. trunc/expand
+// are already defined relative to zero, so they pass through.
+fn TemporalRoundMode mode_for_negative_magnitude(TemporalRoundMode m) {
+    switch (m) {
+        case TemporalRoundMode.CEIL:       return TemporalRoundMode.FLOOR;
+        case TemporalRoundMode.FLOOR:      return TemporalRoundMode.CEIL;
+        case TemporalRoundMode.HALF_CEIL:  return TemporalRoundMode.HALF_FLOOR;
+        case TemporalRoundMode.HALF_FLOOR: return TemporalRoundMode.HALF_CEIL;
+        default: return m;
+    }
+}
+
 fn bool parse_unit_str(char[] s, TemporalUnit* out) {
     if (s == "year"  || s == "years")      { *out = TemporalUnit.YEAR; return true; }
     if (s == "month" || s == "months")     { *out = TemporalUnit.MONTH; return true; }
@@ -3170,59 +3257,29 @@ fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     if (ctx.should_throw) return;
     HObject* other = other_o!!;
 
-    temporal::DifferenceUnit largest;
-    if (!read_diff_options(ctx, 1, temporal::DifferenceUnit.HOURS, &largest, true)) return;
+    // PlainTime carries no date, so only hour-and-finer units are accepted.
+    DiffSettings ds;
+    if (!read_diff_settings(ctx, 1, TemporalUnit.HOUR, TemporalUnit.NANOSECOND,
+                            TemporalUnit.HOUR, TemporalUnit.NANOSECOND, false, &ds)) return;
 
     temporal::CivilTime a = plain_time_value(obj);
     temporal::CivilTime b = plain_time_value(other);
     temporal::CivilTime start = flipped ? b : a;
     temporal::CivilTime end   = flipped ? a : b;
 
-    // Time-only difference: convert to a nanosecond delta then split into the
-    // chosen unit ladder. Days/weeks/months/years are not meaningful for
-    // PlainTime, but we accept them in the option (rejected above if not).
+    // Time-only difference: a nanosecond delta, rounded to smallestUnit and
+    // then split down the ladder from largestUnit. The delta is under 24h, so
+    // a long is plenty and no BigInt is needed.
     long start_ns = ((long)start.h * 3600 + (long)start.mi * 60 + (long)start.s) * 1_000_000_000L
                   + (long)start.ms * 1_000_000L + (long)start.us * 1000L + (long)start.ns;
     long end_ns   = ((long)end.h  * 3600 + (long)end.mi  * 60 + (long)end.s ) * 1_000_000_000L
                   + (long)end.ms  * 1_000_000L + (long)end.us  * 1000L + (long)end.ns;
     long delta = end_ns - start_ns;
 
-    temporal::DurationParts dur;
-    dur.years = 0; dur.months = 0; dur.weeks = 0; dur.days = 0;
-    if (largest == temporal::DifferenceUnit.SECONDS) {
-        long secs = delta / 1_000_000_000L;
-        long rem = delta - secs * 1_000_000_000L;
-        dur.seconds = secs;
-        dur.ms = (int)(rem / 1_000_000);
-        rem -= (long)dur.ms * 1_000_000;
-        dur.us = (int)(rem / 1000);
-        rem -= (long)dur.us * 1000;
-        dur.ns = (int)rem;
-    } else if (largest == temporal::DifferenceUnit.MINUTES) {
-        long mins = delta / 60_000_000_000L;
-        long rem = delta - mins * 60_000_000_000L;
-        dur.minutes = mins;
-        dur.seconds = rem / 1_000_000_000L;
-        rem -= dur.seconds * 1_000_000_000L;
-        dur.ms = (int)(rem / 1_000_000);
-        rem -= (long)dur.ms * 1_000_000;
-        dur.us = (int)(rem / 1000);
-        rem -= (long)dur.us * 1000;
-        dur.ns = (int)rem;
-    } else {  // HOURS (default for PlainTime after SECONDS/MINUTES/HOURS enum ordering)
-        long hours = delta / 3_600_000_000_000L;
-        long rem = delta - hours * 3_600_000_000_000L;
-        dur.hours = hours;
-        dur.minutes = rem / 60_000_000_000L;
-        rem -= dur.minutes * 60_000_000_000L;
-        dur.seconds = rem / 1_000_000_000L;
-        rem -= dur.seconds * 1_000_000_000L;
-        dur.ms = (int)(rem / 1_000_000);
-        rem -= (long)dur.ms * 1_000_000;
-        dur.us = (int)(rem / 1000);
-        rem -= (long)dur.us * 1000;
-        dur.ns = (int)rem;
-    }
+    long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
+    if (incr_ns > 1) delta = round_long_ns(delta, incr_ns, ds.mode);
+
+    temporal::DurationParts dur = time_ns_split(delta, ds.largest);
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -6797,10 +6854,6 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
                     builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not a valid value");
                     return false;
                 }
-                if (out.largest < min_unit || out.largest > max_unit) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not supported by this type");
-                    return false;
-                }
                 largest_given = true;
             }
         }
@@ -6816,11 +6869,13 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
                 v.throw_pending = false;
                 return false;
             }
-            if (math::is_nan(ri) || math::is_inf(ri) || ri < 1 || math::floor(ri) != ri) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+            // ToIntegerWithTruncation: a non-integer increment truncates rather
+            // than throwing; only a non-finite one is rejected outright.
+            if (math::is_nan(ri) || math::is_inf(ri)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be finite");
                 return false;
             }
-            out.increment = ri;
+            out.increment = math::trunc(ri);
         }
 
         TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
@@ -6845,13 +6900,25 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
                     builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit is not a valid value");
                     return false;
                 }
-                if (out.smallest < min_unit || out.smallest > max_unit) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit is not supported by this type");
-                    return false;
-                }
                 smallest_given = true;
             }
         }
+    }
+
+    // Every option is read before any of this validation runs: each read can
+    // invoke user code through a getter or valueOf, and the spec observes all
+    // four reads even when an earlier value turns out to be unusable.
+    if (out.increment < 1 || out.increment > 1e9) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
+        return false;
+    }
+    if (largest_given && (out.largest < min_unit || out.largest > max_unit)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not supported by this type");
+        return false;
+    }
+    if (smallest_given && (out.smallest < min_unit || out.smallest > max_unit)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit is not supported by this type");
+        return false;
     }
 
     // An explicit smallestUnit coarser than the default widens largestUnit to
