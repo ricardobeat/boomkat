@@ -1875,6 +1875,28 @@ fn void builtin_temporal_plain_date_proto_since(BuiltinContext* ctx) {
     plain_date_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
 }
 
+// PlainDate.prototype.withCalendar(calendarLike): clones the date with a new
+// calendar. Only iso8601 is supported, so any non-calendar value must be the
+// string "iso8601" (case-insensitive).
+fn void builtin_temporal_plain_date_proto_withCalendar(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "PlainDate.prototype.withCalendar requires a calendar argument");
+        return;
+    }
+    HObject* cal;
+    if (!calendar_from_arg(ctx, arg_at(ctx, 0), &cal)) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilDate cur = plain_date_value(obj);
+    ((types::HeapHeader*)cal).incref();
+    HObject*? obj_o = alloc_plain_date(ctx.heap, cur, cal);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_date_proto;
+    ctx.result.set_object(obj2);
+}
+
 // ============================================================================
 // Temporal.PlainTime
 // ============================================================================
@@ -3239,6 +3261,25 @@ fn void builtin_temporal_plain_datetime_proto_since(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
     plain_datetime_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
+}
+
+fn void builtin_temporal_plain_datetime_proto_withCalendar(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "PlainDateTime.prototype.withCalendar requires a calendar argument");
+        return;
+    }
+    HObject* cal;
+    if (!calendar_from_arg(ctx, arg_at(ctx, 0), &cal)) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilDateTime cur = plain_datetime_value(obj);
+    ((types::HeapHeader*)cal).incref();
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, cur, cal);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.result.set_object(obj2);
 }
 
 // ============================================================================
@@ -4735,6 +4776,7 @@ fn bool setUpTemporalPlainDate(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_DATE_PROTO_SUBTRACT.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_DATE_PROTO_UNTIL.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_DATE_PROTO_SINCE.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "withCalendar", Builtin.TEMPORAL_PLAIN_DATE_PROTO_WITHCALENDAR.ordinal)) return false;
 
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_DATE_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_DATE_COMPARE.ordinal)) return false;
@@ -4880,6 +4922,7 @@ fn bool setUpTemporalPlainDateTime(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SUBTRACT.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_UNTIL.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SINCE.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "withCalendar", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WITHCALENDAR.ordinal)) return false;
 
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_DATETIME_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_DATETIME_COMPARE.ordinal)) return false;
