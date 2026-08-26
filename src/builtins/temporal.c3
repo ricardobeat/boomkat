@@ -665,11 +665,11 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
 
     TVal uv = prop_or_undefined(opts, ctx.heap, "largestUnit");
     if (!uv.is_undefined()) {
-        if (!uv.is_string()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "largestUnit must be a string");
-            return false;
-        }
-        HString* s = (HString*)uv.get_heapptr();
+        // GetOption converts the value to a string before matching. Symbol
+        // throws TypeError; primitives that don't match a known unit reject
+        // with RangeError below.
+        HString* s = builtin_to_string_vm(ctx, &uv);
+        if (ctx.should_throw) return false;
         char[] v = s.get_cstr()[:s.blen];
         if (v == "auto") { /* keep default_largest */ }
         else if (v == "year" || v == "years") { *largest = temporal::DifferenceUnit.YEARS; }
@@ -692,11 +692,8 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
     // later phase).
     TVal sv = prop_or_undefined(opts, ctx.heap, "smallestUnit");
     if (!sv.is_undefined()) {
-        if (!sv.is_string()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit must be a string");
-            return false;
-        }
-        HString* s = (HString*)sv.get_heapptr();
+        HString* s = builtin_to_string_vm(ctx, &sv);
+        if (ctx.should_throw) return false;
         char[] v = s.get_cstr()[:s.blen];
         temporal::DifferenceUnit small;
         if (v == "auto") { small = *largest; }
@@ -717,17 +714,15 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
         }
     }
 
-    // roundingMode: trunc is the only mode the exact day-level difference
-    // needs; the others are accepted and ignored here.
+    // roundingMode: GetOption converts to string, then matches the allowed set.
     TVal rm = prop_or_undefined(opts, ctx.heap, "roundingMode");
     if (!rm.is_undefined()) {
-        if (!rm.is_string()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "roundingMode must be a string");
-            return false;
-        }
-        HString* s = (HString*)rm.get_heapptr();
+        HString* s = builtin_to_string_vm(ctx, &rm);
+        if (ctx.should_throw) return false;
         char[] v = s.get_cstr()[:s.blen];
-        if (!(v == "trunc" || v == "ceil" || v == "floor" || v == "halfExpand")) {
+        if (!(v == "trunc" || v == "ceil" || v == "floor" || v == "expand" ||
+              v == "halfTrunc" || v == "halfCeil" || v == "halfFloor" ||
+              v == "halfExpand" || v == "halfEven")) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
             return false;
         }
