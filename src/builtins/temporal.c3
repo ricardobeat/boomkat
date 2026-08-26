@@ -2715,26 +2715,18 @@ fn void plain_date_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
         return;
     }
 
-    temporal::DifferenceUnit largest;
-    if (!read_date_diff_options(ctx, 1, &largest)) return;
+    // A PlainDate has no time, so only day-and-coarser units are accepted.
+    DiffSettings ds;
+    if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.DAY,
+                            TemporalUnit.DAY, TemporalUnit.DAY, false, &ds)) return;
 
     temporal::CivilDate a = plain_date_value(obj);
     temporal::CivilDate b = plain_date_value(other);
-    temporal::CivilDate start = flipped ? b : a;
-    temporal::CivilDate end   = flipped ? a : b;
+    temporal::CivilDateTime start = { .date = flipped ? b : a };
+    temporal::CivilDateTime end   = { .date = flipped ? a : b };
 
-    temporal::DateDifference diff = temporal::difference_date(start, end, largest);
     temporal::DurationParts dur;
-    dur.years = diff.years;
-    dur.months = diff.months;
-    if (largest == temporal::DifferenceUnit.WEEKS) {
-        dur.weeks = diff.days / 7;   // truncating toward zero, polyfill divTrunc
-        dur.days = diff.days % 7;    // modTrunc: same sign as the dividend
-    } else {
-        dur.days = diff.days;
-    }
-    dur.hours = 0; dur.minutes = 0; dur.seconds = 0;
-    dur.ms = 0; dur.us = 0; dur.ns = 0;
+    if (!datetime_difference(ctx, start, end, ds, &dur)) return;
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -4176,29 +4168,57 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
 
     // round_long_ns works on a magnitude, so feed it the offset past the
     // boundary and let it decide whether that reaches the next one.
-    long rounded = round_long_ns(to_end, span < 0 ? -span : span, ds.mode);
-    set_smallest_unit_count(dp, ds.smallest, rounded == 0 ? kept : kept + sign * incr);
+    long mag_span = span < 0 ? -span : span;
+    long mag_end = to_end < 0 ? -to_end : to_end;
+    bool step_up;
+    if (mag_end * 2 == mag_span && is_half_mode(ds.mode)) {
+        // Exact halfway point. round_long_ns would break the tie on the
+        // quotient within this one span, which is always 0 — halfEven needs the
+        // parity of the unit count itself, so the tie is settled here.
+        // "up" here means away from zero, so the ceil/floor pair flips for a
+        // negative difference.
+        TemporalRoundMode tie = sign < 0 ? mode_for_negative_magnitude(ds.mode) : ds.mode;
+        switch (tie) {
+            case TemporalRoundMode.HALF_EVEN:
+                step_up = (kept / incr) % 2 != 0;
+            case TemporalRoundMode.HALF_EXPAND:
+            case TemporalRoundMode.HALF_CEIL:
+                step_up = true;
+            default:
+                step_up = false;
+        }
+    } else {
+        step_up = round_long_ns(to_end, mag_span, ds.mode) != 0;
+    }
+    set_smallest_unit_count(dp, ds.smallest, step_up ? kept + sign * incr : kept);
     clear_below(dp, ds.smallest);
     return rebalance_date_part(ctx, start, ds, dp);
 }
 
-// The count of `unit` currently held in `dp`, folding coarser components in so
-// the value is a single number of that unit.
+fn bool is_half_mode(TemporalRoundMode m) {
+    return m >= TemporalRoundMode.HALF_CEIL;
+}
+
+// The count held in `dp`'s own smallestUnit field.
+//
+// This is the field alone, not the difference folded into that unit: with
+// largestUnit "years" a roundingIncrement of 5 months snaps the months field
+// within the year (2y8m -> 2y5m), while largestUnit "months" leaves the whole
+// span in the months field and snaps that instead (32m -> 30m).
 fn long smallest_unit_count(temporal::DurationParts dp, TemporalUnit unit) {
     switch (unit) {
         case TemporalUnit.YEAR:  return dp.years;
-        case TemporalUnit.MONTH: return dp.years * 12 + dp.months;
+        case TemporalUnit.MONTH: return dp.months;
         case TemporalUnit.WEEK:  return dp.weeks;
         default:                 return dp.days;
     }
 }
 
-// Set the count of `unit`, leaving the coarser components alone. Years fold
-// into months, so writing a month count clears the year field.
+// Set the count of `unit`, leaving the coarser components alone.
 fn void set_smallest_unit_count(temporal::DurationParts* dp, TemporalUnit unit, long n) {
     switch (unit) {
         case TemporalUnit.YEAR:  dp.years = n; break;
-        case TemporalUnit.MONTH: dp.years = 0; dp.months = n; break;
+        case TemporalUnit.MONTH: dp.months = n; break;
         case TemporalUnit.WEEK:  dp.weeks = n; break;
         default:                 dp.days = n; break;
     }
@@ -4930,13 +4950,10 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
         return;
     }
 
-    temporal::DifferenceUnit largest;
-    if (!read_diff_options(ctx, 1, temporal::DifferenceUnit.MONTHS, &largest, false)) return;
-    // Only year/month units are accepted here.
-    if (largest != temporal::DifferenceUnit.YEARS && largest != temporal::DifferenceUnit.MONTHS) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "PlainYearMonth.until/since largestUnit must be 'years' or 'months'");
-        return;
-    }
+    // A PlainYearMonth has no day, so only year and month units are accepted.
+    DiffSettings ds;
+    if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.MONTH,
+                            TemporalUnit.YEAR, TemporalUnit.MONTH, false, &ds)) return;
 
     long a_y = plain_yearmonth_y(obj);
     int  a_m = plain_yearmonth_m(obj);
@@ -4947,19 +4964,13 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
     long end_y   = flipped ? a_y : b_y;
     int  end_m   = flipped ? a_m : b_m;
 
-    // Use a synthetic CivilDate with day=1 so difference_date handles the
+    // Use a synthetic date at day 1 so the shared date differencing handles the
     // year/month split identically to the PlainDate path.
-    temporal::CivilDate start = { .y = start_y, .m = start_m, .d = 1 };
-    temporal::CivilDate end   = { .y = end_y,   .m = end_m,   .d = 1 };
-    temporal::DateDifference diff = temporal::difference_date(start, end, largest);
+    temporal::CivilDateTime start = { .date = { .y = start_y, .m = start_m, .d = 1 } };
+    temporal::CivilDateTime end   = { .date = { .y = end_y,   .m = end_m,   .d = 1 } };
 
     temporal::DurationParts dur;
-    dur.years = diff.years;
-    dur.months = diff.months;
-    dur.weeks = 0;
-    dur.days = 0;
-    dur.hours = 0; dur.minutes = 0; dur.seconds = 0;
-    dur.ms = 0; dur.us = 0; dur.ns = 0;
+    if (!datetime_difference(ctx, start, end, ds, &dur)) return;
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }

@@ -86,20 +86,21 @@ var ymFebLeap = new Temporal.PlainYearMonth(2024, 2, 29);
 assertEq(ymFebLeap.day, 29, "Feb 29 ref day in leap year");
 assertEq(ymFebLeap.add({ years: 1 }).day, 28, "Feb 29 ref day clamps in non-leap year");
 
-// until() / since(): default largestUnit is "months".
+// until() / since(): default largestUnit is "years".
 var a = new Temporal.PlainYearMonth(2020, 1);
 var b = new Temporal.PlainYearMonth(2024, 6);
 var diff = a.until(b);
-assertEq(diff.years, 0, "until default months, years=0");
-assertEq(diff.months, 53, "until default months=53");
+assertEq(diff.years, 4, "until default years=4");
+assertEq(diff.months, 5, "until default years, months=5");
 
-var diffYears = a.until(b, { largestUnit: "years" });
-assertEq(diffYears.years, 4, "until years=4");
-assertEq(diffYears.months, 5, "until years, months=5");
+var diffMonths = a.until(b, { largestUnit: "months" });
+assertEq(diffMonths.years, 0, "until months, years=0");
+assertEq(diffMonths.months, 53, "until months=53");
 
 // since() flips the sign.
 var diffBack = a.since(b);
-assertEq(diffBack.months, -53, "since months=-53");
+assertEq(diffBack.years, -4, "since years=-4");
+assertEq(diffBack.months, -5, "since years, months=-5");
 
 // valueOf throws.
 var threw = false;
