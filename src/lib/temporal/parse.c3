@@ -141,13 +141,19 @@ fn bool parse_offset(char[] text, usz* i) {
 }
 
 // A trailing `[...]` annotation block. `out_cal_start/len` receive the first
-// calendar annotation's value range (for CallerCalendar resolution); every
-// `u-ca=` value keeps the same syntax but only the first is returned.
+// calendar annotation's value range (for CallerCalendar resolution). Per ISO
+// 8601 / Temporal grammar:
+//   * annotation keys are lowercase-only (uppercase → RangeError)
+//   * an unknown key with the critical flag is a syntax error
+//   * more than one u-ca= annotation is rejected if any annotation in the
+//     sequence carries the critical flag (else the second is silently dropped)
+//   * more than one time-zone annotation is a syntax error unconditionally
 fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_len, usz* out_tz_start, usz* out_tz_len) {
     int count = 0;
     int tz_count = 0;
     bool cal_seen = false;
     bool tz_seen = false;
+    bool critical_seen = false;
     *out_cal_start = 0;
     *out_cal_len = 0;
     if (out_tz_start != null) *out_tz_start = 0;
@@ -157,7 +163,7 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
         if (count >= 9) return false;
         *i += 1;
         bool critical = false;
-        if (*i < text.len && text[*i] == '!') { critical = true; *i += 1; }
+        if (*i < text.len && text[*i] == '!') { critical = true; *i += 1; critical_seen = true; }
 
         usz key_start = *i;
         while (*i < text.len && text[*i] != '=' && text[*i] != ']') {
@@ -172,9 +178,20 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
 
         if (*i < text.len && text[*i] == '=') {
             *i += 1;
+            // ISO 8601 §3.8 / Temporal grammar: annotation keys in `key=value`
+            // form must be all lowercase. A capitalized or mixed-case key
+            // (recognized or not) is a syntax error. Bare time-zone
+            // identifiers like `[UTC]` are read below without this rule,
+            // since time-zone names are case-sensitive in IANA / tz database.
+            for (usz k = key_start; k < key_end; k++) {
+                if (ascii::is_upper(text[k])) return false;
+            }
             // Only u-ca is a recognized key; unknown lower-case keys are
-            // tolerated per the spec's annotation grammar.
-            bool is_uca = (key_end - key_start) == 4 && text[key_start..key_end] == "u-ca";
+            // tolerated per the spec's annotation grammar. Match the key
+            // prefix (4 chars, before the `=` separator) so a key like
+            // `u-ca=...` is recognized even when `key_end` includes the
+            // separator.
+            bool is_uca = (key_end - key_start) >= 4 && text[key_start..key_start + 3] == "u-ca";
             usz v_start = *i;
             while (*i < text.len && text[*i] != ']') {
                 char c = text[*i];
@@ -185,8 +202,18 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
             }
             if (*i == v_start) return false;
             if (is_uca) {
-                if (!cal_seen) { *out_cal_start = v_start; *out_cal_len = *i - v_start; }
+                // Per spec: a second u-ca= is a syntax error only when the
+                // critical flag appears anywhere in the sequence (this entry
+                // or a sibling). Without any critical flag the second
+                // occurrence is silently dropped, leaving the first value
+                // in `out_cal_start/len`.
+                if (cal_seen && (critical || critical_seen)) return false;
+                if (!cal_seen) { *out_cal_start = v_start; *out_cal_len = *i - v_start - 1; }
                 cal_seen = true;
+            } else {
+                // Unknown key: a critical flag forces a syntax error,
+                // otherwise the annotation is tolerated.
+                if (critical) return false;
             }
         } else {
             // Time-zone identifier annotation: at most one occurrence.
@@ -268,7 +295,6 @@ fn bool parse_iso_date_string(char[] text, ParsedIsoDateTime* out) {
         usz cal_start, cal_len;
         if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
         if (cal_len != 0) {
-            // The only built-in calendar is iso8601 (ASCII case-insensitive).
             char[] cal = text[cal_start..cal_start + cal_len];
             if (!ci_equals(cal, "iso8601")) return false;
         }
@@ -522,10 +548,11 @@ fn bool parse_iso_instant_string(char[] text, ParsedIsoInstant* out) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len;
         if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
-        if (cal_len != 0) {
-            char[] cal = text[cal_start..cal_start + cal_len];
-            if (!ci_equals(cal, "iso8601")) return false;
-        }
+        // Instant has no calendar component, so any u-ca= annotation (including
+        // critical or non-iso8601) is silently ignored. parse_annotations has
+        // already enforced the uppercase-rejection and critical-unknown-key
+        // rules for grammar validity; only the calendar value is left to the
+        // caller, and the Instant caller ignores it.
         if (i != len) return false;
     }
 
