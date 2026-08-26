@@ -90,7 +90,13 @@ assertEq(Temporal.PlainDate.compare(new Temporal.PlainDate(2024, 1, 2), new Temp
 // equals()
 assertEq(new Temporal.PlainDate(2024, 1, 1).equals(new Temporal.PlainDate(2024, 1, 1)), true, "equals same");
 assertEq(new Temporal.PlainDate(2024, 1, 1).equals(new Temporal.PlainDate(2024, 1, 2)), false, "equals diff");
-assertEq(new Temporal.PlainDate(2024, 1, 1).equals({ year: 2024, month: 1, day: 1 }), false, "equals non-PD");
+// equals() runs ToTemporalDate on its argument, so a matching property bag is
+// equal and an unconvertible value throws rather than comparing unequal.
+assertEq(new Temporal.PlainDate(2024, 1, 1).equals({ year: 2024, month: 1, day: 1 }), true, "equals matching bag");
+assertEq(new Temporal.PlainDate(2024, 1, 1).equals({ year: 2024, month: 1, day: 2 }), false, "equals non-matching bag");
+assertEq(new Temporal.PlainDate(2024, 1, 1).equals("2024-01-01"), true, "equals matching string");
+assertThrows(() => new Temporal.PlainDate(2024, 1, 1).equals(1), TypeError, "equals number throws");
+assertThrows(() => new Temporal.PlainDate(2024, 1, 1).equals(), TypeError, "equals no argument throws");
 
 // with()
 const w1 = new Temporal.PlainDate(2024, 7, 15).with({ day: 1 });

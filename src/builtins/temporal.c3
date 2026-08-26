@@ -2439,49 +2439,31 @@ fn void builtin_temporal_plain_date_proto_equals(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
-        return;
-    }
+    // equals runs ToTemporalDate on its argument, so anything that cannot be
+    // converted throws rather than comparing unequal — including a missing
+    // argument, a bare number and a Duration.
     TVal* arg = arg_at(ctx, 0);
-    if (arg.is_object() && arg.get_heapptr() != null) {
-        HObject* other = (HObject*)arg.get_heapptr();
-        // ToTemporalDate: only a real PlainDate compares through the fast
-        // path; anything else needs conversion (later phases) or is unequal.
-        if (other.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
-            temporal::CivilDate a = plain_date_value(obj);
-            temporal::CivilDate b = plain_date_value(other);
-            bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
-            ctx.result.set_boolean(same_cal && temporal::date_equals(a, b));
-            return;
-        }
-        if (other.get_class() == hobject::ObjClass.TEMPORAL_DURATION) {
-            ctx.result.set_boolean(false);
-            return;
-        }
-        // Non-PlainDate object (property bag): convert and compare.
-        HObject*? other_o = plain_date_from_arg(ctx, arg);
-        if (ctx.should_throw) return;
-        HObject* other_pd = other_o!!;
-        temporal::CivilDate a = plain_date_value(obj);
-        temporal::CivilDate b = plain_date_value(other_pd);
-        bool same_cal = obj.extra.temporal.calendar == other_pd.extra.temporal.calendar;
-        ctx.result.set_boolean(same_cal && temporal::date_equals(a, b));
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "equals requires a Temporal.PlainDate argument");
         return;
     }
-    // String: parse via the standard path (which enforces no-time-component,
-    // valid-date range, and known calendar).
-    if (arg.is_string()) {
+
+    // A real PlainDate compares directly; everything else goes through the
+    // conversion path, which reports its own TypeError/RangeError.
+    HObject* other_pd;
+    if (arg.is_object() && arg.get_heapptr() != null
+        && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
+        other_pd = (HObject*)arg.get_heapptr();
+    } else {
         HObject*? other_o = plain_date_from_arg(ctx, arg);
         if (ctx.should_throw) return;
-        HObject* other_pd = other_o!!;
-        temporal::CivilDate a = plain_date_value(obj);
-        temporal::CivilDate b = plain_date_value(other_pd);
-        bool same_cal = obj.extra.temporal.calendar == other_pd.extra.temporal.calendar;
-        ctx.result.set_boolean(same_cal && temporal::date_equals(a, b));
-        return;
+        other_pd = other_o!!;
     }
-    ctx.result.set_boolean(false);
+
+    temporal::CivilDate a = plain_date_value(obj);
+    temporal::CivilDate b = plain_date_value(other_pd);
+    bool same_cal = obj.extra.temporal.calendar == other_pd.extra.temporal.calendar;
+    ctx.result.set_boolean(same_cal && temporal::date_equals(a, b));
 }
 
 fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
@@ -3033,7 +3015,7 @@ fn void builtin_temporal_plain_time_proto_equals(BuiltinContext* ctx) {
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "equals requires an argument");
         return;
     }
     TVal* arg = arg_at(ctx, 0);
@@ -3735,7 +3717,7 @@ fn void builtin_temporal_plain_datetime_proto_equals(BuiltinContext* ctx) {
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "equals requires an argument");
         return;
     }
     TVal* arg = arg_at(ctx, 0);
@@ -4790,7 +4772,7 @@ fn void builtin_temporal_plain_yearmonth_proto_equals(BuiltinContext* ctx) {
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "equals requires an argument");
         return;
     }
     TVal* arg = arg_at(ctx, 0);
@@ -5474,7 +5456,7 @@ fn void builtin_temporal_plain_monthday_proto_equals(BuiltinContext* ctx) {
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "equals requires an argument");
         return;
     }
     TVal* arg = arg_at(ctx, 0);
@@ -8473,8 +8455,17 @@ fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null
-        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+    // equals runs ToTemporalZonedDateTime, so a value that cannot convert
+    // throws instead of comparing unequal. Strings and property bags are not
+    // accepted yet; a primitive is rejected here as the spec requires.
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        // A string would parse as an ISO instant, so a bad one is a RangeError;
+        // every other primitive fails the type check outright.
+        HObject* proto = arg.is_string() ? ctx.heap.range_err_proto : ctx.heap.type_err_proto;
+        builtin_throw(ctx, proto, "argument is not a Temporal.ZonedDateTime");
+        return;
+    }
+    if (((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
         ctx.result.set_boolean(false);
         return;
     }
