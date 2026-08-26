@@ -223,6 +223,35 @@ fn TVal prop_or_undefined(HObject* o, Heap* hp, char[] name) {
     return o.get_prop(key, hp) ?? undef;
 }
 
+// Proxy-aware read: when the bag is a Proxy exotic, route through the trap
+// machinery so observers (test262 propertyBagObserver) see the [[Get]]
+// rather than only the prop table lookup. For non-Proxy objects this is
+// equivalent to prop_or_undefined.
+fn TVal prop_or_undefined_pa(BuiltinContext* ctx, HObject* o, char[] name) {
+    Heap* hp = ctx.heap;
+    HString* key = builtin_intern_string(hp, name);
+    if (o.flags.exotic_proxyobj && ctx.vm != null) {
+        TVal recv; recv.set_object(o);
+        TVal out;
+        if (proxy_mop_get(ctx.vm, hp, o, key, recv, &out)) {
+            if (ctx.should_throw) {
+                TVal undef; undef.set_undefined();
+                return undef;
+            }
+            return out;
+        }
+        if (hp.has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = hp.error_value;
+            hp.has_error = false;
+        }
+        TVal undef; undef.set_undefined();
+        return undef;
+    }
+    TVal undef; undef.set_undefined();
+    return o.get_prop(key, hp) ?? undef;
+}
+
 // Read the `overflow` option (default "constrain"). Per spec (GetOption +
 // ToTemporalOverflow), the option value is converted to a string before being
 // matched against the allowed set. TypeError only fires when ToString itself
@@ -304,8 +333,13 @@ fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
 // RangeError for malformed or out-of-range codes).
 fn bool parse_month_code(BuiltinContext* ctx, TVal tv, int* out) {
     if (!tv.is_string()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "monthCode must be a string");
-        return false;
+        HString* s = builtin_to_string_vm(ctx, &tv);
+        if (ctx.should_throw) return false;
+        if (s == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "monthCode must be convertible to a string");
+            return false;
+        }
+        tv.set_string(s);
     }
     HString* s = (HString*)tv.get_heapptr();
     char[] text = s.get_cstr()[:s.blen];
@@ -327,28 +361,76 @@ fn bool parse_month_code(BuiltinContext* ctx, TVal tv, int* out) {
 // `keep_missing` tells with() to fall back to the current date's fields.
 // Runs the era/eraYear rejection, month/monthCode agreement check, and
 // calendar-property resolution that the single-ISO-calendar engine needs.
+// Property reads happen in the spec order (calendar, day, month, monthCode,
+// year) so observers (test262 propertyBagObserver) see the right sequence
+// and valueOf/toString fire right after their property.
 fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
                       temporal::CivilDate cur, temporal::CivilDate* out,
                       long* out_epoch_days) {
     Vm* v = (Vm*)ctx.vm;
-    TVal year_v  = prop_or_undefined(bag, ctx.heap, "year");
-    TVal month_v = prop_or_undefined(bag, ctx.heap, "month");
-    TVal mc_v    = prop_or_undefined(bag, ctx.heap, "monthCode");
-    TVal day_v   = prop_or_undefined(bag, ctx.heap, "day");
-    TVal cal_v   = prop_or_undefined(bag, ctx.heap, "calendar");
-    TVal era_v   = prop_or_undefined(bag, ctx.heap, "era");
-    TVal era_y_v = prop_or_undefined(bag, ctx.heap, "eraYear");
 
-    if (!era_v.is_undefined() || !era_y_v.is_undefined()) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "era/eraYear are not supported by the ISO calendar");
-        return false;
-    }
+    // Calendar (RejectObjectWithCalendarOrTimeZone): we only support iso8601,
+    // so read calendar first; anything other than an iso8601 string/calendar
+    // object throws.
+    TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
     if (!cal_v.is_undefined()) {
         HObject* cal;
         if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
     }
 
+    // era / eraYear are never read by the ISO calendar's PrepareTemporalFields,
+    // so we don't probe for them here either. They would be rejected if a
+    // caller set them on the bag directly via JS, but no spec path triggers
+    // that read.
+
     long y = cur.y;
+    long m = cur.m;
+    long d = cur.d;
+
+    // day
+    TVal day_v = prop_or_undefined_pa(ctx, bag, "day");
+    if (!day_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &day_v, &d)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+            return false;
+        }
+    } else if (!keep_missing) {
+        d = 1;
+    }
+
+    // month
+    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
+    bool have_month = false;
+    long mv = 0;
+    if (!month_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &month_v, &mv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+            return false;
+        }
+        have_month = true;
+    }
+
+    // monthCode
+    TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
+    if (!mc_v.is_undefined()) {
+        int mci;
+        if (!parse_month_code(ctx, mc_v, &mci)) return false;
+        if (have_month && mv != mci) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
+            return false;
+        }
+        m = mci;
+    } else if (have_month) {
+        m = mv;
+    } else if (!keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
+        return false;
+    }
+
+    // year (last, per the spec ordering of PrepareTemporalFields)
+    TVal year_v = prop_or_undefined_pa(ctx, bag, "year");
     if (!year_v.is_undefined()) {
         if (!to_integer_with_truncation(v, &year_v, &y)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
@@ -358,47 +440,6 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     } else if (!keep_missing) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "missing year property");
         return false;
-    }
-
-    long m = cur.m;
-    if (month_v.is_undefined() && mc_v.is_undefined()) {
-        if (!keep_missing) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
-            return false;
-        }
-    } else {
-        long mv = 0;
-        bool have_month = false;
-        if (!month_v.is_undefined()) {
-            if (!to_integer_with_truncation(v, &month_v, &mv)) {
-                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-                builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
-                return false;
-            }
-            have_month = true;
-        }
-        if (!mc_v.is_undefined()) {
-            int mci;
-            if (!parse_month_code(ctx, mc_v, &mci)) return false;
-            if (have_month && mv != mci) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
-                return false;
-            }
-            m = mci;
-        } else if (have_month) {
-            m = mv;
-        }
-    }
-
-    long d = cur.d;
-    if (!day_v.is_undefined()) {
-        if (!to_integer_with_truncation(v, &day_v, &d)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
-            return false;
-        }
-    } else if (!keep_missing) {
-        d = 1;
     }
 
     out.y = y;
@@ -663,7 +704,10 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
     }
     HObject* opts = (HObject*)ov.get_heapptr();
 
-    TVal uv = prop_or_undefined(opts, ctx.heap, "largestUnit");
+    // Order matches GetDifferenceSettings in the reference implementation:
+    // largestUnit, roundingIncrement, roundingMode, smallestUnit. Read in this
+    // sequence so Proxy observers see the expected access pattern.
+    TVal uv = prop_or_undefined_pa(ctx, opts, "largestUnit");
     if (!uv.is_undefined()) {
         // GetOption converts the value to a string before matching. Symbol
         // throws TypeError; primitives that don't match a known unit reject
@@ -685,12 +729,38 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
         }
     }
 
-    // smallestUnit must be no finer than the smallest allowed by the type,
-    // and no larger than largestUnit. Date-only types stop at day; time-aware
-    // types can go down to nanoseconds but the difference algorithms in
-    // lib/temporal stop at seconds (smaller units land with `round` in a
-    // later phase).
-    TVal sv = prop_or_undefined(opts, ctx.heap, "smallestUnit");
+    // roundingIncrement: integral >= 1; values > 1 are accepted but computed
+    // as the exact difference (rounding is a later phase).
+    TVal ri = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
+    if (!ri.is_undefined()) {
+        Vm* v = (Vm*)ctx.vm;
+        double d = vm::vm_to_number(v, &ri);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+        if (math::is_nan(d) || math::is_inf(d)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingIncrement");
+            return false;
+        }
+        if (d < 1 || math::floor(d) != d) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+            return false;
+        }
+    }
+
+    // roundingMode: GetOption converts to string, then matches the allowed set.
+    TVal rm = prop_or_undefined_pa(ctx, opts, "roundingMode");
+    if (!rm.is_undefined()) {
+        HString* s = builtin_to_string_vm(ctx, &rm);
+        if (ctx.should_throw) return false;
+        char[] v = s.get_cstr()[:s.blen];
+        if (!(v == "trunc" || v == "ceil" || v == "floor" || v == "expand" ||
+              v == "halfTrunc" || v == "halfCeil" || v == "halfFloor" ||
+              v == "halfExpand" || v == "halfEven")) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
+            return false;
+        }
+    }
+
+    TVal sv = prop_or_undefined_pa(ctx, opts, "smallestUnit");
     if (!sv.is_undefined()) {
         HString* s = builtin_to_string_vm(ctx, &sv);
         if (ctx.should_throw) return false;
@@ -710,37 +780,6 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
         }
         if (small > *largest) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit cannot be larger than largestUnit");
-            return false;
-        }
-    }
-
-    // roundingMode: GetOption converts to string, then matches the allowed set.
-    TVal rm = prop_or_undefined(opts, ctx.heap, "roundingMode");
-    if (!rm.is_undefined()) {
-        HString* s = builtin_to_string_vm(ctx, &rm);
-        if (ctx.should_throw) return false;
-        char[] v = s.get_cstr()[:s.blen];
-        if (!(v == "trunc" || v == "ceil" || v == "floor" || v == "expand" ||
-              v == "halfTrunc" || v == "halfCeil" || v == "halfFloor" ||
-              v == "halfExpand" || v == "halfEven")) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
-            return false;
-        }
-    }
-
-    // roundingIncrement: integral >= 1; values > 1 are accepted but computed
-    // as the exact difference (rounding is a later phase).
-    TVal ri = prop_or_undefined(opts, ctx.heap, "roundingIncrement");
-    if (!ri.is_undefined()) {
-        Vm* v = (Vm*)ctx.vm;
-        double d = vm::vm_to_number(v, &ri);
-        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-        if (math::is_nan(d) || math::is_inf(d)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingIncrement");
-            return false;
-        }
-        if (d < 1 || math::floor(d) != d) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
             return false;
         }
     }
@@ -3215,13 +3254,13 @@ fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_mis
                                 long cur_y, int cur_m, int cur_day,
                                 long* out_y, int* out_m, int* out_day) {
     Vm* v = (Vm*)ctx.vm;
-    TVal year_v  = prop_or_undefined(bag, ctx.heap, "year");
-    TVal month_v = prop_or_undefined(bag, ctx.heap, "month");
-    TVal mc_v    = prop_or_undefined(bag, ctx.heap, "monthCode");
-    TVal day_v   = prop_or_undefined(bag, ctx.heap, "day");
-    TVal cal_v   = prop_or_undefined(bag, ctx.heap, "calendar");
-    TVal era_v   = prop_or_undefined(bag, ctx.heap, "era");
-    TVal era_y_v = prop_or_undefined(bag, ctx.heap, "eraYear");
+    TVal year_v  = prop_or_undefined_pa(ctx, bag, "year");
+    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
+    TVal mc_v    = prop_or_undefined_pa(ctx, bag, "monthCode");
+    TVal day_v   = prop_or_undefined_pa(ctx, bag, "day");
+    TVal cal_v   = prop_or_undefined_pa(ctx, bag, "calendar");
+    TVal era_v   = prop_or_undefined_pa(ctx, bag, "era");
+    TVal era_y_v = prop_or_undefined_pa(ctx, bag, "eraYear");
 
     if (!era_v.is_undefined() || !era_y_v.is_undefined()) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "era/eraYear are not supported by the ISO calendar");
@@ -3903,13 +3942,13 @@ fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_miss
                                 int cur_y, int cur_m, int cur_d,
                                 int* out_y, int* out_m, int* out_d) {
     Vm* v = (Vm*)ctx.vm;
-    TVal year_v  = prop_or_undefined(bag, ctx.heap, "year");
-    TVal month_v = prop_or_undefined(bag, ctx.heap, "month");
-    TVal mc_v    = prop_or_undefined(bag, ctx.heap, "monthCode");
-    TVal day_v   = prop_or_undefined(bag, ctx.heap, "day");
-    TVal cal_v   = prop_or_undefined(bag, ctx.heap, "calendar");
-    TVal era_v   = prop_or_undefined(bag, ctx.heap, "era");
-    TVal era_y_v = prop_or_undefined(bag, ctx.heap, "eraYear");
+    TVal year_v  = prop_or_undefined_pa(ctx, bag, "year");
+    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
+    TVal mc_v    = prop_or_undefined_pa(ctx, bag, "monthCode");
+    TVal day_v   = prop_or_undefined_pa(ctx, bag, "day");
+    TVal cal_v   = prop_or_undefined_pa(ctx, bag, "calendar");
+    TVal era_v   = prop_or_undefined_pa(ctx, bag, "era");
+    TVal era_y_v = prop_or_undefined_pa(ctx, bag, "eraYear");
 
     if (!era_v.is_undefined() || !era_y_v.is_undefined()) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "era/eraYear are not supported by the ISO calendar");
