@@ -406,7 +406,8 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
 }
 
 // Constrain or reject a bag's y/m/d into a valid CivilDate. Month/day clamping
-// follows the overflow policy; the year range check is final.
+// Constrain or reject a bag's y/m/d into a valid CivilDate. Month < 1 and
+// day < 1 always throw. Month > 12 follows overflow (clamp to 12 vs reject).
 fn bool fields_to_valid_date(BuiltinContext* ctx, temporal::CivilDate fields,
                              temporal::OverflowKind overflow, temporal::CivilDate* out) {
     long y = fields.y;
@@ -414,16 +415,16 @@ fn bool fields_to_valid_date(BuiltinContext* ctx, temporal::CivilDate fields,
     int d = (int)fields.d;
 
     if (m < 1) {
-        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
-        m = 1;
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month");
+        return false;
     }
     if (m > 12) {
         if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
         m = 12;
     }
     if (d < 1) {
-        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day"); return false; }
-        d = 1;
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day");
+        return false;
     }
     int dim = temporal::days_in_month(y, (int)m);
     if (d > dim) {
@@ -1430,10 +1431,12 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
         return;
     }
     HObject* bag = (HObject*)arg.get_heapptr();
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
 
+    // Spec order: validate the field bag (base ranges reject regardless of
+    // overflow) before reading options, so a primitive options type does not
+    // shadow a RangeError on the bag itself. The full validity check below
+    // re-runs with the resolved overflow.
     temporal::CivilDate cur = plain_date_value(obj);
     temporal::CivilDate fields;
     long _ep;
@@ -1441,6 +1444,17 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    // Base ranges reject up-front. These are the same rules the validator
+    // applies at the default constrain, so passing CONSTRAIN here only
+    // catches the unconditional cases (month < 1, day < 1). The second pass
+    // below handles the overflow-dependent ones (month > 12, day > daysInMonth).
+    temporal::CivilDate _pre;
+    if (!fields_to_valid_date(ctx, fields, temporal::OverflowKind.CONSTRAIN, &_pre)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     temporal::CivilDate result;
     if (!fields_to_valid_date(ctx, fields, overflow, &result)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
