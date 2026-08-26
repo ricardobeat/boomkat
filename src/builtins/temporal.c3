@@ -223,8 +223,12 @@ fn TVal prop_or_undefined(HObject* o, Heap* hp, char[] name) {
     return o.get_prop(key, hp) ?? undef;
 }
 
-// Read the `overflow` option (default "constrain"). Wrong types throw
-// TypeError, unknown strings RangeError, per GetOption.
+// Read the `overflow` option (default "constrain"). Per spec (GetOption +
+// ToTemporalOverflow), the option value is converted to a string before being
+// matched against the allowed set. TypeError only fires when ToString itself
+// throws (e.g. on a Symbol); null / true / numbers convert to invalid
+// strings and reject with RangeError. The top-level options must be an
+// object (or undefined).
 fn bool read_overflow_option(BuiltinContext* ctx, int options_index, temporal::OverflowKind* out) {
     *out = temporal::OverflowKind.CONSTRAIN;
     if (ctx.argc <= options_index) return true;
@@ -237,13 +241,12 @@ fn bool read_overflow_option(BuiltinContext* ctx, int options_index, temporal::O
     HObject* opts = (HObject*)ov.get_heapptr();
     TVal val = prop_or_undefined(opts, ctx.heap, "overflow");
     if (val.is_undefined()) return true;
-    if (!val.is_string()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "overflow option must be a string");
-        return false;
-    }
-    HString* s = (HString*)val.get_heapptr();
-    char[] v = s.get_cstr()[:s.blen];
-    if (v == "constrain") { *out = temporal::OverflowKind.CONSTRAIN; return true; }
+    // Convert to string per GetOption step 9.a. Symbol throws TypeError
+    // (ToString); primitives convert to invalid strings and RangeError below.
+    HString* str = builtin_to_string_vm(ctx, &val);
+    if (ctx.should_throw) return false;
+    char[] v = str.get_cstr()[:str.blen];
+    if (v == "constrain") return true;
     if (v == "reject")    { *out = temporal::OverflowKind.REJECT; return true; }
     builtin_throw(ctx, ctx.heap.range_err_proto, "overflow option must be \"constrain\" or \"reject\"");
     return false;
