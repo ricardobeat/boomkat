@@ -765,7 +765,9 @@ fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
 
     int arg_count = ctx.argc < 10 ? ctx.argc : 10;
     for (int k = 0; k < arg_count; k++) {
-        double val = vm::vm_to_number(v, arg_at(ctx, k));
+        TVal* arg = arg_at(ctx, k);
+        if (arg.is_undefined()) continue; // spec: undefined args treated as zero
+        double val = vm::vm_to_number(v, arg);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
         if (math::is_nan(val) || math::is_inf(val)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite numbers");
