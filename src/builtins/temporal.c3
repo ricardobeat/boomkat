@@ -6896,6 +6896,23 @@ fn TemporalRoundMode negate_round_mode(TemporalRoundMode m) {
     }
 }
 
+// Translate a sign-aware rounding mode into the as-if-positive mode that
+// round_bigint_ns must use to produce the same result for a NEGATIVE value.
+//
+// round_bigint_ns works on the floor-normalized scale, where "down" is toward
+// negative infinity. For a negative value, rounding toward zero is therefore
+// "up" — so trunc behaves as ceil and expand as floor. The ceil/floor pair
+// swaps for the same reason, and the half-* modes follow their tie direction.
+fn TemporalRoundMode mode_for_negative(TemporalRoundMode m) {
+    switch (m) {
+        case TemporalRoundMode.TRUNC:       return TemporalRoundMode.CEIL;
+        case TemporalRoundMode.EXPAND:      return TemporalRoundMode.FLOOR;
+        case TemporalRoundMode.HALF_TRUNC:  return TemporalRoundMode.HALF_CEIL;
+        case TemporalRoundMode.HALF_EXPAND: return TemporalRoundMode.HALF_FLOOR;
+        default: return m;
+    }
+}
+
 // Build a Duration whose time units are the difference between two Instants'
 // epoch-ns BigInts. `largest_unit_ns` is the unit ns (3600*1e9 for hours,
 // 60*1e9 for minutes, 1e9 for seconds, 1e6 for ms, etc.). The duration is
@@ -6971,6 +6988,50 @@ fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigi
     }
     ctx.heap.decref((types::HeapHeader*)q);
     ctx.heap.decref((types::HeapHeader*)r);
+    HObject*? dur_o = alloc_duration(ctx.heap, dp);
+    if (catch err = dur_o) {
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return false;
+    }
+    *out = dur_o;
+    return true;
+}
+
+// Split a nanosecond count into a Duration, filling `largest` and every finer
+// time unit. The value has already been rounded to smallestUnit by the caller,
+// so the tail fields simply come out zero.
+//
+// The count is taken as int128 rather than long: an Instant pair can be up to
+// ~2*8.64e21 ns apart, which overflows a 64-bit nanosecond field even though
+// each individual unit field fits comfortably.
+fn bool instant_ns_split_duration(BuiltinContext* ctx, hbigint::HBigInt* ns, TemporalUnit largest, HObject** out) {
+    int128 v = ns.to_int128();
+    temporal::DurationParts dp = {};
+
+    // Walk the ladder from `largest` down; each unit takes the whole quotient
+    // at its scale and hands the remainder to the next one.
+    if (largest <= TemporalUnit.HOUR) {
+        dp.hours = (long)(v / 3600000000000L);
+        v %= 3600000000000L;
+    }
+    if (largest <= TemporalUnit.MINUTE) {
+        dp.minutes = (long)(v / 60000000000L);
+        v %= 60000000000L;
+    }
+    if (largest <= TemporalUnit.SECOND) {
+        dp.seconds = (long)(v / 1000000000L);
+        v %= 1000000000L;
+    }
+    if (largest <= TemporalUnit.MILLISECOND) {
+        dp.ms = (long)(v / 1000000L);
+        v %= 1000000L;
+    }
+    if (largest <= TemporalUnit.MICROSECOND) {
+        dp.us = (long)(v / 1000L);
+        v %= 1000L;
+    }
+    dp.ns = (long)v;
+
     HObject*? dur_o = alloc_duration(ctx.heap, dp);
     if (catch err = dur_o) {
         builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
@@ -7087,38 +7148,69 @@ fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** o
 // this.since(other[, options]) = this - other, as a Duration in seconds (or
 // other time units when largestUnit is set).
 fn void builtin_temporal_instant_proto_since(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "since requires an Instant argument");
-        return;
-    }
-    hbigint::HBigInt* other_ns;
-    if (!to_temporal_instant(ctx, arg_at(ctx, 0), &other_ns)) return;
-    defer ctx.heap.decref((types::HeapHeader*)other_ns);
-    long largest_unit_ns;
-    if (!read_instant_largest_unit_ns(ctx, 1, &largest_unit_ns)) return;
-    HObject* self = (HObject*)ctx.this_val.get_heapptr();
-    HObject* dur;
-    if (!instant_ns_diff_duration(ctx, self.extra.temporal.big_ns, other_ns, largest_unit_ns, &dur)) return;
-    dur.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(dur);
+    instant_until_since(ctx, false);
 }
 
 // this.until(other[, options]) = other - this, as a Duration in seconds.
 fn void builtin_temporal_instant_proto_until(BuiltinContext* ctx) {
+    instant_until_since(ctx, true);
+}
+
+// Shared body for Instant.prototype.until/since.
+//
+// Instant has no date, so every unit is a fixed number of nanoseconds and the
+// whole difference is one BigInt subtraction: round the elapsed nanoseconds to
+// smallestUnit, then split the result across the ladder down from largestUnit.
+fn void instant_until_since(BuiltinContext* ctx, bool until) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
     if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "until requires an Instant argument");
+        builtin_throw(ctx, ctx.heap.type_err_proto, "until/since requires an Instant argument");
         return;
     }
     hbigint::HBigInt* other_ns;
     if (!to_temporal_instant(ctx, arg_at(ctx, 0), &other_ns)) return;
     defer ctx.heap.decref((types::HeapHeader*)other_ns);
-    long largest_unit_ns;
-    if (!read_instant_largest_unit_ns(ctx, 1, &largest_unit_ns)) return;
+
+    // Instant spans no calendar, so units coarser than "hour" are rejected.
+    //
+    // negate_mode is false even for `since`: the operands below are swapped so
+    // the difference already carries the final sign, and the rounding mode is
+    // then adjusted for that sign directly. Pre-negating here as well would
+    // apply the correction twice.
+    DiffSettings ds;
+    if (!read_diff_settings(ctx, 1, TemporalUnit.HOUR, TemporalUnit.NANOSECOND,
+                            TemporalUnit.SECOND, TemporalUnit.NANOSECOND, false, &ds)) return;
+
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    hbigint::HBigInt* a;
+    hbigint::HBigInt* b;
+    if (until) { a = other_ns; b = self.extra.temporal.big_ns; }
+    else       { a = self.extra.temporal.big_ns; b = other_ns; }
+
+    hbigint::HBigInt*? diff_o = hbigint::hbigint_addsub(ctx.heap, a, b, true);
+    if (catch err = diff_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "difference overflow"); return; }
+    hbigint::HBigInt* diff = diff_o;
+
+    // Rounding to nanoseconds by 1 is the identity, so skip the BigInt work.
+    long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
+    if (incr_ns > 1) {
+        // round_bigint_ns rounds as if the value were positive, but until/since
+        // round by magnitude: on a negative difference "trunc" must move toward
+        // zero (i.e. up) and "expand" away from it (down). Mapping the mode to
+        // its as-if-positive equivalent gives the same answer without negating
+        // the BigInt twice.
+        TemporalRoundMode mode = ds.mode;
+        if (diff.is_negative()) mode = mode_for_negative(mode);
+        hbigint::HBigInt*? rounded_o = round_bigint_ns(ctx, diff, incr_ns, mode);
+        ctx.heap.decref((types::HeapHeader*)diff);
+        if (catch err = rounded_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "rounding failed"); return; }
+        diff = rounded_o;
+    }
+
     HObject* dur;
-    if (!instant_ns_diff_duration(ctx, other_ns, self.extra.temporal.big_ns, largest_unit_ns, &dur)) return;
+    bool ok = instant_ns_split_duration(ctx, diff, ds.largest, &dur);
+    ctx.heap.decref((types::HeapHeader*)diff);
+    if (!ok) return;
     dur.prototype = ctx.heap.temporal_duration_proto;
     ctx.result.set_object(dur);
 }
