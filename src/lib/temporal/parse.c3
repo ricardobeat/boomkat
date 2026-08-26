@@ -162,7 +162,7 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
         usz key_start = *i;
         while (*i < text.len && text[*i] != '=' && text[*i] != ']') {
             char c = text[*i];
-            bool ok = ascii::is_lower(c) || ascii::is_digit(c) ||
+            bool ok = ascii::is_lower(c) || ascii::is_upper(c) || ascii::is_digit(c) ||
                       c == '-' || c == '_' || c == '+' || c == '.' || c == '/';
             if (!ok) return false;
             *i += 1;
@@ -631,7 +631,6 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     }
 
     // --- Annotations ---
-    out.timezone = text[0..0];  // empty by default
     if (i < len) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len, tz_start, tz_len;

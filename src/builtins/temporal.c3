@@ -7495,14 +7495,12 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoZonedDateTime p = { .year = 0, .month = 0, .day = 0, .hour = 0, .minute = 0, .second = 0, .nanos = 0, .offset_seconds = 0 };
         if (!temporal::parse_iso_zoneddatetime_string(text, &p)) {
-            io::printn("PARSE FAILED");
-            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: invalid ISO string");
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: invalid ISO string");
             return;
         }
         // Resolve timezone from annotation or offset.
         HObject* tz;
         if (p.timezone.len > 0) {
-            io::printn("TZ_ANNO");
             char[] tz_id = p.timezone;
             if (temporal::tzdb_zone_exists((String)tz_id)) {
                 HObject*? tz_o = alloc_timezone(ctx.heap, (String)tz_id);
@@ -7523,7 +7521,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             off_buf[4] = (char)('0' + (int)((mag % 3600) / 60 / 10));
             off_buf[5] = (char)('0' + (int)((mag % 3600) / 60 % 10));
             off_buf[6] = 0;
-            HObject*? tz_o = alloc_timezone(ctx.heap, (String)off_buf[:5]);
+            HObject*? tz_o = alloc_timezone(ctx.heap, (String)off_buf[:6]);
             if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             tz = tz_o;
         }

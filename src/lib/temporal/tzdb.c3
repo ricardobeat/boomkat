@@ -123,6 +123,24 @@ fn int tzdb_offset_for_zone_ci(String zone_name, long epoch_sec, char* canonical
 // initial_offset_sec, which is the zone's pre-history offset. Temporal
 // only ever queries instants >= 0 in practice.
 fn int tzdb_offset_for_zone_at(String zone_name, long epoch_sec) {
+    // Fixed-offset time zones: Z or ±HH[:MM].
+    if (zone_name.len > 0) {
+        char first = zone_name.ptr[0];
+        if (first == 'Z' || first == 'z') return 0;
+        if (first == '+' || first == '-') {
+            bool neg = (first == '-');
+            int h = 0;
+            int mi = 0;
+            if (zone_name.len >= 3) {
+                h = (zone_name.ptr[1] - '0') * 10 + (zone_name.ptr[2] - '0');
+            }
+            if (zone_name.len >= 5 && zone_name.ptr[3] == ':') {
+                mi = (zone_name.ptr[4] - '0') * 10 + (zone_name.ptr[5] - '0');
+            }
+            int off = h * 3600 + mi * 60;
+            return neg ? -off : off;
+        }
+    }
     int idx = tzdb_zone_index(zone_name);
     if (idx < 0) return 0;
     TzdbZone* z = &TZDB_ZONES[idx];
