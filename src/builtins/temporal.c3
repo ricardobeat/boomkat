@@ -1312,6 +1312,11 @@ fn void decompose_ns(long ns, TemporalUnit largest, temporal::DurationParts* out
     if (largest == TemporalUnit.DAY) {
         out.days = sign * (long)(rem / 86400000000000L);
         rem %= 86400000000000L;
+    } else if (largest == TemporalUnit.WEEK) {
+        long total_days = (long)(rem / 86400000000000L);
+        rem %= 86400000000000L;
+        out.weeks = sign * (total_days / 7);
+        out.days = sign * (total_days % 7);
     }
     // Decompose time units only down to largest_unit.
     if (largest <= TemporalUnit.HOUR) {
@@ -1513,8 +1518,8 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         return;
     }
 
-    // No-relativeTo or time-only with relativeTo: unified path.
-    if (relative_to == null || (!is_cal_unit(existing) && !is_cal_unit(largest_unit) && !is_cal_unit(smallest_unit))) {
+    // No-relativeTo: time-only path.
+    if (relative_to == null) {
         if (is_cal_unit(existing) || is_cal_unit(largest_unit)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is required for calendar units");
             return;
@@ -1548,7 +1553,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         return;
     }
 
-    // Calendar rounding with relativeTo.
+    // With relativeTo: calendar-aware rounding path.
     // Spec algorithm for plainRelativeTo:
     // 1. ToInternalDurationRecordWith24HourDays(duration) → {date, time}
     // 2. AddTime(MidnightTimeRecord(), time) → targetTime
@@ -1566,17 +1571,21 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
                            .m = relative_to.extra.temporal.long_b,
                            .d = relative_to.extra.temporal.long_c };
 
-    // Step 1-3: InternalDurationRecordWith24HourDays = fold days into time.
-    int128 time_ns = duration_to_time_ns(dur);
+    // Step 1: Compute time-only (no days) for AddTime.
+    int128 time_only_ns = (int128)0;
+    time_only_ns += (int128)dur.hours   * 3600000000000L;
+    time_only_ns += (int128)dur.minutes *   60000000000L;
+    time_only_ns += (int128)dur.seconds *    1000000000L;
+    time_only_ns += (int128)dur.ms      *       1000000L;
+    time_only_ns += (int128)dur.us      *          1000L;
+    time_only_ns += (int128)dur.ns;
 
-    // Step 2: AddTime(Midnight, time) → targetTime
-    // targetTime.time = time, targetTime.days = floor(time_ns / nsPerDay)
-    long target_time_days = (long)(time_ns / 8640000000000L);
-    int128 target_time_rem = time_ns % 8640000000000L;
-    // targetTime.days may be negative for negative durations.
-    if (time_ns < 0 && target_time_rem != 0) {
+    // Step 2: AddTime(Midnight, time_only) → targetTime
+    long target_time_days = (long)(time_only_ns / 86400000000000L);
+    int128 target_time_rem = time_only_ns % 86400000000000L;
+    if (time_only_ns < 0 && target_time_rem != 0) {
         target_time_days -= 1;
-        target_time_rem += 8640000000000L;
+        target_time_rem += 86400000000000L;
     }
 
     // Step 3: AdjustDateDurationRecord(date, date.days + targetTime.days)
@@ -1594,81 +1603,108 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     // Total ns from isoDateTime to targetDateTime:
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
     long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-    int128 diff_ns = (int128)(tgt_epoch - rel_epoch) * 8640000000000L + target_time_rem;
+    int128 diff_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
 
     // Step 7: Round the difference.
-    if (smallest_unit == TemporalUnit.DAY) {
-        double frac = (double)diff_ns / 8640000000000.0;
-        double rounded = round_num_to_incr(frac, rounding_increment, rounding_mode);
-        long days = (long)rounded;
-        int128 rounded_ns = (int128)days * 8640000000000L;
-        // Decompose into days + time up to largest_unit.
-        temporal::DurationParts result;
-        long r = (long)rounded_ns;
-        long abs_r = r < 0 ? -r : r;
-        long sign = r < 0 ? -1 : 1;
-        long rem2 = abs_r;
-        result.days = sign * (long)(rem2 / 8640000000000L);
-        rem2 %= 8640000000000L;
-        result.hours = sign * (int)(rem2 / 3600000000000L);
-        rem2 %= 3600000000000L;
-        result.minutes = sign * (int)(rem2 / 60000000000L);
-        rem2 %= 60000000000L;
-        result.seconds = sign * (int)(rem2 / 1000000000L);
-        rem2 %= 1000000000L;
-        result.ms = sign * (int)(rem2 / 1000000L);
-        rem2 %= 1000000L;
-        result.us = sign * (int)(rem2 / 1000L);
-        result.ns = sign * (int)(rem2 % 1000L);
-        result.years = 0; result.months = 0; result.weeks = 0;
-        HObject*? obj_o = alloc_duration(ctx.heap, result);
-        if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-        HObject* obj = obj_o;
-        obj.prototype = ctx.heap.temporal_duration_proto;
-        ctx.result.set_object(obj);
-        return;
-    }
-
-    if (is_cal_unit(smallest_unit)) {
-        // Calendar unit rounding: use difference_date then round.
-        builtin_throw(ctx, ctx.heap.range_err_proto, "calendar unit rounding with relativeTo not yet fully supported");
-        return;
-    }
-
-    // Time unit rounding: round the total ns to the smallest_unit increment.
-    long divisor = unit_ns_divisor(smallest_unit);
-    double incr_ns = (double)divisor * rounding_increment;
-    double rounded_ns = round_num_to_incr((double)diff_ns, incr_ns, rounding_mode);
-
-    // Decompose the rounded ns into components up to largest_unit.
     temporal::DurationParts result;
-    long rounded = (long)rounded_ns;
-    long abs_r = rounded < 0 ? -rounded : rounded;
-    long sign = rounded < 0 ? -1 : 1;
-    long rem2 = abs_r;
+    result.years = 0; result.months = 0; result.weeks = 0; result.days = 0;
+    result.hours = 0; result.minutes = 0; result.seconds = 0;
+    result.ms = 0; result.us = 0; result.ns = 0;
 
-    // BubbleRelativeDuration: when largest_unit is a time unit and the rounded
-    // result overflows days, keep it as time. When largest_unit is day, split
-    // into days + time.
-    result.years = 0;
-    result.months = 0;
-    result.weeks = 0;
-    if (largest_unit == TemporalUnit.DAY) {
-        result.days = sign * (long)(rem2 / 8640000000000L);
-        rem2 %= 8640000000000L;
+    if (smallest_unit == TemporalUnit.DAY) {
+        double frac = (double)diff_ns / 86400000000000.0;
+        double rounded = round_num_to_incr(frac, rounding_increment, rounding_mode);
+        result.days = (long)rounded;
+    } else if (smallest_unit == TemporalUnit.YEAR || smallest_unit == TemporalUnit.MONTH ||
+               smallest_unit == TemporalUnit.WEEK) {
+        // Calendar unit rounding with relativeTo.
+        temporal::DifferenceUnit diff_unit;
+        if (largest_unit == TemporalUnit.YEAR) {
+            diff_unit = temporal::DifferenceUnit.YEARS;
+        } else if (largest_unit == TemporalUnit.MONTH) {
+            diff_unit = temporal::DifferenceUnit.MONTHS;
+        } else {
+            diff_unit = temporal::DifferenceUnit.DAYS;
+        }
+        temporal::DateDifference dd = temporal::difference_date(rel_date, target_date, diff_unit);
+
+        if (smallest_unit == TemporalUnit.YEAR) {
+            double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
+            double total_years = total_months / 12.0;
+            double rounded_years = round_num_to_incr(total_years, rounding_increment, rounding_mode);
+            result.years = (long)rounded_years;
+        } else if (smallest_unit == TemporalUnit.MONTH) {
+            double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
+            double rounded_months = round_num_to_incr(total_months, rounding_increment, rounding_mode);
+            result.months = (long)rounded_months;
+        } else if (smallest_unit == TemporalUnit.WEEK) {
+            double total_weeks = (double)(tgt_epoch - rel_epoch) / 7.0;
+            double rounded_weeks = round_num_to_incr(total_weeks, rounding_increment, rounding_mode);
+            result.weeks = (long)rounded_weeks;
+        }
+    } else if (!is_cal_unit(existing) && !is_cal_unit(largest_unit)) {
+        // Time-only duration with relativeTo: same as no-relativeTo path.
+        long divisor = unit_ns_divisor(smallest_unit);
+        double incr_ns = (double)divisor * rounding_increment;
+        double rounded_ns = round_num_to_incr((double)diff_ns, incr_ns, rounding_mode);
+        decompose_ns((long)rounded_ns, largest_unit, &result);
     } else {
-        result.days = 0;
+        // Duration has calendar units but smallestUnit is a time unit.
+        // For nanosecond/increment=1, the round is a no-op: return the calendar
+        // difference as-is. For other time smallestUnits, compute the calendar
+        // difference and fold any time portion.
+        temporal::DifferenceUnit diff_unit;
+        if (largest_unit == TemporalUnit.YEAR) {
+            diff_unit = temporal::DifferenceUnit.YEARS;
+        } else if (largest_unit == TemporalUnit.MONTH) {
+            diff_unit = temporal::DifferenceUnit.MONTHS;
+        } else {
+            diff_unit = temporal::DifferenceUnit.DAYS;
+        }
+        temporal::DateDifference dd = temporal::difference_date(rel_date, target_date, diff_unit);
+
+        // When smallestUnit is nanosecond and roundingIncrement is 1, no rounding.
+        if (smallest_unit == TemporalUnit.NANOSECOND && rounding_increment == 1) {
+            // Convert to largest_unit format.
+            if (largest_unit == TemporalUnit.WEEK) {
+                long total_days = tgt_epoch - rel_epoch;
+                result.weeks = total_days / 7;
+                result.days = total_days - result.weeks * 7;
+            } else if (largest_unit == TemporalUnit.MONTH) {
+                result.years = dd.years;
+                result.months = dd.months;
+                result.days = dd.days;
+            } else if (largest_unit == TemporalUnit.YEAR) {
+                result.years = dd.years;
+                result.months = dd.months;
+                result.days = dd.days;
+            } else {
+                result.days = tgt_epoch - rel_epoch;
+            }
+        } else if (smallest_unit == TemporalUnit.WEEK) {
+            // Round total days to weeks.
+            double total_weeks = (double)(tgt_epoch - rel_epoch) / 7.0;
+            double rounded_weeks = round_num_to_incr(total_weeks, rounding_increment, rounding_mode);
+            result.weeks = (long)rounded_weeks;
+        } else if (smallest_unit == TemporalUnit.MONTH) {
+            // Round to months.
+            double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
+            double rounded_months = round_num_to_incr(total_months, rounding_increment, rounding_mode);
+            result.months = (long)rounded_months;
+        } else if (smallest_unit == TemporalUnit.YEAR) {
+            // Round to years.
+            double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
+            double total_years = total_months / 12.0;
+            double rounded_years = round_num_to_incr(total_years, rounding_increment, rounding_mode);
+            result.years = (long)rounded_years;
+        } else {
+            // Time unit: round the total ns and decompose.
+            long divisor = unit_ns_divisor(smallest_unit);
+            double incr_ns = (double)divisor * rounding_increment;
+            double rounded_ns = round_num_to_incr((double)diff_ns, incr_ns, rounding_mode);
+            decompose_ns((long)rounded_ns, largest_unit, &result);
+        }
     }
-    result.hours = sign * (int)(rem2 / 3600000000000L);
-    rem2 %= 3600000000000L;
-    result.minutes = sign * (int)(rem2 / 60000000000L);
-    rem2 %= 60000000000L;
-    result.seconds = sign * (int)(rem2 / 1000000000L);
-    rem2 %= 1000000000L;
-    result.ms = sign * (int)(rem2 / 1000000L);
-    rem2 %= 1000000L;
-    result.us = sign * (int)(rem2 / 1000L);
-    result.ns = sign * (int)(rem2 % 1000L);
 
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -1677,6 +1713,8 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
+// ============================================================================
+// Temporal.Duration.prototype.total
 // ============================================================================
 // Temporal.Duration.prototype.total
 // ============================================================================
@@ -1811,12 +1849,19 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     CivilDate rel_date = { .y = relative_to.extra.temporal.long_a,
                            .m = relative_to.extra.temporal.long_b,
                            .d = relative_to.extra.temporal.long_c };
-    int128 time_ns = duration_to_time_ns(dur);
-    long target_time_days = (long)(time_ns / 8640000000000L);
-    int128 target_time_rem = time_ns % 8640000000000L;
-    if (time_ns < 0 && target_time_rem != 0) {
+    // Compute time-only (no days) for the calendar path.
+    int128 time_only_ns = (int128)0;
+    time_only_ns += (int128)dur.hours   * 3600000000000L;
+    time_only_ns += (int128)dur.minutes *   60000000000L;
+    time_only_ns += (int128)dur.seconds *    1000000000L;
+    time_only_ns += (int128)dur.ms      *       1000000L;
+    time_only_ns += (int128)dur.us      *          1000L;
+    time_only_ns += (int128)dur.ns;
+    long target_time_days = (long)(time_only_ns / 86400000000000L);
+    int128 target_time_rem = time_only_ns % 86400000000000L;
+    if (time_only_ns < 0 && target_time_rem != 0) {
         target_time_days -= 1;
-        target_time_rem += 8640000000000L;
+        target_time_rem += 86400000000000L;
     }
     long adj_days = dur.days + target_time_days;
     CivilDate target_date = rel_date;
@@ -1826,7 +1871,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
     long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-    int128 diff_ns = (int128)(tgt_epoch - rel_epoch) * 8640000000000L + target_time_rem;
+    int128 diff_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
     long divisor = unit_ns_divisor(unit);
     if (divisor > 0) {
         ctx.result.set_number((double)diff_ns / (double)divisor);
@@ -7383,10 +7428,13 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
 
 // Resolve a timezone string to a Temporal.TimeZone object.
 fn HObject* resolve_tz_from_string(BuiltinContext* ctx, String s) {
-    if (s.len > 0 && (s[0] == 'Z' || s[0] == 'z' || s[0] == '+' || s[0] == '-')) {
-        HObject*? tz_o = alloc_timezone(ctx.heap, s);
-        if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
-        return tz_o;
+    if (s.len > 0) {
+        char first = s.ptr[0];
+        if (first == 'Z' || first == 'z' || first == '+' || first == '-') {
+            HObject*? tz_o = alloc_timezone(ctx.heap, s);
+            if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+            return tz_o;
+        }
     }
     if (!temporal::tzdb_zone_exists(s)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Unknown time zone");
@@ -7426,7 +7474,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid string"); return; }
         char[] text = s.get_cstr()[:s.blen];
-        temporal::ParsedIsoZonedDateTime p;
+        temporal::ParsedIsoZonedDateTime p = { .year = 0, .month = 0, .day = 0, .hour = 0, .minute = 0, .second = 0, .nanos = 0, .offset_seconds = 0 };
         if (!temporal::parse_iso_zoneddatetime_string(text, &p)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: invalid ISO string");
             return;
