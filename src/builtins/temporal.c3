@@ -1619,7 +1619,26 @@ fn void builtin_temporal_plain_date_proto_equals(BuiltinContext* ctx) {
             ctx.result.set_boolean(false);
             return;
         }
-        ctx.result.set_boolean(false);
+        // Non-PlainDate object (property bag): convert and compare.
+        HObject*? other_o = plain_date_from_arg(ctx, arg);
+        if (ctx.should_throw) return;
+        HObject* other_pd = other_o!!;
+        temporal::CivilDate a = plain_date_value(obj);
+        temporal::CivilDate b = plain_date_value(other_pd);
+        bool same_cal = obj.extra.temporal.calendar == other_pd.extra.temporal.calendar;
+        ctx.result.set_boolean(same_cal && temporal::date_equals(a, b));
+        return;
+    }
+    // String: parse via the standard path (which enforces no-time-component,
+    // valid-date range, and known calendar).
+    if (arg.is_string()) {
+        HObject*? other_o = plain_date_from_arg(ctx, arg);
+        if (ctx.should_throw) return;
+        HObject* other_pd = other_o!!;
+        temporal::CivilDate a = plain_date_value(obj);
+        temporal::CivilDate b = plain_date_value(other_pd);
+        bool same_cal = obj.extra.temporal.calendar == other_pd.extra.temporal.calendar;
+        ctx.result.set_boolean(same_cal && temporal::date_equals(a, b));
         return;
     }
     ctx.result.set_boolean(false);
