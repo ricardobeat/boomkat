@@ -668,7 +668,8 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
         }
         HString* s = (HString*)uv.get_heapptr();
         char[] v = s.get_cstr()[:s.blen];
-        if (v == "year" || v == "years") { *largest = temporal::DifferenceUnit.YEARS; }
+        if (v == "auto") { /* keep default_largest */ }
+        else if (v == "year" || v == "years") { *largest = temporal::DifferenceUnit.YEARS; }
         else if (v == "month" || v == "months") { *largest = temporal::DifferenceUnit.MONTHS; }
         else if (v == "week" || v == "weeks") { *largest = temporal::DifferenceUnit.WEEKS; }
         else if (v == "day" || v == "days") { *largest = temporal::DifferenceUnit.DAYS; }
@@ -695,7 +696,8 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
         HString* s = (HString*)sv.get_heapptr();
         char[] v = s.get_cstr()[:s.blen];
         temporal::DifferenceUnit small;
-        if (v == "year" || v == "years") { small = temporal::DifferenceUnit.YEARS; }
+        if (v == "auto") { small = *largest; }
+        else if (v == "year" || v == "years") { small = temporal::DifferenceUnit.YEARS; }
         else if (v == "month" || v == "months") { small = temporal::DifferenceUnit.MONTHS; }
         else if (v == "week" || v == "weeks") { small = temporal::DifferenceUnit.WEEKS; }
         else if (v == "day" || v == "days") { small = temporal::DifferenceUnit.DAYS; }
@@ -951,6 +953,14 @@ fn void builtin_temporal_duration_proto_abs(BuiltinContext* ctx) {
 fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
+    // Options, if present, must be an object (function is also OK per spec).
+    if (ctx.argc > 0) {
+        TVal* opt = arg_at(ctx, 0);
+        if (!opt.is_undefined() && (!opt.is_object() || opt.get_heapptr() == null)) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+            return;
+        }
+    }
     temporal::DurationParts d = duration_value((HObject*)this_val.get_heapptr());
     char[128] buf;
     usz len = temporal::format_duration(d, &buf, 128);
