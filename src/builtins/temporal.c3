@@ -1735,8 +1735,6 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
 // ============================================================================
 // Temporal.Duration.prototype.total
 // ============================================================================
-// Temporal.Duration.prototype.total
-// ============================================================================
 
 fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
@@ -1894,20 +1892,33 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     long divisor = unit_ns_divisor(unit);
     if (divisor > 0) {
         ctx.result.set_number((double)diff_ns / (double)divisor);
+        return;
+    }
+    if (unit == TemporalUnit.DAY) {
+        ctx.result.set_number((double)diff_ns / 86400000000000.0);
+        return;
+    }
+    if (unit == TemporalUnit.WEEK) {
+        ctx.result.set_number((double)(tgt_epoch - rel_epoch) / 7.0);
+        return;
+    }
+    if (unit != TemporalUnit.MONTH && unit != TemporalUnit.YEAR) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "unsupported unit for total");
+        return;
+    }
+    // Calendar-aware total: break the actual date span into whole
+    // years/months/days (via difference_date), then add the fractional
+    // remainder as a fraction of the calendar unit's true length, rather
+    // than dividing the raw ns span by a fixed 30-day or 365.2425-day
+    // average (which drifts, e.g. across February).
+    temporal::DifferenceUnit diff_unit = (unit == TemporalUnit.YEAR)
+        ? temporal::DifferenceUnit.YEARS : temporal::DifferenceUnit.MONTHS;
+    temporal::DateDifference dd = temporal::difference_date(rel_date, target_date, diff_unit);
+    double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
+    if (unit == TemporalUnit.YEAR) {
+        ctx.result.set_number(total_months / 12.0);
     } else {
-        // Calendar unit: approximate.
-        if (unit == TemporalUnit.DAY) {
-            ctx.result.set_number((double)diff_ns / 86400000000000.0);
-        } else if (unit == TemporalUnit.WEEK) {
-            ctx.result.set_number((double)diff_ns / (86400000000000.0 * 7));
-        } else if (unit == TemporalUnit.MONTH) {
-            ctx.result.set_number((double)diff_ns / (86400000000000.0 * 30.0));
-        } else if (unit == TemporalUnit.YEAR) {
-            ctx.result.set_number((double)diff_ns / (86400000000000.0 * 365.2425));
-        } else {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "unsupported unit for total");
-            return;
-        }
+        ctx.result.set_number(total_months);
     }
 }
 
@@ -8085,29 +8096,17 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
 // =====================================================================
 
 // Helper: resolve wall-time fields from epoch-ns + timezone.
+//
+// ZonedDateTime construction rejects epochNanoseconds outside +-10^8 days
+// (see builtin_temporal_instant_ctor), so big_ns always fits int128 here.
 fn void zdt_wall_fields(HObject* zdt, long* wy, long* wm, long* wd,
                          int* wh, int* wmi, int* ws, int* wms, int* wus, int* wns, int* off_sec) {
     hbigint::HBigInt* b = zdt.extra.temporal.big_ns;
     HObject* tz = zdt.extra.temporal.timezone;
-    long epoch_secs;
-    long ns_rem;
-    if (b.fits_int128()) {
-        int128 total = b.to_int128();
-        long sec_trunc = (long)(total / 1000000000);
-        ns_rem = (long)(total - (int128)sec_trunc * 1000000000);
-        epoch_secs = sec_trunc;
-    } else {
-        double s_d;
-        if (tz != null && b != null) {
-            String zone = timezone_name(tz);
-            // Approximate from double
-            double secs_d = 0;
-            // fallback: use 0
-            epoch_secs = 0; ns_rem = 0;
-        } else {
-            epoch_secs = 0; ns_rem = 0;
-        }
-    }
+    assert(b.fits_int128(), "ZonedDateTime epochNanoseconds out of int128 range");
+    int128 total = b.to_int128();
+    long epoch_secs = (long)(total / 1000000000);
+    long ns_rem = (long)(total - (int128)epoch_secs * 1000000000);
     String zone = (tz != null) ? timezone_name(tz) : (String)"";
     int off = 0;
     if (zone.len > 0 && zone.ptr != null) off = temporal::tzdb_offset_for_zone_at(zone, epoch_secs);
@@ -8509,7 +8508,40 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     if (su_v.is_undefined()) { builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option"); return; }
     HString* su_str = builtin_to_string_vm(ctx, &su_v);
     if (ctx.should_throw) return;
-    char[] unit = su_str.get_cstr()[:su_str.blen];
+    TemporalUnit smallest_unit;
+    if (!parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
+        return;
+    }
+
+    double rounding_increment = 1;
+    TVal ri_v = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
+    if (!ri_v.is_undefined()) {
+        Vm* v = (Vm*)ctx.vm;
+        double ri_val = vm::vm_to_number(v, &ri_v);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+        if (math::is_nan(ri_val) || math::is_inf(ri_val) || ri_val < 1 || math::floor(ri_val) != ri_val) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+            return;
+        }
+        rounding_increment = ri_val;
+    }
+    long max_incr = (smallest_unit == TemporalUnit.DAY) ? 1 : max_round_incr(smallest_unit);
+    if (max_incr > 0 && rounding_increment > max_incr) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
+        return;
+    }
+
+    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+    TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
+    if (!rm_v.is_undefined()) {
+        HString* rm_str = builtin_to_string_vm(ctx, &rm_v);
+        if (ctx.should_throw) return;
+        if (!parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
+            return;
+        }
+    }
 
     long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
     zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
@@ -8528,47 +8560,26 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         ns_rem = 0;
     }
 
-    long result_secs = epoch_secs;
-    long result_ns = ns_rem;
+    long result_secs;
+    long result_ns;
 
-    if (unit == "day" || unit == "days") {
+    if (smallest_unit == TemporalUnit.DAY) {
+        // roundingIncrement is fixed at 1 for "day" (checked above), so this
+        // rounds to the nearer local calendar-day boundary.
         long local_secs = epoch_secs + woff;
         long day_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400;
-        long diff = local_secs - day_secs;
-        if (diff >= 43200) { day_secs += 86400; }
-        result_secs = day_secs - woff;
+        double day_frac = (double)(local_secs - day_secs) + (double)ns_rem / 1e9;
+        double rounded_days = round_num_to_incr(day_frac / 86400.0, 1, rounding_mode);
+        result_secs = day_secs + (long)rounded_days * 86400 - woff;
         result_ns = 0;
-    } else if (unit == "hour" || unit == "hours") {
-        long local_secs = epoch_secs + woff;
-        long hour_start = local_secs - (local_secs % 3600);
-        long diff = local_secs - hour_start;
-        if (diff > 1800 || diff == 1800) { hour_start += 3600; }
-        result_secs = hour_start - woff;
-        result_ns = 0;
-    } else if (unit == "minute" || unit == "minutes") {
-        long local_secs = epoch_secs + woff;
-        long min_start = local_secs - (local_secs % 60);
-        long diff = local_secs - min_start;
-        if (diff >= 30) { min_start += 60; }
-        result_secs = min_start - woff;
-        result_ns = 0;
-    } else if (unit == "second" || unit == "seconds") {
-        long half = 500000000;
-        if (result_ns >= half) { result_secs += 1; }
-        result_ns = 0;
-    } else if (unit == "millisecond" || unit == "milliseconds") {
-        long ms_ns = (result_ns / 1000000) * 1000000;
-        long diff = result_ns - ms_ns;
-        if (diff >= 500000) { ms_ns += 1000000; }
-        result_ns = ms_ns;
-    } else if (unit == "microsecond" || unit == "microseconds") {
-        long us_ns = (result_ns / 1000) * 1000;
-        long diff = result_ns - us_ns;
-        if (diff >= 500) { us_ns += 1000; }
-        result_ns = us_ns;
     } else {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
-        return;
+        long divisor = unit_ns_divisor(smallest_unit);
+        double incr_ns = (double)divisor * rounding_increment;
+        double local_ns = (double)(epoch_secs + woff) * 1e9 + (double)ns_rem;
+        double rounded_local_ns = round_num_to_incr(local_ns, incr_ns, rounding_mode);
+        double result_local_ns = rounded_local_ns - (double)woff * 1e9;
+        result_secs = (long)math::floor(result_local_ns / 1e9);
+        result_ns = (long)(result_local_ns - (double)result_secs * 1e9);
     }
 
     double total_ns = (double)result_secs * 1e9 + (double)result_ns;
