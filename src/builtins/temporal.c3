@@ -6967,6 +6967,221 @@ fn void builtin_temporal_instant_proto_until(BuiltinContext* ctx) {
     ctx.result.set_object(dur);
 }
 
+// Temporal.Instant.prototype.round([options]) — see spec
+// §sec-temporal.instant.prototype.round. Rounds `this` to the chosen
+// `smallestUnit` (hour, minute, second, millisecond, microsecond, or
+// nanosecond). Accepts `roundingIncrement` and `roundingMode`; the IANA
+// time-zone is irrelevant because Instants are point-in-time.
+fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    if (ctx.argc < 1) { builtin_throw(ctx, ctx.heap.type_err_proto, "round requires an options argument"); return; }
+    TVal* arg = arg_at(ctx, 0);
+    HObject* opts;
+    if (arg.is_string()) {
+        // String shorthand: round(string) is equivalent to round({ smallestUnit: string }).
+        HString* hstr = (HString*)arg.get_heapptr();
+        if (hstr == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "round string shorthand is invalid"); return; }
+        HObject*? bag_o = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (catch err = bag_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+        HObject* bag = bag_o;
+        HString* su_key = builtin_intern_string(ctx.heap, "smallestUnit");
+        HString* su_copy = builtin_intern_string(ctx.heap, (String)hstr.get_cstr()[:hstr.blen]);
+        TVal su_tv;
+        su_tv.set_string(su_copy);
+        PropFlags pf;
+        pf.writable = true;
+        pf.enumerable = true;
+        pf.configurable = true;
+        pf.is_accessor = false;
+        bag.put_prop(su_key, su_tv, pf, ctx.heap);
+        opts = bag;
+    } else if (arg.is_object() && arg.get_heapptr() != null) {
+        opts = (HObject*)arg.get_heapptr();
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "round options must be an object or a string");
+        return;
+    }
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+
+    // Spec §3.1: read all options before any algorithmic validation so that
+    // observable property access (Proxy handlers, TemporalHelpers probes)
+    // occurs in a stable order independent of which validation trips first.
+    // Per spec §Temporal.Instant.prototype.round steps 7-9: read and convert
+    // each option in order — roundingIncrement first (with ToNumber → valueOf),
+    // then roundingMode (with ToString → toString), then smallestUnit (with
+    // ToString → toString). Validation runs after all three have been observed.
+    TVal ri_v = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
+    double ri_val = 1;
+    if (!ri_v.is_undefined()) {
+        Vm* v = (Vm*)ctx.vm;
+        ri_val = vm::vm_to_number(v, &ri_v);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+    }
+    TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
+    HString* rm_str = null;
+    if (!rm_v.is_undefined()) {
+        rm_str = builtin_to_string_vm(ctx, &rm_v);
+        if (ctx.should_throw) return;
+    }
+    TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+    if (su_v.is_undefined()) { builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option"); return; }
+    HString* su_str = builtin_to_string_vm(ctx, &su_v);
+    if (ctx.should_throw) return;
+
+    // Algorithmic validation now that all props have been observed.
+    TemporalUnit smallest_unit;
+    if (!parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit)
+        || smallest_unit < TemporalUnit.HOUR) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for Instant.round");
+        return;
+    }
+    double rounding_increment = 1;
+    if (!ri_v.is_undefined()) {
+        if (math::is_nan(ri_val) || math::is_inf(ri_val) || ri_val < 1 || ri_val > 1e9) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a finite positive integer (≤ 1e9)");
+            return;
+        }
+        // Per spec: non-integer increments are truncated, not rejected.
+        rounding_increment = math::floor(ri_val);
+        if (rounding_increment < 1) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be ≥ 1 after truncation");
+            return;
+        }
+    }
+    long divisor = unit_ns_divisor(smallest_unit);
+    // Spec §ValidateTemporalRoundingIncrement: increment must satisfy
+    //   (1) inc ≤ maximum (inclusive)
+    //   (2) dividend mod inc == 0
+    // where dividend is "number of this-unit-in-one-solar-day" for Instant.
+    // That is dividend = 86400 seconds / (this unit in seconds). Computed as
+    // nsPerDay / divisor = (86400 * 1e9) / divisor.
+    long long_solar_ns = 86400L * 1000000000L;
+    long dividend = divisor > 0 ? (long)(long_solar_ns / divisor) : 1;
+    long long_incr = (long)rounding_increment;
+    if (long_incr > dividend || dividend % long_incr != 0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
+        return;
+    }
+
+    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+    if (rm_str != null) {
+        if (!parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
+            return;
+        }
+    }
+
+    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
+    long incr_ns = divisor * (long)rounding_increment;
+    // Integer arithmetic on the BigInt epoch-ns value: compute the quotient q
+    // and remainder r of b / incr_ns, then pick q or q+1 according to the
+    // rounding mode, then build result = chosen_q * incr_ns. This avoids the
+    // precision loss of casting a 60+ bit nanosecond count through double.
+    hbigint::HBigInt*? incr_o = hbigint::hbigint_alloc(ctx.heap, (int128)incr_ns);
+    if (catch err = incr_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+    hbigint::HBigInt* incr = incr_o;
+    hbigint::HBigInt* q = null;
+    hbigint::HBigInt* r = null;
+    if (catch err = hbigint::hbigint_divrem(ctx.heap, b, incr, &q, &r)) {
+        ctx.heap.decref((types::HeapHeader*)incr);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "division failed");
+        return;
+    }
+    if (q == null || r == null) {
+        ctx.heap.decref((types::HeapHeader*)incr);
+        ctx.heap.decref((types::HeapHeader*)q);
+        ctx.heap.decref((types::HeapHeader*)r);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed");
+        return;
+    }
+    int128 qv = q.to_int128();
+    int128 rv = r.to_int128();
+    int128 incr_128 = (int128)incr_ns;
+    // Normalize to floor-division: hbigint_divrem returns trunc-remainder
+    // (sign follows dividend), but the Temporal spec uses RoundNumberToIncrementAsIfPositive
+    // which wants r1 = floor(b/incr_ns) and r2 = r1 + 1 with r in [0, incr_ns).
+    // For b < 0 with a negative trunc-remainder, step the quotient down and
+    // bump the remainder. After normalization q_f*incr ≤ b < (q_f+1)*incr.
+    int128 q_f;
+    int128 r_f;
+    if (rv >= 0) { q_f = qv; r_f = rv; }
+    else         { q_f = qv - 1; r_f = rv + incr_128; }
+    bool neg = q_f < 0;
+    int128 q_abs = neg ? -q_f : q_f;
+    int128 r_abs = r_f;
+    // The two candidates are r1 = q_f * incr (MORE negative when neg,
+    // LESS positive when !neg) and r2 = (q_f + 1) * incr (the other side).
+    // For b < 0 the unsigned mapping r1 ↔ "q_abs" and r2 ↔ "q_abs - 1";
+    // for b > 0 the mapping is r1 ↔ "q_abs" and r2 ↔ "q_abs + 1".
+    // ApplyUnsignedRoundingMode picks r1 or r2 per the unsigned table.
+    int128 chosen_q;
+    if (r_f == 0) {
+        chosen_q = q_f;
+    } else {
+        switch (rounding_mode) {
+        // floor / trunc → unsigned "zero" → always r1.
+        case TemporalRoundMode.FLOOR:
+        case TemporalRoundMode.TRUNC: chosen_q = q_f; break;
+        // ceil / expand → unsigned "infinity" → always r2.
+        case TemporalRoundMode.CEIL:
+        case TemporalRoundMode.EXPAND: chosen_q = q_f + 1; break;
+        // halfFloor / halfTrunc → unsigned "half-zero" → r1 on tie.
+        // halfCeil / halfExpand → unsigned "half-infinity" → r2 on tie.
+        // Otherwise (closer-than-half), pick whichever side is closer.
+        case TemporalRoundMode.HALF_FLOOR:
+        case TemporalRoundMode.HALF_TRUNC:
+        case TemporalRoundMode.HALF_CEIL:
+        case TemporalRoundMode.HALF_EXPAND:
+        case TemporalRoundMode.HALF_EVEN: {
+            int128 two_r = r_f * 2;
+            if (two_r < incr_128) {
+                // Below half: closer to r1.
+                chosen_q = q_f;
+            } else if (two_r > incr_128) {
+                // Above half: closer to r2.
+                chosen_q = q_f + 1;
+            } else {
+                // Exactly half: tiebreaker per unsigned mode.
+                switch (rounding_mode) {
+                    case TemporalRoundMode.HALF_FLOOR:
+                    case TemporalRoundMode.HALF_TRUNC: chosen_q = q_f; break;
+                    case TemporalRoundMode.HALF_CEIL:
+                    case TemporalRoundMode.HALF_EXPAND: chosen_q = q_f + 1; break;
+                    case TemporalRoundMode.HALF_EVEN: {
+                        // cardinality = (q_f / 1) mod 2 = q_f mod 2
+                        chosen_q = ((q_f & 1) == 0) ? q_f : q_f + 1;
+                        break;
+                    }
+                    default: chosen_q = q_f; break;  // unreachable
+                }
+            }
+            break;
+        }
+        }
+    }
+    (void)q_abs;  // unused but documents the unsigned correspondence
+    (void)neg;
+    ctx.heap.decref((types::HeapHeader*)q);
+    ctx.heap.decref((types::HeapHeader*)r);
+    hbigint::HBigInt*? chosen_o = hbigint::hbigint_alloc(ctx.heap, chosen_q);
+    if (catch err = chosen_o) {
+        ctx.heap.decref((types::HeapHeader*)incr);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed");
+        return;
+    }
+    hbigint::HBigInt* chosen = chosen_o;
+    hbigint::HBigInt*? result = hbigint::hbigint_mul(ctx.heap, chosen, incr);
+    ctx.heap.decref((types::HeapHeader*)chosen);
+    ctx.heap.decref((types::HeapHeader*)incr);
+    if (catch err = result) { builtin_throw(ctx, ctx.heap.range_err_proto, "multiply failed"); return; }
+    HObject*? inst_o = alloc_instant(ctx.heap, result);
+    ctx.heap.decref((types::HeapHeader*)result);
+    if (catch err2 = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* inst = inst_o;
+    inst.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(inst);
+}
+
 // Helper: convert a BigInt to a double representing nanoseconds. The result
 // is precise for any BigInt whose absolute value fits in 2^53 (~285 years
 // of nanoseconds). Throws RangeError if the magnitude is too large.
@@ -7326,6 +7541,7 @@ fn bool setUpTemporalInstant(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_INSTANT_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_INSTANT_PROTO_ADD.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_INSTANT_PROTO_SUBTRACT.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "round", Builtin.TEMPORAL_INSTANT_PROTO_ROUND.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_INSTANT_PROTO_SINCE.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_INSTANT_PROTO_UNTIL.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_INSTANT_FROM.ordinal)) return false;

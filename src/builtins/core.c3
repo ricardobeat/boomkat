@@ -962,6 +962,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_INSTANT_PROTO_EQUALS {"equals", 1, &builtin_temporal_instant_proto_equals},
     TEMPORAL_INSTANT_PROTO_ADD {"add", 1, &builtin_temporal_instant_proto_add},
     TEMPORAL_INSTANT_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_instant_proto_subtract},
+    TEMPORAL_INSTANT_PROTO_ROUND {"round", 1, &builtin_temporal_instant_proto_round},
     TEMPORAL_INSTANT_PROTO_SINCE {"since", 1, &builtin_temporal_instant_proto_since},
     TEMPORAL_INSTANT_PROTO_UNTIL {"until", 1, &builtin_temporal_instant_proto_until},
     TEMPORAL_TIMEZONE_CTOR {"TimeZone", 1, &builtin_temporal_timezone_ctor},
