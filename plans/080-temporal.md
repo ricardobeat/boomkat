@@ -1,14 +1,13 @@
 # Plan 080 — Temporal (`Temporal.*`, the IANA-tz-aware replacement for `Date`)
 
-Status: PLANNED (session 277). Scoped against the live tree. The Temporal
-proposal is currently feature-flag-skipped (`scripts/run_test262.py:160`
-"built-ins/Temporal" + `:181` "Temporal" in `UNSUPPORTED_PATTERN`), costing
-~4,603 test262 tests. Landing this grows the subset under the plan 040
-no-silent-shrinkage rule.
+Status: IN PROGRESS. `built-ins/Temporal` runs unconditionally in
+`scripts/run_test262.py` (no skip list, no feature-flag gate) — every
+test262 file under it is scored on every run. See "Feature list" below
+for what passes and what's left.
 
-This plan picks up cold. It states why, why ICU4X is the wrong tool, what
-the engine already has to reuse, what new surfaces are needed, and a
-sequenced task list with verification gates.
+This plan states why, why ICU4X is the wrong tool, what the engine
+already has to reuse, what new surfaces were needed, and the remaining
+work.
 
 ## Design principle
 
@@ -509,165 +508,145 @@ The existing `OP_ADD` etc. handle the rare integer cases. Spec ops like
   `src/lib/` layout, the value-types pattern, and the engine-wiring
   separation.
 
-## Phased plan (each phase lands with a green test262 run)
+## Feature list
 
-### Phase 0 — `bigmath` move (separate commit, must land first)
+`built-ins/Temporal` runs unconditionally in `scripts/run_test262.py`
+(no directory-level skips) — every method below is scored on every run.
+Numbers are test262 failure counts from a full `built-ins/Temporal` run
+(`python3 scripts/run_test262.py --phase 26 --log /tmp/t.log`, then
+`grep -P '^(FAIL|TIMEOUT|MEMKILL)'`); re-run and re-cluster before
+trusting them again, they drift as fixes land.
 
-- Move `src/bigmath.c3` → `src/lib/bigmath/bigmath.c3`. Rename module
-  to `boomkat::lib::bigmath`. Update the single importer
-  (`src/hbigint.c3:22`).
-- Gate: `just rosetta` + `just test-local` stay green; binary size
-  unchanged (no code delta, just file path).
+### Complete (0 failures)
 
-### Phase 1a — Calendar + PlainDate only
+- `Temporal.Calendar` — constructor, `from`, `id`, `toString` (ISO
+  calendar only; `dateFromFields` / `mergeFields` / `dateAdd` /
+  `dateUntil` are not implemented — see below).
+- `Temporal.Now` — `instant`, `timeZoneId`, `plainDateISO`,
+  `plainTimeISO`, `plainDateTimeISO`, `zonedDateTimeISO`.
+- Object surface plumbing: `getOwnPropertyNames`, `keys`, `prop-desc`,
+  `toStringTag` for every `Temporal.*` namespace.
+- `PlainDate`, `PlainDateTime`, `PlainMonthDay`, `PlainTime`,
+  `PlainYearMonth`, `ZonedDateTime` constructors (all basic-argument
+  and branding tests pass; see below for remaining single-file gaps in
+  edge-case argument handling).
 
-- Land `HObjectTemporal` extra + `$assert HObjectTemporal::size <= HObjectFunction::size`
-  with baseline numbers recorded in the struct comment.
-- Land `TEMPORAL_CALENDAR` + `TEMPORAL_PLAIN_DATE` `ObjClass` values.
-  Two new entries; well under the 6-bit namespace budget, but recorded
-  as a stated cost: 9-11 Temporal classes will consume roughly a
-  quarter of the remaining `ObjClass` values (39 currently used of 64).
-- Land GC walker case for the two new classes.
-- Land `Temporal.Calendar` constructor + `.from` (returns the ISO singleton).
-- Land `Temporal.PlainDate` constructor + `from` + `compare` + `with` +
-  `add` + `subtract` + `until` + `since` + `equals` + `toString`.
-- Land ISO 8601 formatting for `PlainDate` in `lib/temporal/iso8601.c3`.
-- Lift `built-ins/Temporal/PlainDate` and `built-ins/Temporal/Calendar`
-  from `SKIP_DIRS` in `scripts/run_test262.py` (line 160) and from
-  `UNSUPPORTED_PATTERN` (line 181). Also update the Stage 3 comment at
-  `scripts/run_test262.py:160` to Stage 4 while editing that line.
-- Gate: `just test262` with those directories un-skipped reports zero
-  failures; total failures unchanged from baseline. ~810 tests.
+### Remaining
 
-### Phase 1b — PlainTime + PlainDateTime
+Grouped by receiver type, worst offenders first within each group.
 
-- Land `TEMPORAL_PLAIN_TIME` + `TEMPORAL_PLAIN_DATETIME`.
-- Land `Temporal.PlainTime` constructor + `from` + `compare` + `with` +
-  `add` + `subtract` + `until` + `since` + `equals` + `toString`.
-- Land `Temporal.PlainDateTime` constructor + arithmetic + ISO 8601
-  formatting (already have the parts from 1a).
-- Lift matching test262 directories.
-- Gate: zero failures. ~830 tests.
+**`ZonedDateTime.prototype`**
+- `until` / `since` (87 fails each) — the two biggest single gaps in
+  the whole suite.
+- `equals` (46), `toString` (39), `round` (33), `add` (32), `subtract`
+  (32), `with` (29), `withPlainTime` (27), `withTimeZone` (10),
+  `getTimeZoneTransition` (8), `withCalendar` (6), `toJSON` (5),
+  `toInstant` (4), `valueOf` (3), `toPlainTime` (2), `toPlainDateTime`
+  (2), `toLocaleString` (2), `hoursInDay` (2), and single-file gaps in
+  `yearOfWeek`, `year`, `weekOfYear`, `toPlainDate`, `startOfDay`,
+  `nanosecond`, `millisecond`, `microsecond`, `inLeapYear`, `eraYear`,
+  `era`, `daysInYear`, `daysInMonth`, `dayOfYear`, `day`.
+- `ZonedDateTime.from` (66), `ZonedDateTime.compare` (30).
+- Constructor edge cases: `timezone-wrong-type`, `timezone-case-insensitive`,
+  `limits`, `constructor`, `calendar-wrong-type`,
+  `calendar-invalid-iso-string`, `calendar-case-insensitive` (1 each).
 
-### Phase 1c — PlainYearMonth + PlainMonthDay
+**`PlainDateTime.prototype`**
+- `until` (64), `since` (62), `round` (42), `withPlainTime` (36),
+  `toZonedDateTime` (28), `toString` (25), `compare` (31), `equals`
+  (18), `subtract` (17), `add` (17), `with` (10), `toPlainDate` (8),
+  `toPlainTime` (7), `withCalendar` (5), `toLocaleString` (2), `toJSON`
+  (2), `eraYear` (2), `era` (2), `inLeapYear` (1).
+- `PlainDateTime.from` (36).
+- Constructor edge cases: `throws-if-time-is-invalid`,
+  `second-undefined`, `nanosecond-undefined`, `minute-undefined`,
+  `millisecond-undefined`, `microsecond-undefined`, `hour-undefined`,
+  `limits`, `datetime-math`, `argument-convert` (1 each).
 
-- Land `TEMPORAL_PLAIN_YEARMONTH` + `TEMPORAL_PLAIN_MONTHDAY`.
-- Land both constructors + their `from` / `with` / `compare` / `until` /
-  `since` / `equals` / `toString`.
-- Lift matching test262 directories.
-- Gate: zero failures. ~460 tests.
+**`PlainYearMonth.prototype`**
+- `since` (58), `until` (57), `equals` (30), `subtract` (22), `add`
+  (20), `with` (13), `toPlainDate` (11), `toString` (4),
+  `toLocaleString` (2).
+- `PlainYearMonth.from` (36), `PlainYearMonth.compare` (30).
+- Constructor edge cases: `subclass`, `refisoday-undefined`,
+  `negative-infinity-throws-rangeerror`, `limits`,
+  `infinity-throws-rangeerror`, `calendar-wrong-type`,
+  `calendar-undefined`, `calendar-string`, `calendar-invalid-iso-string`,
+  `calendar-case-insensitive`, `calendar-always`, `basic`,
+  `argument-convert` (1 each).
 
-### Phase 1d — Duration + Instant (no relativeTo arithmetic)
+**`Duration.prototype`**
+- `round` (60) and `total` (49) — both currently do time-unit-only
+  math; calendar-unit rounding/total with `relativeTo` needs
+  `NanosecondsToDays` / `BubbleRelativeDuration` /
+  `AddDaysToZonedDateTime` / `AddDaysToPlainDate` per the polyfill
+  spec's "Balance" algorithm.
+- `toString` (31), `add` (18), `subtract` (18), `with` (13), `toJSON`
+  (4), `toLocaleString` (2).
+- `Duration.compare` (48), `Duration.from` (13).
+- Constructor edge cases: `out-of-range`, `mixed`, `large-number`,
+  `fractional-throws-rangeerror`, `constructor` (1 each).
 
-- Land `src/lib/temporal/duration.c3` + `instant.c3`.
-- Land `TEMPORAL_DURATION` `ObjClass`.
-- Land `Temporal.Duration` constructor + arithmetic + `round` / `total`
-  (without `relativeTo`).
-- Lift `built-ins/Temporal/Duration` from the skip list.
-- Gate: zero failures. ~640 tests.
+**`PlainTime.prototype`**
+- `until` (46), `since` (46), `round` (41), `toString` (24), `equals`
+  (16), `subtract` (14), `add` (14), `with` (8), `toLocaleString` (2),
+  `toJSON` (1).
+- `PlainTime.from` (30), `PlainTime.compare` (23).
+- Constructor edge cases: `throws-if-time-is-invalid`,
+  `second-undefined`, `nanosecond-undefined`, `minute-undefined`,
+  `millisecond-undefined`, `microsecond-undefined`, `hour-undefined`,
+  `argument-convert` (1 each).
 
-`iso8601.c3` lands incrementally with whichever type first needs each
-formatter (1a needs PlainDate; 1b adds PlainTime / PlainDateTime; 1d
-adds Duration).
+**`PlainDate.prototype`**
+- `toZonedDateTime` (44), `since` (44), `until` (43), `toPlainDateTime`
+  (33), `equals` (20), `subtract` (11), `add` (11), `toPlainYearMonth`
+  (8), `toPlainMonthDay` (7), `withCalendar` (5), `with` (3),
+  `toString` (2), `toLocaleString` (2).
+- `PlainDate.from` (30), `PlainDate.compare` (19).
 
-### Phase 2 — Instant + TimeZone + ZonedDateTime
+**`Instant.prototype`**
+- `until` (42), `since` (42), `round` (40), `toString` (34), `add`
+  (18), `toZonedDateTimeISO` (17), `subtract` (17), `equals` (13),
+  `toLocaleString` (2).
+- `Instant.compare` (23), `Instant.from` (14).
 
-**Pre-checks (must verify before committing to the blob layout).**
+**`PlainMonthDay.prototype`**
+- `equals` (28), `toPlainDate` (11), `with` (6), `toString` (6),
+  `toLocaleString` (2), `toJSON` (1), `valueOf` (1).
+- `PlainMonthDay.from` (29).
+- Constructor edge cases: `refisoyear-out-of-range`,
+  `negative-infinity-throws-rangeerror`, `infinity-throws-rangeerror`,
+  `calendar-always`, `basic`, `argument-invalid` (1 each).
 
-Three load-bearing assumptions need confirmation with throwaway probes
-before any tzdb code lands:
+**`Temporal.Calendar.prototype`**
+- `dateFromFields`, `mergeFields`, `dateAdd`, `dateUntil` — not
+  implemented (constructor field validation currently happens inline
+  in each Plain*/ZonedDateTime constructor instead of going through
+  these calendar methods, which is why the top-level `Calendar` tests
+  above pass while these don't show up as their own failures — nothing
+  calls them yet).
 
-1. **`std::sort::binarysearch` availability.** Verified
-   (stdlib `lib/c3/std/sort/binarysearch.c3`): the macro returns `sz`
-   and supports a `cmp = ...` slot whose signature is
-   `cmp(list_elem, element)` (by-value, no context needed for our
-   case). The struct element type needs `@operator(<)` defined or a
-   custom comparator. The tzdb lookup will use a `TransitionRecord`
-   struct with a `key` field; the comparator reads `key` and
-   dispatches on `<`. Documented in plan, no surprise.
-2. **`$embed` accepts ~430 KB files.** Verified with a 86 B file
-   (`const char[] X = $embed("/path")` works as expected, prints
-   `embed bytes: 86` matching `wc -c`). No size-limit flag is
-   documented in `c3-lang.org/language-fundamentals/embed`; the
-   constant lands in `.rodata` and the loader is the c3c codegen,
-   not the runtime. A 430 KB blob is well under any plausible limit,
-   but if a future build balks, the fallback is a generated
-   `tzdata.c3` source file with a `const char[430000] BLOB = { ... }`
-   initializer — different build characteristics (linear in source
-   size, requires the generator to run before every c3c invocation)
-   and decided up front if needed.
-3. **tzdata uncompressed figure.** 430 KB is the order of magnitude
-   for the full IANA tz data (Africa, Americas, Asia, Atlantic,
-   Australia, Europe, Indian, Pacific, `backward`). Exact figure
-   depends on the version (e.g. tzdata2025b). The build script
-   downloads the tarball, runs `zic` to compile, and reports the
-   binary size; the plan treats 430 KB ± 50 KB as the expected
-   range and records the measured size at Phase 2 start. If the
-   figure doubles (e.g. future tzdata expansions), we ship a
-   curated subset instead of the full database — same approach as
-   POSIX-only consumers.
+### Calendars beyond ISO
 
-Then:
-
-- Land `vendor/tzdata/tzdata.bin` + `src/lib/temporal/tzdb.c3`.
-- Land `Temporal.Instant` constructor + arithmetic + `since` / `until` +
-  `equals` + `toString`.
-- Land `Temporal.TimeZone` constructor + `from` +
-  `getOffsetNanosecondsFor` + `getPossibleInstantsFor` +
-  `getNextTransition` + `getPreviousTransition`.
-- Land `Temporal.ZonedDateTime` constructor + `with` + `withTimeZone` +
-  `withCalendar` + `add` / `subtract` + `until` / `since` + `equals` +
-  `toString` (with offset + zone).
-- Lift matching test262 directories.
-- Gate: `just test262` zero failures.
-
-### Phase 3 — `Temporal.Now` + disambiguation coverage
-
-- Land `Temporal.Now.instant()` / `now.timeZone()` / `now.plainDateISO()`
-  / etc. The plumbing is the reverse of Phase 2.
-- Lift `Temporal/Now`.
-- Gate: `just test262` zero failures.
-
-### Phase 4 — small odds and ends
-
-- `Temporal.Duration.prototype.round({relativeTo})` — uses Phase 1 +
-  Phase 2.
-- Explicit `Temporal.Calendar.prototype.dateFromFields` /
-  `mergeFields` / `dateAdd` / `dateUntil` (currently implicit through
-  constructors).
-- Gate: full `just test262` at zero failures, `Temporal` removed from
-  `UNSUPPORTED_PATTERN`, `built-ins/Temporal` removed from `SKIP_DIRS`.
-
-### Calendars beyond ISO (separate plan, post-Phase 4)
-
-Each calendar is ~300–800 LOC of arithmetic. Polyfill spec gives Hebrew,
-Islamic (tabular + Umm al-Qura), Indian, Persian, Japanese, Coptic,
-Ethiopic, ROC. Implement in priority order based on test262 coverage.
+Separate from the list above: Hebrew, Islamic (tabular + Umm al-Qura),
+Indian, Persian, Japanese, Coptic, Ethiopic, ROC. Each is ~300–800 LOC
+of arithmetic per the polyfill spec. Not started; sequence by test262
+coverage once the ISO-calendar gaps above are closed.
 
 ## Validation
 
-Per-phase:
-
 - `just rosetta` — must stay green (catches regressions in `TVal` /
   `HObject`).
-- `just test262-phase <n>` — for the relevant phase(s); failures must be
-  zero.
-- `just test262` — full run only at the end of each phase and after the
-  final phase.
-- `just test-local` — `test/temporal/` fixtures run under the local suite
-  (these are the polyfill-spec reference implementations, ported to JS).
-
-Always:
-
+- `python3 scripts/run_test262.py --phase 26 --log /tmp/t.log` — full
+  Temporal test262 run; cluster failures with `awk`/`sort` on the log
+  (see the feature list above for the current per-method grouping).
+- `just test-local` — `test/temporal/` fixtures run under the local
+  suite (polyfill-spec reference implementations, ported to JS).
 - New C3 statics get `@test` cases in the same file as the function
   they exercise, under `src/lib/temporal/`. The `@test` framework
   (`std::core::runtime_test`, see c3-lang reference) runs them under
-  `c3c test`. Each `civil.c3` / `calendar.c3` / `duration.c3` /
-  `instant.c3` file ships with its own minimal spec-locked cases
-  (Hinnant's reference round-trip tables for civil; polyfill spec
-  reference algorithms for the rest).
-- ASAN: `just build-asan` + `python3 scripts/run_test262.py
-  --phase <n>` for each phase's lifted directories.
+  `c3c test`.
+- ASAN: `just build-asan` + `python3 scripts/run_test262.py --phase 26`.
 
 ## Risks / sharp edges
 
@@ -677,7 +656,7 @@ Always:
    rule.
 2. **`Duration` sign normalization.** Components do not carry
    independent signs. Polyfill spec §"Balance" details the algorithm;
-   off-by-one in the carry chain is the most common bug. Cover early.
+   off-by-one in the carry chain is the most common bug.
 3. **Disambiguation at DST gap / overlap.** `Temporal.ZonedDateTime`
    from a `PlainDateTime` in a DST gap must reject (`reject`) or pick a
    side (`compatible`, `earlier`, `later`). Spec §"Disambiguate
@@ -685,29 +664,7 @@ Always:
 4. **Year 2262 ns overflow.** Outside test262. BigInt path is correct
    anyway; the floor for `Date.now()` is the caller's responsibility.
 5. **No Intl.** `Temporal.toLocaleString` throws `TypeError` or returns
-   the ISO string in this phase.
-
-## Verification method
-
-For each phase:
-
-1. Port the polyfill spec's reference algorithm to a JS test in
-   `test/temporal/<phase>/` (these are reproducible, spec-locked).
-2. `just run` each fixture; QuickJS + the temporal polyfill are the
-   differential oracle.
-3. Lift the corresponding test262 directories in
-   `scripts/run_test262.py` and run `python3 scripts/run_test262.py
-   --phase <n> --log /tmp/t.log`.
-4. Cluster failures with `awk` / `sort`.
-5. Fix root causes.
-6. Re-run; the floor is zero failures.
-
-After all phases:
-
-7. Run full `just test262` and confirm zero net failures.
-8. Update `plans/040-test262-100-percent.md` with new per-directory
-   numbers.
-9. Update `docs/engine-scope.md` and `docs/architecture.md`.
+   the ISO string.
 
 ## Estimated cost
 

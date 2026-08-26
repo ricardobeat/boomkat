@@ -244,7 +244,6 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 SKIP_GLOBS = {
     # Async generators (`async function*` / `async *m()`) implemented — plan 060.
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
-    # Temporal Duration.prototype.total / round land with Phase 4.
 }
 
 # noStrict-flagged tests exempt from the blanket noStrict exclusion in
@@ -651,13 +650,12 @@ PHASES = [
         ],
     },
     {
-        "label": "Phase 26: Temporal (Phase 2 — Instant/TimeZone/ZonedDateTime/Plain types)",
-        # Mirror plan 080 §"Phase 2". Excludes:
-        #   built-ins/Temporal/Duration/prototype/round with relativeTo — Phase 4
-        # The longest-prefix rule below scopes subdirs: any subdir listed here
-        # takes its parent over (so listing `built-ins/Temporal/Instant` runs
-        # every test under it, and the runner skips tests with feature flags
-        # the suite can't satisfy).
+        "label": "Phase 26: Temporal",
+        # See plans/080-temporal.md "Feature list" for what currently passes
+        # vs what's still failing. The longest-prefix rule below scopes
+        # subdirs: any subdir listed here takes its parent over (so listing
+        # `built-ins/Temporal/Instant` runs every test under it, and the
+        # runner skips tests with feature flags the suite can't satisfy).
         "dirs": [
             "built-ins/Temporal/Duration",
             "built-ins/Temporal/Instant",
@@ -673,7 +671,8 @@ PHASES = [
             "built-ins/Temporal/PlainYearMonth",
             "built-ins/Temporal/ZonedDateTime",
             # `built-ins/Temporal/Calendar` — top-level (id, toString) lives
-            # here too; full dateFromFields/mergeFields is Phase 4.
+            # here too; dateFromFields/mergeFields/dateAdd/dateUntil are not
+            # implemented yet (see plans/080-temporal.md).
             "built-ins/Temporal/Calendar",
             "built-ins/Temporal/getOwnPropertyNames.js",
             "built-ins/Temporal/keys.js",
