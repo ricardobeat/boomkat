@@ -92,7 +92,7 @@ fn usz format_duration(DurationParts d, char* buf, usz buf_size) {
             buf[off++] = '.';
             for (int k = 0; k < fl; k++) buf[off++] = frac_buf[k];
             buf[off++] = 'S';
-        } else {
+        } else if (d.seconds != 0) {
             off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldS", whole);
         }
     }
