@@ -2205,15 +2205,17 @@ fn void builtin_temporal_plain_time_proto_equals(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null) {
-        ctx.result.set_boolean(false);
-        return;
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* other = (HObject*)arg.get_heapptr();
+        if (other.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
+            ctx.result.set_boolean(temporal::time_equals(plain_time_value(obj), plain_time_value(other)));
+            return;
+        }
     }
-    HObject* other = (HObject*)arg.get_heapptr();
-    if (other.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
-        ctx.result.set_boolean(false);
-        return;
-    }
+    // PlainTime can be derived from a string or property bag via ToTemporalTime.
+    HObject*? other_o = plain_time_from_arg(ctx, arg);
+    if (ctx.should_throw) return;
+    HObject* other = other_o!!;
     ctx.result.set_boolean(temporal::time_equals(plain_time_value(obj), plain_time_value(other)));
 }
 
@@ -2935,15 +2937,20 @@ fn void builtin_temporal_plain_datetime_proto_equals(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null) {
-        ctx.result.set_boolean(false);
-        return;
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* other = (HObject*)arg.get_heapptr();
+        if (other.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
+            temporal::CivilDateTime a = plain_datetime_value(obj);
+            temporal::CivilDateTime b = plain_datetime_value(other);
+            ctx.result.set_boolean(same_cal && temporal::date_equals(a.date, b.date) && temporal::time_equals(a.time, b.time));
+            return;
+        }
     }
-    HObject* other = (HObject*)arg.get_heapptr();
-    if (other.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
-        ctx.result.set_boolean(false);
-        return;
-    }
+    // PlainDateTime can be derived from a string or property bag.
+    HObject*? other_o = plain_datetime_from_arg(ctx, arg);
+    if (ctx.should_throw) return;
+    HObject* other = other_o!!;
     bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
     temporal::CivilDateTime a = plain_datetime_value(obj);
     temporal::CivilDateTime b = plain_datetime_value(other);
@@ -3811,7 +3818,15 @@ fn void builtin_temporal_plain_yearmonth_proto_equals(BuiltinContext* ctx) {
             return;
         }
     }
-    ctx.result.set_boolean(false);
+    HObject*? other_o = plain_yearmonth_from_arg(ctx, arg);
+    if (ctx.should_throw) return;
+    HObject* other = other_o!!;
+    long ay = plain_yearmonth_y(obj);
+    long by = plain_yearmonth_y(other);
+    int am = plain_yearmonth_m(obj);
+    int bm = plain_yearmonth_m(other);
+    bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
+    ctx.result.set_boolean(same_cal && ay == by && am == bm);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
@@ -4496,7 +4511,15 @@ fn void builtin_temporal_plain_monthday_proto_equals(BuiltinContext* ctx) {
             return;
         }
     }
-    ctx.result.set_boolean(false);
+    HObject*? other_o = plain_monthday_from_arg(ctx, arg);
+    if (ctx.should_throw) return;
+    HObject* other = other_o!!;
+    int am = plain_monthday_m(obj);
+    int bm = plain_monthday_m(other);
+    int ad = plain_monthday_d(obj);
+    int bd = plain_monthday_d(other);
+    bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
+    ctx.result.set_boolean(same_cal && am == bm && ad == bd);
 }
 
 fn void builtin_temporal_plain_monthday_proto_with(BuiltinContext* ctx) {
@@ -5782,14 +5805,19 @@ fn void builtin_temporal_instant_proto_equals(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null
-        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
-        ctx.result.set_boolean(false);
+    if (arg.is_object() && arg.get_heapptr() != null
+        && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_INSTANT) {
+        HObject* a = (HObject*)ctx.this_val.get_heapptr();
+        HObject* b = (HObject*)arg.get_heapptr();
+        ctx.result.set_boolean(hbigint::hbigint_cmp(a.extra.temporal.big_ns, b.extra.temporal.big_ns) == 0);
         return;
     }
+    // Strings convert via ToTemporalInstant (rejects invalid strings).
+    hbigint::HBigInt* other_ns;
+    if (!to_temporal_instant(ctx, arg, &other_ns)) return;
+    defer ctx.heap.decref((types::HeapHeader*)other_ns);
     HObject* a = (HObject*)ctx.this_val.get_heapptr();
-    HObject* b = (HObject*)arg.get_heapptr();
-    ctx.result.set_boolean(hbigint::hbigint_cmp(a.extra.temporal.big_ns, b.extra.temporal.big_ns) == 0);
+    ctx.result.set_boolean(hbigint::hbigint_cmp(a.extra.temporal.big_ns, other_ns) == 0);
 }
 
 // add / subtract take a Temporal.Duration.
