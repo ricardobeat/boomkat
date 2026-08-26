@@ -957,6 +957,146 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 
+// Add two durations without relativeTo. Date fields sum; time fields are
+// summed as a single nanosecond count and split back into days/hours/min/sec/
+// ms/us/ns (1 day = 86 400 000 000 000 ns). The split-off days join the date
+// sum. Years/months/weeks don't interact with each other in this code path,
+// matching the spec's no-relativeTo behavior.
+fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationParts b, temporal::DurationParts* out) {
+    // Sum date units directly; balance only happens within the time column.
+    long y  = a.years   + b.years;
+    long mo = a.months  + b.months;
+    long w  = a.weeks   + b.weeks;
+    long d  = a.days    + b.days;
+    // Convert each time column to ns, sum, then split.
+    int128 total_ns = (int128)0;
+    total_ns += (int128)(a.hours + b.hours)    * 3600000000000L;
+    total_ns += (int128)(a.minutes + b.minutes) *   60000000000L;
+    total_ns += (int128)(a.seconds + b.seconds) *    1000000000L;
+    total_ns += (int128)(a.ms + b.ms)           *       1000000L;
+    total_ns += (int128)(a.us + b.us)           *          1000L;
+    total_ns += (int128)(a.ns + b.ns);
+    if (total_ns < 0) {
+        long whole_days = (long)(-((-total_ns) / 86400000000000L));
+        int128 rem = -((-total_ns) % 86400000000000L);
+        if (rem != 0) { whole_days -= 1; rem += 86400000000000L; }
+        out.days    = d + whole_days;
+        out.hours   = (long)(rem / 3600000000000L);
+        rem        %= 3600000000000L;
+        out.minutes = (long)(rem /   60000000000L);
+        rem        %=   60000000000L;
+        out.seconds = (long)(rem /    1000000000L);
+        rem        %=    1000000000L;
+        out.ms      = (long)(rem /       1000000L);
+        rem        %=       1000000L;
+        out.us      = (long)(rem /          1000L);
+        out.ns      = (long)(rem %             1000L);
+    } else {
+        long whole_days = (long)(total_ns / 86400000000000L);
+        int128 rem = total_ns % 86400000000000L;
+        out.days    = d + whole_days;
+        out.hours   = (long)(rem / 3600000000000L);
+        rem        %= 3600000000000L;
+        out.minutes = (long)(rem /   60000000000L);
+        rem        %=   60000000000L;
+        out.seconds = (long)(rem /    1000000000L);
+        rem        %=    1000000000L;
+        out.ms      = (long)(rem /       1000000L);
+        rem        %=       1000000L;
+        out.us      = (long)(rem /          1000L);
+        out.ns      = (long)(rem %             1000L);
+    }
+    out.years  = y;
+    out.months = mo;
+    out.weeks  = w;
+    return true;
+}
+
+fn void builtin_temporal_duration_proto_add(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.prototype.add requires an argument");
+        return;
+    }
+    temporal::DurationParts other;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &other)) return;
+    temporal::DurationParts a = duration_value((HObject*)this_val.get_heapptr());
+    temporal::DurationParts result;
+    if (!add_durations_no_relative(a, other, &result)) return;
+    HObject*? obj_o = alloc_duration(ctx.heap, result);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(obj);
+}
+
+fn void builtin_temporal_duration_proto_subtract(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.prototype.subtract requires an argument");
+        return;
+    }
+    temporal::DurationParts other;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &other)) return;
+    // Negate and add.
+    other.years = -other.years;
+    other.months = -other.months;
+    other.weeks = -other.weeks;
+    other.days = -other.days;
+    other.hours = -other.hours;
+    other.minutes = -other.minutes;
+    other.seconds = -other.seconds;
+    other.ms = -other.ms;
+    other.us = -other.us;
+    other.ns = -other.ns;
+    temporal::DurationParts a = duration_value((HObject*)this_val.get_heapptr());
+    temporal::DurationParts result;
+    if (!add_durations_no_relative(a, other, &result)) return;
+    HObject*? obj_o = alloc_duration(ctx.heap, result);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(obj);
+}
+
+// Duration.prototype.with: copy `this` and overwrite the named fields. Unknown
+// properties are ignored, mirroring the basic test's
+// "incorrectly-spelled properties are ignored" case.
+fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
+    if (ctx.argc < 1 || !arg_at(ctx, 0).is_object() || arg_at(ctx, 0).get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.prototype.with requires a property bag");
+        return;
+    }
+    HObject* bag = (HObject*)arg_at(ctx, 0).get_heapptr();
+    temporal::DurationParts d = duration_value((HObject*)this_val.get_heapptr());
+    char[][] names = { "days", "hours", "minutes", "seconds",
+        "milliseconds", "microseconds", "nanoseconds" };
+    long*[7] slots = { &d.days, &d.hours, &d.minutes, &d.seconds,
+        &d.ms, &d.us, &d.ns };
+    Vm* v = (Vm*)ctx.vm;
+    for (int k = 0; k < 7; k++) {
+        TVal pv = prop_or_undefined(bag, ctx.heap, names[k]);
+        if (pv.is_undefined()) continue;
+        double val = vm::vm_to_number(v, &pv);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+        if (math::is_nan(val) || math::is_inf(val)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
+            return;
+        }
+        long whole = (long)math::trunc(val);
+        *slots[k] = whole;
+    }
+    HObject*? obj_o = alloc_duration(ctx.heap, d);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.result.set_object(obj);
+}
+
 fn void builtin_temporal_duration_proto_toJSON(BuiltinContext* ctx) {
     builtin_temporal_duration_proto_toString(ctx);
 }
@@ -4407,6 +4547,9 @@ fn bool setUpTemporalDuration(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_DURATION_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_DURATION_PROTO_TOJSON.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_DURATION_PROTO_VALUEOF.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_DURATION_PROTO_ADD.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_DURATION_PROTO_SUBTRACT.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_DURATION_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_DURATION_FROM.ordinal)) return false;
 
     heap.temporal_duration_proto = proto;
