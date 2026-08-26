@@ -1225,11 +1225,11 @@ fn TemporalUnit default_largest_unit(temporal::DurationParts d) {
 }
 
 // Split a signed nanosecond count across the time units from `largest` down to
-// nanoseconds. The value has already been rounded to smallestUnit by the
-// caller, so the units below it come out zero on their own.
+// nanoseconds. Callers round to smallestUnit first, which leaves the units
+// below it zero.
 //
-// Division truncates toward zero in C3, so a negative delta yields uniformly
-// negative fields — which is what a Duration wants.
+// Division truncates toward zero, so a negative count gives uniformly negative
+// fields, as a Duration requires.
 fn temporal::DurationParts time_ns_split(long v, TemporalUnit largest) {
     temporal::DurationParts dp = {};
     if (largest <= TemporalUnit.HOUR) {
@@ -1256,12 +1256,12 @@ fn temporal::DurationParts time_ns_split(long v, TemporalUnit largest) {
     return dp;
 }
 
-// Round a signed nanosecond count to a multiple of `incr_ns`, by magnitude.
+// Round a signed nanosecond count to a multiple of `incr_ns`.
 //
-// until/since round the difference's absolute value and reapply the sign, so
-// "trunc" always moves toward zero regardless of direction. Working on the
-// magnitude keeps that straightforward; the sign-aware modes (ceil, floor and
-// their half-* forms) flip for a negative value.
+// until/since round by magnitude: "trunc" moves toward zero in both directions.
+// The rounding therefore runs on the absolute value, with the sign reapplied at
+// the end, and the direction-sensitive modes (ceil, floor and their half-*
+// forms) mirrored for a negative count.
 fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
     bool neg = v < 0;
     long mag = neg ? -v : v;
@@ -1297,10 +1297,9 @@ fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
     return neg ? -out : out;
 }
 
-// Map a rounding mode to the one that gives the same result when applied to a
-// negative value's magnitude. Only the directional modes flip: on a magnitude,
-// "toward negative infinity" means "toward zero" and vice versa. trunc/expand
-// are already defined relative to zero, so they pass through.
+// The mode giving the same result when applied to a negative value's magnitude.
+// On a magnitude, "toward negative infinity" means "toward zero", so ceil and
+// floor swap. trunc and expand are defined relative to zero and pass through.
 fn TemporalRoundMode mode_for_negative_magnitude(TemporalRoundMode m) {
     switch (m) {
         case TemporalRoundMode.CEIL:       return TemporalRoundMode.FLOOR;
@@ -2439,8 +2438,8 @@ fn void builtin_temporal_plain_date_proto_equals(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    // equals runs ToTemporalDate on its argument, so anything that cannot be
-    // converted throws rather than comparing unequal — including a missing
+    // equals runs ToTemporalDate on its argument, so a value that cannot be
+    // converted throws instead of comparing unequal. That covers a missing
     // argument, a bare number and a Duration.
     TVal* arg = arg_at(ctx, 0);
     if (ctx.argc < 1) {
@@ -2448,8 +2447,8 @@ fn void builtin_temporal_plain_date_proto_equals(BuiltinContext* ctx) {
         return;
     }
 
-    // A real PlainDate compares directly; everything else goes through the
-    // conversion path, which reports its own TypeError/RangeError.
+    // plain_date_from_arg raises the TypeError or RangeError for what it
+    // cannot convert.
     HObject* other_pd;
     if (arg.is_object() && arg.get_heapptr() != null
         && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
@@ -3241,9 +3240,7 @@ fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     temporal::CivilTime start = flipped ? b : a;
     temporal::CivilTime end   = flipped ? a : b;
 
-    // Time-only difference: a nanosecond delta, rounded to smallestUnit and
-    // then split down the ladder from largestUnit. The delta is under 24h, so
-    // a long is plenty and no BigInt is needed.
+    // The delta is under 24 hours, so it fits a long and needs no BigInt.
     long start_ns = ((long)start.h * 3600 + (long)start.mi * 60 + (long)start.s) * 1_000_000_000L
                   + (long)start.ms * 1_000_000L + (long)start.us * 1000L + (long)start.ns;
     long end_ns   = ((long)end.h  * 3600 + (long)end.mi  * 60 + (long)end.s ) * 1_000_000_000L
@@ -3977,10 +3974,9 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
 // Difference two wall-clock date-times into a Duration, honoring largestUnit
 // and the rounding options.
 //
-// The split is date-then-time: difference the calendar dates, then carry the
-// leftover time of day, borrowing a day when the time of day runs backwards so
-// the date part counts only whole days. Rounding a calendar unit has to be
-// re-anchored to `start`, since months and years are not fixed lengths.
+// Dates are differenced first, then the leftover time of day. Rounding to a
+// calendar unit is anchored to `start`, since months and years have no fixed
+// length.
 //
 // Returns false after throwing.
 fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
@@ -4000,8 +3996,8 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
     } else if (cmp > 0 || (cmp == 0 && tod_delta < 0)) {
         sign = -1;
     }
-    // Borrow a day so the date difference spans only whole days and the time
-    // remainder carries the same sign as the difference.
+    // Borrowing a day keeps the date difference at whole days and gives the
+    // time remainder the same sign as the difference.
     if (sign > 0 && tod_delta < 0) {
         tod_delta += 86_400_000_000_000L;
         ed = temporal::add_days(ed, -1);
@@ -4010,8 +4006,8 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
         ed = temporal::add_days(ed, 1);
     }
 
-    // Time-only largestUnit: fold the whole date span into the time delta and
-    // round it as a flat nanosecond count.
+    // A time-only largestUnit folds the date span into the time delta, leaving
+    // a flat nanosecond count to round.
     if (ds.largest > TemporalUnit.DAY) {
         long days = temporal::epoch_days_from_civil(ed.y, (int)ed.m, (int)ed.d)
                   - temporal::epoch_days_from_civil(sd.y, (int)sd.m, (int)sd.d);
@@ -4041,17 +4037,16 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
     }
 
     if (ds.smallest > TemporalUnit.DAY) {
-        // Rounding stays inside the time of day: the date part is already whole
-        // days, so a carry can only push the time to a full day, which then
-        // becomes one more day.
+        // The date part is whole days, so rounding stays inside the time of
+        // day and can carry at most one full day into it.
         long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
         if (incr_ns > 1) {
             long rounded = round_long_ns(tod_delta, incr_ns, ds.mode);
             if (rounded != tod_delta) {
                 if (rounded == 86_400_000_000_000L || rounded == -86_400_000_000_000L) {
-                    // The carry consumed a whole day: clear the time of day and
-                    // hand the extra day to the date part, which may in turn
-                    // cascade up through months and years.
+                    // A carry of a whole day empties the time of day and adds a
+                    // day to the date part, which can cascade up through
+                    // months and years.
                     dp.hours = 0; dp.minutes = 0; dp.seconds = 0;
                     dp.ms = 0; dp.us = 0; dp.ns = 0;
                     if (!bump_date_part(ctx, sd, ds, sign, &dp)) return false;
@@ -4066,23 +4061,24 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
         return true;
     }
 
-    // Rounding to a calendar unit (day or coarser): the leftover below that
-    // unit decides whether to round up to the next whole one.
+    // For a calendar smallestUnit (day or coarser), the leftover below that
+    // unit determines whether the count steps to the next whole one.
     if (!round_date_part(ctx, sd, ed, tod_delta, ds, sign, &dp)) return false;
     *out = dp;
     return true;
 }
 
-// Add one more whole `ds.smallest` unit to the date part of `dp`, in the
-// direction of `sign`. Used when time-of-day rounding carried a full day.
+// Add a day to the date part of `dp` in the direction of `sign`, then
+// rebalance. Called when time-of-day rounding carries a full day.
 fn bool bump_date_part(BuiltinContext* ctx, temporal::CivilDate start, DiffSettings ds,
                        long sign, temporal::DurationParts* dp) {
     dp.days += sign;
     return rebalance_date_part(ctx, start, ds, dp);
 }
 
-// Re-derive years/months/weeks/days from the total day count so a carry does
-// not leave, say, 12 months sitting next to 0 years.
+// Re-derive years/months/weeks/days at largestUnit by walking `start` forward
+// by the current date part and differencing again. A carry that pushes months
+// to 12 or days past a month length settles here.
 fn bool rebalance_date_part(BuiltinContext* ctx, temporal::CivilDate start, DiffSettings ds,
                             temporal::DurationParts* dp) {
     temporal::CivilDate end = start;
@@ -4113,29 +4109,27 @@ fn bool rebalance_date_part(BuiltinContext* ctx, temporal::CivilDate start, Diff
 // Round a date-level difference to `ds.smallest` (day, week, month or year).
 //
 // A calendar unit has no fixed length, so the fraction is measured against the
-// real distance between the unit boundaries on either side of the difference:
-// advance the start date by the truncated count, then by one more unit, and see
-// where the exact endpoint falls between them.
+// distance between the unit boundaries on either side of the difference:
+// advance the start date by the truncated count, then by one more unit, and
+// locate the exact endpoint between them.
 fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal::CivilDate end,
                         long tod_delta, DiffSettings ds, long sign,
                         temporal::DurationParts* dp) {
     if (sign == 0) return true;
 
-    // The components coarser than smallestUnit are already correct — they came
-    // from difference_date at largestUnit — so only the count of smallestUnit
-    // itself is rounded. Rounding the whole difference into smallestUnit
-    // instead would destroy that structure: one month is 4 weeks and 3 days,
-    // and re-expressing it as weeks can never get back to "exactly P1M".
+    // Only the smallestUnit count is rounded; the coarser components stand as
+    // difference_date produced them at largestUnit. Folding the difference into
+    // smallestUnit first loses that structure, since a month is 4 weeks and 3
+    // days and no whole number of weeks recovers P1M.
     long incr = (long)ds.increment;
     long units = smallest_unit_count(*dp, ds.smallest);
     long kept = units - units % incr;
 
-    // Walk from the start date to the boundary at `kept` units, keeping the
-    // coarser components fixed, and measure how far the exact endpoint lies
-    // past it relative to the next boundary.
-    // The boundaries must sit at whole multiples of smallestUnit, so everything
-    // finer is cleared before walking to them — otherwise a leftover month
-    // would push `lo` past the year boundary it is meant to mark.
+    // `lo` and `hi` are the boundaries at `kept` and one increment beyond it,
+    // reached by walking the date part forward from `start` with the coarser
+    // components held fixed. Both must land on whole multiples of smallestUnit,
+    // so everything finer is cleared first: a leftover month would carry `lo`
+    // past the year boundary it marks.
     temporal::DurationParts base = *dp;
     set_smallest_unit_count(&base, ds.smallest, kept);
     clear_below(&base, ds.smallest);
@@ -4148,16 +4142,16 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     long span = total_days_between(lo, hi) * 86_400_000_000_000L;
     if (span == 0) return true;
 
-    // round_long_ns works on a magnitude, so feed it the offset past the
-    // boundary and let it decide whether that reaches the next one.
+    // round_long_ns takes the offset past the boundary and reports whether it
+    // reaches the next one.
     long mag_span = span < 0 ? -span : span;
     long mag_end = to_end < 0 ? -to_end : to_end;
     bool step_up;
     if (mag_end * 2 == mag_span && is_half_mode(ds.mode)) {
-        // Exact halfway point. round_long_ns would break the tie on the
-        // quotient within this one span, which is always 0 — halfEven needs the
-        // parity of the unit count itself, so the tie is settled here.
-        // "up" here means away from zero, so the ceil/floor pair flips for a
+        // An exact halfway point is settled here rather than in round_long_ns,
+        // which breaks ties on the quotient within a single span. That quotient
+        // is always 0, and halfEven needs the parity of the unit count.
+        // Stepping up means away from zero, so ceil and floor swap for a
         // negative difference.
         TemporalRoundMode tie = sign < 0 ? mode_for_negative_magnitude(ds.mode) : ds.mode;
         switch (tie) {
@@ -4181,12 +4175,10 @@ fn bool is_half_mode(TemporalRoundMode m) {
     return m >= TemporalRoundMode.HALF_CEIL;
 }
 
-// The count held in `dp`'s own smallestUnit field.
-//
-// This is the field alone, not the difference folded into that unit: with
-// largestUnit "years" a roundingIncrement of 5 months snaps the months field
-// within the year (2y8m -> 2y5m), while largestUnit "months" leaves the whole
-// span in the months field and snaps that instead (32m -> 30m).
+// The count held in `dp`'s smallestUnit field, not the difference folded into
+// that unit. A roundingIncrement of 5 months under largestUnit "years" snaps
+// the months within the year (2y8m -> 2y5m); under largestUnit "months" the
+// whole span sits in the months field and snaps there (32m -> 30m).
 fn long smallest_unit_count(temporal::DurationParts dp, TemporalUnit unit) {
     switch (unit) {
         case TemporalUnit.YEAR:  return dp.years;
@@ -7013,20 +7005,18 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
         if (ctx.should_throw) return false;
         if (!ri_v.is_undefined()) {
             Vm* v = (Vm*)ctx.vm;
-            double ri = vm::vm_to_number(v, &ri_v);
-            if (v.throw_pending) {
-                ctx.should_throw = true;
-                ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-                v.throw_pending = false;
-                return false;
-            }
-            // ToIntegerWithTruncation: a non-integer increment truncates rather
-            // than throwing; only a non-finite one is rejected outright.
-            if (math::is_nan(ri) || math::is_inf(ri)) {
+            long ri;
+            if (!to_integer_with_truncation(v, &ri_v, &ri)) {
+                if (v.throw_pending) {
+                    ctx.should_throw = true;
+                    ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
+                    v.throw_pending = false;
+                    return false;
+                }
                 builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be finite");
                 return false;
             }
-            out.increment = math::trunc(ri);
+            out.increment = (double)ri;
         }
 
         TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
@@ -7056,9 +7046,9 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
         }
     }
 
-    // Every option is read before any of this validation runs: each read can
-    // invoke user code through a getter or valueOf, and the spec observes all
-    // four reads even when an earlier value turns out to be unusable.
+    // Validation runs only after all four options are read. Each read can
+    // invoke user code through a getter or valueOf, and the spec observes every
+    // one of them even when an earlier value is unusable.
     if (out.increment < 1 || out.increment > 1e9) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
         return false;
@@ -7093,9 +7083,9 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
             return false;
         }
     }
-    // Calendar units and "day" have no fixed length, so there is nothing for an
-    // increment to divide into: any positive integer is accepted, and the
-    // [1, 1e9] check above is the only bound.
+    // Calendar units and "day" have no fixed length for an increment to divide
+    // into, so any positive integer is accepted there and the [1, 1e9] check
+    // above is the only bound.
 
     if (negate_mode) out.mode = negate_round_mode(out.mode);
     return true;
@@ -7390,10 +7380,9 @@ fn void instant_until_since(BuiltinContext* ctx, bool until) {
 
     // Instant spans no calendar, so units coarser than "hour" are rejected.
     //
-    // negate_mode is false even for `since`: the operands below are swapped so
-    // the difference already carries the final sign, and the rounding mode is
-    // then adjusted for that sign directly. Pre-negating here as well would
-    // apply the correction twice.
+    // negate_mode is false even for `since`. The operands below are swapped, so
+    // the difference already carries the final sign and the rounding mode is
+    // adjusted against that sign directly.
     DiffSettings ds;
     if (!read_diff_settings(ctx, 1, TemporalUnit.HOUR, TemporalUnit.NANOSECOND,
                             TemporalUnit.SECOND, TemporalUnit.NANOSECOND, false, &ds)) return;
@@ -7411,11 +7400,10 @@ fn void instant_until_since(BuiltinContext* ctx, bool until) {
     // Rounding to nanoseconds by 1 is the identity, so skip the BigInt work.
     long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
     if (incr_ns > 1) {
-        // round_bigint_ns rounds as if the value were positive, but until/since
-        // round by magnitude: on a negative difference "trunc" must move toward
-        // zero (i.e. up) and "expand" away from it (down). Mapping the mode to
-        // its as-if-positive equivalent gives the same answer without negating
-        // the BigInt twice.
+        // round_bigint_ns rounds as if the value were positive, while
+        // until/since round by magnitude: on a negative difference "trunc"
+        // moves toward zero, which is up, and "expand" away from it. Mapping
+        // the mode to its as-if-positive form avoids negating the BigInt twice.
         TemporalRoundMode mode = ds.mode;
         if (diff.is_negative()) mode = mode_for_negative(mode);
         hbigint::HBigInt*? rounded_o = round_bigint_ns(ctx, diff, incr_ns, mode);
@@ -8456,11 +8444,10 @@ fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
     }
     TVal* arg = arg_at(ctx, 0);
     // equals runs ToTemporalZonedDateTime, so a value that cannot convert
-    // throws instead of comparing unequal. Strings and property bags are not
-    // accepted yet; a primitive is rejected here as the spec requires.
+    // throws instead of comparing unequal.
     if (!arg.is_object() || arg.get_heapptr() == null) {
-        // A string would parse as an ISO instant, so a bad one is a RangeError;
-        // every other primitive fails the type check outright.
+        // A string converts by parsing as an ISO instant, making a bad one a
+        // RangeError. Other primitives fail the type check.
         HObject* proto = arg.is_string() ? ctx.heap.range_err_proto : ctx.heap.type_err_proto;
         builtin_throw(ctx, proto, "argument is not a Temporal.ZonedDateTime");
         return;
