@@ -668,6 +668,12 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date string");
             return null;
         }
+        // Per spec (ToTemporalDate step 4): reject strings that carry a time
+        // component, including fractional minute/second values.
+        if (p.has_time) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date string must not have a time component");
+            return null;
+        }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
         if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
@@ -707,15 +713,17 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
     // Order matches GetDifferenceSettings in the reference implementation:
     // largestUnit, roundingIncrement, roundingMode, smallestUnit. Read in this
     // sequence so Proxy observers see the expected access pattern.
+    bool largest_auto = true;
     TVal uv = prop_or_undefined_pa(ctx, opts, "largestUnit");
     if (!uv.is_undefined()) {
+        largest_auto = false;
         // GetOption converts the value to a string before matching. Symbol
         // throws TypeError; primitives that don't match a known unit reject
         // with RangeError below.
         HString* s = builtin_to_string_vm(ctx, &uv);
         if (ctx.should_throw) return false;
         char[] v = s.get_cstr()[:s.blen];
-        if (v == "auto") { /* keep default_largest */ }
+        if (v == "auto") { largest_auto = true; }
         else if (v == "year" || v == "years") { *largest = temporal::DifferenceUnit.YEARS; }
         else if (v == "month" || v == "months") { *largest = temporal::DifferenceUnit.MONTHS; }
         else if (v == "week" || v == "weeks") { *largest = temporal::DifferenceUnit.WEEKS; }
@@ -778,9 +786,16 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
             return false;
         }
+        // GetDifferenceSettings: when smallestUnit > current largestUnit
+        // AND largestUnit was "auto" (or absent), bump largestUnit up to fit.
+        // When the caller pinned both, reject as a likely mistake.
         if (small > *largest) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit cannot be larger than largestUnit");
-            return false;
+            if (largest_auto) {
+                *largest = small;
+            } else {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit cannot be larger than largestUnit");
+                return false;
+            }
         }
     }
     return true;
@@ -1284,6 +1299,12 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(text, &p)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDate.from: invalid ISO date string");
+            return;
+        }
+        // ToTemporalDate (Temporal.PlainDate.from step 5.b): reject strings
+        // carrying any time component, including fractional minutes/seconds.
+        if (p.has_time) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date string must not have a time component");
             return;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
