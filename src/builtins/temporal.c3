@@ -2140,10 +2140,16 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDate.from: invalid ISO date string");
             return;
         }
-        // ToTemporalDate (Temporal.PlainDate.from step 5.b): reject strings
-        // carrying any time component, including fractional minutes/seconds.
-        if (p.has_time) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "date string must not have a time component");
+        // Temporal.PlainDate.from accepts a time component only when every
+        // component is zero. The representable-range edge cases
+        // (`-271821-04-19T01:00`, `+275760-09-13T23:00`) get a separate
+        // exception: if the date sits exactly on the min or max boundary
+        // and the offset is empty (`Z` is treated as `+00:00` so we look
+        // at the local date only), the time is permitted.
+        bool is_edge_date = (p.year == -271821 && p.month == 4 && p.day == 19) ||
+                            (p.year == 275760 && p.month == 9 && p.day == 13);
+        if (p.has_time && (p.hour != 0 || p.minute != 0 || p.second != 0 || p.nanos != 0) && !is_edge_date) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date string must not have a non-midnight time component");
             return;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };

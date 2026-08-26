@@ -53,7 +53,12 @@ fn bool parse_two_digits(char[] text, usz* i, int* out) {
 // Fraction after a decimal point: 1..9 digits, zero-padded to nanoseconds;
 // a 10th digit is "too many decimals".
 fn bool parse_fraction(char[] text, usz* i, long* nanos) {
-    if (*i >= text.len || text[*i] != '.') return false;
+    // ISO 8601 permits either `.` or `,` as the decimal mark for a fractional
+    // component (`±YYYYYY-MM-DDTHH:MM:SS,5` is valid). Treat them identically
+    // here; the value is converted to nanoseconds.
+    if (*i >= text.len) return false;
+    char sep = text[*i];
+    if (sep != '.' && sep != ',') return false;
     *i += 1;
     int digits = 0;
     long n = 0;
@@ -95,7 +100,7 @@ fn bool parse_time(char[] text, usz* i, int* h, int* mi, int* s, long* nanos) {
         *i += 1;
         if (!parse_two_digits(text, i, s)) return false;
     }
-    if (*i < text.len && text[*i] == '.') {
+    if (*i < text.len && (text[*i] == '.' || text[*i] == ',')) {
         if (!parse_fraction(text, i, nanos)) return false;
     } else if (digit_at(text, *i) >= 0 && *i < text.len) {
         return false;                             // trailing digits after seconds
@@ -130,7 +135,7 @@ fn bool parse_offset(char[] text, usz* i) {
             has_s = true;
         }
         if (has_s) {
-            if (*i < text.len && text[*i] == '.') {
+            if (*i < text.len && (text[*i] == '.' || text[*i] == ',')) {
                 if (!parse_fraction(text, i, &nanos)) return false;
             } else if (digit_at(text, *i) >= 0 && *i < text.len) {
                 return false;
