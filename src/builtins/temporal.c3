@@ -6967,6 +6967,86 @@ fn void builtin_temporal_instant_proto_until(BuiltinContext* ctx) {
     ctx.result.set_object(dur);
 }
 
+// Helper: round a BigInt nanosecond value to the nearest multiple of
+// `incr_ns` using the spec's `RoundNumberToIncrementAsIfPositive`. Returns a
+// newly-allocated BigInt on success; on failure the `catch` path yields
+// BIGINT_DIV_ZERO or an allocation fault.
+fn hbigint::HBigInt*? round_bigint_ns(BuiltinContext* ctx, hbigint::HBigInt* b, long incr_ns, TemporalRoundMode rounding_mode) {
+    hbigint::HBigInt*? incr_o = hbigint::hbigint_alloc(ctx.heap, (int128)incr_ns);
+    if (catch err = incr_o) return err~;
+    hbigint::HBigInt* incr = incr_o;
+    hbigint::HBigInt* q = null;
+    hbigint::HBigInt* r = null;
+    if (catch err = hbigint::hbigint_divrem(ctx.heap, b, incr, &q, &r)) {
+        ctx.heap.decref((types::HeapHeader*)incr);
+        return err~;
+    }
+    if (q == null || r == null) {
+        ctx.heap.decref((types::HeapHeader*)incr);
+        ctx.heap.decref((types::HeapHeader*)q);
+        ctx.heap.decref((types::HeapHeader*)r);
+        return hbigint::BIGINT_ALLOC~;
+    }
+    int128 qv = q.to_int128();
+    int128 rv = r.to_int128();
+    int128 incr_128 = (int128)incr_ns;
+    // Normalize to floor-division (spec uses RoundNumberToIncrementAsIfPositive,
+    // which expects r in [0, incr_ns) with q_f = floor(b/incr_ns)).
+    int128 q_f;
+    int128 r_f;
+    if (rv >= 0) { q_f = qv; r_f = rv; }
+    else         { q_f = qv - 1; r_f = rv + incr_128; }
+    int128 chosen_q;
+    if (r_f == 0) {
+        chosen_q = q_f;
+    } else {
+        switch (rounding_mode) {
+            // floor / trunc → unsigned "zero" → always r1.
+            case TemporalRoundMode.FLOOR:
+            case TemporalRoundMode.TRUNC: chosen_q = q_f; break;
+            // ceil / expand → unsigned "infinity" → always r2.
+            case TemporalRoundMode.CEIL:
+            case TemporalRoundMode.EXPAND: chosen_q = q_f + 1; break;
+            // half-* modes pick the closer candidate, breaking ties per unsigned mode.
+            case TemporalRoundMode.HALF_FLOOR:
+            case TemporalRoundMode.HALF_TRUNC:
+            case TemporalRoundMode.HALF_CEIL:
+            case TemporalRoundMode.HALF_EXPAND:
+            case TemporalRoundMode.HALF_EVEN: {
+                int128 two_r = r_f * 2;
+                if (two_r < incr_128) {
+                    chosen_q = q_f;
+                } else if (two_r > incr_128) {
+                    chosen_q = q_f + 1;
+                } else {
+                    switch (rounding_mode) {
+                        case TemporalRoundMode.HALF_FLOOR:
+                        case TemporalRoundMode.HALF_TRUNC: chosen_q = q_f; break;
+                        case TemporalRoundMode.HALF_CEIL:
+                        case TemporalRoundMode.HALF_EXPAND: chosen_q = q_f + 1; break;
+                        case TemporalRoundMode.HALF_EVEN:
+                            chosen_q = ((q_f & 1) == 0) ? q_f : q_f + 1; break;
+                        default: chosen_q = q_f; break;  // unreachable
+                    }
+                }
+                break;
+            }
+        }
+    }
+    ctx.heap.decref((types::HeapHeader*)q);
+    ctx.heap.decref((types::HeapHeader*)r);
+    hbigint::HBigInt*? chosen_o = hbigint::hbigint_alloc(ctx.heap, chosen_q);
+    if (catch err = chosen_o) {
+        ctx.heap.decref((types::HeapHeader*)incr);
+        return err~;
+    }
+    hbigint::HBigInt* chosen = chosen_o;
+    hbigint::HBigInt*? result = hbigint::hbigint_mul(ctx.heap, chosen, incr);
+    ctx.heap.decref((types::HeapHeader*)chosen);
+    ctx.heap.decref((types::HeapHeader*)incr);
+    return result;
+}
+
 // Temporal.Instant.prototype.round([options]) — see spec
 // §sec-temporal.instant.prototype.round. Rounds `this` to the chosen
 // `smallestUnit` (hour, minute, second, millisecond, microsecond, or
@@ -7073,107 +7153,11 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
 
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
     long incr_ns = divisor * (long)rounding_increment;
-    // Integer arithmetic on the BigInt epoch-ns value: compute the quotient q
-    // and remainder r of b / incr_ns, then pick q or q+1 according to the
-    // rounding mode, then build result = chosen_q * incr_ns. This avoids the
-    // precision loss of casting a 60+ bit nanosecond count through double.
-    hbigint::HBigInt*? incr_o = hbigint::hbigint_alloc(ctx.heap, (int128)incr_ns);
-    if (catch err = incr_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
-    hbigint::HBigInt* incr = incr_o;
-    hbigint::HBigInt* q = null;
-    hbigint::HBigInt* r = null;
-    if (catch err = hbigint::hbigint_divrem(ctx.heap, b, incr, &q, &r)) {
-        ctx.heap.decref((types::HeapHeader*)incr);
-        builtin_throw(ctx, ctx.heap.range_err_proto, "division failed");
+    hbigint::HBigInt*? result = round_bigint_ns(ctx, b, incr_ns, rounding_mode);
+    if (catch err = result) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "round failed");
         return;
     }
-    if (q == null || r == null) {
-        ctx.heap.decref((types::HeapHeader*)incr);
-        ctx.heap.decref((types::HeapHeader*)q);
-        ctx.heap.decref((types::HeapHeader*)r);
-        builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed");
-        return;
-    }
-    int128 qv = q.to_int128();
-    int128 rv = r.to_int128();
-    int128 incr_128 = (int128)incr_ns;
-    // Normalize to floor-division: hbigint_divrem returns trunc-remainder
-    // (sign follows dividend), but the Temporal spec uses RoundNumberToIncrementAsIfPositive
-    // which wants r1 = floor(b/incr_ns) and r2 = r1 + 1 with r in [0, incr_ns).
-    // For b < 0 with a negative trunc-remainder, step the quotient down and
-    // bump the remainder. After normalization q_f*incr ≤ b < (q_f+1)*incr.
-    int128 q_f;
-    int128 r_f;
-    if (rv >= 0) { q_f = qv; r_f = rv; }
-    else         { q_f = qv - 1; r_f = rv + incr_128; }
-    bool neg = q_f < 0;
-    int128 q_abs = neg ? -q_f : q_f;
-    int128 r_abs = r_f;
-    // The two candidates are r1 = q_f * incr (MORE negative when neg,
-    // LESS positive when !neg) and r2 = (q_f + 1) * incr (the other side).
-    // For b < 0 the unsigned mapping r1 ↔ "q_abs" and r2 ↔ "q_abs - 1";
-    // for b > 0 the mapping is r1 ↔ "q_abs" and r2 ↔ "q_abs + 1".
-    // ApplyUnsignedRoundingMode picks r1 or r2 per the unsigned table.
-    int128 chosen_q;
-    if (r_f == 0) {
-        chosen_q = q_f;
-    } else {
-        switch (rounding_mode) {
-        // floor / trunc → unsigned "zero" → always r1.
-        case TemporalRoundMode.FLOOR:
-        case TemporalRoundMode.TRUNC: chosen_q = q_f; break;
-        // ceil / expand → unsigned "infinity" → always r2.
-        case TemporalRoundMode.CEIL:
-        case TemporalRoundMode.EXPAND: chosen_q = q_f + 1; break;
-        // halfFloor / halfTrunc → unsigned "half-zero" → r1 on tie.
-        // halfCeil / halfExpand → unsigned "half-infinity" → r2 on tie.
-        // Otherwise (closer-than-half), pick whichever side is closer.
-        case TemporalRoundMode.HALF_FLOOR:
-        case TemporalRoundMode.HALF_TRUNC:
-        case TemporalRoundMode.HALF_CEIL:
-        case TemporalRoundMode.HALF_EXPAND:
-        case TemporalRoundMode.HALF_EVEN: {
-            int128 two_r = r_f * 2;
-            if (two_r < incr_128) {
-                // Below half: closer to r1.
-                chosen_q = q_f;
-            } else if (two_r > incr_128) {
-                // Above half: closer to r2.
-                chosen_q = q_f + 1;
-            } else {
-                // Exactly half: tiebreaker per unsigned mode.
-                switch (rounding_mode) {
-                    case TemporalRoundMode.HALF_FLOOR:
-                    case TemporalRoundMode.HALF_TRUNC: chosen_q = q_f; break;
-                    case TemporalRoundMode.HALF_CEIL:
-                    case TemporalRoundMode.HALF_EXPAND: chosen_q = q_f + 1; break;
-                    case TemporalRoundMode.HALF_EVEN: {
-                        // cardinality = (q_f / 1) mod 2 = q_f mod 2
-                        chosen_q = ((q_f & 1) == 0) ? q_f : q_f + 1;
-                        break;
-                    }
-                    default: chosen_q = q_f; break;  // unreachable
-                }
-            }
-            break;
-        }
-        }
-    }
-    (void)q_abs;  // unused but documents the unsigned correspondence
-    (void)neg;
-    ctx.heap.decref((types::HeapHeader*)q);
-    ctx.heap.decref((types::HeapHeader*)r);
-    hbigint::HBigInt*? chosen_o = hbigint::hbigint_alloc(ctx.heap, chosen_q);
-    if (catch err = chosen_o) {
-        ctx.heap.decref((types::HeapHeader*)incr);
-        builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed");
-        return;
-    }
-    hbigint::HBigInt* chosen = chosen_o;
-    hbigint::HBigInt*? result = hbigint::hbigint_mul(ctx.heap, chosen, incr);
-    ctx.heap.decref((types::HeapHeader*)chosen);
-    ctx.heap.decref((types::HeapHeader*)incr);
-    if (catch err = result) { builtin_throw(ctx, ctx.heap.range_err_proto, "multiply failed"); return; }
     HObject*? inst_o = alloc_instant(ctx.heap, result);
     ctx.heap.decref((types::HeapHeader*)result);
     if (catch err2 = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
