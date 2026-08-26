@@ -4000,6 +4000,237 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
     ctx.result.set_object(obj2);
 }
 
+// Difference two wall-clock date-times into a Duration, honoring largestUnit
+// and the rounding options.
+//
+// The split is date-then-time: difference the calendar dates, then carry the
+// leftover time of day, borrowing a day when the time of day runs backwards so
+// the date part counts only whole days. Rounding a calendar unit has to be
+// re-anchored to `start`, since months and years are not fixed lengths.
+//
+// Returns false after throwing.
+fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
+                            temporal::CivilDateTime end, DiffSettings ds,
+                            temporal::DurationParts* out) {
+    long start_tod = civil_time_to_ns(start.time);
+    long end_tod = civil_time_to_ns(end.time);
+
+    temporal::CivilDate sd = start.date;
+    temporal::CivilDate ed = end.date;
+    long tod_delta = end_tod - start_tod;
+
+    int cmp = temporal::date_compare(sd, ed);
+    long sign = 0;
+    if (cmp < 0 || (cmp == 0 && tod_delta > 0)) {
+        sign = 1;
+    } else if (cmp > 0 || (cmp == 0 && tod_delta < 0)) {
+        sign = -1;
+    }
+    // Borrow a day so the date difference spans only whole days and the time
+    // remainder carries the same sign as the difference.
+    if (sign > 0 && tod_delta < 0) {
+        tod_delta += 86_400_000_000_000L;
+        ed = temporal::add_days(ed, -1);
+    } else if (sign < 0 && tod_delta > 0) {
+        tod_delta -= 86_400_000_000_000L;
+        ed = temporal::add_days(ed, 1);
+    }
+
+    // Time-only largestUnit: fold the whole date span into the time delta and
+    // round it as a flat nanosecond count.
+    if (ds.largest > TemporalUnit.DAY) {
+        long days = temporal::epoch_days_from_civil(ed.y, (int)ed.m, (int)ed.d)
+                  - temporal::epoch_days_from_civil(sd.y, (int)sd.m, (int)sd.d);
+        long total = days * 86_400_000_000_000L + tod_delta;
+        long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
+        if (incr_ns > 1) total = round_long_ns(total, incr_ns, ds.mode);
+        *out = time_ns_split(total, ds.largest);
+        return true;
+    }
+
+    temporal::DifferenceUnit du;
+    switch (ds.largest) {
+        case TemporalUnit.YEAR:  du = temporal::DifferenceUnit.YEARS; break;
+        case TemporalUnit.MONTH: du = temporal::DifferenceUnit.MONTHS; break;
+        case TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
+        default:                 du = temporal::DifferenceUnit.DAYS; break;
+    }
+    temporal::DateDifference dd = temporal::difference_date(sd, ed, du);
+
+    temporal::DurationParts dp = time_ns_split(tod_delta, TemporalUnit.HOUR);
+    dp.years = dd.years;
+    dp.months = dd.months;
+    dp.days = dd.days;
+    if (ds.largest == TemporalUnit.WEEK) {
+        dp.weeks = dd.days / 7;
+        dp.days = dd.days % 7;
+    }
+
+    if (ds.smallest > TemporalUnit.DAY) {
+        // Rounding stays inside the time of day: the date part is already whole
+        // days, so a carry can only push the time to a full day, which then
+        // becomes one more day.
+        long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
+        if (incr_ns > 1) {
+            long rounded = round_long_ns(tod_delta, incr_ns, ds.mode);
+            if (rounded != tod_delta) {
+                if (rounded == 86_400_000_000_000L || rounded == -86_400_000_000_000L) {
+                    // The carry consumed a whole day: clear the time of day and
+                    // hand the extra day to the date part, which may in turn
+                    // cascade up through months and years.
+                    dp.hours = 0; dp.minutes = 0; dp.seconds = 0;
+                    dp.ms = 0; dp.us = 0; dp.ns = 0;
+                    if (!bump_date_part(ctx, sd, ds, sign, &dp)) return false;
+                } else {
+                    temporal::DurationParts t = time_ns_split(rounded, TemporalUnit.HOUR);
+                    dp.hours = t.hours; dp.minutes = t.minutes; dp.seconds = t.seconds;
+                    dp.ms = t.ms; dp.us = t.us; dp.ns = t.ns;
+                }
+            }
+        }
+        *out = dp;
+        return true;
+    }
+
+    // Rounding to a calendar unit (day or coarser): the leftover below that
+    // unit decides whether to round up to the next whole one.
+    if (!round_date_part(ctx, sd, ed, tod_delta, ds, sign, &dp)) return false;
+    *out = dp;
+    return true;
+}
+
+// Add one more whole `ds.smallest` unit to the date part of `dp`, in the
+// direction of `sign`. Used when time-of-day rounding carried a full day.
+fn bool bump_date_part(BuiltinContext* ctx, temporal::CivilDate start, DiffSettings ds,
+                       long sign, temporal::DurationParts* dp) {
+    dp.days += sign;
+    return rebalance_date_part(ctx, start, ds, dp);
+}
+
+// Re-derive years/months/weeks/days from the total day count so a carry does
+// not leave, say, 12 months sitting next to 0 years.
+fn bool rebalance_date_part(BuiltinContext* ctx, temporal::CivilDate start, DiffSettings ds,
+                            temporal::DurationParts* dp) {
+    temporal::CivilDate end = start;
+    if (dp.years != 0 || dp.months != 0) {
+        end = temporal::add_months(end, dp.years * 12 + dp.months, temporal::OverflowKind.CONSTRAIN);
+    }
+    end = temporal::add_days(end, dp.weeks * 7 + dp.days);
+
+    temporal::DifferenceUnit du;
+    switch (ds.largest) {
+        case TemporalUnit.YEAR:  du = temporal::DifferenceUnit.YEARS; break;
+        case TemporalUnit.MONTH: du = temporal::DifferenceUnit.MONTHS; break;
+        case TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
+        default:                 du = temporal::DifferenceUnit.DAYS; break;
+    }
+    temporal::DateDifference dd = temporal::difference_date(start, end, du);
+    dp.years = dd.years;
+    dp.months = dd.months;
+    dp.weeks = 0;
+    dp.days = dd.days;
+    if (ds.largest == TemporalUnit.WEEK) {
+        dp.weeks = dd.days / 7;
+        dp.days = dd.days % 7;
+    }
+    return true;
+}
+
+// Round a date-level difference to `ds.smallest` (day, week, month or year).
+//
+// A calendar unit has no fixed length, so the fraction is measured against the
+// real distance between the unit boundaries on either side of the difference:
+// advance the start date by the truncated count, then by one more unit, and see
+// where the exact endpoint falls between them.
+fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal::CivilDate end,
+                        long tod_delta, DiffSettings ds, long sign,
+                        temporal::DurationParts* dp) {
+    if (sign == 0) return true;
+
+    // The components coarser than smallestUnit are already correct — they came
+    // from difference_date at largestUnit — so only the count of smallestUnit
+    // itself is rounded. Rounding the whole difference into smallestUnit
+    // instead would destroy that structure: one month is 4 weeks and 3 days,
+    // and re-expressing it as weeks can never get back to "exactly P1M".
+    long incr = (long)ds.increment;
+    long units = smallest_unit_count(*dp, ds.smallest);
+    long kept = units - units % incr;
+
+    // Walk from the start date to the boundary at `kept` units, keeping the
+    // coarser components fixed, and measure how far the exact endpoint lies
+    // past it relative to the next boundary.
+    // The boundaries must sit at whole multiples of smallestUnit, so everything
+    // finer is cleared before walking to them — otherwise a leftover month
+    // would push `lo` past the year boundary it is meant to mark.
+    temporal::DurationParts base = *dp;
+    set_smallest_unit_count(&base, ds.smallest, kept);
+    clear_below(&base, ds.smallest);
+    temporal::CivilDate lo = apply_date_part(start, base);
+    temporal::DurationParts next = base;
+    set_smallest_unit_count(&next, ds.smallest, kept + sign * incr);
+    temporal::CivilDate hi = apply_date_part(start, next);
+
+    long to_end = total_days_between(lo, end) * 86_400_000_000_000L + tod_delta;
+    long span = total_days_between(lo, hi) * 86_400_000_000_000L;
+    if (span == 0) return true;
+
+    // round_long_ns works on a magnitude, so feed it the offset past the
+    // boundary and let it decide whether that reaches the next one.
+    long rounded = round_long_ns(to_end, span < 0 ? -span : span, ds.mode);
+    set_smallest_unit_count(dp, ds.smallest, rounded == 0 ? kept : kept + sign * incr);
+    clear_below(dp, ds.smallest);
+    return rebalance_date_part(ctx, start, ds, dp);
+}
+
+// The count of `unit` currently held in `dp`, folding coarser components in so
+// the value is a single number of that unit.
+fn long smallest_unit_count(temporal::DurationParts dp, TemporalUnit unit) {
+    switch (unit) {
+        case TemporalUnit.YEAR:  return dp.years;
+        case TemporalUnit.MONTH: return dp.years * 12 + dp.months;
+        case TemporalUnit.WEEK:  return dp.weeks;
+        default:                 return dp.days;
+    }
+}
+
+// Set the count of `unit`, leaving the coarser components alone. Years fold
+// into months, so writing a month count clears the year field.
+fn void set_smallest_unit_count(temporal::DurationParts* dp, TemporalUnit unit, long n) {
+    switch (unit) {
+        case TemporalUnit.YEAR:  dp.years = n; break;
+        case TemporalUnit.MONTH: dp.years = 0; dp.months = n; break;
+        case TemporalUnit.WEEK:  dp.weeks = n; break;
+        default:                 dp.days = n; break;
+    }
+}
+
+// Zero every component finer than `unit`; rounding to it leaves no remainder.
+fn void clear_below(temporal::DurationParts* dp, TemporalUnit unit) {
+    if (unit <= TemporalUnit.YEAR)  dp.months = 0;
+    if (unit <= TemporalUnit.MONTH) dp.weeks = 0;
+    if (unit <= TemporalUnit.WEEK)  dp.days = 0;
+    dp.hours = 0; dp.minutes = 0; dp.seconds = 0;
+    dp.ms = 0; dp.us = 0; dp.ns = 0;
+}
+
+// Advance a date by the date-level components of a Duration.
+fn temporal::CivilDate apply_date_part(temporal::CivilDate d, temporal::DurationParts dp) {
+    temporal::CivilDate r = d;
+    long months = dp.years * 12 + dp.months;
+    if (months != 0) r = temporal::add_months(r, months, temporal::OverflowKind.CONSTRAIN);
+    return temporal::add_days(r, dp.weeks * 7 + dp.days);
+}
+
+fn long total_days_between(temporal::CivilDate a, temporal::CivilDate b) {
+    return temporal::epoch_days_from_civil(b.y, (int)b.m, (int)b.d)
+         - temporal::epoch_days_from_civil(a.y, (int)a.m, (int)a.d);
+}
+
+fn long civil_time_to_ns(temporal::CivilTime t) {
+    return ((long)t.h * 3600 + (long)t.mi * 60 + (long)t.s) * 1_000_000_000L
+         + (long)t.ms * 1_000_000L + (long)t.us * 1000L + (long)t.ns;
+}
+
 fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) {
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "until/since requires another date-time");
@@ -4016,90 +4247,17 @@ fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipp
         return;
     }
 
-    temporal::DifferenceUnit largest;
-    if (!read_diff_options(ctx, 1, temporal::DifferenceUnit.DAYS, &largest, true)) return;
+    DiffSettings ds;
+    if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.NANOSECOND,
+                            TemporalUnit.DAY, TemporalUnit.NANOSECOND, false, &ds)) return;
 
     temporal::CivilDateTime a = plain_datetime_value(obj);
     temporal::CivilDateTime b = plain_datetime_value(other);
     temporal::CivilDateTime start = flipped ? b : a;
     temporal::CivilDateTime end   = flipped ? a : b;
 
-    // Date part first, then time leftover at the chosen granularity. For
-    // largestUnit at the date level (days..years), use difference_date with
-    // the chosen unit so the result is years/months/days. For largestUnit
-    // finer than days (hours..seconds), use days-only difference_date and
-    // convert the time delta at the chosen granularity.
-    temporal::DifferenceUnit date_unit = largest;
-    if (largest < temporal::DifferenceUnit.DAYS) date_unit = temporal::DifferenceUnit.DAYS;
-    temporal::DateDifference ddiff = temporal::difference_date(start.date, end.date, date_unit);
-    long start_epoch = temporal::epoch_days_from_civil(start.date.y, (int)start.date.m, (int)start.date.d) * 86_400L
-                     + (long)start.time.h * 3600 + (long)start.time.mi * 60 + (long)start.time.s;
-    long end_epoch   = temporal::epoch_days_from_civil(end.date.y, (int)end.date.m, (int)end.date.d)   * 86_400L
-                     + (long)end.time.h * 3600 + (long)end.time.mi * 60 + (long)end.time.s;
-    long start_ns = start_epoch * 1_000_000_000L + (long)start.time.ms * 1_000_000L + (long)start.time.us * 1000L + (long)start.time.ns;
-    long end_ns   = end_epoch   * 1_000_000_000L + (long)end.time.ms   * 1_000_000L + (long)end.time.us   * 1000L + (long)end.time.ns;
-    long total_delta = end_ns - start_ns;
-    long days_total = total_delta / 86_400_000_000_000L;
-    long rem_ns = total_delta - days_total * 86_400_000_000_000L;
-
     temporal::DurationParts dur;
-    dur.years = 0;
-    dur.months = 0;
-    dur.weeks = 0;
-    if (largest == temporal::DifferenceUnit.DAYS) {
-        // Day-only output: total delta in ns / ns-per-day gives the right count
-        // (the date diff and time delta agree for same-time-of-day inputs).
-        dur.days = days_total;
-        dur.hours = 0; dur.minutes = 0; dur.seconds = 0;
-        dur.ms = 0; dur.us = 0; dur.ns = 0;
-    } else if (largest == temporal::DifferenceUnit.MONTHS ||
-               largest == temporal::DifferenceUnit.YEARS ||
-               largest == temporal::DifferenceUnit.WEEKS) {
-        // Months/years/weeks split: y/m/d from difference_date.
-        dur.years = ddiff.years;
-        dur.months = ddiff.months;
-        if (largest == temporal::DifferenceUnit.WEEKS) {
-            dur.weeks = ddiff.days / 7;
-            dur.days = ddiff.days % 7;
-        } else {
-            dur.days = ddiff.days;
-        }
-        dur.hours = 0; dur.minutes = 0; dur.seconds = 0;
-        dur.ms = 0; dur.us = 0; dur.ns = 0;
-    } else if (largest == temporal::DifferenceUnit.HOURS) {
-        long hours = rem_ns / 3_600_000_000_000L;
-        rem_ns -= hours * 3_600_000_000_000L;
-        dur.hours = hours;
-        dur.minutes = rem_ns / 60_000_000_000L;
-        rem_ns -= dur.minutes * 60_000_000_000L;
-        dur.seconds = rem_ns / 1_000_000_000L;
-        rem_ns -= dur.seconds * 1_000_000_000L;
-        dur.ms = (int)(rem_ns / 1_000_000);
-        rem_ns -= (long)dur.ms * 1_000_000;
-        dur.us = (int)(rem_ns / 1000);
-        rem_ns -= (long)dur.us * 1000;
-        dur.ns = (int)rem_ns;
-    } else if (largest == temporal::DifferenceUnit.MINUTES) {
-        long mins = rem_ns / 60_000_000_000L;
-        rem_ns -= mins * 60_000_000_000L;
-        dur.minutes = mins;
-        dur.seconds = rem_ns / 1_000_000_000L;
-        rem_ns -= dur.seconds * 1_000_000_000L;
-        dur.ms = (int)(rem_ns / 1_000_000);
-        rem_ns -= (long)dur.ms * 1_000_000;
-        dur.us = (int)(rem_ns / 1000);
-        rem_ns -= (long)dur.us * 1000;
-        dur.ns = (int)rem_ns;
-    } else {
-        long secs = rem_ns / 1_000_000_000L;
-        rem_ns -= secs * 1_000_000_000L;
-        dur.seconds = secs;
-        dur.ms = (int)(rem_ns / 1_000_000);
-        rem_ns -= (long)dur.ms * 1_000_000;
-        dur.us = (int)(rem_ns / 1000);
-        rem_ns -= (long)dur.us * 1000;
-        dur.ns = (int)rem_ns;
-    }
+    if (!datetime_difference(ctx, start, end, ds, &dur)) return;
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -6941,11 +7099,10 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
             builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
             return false;
         }
-    } else if (out.increment != 1) {
-        // Calendar units and "day" admit no increment other than 1.
-        builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
-        return false;
     }
+    // Calendar units and "day" have no fixed length, so there is nothing for an
+    // increment to divide into: any positive integer is accepted, and the
+    // [1, 1e9] check above is the only bound.
 
     if (negate_mode) out.mode = negate_round_mode(out.mode);
     return true;
