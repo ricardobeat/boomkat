@@ -1653,9 +1653,11 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
 
     char[][] names = { "years", "months", "weeks", "days", "hours",
         "minutes", "seconds", "milliseconds", "microseconds", "nanoseconds" };
+    bool any_field = false;
     for (int k = 0; k < 10; k++) {
         TVal pv = prop_or_undefined(o, ctx.heap, names[k]);
         if (pv.is_undefined()) continue;
+        any_field = true;
         double val = vm::vm_to_number(v, &pv);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
         if (math::is_nan(val) || math::is_inf(val)) {
@@ -1679,6 +1681,10 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
             case 8: out.us = (int)whole; out.ns += (int)((val - (double)whole) * 1e3); break;
             default: out.ns = (int)whole; break;
         }
+    }
+    if (!any_field) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "duration property bag has no recognized fields");
+        return false;
     }
     return true;
 }
