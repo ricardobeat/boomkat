@@ -511,120 +511,76 @@ The existing `OP_ADD` etc. handle the rare integer cases. Spec ops like
 ## Feature list
 
 `built-ins/Temporal` runs unconditionally in `scripts/run_test262.py`
-(no directory-level skips) — every method below is scored on every run.
-Numbers are test262 failure counts from a full `built-ins/Temporal` run
-(`python3 scripts/run_test262.py --phase 26 --log /tmp/t.log`, then
-`grep -P '^(FAIL|TIMEOUT|MEMKILL)'`); re-run and re-cluster before
-trusting them again, they drift as fixes land.
+(no directory-level skips) — everything is scored on every run.
+
+Per-method failure counts are not listed here; they go stale within a
+few commits. Regenerate them:
+
+```sh
+just build-bench
+python3 scripts/run_test262.py --phase 26 --log /tmp/t.log
+grep -P '^FAIL' /tmp/t.log | sed -E 's#.*built-ins/Temporal/##; s#/[^/]+\.js$##' \
+  | sort | uniq -c | sort -rn | head -30
+```
+
+Work in roughly this order, which tracks tests fixed per line changed:
+the not-implemented methods below, then the shared root causes, then
+per-type edge cases clustered from the log, then the non-ISO calendars.
+The not-implemented methods parallelize safely across agents; the shared
+root causes do not, since they touch common helpers.
+
+More than one worktree has been active on this plan at a time. Check
+`git worktree list` before claiming a task.
+
+### Shared root causes
+
+One defect surfacing as many unrelated-looking per-method failures.
+Check here before treating a cluster as a per-method bug.
+
+- `Duration.round` and `Duration.total` do time-unit-only math. Calendar-unit
+  rounding and totals with `relativeTo` need `NanosecondsToDays`,
+  `BubbleRelativeDuration`, `AddDaysToZonedDateTime` and `AddDaysToPlainDate`
+  per the polyfill spec's "Balance" algorithm. One implementation covers
+  both methods.
+- `Duration.round`, `Duration.total` and `Duration.compare` each carry a
+  verbatim copy of the same ~60-line `relativeTo` parsing block. Changing
+  one leaves the others behind. Worth extracting when no agent is mid-edit
+  on them.
+- `until` and `since` share a difference algorithm across PlainDate,
+  PlainDateTime, PlainTime, PlainYearMonth, Instant and ZonedDateTime.
+
+Read property-bag fields with `prop_or_undefined_pa`. `prop_or_undefined`
+does a raw slot read that skips getters and the prototype chain.
+
+### Not implemented
+
+These return `undefined`: the function, a `core.c3` enum entry and a
+registration line are all missing. Confirm with a `typeof` probe before
+starting — the list drifts.
+
+- `Temporal.PlainDateTime.prototype.round`
+- `Temporal.PlainDate.prototype.toZonedDateTime`
+- `Temporal.Calendar.prototype.dateFromFields`, `mergeFields`, `dateAdd`,
+  `dateUntil`. Nothing calls them, so they raise no failures of their own.
+  Constructor field validation happens inline in each `Plain*` and
+  `ZonedDateTime` constructor instead of routing through them.
+
+A handler and enum entry can exist while the registration line does not,
+in which case the method resolves up the prototype chain to
+`Object.prototype` and `typeof` still reports `function`. Grep for the
+`register_string_proto_method` call, not just the handler.
 
 ### Complete (0 failures)
 
-- `Temporal.Calendar` — constructor, `from`, `id`, `toString` (ISO
-  calendar only; `dateFromFields` / `mergeFields` / `dateAdd` /
-  `dateUntil` are not implemented — see below).
-- `Temporal.Now` — `instant`, `timeZoneId`, `plainDateISO`,
-  `plainTimeISO`, `plainDateTimeISO`, `zonedDateTimeISO`.
+- `Temporal.Calendar` — constructor, `from`, `id`, `toString`, ISO calendar
+  only. Its prototype methods are in the not-implemented list.
+- `Temporal.Now` — `instant`, `timeZoneId`, `plainDateISO`, `plainTimeISO`,
+  `plainDateTimeISO`, `zonedDateTimeISO`.
 - Object surface plumbing: `getOwnPropertyNames`, `keys`, `prop-desc`,
   `toStringTag` for every `Temporal.*` namespace.
 - `PlainDate`, `PlainDateTime`, `PlainMonthDay`, `PlainTime`,
-  `PlainYearMonth`, `ZonedDateTime` constructors (all basic-argument
-  and branding tests pass; see below for remaining single-file gaps in
-  edge-case argument handling).
-
-### Remaining
-
-Grouped by receiver type, worst offenders first within each group.
-
-**`ZonedDateTime.prototype`**
-- `until` / `since` (87 fails each) — the two biggest single gaps in
-  the whole suite.
-- `equals` (46), `toString` (39), `round` (33), `add` (32), `subtract`
-  (32), `with` (29), `withPlainTime` (27), `withTimeZone` (10),
-  `getTimeZoneTransition` (8), `withCalendar` (6), `toJSON` (5),
-  `toInstant` (4), `valueOf` (3), `toPlainTime` (2), `toPlainDateTime`
-  (2), `toLocaleString` (2), `hoursInDay` (2), and single-file gaps in
-  `yearOfWeek`, `year`, `weekOfYear`, `toPlainDate`, `startOfDay`,
-  `nanosecond`, `millisecond`, `microsecond`, `inLeapYear`, `eraYear`,
-  `era`, `daysInYear`, `daysInMonth`, `dayOfYear`, `day`.
-- `ZonedDateTime.from` (66), `ZonedDateTime.compare` (30).
-- Constructor edge cases: `timezone-wrong-type`, `timezone-case-insensitive`,
-  `limits`, `constructor`, `calendar-wrong-type`,
-  `calendar-invalid-iso-string`, `calendar-case-insensitive` (1 each).
-
-**`PlainDateTime.prototype`**
-- `until` (64), `since` (62), `round` (42), `withPlainTime` (36),
-  `toZonedDateTime` (28), `toString` (25), `compare` (31), `equals`
-  (18), `subtract` (17), `add` (17), `with` (10), `toPlainDate` (8),
-  `toPlainTime` (7), `withCalendar` (5), `toLocaleString` (2), `toJSON`
-  (2), `eraYear` (2), `era` (2), `inLeapYear` (1).
-- `PlainDateTime.from` (36).
-- Constructor edge cases: `throws-if-time-is-invalid`,
-  `second-undefined`, `nanosecond-undefined`, `minute-undefined`,
-  `millisecond-undefined`, `microsecond-undefined`, `hour-undefined`,
-  `limits`, `datetime-math`, `argument-convert` (1 each).
-
-**`PlainYearMonth.prototype`**
-- `since` (58), `until` (57), `equals` (30), `subtract` (22), `add`
-  (20), `with` (13), `toPlainDate` (11), `toString` (4),
-  `toLocaleString` (2).
-- `PlainYearMonth.from` (36), `PlainYearMonth.compare` (30).
-- Constructor edge cases: `subclass`, `refisoday-undefined`,
-  `negative-infinity-throws-rangeerror`, `limits`,
-  `infinity-throws-rangeerror`, `calendar-wrong-type`,
-  `calendar-undefined`, `calendar-string`, `calendar-invalid-iso-string`,
-  `calendar-case-insensitive`, `calendar-always`, `basic`,
-  `argument-convert` (1 each).
-
-**`Duration.prototype`**
-- `round` (60) and `total` (49) — both currently do time-unit-only
-  math; calendar-unit rounding/total with `relativeTo` needs
-  `NanosecondsToDays` / `BubbleRelativeDuration` /
-  `AddDaysToZonedDateTime` / `AddDaysToPlainDate` per the polyfill
-  spec's "Balance" algorithm.
-- `toString` (31), `add` (18), `subtract` (18), `with` (13), `toJSON`
-  (4), `toLocaleString` (2).
-- `Duration.compare` (48), `Duration.from` (13).
-- Constructor edge cases: `out-of-range`, `mixed`, `large-number`,
-  `fractional-throws-rangeerror`, `constructor` (1 each).
-
-**`PlainTime.prototype`**
-- `until` (46), `since` (46), `round` (41), `toString` (24), `equals`
-  (16), `subtract` (14), `add` (14), `with` (8), `toLocaleString` (2),
-  `toJSON` (1).
-- `PlainTime.from` (30), `PlainTime.compare` (23).
-- Constructor edge cases: `throws-if-time-is-invalid`,
-  `second-undefined`, `nanosecond-undefined`, `minute-undefined`,
-  `millisecond-undefined`, `microsecond-undefined`, `hour-undefined`,
-  `argument-convert` (1 each).
-
-**`PlainDate.prototype`**
-- `toZonedDateTime` (44), `since` (44), `until` (43), `toPlainDateTime`
-  (33), `equals` (20), `subtract` (11), `add` (11), `toPlainYearMonth`
-  (8), `toPlainMonthDay` (7), `withCalendar` (5), `with` (3),
-  `toString` (2), `toLocaleString` (2).
-- `PlainDate.from` (30), `PlainDate.compare` (19).
-
-**`Instant.prototype`**
-- `until` (42), `since` (42), `round` (40), `toString` (34), `add`
-  (18), `toZonedDateTimeISO` (17), `subtract` (17), `equals` (13),
-  `toLocaleString` (2).
-- `Instant.compare` (23), `Instant.from` (14).
-
-**`PlainMonthDay.prototype`**
-- `equals` (28), `toPlainDate` (11), `with` (6), `toString` (6),
-  `toLocaleString` (2), `toJSON` (1), `valueOf` (1).
-- `PlainMonthDay.from` (29).
-- Constructor edge cases: `refisoyear-out-of-range`,
-  `negative-infinity-throws-rangeerror`, `infinity-throws-rangeerror`,
-  `calendar-always`, `basic`, `argument-invalid` (1 each).
-
-**`Temporal.Calendar.prototype`**
-- `dateFromFields`, `mergeFields`, `dateAdd`, `dateUntil` — not
-  implemented (constructor field validation currently happens inline
-  in each Plain*/ZonedDateTime constructor instead of going through
-  these calendar methods, which is why the top-level `Calendar` tests
-  above pass while these don't show up as their own failures — nothing
-  calls them yet).
+  `PlainYearMonth`, `ZonedDateTime` constructors, for basic-argument and
+  branding tests. Edge-case argument handling still has single-file gaps.
 
 ### Calendars beyond ISO
 
@@ -638,8 +594,9 @@ coverage once the ISO-calendar gaps above are closed.
 - `just rosetta` — must stay green (catches regressions in `TVal` /
   `HObject`).
 - `python3 scripts/run_test262.py --phase 26 --log /tmp/t.log` — full
-  Temporal test262 run; cluster failures with `awk`/`sort` on the log
-  (see the feature list above for the current per-method grouping).
+  Temporal test262 run; cluster failures with `awk`/`sort` on the log.
+  `--single` runs `out/boomkat` and `--phase` runs `out/test262_runner`,
+  so build both (`just build-bench`) before comparing their results.
 - `just test-local` — `test/temporal/` fixtures run under the local
   suite (polyfill-spec reference implementations, ported to JS).
 - New C3 statics get `@test` cases in the same file as the function
