@@ -8324,11 +8324,31 @@ fn HObject* resolve_tz_from_string(BuiltinContext* ctx, String s) {
     }
     // Zone name path: must be a known IANA name (case-insensitive). An
     // unknown identifier is a RangeError per spec.
-    if (!temporal::tzdb_zone_exists(zone_name)) {
+    if (off_known) {
+        // Canonicalize as a "+HH:MM" string for the TimeZone id.
+        char[8] buf;
+        long mag = off_sec < 0 ? -off_sec : off_sec;
+        buf[0] = off_sec >= 0 ? '+' : '-';
+        buf[1] = (char)('0' + (int)(mag / 3600 / 10));
+        buf[2] = (char)('0' + (int)(mag / 3600 % 10));
+        buf[3] = ':';
+        buf[4] = (char)('0' + (int)((mag % 3600) / 60 / 10));
+        buf[5] = (char)('0' + (int)((mag % 3600) / 60 % 10));
+        buf[6] = 0;
+        HObject*? tz_o = alloc_timezone(ctx.heap, (String)buf[:6]);
+        if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+        return tz_o;
+    }
+    char[64] canon_buf;
+    if (!temporal::tzdb_zone_exists_ci(zone_name, &canon_buf[0], 64)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Unknown time zone");
         return null;
     }
-    HObject*? tz_o = alloc_timezone(ctx.heap, zone_name);
+    // canon_buf is null-terminated. Convert to a C3 slice for alloc_timezone.
+    usz n = 0;
+    while (n < 64 && canon_buf[n] != 0) n += 1;
+    char[] canon_slice = canon_buf[:n];
+    HObject*? tz_o = alloc_timezone(ctx.heap, (String)canon_slice);
     if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
     return tz_o;
 }
@@ -8995,25 +9015,56 @@ fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    // equals runs ToTemporalZonedDateTime, so a value that cannot convert
-    // throws instead of comparing unequal.
-    if (!arg.is_object() || arg.get_heapptr() == null) {
-        // A string converts by parsing as an ISO instant, making a bad one a
-        // RangeError. Other primitives fail the type check.
-        HObject* proto = arg.is_string() ? ctx.heap.range_err_proto : ctx.heap.type_err_proto;
-        builtin_throw(ctx, proto, "argument is not a Temporal.ZonedDateTime");
-        return;
-    }
-    if (((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
-        ctx.result.set_boolean(false);
+    // equals runs ToTemporalZonedDateTime, so strings and property bags
+    // (with year / month / day / timeZone) are accepted. Non-Temporal,
+    // non-string, non-object primitives throw TypeError.
+    hbigint::HBigInt* b_ns = null;
+    HObject* b_tz = null;
+    if (arg.is_object() && arg.get_heapptr() != null
+        && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+        HObject* b = (HObject*)arg.get_heapptr();
+        b_ns = b.extra.temporal.big_ns;
+        b_tz = b.extra.temporal.timezone;
+    } else if (arg.is_string()) {
+        HString* as = (HString*)arg.get_heapptr();
+        if (as != null && as.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "argument is not a Temporal.ZonedDateTime");
+            return;
+        }
+        TVal saved_this = ctx.this_val;
+        ctx.regs[ctx.base_reg + 0] = *arg;
+        ctx.argc = 1;
+        builtin_temporal_zoneddatetime_from(ctx);
+        ctx.this_val = saved_this;
+        ctx.argc = 1;
+        if (ctx.should_throw) return;
+        if (!ctx.result.is_object()) { builtin_throw(ctx, ctx.heap.type_err_proto, "not a ZonedDateTime"); return; }
+        HObject* b = (HObject*)ctx.result.get_heapptr();
+        b_ns = b.extra.temporal.big_ns;
+        b_tz = b.extra.temporal.timezone;
+    } else if (arg.is_object() && arg.get_heapptr() != null) {
+        // Property bag — delegate to from().
+        TVal saved_this = ctx.this_val;
+        ctx.regs[ctx.base_reg + 0] = *arg;
+        ctx.argc = 1;
+        builtin_temporal_zoneddatetime_from(ctx);
+        ctx.this_val = saved_this;
+        ctx.argc = 1;
+        if (ctx.should_throw) return;
+        if (!ctx.result.is_object()) { builtin_throw(ctx, ctx.heap.type_err_proto, "not a ZonedDateTime"); return; }
+        HObject* b = (HObject*)ctx.result.get_heapptr();
+        b_ns = b.extra.temporal.big_ns;
+        b_tz = b.extra.temporal.timezone;
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument is not a Temporal.ZonedDateTime");
         return;
     }
     HObject* a = (HObject*)ctx.this_val.get_heapptr();
-    HObject* bb = (HObject*)arg.get_heapptr();
-    // ZonedDateTime equality also requires the same time zone and calendar.
+    // ZonedDateTime equality also requires the same time zone (calendar
+    // is always iso8601, so it can be omitted from the check).
     String za = a.extra.temporal.timezone == null ? "" : timezone_name(a.extra.temporal.timezone);
-    String zb = bb.extra.temporal.timezone == null ? "" : timezone_name(bb.extra.temporal.timezone);
-    bool same_ns = hbigint::hbigint_cmp(a.extra.temporal.big_ns, bb.extra.temporal.big_ns) == 0;
+    String zb = b_tz == null ? "" : timezone_name(b_tz);
+    bool same_ns = b_ns != null && hbigint::hbigint_cmp(a.extra.temporal.big_ns, b_ns) == 0;
     ctx.result.set_boolean(same_ns && za == zb);
 }
 

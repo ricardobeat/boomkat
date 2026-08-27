@@ -790,19 +790,36 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     }
     if (!parse_two_digits(text, &i, &out.day)) return false;
 
-    // --- Time separator (T or space) ---
-    if (i >= len || (text[i] != 'T' && text[i] != 't' && text[i] != ' ')) return false;
-    i += 1;
-
-    if (!parse_time(text, &i, &out.hour, &out.minute, &out.second, &out.nanos)) return false;
-    if (out.hour == 24) {
-        if (out.minute != 0 || out.second != 0 || out.nanos != 0) return false;
-        out.hour = 0;
+    // --- Time separator (T or space): optional when the bracket annotation
+    // follows directly after the date. Per spec `TemporalZonedDateTimeString`
+    // is `DateTime[+Z, ?TimeRequired] TimeZoneAnnotation Annotations_opt`,
+    // so a bare date like `1970-01-01[UTC]` is a valid ZDT (midnight at
+    // the bracketed zone).
+    bool has_time = false;
+    if (i < len && (text[i] == 'T' || text[i] == 't' || text[i] == ' ')) {
+        i += 1;
+        has_time = true;
+    } else if (i >= len || text[i] != '[') {
+        // No `T` and no immediate bracket — reject.
+        return false;
     }
-    if (out.hour > 23) return false;
-    if (out.minute > 59) return false;
-    if (out.second > 60) return false;
-    if (out.second == 60) out.second = 59;
+    if (has_time) {
+        if (!parse_time(text, &i, &out.hour, &out.minute, &out.second, &out.nanos)) return false;
+        if (out.hour == 24) {
+            if (out.minute != 0 || out.second != 0 || out.nanos != 0) return false;
+            out.hour = 0;
+        }
+        if (out.hour > 23) return false;
+        if (out.minute > 59) return false;
+        if (out.second > 60) return false;
+        if (out.second == 60) out.second = 59;
+    } else {
+        // No time: default to midnight.
+        out.hour = 0;
+        out.minute = 0;
+        out.second = 0;
+        out.nanos = 0;
+    }
 
     // --- Offset: optional for ZonedDateTime when a bracket annotation follows ---
     // If next char is '[', there's no offset — just a time zone annotation.

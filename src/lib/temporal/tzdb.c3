@@ -80,6 +80,48 @@ fn bool tzdb_zone_exists(String zone_name) {
     return tzdb_zone_index(zone_name) >= 0;
 }
 
+// Case-insensitive zone existence check, used by the ZDT property-bag path
+// where the spec allows "utC" / "America/NEW_YORK" to match canonical
+// "UTC" / "America/New_York". The canonical name is written into
+// `canonical_buf` so the caller can attach it to the resulting ZDT.
+fn bool tzdb_zone_exists_ci(String zone_name, char* canonical_buf, usz buf_cap) {
+    int idx = tzdb_zone_index(zone_name);
+    if (idx >= 0) {
+        if (canonical_buf != null && buf_cap > 0) {
+            String canon = TZDB_ZONES[idx].name;
+            usz n = canon.len < (buf_cap - 1) ? canon.len : (buf_cap - 1);
+            for (usz k = 0; k < n; k++) canonical_buf[k] = canon[k];
+            canonical_buf[n] = 0;
+        }
+        return true;
+    }
+    for (usz k = 0; k < TZDB_ZONES.len; k++) {
+        String cand = TZDB_ZONES[k].name;
+        if (ci_zone_eq(zone_name, cand)) {
+            if (canonical_buf != null && buf_cap > 0) {
+                usz n = cand.len < (buf_cap - 1) ? cand.len : (buf_cap - 1);
+                for (usz j = 0; j < n; j++) canonical_buf[j] = cand[j];
+                canonical_buf[n] = 0;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+// ASCII case-insensitive zone-name comparison.
+fn bool ci_zone_eq(String a, String b) {
+    if (a.len != b.len) return false;
+    for (usz k = 0; k < a.len; k++) {
+        char ca = a[k];
+        char cb = b[k];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+        if (ca != cb) return false;
+    }
+    return true;
+}
+
 // Convenience wrapper: returns the offset (in seconds) of the case-folded
 // zone at `epoch_sec`, or -1 if unknown. Used by Temporal.Now so that an
 // upper- or mixed-case zone string ("Utc", "AMERICA/new_york") resolves to
