@@ -422,6 +422,16 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
             builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
             return false;
         }
+        // Per spec, PrepareTemporalFields rejects day < 1 with a
+        // RangeError. This runs even when `keep_missing` is true (e.g. in
+        // `with()`) so the partial-date / day-range check fires BEFORE
+        // the options type-check, matching the test262 expectation in
+        // `options-wrong-type.js` (where `{day: -1}, null` must throw
+        // RangeError, not TypeError).
+        if (d < 1) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is out of range");
+            return false;
+        }
     } else if (!keep_missing) {
         d = 1;
     }
@@ -9107,6 +9117,20 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
         Vm* v = (Vm*)ctx.vm;
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
+    }
+    // After PrepareTemporalFields (which now rejects day < 1 with
+    // RangeError) the options argument is type-checked. A non-object
+    // / non-undefined value here throws TypeError, so the call sequence
+    // for `with({day:5}, null)` (TypeError) vs `with({day:-1}, null)`
+    // (RangeError) matches the test262 expectation.
+    if (ctx.argc >= 2) {
+        TVal* ov = arg_at(ctx, 1);
+        if (ov != null && !ov.is_undefined()) {
+            if (!ov.is_object() || ov.get_heapptr() == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "with options must be an object");
+                return;
+            }
+        }
     }
     temporal::CivilDate valid_d;
     if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
