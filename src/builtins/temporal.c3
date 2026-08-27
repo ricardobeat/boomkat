@@ -3330,6 +3330,116 @@ fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     ctx.result.set_object(dur_obj);
 }
 
+fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
+    if (ctx.argc < 1) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "PlainTime.prototype.round requires an argument");
+        return;
+    }
+    HObject* self = (HObject*)this_val.get_heapptr();
+    TVal* round_to = arg_at(ctx, 0);
+    HObject* opts = null;
+    TemporalUnit smallest_unit = TemporalUnit.NANOSECOND;
+    bool smallest_given = false;
+    double rounding_increment = 1;
+    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+    if (!round_to.is_object() || round_to.get_heapptr() == null) {
+        // String shorthand: smallestUnit = the string.
+        if (round_to.is_string() || (round_to.is_object() && round_to.get_heapptr() != null && !((HObject*)round_to.get_heapptr()).flags.callable)) {
+            HString* s = builtin_to_string_vm(ctx, round_to);
+            if (ctx.should_throw) return;
+            char[] str = s.get_cstr()[:s.blen];
+            if (!parse_unit_str(str, &smallest_unit) || smallest_unit < TemporalUnit.HOUR) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
+                return;
+            }
+            smallest_given = true;
+        } else {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object or string");
+            return;
+        }
+    } else {
+        opts = (HObject*)round_to.get_heapptr();
+        TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+        if (ctx.should_throw) return;
+        if (!su_v.is_undefined()) {
+            HString* s = builtin_to_string_vm(ctx, &su_v);
+            if (ctx.should_throw) return;
+            if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.HOUR) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
+                return;
+            }
+            smallest_given = true;
+        }
+        TVal ri_v = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
+        if (ctx.should_throw) return;
+        if (!ri_v.is_undefined()) {
+            Vm* v = (Vm*)ctx.vm;
+            double ri_val = vm::vm_to_number(v, &ri_v);
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            if (math::is_nan(ri_val) || math::is_inf(ri_val) || ri_val < 1 || math::floor(ri_val) != ri_val) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+                return;
+            }
+            rounding_increment = ri_val;
+        }
+        TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
+        if (ctx.should_throw) return;
+        if (!rm_v.is_undefined()) {
+            HString* s = builtin_to_string_vm(ctx, &rm_v);
+            if (ctx.should_throw) return;
+            if (!parse_rm_str(s.get_cstr()[:s.blen], &rounding_mode)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
+                return;
+            }
+        }
+    }
+    if (!smallest_given) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option");
+        return;
+    }
+    long max_incr = max_round_incr(smallest_unit);
+    if (max_incr > 0 && (rounding_increment > (double)max_incr
+        || (double)max_incr / rounding_increment != math::floor((double)max_incr / rounding_increment)
+        || rounding_increment == (double)max_incr)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
+        return;
+    }
+
+    long divisor = unit_ns_divisor(smallest_unit);
+    long incr_ns = divisor * (long)rounding_increment;
+    // PlainTime stores its fields directly. Build the total ns value:
+    long h = self.extra.temporal.long_a;
+    long m = self.extra.temporal.long_b;
+    long s = self.extra.temporal.long_c;
+    long ms = self.extra.temporal.long_d;
+    long us = self.extra.temporal.long_e;
+    long ns = self.extra.temporal.long_f;
+    long total_ns = h * 3600000000000L + m * 60000000000L + s * 1000000000L
+                  + ms * 1000000L + us * 1000L + ns;
+    long rounded = round_long_ns(total_ns, incr_ns, rounding_mode);
+    temporal::BrokenDownTime bd = temporal::civil_from_seconds(rounded / 1000000000L);
+    int rh = bd.h;
+    long rem = rounded - (rounded / 1000000000L) * 1000000000L;
+    int rmin = bd.mi;
+    int rs = bd.s;
+    int rms = (int)(rem / 1000000L); rem %= 1000000L;
+    int rus = (int)(rem / 1000L);
+    int rns = (int)(rem % 1000L);
+    // Normalize hours >= 24 (rolls over the day; PlainTime discards the day).
+    rh = rh % 24;
+    if (rh < 0) rh += 24;
+    HObject*? obj_o = alloc_plain_time(ctx.heap, (temporal::CivilTime){
+        .h = (int)rh, .mi = (int)rmin, .s = (int)rs,
+        .ms = rms, .us = rus, .ns = rns
+    });
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.result.set_object(obj);
+}
+
 fn void builtin_temporal_plain_time_proto_until(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
@@ -5971,6 +6081,7 @@ fn bool setUpTemporalPlainTime(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_TIME_PROTO_SUBTRACT.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_TIME_PROTO_UNTIL.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_TIME_PROTO_SINCE.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "round", Builtin.TEMPORAL_PLAIN_TIME_PROTO_ROUND.ordinal)) return false;
 
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_TIME_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_TIME_COMPARE.ordinal)) return false;

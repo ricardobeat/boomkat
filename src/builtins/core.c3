@@ -855,6 +855,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_PLAIN_TIME_PROTO_SUBTRACT {"subtract", 1, &builtin_temporal_plain_time_proto_subtract},
     TEMPORAL_PLAIN_TIME_PROTO_UNTIL {"until", 1, &builtin_temporal_plain_time_proto_until},
     TEMPORAL_PLAIN_TIME_PROTO_SINCE {"since", 1, &builtin_temporal_plain_time_proto_since},
+    TEMPORAL_PLAIN_TIME_PROTO_ROUND {"round", 1, &builtin_temporal_plain_time_proto_round},
     TEMPORAL_PLAIN_DATETIME_CTOR {"PlainDateTime", 3, &builtin_temporal_plain_datetime_ctor},
     TEMPORAL_PLAIN_DATETIME_FROM {"from", 1, &builtin_temporal_plain_datetime_from},
     TEMPORAL_PLAIN_DATETIME_COMPARE {"compare", 2, &builtin_temporal_plain_datetime_compare},
