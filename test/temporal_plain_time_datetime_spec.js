@@ -16,6 +16,9 @@ function assertEq(actual, expected, name) {
 }
 function assertTrue(cond, name) { assertEq(!!cond, true, name); }
 function assertFalse(cond, name) { assertEq(!!cond, false, name); }
+function throwsRange(fn) {
+    try { fn(); return false; } catch (e) { return e instanceof RangeError; }
+}
 
 // ============================================================================
 // Temporal.PlainTime
@@ -42,8 +45,11 @@ assertEq(t.nanosecond, 750, "get ns");
 // from() with strings.
 assertEq(Temporal.PlainTime.from("13:45:30").toString(), "13:45:30", "from HH:MM:SS");
 assertEq(Temporal.PlainTime.from("13:45:30.500250750").toString(), "13:45:30.500250750", "from with ns");
-assertEq(Temporal.PlainTime.from("14:30:00Z").toString(), "14:30:00", "from with Z");
 assertEq(Temporal.PlainTime.from("1330").toString(), "13:30:00", "from basic");
+// Z designator is rejected by the grammar (DateTimeUTCOffset[~Z] forbids
+// it). Numeric UTC offsets are silently dropped.
+assertTrue(throwsRange(() => Temporal.PlainTime.from("14:30:00Z")), "from rejects Z");
+assertEq(Temporal.PlainTime.from("14:30:00+05:00").toString(), "14:30:00", "from drops numeric offset");
 
 // from() with object bag.
 var tBag = Temporal.PlainTime.from({ hour: 9, minute: 30 });

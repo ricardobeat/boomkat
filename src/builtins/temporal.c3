@@ -668,10 +668,11 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date string");
             return null;
         }
-        // Per spec (ToTemporalDate step 4): reject strings that carry a time
-        // component, including fractional minute/second values.
-        if (p.has_time) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "date string must not have a time component");
+        // Per the Temporal grammar (DateTime[~Z]), a `Z` designator is not
+        // permitted on a string being coerced to PlainDate. The time
+        // component and any numeric offset are silently dropped.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Z designator not valid for PlainDate");
             return null;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
@@ -2140,16 +2141,12 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDate.from: invalid ISO date string");
             return;
         }
-        // Temporal.PlainDate.from accepts a time component only when every
-        // component is zero. The representable-range edge cases
-        // (`-271821-04-19T01:00`, `+275760-09-13T23:00`) get a separate
-        // exception: if the date sits exactly on the min or max boundary
-        // and the offset is empty (`Z` is treated as `+00:00` so we look
-        // at the local date only), the time is permitted.
-        bool is_edge_date = (p.year == -271821 && p.month == 4 && p.day == 19) ||
-                            (p.year == 275760 && p.month == 9 && p.day == 13);
-        if (p.has_time && (p.hour != 0 || p.minute != 0 || p.second != 0 || p.nanos != 0) && !is_edge_date) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "date string must not have a non-midnight time component");
+        // Per the Temporal grammar, `TemporalDateTimeString[~Zoned]` (the
+        // only goal ToTemporalDate accepts) forbids a `Z` designator —
+        // `DateTime[~Z]` excludes it. A bare numeric offset after a time
+        // component is allowed and silently dropped along with the time.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDate.from: Z designator is not allowed");
             return;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
@@ -2860,6 +2857,15 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
             }
             p = full_p;
         }
+        // Per the Temporal grammar (`AnnotatedTime` and
+        // `AnnotatedDateTime[~Zoned, +TimeRequired]` both parameterise
+        // `DateTimeUTCOffset` as `[~Z]`), the `Z` designator is forbidden
+        // on a PlainTime string. A numeric UTC offset is silently
+        // discarded.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainTime.from: Z designator is not allowed");
+            return;
+        }
         result = { .h = p.hour, .mi = p.minute, .s = p.second, .ms = 0, .us = 0, .ns = (int)p.nanos };
         // Convert nanos (0..999_999_999) into ms/us/ns fields.
         result.ms = (int)(p.nanos / 1_000_000);
@@ -3059,13 +3065,23 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
         char[] text = s.get_cstr()[:s.blen];
+        // PlainTime accepts both time-only strings (`12:34`, `T12:34:56`)
+        // and date-time strings whose date portion is silently dropped.
+        // Try the time-only parser first; fall back to the date-time parser.
         temporal::ParsedIsoDateTime p;
-        if (!temporal::parse_iso_date_string(text, &p)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO time string");
-            return null;
+        bool ok = temporal::parse_iso_time_string(text, &p);
+        if (!ok) {
+            ok = temporal::parse_iso_date_string(text, &p);
+            if (!ok || !p.has_time) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO time string");
+                return null;
+            }
         }
-        if (!p.has_time) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "string has no time portion");
+        // Per the Temporal grammar (`AnnotatedTime` and the
+        // date-time production both use `DateTimeUTCOffset[~Z]`), the `Z`
+        // designator is forbidden on a PlainTime string.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Z designator not valid for PlainTime");
             return null;
         }
         temporal::CivilTime t = {
@@ -3417,6 +3433,13 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(text, &p)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDateTime.from: invalid ISO date-time string");
+            return;
+        }
+        // Per the Temporal grammar (DateTime[~Z]), the `Z` designator is
+        // forbidden on a PlainDateTime string. A numeric UTC offset is
+        // parsed and silently discarded.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDateTime.from: Z designator is not allowed");
             return;
         }
         if (!p.has_time) {
@@ -3775,6 +3798,12 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(text, &p)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date-time string");
+            return null;
+        }
+        // Per the Temporal grammar (DateTime[~Z]), the `Z` designator is
+        // forbidden on a PlainDateTime string.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Z designator not valid for PlainDateTime");
             return null;
         }
         if (!p.has_time) {
@@ -4495,6 +4524,12 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainYearMonth.from: invalid ISO year-month string");
             return;
         }
+        // Per the Temporal grammar (`AnnotatedDateTime[~Zoned, ~TimeRequired]`
+        // for the year-month projection), the `Z` designator is not allowed.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainYearMonth.from: Z designator is not allowed");
+            return;
+        }
         vy = p.year; vm = p.month; vd = p.day;
         if (!fields_to_valid_yearmonth(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
     } else if (arg.is_object() && arg.get_heapptr() != null) {
@@ -5169,9 +5204,25 @@ fn void builtin_temporal_plain_monthday_from(BuiltinContext* ctx) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
         char[] text = s.get_cstr()[:s.blen];
+        // Per the grammar, `TemporalMonthDayString` accepts both the
+        // year-less `--MM-DD` form and the full date-time form
+        // `YYYY-MM-DDT<time>±offset` (with the year kept as the reference
+        // year for month-day projection). Try the month-day parser first;
+        // fall back to the date-time parser for the longer form.
         temporal::ParsedIsoDateTime p;
-        if (!temporal::parse_iso_monthday_string(text, &p)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay.from: invalid ISO month-day string");
+        bool ok = temporal::parse_iso_monthday_string(text, &p);
+        if (!ok) {
+            ok = temporal::parse_iso_date_string(text, &p);
+            if (!ok || !p.has_time) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay.from: invalid ISO month-day string");
+                return;
+            }
+        }
+        // Per the Temporal grammar (`AnnotatedDateTime[~Zoned, +TimeRequired]`
+        // for the full-date form, `AnnotatedMonthDay` for the year-less
+        // form), `Z` is forbidden.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay.from: Z designator is not allowed");
             return;
         }
         vy = 1972; vm = p.month; vd = p.day;
@@ -7346,6 +7397,11 @@ fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** o
         ns128 += (int128)sec_of_day * 1000000000L;
         ns128 += (int128)p.nanos;
         ns128 -= (int128)p.offset_seconds * 1000000000L;
+        // The sub-minute offset component (e.g. `+00:00:00.5`) carries the
+        // sign of `offset_seconds` — a positive seconds value means the
+        // parsed time is east of UTC, so the offset also subtracts.
+        long sign = p.offset_seconds < 0 ? -1L : 1L;
+        ns128 -= (int128)(sign * p.offset_nanos);
         hbigint::HBigInt*? b_o = hbigint::hbigint_alloc(ctx.heap, ns128);
         if (catch err = b_o) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Instant alloc failed");
@@ -8157,6 +8213,31 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
+
+    // Validate the options bag early (string path is the main one missing
+    // this; object paths already validate their own options). The grammar
+    // checks for the disambiguation option: only `compatible`, `earlier`,
+    // `later`, `reject` are accepted — anything else throws RangeError.
+    if (ctx.argc >= 2) {
+        TVal ov = ctx.regs[ctx.base_reg + 1];
+        if (!ov.is_undefined() && (!ov.is_object() || ov.get_heapptr() == null)) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+            return;
+        }
+        if (ov.is_object() && ov.get_heapptr() != null) {
+            HObject* opts = (HObject*)ov.get_heapptr();
+            TVal dv = prop_or_undefined(opts, ctx.heap, "disambiguation");
+            if (!dv.is_undefined()) {
+                HString* ds = builtin_to_string_vm(ctx, &dv);
+                if (ctx.should_throw) return;
+                char[] dstr = ds.get_cstr()[:ds.blen];
+                if (dstr != "compatible" && dstr != "earlier" && dstr != "later" && dstr != "reject") {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation");
+                    return;
+                }
+            }
+        }
+    }
 
     // String input: parse ISO ZonedDateTime string.
     if (arg.is_string()) {
