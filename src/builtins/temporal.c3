@@ -9130,6 +9130,52 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "with options must be an object");
                 return;
             }
+            HObject* opts = (HObject*)ov.get_heapptr();
+            // Read `offset` (per spec a string in {prefer, use, ignore, reject}).
+            TVal offv = prop_or_undefined(opts, ctx.heap, "offset");
+            if (!offv.is_undefined()) {
+                HString* s = builtin_to_string_vm(ctx, &offv);
+                if (ctx.should_throw) return;
+                if (s == null) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "offset option must be a string");
+                    return;
+                }
+                char[] ostr = (String)s.get_cstr()[:s.blen];
+                if (ostr != "prefer" && ostr != "use" && ostr != "ignore" && ostr != "reject") {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset option");
+                    return;
+                }
+            }
+            // Read `overflow` (constrain | reject).
+            TVal ovv = prop_or_undefined(opts, ctx.heap, "overflow");
+            if (!ovv.is_undefined()) {
+                HString* s = builtin_to_string_vm(ctx, &ovv);
+                if (ctx.should_throw) return;
+                if (s == null) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "overflow option must be a string");
+                    return;
+                }
+                char[] ostr = (String)s.get_cstr()[:s.blen];
+                if (ostr != "constrain" && ostr != "reject") {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid overflow option");
+                    return;
+                }
+            }
+            // Read `disambiguation` (compatible | earlier | later | reject).
+            TVal disv = prop_or_undefined(opts, ctx.heap, "disambiguation");
+            if (!disv.is_undefined()) {
+                HString* s = builtin_to_string_vm(ctx, &disv);
+                if (ctx.should_throw) return;
+                if (s == null) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "disambiguation option must be a string");
+                    return;
+                }
+                char[] ostr = (String)s.get_cstr()[:s.blen];
+                if (ostr != "compatible" && ostr != "earlier" && ostr != "later" && ostr != "reject") {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation option");
+                    return;
+                }
+            }
         }
     }
     temporal::CivilDate valid_d;
