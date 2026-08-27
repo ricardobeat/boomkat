@@ -16,9 +16,12 @@ build-lib:
 build-batch:
     @make out/test262_runner
 
-# Build plain runner CLI (out/boomkat)
+# Build plain runner CLI (out/boomkat) and the batch test262 runner.
+# Both are built together deliberately: building only out/boomkat leaves a
+# stale out/test262_runner behind, so `--single` picks up your change while a
+# full `--phase` run silently scores the old binary.
 build-bench:
-    @make out/boomkat
+    @make out/boomkat out/test262_runner
 
 # ── Comparison engines ───────────────────────────────────────────────────────
 
