@@ -8147,8 +8147,10 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
         && ((HObject*)tzarg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_TIMEZONE) {
         tz = (HObject*)tzarg.get_heapptr();
     } else if (tzarg.is_string()) {
-        HString* hs = (HString*)tzarg.get_heapptr();
-        String s = hs != null ? (String)hs.get_cstr()[:hs.blen] : (String)"";
+        // Symbols are string-tagged but cannot be a timezone.
+        HString* tzs_str = builtin_to_string_vm(ctx, tzarg);
+        if (ctx.should_throw) return;
+        String s = tzs_str != null ? (String)tzs_str.get_cstr()[:tzs_str.blen] : (String)"";
         HObject* tz_o = resolve_tz_from_string(ctx, s);
         if (tz_o == null) return;
         tz = tz_o;
@@ -8157,9 +8159,27 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
         return;
     }
 
-    // calendar: Phase 2 defaults to iso8601; a supplied calendar must already
-    // be a Temporal.Calendar with id "iso8601".
-    HString* calendar = builtin_intern_string(ctx.heap, "iso8601");
+    // calendar: defaults to iso8601; a supplied calendar must be a string
+    // matching "iso8601"/"gregory"/"gregorian" (case-insensitive) or a
+    // Temporal.Calendar object. Anything else throws TypeError; unknown
+    // identifiers throw RangeError.
+    HObject* calendar_obj = ctx.heap.temporal_iso_calendar;
+    if (ctx.argc >= 3) {
+        TVal* cal_arg = arg_at(ctx, 2);
+        if (!cal_arg.is_undefined()) {
+            if (!calendar_from_arg(ctx, cal_arg, &calendar_obj)) return;
+        }
+    }
+    // The slot stores the calendar id string; use a small HString per call so
+    // we don't share the "iso8601" literal across distinct calendar objects.
+    String cal_id = "iso8601";
+    if (calendar_obj != ctx.heap.temporal_iso_calendar) {
+        // Only "iso8601" exists right now; reaching here means an unrecognized
+        // Calendar object was passed and slipped past calendar_from_arg.
+        builtin_throw(ctx, ctx.heap.range_err_proto, "unknown calendar");
+        return;
+    }
+    HString* calendar = builtin_intern_string(ctx.heap, cal_id);
     HObject*? obj_o = alloc_zoneddatetime(ctx.heap, b, tz, calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
@@ -8171,26 +8191,57 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-// Resolve a timezone string to a Temporal.TimeZone object.
+// Resolve a timezone string to a Temporal.TimeZone object. The string may be
+// an IANA zone name, an offset like "+01:00", "Z", or a full ISO date-time
+// with a bracketed zone annotation like "2021-08-19T17:30Z[UTC]" — in the
+// last case, the bracketed annotation wins and any leading ISO prefix is
+// validated and ignored. Empty strings, sub-minute offsets, bare date-times
+// without a zone, unknown IANA names, and negative-zero years throw
+// RangeError per spec.
 fn HObject* resolve_tz_from_string(BuiltinContext* ctx, String s) {
-    if (s.len > 0) {
-        char first = s.ptr[0];
-        if (first == 'Z' || first == 'z' || first == '+' || first == '-') {
-            HObject*? tz_o = alloc_timezone(ctx.heap, s);
-            if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
-            return tz_o;
-        }
+    if (s.len == 0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "empty time zone string");
+        return null;
     }
-    if (!temporal::tzdb_zone_exists(s)) {
+
+    long off_sec = 0;
+    bool off_known = false;
+    String zone_name = (String)"";
+    bool zone_known = false;
+    if (!now_resolve_tz(ctx, s, &off_sec, &off_known, &zone_name, &zone_known)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone string");
+        return null;
+    }
+
+    if (off_known) {
+        // Canonicalize as a "+HH:MM" string for the TimeZone id.
+        char[8] buf;
+        long mag = off_sec < 0 ? -off_sec : off_sec;
+        buf[0] = off_sec >= 0 ? '+' : '-';
+        buf[1] = (char)('0' + (int)(mag / 3600 / 10));
+        buf[2] = (char)('0' + (int)(mag / 3600 % 10));
+        buf[3] = ':';
+        buf[4] = (char)('0' + (int)((mag % 3600) / 60 / 10));
+        buf[5] = (char)('0' + (int)((mag % 3600) / 60 % 10));
+        buf[6] = 0;
+        HObject*? tz_o = alloc_timezone(ctx.heap, (String)buf[:6]);
+        if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+        return tz_o;
+    }
+    // Zone name path: must be a known IANA name (case-insensitive). An
+    // unknown identifier is a RangeError per spec.
+    if (!temporal::tzdb_zone_exists(zone_name)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Unknown time zone");
         return null;
     }
-    HObject*? tz_o = alloc_timezone(ctx.heap, s);
+    HObject*? tz_o = alloc_timezone(ctx.heap, zone_name);
     if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
     return tz_o;
 }
 
-// Convert string or TimeZone to a TimeZone HObject.
+// Convert string or TimeZone to a TimeZone HObject. Per spec, anything that
+// cannot be converted to a string (Symbols, plain objects without a useful
+// toString) raises TypeError; unparseable offset strings raise RangeError.
 fn HObject*? to_temporal_tz(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_object() && arg.get_heapptr() != null
         && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_TIMEZONE) {
@@ -8198,13 +8249,67 @@ fn HObject*? to_temporal_tz(BuiltinContext* ctx, TVal* arg) {
     }
     if (arg.is_string()) {
         HString* hs = (HString*)arg.get_heapptr();
-        String s = hs != null ? (String)hs.get_cstr()[:hs.blen] : (String)"";
+        // Symbols are string-tagged but cannot be converted via get_cstr().
+        HString* s_str = builtin_to_string_vm(ctx, arg);
+        if (ctx.should_throw) return null;
+        String s = s_str != null ? (String)s_str.get_cstr()[:s_str.blen] : (String)"";
         HObject* tz = resolve_tz_from_string(ctx, s);
         if (tz == null) return null;
         return tz;
     }
     builtin_throw(ctx, ctx.heap.type_err_proto, "time zone must be a string or Temporal.TimeZone object");
     return null;
+}
+
+// Validate the options bag for `Temporal.ZonedDateTime.from`. Reads three
+// options:
+//   * `disambiguation`: "compatible" | "earlier" | "later" | "reject"
+//   * `offset`: "prefer" | "use" | "ignore" | "reject"
+//   * `overflow`: "constrain" | "reject"
+// Anything else throws RangeError; non-object primitives (null/true/number/
+// Symbol/string/BigInt) throw TypeError. The spec calls GetOption on each
+// key, which only succeeds when the option is a string member of the
+// allowed set; reading happens before any algorithmic validation.
+fn bool validate_zdt_from_options(BuiltinContext* ctx) {
+    if (ctx.argc < 2) return true;
+    TVal ov = ctx.regs[ctx.base_reg + 1];
+    if (ov.is_undefined()) return true;
+    if (!ov.is_object() || ov.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+        return false;
+    }
+    HObject* opts = (HObject*)ov.get_heapptr();
+    TVal dv = prop_or_undefined(opts, ctx.heap, "disambiguation");
+    if (!dv.is_undefined()) {
+        HString* ds = builtin_to_string_vm(ctx, &dv);
+        if (ctx.should_throw) return false;
+        char[] dstr = ds.get_cstr()[:ds.blen];
+        if (dstr != "compatible" && dstr != "earlier" && dstr != "later" && dstr != "reject") {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation");
+            return false;
+        }
+    }
+    TVal offv = prop_or_undefined(opts, ctx.heap, "offset");
+    if (!offv.is_undefined()) {
+        HString* os = builtin_to_string_vm(ctx, &offv);
+        if (ctx.should_throw) return false;
+        char[] ostr = os.get_cstr()[:os.blen];
+        if (ostr != "prefer" && ostr != "use" && ostr != "ignore" && ostr != "reject") {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset option");
+            return false;
+        }
+    }
+    TVal ofv = prop_or_undefined(opts, ctx.heap, "overflow");
+    if (!ofv.is_undefined()) {
+        HString* os2 = builtin_to_string_vm(ctx, &ofv);
+        if (ctx.should_throw) return false;
+        char[] ostr2 = os2.get_cstr()[:os2.blen];
+        if (ostr2 != "constrain" && ostr2 != "reject") {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid overflow option");
+            return false;
+        }
+    }
+    return true;
 }
 
 fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
@@ -8214,32 +8319,24 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
     }
     TVal* arg = arg_at(ctx, 0);
 
-    // Validate the options bag early (string path is the main one missing
-    // this; object paths already validate their own options). The grammar
-    // checks for the disambiguation option: only `compatible`, `earlier`,
-    // `later`, `reject` are accepted — anything else throws RangeError.
-    if (ctx.argc >= 2) {
-        TVal ov = ctx.regs[ctx.base_reg + 1];
-        if (!ov.is_undefined() && (!ov.is_object() || ov.get_heapptr() == null)) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+    // Per spec, a Symbol argument is a TypeError (not a RangeError from the
+    // ISO parser). Other non-string non-object primitives also throw
+    // TypeError. Empty string goes through the ISO parser as RangeError.
+    if (arg.is_string()) {
+        HString* argstr = (HString*)arg.get_heapptr();
+        if (argstr != null && argstr.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: Symbol argument is not a valid string or property bag");
             return;
         }
-        if (ov.is_object() && ov.get_heapptr() != null) {
-            HObject* opts = (HObject*)ov.get_heapptr();
-            TVal dv = prop_or_undefined(opts, ctx.heap, "disambiguation");
-            if (!dv.is_undefined()) {
-                HString* ds = builtin_to_string_vm(ctx, &dv);
-                if (ctx.should_throw) return;
-                char[] dstr = ds.get_cstr()[:ds.blen];
-                if (dstr != "compatible" && dstr != "earlier" && dstr != "later" && dstr != "reject") {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation");
-                    return;
-                }
-            }
-        }
+    } else if (!arg.is_object() || arg.get_heapptr() == null) {
+        // null, true, numbers, BigInts land here. Each throws TypeError.
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: argument must be a string or object");
+        return;
     }
 
-    // String input: parse ISO ZonedDateTime string.
+    // String input: parse ISO ZonedDateTime string. Per spec, options are
+    // validated AFTER string parsing succeeds (so a syntactically bad string
+    // raises RangeError before any TypeError from the options check).
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid string"); return; }
@@ -8249,6 +8346,8 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: invalid ISO string");
             return;
         }
+        // Validate options for the string path.
+        if (!validate_zdt_from_options(ctx)) return;
         // Resolve timezone from annotation or offset.
         HObject* tz;
         if (p.timezone.len > 0) {
@@ -8293,8 +8392,10 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         return;
     }
 
-    // Object input: fast path for ZDT identity.
+    // Object input: fast path for ZDT identity. Per spec, options are read
+    // (and validated) before the ZDT identity copy path runs.
     if (arg.is_object() && arg.get_heapptr() != null) {
+        if (!validate_zdt_from_options(ctx)) return;
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
             // Per spec, a ZonedDateTime argument produces a copy rather
@@ -8321,8 +8422,9 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         HObject* tz = null;
         TVal tz_v = prop_or_undefined_pa(ctx, o, "timeZone");
         if (!tz_v.is_undefined()) {
-            if (try tz_o = to_temporal_tz(ctx, &tz_v)) {
-                tz = tz_o;
+            if (try maybe_tz = to_temporal_tz(ctx, &tz_v)) {
+                if (ctx.should_throw) return;
+                tz = maybe_tz;
             } else {
                 return;
             }
@@ -8331,10 +8433,41 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag requires a timeZone property");
             return;
         }
+        // Per spec (ToTemporalZonedDateTime), the offset string is validated
+        // *before* the date/time fields so a syntactically bad offset raises
+        // RangeError even when other fields are ill-typed.
+        long off_sec = 0;
+        TVal offset_v = prop_or_undefined_pa(ctx, o, "offset");
+        if (!offset_v.is_undefined()) {
+            if (offset_v.is_string()) {
+                HString* ohs = (HString*)offset_v.get_heapptr();
+                if (ohs.is_symbol()) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "offset must not be a Symbol");
+                    return;
+                }
+                char[] otxt = ohs != null ? (String)ohs.get_cstr()[:ohs.blen] : (String)"";
+                usz pi = 0;
+                if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
+                    return;
+                }
+            } else if (offset_v.is_object() && offset_v.get_heapptr() != null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
+                return;
+            } else {
+                // null / number / boolean / undefined-of-wrong-sort: TypeError.
+                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
+                return;
+            }
+        }
         Vm* v = (Vm*)ctx.vm;
         temporal::CivilDateTime fields;
+        // Defaults for missing fields per InterpretTemporalDateTimeFields:
+        // date defaults to 1970-01-01, time fields to 0. Pass `keep_missing`
+        // true so a property bag with only year/month/day and timeZone is
+        // accepted (hour/minute/... are optional and resolve to 0).
         temporal::CivilDateTime cur = { .date = { .y = 1970, .m = 1, .d = 1 }, .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 } };
-        if (!bag_to_datetime_fields(ctx, o, false, cur.date, cur.time, &fields)) {
+        if (!bag_to_datetime_fields(ctx, o, true, cur.date, cur.time, &fields)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
@@ -8342,19 +8475,6 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
         temporal::CivilTime valid_t;
         if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
-        long off_sec = 0;
-        TVal offset_v = prop_or_undefined_pa(ctx, o, "offset");
-        if (!offset_v.is_undefined()) {
-            if (offset_v.is_string()) {
-                HString* ohs = (HString*)offset_v.get_heapptr();
-                char[] otxt = ohs != null ? (String)ohs.get_cstr()[:ohs.blen] : (String)"";
-                usz pi = 0;
-                if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
-                    return;
-                }
-            }
-        }
         long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
             + (long)valid_t.h * 3600 + (long)valid_t.mi * 60 + (long)valid_t.s;
         long frac_ns = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
@@ -8390,7 +8510,22 @@ fn void builtin_temporal_zoneddatetime_compare(BuiltinContext* ctx) {
     if (a_arg.is_object() && a_arg.get_heapptr() != null
         && ((HObject*)a_arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
         a_ns = ((HObject*)a_arg.get_heapptr()).extra.temporal.big_ns;
-    } else if (a_arg.is_string() || (a_arg.is_object() && a_arg.get_heapptr() != null)) {
+    } else {
+        // Reject non-string/non-object primitives (including Symbol) before
+        // delegating to `from`, which would otherwise mishandle them.
+        if (!a_arg.is_string() && !(a_arg.is_object() && a_arg.get_heapptr() != null)) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.compare: argument must be a ZonedDateTime, string, or property bag");
+            return;
+        }
+        // String path: reject Symbols (they would otherwise coerce to a
+        // RangeError via the ISO parser; the spec wants a TypeError here).
+        if (a_arg.is_string()) {
+            HString* as = (HString*)a_arg.get_heapptr();
+            if (as != null && as.is_symbol()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.compare: Symbol argument is not a ZonedDateTime");
+                return;
+            }
+        }
         TVal saved_this = ctx.this_val;
         ctx.regs[ctx.base_reg + 0] = *a_arg;
         ctx.argc = 1;
@@ -8400,9 +8535,6 @@ fn void builtin_temporal_zoneddatetime_compare(BuiltinContext* ctx) {
         if (ctx.should_throw) return;
         if (!ctx.result.is_object()) { builtin_throw(ctx, ctx.heap.type_err_proto, "not a ZonedDateTime"); return; }
         a_ns = ((HObject*)ctx.result.get_heapptr()).extra.temporal.big_ns;
-    } else {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.compare requires ZonedDateTime arguments");
-        return;
     }
 
     // Resolve b.
@@ -8410,7 +8542,18 @@ fn void builtin_temporal_zoneddatetime_compare(BuiltinContext* ctx) {
     if (b_arg.is_object() && b_arg.get_heapptr() != null
         && ((HObject*)b_arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
         b_ns = ((HObject*)b_arg.get_heapptr()).extra.temporal.big_ns;
-    } else if (b_arg.is_string() || (b_arg.is_object() && b_arg.get_heapptr() != null)) {
+    } else {
+        if (!b_arg.is_string() && !(b_arg.is_object() && b_arg.get_heapptr() != null)) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.compare: argument must be a ZonedDateTime, string, or property bag");
+            return;
+        }
+        if (b_arg.is_string()) {
+            HString* bs = (HString*)b_arg.get_heapptr();
+            if (bs != null && bs.is_symbol()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.compare: Symbol argument is not a ZonedDateTime");
+                return;
+            }
+        }
         TVal saved_this = ctx.this_val;
         ctx.regs[ctx.base_reg + 0] = *b_arg;
         ctx.argc = 1;
@@ -8420,9 +8563,6 @@ fn void builtin_temporal_zoneddatetime_compare(BuiltinContext* ctx) {
         if (ctx.should_throw) return;
         if (!ctx.result.is_object()) { builtin_throw(ctx, ctx.heap.type_err_proto, "not a ZonedDateTime"); return; }
         b_ns = ((HObject*)ctx.result.get_heapptr()).extra.temporal.big_ns;
-    } else {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.compare requires ZonedDateTime arguments");
-        return;
     }
 
     ctx.result.set_fastint(temporal::instant_cmp(a_ns, b_ns));

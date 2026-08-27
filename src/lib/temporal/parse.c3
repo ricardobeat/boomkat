@@ -802,7 +802,7 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
             if (!ci_equals(cal, "iso8601")) return false;
         }
         if (tz_len != 0) {
-            out.timezone = text[tz_start..tz_start + tz_len];
+            out.timezone = text[tz_start..tz_start + tz_len - 1];
         }
         if (i != len) return false;
     }
