@@ -393,16 +393,19 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
                       long* out_epoch_days) {
     Vm* v = (Vm*)ctx.vm;
 
-    // Calendar (RejectObjectWithCalendarOrTimeZone): we only support iso8601,
-    // so read calendar first; anything other than an iso8601 string/calendar
-    // object throws.
-    TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
-    if (!cal_v.is_undefined()) {
-        HObject* cal;
-        if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+    // Read `calendar` first so the spec's property-read order is observed
+    // (test262's `order-of-operations`). Anything other than an iso8601
+    // identifier / leap-second ISO string / a Temporal object that carries
+    // an internal calendar slot throws.
+    {
+        TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
+        if (!cal_v.is_undefined()) {
+            HObject* cal;
+            if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+        }
     }
 
-    // era / eraYear are never read by the ISO calendar's PrepareTemporalFields,
+    // Era / eraYear are never read by the ISO calendar's PrepareTemporalFields,
     // so we don't probe for them here either. They would be rejected if a
     // caller set them on the bag directly via JS, but no spec path triggers
     // that read.
@@ -8276,6 +8279,29 @@ fn HObject* resolve_tz_from_string(BuiltinContext* ctx, String s) {
     bool off_known = false;
     String zone_name = (String)"";
     bool zone_known = false;
+    // Reject bare sub-minute offsets like `+01:35:00.000000000` or
+    // `-12:12:59.9`. The sub-minute `.` / `,` form is only valid inside
+    // the date-time prefix of a ZonedDateTime ISO string (e.g. the
+    // offset of `2021-08-19T17:30:45.123-12:12[+01:00]`), not as a
+    // time-zone identifier on its own. The bracket path (e.g.
+    // `2021-08-19T17:30-12:12[+01:46]`) is handled later.
+    if (s.len > 0 && (s[0] == '+' || s[0] == '-')) {
+        for (usz chk = 0; chk < s.len; chk++) {
+            if (s[chk] == '.' || s[chk] == ',') {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "sub-minute time zone identifier is not allowed");
+                return null;
+            }
+        }
+        // Sub-minute `:SS` is also disallowed for bare-offset identifiers.
+        int cs = 0;
+        for (usz chk = 0; chk < s.len; chk++) {
+            if (s[chk] == ':') cs++;
+        }
+        if (cs >= 2) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "sub-minute time zone identifier is not allowed");
+            return null;
+        }
+    }
     if (!now_resolve_tz(ctx, s, &off_sec, &off_known, &zone_name, &zone_known)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone string");
         return null;
@@ -8567,27 +8593,39 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         bool has_offset_prop = false;
         TVal offset_v = prop_or_undefined_pa(ctx, o, "offset");
         if (!offset_v.is_undefined()) {
+            // Per spec the offset value is coerced to a string, which fires
+            // the observer's `toString` getter (test262 `order-of-operations`).
+            // Non-string / non-object types (number, null, boolean, BigInt)
+            // throw TypeError; Symbols are rejected here. Everything else
+            // goes through `builtin_to_string_vm`.
             if (offset_v.is_string()) {
                 HString* ohs = (HString*)offset_v.get_heapptr();
-                if (ohs.is_symbol()) {
+                if (ohs != null && ohs.is_symbol()) {
                     builtin_throw(ctx, ctx.heap.type_err_proto, "offset must not be a Symbol");
                     return;
                 }
-                char[] otxt = ohs != null ? (String)ohs.get_cstr()[:ohs.blen] : (String)"";
-                usz pi = 0;
-                if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
-                    return;
-                }
-                has_offset_prop = true;
             } else if (offset_v.is_object() && offset_v.get_heapptr() != null) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
-                return;
+                // Object with a toString / valueOf that returns a string is OK
+                // (per spec, ToString is called on the value). Let the
+                // builtin_to_string_vm path handle it below.
             } else {
-                // null / number / boolean / undefined-of-wrong-sort: TypeError.
+                // null / number / boolean / BigInt: TypeError.
                 builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
                 return;
             }
+            HString* s_str = builtin_to_string_vm(ctx, &offset_v);
+            if (ctx.should_throw) return;
+            if (s_str == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be convertible to a string");
+                return;
+            }
+            char[] otxt = (String)s_str.get_cstr()[:s_str.blen];
+            usz pi = 0;
+            if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
+                return;
+            }
+            has_offset_prop = true;
         }
         // If no `offset` was supplied but the time zone is an offset zone
         // (e.g. "+01:46"), use that offset to convert the wall time to UTC.
@@ -8623,6 +8661,27 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         // true so a property bag with only year/month/day and timeZone is
         // accepted (hour/minute/... are optional and resolve to 0).
         temporal::CivilDateTime cur = { .date = { .y = 1970, .m = 1, .d = 1 }, .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 } };
+        // Per spec, `ToTemporalZonedDateTime` rejects the property bag if
+        // it lacks any of `year`, `month`/`monthCode`, or `day`. The
+        // shared `bag_to_datetime_fields` is permissive (used by `with()`
+        // which to falls back to the current value), so enforce the
+        // required-field check here.
+        TVal y_v = prop_or_undefined_pa(ctx, o, "year");
+        if (y_v.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag is missing required year property");
+            return;
+        }
+        TVal m_v = prop_or_undefined_pa(ctx, o, "month");
+        TVal mc_v = prop_or_undefined_pa(ctx, o, "monthCode");
+        if (m_v.is_undefined() && mc_v.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag is missing required month property");
+            return;
+        }
+        TVal d_v = prop_or_undefined_pa(ctx, o, "day");
+        if (d_v.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag is missing required day property");
+            return;
+        }
         if (!bag_to_datetime_fields(ctx, o, true, cur.date, cur.time, &fields)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
@@ -9161,15 +9220,23 @@ fn void builtin_temporal_zoneddatetime_proto_withTimeZone(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null
-        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_TIMEZONE) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "withTimeZone requires a Temporal.TimeZone");
+    // Per spec, withTimeZone accepts either a TimeZone object or a string
+    // / ISO-string time-zone identifier. Earlier builds rejected strings
+    // outright, but test262 (e.g. `disregard-time-zone-ids-if-exact-
+    // times-are-equal.js`) calls `zdt.withTimeZone("+05:30")`.
+    HObject* new_tz_obj;
+    if (arg.is_object() && arg.get_heapptr() != null
+        && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_TIMEZONE) {
+        new_tz_obj = (HObject*)arg.get_heapptr();
+    } else if (try maybe_tz = to_temporal_tz(ctx, arg)) {
+        if (ctx.should_throw) return;
+        new_tz_obj = maybe_tz;
+    } else {
         return;
     }
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
-    HObject* new_tz = (HObject*)arg.get_heapptr();
     ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
-    zdt_from_parts(ctx, self.extra.temporal.big_ns, new_tz, (HString*)self.extra.temporal.calendar);
+    zdt_from_parts(ctx, self.extra.temporal.big_ns, new_tz_obj, (HString*)self.extra.temporal.calendar);
 }
 
 // this.withCalendar(calendar) — Phase 2 accepts only the iso8601 calendar;
@@ -10296,6 +10363,20 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
         String bracket = (String)text[b_start..b_start + b_len - 1];
         // A bracket body can be an IANA name or a `±HH:MM` offset (UTC-offset
         // zone identifiers like `+01:46`). The bracket form disambiguates.
+        // Sub-minute forms (`:SS` or `.frac`) are not valid time-zone
+        // identifiers per spec; reject them.
+        for (usz chk = 0; chk < bracket.len; chk++) {
+            if (bracket[chk] == '.' || bracket[chk] == ',') return false;
+        }
+        // If the bracket starts with `+`/`-` and contains more than one
+        // `:`, it is a sub-minute form (e.g. `+01:30:45`); reject.
+        if (bracket.len > 0 && (bracket[0] == '+' || bracket[0] == '-')) {
+            int colons = 0;
+            for (usz chk = 0; chk < bracket.len; chk++) {
+                if (bracket[chk] == ':') colons++;
+            }
+            if (colons >= 2) return false;
+        }
         usz j = 0;
         long off_in = 0;
         if (parse_offset_only(bracket, &j, &off_in) && j == bracket.len) {
@@ -10309,12 +10390,56 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
     }
 
     // ISO prefix without bracket: what's left must be either empty, "Z",
-    // or a ±HH:MM offset. Anything else (e.g. bare date-time without zone)
-    // is a RangeError.
+    // or a ±HH:MM offset. Anything else (e.g. bare date-time without zone,
+    // or sub-minute offset like `2021-08-19T17:30-07:00:00.1`) is a
+    // RangeError.
     if (has_iso_prefix) {
         long off = 0;
         if (prefix_end < text.len && parse_offset_only(text, &prefix_end, &off)) {
             if (prefix_end != text.len) return false;
+            // Reject sub-minute offsets: scan the offset tail for `.` or `,`
+            // (fractional separator) or for a third `:` (the seconds tier).
+            // `prefix_end` is the position right after the offset, so the
+            // offset itself lives in `text[time_end..prefix_end]`. We don't
+            // have `time_end` tracked here, but the only thing after `time_end`
+            // and before `prefix_end` is the offset (and possibly trailing
+            // junk we already rejected with `prefix_end != text.len`).
+            // Use the time zone name path's check: count colons in the
+            // tail and reject when the offset has 2+.
+            int tail_colons = 0;
+            // Walk backwards from prefix_end to find the offset's start
+            // (the first non-`±HH:MM:SS[.frac]` char).
+            // Cheaper: re-walk from the end and detect a third `:` at the
+            // offset tier. The date-time time portion has the form
+            // `HH:MM:SS[.frac]`, so there are exactly 2 colons. Anything
+            // beyond the time tier (after the time's `T`) is the offset
+            // and adds 1 or 2 colons. Sub-minute offset = 2 colons
+            // (`±HH:MM:SS`); reject when offset has 2 colons.
+            // Walk from prefix_end backward to find `:T`-style boundary.
+            // Simpler approximation: count colons in the entire `prefix_end..text.len`
+            // tail; the time part is the only thing before the offset,
+            // and our offset parser already knows the offset ends here.
+            // For now, scan the entire tail starting at `prefix_end` minus
+            // the offset's start.
+            // Concrete approach: find the time separator (`T`/`t`/` `) in
+            // the text, walk forward, count colons in the offset suffix
+            // (the part from there to the end, up to but not including any
+            // optional bracket).
+            usz k = 0;
+            while (k < text.len && text[k] != 'T' && text[k] != 't' && text[k] != ' ') k++;
+            if (k < text.len) {
+                // After the time separator, count colons in the time
+                // portion (we expect exactly 2) and in the offset portion.
+                // We approximate: any third `:` from there to the end is
+                // the offset's `:SS` tier.
+                int cs = 0;
+                for (usz j = k + 1; j < text.len; j++) {
+                    if (text[j] == ':') cs++;
+                }
+                // Subtract 2 for the time portion itself; if anything
+                // remains, the offset has more than `±HH:MM`.
+                if (cs > 2) return false;
+            }
             *out_offset_sec = off;
             *offset_known = true;
             return true;

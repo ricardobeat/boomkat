@@ -21,7 +21,20 @@ import std::core::string;
 // ("iso8601") and its `u-ca=` annotation values. `String` is a distinct inline
 // typedef, so the stdlib method needs an explicit cast.
 fn bool ci_equals(char[] a, char[] b) {
-    return ((String)a).compare_to_ignore_case((String)b) == 0;
+    if (a.len != b.len) return false;
+    for (usz i = 0; i < a.len; i++) {
+        char ca = a[i];
+        char cb = b[i];
+        // ASCII fast path. Both characters are in A-Z range only when the
+        // upper-cased form differs; map both to lower for comparison.
+        // For non-ASCII bytes we just compare directly — the spec only
+        // requires the ASCII A-Z range to be case-insensitive, and any
+        // non-ASCII byte can't be "iso8601" anyway.
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+        if (ca != cb) return false;
+    }
+    return true;
 }
 
 // What kind of UTC offset the parsed string carried, if any. The grammar
