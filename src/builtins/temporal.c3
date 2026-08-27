@@ -962,6 +962,232 @@ fn void builtin_temporal_duration_from(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
+// ToRelativeTemporalObject: read the `relativeTo` option out of `opts` (which
+// may be null, meaning no options bag was supplied) and resolve it into a
+// PlainDate or PlainDateTime object, writing null when the property is
+// absent. Shared by Duration.compare / .round / .total, which all interpret
+// relativeTo identically.
+//
+// Accepts:
+//   * an existing PlainDate / PlainDateTime object (identity kept);
+//   * a ZonedDateTime object (converted to its local wall-clock PlainDateTime,
+//     since none of the three callers need the time zone itself -- they only
+//     read the date fields off `long_a/long_b/long_c`);
+//   * a property bag with year/month/day (+ optional time fields), which may
+//     additionally carry `timeZone` (and `offset`), making it ZonedDateTime-
+//     relative; the resolved local wall-clock is likewise converted to a
+//     PlainDateTime;
+//   * an ISO date or date-time string.
+//
+// Returns false with `ctx.should_throw` set on failure.
+fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** out_relative_to) {
+    *out_relative_to = null;
+    if (opts == null) return true;
+    TVal rv = prop_or_undefined_pa(ctx, opts, "relativeTo");
+    if (ctx.should_throw) return false;
+    if (rv.is_undefined()) return true;
+
+    if (rv.is_object() && rv.get_heapptr() != null) {
+        HObject* ro = (HObject*)rv.get_heapptr();
+        if (ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE ||
+            ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            *out_relative_to = ro;
+            return true;
+        }
+        if (ro.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
+            zdt_wall_fields(ro, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
+            temporal::CivilDateTime dt = {
+                .date = { .y = wy, .m = wm, .d = wd },
+                .time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns },
+            };
+            HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
+            *out_relative_to = dt_o;
+            return true;
+        }
+
+        // Property bag. `timeZone` present makes this ZonedDateTime-relative
+        // per ToRelativeTemporalObject; resolve it with the same helper
+        // ZonedDateTime.from uses, then read `offset` (a UTC offset string
+        // used to disambiguate the wall time), then the date/time fields
+        // (which also validates `calendar`, if present, and defaults missing
+        // time units to 0).
+        TVal tz_v = prop_or_undefined_pa(ctx, ro, "timeZone");
+        if (ctx.should_throw) return false;
+        HObject* tz = null;
+        if (!tz_v.is_undefined()) {
+            if (try maybe_tz = to_temporal_tz(ctx, &tz_v)) {
+                tz = maybe_tz;
+            } else {
+                return false;
+            }
+        }
+
+        long off_sec = 0;
+        bool has_offset_prop = false;
+        TVal offset_v = prop_or_undefined_pa(ctx, ro, "offset");
+        if (ctx.should_throw) return false;
+        if (!offset_v.is_undefined()) {
+            if (offset_v.is_string()) {
+                HString* ohs = (HString*)offset_v.get_heapptr();
+                if (ohs != null && ohs.is_symbol()) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "offset must not be a Symbol");
+                    return false;
+                }
+            } else if (offset_v.is_object() && offset_v.get_heapptr() != null) {
+                // Object with toString/valueOf: let builtin_to_string_vm below
+                // handle the coercion.
+            } else {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
+                return false;
+            }
+            HString* off_s = builtin_to_string_vm(ctx, &offset_v);
+            if (ctx.should_throw) return false;
+            if (off_s == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be convertible to a string");
+                return false;
+            }
+            char[] otxt = (String)off_s.get_cstr()[:off_s.blen];
+            usz pi = 0;
+            if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
+                return false;
+            }
+            has_offset_prop = true;
+        }
+
+        // Per spec (ToRelativeTemporalObject / PrepareTemporalFields), the
+        // bag must carry year, month (or monthCode), and day; missing time
+        // fields default to 0. `bag_to_datetime_fields`'s `keep_missing`
+        // flag would silently substitute `cur`'s value for a missing date
+        // field, so require the three date fields explicitly (mirroring
+        // `builtin_temporal_zoneddatetime_from`'s property-bag path) and
+        // pass `keep_missing = true` only to get 0-default time fields.
+        TVal y_v = prop_or_undefined_pa(ctx, ro, "year");
+        if (ctx.should_throw) return false;
+        if (y_v.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo: missing year property");
+            return false;
+        }
+        TVal m_v = prop_or_undefined_pa(ctx, ro, "month");
+        if (ctx.should_throw) return false;
+        TVal mc_v = prop_or_undefined_pa(ctx, ro, "monthCode");
+        if (ctx.should_throw) return false;
+        if (m_v.is_undefined() && mc_v.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo: missing month property");
+            return false;
+        }
+        TVal d_v = prop_or_undefined_pa(ctx, ro, "day");
+        if (ctx.should_throw) return false;
+        if (d_v.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo: missing day property");
+            return false;
+        }
+
+        Vm* v = (Vm*)ctx.vm;
+        temporal::CivilDateTime cur = { .date = { .y = 1970, .m = 1, .d = 1 }, .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 } };
+        temporal::CivilDateTime fields;
+        if (!bag_to_datetime_fields(ctx, ro, true, cur.date, cur.time, &fields)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return false;
+        }
+        temporal::CivilDate valid_d;
+        if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return false;
+        temporal::CivilTime valid_t;
+        if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return false;
+
+        if (tz == null) {
+            // Plain (non-zoned) bag: a PlainDateTime built straight from the
+            // fields, ignoring any `offset` (it only matters once a time
+            // zone is present).
+            temporal::CivilDateTime dt = { .date = valid_d, .time = valid_t };
+            HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
+            *out_relative_to = dt_o;
+            return true;
+        }
+
+        // ZonedDateTime-relative bag: resolve the wall time to an instant
+        // using the offset (explicit `offset` property, or the offset
+        // implied by an offset-form time zone identifier), then convert
+        // back to the zone's local wall-clock PlainDateTime -- callers only
+        // read the date fields.
+        if (!has_offset_prop) {
+            String tzid_str = timezone_name(tz);
+            usz k = 0;
+            long tz_off = 0;
+            if (parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
+                off_sec = tz_off;
+                has_offset_prop = true;
+            }
+        } else {
+            String tzid_str = timezone_name(tz);
+            usz k = 0;
+            long tz_off = 0;
+            if (parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
+                if (tz_off != off_sec) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo: offset property does not agree with time zone");
+                    return false;
+                }
+            }
+        }
+        long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
+            + (long)valid_t.h * 3600 + (long)valid_t.mi * 60 + (long)valid_t.s;
+        long frac_ns = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
+        double naive_ns = (double)wall_secs * 1e9 + (double)frac_ns;
+        double epoch_ns_d = naive_ns - (double)off_sec * 1e9;
+        hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, epoch_ns_d);
+        if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return false; }
+        hbigint::HBigInt* epoch_ns = big_o;
+        HString* cal_str = builtin_intern_string(ctx.heap, "iso8601");
+        HObject*? zdt_o = alloc_zoneddatetime(ctx.heap, epoch_ns, tz, cal_str);
+        ctx.heap.decref((types::HeapHeader*)epoch_ns);
+        if (catch err = zdt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
+        HObject* zdt = zdt_o;
+        long zwy, zwm, zwd; int zwh, zwmi, zws, zwms, zwus, zwns, zwoff;
+        zdt_wall_fields(zdt, &zwy, &zwm, &zwd, &zwh, &zwmi, &zws, &zwms, &zwus, &zwns, &zwoff);
+        temporal::CivilDateTime zdt_local = {
+            .date = { .y = zwy, .m = zwm, .d = zwd },
+            .time = { .h = zwh, .mi = zwmi, .s = zws, .ms = zwms, .us = zwus, .ns = zwns },
+        };
+        HObject*? out_o = alloc_plain_datetime(ctx.heap, zdt_local, ctx.heap.temporal_iso_calendar);
+        if (catch err = out_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
+        *out_relative_to = out_o;
+        return true;
+    }
+
+    if (rv.is_string()) {
+        HString* rs = builtin_to_string_vm(ctx, &rv);
+        if (ctx.should_throw) return false;
+        temporal::ParsedIsoDateTime p;
+        if (!temporal::parse_iso_date_string(rs.get_cstr()[:rs.blen], &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid relativeTo string");
+            return false;
+        }
+        if (p.has_time) {
+            temporal::CivilDateTime dt = {
+                .date = { .y = p.year, .m = p.month, .d = p.day },
+                .time = { .h = p.hour, .mi = p.minute, .s = p.second,
+                          .ms = p.nanos / 1000000, .us = (p.nanos / 1000) % 1000,
+                          .ns = p.nanos % 1000 },
+            };
+            HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
+            *out_relative_to = dt_o;
+        } else {
+            temporal::CivilDate dd = { .y = p.year, .m = p.month, .d = p.day };
+            HObject*? dt_o = alloc_plain_date(ctx.heap, dd, ctx.heap.temporal_iso_calendar);
+            if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
+            *out_relative_to = dt_o;
+        }
+        return true;
+    }
+
+    builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a string or object");
+    return false;
+}
+
 fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
     if (ctx.argc < 2) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Duration.compare requires two arguments");
@@ -983,80 +1209,9 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
         opts = (HObject*)ov.get_heapptr();
     }
 
-    // relativeTo -- mirrors builtin_temporal_duration_proto_round's relativeTo block.
+    // relativeTo
     HObject* relative_to = null;
-    if (opts != null) {
-        TVal rv = prop_or_undefined_pa(ctx, opts, "relativeTo");
-        if (ctx.should_throw) return;
-        if (!rv.is_undefined()) {
-            if (rv.is_object() && rv.get_heapptr() != null) {
-                HObject* ro = (HObject*)rv.get_heapptr();
-                if (ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE ||
-                    ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
-                    relative_to = ro;
-                } else {
-                    // Try as property bag with year, month, day.
-                    TVal yv = prop_or_undefined_pa(ctx, ro, "year");
-                    if (ctx.should_throw) return;
-                    TVal mv = prop_or_undefined_pa(ctx, ro, "month");
-                    if (ctx.should_throw) return;
-                    TVal dv = prop_or_undefined_pa(ctx, ro, "day");
-                    if (ctx.should_throw) return;
-                    if (!yv.is_undefined() && !mv.is_undefined() && !dv.is_undefined()) {
-                        Vm* v = (Vm*)ctx.vm;
-                        double yd = vm::vm_to_number(v, &yv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        double md = vm::vm_to_number(v, &mv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        double dd = vm::vm_to_number(v, &dv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        if (math::is_nan(yd) || math::is_inf(yd) || math::is_nan(md) || math::is_inf(md) || math::is_nan(dd) || math::is_inf(dd)) {
-                            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo properties must be finite");
-                            return;
-                        }
-                        temporal::CivilDate pd = { .y = (long)yd, .m = (long)md, .d = (long)dd };
-                        if (!temporal::is_valid_iso_date(pd.y, (int)pd.m, (int)pd.d)) {
-                            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo date is out of range");
-                            return;
-                        }
-                        HObject*? dt_o = alloc_plain_date(ctx.heap, pd, ctx.heap.temporal_iso_calendar);
-                        if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                        relative_to = dt_o;
-                    } else {
-                        builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a PlainDate, PlainDateTime, or property bag");
-                        return;
-                    }
-                }
-            } else if (rv.is_string()) {
-                HString* rs = builtin_to_string_vm(ctx, &rv);
-                if (ctx.should_throw) return;
-                temporal::ParsedIsoDateTime p;
-                if (!temporal::parse_iso_date_string(rs.get_cstr()[:rs.blen], &p)) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid relativeTo string");
-                    return;
-                }
-                if (p.has_time) {
-                    temporal::CivilDateTime dt = {
-                        .date = { .y = p.year, .m = p.month, .d = p.day },
-                        .time = { .h = p.hour, .mi = p.minute, .s = p.second,
-                                  .ms = p.nanos / 1000000, .us = (p.nanos / 1000) % 1000,
-                                  .ns = p.nanos % 1000 },
-                    };
-                    HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
-                    if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                    relative_to = dt_o;
-                } else {
-                    temporal::CivilDate dd = { .y = p.year, .m = p.month, .d = p.day };
-                    HObject*? dt_o = alloc_plain_date(ctx.heap, dd, ctx.heap.temporal_iso_calendar);
-                    if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                    relative_to = dt_o;
-                }
-            } else {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a string or object");
-                return;
-            }
-        }
-    }
+    if (!read_relative_to_option(ctx, opts, &relative_to)) return;
 
     if (relative_to == null) {
         if (is_cal_unit(default_largest_unit(da)) || is_cal_unit(default_largest_unit(db))) {
@@ -1759,72 +1914,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             }
         }
         // relativeTo
-        TVal rv = prop_or_undefined_pa(ctx, opts, "relativeTo");
-        if (!rv.is_undefined()) {
-            if (rv.is_object() && rv.get_heapptr() != null) {
-                HObject* ro = (HObject*)rv.get_heapptr();
-                if (ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE ||
-                    ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
-                    relative_to = ro;
-                } else {
-                    // Try as property bag with year, month, day.
-                    TVal yv = prop_or_undefined_pa(ctx, ro, "year");
-                    TVal mv = prop_or_undefined_pa(ctx, ro, "month");
-                    TVal dv = prop_or_undefined_pa(ctx, ro, "day");
-                    if (!yv.is_undefined() && !mv.is_undefined() && !dv.is_undefined()) {
-                        Vm* v = (Vm*)ctx.vm;
-                        double yd = vm::vm_to_number(v, &yv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        double md = vm::vm_to_number(v, &mv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        double dd = vm::vm_to_number(v, &dv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        if (math::is_nan(yd) || math::is_inf(yd) || math::is_nan(md) || math::is_inf(md) || math::is_nan(dd) || math::is_inf(dd)) {
-                            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo properties must be finite");
-                            return;
-                        }
-                        temporal::CivilDate pd = { .y = (long)yd, .m = (long)md, .d = (long)dd };
-                        if (!temporal::is_valid_iso_date(pd.y, (int)pd.m, (int)pd.d)) {
-                            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo date is out of range");
-                            return;
-                        }
-                        HObject*? dt_o = alloc_plain_date(ctx.heap, pd, ctx.heap.temporal_iso_calendar);
-                        if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                        relative_to = dt_o;
-                    } else {
-                        builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a PlainDate, PlainDateTime, or property bag");
-                        return;
-                    }
-                }
-            } else if (rv.is_string()) {
-                HString* rs = builtin_to_string_vm(ctx, &rv);
-                if (ctx.should_throw) return;
-                temporal::ParsedIsoDateTime p;
-                if (!temporal::parse_iso_date_string(rs.get_cstr()[:rs.blen], &p)) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid relativeTo string");
-                    return;
-                }
-                if (p.has_time) {
-                    temporal::CivilDateTime dt = {
-                        .date = { .y = p.year, .m = p.month, .d = p.day },
-                        .time = { .h = p.hour, .mi = p.minute, .s = p.second,
-                                  .ms = p.nanos / 1000000, .us = (p.nanos / 1000) % 1000,
-                                  .ns = p.nanos % 1000 },
-                    };
-                    HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
-                    if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                    relative_to = dt_o;
-                } else {
-                    temporal::CivilDate dd = { .y = p.year, .m = p.month, .d = p.day };
-                    HObject*? dt_o = alloc_plain_date(ctx.heap, dd, ctx.heap.temporal_iso_calendar);
-                    if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                    relative_to = dt_o;
-                }
-            } else {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a string or object");
-                return;
-            }
-        }
+        if (!read_relative_to_option(ctx, opts, &relative_to)) return;
         // roundingIncrement
         TVal ri_tv = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
         if (!ri_tv.is_undefined()) {
@@ -2120,72 +2210,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid unit");
             return;
         }
-        TVal rv = prop_or_undefined_pa(ctx, opts, "relativeTo");
-        if (!rv.is_undefined()) {
-            if (rv.is_object() && rv.get_heapptr() != null) {
-                HObject* ro = (HObject*)rv.get_heapptr();
-                if (ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE ||
-                    ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
-                    relative_to = ro;
-                } else {
-                    // Try as property bag.
-                    TVal yv = prop_or_undefined_pa(ctx, ro, "year");
-                    TVal mv = prop_or_undefined_pa(ctx, ro, "month");
-                    TVal dv = prop_or_undefined_pa(ctx, ro, "day");
-                    if (!yv.is_undefined() && !mv.is_undefined() && !dv.is_undefined()) {
-                        Vm* v = (Vm*)ctx.vm;
-                        double yd = vm::vm_to_number(v, &yv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        double md = vm::vm_to_number(v, &mv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        double dd = vm::vm_to_number(v, &dv);
-                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                        if (math::is_nan(yd) || math::is_inf(yd) || math::is_nan(md) || math::is_inf(md) || math::is_nan(dd) || math::is_inf(dd)) {
-                            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo properties must be finite");
-                            return;
-                        }
-                        temporal::CivilDate pd = { .y = (long)yd, .m = (long)md, .d = (long)dd };
-                        if (!temporal::is_valid_iso_date(pd.y, (int)pd.m, (int)pd.d)) {
-                            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo date is out of range");
-                            return;
-                        }
-                        HObject*? dt_o = alloc_plain_date(ctx.heap, pd, ctx.heap.temporal_iso_calendar);
-                        if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                        relative_to = dt_o;
-                    } else {
-                        builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a PlainDate, PlainDateTime, or property bag");
-                        return;
-                    }
-                }
-            } else if (rv.is_string()) {
-                HString* rs = builtin_to_string_vm(ctx, &rv);
-                if (ctx.should_throw) return;
-                temporal::ParsedIsoDateTime p;
-                if (!temporal::parse_iso_date_string(rs.get_cstr()[:rs.blen], &p)) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid relativeTo string");
-                    return;
-                }
-                if (p.has_time) {
-                    temporal::CivilDateTime dt = {
-                        .date = { .y = p.year, .m = p.month, .d = p.day },
-                        .time = { .h = p.hour, .mi = p.minute, .s = p.second,
-                                  .ms = p.nanos / 1000000, .us = (p.nanos / 1000) % 1000,
-                                  .ns = p.nanos % 1000 },
-                    };
-                    HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
-                    if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                    relative_to = dt_o;
-                } else {
-                    temporal::CivilDate dd = { .y = p.year, .m = p.month, .d = p.day };
-                    HObject*? dt_o = alloc_plain_date(ctx.heap, dd, ctx.heap.temporal_iso_calendar);
-                    if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-                    relative_to = dt_o;
-                }
-            } else {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a string or object");
-                return;
-            }
-        }
+        if (!read_relative_to_option(ctx, opts, &relative_to)) return;
     }
 
     TemporalUnit existing = default_largest_unit(dur);
@@ -2195,15 +2220,20 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
             return;
         }
         int128 time_ns = duration_to_time_ns(dur);
-        long divisor = unit_ns_divisor(unit);
-        ctx.result.set_number((double)time_ns / (double)divisor);
+        double divisor = unit == TemporalUnit.DAY
+            ? 86400000000000.0
+            : (double)unit_ns_divisor(unit);
+        ctx.result.set_number((double)time_ns / divisor);
         return;
     }
-    // Time-only with relativeTo: same as no-relativeTo.
+    // Time-only with relativeTo: same as no-relativeTo. A day is a fixed
+    // 86400e9 ns here; unit_ns_divisor covers only the sub-day tiers.
     if (!is_cal_unit(unit)) {
         int128 time_ns = duration_to_time_ns(dur);
-        long divisor = unit_ns_divisor(unit);
-        ctx.result.set_number((double)time_ns / (double)divisor);
+        double divisor = unit == TemporalUnit.DAY
+            ? 86400000000000.0
+            : (double)unit_ns_divisor(unit);
+        ctx.result.set_number((double)time_ns / divisor);
         return;
     }
     // Calendar unit total with relativeTo: compute total nanoseconds between
