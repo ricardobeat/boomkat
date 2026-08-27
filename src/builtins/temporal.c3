@@ -293,8 +293,18 @@ fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
     }
     if (tv.is_object() && tv.get_heapptr() != null) {
         HObject* o = (HObject*)tv.get_heapptr();
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_CALENDAR) {
-            *out = o;
+        // Fast-path: any Temporal object that already carries a calendar
+        // (PlainDate / PlainDateTime / PlainYearMonth / PlainMonthDay /
+        // ZonedDateTime) exposes its calendar via the same HObjectTemporal
+        // slot, so it short-circuits to the shared iso8601 singleton.
+        hobject::ObjClass cl = o.get_class();
+        if (cl == hobject::ObjClass.TEMPORAL_CALENDAR
+            || cl == hobject::ObjClass.TEMPORAL_PLAIN_DATE
+            || cl == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME
+            || cl == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH
+            || cl == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY
+            || cl == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            *out = ctx.heap.temporal_iso_calendar;
             return true;
         }
         builtin_throw(ctx, ctx.heap.type_err_proto, "not a Temporal.Calendar object");
@@ -314,6 +324,20 @@ fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
             if (temporal::ci_equals(text, "iso8601") ||
                 temporal::ci_equals(text, "gregory") ||
                 temporal::ci_equals(text, "gregorian")) {
+                *out = ctx.heap.temporal_iso_calendar;
+                return true;
+            }
+            // Otherwise the calendar may be any Temporal ISO 8601 / Temporal
+            // date / date-time / year-month / month-day / time string. The
+            // bracket annotation can carry `[u-ca=iso8601]`, which we accept.
+            // The plain ISO date / time forms (e.g. "2020-01-01",
+            // "2020-01-01T00:00:00.000000000", "2020-01", "01-01") likewise
+            // resolve to the iso8601 calendar.
+            temporal::ParsedIsoDateTime pdt = { .year = 0 };
+            if (temporal::parse_iso_date_string(text, &pdt)
+                || temporal::parse_iso_yearmonth_string(text, &pdt)
+                || temporal::parse_iso_monthday_string(text, &pdt)
+                || temporal::parse_iso_time_string(text, &pdt)) {
                 *out = ctx.heap.temporal_iso_calendar;
                 return true;
             }
@@ -4450,6 +4474,12 @@ fn bool fields_to_valid_yearmonth(BuiltinContext* ctx, long y, int m, int d,
     return true;
 }
 
+// Temporal.PlainYearMonth(year, month, calendar?, referenceDay?) — per spec,
+// the 3rd argument is the calendar (string or Calendar object) and the 4th
+// is the reference day (1..31, used only for date arithmetic). Older builds
+// mistakenly treated the 3rd slot as `day`, which made `new PlainYearMonth(2000, 5, "iso8601")`
+// throw "day is not an integral number" because the calendar string
+// converted to NaN. Reorder: calendar first, then reference day.
 fn void builtin_temporal_plain_yearmonth_ctor(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth requires new");
@@ -4458,7 +4488,7 @@ fn void builtin_temporal_plain_yearmonth_ctor(BuiltinContext* ctx) {
     Vm* v = (Vm*)ctx.vm;
     long y = 0;
     int m = 1;
-    int d = 1;
+    int reference_day = 1;
 
     if (ctx.argc >= 1) {
         if (!to_integer_with_truncation(v, arg_at(ctx, 0), &y)) {
@@ -4479,23 +4509,22 @@ fn void builtin_temporal_plain_yearmonth_ctor(BuiltinContext* ctx) {
     }
     m = (int)m_lv;
 
+    HObject* calendar = ctx.heap.temporal_iso_calendar;
     if (ctx.argc >= 3) {
+        if (!calendar_from_arg(ctx, arg_at(ctx, 2), &calendar)) return;
+    }
+    if (ctx.argc >= 4) {
         long d_lv;
-        if (!to_integer_with_truncation(v, arg_at(ctx, 2), &d_lv)) {
+        if (!to_integer_with_truncation(v, arg_at(ctx, 3), &d_lv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+            builtin_throw(ctx, ctx.heap.range_err_proto, "referenceDay is not an integral number");
             return;
         }
-        d = (int)d_lv;
-    }
-
-    HObject* calendar = ctx.heap.temporal_iso_calendar;
-    if (ctx.argc >= 4) {
-        if (!calendar_from_arg(ctx, arg_at(ctx, 3), &calendar)) return;
+        reference_day = (int)d_lv;
     }
 
     long vy; int vm; int vd;
-    if (!fields_to_valid_yearmonth(ctx, y, m, d, temporal::OverflowKind.REJECT, &vy, &vm, &vd)) return;
+    if (!fields_to_valid_yearmonth(ctx, y, m, reference_day, temporal::OverflowKind.REJECT, &vy, &vm, &vd)) return;
 
     HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, vy, vm, vd, calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -6051,6 +6080,15 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "year", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "month", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTH.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "monthCode", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHCODE.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "daysInMonth", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINMONTH.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "monthsInYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHSINYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "inLeapYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_INLEAPYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "era", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ERA.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "eraYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ERAYEAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "calendar", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_CALENDAR.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "month", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTH.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "monthCode", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHCODE.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "day", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAY.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "daysInMonth", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINMONTH.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "daysInYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINYEAR.ordinal)) return false;
@@ -6065,11 +6103,6 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "weekOfYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WEEKOFYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAROFWEEK.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "daysInWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINWEEK.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_VALUEOF.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOSTRING.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOJSON.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_EQUALS.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ADD.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_SUBTRACT.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_UNTIL.ordinal)) return false;
@@ -8554,6 +8587,19 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 // null / number / boolean / undefined-of-wrong-sort: TypeError.
                 builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
                 return;
+            }
+        }
+        // If no `offset` was supplied but the time zone is an offset zone
+        // (e.g. "+01:46"), use that offset to convert the wall time to UTC.
+        // The agreement check below applies only when both an offset and an
+        // offset-zone name were supplied; here they would necessarily agree.
+        if (!has_offset_prop) {
+            String tzid_str = timezone_name(tz);
+            usz k = 0;
+            long tz_off = 0;
+            if (parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
+                off_sec = tz_off;
+                has_offset_prop = true;
             }
         }
         // If the time zone is an offset zone (e.g. "+01:00") and an `offset`

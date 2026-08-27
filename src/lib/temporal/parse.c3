@@ -186,7 +186,11 @@ fn bool parse_offset(char[] text, usz* i, OffsetKind* out_offset_kind) {
 //   * more than one u-ca= annotation is rejected if any annotation in the
 //     sequence carries the critical flag (else the second is silently dropped)
 //   * more than one time-zone annotation is a syntax error unconditionally
-fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_len, usz* out_tz_start, usz* out_tz_len) {
+// `allow_sub_minute_tz`: when true (default for Instant / DateTime /
+// Duration parsers), the bracket may contain a `±HH:MM:SS.fffffffff`
+// sub-minute offset. ZonedDateTime passes `false` to enforce its narrower
+// grammar (no sub-minute time-zone identifiers).
+fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_len, usz* out_tz_start, usz* out_tz_len, bool allow_sub_minute_tz = true) {
     int count = 0;
     int tz_count = 0;
     bool cal_seen = false;
@@ -270,12 +274,12 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
             // `TimeZoneIdentifier`: either an IANA name (`Alpha …`) or
             // a `UTCOffset[~SubMinutePrecision]`. The latter permits
             // `±HH`, `±HHMM`, `±HH:MM`, or — when sub-minute precision
-            // is requested — `±HH:MM:SS[.fffffffff]`. A trailing-zero
+            // is allowed — `±HH:MM:SS[.fffffffff]`. A trailing-zero
             // fraction (e.g. `+01:35:00.000000000`) is a syntax error,
-            // so reject fractions whose last digit is zero. This check
-            // applies whether or not the caller wants the tz value, so
-            // a `relativeTo` string like `…[-00:44:30]` is rejected by
-            // any parser that consumes annotations.
+            // so reject fractions whose last digit is zero. ZDT forbids
+            // sub-minute time-zone identifiers per its narrower grammar,
+            // so when `!allow_sub_minute_tz` we reject anything past
+            // minutes (a second `:`, a `.`, or a `,`).
             if (key_end - key_start >= 1 && (text[key_start] == '+' || text[key_start] == '-')) {
                 usz colon_count = 0;
                 usz dot_pos = 0;
@@ -296,6 +300,10 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
                 usz main_end = has_dot ? dot_pos : key_end;
                 usz tz_len = main_end - key_start;
                 if (colon_count == 0 && tz_len > 5) return false;
+                if (!allow_sub_minute_tz) {
+                    if (colon_count >= 2) return false;
+                    if (has_dot) return false;
+                }
                 // Trailing-zero check on the fraction: if the fraction
                 // exists, the last fraction digit must be non-zero.
                 if (has_dot) {
@@ -878,7 +886,7 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     // RangeError precisely because no zone annotation was supplied.
     if (i >= len || text[i] != '[') return false;
     usz cal_start, cal_len, tz_start, tz_len;
-    if (!parse_annotations(text, &i, &cal_start, &cal_len, &tz_start, &tz_len)) return false;
+    if (!parse_annotations(text, &i, &cal_start, &cal_len, &tz_start, &tz_len, false)) return false;
     if (tz_len == 0) return false;
     if (cal_len != 0) {
         char[] cal = text[cal_start..cal_start + cal_len];
