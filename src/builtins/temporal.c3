@@ -248,8 +248,57 @@ fn TVal prop_or_undefined_pa(BuiltinContext* ctx, HObject* o, char[] name) {
         TVal undef; undef.set_undefined();
         return undef;
     }
+    // Non-Proxy path: walk the prototype chain honouring accessors, so a
+    // property bag whose fields are getters (test262's propertyBagObserver,
+    // and any ordinary `get years() {...}`) observes the [[Get]] and yields
+    // the getter's return value rather than the raw accessor slot.
+    hobject::PropLookupResult res = o.get_prop_or_accessor_proto(key, true, hp);
+    if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+        return temporal_invoke_getter(o, res.acc.accessor_fn, ctx);
+    } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
+        return res.data_val;
+    }
     TVal undef; undef.set_undefined();
-    return o.get_prop(key, hp) ?? undef;
+    return undef;
+}
+
+// Call a property-bag getter with the bag as `this`, propagating a throw
+// into the surrounding JS try/catch via ctx.should_throw.
+fn TVal temporal_invoke_getter(HObject* obj, TVal getter_fn, BuiltinContext* ctx) {
+    TVal undef; undef.set_undefined();
+    if (!getter_fn.is_object() || getter_fn.get_heapptr() == null) return undef;
+    HObject* fn_obj = (HObject*)getter_fn.get_heapptr();
+    if (!fn_obj.is_callable()) return undef;
+    Heap* hp = ctx.heap;
+    if (hp.call_fn == null || ctx.vm == null) return undef;
+    TVal this_val; this_val.set_object(obj);
+    TVal result = hp.call_fn(ctx.vm, getter_fn, null, 0, this_val);
+    if (hp.has_error) {
+        ctx.should_throw = true;
+        ctx.throw_value = hp.error_value;
+        hp.has_error = false;
+        hp.error_value.set_undefined();
+        return undef;
+    }
+    return result;
+}
+
+// RejectObjectWithCalendarOrTimeZone: a fields bag passed to with() must be a
+// plain object, never a Temporal object. This is checked by brand before any
+// property is read, so a `calendar`/`timeZone` getter on the argument never
+// runs (test262 calendar-temporal-object-throws asserts exactly that).
+fn bool reject_temporal_object_bag(BuiltinContext* ctx, HObject* bag) {
+    hobject::ObjClass c = bag.get_class();
+    if (c == hobject::ObjClass.TEMPORAL_PLAIN_DATE ||
+        c == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME ||
+        c == hobject::ObjClass.TEMPORAL_PLAIN_TIME ||
+        c == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH ||
+        c == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY ||
+        c == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a Temporal object as its fields bag");
+        return false;
+    }
+    return true;
 }
 
 // Read the `overflow` option (default "constrain"). Per spec (GetOption +
@@ -933,13 +982,20 @@ fn bool duration_from_arg(BuiltinContext* ctx, TVal* arg, temporal::DurationPart
             return true;
         }
         Vm* v = (Vm*)ctx.vm;
-        char[][] names = { "years", "months", "weeks", "days", "hours",
-            "minutes", "seconds", "milliseconds", "microseconds", "nanoseconds" };
+        // Spec order: ToTemporalDuration reads the fields in alphabetical
+        // order (CreateDurationRecord / the Duration field table), which
+        // test262's order-of-operations tests assert exactly. `slot` maps a
+        // read position back to the field it fills.
+        char[][] names = { "days", "hours", "microseconds", "milliseconds",
+            "minutes", "months", "nanoseconds", "seconds", "weeks", "years" };
+        int[] slot = { 3, 4, 8, 7, 5, 1, 9, 6, 2, 0 };
         out.years = 0; out.months = 0; out.weeks = 0; out.days = 0;
         out.hours = 0; out.minutes = 0; out.seconds = 0;
         out.ms = 0; out.us = 0; out.ns = 0;
-        for (int k = 0; k < 10; k++) {
-            TVal pv = prop_or_undefined(o, ctx.heap, names[k]);
+        for (int i = 0; i < 10; i++) {
+            int k = slot[i];
+            TVal pv = prop_or_undefined_pa(ctx, o, names[i]);
+            if (ctx.should_throw) return false;
             if (pv.is_undefined()) continue;
             double val = vm::vm_to_number(v, &pv);
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
@@ -4005,6 +4061,7 @@ fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
         return;
     }
     HObject* bag = (HObject*)arg.get_heapptr();
+    if (!reject_temporal_object_bag(ctx, bag)) return;
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
