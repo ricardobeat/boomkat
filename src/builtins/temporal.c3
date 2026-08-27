@@ -1429,8 +1429,10 @@ fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
             double half = incr / 2;
             if (rem < half) return r1;
             if (rem > half) return r2;
+            // Tie: pick the multiple whose factor (qb) is even.
             double qb = math::floor(q);
-            return math::floor((qb + 0.5) / 2) * 2 * incr;
+            if (math::floor(qb / 2) * 2 == qb) return r1;
+            return r2;
         }
     }
     return x;
@@ -10122,16 +10124,28 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         result_ns = 0;
     } else {
         long divisor = unit_ns_divisor(smallest_unit);
-        double incr_ns = (double)divisor * rounding_increment;
-        double local_ns = (double)(epoch_secs + woff) * 1e9 + (double)ns_rem;
-        double rounded_local_ns = round_num_to_incr(local_ns, incr_ns, rounding_mode);
-        double result_local_ns = rounded_local_ns - (double)woff * 1e9;
-        result_secs = (long)math::floor(result_local_ns / 1e9);
-        result_ns = (long)(result_local_ns - (double)result_secs * 1e9);
+        long incr_ns = divisor * (long)rounding_increment;
+        // local_ns can exceed 2^53 (modern epoch ns are ~1.6e18), so we
+        // route through round_long_ns which keeps the magnitude as a long.
+        // woff is the zone offset in seconds; the wall-time-in-ns form is
+        // (epoch_secs + woff) * 1e9 + ns_rem, and the rounded result is
+        // then shifted back to UTC ns.
+        long local_ns = (epoch_secs + woff) * 1000000000L + ns_rem;
+        long rounded_local_ns = round_long_ns(local_ns, incr_ns, rounding_mode);
+        long result_local_ns = rounded_local_ns - woff * 1000000000L;
+        result_secs = result_local_ns / 1000000000L;
+        result_ns = result_local_ns - result_secs * 1000000000L;
     }
 
-    double total_ns = (double)result_secs * 1e9 + (double)result_ns;
-    hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, total_ns);
+    // Combine result_secs and result_ns as a BigInt to avoid the 2^53
+    // ceiling on double precision. `(double)result_secs * 1e9` rounds
+    // values past ~1973 by 1 ns or more.
+    int128 total_i128 = (int128)result_secs * 1000000000 + (int128)result_ns;
+    if (total_i128 < (int128)0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "round produced a negative epoch");
+        return;
+    }
+    hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, total_i128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
     ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
     zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, (HString*)obj.extra.temporal.calendar);
