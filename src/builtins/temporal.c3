@@ -905,60 +905,70 @@ fn void builtin_temporal_duration_from(BuiltinContext* ctx) {
     }
     TVal* arg = arg_at(ctx, 0);
     temporal::DurationParts d;
-    if (arg.is_string()) {
-        HString* s = (HString*)arg.get_heapptr();
-        if (s == null || !temporal::parse_duration(s.get_cstr()[:s.blen], &d)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
-            return;
-        }
-    } else if (arg.is_object() && arg.get_heapptr() != null) {
-        HObject* o = (HObject*)arg.get_heapptr();
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_DURATION) {
-            d = duration_value(o);
-        } else {
-            Vm* v = (Vm*)ctx.vm;
-            char[][] names = { "years", "months", "weeks", "days", "hours",
-                "minutes", "seconds", "milliseconds", "microseconds", "nanoseconds" };
-            d.years = 0; d.months = 0; d.weeks = 0; d.days = 0;
-            d.hours = 0; d.minutes = 0; d.seconds = 0;
-            d.ms = 0; d.us = 0; d.ns = 0;
-            for (int k = 0; k < 10; k++) {
-                TVal pv = prop_or_undefined(o, ctx.heap, names[k]);
-                if (pv.is_undefined()) continue;
-                double val = vm::vm_to_number(v, &pv);
-                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                if (math::is_nan(val) || math::is_inf(val)) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
-                    return;
-                }
-                if (k < 4 && math::floor(val) != val) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "date duration fields must be integers");
-                    return;
-                }
-                long whole = (long)math::trunc(val);
-                switch (k) {
-                    case 0: d.years = whole; break;
-                    case 1: d.months = whole; break;
-                    case 2: d.weeks = whole; break;
-                    case 3: d.days = whole; break;
-                    case 4: d.hours = whole; d.ns += (int)((val - (double)whole) * 3.6e12); break;
-                    case 5: d.minutes = whole; d.ns += (int)((val - (double)whole) * 6e10); break;
-                    case 6: d.seconds = whole; d.ns += (int)((val - (double)whole) * 1e9); break;
-                    case 7: d.ms = whole; d.ns += (int)((val - (double)whole) * 1e6); break;
-                    case 8: d.us = whole; d.ns += (int)((val - (double)whole) * 1e3); break;
-                    default: d.ns = whole; break;
-                }
-            }
-        }
-    } else {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.from requires a string or object");
-        return;
-    }
+    if (!duration_from_arg(ctx, arg, &d)) return;
     HObject*? obj_o = alloc_duration(ctx.heap, d);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_duration_proto;
     ctx.result.set_object(obj);
+}
+
+// Shared coercion from a string, Duration, or property bag into a Duration.
+// Returns true on success; on failure throws and writes `ctx.should_throw`.
+// Reused by the + / - / until / since / round operations on every Temporal
+// type that takes a Duration argument.
+fn bool duration_from_arg(BuiltinContext* ctx, TVal* arg, temporal::DurationParts* out) {
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null || !temporal::parse_duration(s.get_cstr()[:s.blen], out)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
+            return false;
+        }
+        return true;
+    }
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_DURATION) {
+            *out = duration_value(o);
+            return true;
+        }
+        Vm* v = (Vm*)ctx.vm;
+        char[][] names = { "years", "months", "weeks", "days", "hours",
+            "minutes", "seconds", "milliseconds", "microseconds", "nanoseconds" };
+        out.years = 0; out.months = 0; out.weeks = 0; out.days = 0;
+        out.hours = 0; out.minutes = 0; out.seconds = 0;
+        out.ms = 0; out.us = 0; out.ns = 0;
+        for (int k = 0; k < 10; k++) {
+            TVal pv = prop_or_undefined(o, ctx.heap, names[k]);
+            if (pv.is_undefined()) continue;
+            double val = vm::vm_to_number(v, &pv);
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            if (math::is_nan(val) || math::is_inf(val)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
+                return false;
+            }
+            if (k < 4 && math::floor(val) != val) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "date duration fields must be integers");
+                return false;
+            }
+            long whole = (long)math::trunc(val);
+            switch (k) {
+                case 0: out.years = whole; break;
+                case 1: out.months = whole; break;
+                case 2: out.weeks = whole; break;
+                case 3: out.days = whole; break;
+                case 4: out.hours = whole; out.ns += (int)((val - (double)whole) * 3.6e12); break;
+                case 5: out.minutes = whole; out.ns += (int)((val - (double)whole) * 6e10); break;
+                case 6: out.seconds = whole; out.ns += (int)((val - (double)whole) * 1e9); break;
+                case 7: out.ms = whole; out.ns += (int)((val - (double)whole) * 1e6); break;
+                case 8: out.us = whole; out.ns += (int)((val - (double)whole) * 1e3); break;
+                default: out.ns = whole; break;
+            }
+        }
+        return true;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.from requires a string or object");
+    return false;
 }
 
 // One getter for all ten duration fields, dispatched on the builtin index.
@@ -9413,13 +9423,14 @@ fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null
-        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_DURATION) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "argument is not a Temporal.Duration");
-        return;
-    }
+    // Per spec, the duration argument is coerced via `ToTemporalDuration`,
+    // which accepts a Duration, a duration string, or a property bag.
+    // Primitive non-string types (number, boolean, BigInt, null, Symbol)
+    // throw TypeError.
+    temporal::DurationParts d_in;
+    if (!duration_from_arg(ctx, arg, &d_in)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
-    temporal::DurationParts dp = duration_value((HObject*)arg.get_heapptr());
+    temporal::DurationParts dp = d_in;
     long sign = subtract ? -1 : 1;
 
     hbigint::HBigInt* base = self.extra.temporal.big_ns;
