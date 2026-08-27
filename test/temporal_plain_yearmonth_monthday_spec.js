@@ -21,10 +21,10 @@ function assertFalse(cond, name) { assertEq(!!cond, false, name); }
 // Temporal.PlainYearMonth
 // ============================================================================
 
-// Constructor: integer y/m; optional reference day (1 by default).
+// Constructor: PlainYearMonth(year, month, calendar, referenceISODay).
 assertEq(new Temporal.PlainYearMonth(2024, 3).toString(), "2024-03", "PlainYearMonth(y,m)");
-assertEq(new Temporal.PlainYearMonth(2024, 3, 15).toString(), "2024-03", "PlainYearMonth day dropped from toString");
-assertEq(new Temporal.PlainYearMonth(2024, 2, 29).day, 29, "Feb 29 in leap year OK");
+assertEq(new Temporal.PlainYearMonth(2024, 3, "iso8601", 15).toString(), "2024-03", "PlainYearMonth day dropped from toString");
+assertEq(new Temporal.PlainYearMonth(2024, 2, "iso8601", 29).day, 29, "Feb 29 in leap year OK");
 
 // Getters.
 var ym = new Temporal.PlainYearMonth(2024, 3);
@@ -82,7 +82,7 @@ assertEq(ym.subtract({ years: 1 }).toString(), "2023-03", "subtract 1 year");
 
 // Reference-day clamping: PlainYearMonth.add rolls Feb 29 in leap year to
 // Feb 28 in non-leap year (CONSTRAIN behavior, the default).
-var ymFebLeap = new Temporal.PlainYearMonth(2024, 2, 29);
+var ymFebLeap = new Temporal.PlainYearMonth(2024, 2, "iso8601", 29);
 assertEq(ymFebLeap.day, 29, "Feb 29 ref day in leap year");
 assertEq(ymFebLeap.add({ years: 1 }).day, 28, "Feb 29 ref day clamps in non-leap year");
 
@@ -125,7 +125,7 @@ assertTrue(threwCtor, "Constructor rejects month 13");
 
 // Constructor with Feb 29 in non-leap year throws (REJECT semantics).
 var threwFeb = false;
-try { new Temporal.PlainYearMonth(2023, 2, 29); } catch (e) { threwFeb = (e && e.constructor.name === "RangeError"); }
+try { new Temporal.PlainYearMonth(2023, 2, "iso8601", 29); } catch (e) { threwFeb = (e && e.constructor.name === "RangeError"); }
 assertTrue(threwFeb, "Constructor rejects Feb 29 in non-leap year");
 
 // Reject option from() with overflow="reject".

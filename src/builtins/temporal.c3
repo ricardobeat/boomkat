@@ -5280,6 +5280,32 @@ fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
         return;
     }
     HObject* bag = (HObject*)arg.get_heapptr();
+    if (!reject_temporal_object_bag(ctx, bag)) return;
+    // A calendar or timeZone field in a with() bag is a TypeError, and the
+    // bag must carry at least one recognised field.
+    TVal cal_f = prop_or_undefined_pa(ctx, bag, "calendar");
+    if (ctx.should_throw) return;
+    if (!cal_f.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar field");
+        return;
+    }
+    TVal tz_f = prop_or_undefined_pa(ctx, bag, "timeZone");
+    if (ctx.should_throw) return;
+    if (!tz_f.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone field");
+        return;
+    }
+    bool any_field = false;
+    char[][] ym_names = { "era", "eraYear", "month", "monthCode", "year" };
+    for (int fi = 0; fi < 5; fi++) {
+        TVal fv = prop_or_undefined_pa(ctx, bag, ym_names[fi]);
+        if (ctx.should_throw) return;
+        if (!fv.is_undefined()) { any_field = true; break; }
+    }
+    if (!any_field) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with() requires at least one recognised field");
+        return;
+    }
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
@@ -6511,6 +6537,10 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "weekOfYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WEEKOFYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAROFWEEK.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "daysInWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINWEEK.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_VALUEOF.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ADD.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_SUBTRACT.ordinal)) return false;
@@ -10977,7 +11007,18 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
         return false;
     }
 
-    // Otherwise the input is a bare zone/offset token.
+    // Otherwise the input is a bare zone/offset token. A UTC-offset zone
+    // identifier is minute precision only: `:SS` or a fractional part makes
+    // it a sub-minute offset, which parse_offset_only accepts but which is
+    // not a valid time-zone identifier.
+    if (text.len > 0 && (text[0] == '+' || text[0] == '-')) {
+        int colons = 0;
+        for (usz chk = 0; chk < text.len; chk++) {
+            if (text[chk] == '.' || text[chk] == ',') return false;
+            if (text[chk] == ':') colons++;
+        }
+        if (colons > 1) return false;
+    }
     usz saved = 0;
     long off2 = 0;
     if (parse_offset_only(text, &saved, &off2)) {
