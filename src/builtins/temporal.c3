@@ -6664,7 +6664,14 @@ fn void builtin_temporal_instant_proto_epochNanoseconds(BuiltinContext* ctx) {
 // for a fixed width (lower digits truncated, the Temporal default
 // roundingMode). Appends the leading "." plus the padded fraction starting at
 // buf; returns the number of characters appended (0 if there is no fraction).
-fn int format_fractional_seconds(char* buf, long ns_rem, int digits) {
+// Render the fractional-seconds suffix (`.XYZ`) into `buf` and return the
+// number of bytes written (0 when no fractional part should be printed).
+// `digits` (-1 = auto, 0..9 = fixed) selects the precision; `mode` is the
+// rounding rule (default trunc). `*ns_rem` is read AND may be updated: when
+// rounding pushes ns_rem to 1_000_000_000 (a full second), the caller must
+// increment whole_secs — see the wrapper in this file that handles the
+// carry.
+fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRoundMode mode) {
     if (ns_rem < 0) ns_rem = -ns_rem;
     if (ns_rem == 0) return 0;
     int d = digits;
@@ -6676,10 +6683,15 @@ fn int format_fractional_seconds(char* buf, long ns_rem, int digits) {
         if (d <= 0) return 0;
     }
     if (d > 9) d = 9;
-    // Truncate to `d` digits (the default roundingMode is "trunc").
+    // Round to `d` digits using `mode`. Compute a divisor = 10^(9-d), then
+    // round ns_rem/divisor to the nearest integer, then multiply back.
     long divisor = 1;
     for (int i = 0; i < 9 - d; i++) divisor *= 10;
-    long v = ns_rem / divisor;
+    long v;
+    {
+        double x = (double)ns_rem / (double)divisor;
+        v = (long)round_num_to_incr(x, 1.0, mode);
+    }
     if (v == 0) return 0;
     buf[0] = '.';
     char[16] tmp;
@@ -6691,13 +6703,16 @@ fn int format_fractional_seconds(char* buf, long ns_rem, int digits) {
     return 1 + k;
 }
 
-// Resolve the fractional-second precision for a Temporal toString(options)
-// bag. `digits` (-1 = auto, 0..9 = fixed) is set from `fractionalSecondDigits`
-// or, if `smallestUnit` is given, its implied width (hour/minute/second -> 0,
-// millisecond -> 3, microsecond -> 6, nanosecond -> 9). Returns false on a
-// malformed option (after throwing).
-fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits) {
+// Resolve the fractional-second precision and rounding mode for a Temporal
+// toString(options) bag. `digits` (-1 = auto, 0..9 = fixed) is set from
+// `fractionalSecondDigits` or, if `smallestUnit` is given, its implied width
+// (hour/minute/second -> 0, millisecond -> 3, microsecond -> 6, nanosecond ->
+// 9). `rounding_mode` defaults to TRUNC; "ceil", "floor", "expand", "trunc",
+// "halfCeil", "halfFloor", "halfExpand", "halfTrunc", "halfEven" are valid.
+// Returns false on a malformed option (after throwing).
+fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits, TemporalRoundMode* rm) {
     *digits = -1;  // auto when no options
+    *rm = TemporalRoundMode.TRUNC;
     if (ctx.argc <= options_index) return true;
     TVal ov = ctx.regs[ctx.base_reg + options_index];
     if (ov.is_undefined()) return true;
@@ -6709,36 +6724,55 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits)
 
     TVal su = prop_or_undefined(opts, ctx.heap, "smallestUnit");
     if (!su.is_undefined()) {
-        if (!su.is_string()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit option must be a string");
-            return false;
-        }
-        HString* s = (HString*)su.get_heapptr();
-        char[] v = s.get_cstr()[:s.blen];
-        if (v == "hour" || v == "minute" || v == "second") { *digits = 0; return true; }
-        if (v == "millisecond") { *digits = 3; return true; }
-        if (v == "microsecond") { *digits = 6; return true; }
-        if (v == "nanosecond")  { *digits = 9; return true; }
-        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for Instant.toString");
-        return false;
+        HString* su_s = builtin_to_string_vm(ctx, &su);
+        if (ctx.should_throw) return false;
+        if (su_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit option must be a string"); return false; }
+        char[] v = su_s.get_cstr()[:su_s.blen];
+        if (v == "minute") { *digits = -10; }   // sentinel: round to minute, no fractional part
+        else if (v == "second") { *digits = 0; }
+        else if (v == "millisecond") { *digits = 3; }
+        else if (v == "microsecond") { *digits = 6; }
+        else if (v == "nanosecond")  { *digits = 9; }
+        else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit"); return false; }
     }
 
     TVal f = prop_or_undefined(opts, ctx.heap, "fractionalSecondDigits");
     if (!f.is_undefined()) {
         if (f.is_string()) {
             HString* s = (HString*)f.get_heapptr();
+            if (s != null && s.is_symbol()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
+                return false;
+            }
             char[] v = s.get_cstr()[:s.blen];
-            if (v == "auto") { *digits = -1; return true; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
-            return false;
+            if (v == "auto") { *digits = -1; }
+            else { builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9"); return false; }
+        } else {
+            double dv = builtin_to_number_getdouble(ctx, &f);
+            if (math::is_nan(dv) || math::is_inf(dv) || dv < 0 || dv > 9 || dv != (double)((long)dv)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
+                return false;
+            }
+            *digits = (int)dv;
         }
-        double dv = builtin_to_number_getdouble(ctx, &f);
-        if (dv < 0 || dv > 9 || dv != (double)((long)dv)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
-            return false;
-        }
-        *digits = (int)dv;
-        return true;
+    }
+
+    TVal rmv = prop_or_undefined(opts, ctx.heap, "roundingMode");
+    if (!rmv.is_undefined()) {
+        HString* rm_s = builtin_to_string_vm(ctx, &rmv);
+        if (ctx.should_throw) return false;
+        if (rm_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "roundingMode must be a string"); return false; }
+        char[] v = rm_s.get_cstr()[:rm_s.blen];
+        if (v == "ceil") { *rm = TemporalRoundMode.CEIL; }
+        else if (v == "floor") { *rm = TemporalRoundMode.FLOOR; }
+        else if (v == "expand") { *rm = TemporalRoundMode.EXPAND; }
+        else if (v == "trunc") { *rm = TemporalRoundMode.TRUNC; }
+        else if (v == "halfCeil") { *rm = TemporalRoundMode.HALF_CEIL; }
+        else if (v == "halfFloor") { *rm = TemporalRoundMode.HALF_FLOOR; }
+        else if (v == "halfExpand") { *rm = TemporalRoundMode.HALF_EXPAND; }
+        else if (v == "halfTrunc") { *rm = TemporalRoundMode.HALF_TRUNC; }
+        else if (v == "halfEven") { *rm = TemporalRoundMode.HALF_EVEN; }
+        else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode"); return false; }
     }
     return true;
 }
@@ -6748,7 +6782,8 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
     int digits;
-    if (!to_string_precision(ctx, 0, &digits)) return;
+    TemporalRoundMode rm;
+    if (!to_string_precision(ctx, 0, &digits, &rm)) return;
 
     // Whole seconds and sub-second remainder, split toward zero. Read the
     // epoch-nanosecond value directly via to_int128 (no allocation), so no GC
@@ -6794,7 +6829,7 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
         n = libc::snprintf(&buf, 40, "+%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
             y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
     }
-    n += format_fractional_seconds(&buf[n], ns_rem, digits);
+    n += format_fractional_seconds(&buf[n], ns_rem, digits, rm);
     buf[n] = 'Z';
     n++;
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
@@ -8632,13 +8667,63 @@ fn void format_offset_seconds(char* buf, int off) {
 // offset with fractional seconds, the ±HH:MM offset, and (unless drop_zone) the
 // [Zone] bracket. `digits` is -1 for auto or 0..9. Reads epoch nanoseconds via
 // to_int128 so sub-second precision survives beyond 2^53.
-fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, int digits, bool drop_zone) {
+fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, int digits, TemporalRoundMode rm, bool drop_zone) {
+    // Re-read the full option set on the prototype's toString call (offset,
+    // timeZoneName, calendarName) — defaults match the spec: offset="auto",
+    // timeZoneName="auto", calendarName="auto".
+    int show_offset = 1;   // 1 = show, 0 = hide
+    int show_tz = 1;       // 1 = show, 0 = hide, 2 = critical flag
+    int show_cal = 0;      // 0 = auto (only non-iso), 1 = always, 2 = never, 3 = critical
+    if (ctx.argc >= 1) {
+        TVal ov = ctx.regs[ctx.base_reg + 0];
+        if (!ov.is_undefined() && ov.is_object() && ov.get_heapptr() != null) {
+            HObject* opts = (HObject*)ov.get_heapptr();
+            TVal offv = prop_or_undefined(opts, ctx.heap, "offset");
+            if (!offv.is_undefined()) {
+                HString* s = builtin_to_string_vm(ctx, &offv);
+                if (ctx.should_throw) return;
+                if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string"); return; }
+                char[] v = s.get_cstr()[:s.blen];
+                if (v == "auto") { show_offset = 1; }
+                else if (v == "never") { show_offset = 0; }
+                else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset option"); return; }
+            }
+            TVal tzv = prop_or_undefined(opts, ctx.heap, "timeZoneName");
+            if (!tzv.is_undefined()) {
+                HString* s = builtin_to_string_vm(ctx, &tzv);
+                if (ctx.should_throw) return;
+                if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "timeZoneName must be a string"); return; }
+                char[] v = s.get_cstr()[:s.blen];
+                if (v == "auto") { show_tz = 1; }
+                else if (v == "never") { show_tz = 0; }
+                else if (v == "critical") { show_tz = 2; }
+                else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid timeZoneName option"); return; }
+            }
+            TVal calv = prop_or_undefined(opts, ctx.heap, "calendarName");
+            if (!calv.is_undefined()) {
+                HString* s = builtin_to_string_vm(ctx, &calv);
+                if (ctx.should_throw) return;
+                if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "calendarName must be a string"); return; }
+                char[] v = s.get_cstr()[:s.blen];
+                if (v == "auto") { show_cal = 0; }
+                else if (v == "always") { show_cal = 1; }
+                else if (v == "never") { show_cal = 2; }
+                else if (v == "critical") { show_cal = 3; }
+                else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName option"); return; }
+            }
+        }
+    }
+    (void)show_cal;
     long epoch_secs;
     long ns_rem;
     if (b.fits_int128()) {
         int128 total = b.to_int128();
         long sec_trunc = (long)(total / 1000000000);
         ns_rem = (long)(total - (int128)sec_trunc * 1000000000);
+        if (ns_rem < 0) {
+            sec_trunc -= 1;
+            ns_rem += 1000000000;
+        }
         epoch_secs = sec_trunc;
     } else {
         double s_d;
@@ -8650,15 +8735,57 @@ fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, in
     int off = 0;
     if (tz != null) off = temporal::tzdb_offset_for_zone_at(zone, epoch_secs);
     long local_secs = epoch_secs + off;
+
+    // Round up to whole minute when smallestUnit == "minute" (digits == -10):
+    // collapse seconds + ns to a multiple of 60s using `rm`. After rounding
+    // the broken-down time's seconds/ms/us/ns are all zero.
+    if (digits == -10) {
+        long total_ns = local_secs * 1000000000 + ns_rem;
+        long rounded_total_ns = round_long_ns(total_ns, 60 * 1000000000L, rm);
+        local_secs = rounded_total_ns / 1000000000;
+        ns_rem = 0;
+    } else if (digits >= 0 && ns_rem != 0) {
+        // Round ns_rem to `digits` precision. If rounding pushes ns_rem over
+        // a whole second, carry the extra second into local_secs before
+        // recomputing the broken-down time.
+        long divisor = 1;
+        for (int i = 0; i < 9 - digits; i++) divisor *= 10;
+        long v = (long)round_num_to_incr((double)ns_rem / (double)divisor, 1.0, rm);
+        long new_ns_rem = v * divisor;
+        if (new_ns_rem >= 1000000000) {
+            local_secs += 1;
+            new_ns_rem -= 1000000000;
+        }
+        ns_rem = new_ns_rem;
+    }
+
     temporal::BrokenDownTime bd = temporal::civil_from_seconds(local_secs);
     char[64] buf;
-    int n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
-        bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
-    n += format_fractional_seconds(&buf[n], ns_rem, digits);
+    int n;
+    if (digits == -10) {
+        // Minute smallestUnit: print YYYY-MM-DDTHH:MM with no seconds.
+        n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld",
+            bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi);
+    } else {
+        n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+            bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        n += format_fractional_seconds(&buf[n], ns_rem, digits, rm);
+    }
     format_offset_seconds(&buf[n], off);
-    n += 6;
-    if (!drop_zone && zone.len > 0 && zone.ptr != null) {
-        int zn = libc::snprintf(&buf[n], 64 - (usz)n, "[%s]", (char*)zone.ptr);
+    if (show_offset == 1) n += 6;
+    if (!drop_zone && zone.len > 0 && zone.ptr != null && show_tz > 0) {
+        int zn = libc::snprintf(&buf[n], 64 - (usz)n, (show_tz == 2) ? "[!%s]" : "[%s]", (char*)zone.ptr);
+        n += zn;
+    }
+    // Calendar name suffix per spec: auto omits for ISO, always and critical
+    // include it (`critical` with `!`), never never adds it.
+    bool include_cal = false;
+    bool cal_critical = false;
+    if (show_cal == 1) { include_cal = true; }
+    else if (show_cal == 3) { include_cal = true; cal_critical = true; }
+    // show_cal == 0 (auto) and show_cal == 2 (never) both leave include_cal false.
+    if (include_cal && 64 - (usz)n > 12) {
+        int zn = libc::snprintf(&buf[n], 64 - (usz)n, cal_critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]");
         n += zn;
     }
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
@@ -8668,8 +8795,9 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
     int digits;
-    if (!to_string_precision(ctx, 0, &digits)) return;
-    zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, digits, false);
+    TemporalRoundMode rm;
+    if (!to_string_precision(ctx, 0, &digits, &rm)) return;
+    zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, digits, rm, false);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_toJSON(BuiltinContext* ctx) {
@@ -8677,7 +8805,7 @@ fn void builtin_temporal_zoneddatetime_proto_toJSON(BuiltinContext* ctx) {
     // precision, so the string round-trips through from() in the same zone.
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, -1, true);
+    zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, -1, TemporalRoundMode.TRUNC, true);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
