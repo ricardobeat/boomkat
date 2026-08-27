@@ -962,6 +962,159 @@ fn void builtin_temporal_duration_from(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
+fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
+    if (ctx.argc < 2) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Duration.compare requires two arguments");
+        return;
+    }
+    temporal::DurationParts da;
+    if (!duration_from_arg(ctx, arg_at(ctx, 0), &da)) return;
+    temporal::DurationParts db;
+    if (!duration_from_arg(ctx, arg_at(ctx, 1), &db)) return;
+
+    // Options bag: must be an object or undefined.
+    HObject* opts = null;
+    if (ctx.argc >= 3 && !arg_at(ctx, 2).is_undefined()) {
+        TVal* ov = arg_at(ctx, 2);
+        if (!ov.is_object() || ov.get_heapptr() == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object or undefined");
+            return;
+        }
+        opts = (HObject*)ov.get_heapptr();
+    }
+
+    // relativeTo -- mirrors builtin_temporal_duration_proto_round's relativeTo block.
+    HObject* relative_to = null;
+    if (opts != null) {
+        TVal rv = prop_or_undefined_pa(ctx, opts, "relativeTo");
+        if (ctx.should_throw) return;
+        if (!rv.is_undefined()) {
+            if (rv.is_object() && rv.get_heapptr() != null) {
+                HObject* ro = (HObject*)rv.get_heapptr();
+                if (ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE ||
+                    ro.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+                    relative_to = ro;
+                } else {
+                    // Try as property bag with year, month, day.
+                    TVal yv = prop_or_undefined_pa(ctx, ro, "year");
+                    if (ctx.should_throw) return;
+                    TVal mv = prop_or_undefined_pa(ctx, ro, "month");
+                    if (ctx.should_throw) return;
+                    TVal dv = prop_or_undefined_pa(ctx, ro, "day");
+                    if (ctx.should_throw) return;
+                    if (!yv.is_undefined() && !mv.is_undefined() && !dv.is_undefined()) {
+                        Vm* v = (Vm*)ctx.vm;
+                        double yd = vm::vm_to_number(v, &yv);
+                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+                        double md = vm::vm_to_number(v, &mv);
+                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+                        double dd = vm::vm_to_number(v, &dv);
+                        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+                        if (math::is_nan(yd) || math::is_inf(yd) || math::is_nan(md) || math::is_inf(md) || math::is_nan(dd) || math::is_inf(dd)) {
+                            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo properties must be finite");
+                            return;
+                        }
+                        temporal::CivilDate pd = { .y = (long)yd, .m = (long)md, .d = (long)dd };
+                        if (!temporal::is_valid_iso_date(pd.y, (int)pd.m, (int)pd.d)) {
+                            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo date is out of range");
+                            return;
+                        }
+                        HObject*? dt_o = alloc_plain_date(ctx.heap, pd, ctx.heap.temporal_iso_calendar);
+                        if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+                        relative_to = dt_o;
+                    } else {
+                        builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a PlainDate, PlainDateTime, or property bag");
+                        return;
+                    }
+                }
+            } else if (rv.is_string()) {
+                HString* rs = builtin_to_string_vm(ctx, &rv);
+                if (ctx.should_throw) return;
+                temporal::ParsedIsoDateTime p;
+                if (!temporal::parse_iso_date_string(rs.get_cstr()[:rs.blen], &p)) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid relativeTo string");
+                    return;
+                }
+                if (p.has_time) {
+                    temporal::CivilDateTime dt = {
+                        .date = { .y = p.year, .m = p.month, .d = p.day },
+                        .time = { .h = p.hour, .mi = p.minute, .s = p.second,
+                                  .ms = p.nanos / 1000000, .us = (p.nanos / 1000) % 1000,
+                                  .ns = p.nanos % 1000 },
+                    };
+                    HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+                    if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+                    relative_to = dt_o;
+                } else {
+                    temporal::CivilDate dd = { .y = p.year, .m = p.month, .d = p.day };
+                    HObject*? dt_o = alloc_plain_date(ctx.heap, dd, ctx.heap.temporal_iso_calendar);
+                    if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+                    relative_to = dt_o;
+                }
+            } else {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo must be a string or object");
+                return;
+            }
+        }
+    }
+
+    if (relative_to == null) {
+        if (is_cal_unit(default_largest_unit(da)) || is_cal_unit(default_largest_unit(db))) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is required to compare durations with calendar units");
+            return;
+        }
+        int128 na = duration_to_time_ns(da);
+        int128 nb = duration_to_time_ns(db);
+        long cmp = na < nb ? -1 : (na > nb ? 1 : 0);
+        ctx.result.set_number((double)cmp);
+        return;
+    }
+
+    // With relativeTo: add each duration's date part to relativeTo's date and
+    // compute total nanoseconds relative to that same origin, then compare.
+    CivilDate rel_date = { .y = relative_to.extra.temporal.long_a,
+                           .m = relative_to.extra.temporal.long_b,
+                           .d = relative_to.extra.temporal.long_c };
+
+    int128 total_a = duration_total_ns_from(rel_date, da);
+    int128 total_b = duration_total_ns_from(rel_date, db);
+    long cmp = total_a < total_b ? -1 : (total_a > total_b ? 1 : 0);
+    ctx.result.set_number((double)cmp);
+}
+
+// Adds a duration's date part (years/months/weeks/days, with days folded in
+// from time-only overflow) to `rel_date` and returns the total nanoseconds
+// from `rel_date` (midnight) to the resulting date-time. Mirrors the
+// relativeTo path of builtin_temporal_duration_proto_round.
+fn int128 duration_total_ns_from(CivilDate rel_date, temporal::DurationParts dur) {
+    int128 time_only_ns = (int128)0;
+    time_only_ns += (int128)dur.hours   * 3600000000000L;
+    time_only_ns += (int128)dur.minutes *   60000000000L;
+    time_only_ns += (int128)dur.seconds *    1000000000L;
+    time_only_ns += (int128)dur.ms      *       1000000L;
+    time_only_ns += (int128)dur.us      *          1000L;
+    time_only_ns += (int128)dur.ns;
+
+    long target_time_days = (long)(time_only_ns / 86400000000000L);
+    int128 target_time_rem = time_only_ns % 86400000000000L;
+    if (time_only_ns < 0 && target_time_rem != 0) {
+        target_time_days -= 1;
+        target_time_rem += 86400000000000L;
+    }
+
+    long adj_days = dur.days + target_time_days;
+
+    CivilDate target_date = rel_date;
+    if (dur.years != 0) target_date = temporal::add_months(target_date, dur.years * 12, temporal::OverflowKind.CONSTRAIN);
+    if (dur.months != 0) target_date = temporal::add_months(target_date, dur.months, temporal::OverflowKind.CONSTRAIN);
+    if (dur.weeks != 0) target_date = temporal::add_days(target_date, dur.weeks * 7);
+    if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
+
+    long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
+    long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
+    return (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
+}
+
 // Shared coercion from a string, Duration, or property bag into a Duration.
 // Returns true on success; on failure throws and writes `ctx.should_throw`.
 // Reused by the + / - / until / since / round operations on every Temporal
@@ -2571,6 +2724,29 @@ fn void builtin_temporal_plain_date_proto_equals(BuiltinContext* ctx) {
     temporal::CivilDate b = plain_date_value(other_pd);
     bool same_cal = obj.extra.temporal.calendar == other_pd.extra.temporal.calendar;
     ctx.result.set_boolean(same_cal && temporal::date_equals(a, b));
+}
+
+fn void builtin_temporal_plain_date_proto_toPlainDateTime(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+
+    temporal::CivilTime t = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+    if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
+        TVal* arg = arg_at(ctx, 0);
+        HObject*? time_o = plain_time_from_arg(ctx, arg);
+        if (ctx.should_throw) return;
+        HObject* time_obj = time_o!!;
+        t = plain_time_value(time_obj);
+    }
+
+    temporal::CivilDate d = plain_date_value(obj);
+    temporal::CivilDateTime result = { .date = d, .time = t };
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj2 = obj_o;
+    obj2.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.result.set_object(obj2);
 }
 
 fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
@@ -5021,6 +5197,53 @@ fn void builtin_temporal_plain_yearmonth_proto_toJSON(BuiltinContext* ctx) {
     builtin_temporal_plain_yearmonth_proto_toString(ctx);
 }
 
+// ToTemporalYearMonth coercion for equals(): unlike plain_yearmonth_from_arg
+// (used by compare/until/since, which require an actual PlainYearMonth),
+// equals must accept the full ISO string / property-bag forms that
+// Temporal.PlainYearMonth.from accepts. This mirrors
+// builtin_temporal_plain_yearmonth_from's coercion exactly (minus the
+// options-bag overflow read, which equals does not take).
+fn HObject*? plain_yearmonth_from_arg_full(BuiltinContext* ctx, TVal* arg) {
+    Vm* v = (Vm*)ctx.vm;
+    long vy = 0; int vm = 1; int vd = 1;
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        if (!temporal::parse_iso_yearmonth_string(text, &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO year-month string");
+            return null;
+        }
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Z designator is not allowed");
+            return null;
+        }
+        vy = p.year; vm = p.month; vd = p.day;
+        if (!fields_to_valid_yearmonth(ctx, vy, vm, vd, temporal::OverflowKind.CONSTRAIN, &vy, &vm, &vd)) return null;
+    } else if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH) return o;
+        HObject* calendar = ctx.heap.temporal_iso_calendar;
+        TVal cal_v = prop_or_undefined_pa(ctx, o, "calendar");
+        if (!cal_v.is_undefined()) {
+            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return null;
+        }
+        long y; int m; int d;
+        if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return null;
+        }
+        if (!fields_to_valid_yearmonth(ctx, y, m, d, temporal::OverflowKind.CONSTRAIN, &vy, &vm, &vd)) return null;
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a string or object");
+        return null;
+    }
+    HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, vy, vm, vd, ctx.heap.temporal_iso_calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+    return obj_o;
+}
+
 fn void builtin_temporal_plain_yearmonth_proto_equals(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
@@ -5030,27 +5253,17 @@ fn void builtin_temporal_plain_yearmonth_proto_equals(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (arg.is_object() && arg.get_heapptr() != null) {
-        HObject* other = (HObject*)arg.get_heapptr();
-        if (other.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH) {
-            long ay = plain_yearmonth_y(obj);
-            long by = plain_yearmonth_y(other);
-            int am = plain_yearmonth_m(obj);
-            int bm = plain_yearmonth_m(other);
-            bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
-            ctx.result.set_boolean(same_cal && ay == by && am == bm);
-            return;
-        }
-    }
-    HObject*? other_o = plain_yearmonth_from_arg(ctx, arg);
+    HObject*? other_o = plain_yearmonth_from_arg_full(ctx, arg);
     if (ctx.should_throw) return;
     HObject* other = other_o!!;
     long ay = plain_yearmonth_y(obj);
     long by = plain_yearmonth_y(other);
     int am = plain_yearmonth_m(obj);
     int bm = plain_yearmonth_m(other);
+    int ad = plain_yearmonth_day(obj);
+    int bd = plain_yearmonth_day(other);
     bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
-    ctx.result.set_boolean(same_cal && ay == by && am == bm);
+    ctx.result.set_boolean(same_cal && ay == by && am == bm && ad == bd);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
@@ -5941,6 +6154,7 @@ fn bool setUpTemporalDuration(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "round", Builtin.TEMPORAL_DURATION_PROTO_ROUND.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "total", Builtin.TEMPORAL_DURATION_PROTO_TOTAL.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_DURATION_FROM.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_DURATION_COMPARE.ordinal)) return false;
 
     heap.temporal_duration_proto = proto;
     return true;
@@ -6073,6 +6287,7 @@ fn bool setUpTemporalPlainDate(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_DATE_PROTO_UNTIL.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_DATE_PROTO_SINCE.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "withCalendar", Builtin.TEMPORAL_PLAIN_DATE_PROTO_WITHCALENDAR.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toPlainDateTime", Builtin.TEMPORAL_PLAIN_DATE_PROTO_TOPLAINDATETIME.ordinal)) return false;
 
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_DATE_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_DATE_COMPARE.ordinal)) return false;
@@ -6296,6 +6511,7 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "weekOfYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WEEKOFYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAROFWEEK.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "daysInWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINWEEK.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_ADD.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_SUBTRACT.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_UNTIL.ordinal)) return false;
