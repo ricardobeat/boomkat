@@ -8297,7 +8297,24 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
-            ctx.result.set_object(o);
+            // Per spec, a ZonedDateTime argument produces a copy rather
+            // than the same instance. The shared sub-objects (time-zone,
+            // calendar) are incref'd in `alloc_zoneddatetime` so this
+            // copy keeps the original reachable through them.
+            hbigint::HBigInt* src_ns = o.extra.temporal.big_ns;
+            HObject* src_tz = o.extra.temporal.timezone;
+            HString* src_cal = (HString*)o.extra.temporal.calendar;
+            hbigint::HBigInt*? big_o = hbigint::hbigint_copy(ctx.heap, src_ns);
+            if (catch err = big_o) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Instant copy failed");
+                return;
+            }
+            HObject*? obj_o = alloc_zoneddatetime(ctx.heap, big_o, src_tz, src_cal);
+            ctx.heap.decref((types::HeapHeader*)big_o);
+            if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* obj = obj_o;
+            obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
+            ctx.result.set_object(obj);
             return;
         }
         // Property bag.
