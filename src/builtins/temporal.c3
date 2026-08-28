@@ -4465,6 +4465,30 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             ctx.result.set_object(o);
             return;
         }
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            // ZonedDateTime → PlainDateTime: read the wall-clock fields of
+            // the ZDT directly via zdt_wall_fields and synthesize a PDT.
+            // The ZDT body methods don't expose day/hour/... as normal
+            // object properties, so the bag-reading path can't extract them.
+            long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
+            zdt_wall_fields(o, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
+            (void)off;
+            temporal::OverflowKind _clone_overflow;
+            if (!read_overflow_option(ctx, 1, &_clone_overflow)) return;
+            temporal::CivilDate valid_d;
+            temporal::CivilTime valid_t = {
+                .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns,
+            };
+            if (!fields_to_valid_date(ctx, { .y = wy, .m = (int)wm, .d = (int)wd }, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
+            if (!fields_to_valid_time(ctx, valid_t, &valid_t)) return;
+            temporal::CivilDateTime dt = { .date = valid_d, .time = valid_t };
+            HObject*? res = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* obj = res;
+            obj.prototype = ctx.heap.temporal_plain_datetime_proto;
+            ctx.result.set_object(obj);
+            return;
+        }
         // Property bag: read fields first, then overflow option. The
         // `calendar` field is read inside bag_to_datetime_fields (via
         // bag_to_fields), so we don't double-read it here. The monthCode
@@ -8312,6 +8336,28 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
             ctx.result.set_object(obj);
             return;
         }
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            // Fast path for ZonedDateTime → Instant: copy the [[Nanoseconds]]
+            // directly. Avoids coercing via toString (which would defeat the
+            // identity check in checkToTemporalInstantFastPath).
+            hbigint::HBigInt* src = o.extra.temporal.big_ns;
+            hbigint::HBigInt*? b_o = hbigint::hbigint_copy(ctx.heap, src);
+            if (catch err = b_o) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Instant.from: ZDT copy failed");
+                return;
+            }
+            HObject*? obj_o = alloc_instant(ctx.heap, b_o);
+            if (catch err2 = obj_o) {
+                ctx.heap.decref((types::HeapHeader*)b_o);
+                builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+                return;
+            }
+            HObject* obj = obj_o;
+            ctx.heap.decref((types::HeapHeader*)b_o);
+            obj.prototype = ctx.heap.temporal_instant_proto;
+            ctx.result.set_object(obj);
+            return;
+        }
         // Non-Instant object: ToPrimitive(string) — same shape as
         // ToTemporalInstant for the object branch. The primitive must
         // be a string for the parse path; everything else throws
@@ -11891,6 +11937,13 @@ fn void zdt_wall_fields(HObject* zdt, long* wy, long* wm, long* wd,
     int128 total = b.to_int128();
     long epoch_secs = (long)(total / 1000000000);
     long ns_rem = (long)(total - (int128)epoch_secs * 1000000000);
+    // Floor toward -inf so a negative epoch carries its sub-second part as
+    // a positive remainder on the previous civil second (per
+    // GetISOPartsFromEpoch).
+    if (ns_rem < 0) {
+        epoch_secs -= 1;
+        ns_rem += 1000000000;
+    }
     String zone = (tz != null) ? timezone_name(tz) : (String)"";
     int off = 0;
     if (zone.len > 0 && zone.ptr != null) off = temporal::tzdb_offset_for_zone_at(zone, epoch_secs);
