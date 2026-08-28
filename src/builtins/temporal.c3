@@ -851,6 +851,17 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) return o;
+        // PlainDateTime → PlainDate fast path: extract the date directly
+        // from internal slots, skipping property-bag reading (which can't
+        // see internal slots). Per ToTemporalDate step 2.b.
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            temporal::CivilDate cd = plain_date_value(o);
+            HObject*? res = alloc_plain_date(ctx.heap, cd, ctx.heap.temporal_iso_calendar);
+            if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+            HObject* r = res;
+            r.prototype = ctx.heap.temporal_plain_date_proto;
+            return r;
+        }
         temporal::CivilDate fields;
         long _ep;
         bool have_mc;
