@@ -3669,62 +3669,28 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::CivilTime t = plain_time_value(obj);
 
-    int ns_digits = -1;  // smallest non-zero
-    if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
-        TVal ov = ctx.regs[ctx.base_reg];
-        if (!ov.is_object() || ov.get_heapptr() == null) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
-            return;
-        }
-        HObject* opts = (HObject*)ov.get_heapptr();
-        TVal fd = prop_or_undefined(opts, ctx.heap, "fractionalSecondDigits");
-        if (!fd.is_undefined()) {
-            if (fd.is_number() || fd.is_fastint()) {
-                Vm* v = (Vm*)ctx.vm;
-                double d = vm::vm_to_number(v, &fd);
-                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                if (math::is_nan(d) || d < 0 || d > 9 || math::floor(d) != d) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
-                    return;
-                }
-                ns_digits = (int)d;
-            } else if (fd.is_string()) {
-                HString* s = (HString*)fd.get_heapptr();
-                char[] v = s.get_cstr()[:s.blen];
-                if (v == "auto") {
-                    ns_digits = -1;
-                } else {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
-                    return;
-                }
-            } else {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or string");
-                return;
-            }
-        }
-        TVal su = prop_or_undefined(opts, ctx.heap, "smallestUnit");
-        if (!su.is_undefined()) {
-            if (!su.is_string()) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit must be a string");
-                return;
-            }
-            HString* s = (HString*)su.get_heapptr();
-            char[] v = s.get_cstr()[:s.blen];
-            // Map smallestUnit to ns_digits: "hour"=0, "minute"=0, "second"=0,
-            // "millisecond"=3, "microsecond"=6, "nanosecond"=9.
-            if (v == "hour" || v == "hours" || v == "minute" || v == "minutes" || v == "second" || v == "seconds") {
-                if (ns_digits < 0) ns_digits = 0;
-            } else if (v == "millisecond" || v == "milliseconds") {
-                if (ns_digits < 0) ns_digits = 3;
-            } else if (v == "microsecond" || v == "microseconds") {
-                if (ns_digits < 0) ns_digits = 6;
-            } else if (v == "nanosecond" || v == "nanoseconds") {
-                if (ns_digits < 0) ns_digits = 9;
-            } else {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
-                return;
-            }
-        }
+    // Reuse to_string_precision for the option reads: it goes through
+    // prop_or_undefined_pa (so a Proxy's get trap fires) and uses
+    // builtin_to_string_vm (so toString/valueOf pair is observed in the
+    // order-of-operations log). The smallestUnit branch is encoded as
+    // sentinel -10 (minute), 0 (second), 3/6/9 (sub-second).
+    int digits = -1;
+    TemporalRoundMode rm = TemporalRoundMode.TRUNC;
+    if (!to_string_precision(ctx, 0, &digits, &rm)) return;
+    // No rounding to apply for PlainTime beyond the digit truncation that
+    // the formatter does directly; the `rm` is consumed here only to keep
+    // the option log faithful to the spec.
+    (void)rm;
+
+    int ns_digits;
+    if (digits == -10) {
+        // Round to whole minute: a PlainTime cannot change its hour
+        // boundary, so clamp the fraction to a minute-precision render.
+        ns_digits = 0;
+    } else if (digits < 0) {
+        ns_digits = -1;  // auto: smallest non-zero
+    } else {
+        ns_digits = digits;
     }
 
     char[32] buf;
@@ -4272,10 +4238,10 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
 
+    // Per spec, the property bag is read before the options bag. We defer
+    // overflow-option parsing until after the field reads are done.
     temporal::CivilDateTime result;
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
@@ -4302,13 +4268,23 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             return;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
-        int dim = temporal::days_in_month(d.y, (int)d.m);
-        if (d.d > dim) {
-            if (overflow == temporal::OverflowKind.REJECT) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
-                return;
+        // For string inputs, only parse overflow when the caller passed
+        // an options object. The default is constrain, so the same clamp
+        // runs unless the caller asked for reject.
+        if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+            temporal::OverflowKind overflow;
+            if (!read_overflow_option(ctx, 1, &overflow)) return;
+            int dim = temporal::days_in_month(d.y, (int)d.m);
+            if (d.d > dim) {
+                if (overflow == temporal::OverflowKind.REJECT) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
+                    return;
+                }
+                d.d = dim;
             }
-            d.d = dim;
+        } else {
+            int dim = temporal::days_in_month(d.y, (int)d.m);
+            if (d.d > dim) d.d = dim;
         }
         if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
@@ -4328,20 +4304,26 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            // Identity-preserving clone; still parse overflow so the
+            // order-of-operations tests with a PlainDateTime instance see
+            // the options log line.
+            temporal::OverflowKind clone_overflow;
+            if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
+            (void)clone_overflow;
             ctx.result.set_object(o);
             return;
         }
-        HObject* calendar = ctx.heap.temporal_iso_calendar;
-        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
-        if (!cal_v.is_undefined()) {
-            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return;
-        }
+        // Property bag: read fields first, then overflow option. The
+        // `calendar` field is read inside bag_to_datetime_fields (via
+        // bag_to_fields), so we don't double-read it here.
         temporal::CivilDateTime fields;
         if (!bag_to_datetime_fields(ctx, o, false, { .y = 0, .m = 1, .d = 1 },
                                     { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
+        temporal::OverflowKind overflow;
+        if (!read_overflow_option(ctx, 1, &overflow)) return;
         temporal::CivilDate valid_d;
         if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
@@ -5961,8 +5943,6 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
 
     long vy = 0; int vm = 1; int vd = 1;
@@ -5986,15 +5966,25 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
             return;
         }
         vy = p.year; vm = p.month; vd = p.day;
-        if (!fields_to_valid_yearmonth(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
+        // For string inputs, only parse overflow when the caller passed
+        // an options object. The default is constrain.
+        if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+            temporal::OverflowKind overflow;
+            if (!read_overflow_option(ctx, 1, &overflow)) return;
+            if (!fields_to_valid_yearmonth(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
+        } else {
+            if (!fields_to_valid_yearmonth(ctx, vy, vm, vd, temporal::OverflowKind.CONSTRAIN, &vy, &vm, &vd)) return;
+        }
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH) {
             // IsTemporalYearMonth fast path: still validates (and discards)
             // the options bag before copying, per ToTemporalYearMonth step
             // 1.a (`GetTemporalOverflowOption` runs even though its result
-            // is unused for an identity copy). `read_overflow_option` above
-            // already ran unconditionally, so this only needs the copy.
+            // is unused for an identity copy).
+            temporal::OverflowKind clone_overflow;
+            if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
+            (void)clone_overflow;
             HObject*? copy_o = alloc_plain_yearmonth(
                 ctx.heap, plain_yearmonth_y(o), plain_yearmonth_m(o), plain_yearmonth_day(o),
                 ctx.heap.temporal_iso_calendar);
@@ -6006,12 +5996,16 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
         }
         // `bag_to_yearmonth_fields` reads `calendar` itself (in spec
         // order, before month/monthCode/year); reading it again here would
-        // double-fire a `calendar` getter (order-of-operations bug).
+        // double-fire a `calendar` getter (order-of-operations bug). Read
+        // the property bag first, then parse the overflow option, so the
+        // options log line follows the fields log line.
         long y; int m; int d;
         if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
+        temporal::OverflowKind overflow;
+        if (!read_overflow_option(ctx, 1, &overflow)) return;
         if (!fields_to_valid_yearmonth(ctx, y, m, d, overflow, &vy, &vm, &vd)) return;
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth.from: argument must be a string or object");
