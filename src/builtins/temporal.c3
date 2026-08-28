@@ -453,15 +453,27 @@ fn bool parse_month_code(BuiltinContext* ctx, TVal tv, int* out) {
 
 // Read a PlainDate property bag (from / with / compare / until args).
 // `keep_missing` tells with() to fall back to the current date's fields.
+// `read_tz` controls whether the spec's RejectObjectWithCalendarOrTimeZone
+// step fires a `get` trap for `timeZone` (true for `with`, false for `from`).
 // Runs the era/eraYear rejection, month/monthCode agreement check, and
 // calendar-property resolution that the single-ISO-calendar engine needs.
 // Property reads happen in the spec order (calendar, day, month, monthCode,
 // year) so observers (test262 propertyBagObserver) see the right sequence
 // and valueOf/toString fire right after their property.
-fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
+//
+// The ISO monthCode suitability check (M01..M12, no `L` suffix) is NOT
+// performed here — the caller runs check_iso_monthcode_suitability after
+// read_overflow_option so the options bag is observed even when the field
+// bag is invalid (test262 options-read-before-algorithmic-validation).
+// `out_have_mc`, `out_mci`, and `out_mc_v` report the parsed monthCode so
+// the caller can do that check.
+fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing, bool read_tz,
                       temporal::CivilDate cur, temporal::CivilDate* out,
-                      long* out_epoch_days) {
+                      long* out_epoch_days,
+                      bool* out_have_mc, int* out_mci, TVal* out_mc_v) {
     Vm* v = (Vm*)ctx.vm;
+
+    *out_have_mc = false;
 
     // Read `calendar` first so the spec's property-read order is observed
     // (test262's `order-of-operations`). Anything other than an iso8601
@@ -474,10 +486,10 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
             if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
         }
     }
-    // Probe timeZone (read for order-of-operations parity with the spec,
-    // even though the ISO calendar's PrepareTemporalFields discards the
-    // value; it must still fire the proxy `get` trap).
-    {
+    if (read_tz) {
+        // RejectObjectWithCalendarOrTimeZone: `with()` must probe timeZone
+        // even though the ISO calendar's PrepareTemporalFields discards the
+        // value; from() does not read timeZone at all.
         TVal tz_v = prop_or_undefined_pa(ctx, bag, "timeZone");
         if (!tz_v.is_undefined()) {
             // Validate the value via to_temporal_tz; the resulting object
@@ -537,20 +549,23 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     // monthCode — read and validate the syntax BEFORE year so a malformed
     // monthCode (e.g. "L99M") raises RangeError even when year is a Symbol
     // that would otherwise raise TypeError first. test262 `monthcode-invalid.js`.
+    // The parsed value is reported to the caller via out_mc_v/out_mci so
+    // check_iso_monthcode_suitability can run it after read_overflow_option.
     TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
-    bool have_mc = false;
     long mci = 0;
     if (!mc_v.is_undefined()) {
         int mci_int;
         if (!parse_month_code(ctx, mc_v, &mci_int)) return false;
         mci = mci_int;
-        have_mc = true;
+        *out_have_mc = true;
+        *out_mci = mci_int;
+        *out_mc_v = mc_v;
     }
-    if (have_month && have_mc && mv != mci) {
+    if (have_month && *out_have_mc && mv != mci) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
         return false;
     }
-    if (have_mc) {
+    if (*out_have_mc) {
         m = mci;
     } else if (have_month) {
         m = mv;
@@ -572,32 +587,39 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
         return false;
     }
 
-    // CalendarResolveFields / monthCodeFromFields: validate monthCode
-    // suitability for the ISO calendar after the year type has been
-    // checked. ISO accepts M01..M12 only — anything else is unsuitable.
-    // (L-suffixed codes are non-ISO lunisolar and rejected.) The
-    // suitability check fires after `year` is read so a Symbol() year
-    // raises TypeError first (test262 `monthcode-invalid.js`).
-    if (have_mc) {
-        if (mci < 1 || mci > 12) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "monthCode not valid for ISO 8601 calendar");
-            return false;
-        }
-        HString* mc_s = (HString*)mc_v.get_heapptr();
-        if (mc_s != null && !mc_s.is_symbol()) {
-            String mc_text = (String)mc_s.get_cstr()[:mc_s.blen];
-            if (mc_text.len == 4) {
-                // "MxxL" — only valid for lunisolar calendars; ISO rejects.
-                builtin_throw(ctx, ctx.heap.range_err_proto, "monthCode not valid for ISO 8601 calendar");
-                return false;
-            }
-        }
-    }
+    // The ISO calendar's CalendarResolveFields / monthCodeFromFields
+    // suitability check runs AFTER read_overflow_option in the callers,
+    // not here, so the options bag is observed even when the field bag
+    // is invalid (test262 options-read-before-algorithmic-validation).
 
     out.y = y;
     out.m = (int)m;
     out.d = (int)d;
     *out_epoch_days = temporal::epoch_days_from_civil(y, (int)m, (int)d);
+    return true;
+}
+
+// Validate monthCode suitability for the ISO calendar. Called by the from/with
+// methods AFTER read_overflow_option so the options bag is observed even when
+// the field bag is invalid (test262 options-read-before-algorithmic-validation).
+// `have_mc` reports whether the bag supplied a monthCode; when false this is a
+// no-op. `mc_v` is the original TVal — Symbol values skip the L-suffix length
+// check because the parse_month_code syntax check has already produced an int.
+fn bool check_iso_monthcode_suitability(BuiltinContext* ctx, bool have_mc, int mci, TVal mc_v) {
+    if (!have_mc) return true;
+    if (mci < 1 || mci > 12) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "monthCode not valid for ISO 8601 calendar");
+        return false;
+    }
+    HString* mc_s = (HString*)mc_v.get_heapptr();
+    if (mc_s != null && !mc_s.is_symbol()) {
+        String mc_text = (String)mc_s.get_cstr()[:mc_s.blen];
+        if (mc_text.len == 4) {
+            // "MxxL" — only valid for lunisolar calendars; ISO rejects.
+            builtin_throw(ctx, ctx.heap.range_err_proto, "monthCode not valid for ISO 8601 calendar");
+            return false;
+        }
+    }
     return true;
 }
 
@@ -670,8 +692,11 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
         }
         h = (int)lv;
     } else if (!keep_missing) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "missing hour property");
-        return false;
+        // Per spec, all six time fields default to 0 when omitted from the
+        // bag — Temporal.PlainDateTime.from({year, month, day}) is valid
+        // (test262 argument-propertybag-optional-properties.js). Only fall
+        // back to `cur` when the caller asked for with() semantics.
+        h = 0;
     }
     if (!mi_v.is_undefined()) {
         if (!to_integer_with_truncation(v, &mi_v, &lv)) {
@@ -776,13 +801,21 @@ fn bool fields_to_valid_time(BuiltinContext* ctx, temporal::CivilTime fields, te
 // Read a PlainDateTime property bag: y/m/d + the six time fields. Missing
 // date fields default to `cur_date`; missing time fields default to
 // `cur_time` (00:00:00 for the constructor, the current time for `with`).
-fn bool bag_to_datetime_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
+// `read_tz` is passed through to bag_to_fields so PlainDateTime.prototype.with
+// fires the RejectObjectWithCalendarOrTimeZone probe and PlainDateTime.from
+// does not. The monthCode suitability check is NOT performed here — callers
+// run check_iso_monthcode_suitability after read_overflow_option; the
+// reported values are passed via out_have_mc/out_mci/out_mc_v so the caller
+// can run that check on the right TVal.
+fn bool bag_to_datetime_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing, bool read_tz,
                                 temporal::CivilDate cur_date, temporal::CivilTime cur_time,
-                                temporal::CivilDateTime* out) {
+                                temporal::CivilDateTime* out,
+                                bool* out_have_mc, int* out_mci, TVal* out_mc_v) {
     Vm* v = (Vm*)ctx.vm;
     temporal::CivilDate date_fields;
     long _ep;
-    if (!bag_to_fields(ctx, bag, keep_missing, cur_date, &date_fields, &_ep)) {
+    if (!bag_to_fields(ctx, bag, keep_missing, read_tz, cur_date, &date_fields, &_ep,
+                       out_have_mc, out_mci, out_mc_v)) {
         return false;
     }
     temporal::CivilTime t;
@@ -802,8 +835,13 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) return o;
         temporal::CivilDate fields;
         long _ep;
-        if (!bag_to_fields(ctx, o, false, { .y = 0, .m = 1, .d = 1 }, &fields, &_ep)) return null;
+        bool have_mc;
+        int mci;
+        TVal mc_v;
+        if (!bag_to_fields(ctx, o, false, false, { .y = 0, .m = 1, .d = 1 }, &fields, &_ep,
+                           &have_mc, &mci, &mc_v)) return null;
         temporal::CivilDate valid;
+        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) return null;
         if (!fields_to_valid_date(ctx, fields, temporal::OverflowKind.CONSTRAIN, &valid)) return null;
         HObject*? res = alloc_plain_date(ctx.heap, valid, ctx.heap.temporal_iso_calendar);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
@@ -1161,7 +1199,11 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
         Vm* v = (Vm*)ctx.vm;
         temporal::CivilDateTime cur = { .date = { .y = 1970, .m = 1, .d = 1 }, .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 } };
         temporal::CivilDateTime fields;
-        if (!bag_to_datetime_fields(ctx, ro, true, cur.date, cur.time, &fields)) {
+        bool _have_mc;
+        int _mci;
+        TVal _mc_v;
+        if (!bag_to_datetime_fields(ctx, ro, true, false, cur.date, cur.time, &fields,
+                                    &_have_mc, &_mci, &_mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return false;
         }
@@ -2816,17 +2858,25 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
             ctx.result.set_object(o);
             return;
         }
-        // Property bag: the `calendar` field is read inside bag_to_fields
-        // (which also drives the day/month/monthCode/year read order), so
-        // the overflow option is the only thing left to read after that.
+        // Property bag: read fields first, then the overflow option. The
+        // monthCode suitability check runs AFTER the option bag so the
+        // options bag is observed even when the field bag is unsuitable
+        // (test262 options-read-before-algorithmic-validation).
         temporal::CivilDate fields;
         long _ep;
-        if (!bag_to_fields(ctx, o, false, { .y = 0, .m = 1, .d = 1 }, &fields, &_ep)) {
+        bool have_mc;
+        int mci;
+        TVal mc_v;
+        if (!bag_to_fields(ctx, o, false, false, { .y = 0, .m = 1, .d = 1 }, &fields, &_ep,
+                           &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
         temporal::OverflowKind overflow;
         if (!read_overflow_option(ctx, 1, &overflow)) return;
+        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
+            return;
+        }
         if (!fields_to_valid_date(ctx, fields, overflow, &result)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
@@ -3229,11 +3279,17 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     // Spec order: validate the field bag (base ranges reject regardless of
     // overflow) before reading options, so a primitive options type does not
     // shadow a RangeError on the bag itself. The full validity check below
-    // re-runs with the resolved overflow.
+    // re-runs with the resolved overflow. The monthCode suitability check
+    // runs AFTER read_overflow_option so the options bag is observed even
+    // when the field bag is unsuitable (test262
+    // options-read-before-algorithmic-validation).
     temporal::CivilDate cur = plain_date_value(obj);
     temporal::CivilDate fields;
     long _ep;
-    if (!bag_to_fields(ctx, bag, true, cur, &fields, &_ep)) {
+    bool have_mc;
+    int mci;
+    TVal mc_v;
+    if (!bag_to_fields(ctx, bag, true, true, cur, &fields, &_ep, &have_mc, &mci, &mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
@@ -3241,6 +3297,7 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     // applies at the default constrain, so passing CONSTRAIN here only
     // catches the unconditional cases (month < 1, day < 1). The second pass
     // below handles the overflow-dependent ones (month > 12, day > daysInMonth).
+    // The monthCode suitability check runs AFTER overflow is read.
     temporal::CivilDate _pre;
     if (!fields_to_valid_date(ctx, fields, temporal::OverflowKind.CONSTRAIN, &_pre)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
@@ -3248,6 +3305,10 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     }
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
+    if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
     temporal::CivilDate result;
     if (!fields_to_valid_date(ctx, fields, overflow, &result)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
@@ -4377,15 +4438,26 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
         }
         // Property bag: read fields first, then overflow option. The
         // `calendar` field is read inside bag_to_datetime_fields (via
-        // bag_to_fields), so we don't double-read it here.
+        // bag_to_fields), so we don't double-read it here. The monthCode
+        // suitability check runs AFTER the option bag so the options bag
+        // is observed even when the field bag is unsuitable (test262
+        // options-read-before-algorithmic-validation).
         temporal::CivilDateTime fields;
-        if (!bag_to_datetime_fields(ctx, o, false, { .y = 0, .m = 1, .d = 1 },
-                                    { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields)) {
+        bool have_mc;
+        int mci;
+        TVal mc_v;
+        if (!bag_to_datetime_fields(ctx, o, false, false, { .y = 0, .m = 1, .d = 1 },
+                                    { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields,
+                                    &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
         temporal::OverflowKind overflow;
         if (!read_overflow_option(ctx, 1, &overflow)) return;
+        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
         temporal::CivilDate valid_d;
         if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
@@ -4905,8 +4977,13 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
             if (!calendar_from_arg(ctx, &cal_v, &calendar)) return null;
         }
         temporal::CivilDateTime fields;
-        if (!bag_to_datetime_fields(ctx, o, false, { .y = 0, .m = 1, .d = 1 },
-                                    { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields)) return null;
+        bool have_mc;
+        int mci;
+        TVal mc_v;
+        if (!bag_to_datetime_fields(ctx, o, false, false, { .y = 0, .m = 1, .d = 1 },
+                                    { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields,
+                                    &have_mc, &mci, &mc_v)) return null;
+        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) return null;
         temporal::CivilDate valid_d;
         if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return null;
         temporal::CivilTime valid_t;
@@ -5206,7 +5283,11 @@ fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
 
     temporal::CivilDateTime cur = plain_datetime_value(obj);
     temporal::CivilDateTime fields;
-    if (!bag_to_datetime_fields(ctx, bag, true, cur.date, cur.time, &fields)) {
+    bool have_mc;
+    int mci;
+    TVal mc_v;
+    if (!bag_to_datetime_fields(ctx, bag, true, true, cur.date, cur.time, &fields,
+                                &have_mc, &mci, &mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
@@ -5838,8 +5919,10 @@ fn void builtin_temporal_plain_datetime_proto_withCalendar(BuiltinContext* ctx) 
 // likewise never probes era/eraYear.
 fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
                                 long cur_y, int cur_m, int cur_day,
-                                long* out_y, int* out_m, int* out_day) {
+                                long* out_y, int* out_m, int* out_day,
+                                bool* out_have_mc, int* out_mci, TVal* out_mc_v) {
     Vm* v = (Vm*)ctx.vm;
+    *out_have_mc = false;
     TVal cal_v   = prop_or_undefined_pa(ctx, bag, "calendar");
     if (!cal_v.is_undefined()) {
         HObject* cal;
@@ -5881,6 +5964,13 @@ fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_mis
         if (!mc_v.is_undefined()) {
             int mci;
             if (!parse_month_code(ctx, mc_v, &mci)) return false;
+            // Report the parsed monthCode so the caller can run the ISO
+            // suitability check after read_overflow_option (options-read-
+            // before-algorithmic-validation.js expects overflow read first
+            // when monthCode is unsuitable).
+            *out_have_mc = true;
+            *out_mci = mci;
+            *out_mc_v = mc_v;
             if (have_month && mv != mci) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
                 return false;
@@ -6060,14 +6150,25 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
         // order, before month/monthCode/year); reading it again here would
         // double-fire a `calendar` getter (order-of-operations bug). Read
         // the property bag first, then parse the overflow option, so the
-        // options log line follows the fields log line.
+        // options log line follows the fields log line. The monthCode
+        // suitability check runs AFTER the option bag so the options bag
+        // is observed even when the field bag is unsuitable (test262
+        // options-read-before-algorithmic-validation).
         long y; int m; int d;
-        if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d)) {
+        bool have_mc;
+        int mci;
+        TVal mc_v;
+        if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d,
+                                     &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
         temporal::OverflowKind overflow;
         if (!read_overflow_option(ctx, 1, &overflow)) return;
+        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
         if (!fields_to_valid_yearmonth(ctx, y, m, d, overflow, &vy, &vm, &vd)) return;
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth.from: argument must be a string or object");
@@ -6365,10 +6466,15 @@ fn HObject*? plain_yearmonth_from_arg_full(BuiltinContext* ctx, TVal* arg) {
         // `bag_to_yearmonth_fields` reads `calendar` itself; reading it
         // again here would double-fire a `calendar` getter.
         long y; int m; int d;
-        if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d)) {
+        bool have_mc;
+        int mci;
+        TVal mc_v;
+        if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d,
+                                     &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return null;
         }
+        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) return null;
         if (!fields_to_valid_yearmonth(ctx, y, m, d, temporal::OverflowKind.CONSTRAIN, &vy, &vm, &vd)) return null;
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a string or object");
@@ -6446,9 +6552,17 @@ fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
     Vm* v = (Vm*)ctx.vm;
 
     long y; int m; int d;
+    bool have_mc;
+    int mci;
+    TVal mc_v;
     if (!bag_to_yearmonth_fields(ctx, bag, true,
                                   plain_yearmonth_y(obj), plain_yearmonth_m(obj), plain_yearmonth_day(obj),
-                                  &y, &m, &d)) {
+                                  &y, &m, &d,
+                                  &have_mc, &mci, &mc_v)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
@@ -6665,8 +6779,10 @@ fn HObject*? plain_yearmonth_from_arg(BuiltinContext* ctx, TVal* arg) {
 // caller override.
 fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
                                 int cur_y, int cur_m, int cur_d,
-                                int* out_y, int* out_m, int* out_d) {
+                                int* out_y, int* out_m, int* out_d,
+                                bool* out_have_mc, int* out_mci, TVal* out_mc_v) {
     Vm* v = (Vm*)ctx.vm;
+    *out_have_mc = false;
     TVal year_v  = prop_or_undefined_pa(ctx, bag, "year");
     TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
     TVal mc_v    = prop_or_undefined_pa(ctx, bag, "monthCode");
@@ -6717,6 +6833,14 @@ fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_miss
         if (!mc_v.is_undefined()) {
             int mci;
             if (!parse_month_code(ctx, mc_v, &mci)) return false;
+            // Reported to the caller so check_iso_monthcode_suitability can
+            // run after read_overflow_option. Already invoked from
+            // PlainMonthDay.from's caller, which reads overflow first; for
+            // from() correctness, the suitability check must follow the
+            // option bag, not the field reads.
+            *out_have_mc = true;
+            *out_mci = mci;
+            *out_mc_v = mc_v;
             if (have_month && mv != mci) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
                 return false;
@@ -6891,10 +7015,19 @@ fn bool plainmonthday_from_arg_full(BuiltinContext* ctx, TVal* arg, temporal::Ov
             if (!calendar_from_arg(ctx, &cal_v, &calendar)) return false;
         }
         int y; int m; int d;
-        if (!bag_to_monthday_fields(ctx, o, false, 1972, 1, 1, &y, &m, &d)) {
+        bool have_mc;
+        int mci;
+        TVal mc_v;
+        if (!bag_to_monthday_fields(ctx, o, false, 1972, 1, 1, &y, &m, &d,
+                                    &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return false;
         }
+        // monthCode suitability is checked AFTER read_overflow_option in the
+        // caller (the option is read first at line 6948); running the check
+        // here keeps PlainMonthDay.from's options-before-algorithmic-validation
+        // invariant even when the input bag is otherwise valid.
+        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) return false;
         return fields_to_valid_monthday(ctx, y, m, d, overflow, out_y, out_m, out_d);
     }
     builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay: argument must be a string or object");
@@ -7199,9 +7332,16 @@ fn void builtin_temporal_plain_monthday_proto_with(BuiltinContext* ctx) {
     Vm* v = (Vm*)ctx.vm;
 
     int y; int m; int d;
+    bool have_mc;
+    int mci;
+    TVal mc_v;
     if (!bag_to_monthday_fields(ctx, bag, true,
                                 plain_monthday_year(obj), plain_monthday_m(obj), plain_monthday_d(obj),
-                                &y, &m, &d)) {
+                                &y, &m, &d, &have_mc, &mci, &mc_v)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+        return;
+    }
+    if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
@@ -10511,7 +10651,15 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag is missing required day property");
             return;
         }
-        if (!bag_to_datetime_fields(ctx, o, true, cur.date, cur.time, &fields)) {
+        bool _zdt_have_mc;
+        int _zdt_mci;
+        TVal _zdt_mc_v;
+        if (!bag_to_datetime_fields(ctx, o, true, false, cur.date, cur.time, &fields,
+                                    &_zdt_have_mc, &_zdt_mci, &_zdt_mc_v)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
+        if (!check_iso_monthcode_suitability(ctx, _zdt_have_mc, _zdt_mci, _zdt_mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
@@ -10912,7 +11060,11 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     };
 
     temporal::CivilDateTime fields;
-    if (!bag_to_datetime_fields(ctx, bag, true, cur.date, cur.time, &fields)) {
+    bool have_mc;
+    int mci;
+    TVal mc_v;
+    if (!bag_to_datetime_fields(ctx, bag, true, true, cur.date, cur.time, &fields,
+                                &have_mc, &mci, &mc_v)) {
         Vm* v = (Vm*)ctx.vm;
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
