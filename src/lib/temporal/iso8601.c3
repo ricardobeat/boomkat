@@ -53,51 +53,110 @@ struct DurationParts {
     long ns;
 }
 
+// A DurationParts reduced to the canonical shape the ISO 8601 duration
+// formatters need: every field is a non-negative magnitude, `negative`
+// carries the single sign for the whole value, and the sub-second columns
+// have been folded into `seconds` + a 0..999999999 nanosecond remainder.
+//
+// The sub-second fold is required by the spec: Temporal.Duration's ms/us/ns
+// fields are unbounded (`new Temporal.Duration(0,0,0,0,0,0,0, 999, 999999,
+// 999999999)` is a valid duration of 2.998998999 seconds), so a formatter
+// cannot treat `ms*10^6 + us*10^3 + ns` as a nine-digit fraction. Units at
+// or above `seconds` never carry into each other -- `{days:1, seconds:1}`
+// formats as "P1DT1S", not "PT25H" -- so the fold stops at the seconds
+// column.
+struct NormalizedDuration {
+    bool negative;
+    long years;
+    long months;
+    long weeks;
+    long days;
+    long hours;
+    long minutes;
+    long seconds;
+    long frac_ns;   // 0 .. 999_999_999
+}
+
+// Reduce a raw DurationParts to its canonical formatting shape.
+//
+// A well-formed Duration has all fields sharing one sign, but intermediate
+// values (notably the rebalanced result of Duration.prototype.toString's
+// rounding path) can pair a positive date part with a negative time part.
+// Deriving the sign by scanning for "any negative field" would then negate
+// the wrong columns and emit a doubly-signed string like "-P-1DT1H0S". So
+// the sign is taken from the value as a whole: the date part decides, and
+// the time part only gets a say when every date field is zero.
+fn NormalizedDuration normalize_duration(DurationParts d) {
+    // Fold ms/us/ns into a single signed nanosecond count, then into whole
+    // seconds plus a remainder. int128 keeps `ms` near LONG_MAX from
+    // overflowing the 10^6 scale-up.
+    int128 total_ns = (int128)d.ms * 1_000_000 + (int128)d.us * 1_000 + (int128)d.ns;
+    int128 carry_secs = total_ns / 1_000_000_000;
+    int128 rem_ns = total_ns % 1_000_000_000;
+    int128 secs = (int128)d.seconds + carry_secs;
+
+    // C3 truncates division toward zero, so `rem_ns` and `secs` can end up
+    // with opposite signs (e.g. seconds=1, ns=-1500000000 gives secs=0,
+    // rem=-500000000). Borrow one second so the remainder matches the
+    // seconds column's sign and stays a pure magnitude below.
+    if (rem_ns > 0 && secs < 0) { secs += 1; rem_ns -= 1_000_000_000; }
+    else if (rem_ns < 0 && secs > 0) { secs -= 1; rem_ns += 1_000_000_000; }
+
+    bool neg;
+    if (d.years != 0 || d.months != 0 || d.weeks != 0 || d.days != 0) {
+        neg = d.years < 0 || d.months < 0 || d.weeks < 0 || d.days < 0;
+    } else if (d.hours != 0 || d.minutes != 0) {
+        neg = d.hours < 0 || d.minutes < 0;
+    } else {
+        neg = secs < 0 || rem_ns < 0;
+    }
+
+    return {
+        .negative = neg,
+        .years    = math::abs(d.years),
+        .months   = math::abs(d.months),
+        .weeks    = math::abs(d.weeks),
+        .days     = math::abs(d.days),
+        .hours    = math::abs(d.hours),
+        .minutes  = math::abs(d.minutes),
+        .seconds  = (long)math::abs(secs),
+        .frac_ns  = (long)math::abs(rem_ns),
+    };
+}
+
+// Write the fractional-seconds digits for `frac_ns` (a 0..999999999
+// magnitude) into `buf`, including the leading '.', and return the bytes
+// written. `precision` is -1 for "auto" (render the nine digits with
+// trailing zeros trimmed, and emit nothing at all when the fraction is
+// zero) or 0..9 for a fixed, zero-padded digit count (0 emits nothing).
+//
+// The nine digits are produced by hand rather than through snprintf's
+// "%09ld": a caller-supplied value above 999999999 would render as ten
+// digits and overrun a nine-digit stack buffer. Normalization guarantees
+// the range, and building the digits directly keeps that guarantee local.
+fn usz write_fraction(long frac_ns, int precision, char* buf) @local {
+    if (precision == 0) return 0;
+    char[9] digits;
+    long v = frac_ns;
+    for (int k = 8; k >= 0; k--) { digits[k] = (char)('0' + (v % 10)); v /= 10; }
+
+    int count = precision;
+    if (precision < 0) {
+        count = 9;
+        while (count > 0 && digits[count - 1] == '0') count -= 1;
+        if (count == 0) return 0;   // auto: no fraction at all
+    }
+    usz off = 0;
+    buf[off++] = '.';
+    for (int k = 0; k < count; k++) buf[off++] = digits[k];
+    return off;
+}
+
 // Format a DurationParts as ISO 8601. All zero -> "PT0S". The seconds field
 // renders with a fraction trimmed to the smallest non-zero sub-second digit.
 // Buffer must hold at least 128 bytes.
 fn usz format_duration(DurationParts d, char* buf, usz buf_size) {
-    usz off = 0;
-    if (d.years == 0 && d.months == 0 && d.weeks == 0 && d.days == 0 &&
-        d.hours == 0 && d.minutes == 0 && d.seconds == 0 && d.ms == 0 &&
-        d.us == 0 && d.ns == 0) {
-        return (usz)libc::snprintf(buf, buf_size, "PT0S");
-    }
-
-    long sign = 1;
-    if (d.years < 0 || d.months < 0 || d.weeks < 0 || d.days < 0 ||
-        d.hours < 0 || d.minutes < 0 || d.seconds < 0 || d.ms < 0 ||
-        d.us < 0 || d.ns < 0) sign = -1;
-    if (sign < 0) buf[off++] = '-';
-    buf[off++] = 'P';
-
-    if (d.years != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldY",  d.years * sign);
-    if (d.months != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM",  d.months * sign);
-    if (d.weeks != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldW",  d.weeks * sign);
-    if (d.days != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldD",  d.days * sign);
-
-    if (d.hours != 0 || d.minutes != 0 || d.seconds != 0 || d.ms != 0 || d.us != 0 || d.ns != 0) {
-        buf[off++] = 'T';
-        if (d.hours != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldH", d.hours * sign);
-        if (d.minutes != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", d.minutes * sign);
-        long secs = d.seconds * sign;
-        long whole = secs;
-        if (d.ns != 0 || d.us != 0 || d.ms != 0) {
-            long frac = ((long)d.ms * 1000 + (long)d.us) * 1000 + (long)d.ns;
-            if (frac < 0) frac = -frac;
-            off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", whole);
-            // trim trailing zeros in the 9-digit fraction
-            char[10] frac_buf;
-            int fl = libc::snprintf(&frac_buf, 10, "%09ld", frac);
-            while (fl > 0 && frac_buf[fl - 1] == '0') fl -= 1;
-            buf[off++] = '.';
-            for (int k = 0; k < fl; k++) buf[off++] = frac_buf[k];
-            buf[off++] = 'S';
-        } else if (d.seconds != 0) {
-            off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldS", whole);
-        }
-    }
-    return off;
+    return format_duration_precision(d, -1, buf, buf_size);
 }
 
 // Format a DurationParts as ISO 8601, per the TemporalDurationToString
@@ -114,47 +173,41 @@ fn usz format_duration(DurationParts d, char* buf, usz buf_size) {
 // all zero) also forces a seconds field the same way. Buffer must hold at
 // least 128 bytes.
 fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz buf_size) {
-    if (precision < 0) {
-        // Auto precision matches format_duration's existing behavior
-        // exactly (it already implements FormatFractionalSeconds(auto)).
-        return format_duration(d, buf, buf_size);
+    NormalizedDuration n = normalize_duration(d);
+
+    // An all-zero duration is "PT0S" at auto precision; a fixed precision
+    // still renders the padded fraction ("PT0.000S" for 3 digits).
+    bool all_zero = n.years == 0 && n.months == 0 && n.weeks == 0 && n.days == 0 &&
+        n.hours == 0 && n.minutes == 0 && n.seconds == 0 && n.frac_ns == 0;
+    if (all_zero && precision < 0) {
+        return (usz)libc::snprintf(buf, buf_size, "PT0S");
     }
 
     usz off = 0;
-    long sign = 1;
-    if (d.years < 0 || d.months < 0 || d.weeks < 0 || d.days < 0 ||
-        d.hours < 0 || d.minutes < 0 || d.seconds < 0 || d.ms < 0 ||
-        d.us < 0 || d.ns < 0) sign = -1;
-    if (sign < 0) buf[off++] = '-';
+    if (n.negative) buf[off++] = '-';
     buf[off++] = 'P';
 
-    if (d.years != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldY",  d.years * sign);
-    if (d.months != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM",  d.months * sign);
-    if (d.weeks != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldW",  d.weeks * sign);
-    if (d.days != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldD",  d.days * sign);
+    if (n.years != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldY", n.years);
+    if (n.months != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.months);
+    if (n.weeks != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldW", n.weeks);
+    if (n.days != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldD", n.days);
 
-    long frac = ((long)d.ms * 1000 + (long)d.us) * 1000 + (long)d.ns;
-    // Spec: "If secondsDuration != 0, or zeroMinutesAndHigher is true, or
-    // precision is not auto, then [emit seconds]". This function is only
-    // called with a non-auto precision (see the `precision < 0` early
-    // return above), so that third disjunct is always true here — the
-    // seconds field is always emitted.
-    bool needs_seconds = true;
+    // TemporalDurationToString emits the seconds field when the seconds
+    // column is non-zero, when no unit above `seconds` is present (so the
+    // string cannot be empty after "P"), or whenever a fixed precision was
+    // requested.
+    bool zero_minutes_and_higher = n.years == 0 && n.months == 0 && n.weeks == 0 &&
+        n.days == 0 && n.hours == 0 && n.minutes == 0;
+    bool needs_seconds = n.seconds != 0 || n.frac_ns != 0 || zero_minutes_and_higher ||
+        precision >= 0;
 
-    if (d.hours != 0 || d.minutes != 0 || needs_seconds) {
+    if (n.hours != 0 || n.minutes != 0 || needs_seconds) {
         buf[off++] = 'T';
-        if (d.hours != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldH", d.hours * sign);
-        if (d.minutes != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", d.minutes * sign);
+        if (n.hours != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldH", n.hours);
+        if (n.minutes != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.minutes);
         if (needs_seconds) {
-            long whole = d.seconds * sign;
-            off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", whole);
-            if (precision > 0) {
-                long abs_frac = frac < 0 ? -frac : frac;
-                char[10] frac_buf;
-                libc::snprintf(&frac_buf, 10, "%09ld", abs_frac);
-                buf[off++] = '.';
-                for (int k = 0; k < precision; k++) buf[off++] = frac_buf[k];
-            }
+            off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", n.seconds);
+            off += write_fraction(n.frac_ns, precision, &buf[off]);
             buf[off++] = 'S';
         }
     }
