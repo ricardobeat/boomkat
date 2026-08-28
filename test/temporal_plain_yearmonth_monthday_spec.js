@@ -54,9 +54,15 @@ var ymMc = Temporal.PlainYearMonth.from({ year: 2025, monthCode: "M07" });
 assertEq(ymMc.month, 7, "from bag monthCode M07");
 assertEq(ymMc.monthCode, "M07", "ymMc.monthCode M07");
 
-// from() identity: a PlainYearMonth returns itself.
+// from() identity: per ToTemporalYearMonth, a PlainYearMonth argument is
+// still copied into a *new* PlainYearMonth (CreateTemporalYearMonth is
+// called unconditionally) — it is not returned by reference. Verified
+// against @js-temporal/polyfill 0.5.1: `Temporal.PlainYearMonth.from(x) === x`
+// is false there too.
 var ym1 = new Temporal.PlainYearMonth(2024, 6);
-assertTrue(Temporal.PlainYearMonth.from(ym1) === ym1, "from identity");
+var ym1Copy = Temporal.PlainYearMonth.from(ym1);
+assertFalse(ym1Copy === ym1, "from identity: copies, does not return by reference");
+assertTrue(ym1Copy.equals(ym1), "from identity: copy is equal by value");
 
 // compare().
 assertEq(Temporal.PlainYearMonth.compare(ym, ym), 0, "compare equal");
@@ -128,10 +134,17 @@ var threwFeb = false;
 try { new Temporal.PlainYearMonth(2023, 2, "iso8601", 29); } catch (e) { threwFeb = (e && e.constructor.name === "RangeError"); }
 assertTrue(threwFeb, "Constructor rejects Feb 29 in non-leap year");
 
-// Reject option from() with overflow="reject".
+// Reject option from() with overflow="reject". `day` is not a calendar
+// field for the year-month projection (CalendarYearMonthFromFields always
+// forces the reference day to 1 before resolving, per spec and verified
+// against @js-temporal/polyfill 0.5.1), so a bag's `day` is never read —
+// only `month`/`monthCode`/`year` overflow. Use an out-of-range month to
+// exercise reject vs constrain instead.
 var threwReject = false;
-try { Temporal.PlainYearMonth.from({ year: 2023, month: 2, day: 29 }, { overflow: "reject" }); } catch (e) { threwReject = (e && e.constructor.name === "RangeError"); }
+try { Temporal.PlainYearMonth.from({ year: 2023, month: 13 }, { overflow: "reject" }); } catch (e) { threwReject = (e && e.constructor.name === "RangeError"); }
 assertTrue(threwReject, "from with reject overflow throws");
+assertEq(Temporal.PlainYearMonth.from({ year: 2023, month: 13 }, { overflow: "constrain" }).toString(), "2023-12", "from with constrain overflow clamps month");
+assertEq(Temporal.PlainYearMonth.from({ year: 2023, month: 2, day: 29 }).toString(), "2023-02", "from ignores day property entirely (not a year-month field)");
 
 // Negative years use the ISO 8601 extended-year leading sign.
 assertEq(new Temporal.PlainYearMonth(-44, 3).toString(), "-000044-03", "negative year formatting");

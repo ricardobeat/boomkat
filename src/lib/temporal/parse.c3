@@ -441,10 +441,13 @@ fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
     out.year = sign * y;
 
     // Month. Optional `-` separator disambiguates `YYYY-MM` (extended)
-    // from `YYYYMM` (basic).
+    // from `YYYYMM` (basic). Per the grammar's `monthpart` (`0[1-9]|1[0-2]`),
+    // only 01..12 are valid; anything else is a parse failure (not a
+    // constrain-time clamp).
     bool date_sep = false;
     if (i < len && text[i] == '-') { date_sep = true; i += 1; }
     if (!parse_two_digits(text, &i, &out.month)) return false;
+    if (out.month < 1 || out.month > 12) return false;
 
     // Optional day. Two forms:
     //   * Extended: `-DD` immediately following.
@@ -452,11 +455,17 @@ fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
     //     only when what follows is a `T`/`t` time designator, an
     //     annotation bracket, or end-of-string. A bare `YYYYMMDD` with
     //     no further grammar continuation is rejected.
+    // `had_day` distinguishes the short `TemporalYearMonthString` form
+    // (bare `YYYY-MM`, which per the grammar never carries a time
+    // component) from the full `AnnotatedDateTime` fallback (which
+    // requires a day and may carry `T<time>` + offset).
+    bool had_day = false;
     if (date_sep) {
         if (i < len && text[i] == '-' && digit_at(text, i + 1) >= 0) {
             i += 1;
             int _d;
             if (!parse_two_digits(text, &i, &_d)) return false;
+            had_day = true;
         }
     } else if (i + 1 < len && digit_at(text, i) >= 0 && digit_at(text, i + 1) >= 0
                && (i + 2 >= len
@@ -464,12 +473,14 @@ fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
                    || text[i + 2] == ' ' || text[i + 2] == '[')) {
         int _d;
         if (!parse_two_digits(text, &i, &_d)) return false;
+        had_day = true;
     }
 
     // Optional `T<time>` and `±HH:MM` offset, all discarded. `Z` is
     // forbidden by the grammar; we propagate `offset_kind == Z` and let
-    // the caller throw RangeError.
-    if (i < len && (text[i] == 'T' || text[i] == 't' || text[i] == ' ')) {
+    // the caller throw RangeError. Only reachable when a day was present:
+    // the short year-month form (no day) never carries a time component.
+    if (had_day && i < len && (text[i] == 'T' || text[i] == 't' || text[i] == ' ')) {
         i += 1;
         int _h, _mi, _s;
         long _n;

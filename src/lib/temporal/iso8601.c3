@@ -84,6 +84,7 @@ fn usz format_duration(DurationParts d, char* buf, usz buf_size) {
         long whole = secs;
         if (d.ns != 0 || d.us != 0 || d.ms != 0) {
             long frac = ((long)d.ms * 1000 + (long)d.us) * 1000 + (long)d.ns;
+            if (frac < 0) frac = -frac;
             off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", whole);
             // trim trailing zeros in the 9-digit fraction
             char[10] frac_buf;
@@ -94,6 +95,67 @@ fn usz format_duration(DurationParts d, char* buf, usz buf_size) {
             buf[off++] = 'S';
         } else if (d.seconds != 0) {
             off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldS", whole);
+        }
+    }
+    return off;
+}
+
+// Format a DurationParts as ISO 8601, per the TemporalDurationToString
+// abstract operation, with `precision` controlling the seconds fraction:
+// -1 = auto (trim trailing zeros, omit "." entirely when the fraction is
+// zero), 0..9 = a fixed digit count (zero-padded, no trimming; 0 means no
+// "." at all). Unlike format_duration (which is the auto/no-options case),
+// this also prints a "0S" seconds field when smallestUnit/fractionalSecond
+// Digits forced a non-auto precision — the spec's TemporalDurationToString
+// step "If secondsDuration ≠ 0, or zeroMinutesAndHigher is true, or
+// precision is not auto" — even when hours/minutes and the sub-second
+// components are otherwise all zero. `zeroMinutesAndHigher` (the largest
+// unit is second/ms/us/ns, i.e. years/months/weeks/days/hours/minutes are
+// all zero) also forces a seconds field the same way. Buffer must hold at
+// least 128 bytes.
+fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz buf_size) {
+    if (precision < 0) {
+        // Auto precision matches format_duration's existing behavior
+        // exactly (it already implements FormatFractionalSeconds(auto)).
+        return format_duration(d, buf, buf_size);
+    }
+
+    usz off = 0;
+    long sign = 1;
+    if (d.years < 0 || d.months < 0 || d.weeks < 0 || d.days < 0 ||
+        d.hours < 0 || d.minutes < 0 || d.seconds < 0 || d.ms < 0 ||
+        d.us < 0 || d.ns < 0) sign = -1;
+    if (sign < 0) buf[off++] = '-';
+    buf[off++] = 'P';
+
+    if (d.years != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldY",  d.years * sign);
+    if (d.months != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM",  d.months * sign);
+    if (d.weeks != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldW",  d.weeks * sign);
+    if (d.days != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldD",  d.days * sign);
+
+    long frac = ((long)d.ms * 1000 + (long)d.us) * 1000 + (long)d.ns;
+    // Spec: "If secondsDuration != 0, or zeroMinutesAndHigher is true, or
+    // precision is not auto, then [emit seconds]". This function is only
+    // called with a non-auto precision (see the `precision < 0` early
+    // return above), so that third disjunct is always true here — the
+    // seconds field is always emitted.
+    bool needs_seconds = true;
+
+    if (d.hours != 0 || d.minutes != 0 || needs_seconds) {
+        buf[off++] = 'T';
+        if (d.hours != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldH", d.hours * sign);
+        if (d.minutes != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", d.minutes * sign);
+        if (needs_seconds) {
+            long whole = d.seconds * sign;
+            off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", whole);
+            if (precision > 0) {
+                long abs_frac = frac < 0 ? -frac : frac;
+                char[10] frac_buf;
+                libc::snprintf(&frac_buf, 10, "%09ld", abs_frac);
+                buf[off++] = '.';
+                for (int k = 0; k < precision; k++) buf[off++] = frac_buf[k];
+            }
+            buf[off++] = 'S';
         }
     }
     return off;

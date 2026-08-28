@@ -1414,20 +1414,218 @@ fn void builtin_temporal_duration_proto_abs(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
+// Resolve the fractional-second precision, rounding mode, and rounding
+// increment (in nanoseconds) for Duration.prototype.toString(options).
+// Unlike to_string_precision (shared by Instant/ZonedDateTime, which also
+// accept smallestUnit "minute" and larger units are always a RangeError for
+// them too), Duration.toString restricts smallestUnit to the time units at
+// or below "second" — "minute", "hour", and any calendar unit are a
+// RangeError here. Options are read in the spec's alphabetical order:
+// fractionalSecondDigits, roundingMode, smallestUnit.
+fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalRoundMode* rm, long* incr_ns) {
+    *digits = -1;   // auto
+    *rm = TemporalRoundMode.TRUNC;
+    *incr_ns = 1;
+    if (ctx.argc < 1) return true;
+    TVal ov = ctx.regs[ctx.base_reg + 0];
+    if (ov.is_undefined()) return true;
+    if (!ov.is_object() || ov.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+        return false;
+    }
+    HObject* opts = (HObject*)ov.get_heapptr();
+
+    TVal f = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
+    if (ctx.should_throw) return false;
+    if (!f.is_undefined()) {
+        if (f.is_string()) {
+            HString* s = (HString*)f.get_heapptr();
+            if (s != null && s.is_symbol()) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
+                return false;
+            }
+            char[] v = s.get_cstr()[:s.blen];
+            if (v == "auto") { *digits = -1; }
+            else { builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9"); return false; }
+        } else {
+            double dv = builtin_to_number_getdouble(ctx, &f);
+            if (ctx.should_throw) return false;
+            if (math::is_nan(dv) || math::is_inf(dv)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
+                return false;
+            }
+            double dc = math::floor(dv);
+            if (dc < 0 || dc > 9) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
+                return false;
+            }
+            *digits = (int)dc;
+        }
+    }
+
+    TVal rmv = prop_or_undefined_pa(ctx, opts, "roundingMode");
+    if (ctx.should_throw) return false;
+    if (!rmv.is_undefined()) {
+        HString* rm_s = builtin_to_string_vm(ctx, &rmv);
+        if (ctx.should_throw) return false;
+        if (rm_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "roundingMode must be a string"); return false; }
+        char[] v = rm_s.get_cstr()[:rm_s.blen];
+        if (v == "ceil") { *rm = TemporalRoundMode.CEIL; }
+        else if (v == "floor") { *rm = TemporalRoundMode.FLOOR; }
+        else if (v == "expand") { *rm = TemporalRoundMode.EXPAND; }
+        else if (v == "trunc") { *rm = TemporalRoundMode.TRUNC; }
+        else if (v == "halfCeil") { *rm = TemporalRoundMode.HALF_CEIL; }
+        else if (v == "halfFloor") { *rm = TemporalRoundMode.HALF_FLOOR; }
+        else if (v == "halfExpand") { *rm = TemporalRoundMode.HALF_EXPAND; }
+        else if (v == "halfTrunc") { *rm = TemporalRoundMode.HALF_TRUNC; }
+        else if (v == "halfEven") { *rm = TemporalRoundMode.HALF_EVEN; }
+        else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode"); return false; }
+    }
+
+    TVal su = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+    if (ctx.should_throw) return false;
+    if (!su.is_undefined()) {
+        HString* su_s = builtin_to_string_vm(ctx, &su);
+        if (ctx.should_throw) return false;
+        if (su_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit option must be a string"); return false; }
+        char[] v = su_s.get_cstr()[:su_s.blen];
+        // ToSecondsStringPrecisionRecord's [[Increment]]/[[Unit]] mapping,
+        // restricted to units <= second (minute/hour and any calendar unit
+        // are a RangeError for Duration.toString per spec step "If
+        // smallestUnit is either hour or minute, throw a RangeError").
+        if (v == "second" || v == "seconds")           { *digits = 0; *incr_ns = 1000000000L; }
+        else if (v == "millisecond" || v == "milliseconds") { *digits = 3; *incr_ns = 1000000L; }
+        else if (v == "microsecond" || v == "microseconds") { *digits = 6; *incr_ns = 1000L; }
+        else if (v == "nanosecond" || v == "nanoseconds")   { *digits = 9; *incr_ns = 1L; }
+        else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit"); return false; }
+    }
+    return true;
+}
+
 fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
-    // Options, if present, must be an object (function is also OK per spec).
-    if (ctx.argc > 0) {
-        TVal* opt = arg_at(ctx, 0);
-        if (!opt.is_undefined() && (!opt.is_object() || opt.get_heapptr() == null)) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
-            return;
-        }
-    }
+    int digits;
+    TemporalRoundMode rm;
+    long incr_ns;
+    if (!duration_to_string_precision(ctx, &digits, &rm, &incr_ns)) return;
+
     temporal::DurationParts d = duration_value((HObject*)this_val.get_heapptr());
-    char[128] buf;
-    usz len = temporal::format_duration(d, &buf, 128);
+
+    // No rounding requested (fractionalSecondDigits: "auto" and no
+    // smallestUnit, i.e. RoundTimeDuration's increment is 1ns) -> format
+    // with the requested (possibly still fixed, e.g. "auto") precision
+    // without touching the stored value.
+    if (incr_ns == 1) {
+        char[160] buf;
+        usz len = temporal::format_duration_precision(d, digits, &buf, 160);
+        ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+        return;
+    }
+
+    // Round the time portion (RoundTimeDuration): combine hours..ns into a
+    // single nanosecond count (using int128 so large values don't lose
+    // precision through double math), round to a multiple of incr_ns, then
+    // rebalance back into hours/minutes/seconds/ms/us/ns. Unlike duration
+    // arithmetic, this never folds overflow into days — CombineDateAndTime
+    // Duration leaves the date part untouched, and toString's smallestUnit
+    // can only be second/millisecond/microsecond/nanosecond (never hour or
+    // minute), so the largest unit stays within the time portion here.
+    int128 total_ns = (int128)0;
+    total_ns += (int128)d.hours   * 3600000000000L;
+    total_ns += (int128)d.minutes *   60000000000L;
+    total_ns += (int128)d.seconds *    1000000000L;
+    total_ns += (int128)d.ms      *       1000000L;
+    total_ns += (int128)d.us      *          1000L;
+    total_ns += (int128)d.ns;
+
+    int128 sign_i = total_ns < 0 ? (int128)(-1) : (int128)1;
+    int128 mag = total_ns < 0 ? -total_ns : total_ns;
+    int128 incr = (int128)incr_ns;
+    int128 q = mag / incr;
+    int128 remv = mag % incr;
+    if (remv != 0) {
+        bool round_up;
+        switch (rm) {
+            case TemporalRoundMode.TRUNC:
+            case TemporalRoundMode.FLOOR: round_up = false; break;
+            case TemporalRoundMode.EXPAND:
+            case TemporalRoundMode.CEIL: round_up = true; break;
+            default: {
+                // Half-* modes: compare remainder against half the
+                // increment. mode_for_negative_magnitude flips ceil/floor
+                // bias for a negative-signed duration so half-ceil/half-floor
+                // remain magnitude-symmetric around zero (mirrors
+                // round_long_ns's handling elsewhere in this file).
+                TemporalRoundMode eff = sign_i < 0 ? mode_for_negative_magnitude(rm) : rm;
+                int128 twice = remv * 2;
+                if (twice < incr) { round_up = false; }
+                else if (twice > incr) { round_up = true; }
+                else {
+                    switch (eff) {
+                        case TemporalRoundMode.HALF_TRUNC:
+                        case TemporalRoundMode.HALF_FLOOR: round_up = false; break;
+                        case TemporalRoundMode.HALF_EXPAND:
+                        case TemporalRoundMode.HALF_CEIL: round_up = true; break;
+                        case TemporalRoundMode.HALF_EVEN: round_up = (q & 1) != 0; break;
+                        default: round_up = false; break;
+                    }
+                }
+                break;
+            }
+        }
+        if (round_up) q += 1;
+    }
+    int128 rounded_ns = q * incr * sign_i;
+
+    // Rebalance rounded_ns back into days/hours/minutes/seconds/ms/us/ns
+    // per TemporalDurationFromInternal(internalDuration, roundedLargestUnit)
+    // where roundedLargestUnit = LargerOfTwoTemporalUnits(
+    // DefaultTemporalLargestUnit(<pre-rounding duration>), second):
+    //   - date category (years/months/weeks/days present, i.e. any of
+    //     those is non-zero): time balances all the way to hours, AND
+    //     hour-overflow folds into the date part's days (verified against
+    //     the reference polyfill: {days:5, seconds:90000, ms:900} with
+    //     smallestUnit "second"/halfExpand -> "P6DT1H1S", i.e. 25.9h
+    //     contributes +1 day).
+    //   - hour category (no date fields, but hours present): time balances
+    //     to hours only (no day fold).
+    //   - minute category (no date/hour fields, but minutes present): time
+    //     balances to minutes only (no hour fold — {minutes:1,
+    //     seconds:90000} stays "PT1501M0S", not "PT25H1M0S").
+    //   - otherwise (only seconds/ms/us/ns present, or an all-zero
+    //     duration): time collapses fully into seconds (no minute fold —
+    //     {seconds:59,ms:900} rounding past 60s stays "PT60S", not
+    //     "PT1M0S").
+    bool has_date_unit = d.years != 0 || d.months != 0 || d.weeks != 0 || d.days != 0;
+    bool has_hour = d.hours != 0;
+    bool has_minute = d.minutes != 0;
+
+    temporal::DurationParts rd = d;
+    int128 rmag = rounded_ns < 0 ? -rounded_ns : rounded_ns;
+    long rsign = rounded_ns < 0 ? -1 : 1;
+    if (has_date_unit) {
+        long extra_days = rsign * (long)(rmag / 86400000000000L); rmag %= 86400000000000L;
+        rd.days   += extra_days;
+        rd.hours   = rsign * (long)(rmag / 3600000000000L); rmag %= 3600000000000L;
+        rd.minutes = rsign * (long)(rmag /   60000000000L); rmag %=   60000000000L;
+    } else if (has_hour) {
+        rd.hours   = rsign * (long)(rmag / 3600000000000L); rmag %= 3600000000000L;
+        rd.minutes = rsign * (long)(rmag /   60000000000L); rmag %=   60000000000L;
+    } else if (has_minute) {
+        rd.hours   = 0;
+        rd.minutes = rsign * (long)(rmag /   60000000000L); rmag %=   60000000000L;
+    } else {
+        rd.hours   = 0;
+        rd.minutes = 0;
+    }
+    rd.seconds = rsign * (long)(rmag /    1000000000L); rmag %=    1000000000L;
+    rd.ms      = rsign * (long)(rmag /       1000000L); rmag %=       1000000L;
+    rd.us      = rsign * (long)(rmag /          1000L); rmag %=          1000L;
+    rd.ns      = rsign * (long)(rmag);
+
+    char[160] buf;
+    usz len = temporal::format_duration_precision(rd, digits, &buf, 160);
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 
@@ -1572,6 +1770,9 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_duration_proto_toJSON(BuiltinContext* ctx) {
+    // toJSON takes no options and always formats at "auto" precision, so the
+    // caller's arguments must not reach the toString delegate.
+    ctx.argc = 0;
     builtin_temporal_duration_proto_toString(ctx);
 }
 
@@ -4000,26 +4201,250 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
+// PrepareCalendarFields, restricted to what ToTemporalDateTime's non-Temporal
+// object path needs: the calendar date fields (day, month, monthCode, year)
+// and time fields (hour, microsecond, millisecond, minute, nanosecond,
+// second), all required-field-free (missing ones default: date fields
+// default via CalendarResolveFields' year/day-required check below, time
+// fields default to 0). Reads happen in the spec's lexicographic property
+// order across the *combined* set, via the Proxy-aware getter.
+fn bool compare_datetime_fields(BuiltinContext* ctx, HObject* bag, temporal::CivilDateTime* out) {
+    Vm* v = (Vm*)ctx.vm;
+    long lv;
+
+    long day = 0; bool have_day = false;
+    TVal day_v = prop_or_undefined_pa(ctx, bag, "day");
+    if (ctx.should_throw) return false;
+    if (!day_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &day_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+            return false;
+        }
+        day = lv; have_day = true;
+    }
+
+    long h = 0;
+    TVal h_v = prop_or_undefined_pa(ctx, bag, "hour");
+    if (ctx.should_throw) return false;
+    if (!h_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &h_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "hour is not an integral number");
+            return false;
+        }
+        h = lv;
+    }
+
+    long us = 0;
+    TVal us_v = prop_or_undefined_pa(ctx, bag, "microsecond");
+    if (ctx.should_throw) return false;
+    if (!us_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &us_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
+            return false;
+        }
+        us = lv;
+    }
+
+    long ms = 0;
+    TVal ms_v = prop_or_undefined_pa(ctx, bag, "millisecond");
+    if (ctx.should_throw) return false;
+    if (!ms_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &ms_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
+            return false;
+        }
+        ms = lv;
+    }
+
+    long mi = 0;
+    TVal mi_v = prop_or_undefined_pa(ctx, bag, "minute");
+    if (ctx.should_throw) return false;
+    if (!mi_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &mi_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "minute is not an integral number");
+            return false;
+        }
+        mi = lv;
+    }
+
+    long month = 0; bool have_month = false;
+    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
+    if (ctx.should_throw) return false;
+    if (!month_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &month_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+            return false;
+        }
+        month = lv; have_month = true;
+    }
+
+    bool have_month_code = false;
+    int mc = 0;
+    TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
+    if (ctx.should_throw) return false;
+    if (!mc_v.is_undefined()) {
+        if (!parse_month_code(ctx, mc_v, &mc)) return false;
+        have_month_code = true;
+        if (have_month && month != mc) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
+            return false;
+        }
+        month = mc;
+        have_month = true;
+    }
+
+    long ns = 0;
+    TVal ns_v = prop_or_undefined_pa(ctx, bag, "nanosecond");
+    if (ctx.should_throw) return false;
+    if (!ns_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &ns_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
+            return false;
+        }
+        ns = lv;
+    }
+
+    long s = 0;
+    TVal s_v = prop_or_undefined_pa(ctx, bag, "second");
+    if (ctx.should_throw) return false;
+    if (!s_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &s_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second is not an integral number");
+            return false;
+        }
+        s = lv;
+    }
+
+    long year = 0;
+    TVal year_v = prop_or_undefined_pa(ctx, bag, "year");
+    if (ctx.should_throw) return false;
+    bool have_year = !year_v.is_undefined();
+    if (have_year) {
+        if (!to_integer_with_truncation(v, &year_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
+            return false;
+        }
+        year = lv;
+    }
+
+    // CalendarResolveFields(iso8601, fields, date): year and day are always
+    // required for a full date; month is required via month OR monthCode.
+    if (!have_year) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing year property");
+        return false;
+    }
+    if (!have_day) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing day property");
+        return false;
+    }
+    if (!have_month) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing month or monthCode property");
+        return false;
+    }
+
+    out.date = { .y = year, .m = (int)month, .d = (int)day };
+    out.time = { .h = h, .mi = mi, .s = s, .ms = ms, .us = us, .ns = ns };
+    return true;
+}
+
+// ToTemporalDateTime, restricted to Temporal.PlainDateTime.compare's needs:
+// calendar identity doesn't matter (CompareISODateTime only looks at the ISO
+// fields), so the calendar-carrying fast paths just extract [[ISODateTime]]
+// / [[ISODate]]+midnight without allocating a fresh calendar. A plain object
+// still has its `calendar` property probed (for TypeError/RangeError on an
+// invalid identifier) even though the result is discarded, to match the
+// spec's GetTemporalCalendarIdentifierWithISODefault side effect.
+fn bool compare_to_temporal_datetime(BuiltinContext* ctx, TVal* arg, temporal::CivilDateTime* out) {
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        hobject::ObjClass cls = o.get_class();
+        if (cls == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            *out = plain_datetime_value(o);
+            return true;
+        }
+        if (cls == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
+            zdt_wall_fields(o, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
+            out.date = { .y = wy, .m = (int)wm, .d = (int)wd };
+            out.time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns };
+            return true;
+        }
+        if (cls == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
+            out.date = plain_date_value(o);
+            out.time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+            return true;
+        }
+        // Plain property bag: probe `calendar` first (order-of-operations),
+        // then read the combined date+time fields in lexicographic order.
+        TVal cal_v = prop_or_undefined_pa(ctx, o, "calendar");
+        if (ctx.should_throw) return false;
+        if (!cal_v.is_undefined()) {
+            HObject* cal;
+            if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+        }
+        temporal::CivilDateTime fields;
+        if (!compare_datetime_fields(ctx, o, &fields)) return false;
+        temporal::CivilDate valid_d;
+        if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return false;
+        // ToTemporalDateTime calls RegulateTime via InterpretTemporalDateTimeFields
+        // with no options argument, so the overflow defaults to ~constrain~.
+        out.date = valid_d;
+        out.time = regulate_time_constrain(fields.time);
+        return true;
+    }
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return false; }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        if (!temporal::parse_iso_date_string(text, &p)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date-time string");
+            return false;
+        }
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Z designator not valid for PlainDateTime");
+            return false;
+        }
+        temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
+        if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
+            return false;
+        }
+        temporal::CivilTime t = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+        if (p.has_time) {
+            t = {
+                .h = p.hour, .mi = p.minute, .s = p.second,
+                .ms = (int)(p.nanos / 1_000_000),
+                .us = (int)((p.nanos / 1000) % 1000),
+                .ns = (int)(p.nanos % 1000),
+            };
+        }
+        out.date = d;
+        out.time = t;
+        return true;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainDateTime, string, or object");
+    return false;
+}
+
 fn void builtin_temporal_plain_datetime_compare(BuiltinContext* ctx) {
     if (ctx.argc < 2) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.compare requires two arguments");
         return;
     }
-    TVal* av = arg_at(ctx, 0);
-    TVal* bv = arg_at(ctx, 1);
-    if (!av.is_object() || av.get_heapptr() == null || !bv.is_object() || bv.get_heapptr() == null) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.compare: arguments must be PlainDateTime");
-        return;
-    }
-    HObject* a = (HObject*)av.get_heapptr();
-    HObject* b = (HObject*)bv.get_heapptr();
-    if (a.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_DATETIME ||
-        b.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.compare: arguments must be PlainDateTime");
-        return;
-    }
-    temporal::CivilDateTime ad = plain_datetime_value(a);
-    temporal::CivilDateTime bd = plain_datetime_value(b);
+    temporal::CivilDateTime ad;
+    if (!compare_to_temporal_datetime(ctx, arg_at(ctx, 0), &ad)) return;
+    temporal::CivilDateTime bd;
+    if (!compare_to_temporal_datetime(ctx, arg_at(ctx, 1), &bd)) return;
     int cmp = temporal::date_compare(ad.date, bd.date);
     if (cmp == 0) cmp = temporal::time_compare(ad.time, bd.time);
     ctx.result.set_fastint((long)cmp);
@@ -4323,6 +4748,224 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
     }
     builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainDateTime, string, or object");
     return null;
+}
+
+// RegulateTime(..., ~constrain~): clamps each field into its valid range
+// instead of rejecting, which is the default overflow behaviour ToTemporalTime
+// applies when called without an options argument (as withPlainTime does).
+// A leap-second-shaped hour:mi:60 collapses to :59 like the reject-mode
+// fields_to_valid_time does.
+fn temporal::CivilTime regulate_time_constrain(temporal::CivilTime f) {
+    temporal::CivilTime v = f;
+    if (v.h < 0) { v.h = 0; } else if (v.h > 23) { v.h = 23; }
+    if (v.mi < 0) { v.mi = 0; } else if (v.mi > 59) { v.mi = 59; }
+    if (v.s < 0) { v.s = 0; } else if (v.s > 59) { v.s = 59; }
+    if (v.ms < 0) { v.ms = 0; } else if (v.ms > 999) { v.ms = 999; }
+    if (v.us < 0) { v.us = 0; } else if (v.us > 999) { v.us = 999; }
+    if (v.ns < 0) { v.ns = 0; } else if (v.ns > 999) { v.ns = 999; }
+    return v;
+}
+
+// ToTemporalTimeRecord: reads the six time properties in the spec's
+// lexicographic order (hour, microsecond, millisecond, minute, nanosecond,
+// second), each via the Proxy-aware getter so property-bag observers see
+// the exact [[Get]] sequence. Throws TypeError if none of the six
+// properties is present (the "any" check). `cur` seeds each field so the
+// caller only needs to overwrite what's actually present; callers that want
+// the ToTemporalTimeRecord "complete" semantics (missing -> 0) should pass
+// an all-zero `cur`.
+fn bool datetime_time_record(BuiltinContext* ctx, HObject* bag, temporal::CivilTime* out) {
+    Vm* v = (Vm*)ctx.vm;
+    long h = 0; long mi = 0; long s = 0; long ms = 0; long us = 0; long ns = 0;
+    bool have_any = false;
+    long lv;
+
+    TVal h_v = prop_or_undefined_pa(ctx, bag, "hour");
+    if (ctx.should_throw) return false;
+    if (!h_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &h_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "hour is not an integral number");
+            return false;
+        }
+        h = lv;
+        have_any = true;
+    }
+    TVal us_v = prop_or_undefined_pa(ctx, bag, "microsecond");
+    if (ctx.should_throw) return false;
+    if (!us_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &us_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
+            return false;
+        }
+        us = lv;
+        have_any = true;
+    }
+    TVal ms_v = prop_or_undefined_pa(ctx, bag, "millisecond");
+    if (ctx.should_throw) return false;
+    if (!ms_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &ms_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
+            return false;
+        }
+        ms = lv;
+        have_any = true;
+    }
+    TVal mi_v = prop_or_undefined_pa(ctx, bag, "minute");
+    if (ctx.should_throw) return false;
+    if (!mi_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &mi_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "minute is not an integral number");
+            return false;
+        }
+        mi = lv;
+        have_any = true;
+    }
+    TVal ns_v = prop_or_undefined_pa(ctx, bag, "nanosecond");
+    if (ctx.should_throw) return false;
+    if (!ns_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &ns_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
+            return false;
+        }
+        ns = lv;
+        have_any = true;
+    }
+    TVal s_v = prop_or_undefined_pa(ctx, bag, "second");
+    if (ctx.should_throw) return false;
+    if (!s_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &s_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second is not an integral number");
+            return false;
+        }
+        s = lv;
+        have_any = true;
+    }
+
+    if (!have_any) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument must have at least one time property");
+        return false;
+    }
+
+    out.h = h; out.mi = mi; out.s = s; out.ms = ms; out.us = us; out.ns = ns;
+    return true;
+}
+
+// ToTemporalTime(item), restricted to the argument shapes withPlainTime
+// needs: a PlainTime/PlainDateTime/ZonedDateTime object (time extracted
+// directly, no coercion), an ISO time string, or a plain property bag read
+// via ToTemporalTimeRecord above. Any other Temporal-branded object (a
+// PlainDate, PlainYearMonth, PlainMonthDay, or Duration/Instant/TimeZone)
+// falls through to the bag path and is rejected there with a TypeError,
+// since none of those expose hour/minute/second/etc. own properties.
+fn HObject*? datetime_to_temporal_time(BuiltinContext* ctx, TVal* arg) {
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        hobject::ObjClass cls = o.get_class();
+        if (cls == hobject::ObjClass.TEMPORAL_PLAIN_TIME) return o;
+        if (cls == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            temporal::CivilTime t = plain_datetime_value(o).time;
+            HObject*? res = alloc_plain_time(ctx.heap, t);
+            if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+            HObject* r = res;
+            r.prototype = ctx.heap.temporal_plain_time_proto;
+            return r;
+        }
+        if (cls == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
+            zdt_wall_fields(o, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
+            temporal::CivilTime t = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns };
+            HObject*? res = alloc_plain_time(ctx.heap, t);
+            if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+            HObject* r = res;
+            r.prototype = ctx.heap.temporal_plain_time_proto;
+            return r;
+        }
+        temporal::CivilTime fields;
+        if (!datetime_time_record(ctx, o, &fields)) return null;
+        // withPlainTime calls ToTemporalTime with no options argument, so
+        // GetTemporalOverflowOption defaults to ~constrain~: out-of-range
+        // fields clamp rather than throw.
+        temporal::CivilTime valid = regulate_time_constrain(fields);
+        HObject*? res = alloc_plain_time(ctx.heap, valid);
+        if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+        HObject* r = res;
+        r.prototype = ctx.heap.temporal_plain_time_proto;
+        return r;
+    }
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        bool ok = temporal::parse_iso_time_string(text, &p);
+        if (!ok) {
+            ok = temporal::parse_iso_date_string(text, &p);
+            if (!ok || !p.has_time) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO time string");
+                return null;
+            }
+        }
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Z designator not valid for PlainTime");
+            return null;
+        }
+        temporal::CivilTime t = {
+            .h = p.hour,
+            .mi = p.minute,
+            .s = p.second,
+            .ms = (int)(p.nanos / 1_000_000),
+            .us = (int)((p.nanos / 1000) % 1000),
+            .ns = (int)(p.nanos % 1000),
+        };
+        if (!temporal::is_valid_time((int)t.h, (int)t.mi, (int)t.s, (int)t.ms, (int)t.us, (int)t.ns)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "time is out of range");
+            return null;
+        }
+        HObject*? res = alloc_plain_time(ctx.heap, t);
+        if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+        HObject* r = res;
+        r.prototype = ctx.heap.temporal_plain_time_proto;
+        return r;
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainTime, string, or object");
+    return null;
+}
+
+// ToTimeRecordOrMidnight: undefined (or a missing argument) means midnight;
+// otherwise delegate to ToTemporalTime and take its [[Time]] fields.
+fn bool datetime_time_record_or_midnight(BuiltinContext* ctx, TVal* arg, temporal::CivilTime* out) {
+    if (arg == null || arg.is_undefined()) {
+        *out = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+        return true;
+    }
+    HObject*? o = datetime_to_temporal_time(ctx, arg);
+    if (ctx.should_throw) return false;
+    *out = plain_time_value(o!!);
+    return true;
+}
+
+fn void builtin_temporal_plain_datetime_proto_withPlainTime(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    TVal undef; undef.set_undefined();
+    TVal* arg = ctx.argc >= 1 ? arg_at(ctx, 0) : &undef;
+    temporal::CivilTime new_time;
+    if (!datetime_time_record_or_midnight(ctx, arg, &new_time)) return;
+
+    temporal::CivilDateTime cur = plain_datetime_value(obj);
+    temporal::CivilDateTime result = { .date = cur.date, .time = new_time };
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* r = obj_o;
+    r.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.result.set_object(r);
 }
 
 fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
@@ -4962,30 +5605,32 @@ fn void builtin_temporal_plain_datetime_proto_withCalendar(BuiltinContext* ctx) 
 // ============================================================================
 
 // `bag_to_yearmonth_fields` reads year + month(/monthCode) from a plain
-// object and writes a CivilDate whose `d` slot is the reference day. The
-// reference day is fixed at 1 for the constructor; `with()` passes the
-// current reference day through `cur_day`. The spec accepts era/eraYear for
-// non-ISO calendars; the single-ISO-calendar engine rejects them.
+// object and writes a CivilDate whose `d` slot is the reference day (always
+// 1, per CalendarYearMonthFromFields forcing `fields.day = 1` before
+// resolving — the reference day is never taken from a bag's `day`
+// property, not even when the caller `with()`s a partial bag over an
+// existing PlainYearMonth). `with()` passes the current reference day
+// through `cur_day` untouched.
+//
+// Property reads follow PrepareCalendarFields's order: `calendar` is read
+// first (GetTemporalCalendarIdentifierWithISODefault), then the ISO
+// calendar's field set (`month`, `monthCode`, `year`) in alphabetical
+// order. The ISO calendar's `extraFields()` is empty, so `day`/`era`/
+// `eraYear` are never read at all — they are simply not calendar fields
+// for a year-month projection, mirroring bag_to_fields (PlainDate), which
+// likewise never probes era/eraYear.
 fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
                                 long cur_y, int cur_m, int cur_day,
                                 long* out_y, int* out_m, int* out_day) {
     Vm* v = (Vm*)ctx.vm;
-    TVal year_v  = prop_or_undefined_pa(ctx, bag, "year");
-    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
-    TVal mc_v    = prop_or_undefined_pa(ctx, bag, "monthCode");
-    TVal day_v   = prop_or_undefined_pa(ctx, bag, "day");
     TVal cal_v   = prop_or_undefined_pa(ctx, bag, "calendar");
-    TVal era_v   = prop_or_undefined_pa(ctx, bag, "era");
-    TVal era_y_v = prop_or_undefined_pa(ctx, bag, "eraYear");
-
-    if (!era_v.is_undefined() || !era_y_v.is_undefined()) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "era/eraYear are not supported by the ISO calendar");
-        return false;
-    }
     if (!cal_v.is_undefined()) {
         HObject* cal;
         if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
     }
+    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
+    TVal mc_v    = prop_or_undefined_pa(ctx, bag, "monthCode");
+    TVal year_v  = prop_or_undefined_pa(ctx, bag, "year");
 
     long y = cur_y;
     if (!year_v.is_undefined()) {
@@ -5029,16 +5674,13 @@ fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_mis
         }
     }
 
+    // `day` is never a calendar field for the year-month projection (the
+    // ISO calendar's CalendarYearMonthFromFields always forces the
+    // reference day to 1 before resolving); a bag's `day` property, if
+    // any, is neither read nor applied. `from()` always passes cur_day==1;
+    // `with()` passes the existing PlainYearMonth's reference day through
+    // untouched.
     int d = cur_day;
-    if (!day_v.is_undefined()) {
-        long dv;
-        if (!to_integer_with_truncation(v, &day_v, &dv)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
-            return false;
-        }
-        d = (int)dv;
-    }
 
     *out_y = y;
     *out_m = m;
@@ -5171,14 +5813,23 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH) {
-            ctx.result.set_object(o);
+            // IsTemporalYearMonth fast path: still validates (and discards)
+            // the options bag before copying, per ToTemporalYearMonth step
+            // 1.a (`GetTemporalOverflowOption` runs even though its result
+            // is unused for an identity copy). `read_overflow_option` above
+            // already ran unconditionally, so this only needs the copy.
+            HObject*? copy_o = alloc_plain_yearmonth(
+                ctx.heap, plain_yearmonth_y(o), plain_yearmonth_m(o), plain_yearmonth_day(o),
+                ctx.heap.temporal_iso_calendar);
+            if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* copy = copy_o;
+            copy.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+            ctx.result.set_object(copy);
             return;
         }
-        HObject* calendar = ctx.heap.temporal_iso_calendar;
-        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
-        if (!cal_v.is_undefined()) {
-            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return;
-        }
+        // `bag_to_yearmonth_fields` reads `calendar` itself (in spec
+        // order, before month/monthCode/year); reading it again here would
+        // double-fire a `calendar` getter (order-of-operations bug).
         long y; int m; int d;
         if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
@@ -5197,22 +5848,33 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
+// Temporal.PlainYearMonth.compare(one, two): both arguments go through
+// ToTemporalYearMonth — the same string / property-bag / PlainYearMonth
+// coercion `from()` uses (CompareTemporalYearMonth in the spec calls
+// ToTemporalYearMonth on each, not a stricter brand check) — fully
+// coercing `one` before touching `two`, per argument order. The ordering
+// is CompareISODate: year, then month, then the reference ISO day (always
+// 1 for any coerced value here, but included for structural parity with
+// the spec's CompareISODate).
 fn void builtin_temporal_plain_yearmonth_compare(BuiltinContext* ctx) {
     if (ctx.argc < 2) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth.compare requires two arguments");
         return;
     }
-    HObject*? a_o = plain_yearmonth_from_arg(ctx, arg_at(ctx, 0));
+    HObject*? a_o = plain_yearmonth_from_arg_full(ctx, arg_at(ctx, 0));
     if (ctx.should_throw) return;
-    HObject*? b_o = plain_yearmonth_from_arg(ctx, arg_at(ctx, 1));
+    HObject*? b_o = plain_yearmonth_from_arg_full(ctx, arg_at(ctx, 1));
     if (ctx.should_throw) return;
     long ay = plain_yearmonth_y(a_o!!);
     long by = plain_yearmonth_y(b_o!!);
     int am = plain_yearmonth_m(a_o!!);
     int bm = plain_yearmonth_m(b_o!!);
+    int ad = plain_yearmonth_day(a_o!!);
+    int bd = plain_yearmonth_day(b_o!!);
     int cmp = 0;
     if (ay != by) { cmp = ay < by ? -1 : 1; }
     else if (am != bm) { cmp = am < bm ? -1 : 1; }
+    else if (ad != bd) { cmp = ad < bd ? -1 : 1; }
     ctx.result.set_fastint((long)cmp);
 }
 
@@ -5463,11 +6125,8 @@ fn HObject*? plain_yearmonth_from_arg_full(BuiltinContext* ctx, TVal* arg) {
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH) return o;
-        HObject* calendar = ctx.heap.temporal_iso_calendar;
-        TVal cal_v = prop_or_undefined_pa(ctx, o, "calendar");
-        if (!cal_v.is_undefined()) {
-            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return null;
-        }
+        // `bag_to_yearmonth_fields` reads `calendar` itself; reading it
+        // again here would double-fire a `calendar` getter.
         long y; int m; int d;
         if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
@@ -6782,6 +7441,7 @@ fn bool setUpTemporalPlainDateTime(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SINCE.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "withCalendar", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WITHCALENDAR.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "round", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_ROUND.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "withPlainTime", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WITHPLAINTIME.ordinal)) return false;
 
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_DATETIME_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_DATETIME_COMPARE.ordinal)) return false;
@@ -7517,21 +8177,13 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
     }
     HObject* opts = (HObject*)ov.get_heapptr();
 
-    TVal su = prop_or_undefined(opts, ctx.heap, "smallestUnit");
-    if (!su.is_undefined()) {
-        HString* su_s = builtin_to_string_vm(ctx, &su);
-        if (ctx.should_throw) return false;
-        if (su_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit option must be a string"); return false; }
-        char[] v = su_s.get_cstr()[:su_s.blen];
-        if (v == "minute") { *digits = -10; }   // sentinel: round to minute, no fractional part
-        else if (v == "second") { *digits = 0; }
-        else if (v == "millisecond") { *digits = 3; }
-        else if (v == "microsecond") { *digits = 6; }
-        else if (v == "nanosecond")  { *digits = 9; }
-        else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit"); return false; }
-    }
-
-    TVal f = prop_or_undefined(opts, ctx.heap, "fractionalSecondDigits");
+    // Spec reads options in alphabetical order: fractionalSecondDigits,
+    // roundingMode, smallestUnit (GetTemporalFractionalSecondDigitsOption,
+    // GetRoundingModeOption, GetTemporalUnitValuedOption). Property bag reads
+    // must go through the accessor/Proxy-aware path so getters/Proxy traps
+    // observe the reads in this order (test262 propertyBagObserver).
+    TVal f = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
+    if (ctx.should_throw) return false;
     if (!f.is_undefined()) {
         if (f.is_string()) {
             HString* s = (HString*)f.get_heapptr();
@@ -7544,15 +8196,22 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
             else { builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9"); return false; }
         } else {
             double dv = builtin_to_number_getdouble(ctx, &f);
-            if (math::is_nan(dv) || math::is_inf(dv) || dv < 0 || dv > 9 || dv != (double)((long)dv)) {
+            if (ctx.should_throw) return false;
+            if (math::is_nan(dv) || math::is_inf(dv)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
                 return false;
             }
-            *digits = (int)dv;
+            double dc = math::floor(dv);
+            if (dc < 0 || dc > 9) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
+                return false;
+            }
+            *digits = (int)dc;
         }
     }
 
-    TVal rmv = prop_or_undefined(opts, ctx.heap, "roundingMode");
+    TVal rmv = prop_or_undefined_pa(ctx, opts, "roundingMode");
+    if (ctx.should_throw) return false;
     if (!rmv.is_undefined()) {
         HString* rm_s = builtin_to_string_vm(ctx, &rmv);
         if (ctx.should_throw) return false;
@@ -7569,6 +8228,23 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
         else if (v == "halfEven") { *rm = TemporalRoundMode.HALF_EVEN; }
         else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode"); return false; }
     }
+
+    TVal su = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+    if (ctx.should_throw) return false;
+    if (!su.is_undefined()) {
+        HString* su_s = builtin_to_string_vm(ctx, &su);
+        if (ctx.should_throw) return false;
+        if (su_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit option must be a string"); return false; }
+        char[] v = su_s.get_cstr()[:su_s.blen];
+        // Sentinel -10: round to minute, no fractional part. Both singular
+        // and plural spellings are accepted for every unit.
+        if (v == "minute" || v == "minutes") { *digits = -10; }
+        else if (v == "second" || v == "seconds") { *digits = 0; }
+        else if (v == "millisecond" || v == "milliseconds") { *digits = 3; }
+        else if (v == "microsecond" || v == "microseconds") { *digits = 6; }
+        else if (v == "nanosecond" || v == "nanoseconds")  { *digits = 9; }
+        else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit"); return false; }
+    }
     return true;
 }
 
@@ -7579,6 +8255,30 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     int digits;
     TemporalRoundMode rm;
     if (!to_string_precision(ctx, 0, &digits, &rm)) return;
+
+    // Read `timeZone` after fractionalSecondDigits/roundingMode/smallestUnit
+    // (to_string_precision above), matching the spec's alphabetical option
+    // read order (fractionalSecondDigits, roundingMode, smallestUnit,
+    // timeZone). undefined means UTC ("Z" suffix); otherwise resolve it the
+    // same way ZonedDateTime does (string offset/IANA name or a
+    // Temporal.TimeZone-like object).
+    HObject* tz = null;
+    if (ctx.argc > 0) {
+        TVal ov = ctx.regs[ctx.base_reg + 0];
+        if (!ov.is_undefined() && ov.is_object() && ov.get_heapptr() != null) {
+            HObject* opts = (HObject*)ov.get_heapptr();
+            TVal tzv = prop_or_undefined_pa(ctx, opts, "timeZone");
+            if (ctx.should_throw) return;
+            if (!tzv.is_undefined()) {
+                if (try maybe_tz = to_temporal_tz(ctx, &tzv)) {
+                    if (ctx.should_throw) return;
+                    tz = maybe_tz;
+                } else {
+                    return;
+                }
+            }
+        }
+    }
 
     // Whole seconds and sub-second remainder, split toward zero. Read the
     // epoch-nanosecond value directly via to_int128 (no allocation), so no GC
@@ -7606,7 +8306,38 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
         whole_secs = (long)math::floor(secs / 1e9);
         ns_rem = 0;
     }
-    temporal::BrokenDownTime bd = temporal::civil_from_seconds(whole_secs);
+
+    // Apply rounding (RoundTemporalInstant) to the full epoch-nanosecond
+    // value before splitting into wall-clock fields, so the rounded value's
+    // carries (into seconds/minutes/... and even the date) are correct —
+    // matching the spec, which rounds epochNs first and only then computes
+    // wall-clock fields from the rounded instant.
+    if (digits == -10) {
+        // smallestUnit: "minute" -> round to a whole minute boundary.
+        long total_ns = whole_secs * 1000000000 + ns_rem;
+        long rounded_total_ns = round_long_ns(total_ns, 60 * 1000000000L, rm);
+        whole_secs = rounded_total_ns / 1000000000;
+        ns_rem = 0;
+    } else if (digits >= 0 && ns_rem != 0) {
+        long divisor = 1;
+        for (int i = 0; i < 9 - digits; i++) divisor *= 10;
+        long v = (long)round_num_to_incr((double)ns_rem / (double)divisor, 1.0, rm);
+        long new_ns_rem = v * divisor;
+        if (new_ns_rem >= 1000000000) {
+            whole_secs += 1;
+            new_ns_rem -= 1000000000;
+        }
+        ns_rem = new_ns_rem;
+    }
+
+    // Shift wall-clock fields into the requested time zone (or UTC/"Z" if
+    // none given).
+    String zone = tz == null ? "" : timezone_name(tz);
+    int off = 0;
+    if (tz != null) off = temporal::tzdb_offset_for_zone_at(zone, whole_secs);
+    long local_secs = whole_secs + off;
+
+    temporal::BrokenDownTime bd = temporal::civil_from_seconds(local_secs);
 
     // Year formatting per spec §`GetISOPartsFromEpoch`: 0 ≤ year ≤ 9999 renders
     // as a 4-digit unsigned year; year < 0 or year > 9999 renders as a 6-digit
@@ -7614,24 +8345,44 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     char[64] buf;
     int n;
     long y = bd.y;
-    if (y >= 0 && y <= 9999) {
-        n = libc::snprintf(&buf, 40, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
-            y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
-    } else if (y < 0) {
-        n = libc::snprintf(&buf, 40, "-%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
-            -y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+    if (digits == -10) {
+        if (y >= 0 && y <= 9999) {
+            n = libc::snprintf(&buf, 40, "%04ld-%02ld-%02ldT%02ld:%02ld",
+                y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi);
+        } else if (y < 0) {
+            n = libc::snprintf(&buf, 40, "-%06ld-%02ld-%02ldT%02ld:%02ld",
+                -y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi);
+        } else {
+            n = libc::snprintf(&buf, 40, "+%06ld-%02ld-%02ldT%02ld:%02ld",
+                y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi);
+        }
     } else {
-        n = libc::snprintf(&buf, 40, "+%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
-            y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        if (y >= 0 && y <= 9999) {
+            n = libc::snprintf(&buf, 40, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+                y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        } else if (y < 0) {
+            n = libc::snprintf(&buf, 40, "-%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+                -y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        } else {
+            n = libc::snprintf(&buf, 40, "+%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+                y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        }
+        n += format_fractional_seconds(&buf[n], ns_rem, digits, rm);
     }
-    n += format_fractional_seconds(&buf[n], ns_rem, digits, rm);
-    buf[n] = 'Z';
-    n++;
+    if (tz == null) {
+        buf[n] = 'Z';
+        n++;
+    } else {
+        format_offset_seconds(&buf[n], off);
+        n += 6;
+    }
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
 }
 
 fn void builtin_temporal_instant_proto_toJSON(BuiltinContext* ctx) {
-    // toJSON uses "auto" precision, i.e. toString() with no options.
+    // toJSON takes no options and always formats at "auto" precision, so the
+    // caller's arguments must not reach the toString delegate.
+    ctx.argc = 0;
     builtin_temporal_instant_proto_toString(ctx);
 }
 

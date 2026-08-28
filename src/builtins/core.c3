@@ -894,6 +894,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_PLAIN_DATETIME_PROTO_SINCE {"since", 1, &builtin_temporal_plain_datetime_proto_since},
     TEMPORAL_PLAIN_DATETIME_PROTO_WITHCALENDAR {"withCalendar", 1, &builtin_temporal_plain_datetime_proto_withCalendar},
     TEMPORAL_PLAIN_DATETIME_PROTO_ROUND {"round", 1, &builtin_temporal_plain_datetime_proto_round},
+    TEMPORAL_PLAIN_DATETIME_PROTO_WITHPLAINTIME {"withPlainTime", 0, &builtin_temporal_plain_datetime_proto_withPlainTime},
     TEMPORAL_PLAIN_YEARMONTH_CTOR {"PlainYearMonth", 2, &builtin_temporal_plain_yearmonth_ctor},
     TEMPORAL_PLAIN_YEARMONTH_FROM {"from", 1, &builtin_temporal_plain_yearmonth_from},
     TEMPORAL_PLAIN_YEARMONTH_COMPARE {"compare", 2, &builtin_temporal_plain_yearmonth_compare},
