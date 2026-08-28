@@ -3883,6 +3883,24 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) return o;
+        // ZonedDateTime: ToTemporalTime spec uses the wall-clock time at
+        // the ZDT's epoch (after applying the zone offset). Read it via
+        // zdt_wall_fields so the sub-second precision (ns_rem = 1 for
+        // negative-epoch ZDTs) survives.
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
+            zdt_wall_fields(o, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
+            (void)wy; (void)wm; (void)wd; (void)off;
+            temporal::CivilTime valid;
+            if (!fields_to_valid_time(ctx, {
+                .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns,
+            }, &valid)) return null;
+            HObject*? res = alloc_plain_time(ctx.heap, valid);
+            if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+            HObject* r = res;
+            r.prototype = ctx.heap.temporal_plain_time_proto;
+            return r;
+        }
         temporal::CivilTime fields;
         temporal::CivilTime cur = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
         if (!bag_to_time_fields(ctx, o, false, cur, &fields)) return null;
