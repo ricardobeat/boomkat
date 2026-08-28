@@ -2915,14 +2915,19 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
-            // Identity-preserving clone — still respect the overflow option
-            // when the result is constraint-checked (the bag isn't read, so
-            // order-of-operations tests with a PlainDate instance expect
-            // only the options log line).
+            // Spec returns a fresh copy (CreateTemporalDate from the
+            // receiver's slots), never the receiver itself. The options bag
+            // is still observed so Proxy-based order-of-operations tests see
+            // the overflow read.
             temporal::OverflowKind clone_overflow;
             if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
             (void)clone_overflow;
-            ctx.result.set_object(o);
+            temporal::CivilDate cd = plain_date_value(o);
+            HObject*? copy_o = alloc_plain_date(ctx.heap, cd, o.extra.temporal.calendar);
+            if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* copy = copy_o;
+            copy.prototype = ctx.heap.temporal_plain_date_proto;
+            ctx.result.set_object(copy);
             return;
         }
         // Property bag: read fields first, then the overflow option. The
@@ -3848,12 +3853,14 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
-            // Identity-preserving clone; read overflow option so the
-            // order-of-operations tests for that case still see the log.
             temporal::OverflowKind clone_overflow;
             if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
             (void)clone_overflow;
-            ctx.result.set_object(o);
+            HObject*? copy_o = alloc_plain_time(ctx.heap, plain_time_value(o));
+            if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* copy = copy_o;
+            copy.prototype = ctx.heap.temporal_plain_time_proto;
+            ctx.result.set_object(copy);
             return;
         }
         // Property bag: read fields first, then the overflow option.
@@ -4585,13 +4592,15 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
-            // Identity-preserving clone; still parse overflow so the
-            // order-of-operations tests with a PlainDateTime instance see
-            // the options log line.
             temporal::OverflowKind clone_overflow;
             if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
             (void)clone_overflow;
-            ctx.result.set_object(o);
+            temporal::CivilDateTime cdt = plain_datetime_value(o);
+            HObject*? copy_o = alloc_plain_datetime(ctx.heap, cdt, o.extra.temporal.calendar);
+            if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* copy = copy_o;
+            copy.prototype = ctx.heap.temporal_plain_datetime_proto;
+            ctx.result.set_object(copy);
             return;
         }
         if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
@@ -7255,16 +7264,21 @@ fn void builtin_temporal_plain_monthday_from(BuiltinContext* ctx) {
     // eraYear) BEFORE the overflow option, so propertyBagObserver sees the
     // full field-read sequence followed by the option read.
 
-    // PlainMonthDay fast path: same-class instance returns identity, after
-    // running the option read (per test262 the ordering is options-first
-    // for the PlainMonthDay fast path — the converter does nothing for an
-    // identity clone, but the spec still reads overflow).
+    // PlainMonthDay fast path: same-class instance yields a fresh copy, after
+    // running the option read (per test262 the ordering is options-first for
+    // the PlainMonthDay fast path).
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY) {
             temporal::OverflowKind _ov;
             if (!read_overflow_option(ctx, 1, &_ov)) return;
-            ctx.result.set_object(o);
+            HObject*? copy_o = alloc_plain_monthday(ctx.heap,
+                (int)o.extra.temporal.long_a, (int)o.extra.temporal.long_b,
+                (int)o.extra.temporal.long_c, o.extra.temporal.calendar);
+            if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* copy = copy_o;
+            copy.prototype = ctx.heap.temporal_plain_monthday_proto;
+            ctx.result.set_object(copy);
             return;
         }
     }
