@@ -3771,32 +3771,44 @@ fn void builtin_temporal_plain_time_proto_add(BuiltinContext* ctx) {
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
 
-    // Combine hours/minutes/seconds/ms/us/ns into one nanosecond delta, then
-    // split into whole seconds + leftover nanos for the carry-aware add.
+    // Sum hours/minutes/seconds/ms/us/ns into one nanosecond delta. Years,
+    // months, weeks and days are silently ignored for PlainTime: their
+    // presence is allowed (the spec reads them) but they contribute zero.
     long extra_ns = (long)dur.ns + (long)dur.us * 1000 + (long)dur.ms * 1_000_000 +
                     dur.seconds * 1_000_000_000L + dur.minutes * 60_000_000_000L +
                     dur.hours * 3_600_000_000_000L;
+    // Balance into whole seconds + sub-1e9 nanoseconds. The carry_ns is then
+    // split into ms/us/ns parts and added to the current sub-second fields,
+    // matching the spec's separate-balance approach.
     long carry_seconds = extra_ns / 1_000_000_000L;
     long carry_ns = extra_ns - carry_seconds * 1_000_000_000L;
 
     temporal::CivilTime cur = plain_time_value(obj);
-    // Add carry_ns to cur.ns, normalize into [0, 1e9), track the carry.
-    long total_ns = (long)cur.ns + carry_ns;
-    if (total_ns >= 1_000_000_000) {
-        carry_seconds += 1;
-        total_ns -= 1_000_000_000;
-    } else if (total_ns < 0) {
-        carry_seconds -= 1;
-        total_ns += 1_000_000_000;
-    }
-    // combine cur.ms/us (unchanged by carry_ns beyond the ns bump)
-    long full_subsec = ((long)cur.ms * 1_000_000L) + ((long)cur.us * 1000L) + total_ns;
     long day_bump = 0;
-    long _day;
-    temporal::CivilTime result = temporal::add_seconds_to_time(cur, carry_seconds, &_day);
+    temporal::CivilTime result = temporal::add_seconds_to_time(cur, carry_seconds, &day_bump);
     // day_bump is dropped per spec: PlainTime.add cannot cross midnight into
     // a different date. The carry still affects hour/minute/second.
     (void)day_bump;
+    long full_subsec = ((long)cur.ms * 1_000_000L) + ((long)cur.us * 1000L) + ((long)cur.ns) + carry_ns;
+    if (full_subsec >= 1_000_000_000L) {
+        full_subsec -= 1_000_000_000L;
+        // Re-add 1s to result; carry_seconds already incremented by add_seconds_to_time only when
+        // its own overflow triggered. Here we manually propagate.
+        temporal::CivilTime bumped;
+        bumped.h = result.h; bumped.mi = result.mi; bumped.s = result.s;
+        bumped.ms = 0; bumped.us = 0; bumped.ns = 0;
+        day_bump = 0;
+        bumped = temporal::add_seconds_to_time(bumped, 1, &day_bump);
+        result = bumped;
+    } else if (full_subsec < 0) {
+        full_subsec += 1_000_000_000L;
+        temporal::CivilTime bumped;
+        bumped.h = result.h; bumped.mi = result.mi; bumped.s = result.s;
+        bumped.ms = 0; bumped.us = 0; bumped.ns = 0;
+        day_bump = 0;
+        bumped = temporal::add_seconds_to_time(bumped, -1, &day_bump);
+        result = bumped;
+    }
     result.ms = (int)(full_subsec / 1_000_000);
     full_subsec -= (long)result.ms * 1_000_000;
     result.us = (int)(full_subsec / 1000);
@@ -3830,21 +3842,31 @@ fn void builtin_temporal_plain_time_proto_subtract(BuiltinContext* ctx) {
     long extra_ns = (long)dur.ns + (long)dur.us * 1000 + (long)dur.ms * 1_000_000 +
                     dur.seconds * 1_000_000_000L + dur.minutes * 60_000_000_000L +
                     dur.hours * 3_600_000_000_000L;
-    long carry_seconds = -(extra_ns / 1_000_000_000L);
-    long carry_ns = -(extra_ns - (-carry_seconds) * 1_000_000_000L);
+    long carry_seconds = extra_ns / 1_000_000_000L;
+    long carry_ns = extra_ns - carry_seconds * 1_000_000_000L;
 
     temporal::CivilTime cur = plain_time_value(obj);
-    long total_ns = (long)cur.ns + carry_ns;
-    if (total_ns >= 1_000_000_000) {
-        carry_seconds += 1;
-        total_ns -= 1_000_000_000;
-    } else if (total_ns < 0) {
-        carry_seconds -= 1;
-        total_ns += 1_000_000_000;
+    long day_bump = 0;
+    temporal::CivilTime result = temporal::add_seconds_to_time(cur, -carry_seconds, &day_bump);
+    (void)day_bump;
+    long full_subsec = ((long)cur.ms * 1_000_000L) + ((long)cur.us * 1000L) + ((long)cur.ns) - carry_ns;
+    if (full_subsec >= 1_000_000_000L) {
+        full_subsec -= 1_000_000_000L;
+        temporal::CivilTime bumped;
+        bumped.h = result.h; bumped.mi = result.mi; bumped.s = result.s;
+        bumped.ms = 0; bumped.us = 0; bumped.ns = 0;
+        day_bump = 0;
+        bumped = temporal::add_seconds_to_time(bumped, 1, &day_bump);
+        result = bumped;
+    } else if (full_subsec < 0) {
+        full_subsec += 1_000_000_000L;
+        temporal::CivilTime bumped;
+        bumped.h = result.h; bumped.mi = result.mi; bumped.s = result.s;
+        bumped.ms = 0; bumped.us = 0; bumped.ns = 0;
+        day_bump = 0;
+        bumped = temporal::add_seconds_to_time(bumped, -1, &day_bump);
+        result = bumped;
     }
-    long full_subsec = ((long)cur.ms * 1_000_000L) + ((long)cur.us * 1000L) + total_ns;
-    long _day;
-    temporal::CivilTime result = temporal::add_seconds_to_time(cur, carry_seconds, &_day);
     result.ms = (int)(full_subsec / 1_000_000);
     full_subsec -= (long)result.ms * 1_000_000;
     result.us = (int)(full_subsec / 1000);
@@ -11033,6 +11055,12 @@ fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
     // throw TypeError.
     temporal::DurationParts d_in;
     if (!duration_from_arg(ctx, arg, &d_in)) return;
+    // ZDT.add/subtract reads the overflow option (default `reject`) before
+    // any calendar arithmetic — see GetTemporalOverflowOption in the spec.
+    // The order-of-operations tests wrap `options` in a Proxy and expect to
+    // see the `get options.overflow` log line after the duration fields.
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     temporal::DurationParts dp = d_in;
     long sign = subtract ? -1 : 1;
