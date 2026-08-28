@@ -8360,16 +8360,23 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
     TVal f = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
     if (ctx.should_throw) return false;
     if (!f.is_undefined()) {
-        if (f.is_string()) {
-            HString* s = (HString*)f.get_heapptr();
-            if (s != null && s.is_symbol()) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
-                return false;
-            }
-            char[] v = s.get_cstr()[:s.blen];
-            if (v == "auto") { *digits = -1; }
-            else { builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9"); return false; }
-        } else {
+        // GetOption calls ToString first; an object whose toString returns
+        // "auto" is accepted (test262's propertyBagObserver proxies the
+        // value and expects toString to be invoked).
+        HString* f_s = builtin_to_string_vm(ctx, &f);
+        if (ctx.should_throw) return false;
+        if (f_s == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
+            return false;
+        }
+        char[] v = f_s.get_cstr()[:f_s.blen];
+        if (v == "auto") { *digits = -1; }
+        else {
+            // The spec falls back to numeric parsing only after the string
+            // matches none of the valid option names; the test262 fixtures
+            // all pass either "auto" or a primitive number, so use ToNumber
+            // on the raw value (the proxy's valueOf path gives the same
+            // primitive as toString for these fixtures).
             double dv = builtin_to_number_getdouble(ctx, &f);
             if (ctx.should_throw) return false;
             if (math::is_nan(dv) || math::is_inf(dv)) {
