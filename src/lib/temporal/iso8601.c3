@@ -214,6 +214,28 @@ fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz 
     return off;
 }
 
+// Scale a parsed fraction to nanoseconds. `digits` is the literal value of
+// the fractional digits and `len` how many there were, so "5" (len 1) is
+// 5*10^8 ns and "000000001" (len 9) is 1 ns.
+fn long fraction_to_ns(long digits, int len) @local {
+    long ns = digits;
+    for (int k = len; k < 9; k++) ns *= 10;
+    return ns;
+}
+
+// Distribute a sub-unit nanosecond count across the seconds/ms/us/ns
+// columns of `out`, adding the whole-seconds carry to whatever the caller
+// already stored in `out.seconds`. `sign` applies to the seconds carry
+// only; the sub-second columns are left positive and negated as a group
+// once parsing finishes.
+fn void split_subseconds(long total_ns, long sign, DurationParts* out) @local {
+    out.seconds += sign * (total_ns / 1_000_000_000L);
+    long rem = total_ns % 1_000_000_000L;
+    out.ms = rem / 1_000_000;
+    out.us = (rem / 1_000) % 1000;
+    out.ns = rem % 1000;
+}
+
 // Parse an ISO 8601 duration string (`[±]P[n]Y[n]M[n]W[n]D[T[n]H[n]M[n]S]`).
 // Fractions are allowed only on the final time component. Returns false on
 // grammar violations ("PT", "P1.5Y", empty). All-zero "P0D" parses fine.
@@ -288,59 +310,50 @@ fn bool parse_duration(char[] text, DurationParts* out) {
     }
 
     bool any_time = false;
+    // The time grammar is `[n]H[n]M[n]S`: each designator appears at most
+    // once and only in that order, and a fraction is allowed only on the
+    // final component present (`DurationTimeComponent` in the spec, where
+    // the fractional variants are all string-final). `seen_rank` tracks the
+    // highest designator consumed so far so "PT1S1H" and "PT1H1H" are
+    // rejected instead of silently overwriting a field.
+    int seen_rank = 0;   // 1 = H, 2 = M, 3 = S
     while (i < text.len) {
         long n;
         long frac_digits;
         int frac_len;
         if (!read_duration_number(text, &i, &n, &frac_digits, &frac_len)) return false;
         if (i >= text.len) return false;
+        int rank;
         switch (text[i]) {
-            case 'H': {
-                // The fractional digits represent the part of an hour.
-                // Multiply by 3600*10^(9-frac_len) to get nanoseconds.
-                long total_ns = frac_digits;
-                for (int k = frac_len; k < 9; k++) total_ns *= 10;
+            case 'H': rank = 1;
+            case 'M': rank = 2;
+            case 'S': rank = 3;
+            default: return false;
+        }
+        if (rank <= seen_rank) return false;   // out of order or repeated
+        seen_rank = rank;
+        // A fractional component must be the last thing in the string.
+        if (frac_len != 0 && i + 1 != text.len) return false;
+        // The fraction is a part of the unit just consumed; scale it to
+        // nanoseconds and let it cascade down into the smaller columns.
+        // `split_subseconds` writes the whole-seconds carry and the ms/us/ns
+        // columns; the caller adds `sign * n` for the unit's own integer
+        // part. Sub-second columns stay positive here and are negated once,
+        // together, by the `sign < 0` block below the loop.
+        long total_ns = fraction_to_ns(frac_digits, frac_len);
+        switch (text[i]) {
+            case 'H':
                 total_ns *= 3600L;
-                long extra_min_int = total_ns / 60_000_000_000L;
-                long rem_ns = total_ns % 60_000_000_000L;
-                long extra_sec_int = rem_ns / 1_000_000_000L;
-                long sec_rem = rem_ns % 1_000_000_000L;
-                long extra_ms = sec_rem / 1_000_000;
-                long extra_us = (sec_rem / 1_000) % 1000;
-                long extra_ns = sec_rem % 1000;
                 out.hours   = sign * n;
-                out.minutes = sign * extra_min_int;
-                out.seconds = sign * extra_sec_int;
-                out.ms = (int)extra_ms;
-                out.us = (int)extra_us;
-                out.ns = (int)extra_ns;
-                break;
-            }
-            case 'M': {
-                long total_ns = frac_digits;
-                for (int k = frac_len; k < 9; k++) total_ns *= 10;
+                out.minutes = sign * (total_ns / 60_000_000_000L);
+                split_subseconds(total_ns % 60_000_000_000L, sign, out);
+            case 'M':
                 total_ns *= 60L;
-                long extra_sec_int = total_ns / 1_000_000_000L;
-                long sec_rem = total_ns % 1_000_000_000L;
-                long extra_ms = sec_rem / 1_000_000;
-                long extra_us = (sec_rem / 1_000) % 1000;
-                long extra_ns = sec_rem % 1000;
                 out.minutes = sign * n;
-                out.seconds = sign * extra_sec_int;
-                out.ms = (int)extra_ms;
-                out.us = (int)extra_us;
-                out.ns = (int)extra_ns;
-                break;
-            }
-            case 'S': {
-                long total_ns = frac_digits;
-                for (int k = frac_len; k < 9; k++) total_ns *= 10;
+                split_subseconds(total_ns, sign, out);
+            case 'S':
                 out.seconds = sign * n;
-                out.ms = (int)(total_ns / 1_000_000);
-                out.us = (int)((total_ns / 1_000) % 1000);
-                out.ns = (int)(total_ns % 1000);
-                break;
-            }
+                split_subseconds(total_ns, sign, out);
             default: return false;
         }
         any_time = true;
