@@ -8598,14 +8598,27 @@ fn void builtin_temporal_instant_proto_epochNanoseconds(BuiltinContext* ctx) {
 // carry.
 fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRoundMode mode) {
     if (ns_rem < 0) ns_rem = -ns_rem;
-    if (ns_rem == 0) return 0;
     int d = digits;
+    // Explicit fixed digits request (`fractionalSecondDigits` was given):
+    // even when ns_rem is 0 the spec requires padding the requested number
+    // of zeros, so a no-op short-circuit doesn't apply.
     if (d < 0) {
-        // auto: needed digits then drop trailing zeros.
+        // auto: write fraction only when non-zero; trailing zeros dropped.
+        if (ns_rem == 0) return 0;
         d = 9;
         long x = ns_rem;
         while (x > 1 && x % 10 == 0) { x /= 10; d--; }
         if (d <= 0) return 0;
+    } else {
+        // Fixed digits: even when ns_rem == 0 we still write ".000…00" so
+        // e.g. `toString({fractionalSecondDigits: 2})` on a whole-second
+        // instant yields ".00".
+        if (ns_rem == 0) {
+            if (d == 0) return 0;
+            buf[0] = '.';
+            for (int i = 0; i < d; i++) buf[1 + i] = '0';
+            return 1 + d;
+        }
     }
     if (d > 9) d = 9;
     // Round to `d` digits using `mode`. Compute a divisor = 10^(9-d), then
@@ -11042,7 +11055,172 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
     int digits;
     TemporalRoundMode rm;
-    if (!to_string_precision(ctx, 0, &digits, &rm, true)) return;
+    // Probe all seven ZDT.toString options in alphabetical order:
+    // calendarName, fractionalSecondDigits, offset, roundingMode,
+    // smallestUnit, timeZoneName, timeZone. The order-of-operations
+    // fixture asserts each `get options.X` / `get options.X.toString` /
+    // `call options.X.toString` triple in that order, so ToString the
+    // value right after the get. Validate only after all reads succeed —
+    // matches the spec's `Read options / Validate` split.
+    if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
+        TVal ov = ctx.regs[ctx.base_reg];
+        if (!ov.is_object() || ov.get_heapptr() == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+            return;
+        }
+        HObject* opts = (HObject*)ov.get_heapptr();
+        HString* cal_s = null;
+        HString* fd_s = null;
+        HString* off_s = null;
+        HString* rm_str = null;
+        HString* su_s = null;
+        HString* tzn_s = null;
+
+        // calendarName
+        TVal cn = prop_or_undefined_pa(ctx, opts, "calendarName");
+        if (ctx.should_throw) return;
+        if (!cn.is_undefined()) {
+            cal_s = builtin_to_string_vm(ctx, &cn);
+            if (ctx.should_throw) return;
+        }
+
+        // fractionalSecondDigits
+        {
+            TVal fd = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
+            if (ctx.should_throw) return;
+            if (!fd.is_undefined()) {
+                fd_s = builtin_to_string_vm(ctx, &fd);
+                if (ctx.should_throw) return;
+            }
+        }
+
+        // offset
+        {
+            TVal offv = prop_or_undefined_pa(ctx, opts, "offset");
+            if (ctx.should_throw) return;
+            if (!offv.is_undefined()) {
+                off_s = builtin_to_string_vm(ctx, &offv);
+                if (ctx.should_throw) return;
+            }
+        }
+
+        // roundingMode
+        {
+            TVal rmod = prop_or_undefined_pa(ctx, opts, "roundingMode");
+            if (ctx.should_throw) return;
+            if (!rmod.is_undefined()) {
+                rm_str = builtin_to_string_vm(ctx, &rmod);
+                if (ctx.should_throw) return;
+            }
+        }
+
+        // smallestUnit (default: no rounding; sentinel handled below).
+        digits = -1;
+        rm = TemporalRoundMode.TRUNC;
+        {
+            TVal su = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+            if (ctx.should_throw) return;
+            if (!su.is_undefined()) {
+                su_s = builtin_to_string_vm(ctx, &su);
+                if (ctx.should_throw) return;
+            }
+        }
+
+        // timeZoneName
+        {
+            TVal tzn = prop_or_undefined_pa(ctx, opts, "timeZoneName");
+            if (ctx.should_throw) return;
+            if (!tzn.is_undefined()) {
+                tzn_s = builtin_to_string_vm(ctx, &tzn);
+                if (ctx.should_throw) return;
+            }
+        }
+
+        // Validate after all probes. Note: `timeZone` is intentionally
+        // omitted from this list because the ZDT.toString spec doesn't
+        // accept a `timeZone` option (the zone is the receiver's).
+        if (cal_s != null) {
+            char[] v = cal_s.get_cstr()[:cal_s.blen];
+            if (v != "auto" && v != "always" && v != "never" && v != "critical") {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName");
+                return;
+            }
+        }
+        // fractionalSecondDigits: "auto" or a non-negative integer 0..9. When the
+        // value was wrapped by the toPrimitiveObserver the coerced string is
+        // already the digit text (e.g. "2" or "auto"); don't re-read the
+        // bag to honour propertyBagObserver's "one get per option" rule.
+        if (fd_s != null) {
+            char[] v = fd_s.get_cstr()[:fd_s.blen];
+            if (v == "auto") { digits = -1; }
+            else {
+                // Parse the digit text manually (avoids an extra `get trap`
+                // on the property bag for the numeric case).
+                int dv = 0;
+                bool ok = true;
+                for (usz k = 0; k < fd_s.blen; k++) {
+                    char c = v[k];
+                    if (c < '0' || c > '9') { ok = false; break; }
+                    dv = dv * 10 + (c - '0');
+                }
+                if (!ok || dv < 0 || dv > 9) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                    return;
+                }
+                digits = dv;
+            }
+        }
+        if (off_s != null) {
+            char[] v = off_s.get_cstr()[:off_s.blen];
+            if (v != "auto" && v != "never") {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset option");
+                return;
+            }
+        }
+        if (rm_str != null) {
+            char[] v = rm_str.get_cstr()[:rm_str.blen];
+            if (v != "ceil" && v != "floor" && v != "expand" && v != "trunc"
+                && v != "halfCeil" && v != "halfFloor" && v != "halfExpand"
+                && v != "halfTrunc" && v != "halfEven") {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
+                return;
+            }
+            // Map strings to TemporalRoundMode. The default before this
+            // block was TRUNC; any explicit value overrides.
+            if (v == "ceil") { rm = TemporalRoundMode.CEIL; }
+            else if (v == "floor") { rm = TemporalRoundMode.FLOOR; }
+            else if (v == "expand") { rm = TemporalRoundMode.EXPAND; }
+            else if (v == "trunc") { rm = TemporalRoundMode.TRUNC; }
+            else if (v == "halfCeil") { rm = TemporalRoundMode.HALF_CEIL; }
+            else if (v == "halfFloor") { rm = TemporalRoundMode.HALF_FLOOR; }
+            else if (v == "halfExpand") { rm = TemporalRoundMode.HALF_EXPAND; }
+            else if (v == "halfTrunc") { rm = TemporalRoundMode.HALF_TRUNC; }
+            else if (v == "halfEven") { rm = TemporalRoundMode.HALF_EVEN; }
+        }
+        if (su_s != null) {
+            char[] v = su_s.get_cstr()[:su_s.blen];
+            // Sentinel -10: round to minute, no fractional part.
+            if (v == "minute" || v == "minutes") { digits = -10; }
+            else if (v == "second" || v == "seconds") { digits = 0; }
+            else if (v == "millisecond" || v == "milliseconds") { digits = 3; }
+            else if (v == "microsecond" || v == "microseconds") { digits = 6; }
+            else if (v == "nanosecond" || v == "nanoseconds") { digits = 9; }
+            else {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
+                return;
+            }
+        }
+        if (tzn_s != null) {
+            char[] v = tzn_s.get_cstr()[:tzn_s.blen];
+            if (v != "auto" && v != "never" && v != "critical") {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid timeZoneName option");
+                return;
+            }
+        }
+    } else {
+        digits = -1;
+        rm = TemporalRoundMode.TRUNC;
+    }
     zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, digits, rm, false);
 }
 
