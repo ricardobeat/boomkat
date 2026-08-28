@@ -46,9 +46,12 @@ fn CivilDate add_days(CivilDate d, long days) {
 
 // Add `months` to a date, clamping the day-of-month to the end of the result
 // month (Jan 31 + 1 month -> Feb 28/29). Year/month step is the ISO calendar's
-// addIsoMonths: truncating div/mod then re-normalizing to 1..12, which carries
-// negative deltas across year boundaries correctly (2020-01 minus 1 month ->
-// 2019-12). REJECT callers pre-validate; this function always clamps.
+// addIsoMonths: years += months/12 (truncating toward 0) and months += months%12,
+// then normalize month into 1..12, carrying the year. This matches the polyfill's
+// iso8601 dateAdd, which composes years and months as separate fields and
+// normalizes after, rather than the spec's floor() decomposition; the difference
+// is one year for negative month spans that don't divide 12. REJECT callers
+// pre-validate; this function always clamps.
 fn CivilDate add_months(CivilDate d, long months, OverflowKind overflow) {
     long new_year = d.y + months / 12;
     long new_month = (long)d.m + months % 12;
