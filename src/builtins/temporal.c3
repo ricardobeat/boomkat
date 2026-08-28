@@ -317,10 +317,18 @@ fn bool read_overflow_option(BuiltinContext* ctx, int options_index, temporal::O
         return false;
     }
     HObject* opts = (HObject*)ov.get_heapptr();
-    TVal val = prop_or_undefined(opts, ctx.heap, "overflow");
+    // prop_or_undefined_pa goes through a Proxy's [[Get]] trap; the
+    // order-of-operations tests in test262 wrap options in
+    // TemporalHelpers.propertyBagObserver, a Proxy, and expect to see
+    // `get options.overflow` in the log.
+    TVal val = prop_or_undefined_pa(ctx, opts, "overflow");
+    if (ctx.should_throw) return false;
     if (val.is_undefined()) return true;
     // Convert to string per GetOption step 9.a. Symbol throws TypeError
     // (ToString); primitives convert to invalid strings and RangeError below.
+    // builtin_to_string_vm invokes @@toPrimitive / toString / valueOf as the
+    // spec requires, so the proxy also sees the `toString` get/call pair the
+    // test logs expect.
     HString* str = builtin_to_string_vm(ctx, &val);
     if (ctx.should_throw) return false;
     char[] v = str.get_cstr()[:str.blen];
@@ -3115,7 +3123,10 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
 
 // ToTemporalDurationRecord: a Duration instance, an ISO duration string, or a
 // plain object whose date fields must be integers and whose time fields may
-// carry fractions (folded into nanoseconds).
+// carry fractions (folded into nanoseconds). Identical contract to
+// duration_from_arg: alphabetical read order, prop_or_undefined_pa (so a
+// Proxy's get trap fires and the order-of-operations test262 tests see the
+// expected log), and a TypeError when none of the ten fields is present.
 fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::DurationParts* out) {
     Vm* v = (Vm*)ctx.vm;
     out.years = 0;
@@ -3131,7 +3142,12 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
 
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
-        if (s == null || !temporal::parse_duration(s.get_cstr()[:s.blen], out)) {
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return false; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Duration: symbol cannot be converted");
+            return false;
+        }
+        if (!temporal::parse_duration(s.get_cstr()[:s.blen], out)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
             return false;
         }
@@ -3147,11 +3163,17 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
         return true;
     }
 
-    char[][] names = { "years", "months", "weeks", "days", "hours",
-        "minutes", "seconds", "milliseconds", "microseconds", "nanoseconds" };
+    // Spec order: ToTemporalDuration reads the fields in alphabetical order
+    // (CreateDurationRecord / the Duration field table). The slot[] array
+    // maps a read position back to the field it fills.
+    char[][] names = { "days", "hours", "microseconds", "milliseconds",
+        "minutes", "months", "nanoseconds", "seconds", "weeks", "years" };
+    int[] slot = { 3, 4, 8, 7, 5, 1, 9, 6, 2, 0 };
     bool any_field = false;
-    for (int k = 0; k < 10; k++) {
-        TVal pv = prop_or_undefined(o, ctx.heap, names[k]);
+    for (int i = 0; i < 10; i++) {
+        int k = slot[i];
+        TVal pv = prop_or_undefined_pa(ctx, o, names[i]);
+        if (ctx.should_throw) return false;
         if (pv.is_undefined()) continue;
         any_field = true;
         double val = vm::vm_to_number(v, &pv);
@@ -8477,14 +8499,13 @@ fn void builtin_temporal_instant_proto_add(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null
-        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_DURATION) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "add: argument is not a Temporal.Duration");
-        return;
-    }
+    // Per spec, AddDurationToOrSubtractDurationFromInstant's argument is a
+    // Temporal.DurationLike: a Temporal.Duration instance, a duration
+    // string, or a property bag with hour/minute/second/ms/us/ns fields
+    // (no calendar units — Instant rejects years/months/weeks/days).
+    temporal::DurationParts dp;
+    if (!duration_record_from_arg(ctx, arg, &dp)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
-    HObject* dur = (HObject*)arg.get_heapptr();
-    temporal::DurationParts dp = duration_value(dur);
     hbigint::HBigInt* base = self.extra.temporal.big_ns;
     // Convert DurationParts to nanoseconds-as-BigInt.
     hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
@@ -8560,14 +8581,9 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null
-        || ((HObject*)arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_DURATION) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract: argument is not a Temporal.Duration");
-        return;
-    }
+    temporal::DurationParts dp;
+    if (!duration_record_from_arg(ctx, arg, &dp)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
-    HObject* dur = (HObject*)arg.get_heapptr();
-    temporal::DurationParts dp = duration_value(dur);
     hbigint::HBigInt* base = self.extra.temporal.big_ns;
     hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
     if (catch err = delta_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: alloc failed"); return; }
