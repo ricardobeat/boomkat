@@ -669,13 +669,6 @@ fn bool fields_to_valid_date(BuiltinContext* ctx, temporal::CivilDate fields,
 fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
                            temporal::CivilTime cur, temporal::CivilTime* out) {
     Vm* v = (Vm*)ctx.vm;
-    TVal h_v  = prop_or_undefined(bag, ctx.heap, "hour");
-    TVal mi_v = prop_or_undefined(bag, ctx.heap, "minute");
-    TVal s_v  = prop_or_undefined(bag, ctx.heap, "second");
-    TVal ms_v = prop_or_undefined(bag, ctx.heap, "millisecond");
-    TVal us_v = prop_or_undefined(bag, ctx.heap, "microsecond");
-    TVal ns_v = prop_or_undefined(bag, ctx.heap, "nanosecond");
-
     int  h  = (int)cur.h;
     int  mi = (int)cur.mi;
     int  s  = (int)cur.s;
@@ -683,7 +676,23 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     int  us = (int)cur.us;
     int  ns = (int)cur.ns;
 
+    // Per spec (PrepareTemporalFields for PlainTime), the time bag is read
+    // lexicographically: hour, microsecond, millisecond, minute, nanosecond,
+    // second. The corresponding primitive valueOf fires immediately after
+    // each property access (so propertyBagObserver sees the get/get valueOf/
+    // call triple per field), and the explicit ms/us/ns read in earlier
+    // positions lets the second-block override check see whether the bag
+    // carried any of those three explicitly.
+    //
+    // All six time fields default to 0 when omitted from the bag —
+    // Temporal.PlainDateTime.from({year, month, day}) is valid
+    // (test262 argument-propertybag-optional-properties.js). Only fall back
+    // to `cur` when the caller asked for with() semantics.
+
     long lv;
+
+    // hour
+    TVal h_v = prop_or_undefined_pa(ctx, bag, "hour");
     if (!h_v.is_undefined()) {
         if (!to_integer_with_truncation(v, &h_v, &lv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
@@ -692,12 +701,37 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
         }
         h = (int)lv;
     } else if (!keep_missing) {
-        // Per spec, all six time fields default to 0 when omitted from the
-        // bag — Temporal.PlainDateTime.from({year, month, day}) is valid
-        // (test262 argument-propertybag-optional-properties.js). Only fall
-        // back to `cur` when the caller asked for with() semantics.
         h = 0;
     }
+
+    // microsecond
+    TVal us_v = prop_or_undefined_pa(ctx, bag, "microsecond");
+    if (!us_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &us_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
+            return false;
+        }
+        us = (int)lv;
+    } else if (!keep_missing) {
+        us = 0;
+    }
+
+    // millisecond
+    TVal ms_v = prop_or_undefined_pa(ctx, bag, "millisecond");
+    if (!ms_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &ms_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
+            return false;
+        }
+        ms = (int)lv;
+    } else if (!keep_missing) {
+        ms = 0;
+    }
+
+    // minute
+    TVal mi_v = prop_or_undefined_pa(ctx, bag, "minute");
     if (!mi_v.is_undefined()) {
         if (!to_integer_with_truncation(v, &mi_v, &lv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
@@ -708,8 +742,25 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     } else if (!keep_missing) {
         mi = 0;
     }
+
+    // nanosecond
+    TVal ns_v = prop_or_undefined_pa(ctx, bag, "nanosecond");
+    if (!ns_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &ns_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
+            return false;
+        }
+        ns = (int)lv;
+    } else if (!keep_missing) {
+        ns = 0;
+    }
+
+    // second — supports an optional fractional part that splits into
+    // ms/us/ns; explicit millisecond/microsecond/nanosecond (which were
+    // already read earlier in this function) override the split.
+    TVal s_v = prop_or_undefined_pa(ctx, bag, "second");
     if (!s_v.is_undefined()) {
-        // Seconds allow a fractional part per the spec: take it as ms+us+ns.
         double d = vm::vm_to_number(v, &s_v);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
         if (math::is_nan(d) || math::is_inf(d)) {
@@ -724,50 +775,17 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
         double frac = d - (double)whole;
         if (whole == 60) { whole = 59; frac = 0; }
         s = (int)whole;
-        // Translate the fractional part to ms/us/ns with rounding.
         long frac_ns = (long)math::trunc(frac * 1_000_000_000.0);
         if (frac_ns < 0) frac_ns = 0;
         if (frac_ns > 999_999_999) frac_ns = 999_999_999;
         ms = (int)(frac_ns / 1_000_000);
         us = (int)((frac_ns / 1000) % 1000);
         ns = (int)(frac_ns % 1000);
-        // Explicit millisecond/microsecond/nanosecond properties override the
-        // fractional second, per spec: the explicit one wins.
         if (!ms_v.is_undefined() || !us_v.is_undefined() || !ns_v.is_undefined()) {
             ms = 0; us = 0; ns = 0;
         }
     } else if (!keep_missing) {
         s = 0;
-    }
-    if (!ms_v.is_undefined()) {
-        if (!to_integer_with_truncation(v, &ms_v, &lv)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
-            return false;
-        }
-        ms = (int)lv;
-    } else if (!keep_missing) {
-        ms = 0;
-    }
-    if (!us_v.is_undefined()) {
-        if (!to_integer_with_truncation(v, &us_v, &lv)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
-            return false;
-        }
-        us = (int)lv;
-    } else if (!keep_missing) {
-        us = 0;
-    }
-    if (!ns_v.is_undefined()) {
-        if (!to_integer_with_truncation(v, &ns_v, &lv)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
-            return false;
-        }
-        ns = (int)lv;
-    } else if (!keep_missing) {
-        ns = 0;
     }
 
     out.h = h;
@@ -3710,6 +3728,13 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainTime.from: out of range");
             return;
         }
+        // Per spec ToTemporalTime always parses the overflow option even
+        // when the input is a string (step 1 of ToTemporalTime runs
+        // GetTemporalOverflowOption before the per-kind coercion). The
+        // value is unused here, but the property reads must fire so the
+        // order-of-operations test for `from(string, options)` records them.
+        temporal::OverflowKind _str_overflow;
+        if (!read_overflow_option(ctx, 1, &_str_overflow)) return;
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
@@ -3799,7 +3824,7 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     // sentinel -10 (minute), 0 (second), 3/6/9 (sub-second).
     int digits = -1;
     TemporalRoundMode rm = TemporalRoundMode.TRUNC;
-    if (!to_string_precision(ctx, 0, &digits, &rm)) return;
+    if (!to_string_precision(ctx, 0, &digits, &rm, false)) return;
     // No rounding to apply for PlainTime beyond the digit truncation that
     // the formatter does directly; the `rm` is consumed here only to keep
     // the option log faithful to the spec.
@@ -8561,7 +8586,7 @@ fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRou
 // 9). `rounding_mode` defaults to TRUNC; "ceil", "floor", "expand", "trunc",
 // "halfCeil", "halfFloor", "halfExpand", "halfTrunc", "halfEven" are valid.
 // Returns false on a malformed option (after throwing).
-fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits, TemporalRoundMode* rm) {
+fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits, TemporalRoundMode* rm, bool read_time_zone) {
     *digits = -1;  // auto when no options
     *rm = TemporalRoundMode.TRUNC;
     if (ctx.argc <= options_index) return true;
@@ -8634,6 +8659,7 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
 
     TVal su = prop_or_undefined_pa(ctx, opts, "smallestUnit");
     if (ctx.should_throw) return false;
+    bool su_valid = true;
     if (!su.is_undefined()) {
         HString* su_s = builtin_to_string_vm(ctx, &su);
         if (ctx.should_throw) return false;
@@ -8646,7 +8672,21 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
         else if (v == "millisecond" || v == "milliseconds") { *digits = 3; }
         else if (v == "microsecond" || v == "microseconds") { *digits = 6; }
         else if (v == "nanosecond" || v == "nanoseconds")  { *digits = 9; }
-        else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit"); return false; }
+        else { su_valid = false; }
+    }
+    // Instant/ZDT observe `timeZone` in their toString tests; PlainTime does
+    // not. Read it after the alphabetical option batch so the order-of-
+    // operations expected record observes the `get options.timeZone` entry
+    // even when smallestUnit later proves invalid (test262's
+    // options-read-before-algorithmic-validation.js expects this sequence).
+    if (read_time_zone) {
+        TVal _tz = prop_or_undefined_pa(ctx, opts, "timeZone");
+        if (ctx.should_throw) return false;
+        (void)_tz;
+    }
+    if (!su_valid) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
+        return false;
     }
     return true;
 }
@@ -8657,7 +8697,7 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
     int digits;
     TemporalRoundMode rm;
-    if (!to_string_precision(ctx, 0, &digits, &rm)) return;
+    if (!to_string_precision(ctx, 0, &digits, &rm, true)) return;
 
     // Read `timeZone` after fractionalSecondDigits/roundingMode/smallestUnit
     // (to_string_precision above), matching the spec's alphabetical option
@@ -10953,7 +10993,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
     int digits;
     TemporalRoundMode rm;
-    if (!to_string_precision(ctx, 0, &digits, &rm)) return;
+    if (!to_string_precision(ctx, 0, &digits, &rm, true)) return;
     zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, digits, rm, false);
 }
 
