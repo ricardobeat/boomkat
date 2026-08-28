@@ -424,16 +424,29 @@ fn bool parse_month_code(BuiltinContext* ctx, TVal tv, int* out) {
     }
     HString* s = (HString*)tv.get_heapptr();
     char[] text = s.get_cstr()[:s.blen];
-    if (text.len != 3 || text[0] != 'M' ||
-        text[1] < '0' || text[1] > '9' || text[2] < '0' || text[2] > '9') {
+    // Spec's monthCode grammar is `M01..M12` or `M01L..M12L` (leap-month
+    // suffix). The syntactic check fires first; suitability (the
+    // calendar-specific month value check) runs in
+    // CalendarResolveFields / monthCodeFromFields, so a well-formed
+    // `M99L` reaches that later check rather than throwing RangeError
+    // here. test262 `monthcode-invalid.js`.
+    if (text.len != 3 && text.len != 4) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid monthCode");
+        return false;
+    }
+    if (text[0] != 'M') {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid monthCode");
+        return false;
+    }
+    if (text[1] < '0' || text[1] > '9' || text[2] < '0' || text[2] > '9') {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid monthCode");
+        return false;
+    }
+    if (text.len == 4 && text[3] != 'L') {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid monthCode");
         return false;
     }
     int m = (text[1] - '0') * 10 + (text[2] - '0');
-    if (m < 1 || m > 12) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid monthCode");
-        return false;
-    }
     *out = m;
     return true;
 }
@@ -504,7 +517,8 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
             return false;
         }
     } else if (!keep_missing) {
-        d = 1;
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing day property");
+        return false;
     }
 
     // month
@@ -520,15 +534,23 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
         have_month = true;
     }
 
-    // monthCode
+    // monthCode — read and validate the syntax BEFORE year so a malformed
+    // monthCode (e.g. "L99M") raises RangeError even when year is a Symbol
+    // that would otherwise raise TypeError first. test262 `monthcode-invalid.js`.
     TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
+    bool have_mc = false;
+    long mci = 0;
     if (!mc_v.is_undefined()) {
-        int mci;
-        if (!parse_month_code(ctx, mc_v, &mci)) return false;
-        if (have_month && mv != mci) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
-            return false;
-        }
+        int mci_int;
+        if (!parse_month_code(ctx, mc_v, &mci_int)) return false;
+        mci = mci_int;
+        have_mc = true;
+    }
+    if (have_month && have_mc && mv != mci) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
+        return false;
+    }
+    if (have_mc) {
         m = mci;
     } else if (have_month) {
         m = mv;
@@ -548,6 +570,28 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     } else if (!keep_missing) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "missing year property");
         return false;
+    }
+
+    // CalendarResolveFields / monthCodeFromFields: validate monthCode
+    // suitability for the ISO calendar after the year type has been
+    // checked. ISO accepts M01..M12 only — anything else is unsuitable.
+    // (L-suffixed codes are non-ISO lunisolar and rejected.) The
+    // suitability check fires after `year` is read so a Symbol() year
+    // raises TypeError first (test262 `monthcode-invalid.js`).
+    if (have_mc) {
+        if (mci < 1 || mci > 12) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "monthCode not valid for ISO 8601 calendar");
+            return false;
+        }
+        HString* mc_s = (HString*)mc_v.get_heapptr();
+        if (mc_s != null && !mc_s.is_symbol()) {
+            String mc_text = (String)mc_s.get_cstr()[:mc_s.blen];
+            if (mc_text.len == 4) {
+                // "MxxL" — only valid for lunisolar calendars; ISO rejects.
+                builtin_throw(ctx, ctx.heap.range_err_proto, "monthCode not valid for ISO 8601 calendar");
+                return false;
+            }
+        }
     }
 
     out.y = y;
