@@ -5408,17 +5408,14 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
         }
     } else {
         opts = (HObject*)round_to.get_heapptr();
-        TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
-        if (ctx.should_throw) return;
-        if (!su_v.is_undefined()) {
-            HString* s = builtin_to_string_vm(ctx, &su_v);
-            if (ctx.should_throw) return;
-            if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
-                return;
-            }
-            smallest_given = true;
-        }
+        // Spec reads options in alphabetical order: roundingIncrement,
+        // roundingMode, smallestUnit. Property bag reads must fire in
+        // that sequence for test262's order-of-operations and options-
+        // read-before fixtures to see the full bag before any validation
+        // throws. ToString/valueOf fires per-field so observers see
+        // `get options.X` / `get options.X.toString` / `call options.X.toString`
+        // (and the same triple on `X.valueOf` for numeric values), then
+        // move to the next option.
         TVal ri_v = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
         if (ctx.should_throw) return;
         if (!ri_v.is_undefined()) {
@@ -5440,6 +5437,17 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
+        }
+        TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+        if (ctx.should_throw) return;
+        if (!su_v.is_undefined()) {
+            HString* s = builtin_to_string_vm(ctx, &su_v);
+            if (ctx.should_throw) return;
+            if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
+                return;
+            }
+            smallest_given = true;
         }
     }
     if (!smallest_given) {
