@@ -1798,14 +1798,16 @@ fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationP
     long mo = a.months  + b.months;
     long w  = a.weeks   + b.weeks;
     long d  = a.days    + b.days;
-    // Convert each time column to ns, sum, then split.
+    // Convert each time column to ns, sum, then split. The per-field sums
+    // must widen to int128 before adding: two fields near LONG_MAX (the
+    // spec allows ms/us/ns up to ~9e18 each) overflow a long sum.
     int128 total_ns = (int128)0;
-    total_ns += (int128)(a.hours + b.hours)    * 3600000000000L;
-    total_ns += (int128)(a.minutes + b.minutes) *   60000000000L;
-    total_ns += (int128)(a.seconds + b.seconds) *    1000000000L;
-    total_ns += (int128)(a.ms + b.ms)           *       1000000L;
-    total_ns += (int128)(a.us + b.us)           *          1000L;
-    total_ns += (int128)(a.ns + b.ns);
+    total_ns += ((int128)a.hours + (int128)b.hours)    * 3600000000000L;
+    total_ns += ((int128)a.minutes + (int128)b.minutes) *   60000000000L;
+    total_ns += ((int128)a.seconds + (int128)b.seconds) *    1000000000L;
+    total_ns += ((int128)a.ms + (int128)b.ms)           *       1000000L;
+    total_ns += ((int128)a.us + (int128)b.us)           *          1000L;
+    total_ns += (int128)a.ns + (int128)b.ns;
     // Per spec, IsValidDuration rejects any duration whose time column
     // (after balancing days into seconds) exceeds ±2^53 seconds. Year/month/week
     // units are unbounded in the spec — only their absolute value needs to
@@ -1818,80 +1820,53 @@ fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationP
         // Caller decides whether to throw — signal failure.
         return false;
     }
-    // Per spec, when neither operand has any calendar units the result keeps
-    // its time units only: the nanosecond total is NOT balanced across a day
-    // boundary. The test262 argument-string-fractional-units-rounding-mode
-    // suite expects -PT1.03125H + blank = {hours:-1, ...}, not
-    // {days:-1, hours:22, ...}.
+    // Spec AddDuration with no relativeTo: any calendar unit (years, months,
+    // weeks) in either operand is a RangeError.
     bool no_calendar_units = (y == 0 && mo == 0 && w == 0 && a.years == 0
         && b.years == 0 && a.months == 0 && b.months == 0
         && a.weeks == 0 && b.weeks == 0);
-    if (no_calendar_units) {
-        out.days = 0;
-        out.years = 0;
-        out.months = 0;
-        out.weeks = 0;
-        if (total_ns >= 0) {
-            out.hours   = (long)(total_ns / 3600000000000L);
-            int128 rem = total_ns % 3600000000000L;
-            out.minutes = (long)(rem /   60000000000L);
-            rem        %=   60000000000L;
-            out.seconds = (long)(rem /    1000000000L);
-            rem        %=    1000000000L;
-            out.ms      = (long)(rem /       1000000L);
-            rem        %=       1000000L;
-            out.us      = (long)(rem /          1000L);
-            out.ns      = (long)(rem %             1000L);
-        } else {
-            // Negative total_ns: divide directly by unit scales (each
-            // division in C3 truncates toward zero), leaving the result
-            // negative without re-normalising across a day boundary.
-            out.hours   = (long)(total_ns / 3600000000000L);
-            int128 rem = total_ns % 3600000000000L;
-            out.minutes = (long)(rem /   60000000000L);
-            rem        %=   60000000000L;
-            out.seconds = (long)(rem /    1000000000L);
-            rem        %=    1000000000L;
-            out.ms      = (long)(rem /       1000000L);
-            rem        %=       1000000L;
-            out.us      = (long)(rem /          1000L);
-            out.ns      = (long)(rem %             1000L);
-        }
-        return true;
+    if (!no_calendar_units) return false;
+
+    // BalanceTimeDuration(norm, largestUnit) with largestUnit = the larger of
+    // the two operands' default largest units: the time total truncates toward
+    // zero into whole units of largestUnit and the same-sign remainder fills
+    // the columns below it, so {minutes:100,...} - {minutes:10,...} reports
+    // 91m while P50DT50H + itself balances 100 of the 101 hours into days.
+    TemporalUnit largest = default_largest_unit(a);
+    TemporalUnit largest_b = default_largest_unit(b);
+    if (largest_b < largest) largest = largest_b;
+    out.years = 0;
+    out.months = 0;
+    out.weeks = 0;
+    out.days = d;
+    out.hours = 0; out.minutes = 0; out.seconds = 0;
+    out.ms = 0; out.us = 0; out.ns = 0;
+    int128 rem = total_ns;
+    if (largest <= TemporalUnit.DAY) {
+        out.days += (long)(rem / 86400000000000L);
+        rem %= 86400000000000L;
     }
-    if (total_ns < 0) {
-        long whole_days = (long)(-((-total_ns) / 86400000000000L));
-        int128 rem = -((-total_ns) % 86400000000000L);
-        if (rem != 0) { whole_days -= 1; rem += 86400000000000L; }
-        out.days    = d + whole_days;
-        out.hours   = (long)(rem / 3600000000000L);
-        rem        %= 3600000000000L;
-        out.minutes = (long)(rem /   60000000000L);
-        rem        %=   60000000000L;
-        out.seconds = (long)(rem /    1000000000L);
-        rem        %=    1000000000L;
-        out.ms      = (long)(rem /       1000000L);
-        rem        %=       1000000L;
-        out.us      = (long)(rem /          1000L);
-        out.ns      = (long)(rem %             1000L);
-    } else {
-        long whole_days = (long)(total_ns / 86400000000000L);
-        int128 rem = total_ns % 86400000000000L;
-        out.days    = d + whole_days;
-        out.hours   = (long)(rem / 3600000000000L);
-        rem        %= 3600000000000L;
-        out.minutes = (long)(rem /   60000000000L);
-        rem        %=   60000000000L;
-        out.seconds = (long)(rem /    1000000000L);
-        rem        %=    1000000000L;
-        out.ms      = (long)(rem /       1000000L);
-        rem        %=       1000000L;
-        out.us      = (long)(rem /          1000L);
-        out.ns      = (long)(rem %             1000L);
+    if (largest <= TemporalUnit.HOUR) {
+        out.hours = (long)(rem / 3600000000000L);
+        rem %= 3600000000000L;
     }
-    out.years  = y;
-    out.months = mo;
-    out.weeks  = w;
+    if (largest <= TemporalUnit.MINUTE) {
+        out.minutes = (long)(rem / 60000000000L);
+        rem %= 60000000000L;
+    }
+    if (largest <= TemporalUnit.SECOND) {
+        out.seconds = (long)(rem / 1000000000L);
+        rem %= 1000000000L;
+    }
+    if (largest <= TemporalUnit.MILLISECOND) {
+        out.ms = (long)(rem / 1000000L);
+        rem %= 1000000L;
+    }
+    if (largest <= TemporalUnit.MICROSECOND) {
+        out.us = (long)(rem / 1000L);
+        rem %= 1000L;
+    }
+    out.ns = (long)rem;
     return true;
 }
 
