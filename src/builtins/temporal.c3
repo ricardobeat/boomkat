@@ -6865,75 +6865,22 @@ fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_miss
                                 bool* out_have_mc, int* out_mci, TVal* out_mc_v) {
     Vm* v = (Vm*)ctx.vm;
     *out_have_mc = false;
-    TVal year_v  = prop_or_undefined_pa(ctx, bag, "year");
-    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
-    TVal mc_v    = prop_or_undefined_pa(ctx, bag, "monthCode");
-    TVal day_v   = prop_or_undefined_pa(ctx, bag, "day");
-    TVal cal_v   = prop_or_undefined_pa(ctx, bag, "calendar");
-    TVal era_v   = prop_or_undefined_pa(ctx, bag, "era");
-    TVal era_y_v = prop_or_undefined_pa(ctx, bag, "eraYear");
-
-    if (!era_v.is_undefined() || !era_y_v.is_undefined()) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "era/eraYear are not supported by the ISO calendar");
-        return false;
-    }
+    // Spec reads the calendar fields alphabetically — calendar, day,
+    // month, monthCode, year — for the ISO 8601 calendar. era / eraYear
+    // are NOT in ISO PrepareTemporalFields and are intentionally not
+    // probed here; propertyBagObserver expects the fire of these five
+    // traps in lexicographic order, with each property's valueOf/toString
+    // triple landing between the get and the next field's get.
+    TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
     if (!cal_v.is_undefined()) {
         HObject* cal;
         if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
     }
 
-    int y = cur_y;
-    if (!year_v.is_undefined()) {
-        long yl;
-        if (!to_integer_with_truncation(v, &year_v, &yl)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
-            return false;
-        }
-        y = (int)yl;
-    } else if (!keep_missing) {
-        y = 1972;  // default reference year: a leap year so Feb 29 is valid
-    }
-
-    int m = cur_m;
-    if (month_v.is_undefined() && mc_v.is_undefined()) {
-        if (!keep_missing) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
-            return false;
-        }
-    } else {
-        long mv = 0;
-        bool have_month = false;
-        if (!month_v.is_undefined()) {
-            if (!to_integer_with_truncation(v, &month_v, &mv)) {
-                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-                builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
-                return false;
-            }
-            have_month = true;
-        }
-        if (!mc_v.is_undefined()) {
-            int mci;
-            if (!parse_month_code(ctx, mc_v, &mci)) return false;
-            // Reported to the caller so check_iso_monthcode_suitability can
-            // run after read_overflow_option. Already invoked from
-            // PlainMonthDay.from's caller, which reads overflow first; for
-            // from() correctness, the suitability check must follow the
-            // option bag, not the field reads.
-            *out_have_mc = true;
-            *out_mci = mci;
-            *out_mc_v = mc_v;
-            if (have_month && mv != mci) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
-                return false;
-            }
-            m = mci;
-        } else if (have_month) {
-            m = (int)mv;
-        }
-    }
-
+    // day (alphabetical position 2): read, then coerce via
+    // toIntegerWithTruncation which fires the primitive's valueOf.
     int d = cur_d;
+    TVal day_v = prop_or_undefined_pa(ctx, bag, "day");
     if (!day_v.is_undefined()) {
         long dl;
         if (!to_integer_with_truncation(v, &day_v, &dl)) {
@@ -6945,6 +6892,55 @@ fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_miss
     } else if (!keep_missing) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "missing day property");
         return false;
+    }
+
+    // month
+    int m = cur_m;
+    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
+    bool have_month = false;
+    long mv = 0;
+    if (!month_v.is_undefined()) {
+        if (!to_integer_with_truncation(v, &month_v, &mv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+            return false;
+        }
+        have_month = true;
+    }
+
+    // monthCode: parse_month_code fires toString on the wrapped primitive
+    TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
+    if (!mc_v.is_undefined()) {
+        int mci;
+        if (!parse_month_code(ctx, mc_v, &mci)) return false;
+        *out_have_mc = true;
+        *out_mci = mci;
+        *out_mc_v = mc_v;
+        if (have_month && mv != mci) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
+            return false;
+        }
+        m = mci;
+    } else if (have_month) {
+        m = (int)mv;
+    } else if (!keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
+        return false;
+    }
+
+    // year (last alphabetical position)
+    int y = cur_y;
+    TVal year_v = prop_or_undefined_pa(ctx, bag, "year");
+    if (!year_v.is_undefined()) {
+        long yl;
+        if (!to_integer_with_truncation(v, &year_v, &yl)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
+            return false;
+        }
+        y = (int)yl;
+    } else if (!keep_missing) {
+        y = 1972;  // default reference year: leap year so Feb 29 is valid
     }
 
     *out_y = y;
@@ -7036,20 +7032,38 @@ fn void builtin_temporal_plain_monthday_from(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
 
-    // PlainMonthDay fast path: same-class instance returns identity.
+    // Spec reads the field bag (calendar, day, month, monthCode, year, era,
+    // eraYear) BEFORE the overflow option, so propertyBagObserver sees the
+    // full field-read sequence followed by the option read.
+
+    // PlainMonthDay fast path: same-class instance returns identity, after
+    // running the option read (per test262 the ordering is options-first
+    // for the PlainMonthDay fast path — the converter does nothing for an
+    // identity clone, but the spec still reads overflow).
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY) {
+            temporal::OverflowKind _ov;
+            if (!read_overflow_option(ctx, 1, &_ov)) return;
             ctx.result.set_object(o);
             return;
         }
     }
 
     int vy; int vm; int vd;
-    if (!plainmonthday_from_arg_full(ctx, arg, overflow, &vy, &vm, &vd)) return;
+    if (!plainmonthday_from_arg_full(ctx, arg, temporal::OverflowKind.CONSTRAIN, &vy, &vm, &vd)) return;
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    // Re-validate with the resolved overflow (the initial pass used
+    // CONSTRAIN so the field reads could finish first even when the bag
+    // is invalid; the second pass enforces month/day bounds under the
+    // user's overflow preference).
+    if (overflow == temporal::OverflowKind.REJECT) {
+        if (!fields_to_valid_monthday(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
+    } else {
+        if (!fields_to_valid_monthday(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
+    }
 
     HObject*? obj_o = alloc_plain_monthday(ctx.heap, vy, vm, vd, ctx.heap.temporal_iso_calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
