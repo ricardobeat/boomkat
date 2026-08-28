@@ -1663,6 +1663,18 @@ fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationP
     total_ns += (int128)(a.ms + b.ms)           *       1000000L;
     total_ns += (int128)(a.us + b.us)           *          1000L;
     total_ns += (int128)(a.ns + b.ns);
+    // Per spec, IsValidDuration rejects any duration whose time column
+    // (after balancing days into seconds) exceeds ±2^53 seconds. Year/month/week
+    // units are unbounded in the spec — only their absolute value needs to
+    // remain within int64. We validate only the time column here; caller is
+    // responsible for year/month range.
+    int128 days_secs = (int128)d * 86400L;
+    int128 combined_secs = days_secs + total_ns / 1000000000L;
+    int128 max_secs = (int128)9007199254740992L;  // 2^53
+    if (combined_secs >= max_secs || combined_secs <= -max_secs) {
+        // Caller decides whether to throw — signal failure.
+        return false;
+    }
     if (total_ns < 0) {
         long whole_days = (long)(-((-total_ns) / 86400000000000L));
         int128 rem = -((-total_ns) % 86400000000000L);
@@ -1710,7 +1722,10 @@ fn void builtin_temporal_duration_proto_add(BuiltinContext* ctx) {
     if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &other)) return;
     temporal::DurationParts a = duration_value((HObject*)this_val.get_heapptr());
     temporal::DurationParts result;
-    if (!add_durations_no_relative(a, other, &result)) return;
+    if (!add_durations_no_relative(a, other, &result)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Duration arithmetic produced an out-of-range result");
+        return;
+    }
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
@@ -1740,7 +1755,10 @@ fn void builtin_temporal_duration_proto_subtract(BuiltinContext* ctx) {
     other.ns = -other.ns;
     temporal::DurationParts a = duration_value((HObject*)this_val.get_heapptr());
     temporal::DurationParts result;
-    if (!add_durations_no_relative(a, other, &result)) return;
+    if (!add_durations_no_relative(a, other, &result)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Duration arithmetic produced an out-of-range result");
+        return;
+    }
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
@@ -3170,6 +3188,9 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
         "minutes", "months", "nanoseconds", "seconds", "weeks", "years" };
     int[] slot = { 3, 4, 8, 7, 5, 1, 9, 6, 2, 0 };
     bool any_field = false;
+    // Per spec, mixed-sign duration properties raise RangeError; collect the
+    // sign of the first non-zero field and reject anything that disagrees.
+    int overall_sign = 0;
     for (int i = 0; i < 10; i++) {
         int k = slot[i];
         TVal pv = prop_or_undefined_pa(ctx, o, names[i]);
@@ -3182,9 +3203,22 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
             builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
             return false;
         }
-        if (k < 4 && math::floor(val) != val) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "years/months/weeks/days must be integers");
+        // All ten fields must be integers — fractional time components are
+        // only allowed via ISO strings (where the parser balances them into
+        // smaller units) or the {fractional: true} shape used by other APIs,
+        // not in a plain property bag.
+        if (math::floor(val) != val) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
             return false;
+        }
+        if (val != 0) {
+            int s = val < 0 ? -1 : 1;
+            if (overall_sign == 0) {
+                overall_sign = s;
+            } else if (overall_sign != s) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "mixed-sign duration properties are not allowed");
+                return false;
+            }
         }
         long whole = (long)math::trunc(val);
         switch (k) {
@@ -3192,11 +3226,11 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
             case 1: out.months = whole; break;
             case 2: out.weeks = whole; break;
             case 3: out.days = whole; break;
-            case 4: out.hours = whole; out.ns += (int)((val - (double)whole) * 3.6e12); break;
-            case 5: out.minutes = whole; out.ns += (int)((val - (double)whole) * 6e10); break;
-            case 6: out.seconds = whole; out.ns += (int)((val - (double)whole) * 1e9); break;
-            case 7: out.ms = (int)whole; out.ns += (int)((val - (double)whole) * 1e6); break;
-            case 8: out.us = (int)whole; out.ns += (int)((val - (double)whole) * 1e3); break;
+            case 4: out.hours = whole; break;
+            case 5: out.minutes = whole; break;
+            case 6: out.seconds = whole; break;
+            case 7: out.ms = (int)whole; break;
+            case 8: out.us = (int)whole; break;
             default: out.ns = (int)whole; break;
         }
     }
