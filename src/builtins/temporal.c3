@@ -461,6 +461,20 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
             if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
         }
     }
+    // Probe timeZone (read for order-of-operations parity with the spec,
+    // even though the ISO calendar's PrepareTemporalFields discards the
+    // value; it must still fire the proxy `get` trap).
+    {
+        TVal tz_v = prop_or_undefined_pa(ctx, bag, "timeZone");
+        if (!tz_v.is_undefined()) {
+            // Validate the value via to_temporal_tz; the resulting object
+            // is dropped — the test262 with-order fixtures only assert the
+            // log line, not the calendar's interpretation of timeZone.
+            HObject*? tz_o = to_temporal_tz(ctx, &tz_v);
+            if (ctx.should_throw) return false;
+            (void)tz_o;
+        }
+    }
 
     // Era / eraYear are never read by the ISO calendar's PrepareTemporalFields,
     // so we don't probe for them here either. They would be rejected if a
