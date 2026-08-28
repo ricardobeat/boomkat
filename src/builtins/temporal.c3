@@ -12015,8 +12015,14 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     // Calendar-unit path: difference the wall-clock dates, then carry whatever
     // time is left over. Working on the local axis keeps a DST day one calendar
     // day even though it is not 24 hours of elapsed time.
-    HObject* from = until ? self : other;
-    HObject* to   = until ? other : self;
+    //
+    // The spec's NudgeToCalendarUnit uses the receiver as the rounding origin
+    // regardless of until/since, and flips the sign at the end for `since`.
+    // Mirror that here: `from = self` always (so the year/month lengths are
+    // measured at `self`), `to = other` always, and negate the resulting
+    // duration when this is a `since` call.
+    HObject* from = self;
+    HObject* to   = other;
     long fy, fm, fd; int fh, fmi, fs, fms, fus, fns, foff;
     long ty, tm, td; int th, tmi, ts, tms, tus, tns, toff;
     zdt_wall_fields(from, &fy, &fm, &fd, &fh, &fmi, &fs, &fms, &fus, &fns, &foff);
@@ -12074,6 +12080,22 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     rem %= 1000000L;
     dp.us = rem / 1000L;
     dp.ns = rem % 1000L;
+
+    if (!until) {
+        // `since` negates the result. read_diff_settings already negated
+        // the rounding mode (ceil ↔ floor, halfCeil ↔ halfFloor), so the
+        // sign of the integer fields flips here.
+        dp.years = -dp.years;
+        dp.months = -dp.months;
+        dp.weeks = -dp.weeks;
+        dp.days = -dp.days;
+        dp.hours = -dp.hours;
+        dp.minutes = -dp.minutes;
+        dp.seconds = -dp.seconds;
+        dp.ms = -dp.ms;
+        dp.us = -dp.us;
+        dp.ns = -dp.ns;
+    }
 
     HObject*? dur_o = alloc_duration(ctx.heap, dp);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
