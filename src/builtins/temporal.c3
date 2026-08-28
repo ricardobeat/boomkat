@@ -3110,7 +3110,9 @@ fn void builtin_temporal_plain_date_proto_toString(BuiltinContext* ctx) {
     temporal::CivilDate d = plain_date_value(obj);
 
     // calendarName option: auto (default) omits the ISO annotation since it
-    // is the default calendar; always/critical append it.
+    // is the default calendar; always/critical append it. Use the Proxy-
+    // aware getter so a propertyBagObserver's `get` trap fires in the
+    // spec's order.
     bool show_calendar = false;
     bool critical = false;
     if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
@@ -3120,13 +3122,15 @@ fn void builtin_temporal_plain_date_proto_toString(BuiltinContext* ctx) {
             return;
         }
         HObject* opts = (HObject*)ov.get_heapptr();
-        TVal cn = prop_or_undefined(opts, ctx.heap, "calendarName");
+        TVal cn = prop_or_undefined_pa(ctx, opts, "calendarName");
+        if (ctx.should_throw) return;
         if (!cn.is_undefined()) {
-            if (!cn.is_string()) {
+            HString* s = builtin_to_string_vm(ctx, &cn);
+            if (ctx.should_throw) return;
+            if (s == null) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "calendarName must be a string");
                 return;
             }
-            HString* s = (HString*)cn.get_heapptr();
             char[] v = s.get_cstr()[:s.blen];
             if (v == "auto") { show_calendar = false; }
             else if (v == "always") { show_calendar = true; }
@@ -4886,52 +4890,97 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
             return;
         }
         HObject* opts = (HObject*)ov.get_heapptr();
-        TVal cn = prop_or_undefined(opts, ctx.heap, "calendarName");
+        // Spec reads options in alphabetical order, calling ToString on each
+        // value right after its [[Get]] (GetOption-style conversion). For
+        // each field the propertyBagObserver expects the
+        // `get options.X` / `get options.X.toString` / `call options.X.toString`
+        // triple before the next option's [[Get]] runs. Read-and-store,
+        // then validate-and-coerce in alphabetical order so the
+        // observable triple order matches the spec.
+        HString* cn_s = null;
+        HString* fd_s = null;
+        HString* rm_s = null;
+        HString* su_s = null;
+
+        TVal cn = prop_or_undefined_pa(ctx, opts, "calendarName");
+        if (ctx.should_throw) return;
         if (!cn.is_undefined()) {
-            if (!cn.is_string()) {
+            cn_s = builtin_to_string_vm(ctx, &cn);
+            if (ctx.should_throw) return;
+            if (cn_s == null) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "calendarName must be a string");
                 return;
             }
-            HString* s = (HString*)cn.get_heapptr();
-            char[] v = s.get_cstr()[:s.blen];
+        }
+
+        TVal fd = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
+        if (ctx.should_throw) return;
+        if (!fd.is_undefined()) {
+            fd_s = builtin_to_string_vm(ctx, &fd);
+            if (ctx.should_throw) return;
+            if (fd_s == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a string");
+                return;
+            }
+        }
+
+        TVal rm = prop_or_undefined_pa(ctx, opts, "roundingMode");
+        if (ctx.should_throw) return;
+        if (!rm.is_undefined()) {
+            rm_s = builtin_to_string_vm(ctx, &rm);
+            if (ctx.should_throw) return;
+            if (rm_s == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "roundingMode must be a string");
+                return;
+            }
+        }
+
+        TVal su = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+        if (ctx.should_throw) return;
+        if (!su.is_undefined()) {
+            su_s = builtin_to_string_vm(ctx, &su);
+            if (ctx.should_throw) return;
+            if (su_s == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit must be a string");
+                return;
+            }
+        }
+
+        // Validate in any order.
+        if (cn_s != null) {
+            char[] v = cn_s.get_cstr()[:cn_s.blen];
             if (v == "auto") { show_calendar = false; }
             else if (v == "always") { show_calendar = true; }
             else if (v == "critical") { show_calendar = true; critical = true; }
             else if (v == "never") { show_calendar = false; }
             else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName"); return; }
         }
-        TVal fd = prop_or_undefined(opts, ctx.heap, "fractionalSecondDigits");
-        if (!fd.is_undefined()) {
-            if (fd.is_number() || fd.is_fastint()) {
-                Vm* v = (Vm*)ctx.vm;
-                double d = vm::vm_to_number(v, &fd);
-                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-                if (math::is_nan(d) || d < 0 || d > 9 || math::floor(d) != d) {
+        if (fd_s != null) {
+            char[] v = fd_s.get_cstr()[:fd_s.blen];
+            if (v == "auto") { ns_digits = -1; }
+            else {
+                // numeric string case
+                Vm* v2 = (Vm*)ctx.vm;
+                double dv = builtin_to_number_getdouble(ctx, &fd);
+                if (v2.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v2.throw_value); v2.throw_pending = false; return; }
+                if (math::is_nan(dv) || dv < 0 || dv > 9 || math::floor(dv) != dv) {
                     builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
                     return;
                 }
-                ns_digits = (int)d;
-            } else if (fd.is_string()) {
-                HString* s = (HString*)fd.get_heapptr();
-                char[] v = s.get_cstr()[:s.blen];
-                if (!(v == "auto")) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
-                    return;
-                }
-                ns_digits = -1;
-            } else {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or string");
+                ns_digits = (int)dv;
+            }
+        }
+        if (rm_s != null) {
+            char[] v = rm_s.get_cstr()[:rm_s.blen];
+            if (v != "ceil" && v != "floor" && v != "expand" && v != "trunc"
+                && v != "halfCeil" && v != "halfFloor" && v != "halfExpand"
+                && v != "halfTrunc" && v != "halfEven") {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
         }
-        TVal su = prop_or_undefined(opts, ctx.heap, "smallestUnit");
-        if (!su.is_undefined()) {
-            if (!su.is_string()) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit must be a string");
-                return;
-            }
-            HString* s = (HString*)su.get_heapptr();
-            char[] v = s.get_cstr()[:s.blen];
+        if (su_s != null) {
+            char[] v = su_s.get_cstr()[:su_s.blen];
             if (v == "minute" || v == "minutes") {
                 if (ns_digits < 0) ns_digits = 0;
             } else if (v == "second" || v == "seconds") {
