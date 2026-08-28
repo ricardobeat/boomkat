@@ -1571,32 +1571,29 @@ fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalR
     TVal f = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
     if (ctx.should_throw) return false;
     if (!f.is_undefined()) {
-        if (f.is_string()) {
-            HString* s = (HString*)f.get_heapptr();
-            if (s == null) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
+        HString* s = builtin_to_string_vm(ctx, &f);
+        if (ctx.should_throw) return false;
+        if (s == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
+            return false;
+        }
+        char[] v = s.get_cstr()[:s.blen];
+        if (v == "auto") { *digits = -1; }
+        else if (v.len > 0 && v[0] >= '0' && v[0] <= '9') {
+            int n = 0;
+            usz pi = 0;
+            while (pi < v.len && v[pi] >= '0' && v[pi] <= '9') {
+                n = n * 10 + (v[pi] - '0');
+                pi++;
+            }
+            if (pi != v.len || n > 9) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
                 return false;
             }
-            if (s.is_symbol()) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
-                return false;
-            }
-            char[] v = s.get_cstr()[:s.blen];
-            if (v == "auto") { *digits = -1; }
-            else { builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9"); return false; }
+            *digits = (int)n;
         } else {
-            double dv = builtin_to_number_getdouble(ctx, &f);
-            if (ctx.should_throw) return false;
-            if (math::is_nan(dv) || math::is_inf(dv)) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
-                return false;
-            }
-            double dc = math::floor(dv);
-            if (dc < 0 || dc > 9) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
-                return false;
-            }
-            *digits = (int)dc;
+            builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
+            return false;
         }
     }
 
@@ -1760,6 +1757,19 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     rd.ms      = rsign * (long)(rmag /       1000000L); rmag %=       1000000L;
     rd.us      = rsign * (long)(rmag /          1000L); rmag %=          1000L;
     rd.ns      = rsign * (long)(rmag);
+
+    // Per spec, after rounding the time portion must remain within ±2^53
+    // seconds (RegulateTimeDuration / IsValidDuration). Calendar-unit
+    // overflows (year/month/week) are unbounded, but seconds here is a
+    // value derived solely from the time portion. Fold any pre-existing
+    // date-unit days into the bound check too, so {days: N, seconds: x}
+    // with x + N*86400 ≥ 2^53 also throws.
+    int128 sec_total = (int128)rd.seconds + (int128)rd.days * 86400L;
+    int128 max_secs = (int128)9007199254740992L;  // 2^53
+    if (sec_total >= max_secs || sec_total <= -max_secs) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration out of range");
+        return;
+    }
 
     char[160] buf;
     usz len = temporal::format_duration_precision(rd, digits, &buf, 160);
@@ -2596,7 +2606,14 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object or string");
             return;
         }
+        // Per spec, options are read in alphabetical order before any
+        // algorithmic validation: relativeTo first, then unit. Reading them
+        // in any other order surfaces unit-validation errors before the
+        // caller has observed relativeTo, breaking options-read-before-
+        // algorithmic-validation tests.
+        if (!read_relative_to_option(ctx, opts, &relative_to)) return;
         TVal unit_tv = prop_or_undefined_pa(ctx, opts, "unit");
+        if (ctx.should_throw) return;
         if (unit_tv.is_undefined()) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "unit is required");
             return;
@@ -2607,7 +2624,6 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid unit");
             return;
         }
-        if (!read_relative_to_option(ctx, opts, &relative_to)) return;
     }
 
     TemporalUnit existing = default_largest_unit(dur);
