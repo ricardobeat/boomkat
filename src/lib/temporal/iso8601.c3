@@ -256,6 +256,12 @@ fn bool parse_duration(char[] text, DurationParts* out) {
     if (time_part && !any_time) return false;  // "PT" alone
     if (sign < 0) {
         out.years *= sign; out.months *= sign; out.weeks *= sign; out.days *= sign;
+        // Hours/minutes/seconds already carry sign from the parse loop
+        // (e.g. `out.seconds = sign * n`). Sub-second fields come from the
+        // fractional digits, which are always parsed as positive; flip them
+        // here so every component has the same sign. For `-PT1.5S` this
+        // gives seconds=-1, ms=-500, summing to -1.5 seconds.
+        out.ms *= sign; out.us *= sign; out.ns *= sign;
     }
     return true;
 }

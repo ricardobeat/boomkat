@@ -3229,9 +3229,9 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
             case 4: out.hours = whole; break;
             case 5: out.minutes = whole; break;
             case 6: out.seconds = whole; break;
-            case 7: out.ms = (int)whole; break;
-            case 8: out.us = (int)whole; break;
-            default: out.ns = (int)whole; break;
+            case 7: out.ms = whole; break;
+            case 8: out.us = whole; break;
+            default: out.ns = whole; break;
         }
     }
     if (!any_field) {
