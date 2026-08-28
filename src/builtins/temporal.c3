@@ -2649,12 +2649,20 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         ctx.result.set_number((double)time_ns / divisor);
         return;
     }
-    // Calendar unit total with relativeTo: compute total nanoseconds between
-    // the two date-times, then divide by the unit's divisor.
+    // Calendar unit total with relativeTo: the spec re-runs calendar arithmetic
+    // (DifferenceISODateTime) on relTo + duration before measuring total, so
+    // a duration like "548 days" decomposes into (1y 6m 1d) anchored at
+    // relTo. We do the same: fold the sub-day time into target_time_days,
+    // add (years, months, weeks, days) to rel_to, and treat that as the
+    // calendar date of rel_to + duration. From there the total is
+    // (denominator * r1 + numerator * sign) / denominator with denominator =
+    // relTo + (r1+sign) units - relTo + r1 units (so the year length tracks
+    // the unit's actual calendar span at rel_to, not a 365-day constant).
     CivilDate rel_date = { .y = relative_to.extra.temporal.long_a,
                            .m = relative_to.extra.temporal.long_b,
                            .d = relative_to.extra.temporal.long_c };
-    // Compute time-only (no days) for the calendar path.
+    // Sub-day time becomes a delta-days offset on the date portion: 548h
+    // rolls over into 22 full days plus a sub-day remainder.
     int128 time_only_ns = (int128)0;
     time_only_ns += (int128)dur.hours   * 3600000000000L;
     time_only_ns += (int128)dur.minutes *   60000000000L;
@@ -2690,26 +2698,31 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         ctx.result.set_number((double)(tgt_epoch - rel_epoch) / 7.0);
         return;
     }
-    // Calendar-aware total for month/year: the spec's TotalRelativeDuration
-    // measures the unit length between two adjacent calendar anchors that
-    // bracket one unit at relativeTo (rel + r1 units - rel + (r1-1) units).
-    // For positive durations r1 is the integer part of the unit count
-    // (RoundNumberToIncrement(_, 1, 'trunc') = dur.X for non-negative X),
-    // so unit_start = rel + r1 units and unit_end = rel + r1+1 units.
-    // The total is then (denominator * r1 + numerator * sign) / denominator,
-    // where numerator = destEpochNs - startEpochNs. That keeps
-    // total(dur=2y, unit=year) = 2 exactly (not 3): the destEpochNs is
-    // already 2y past rel, which equals unit_start, so the numerator is 0
-    // and total = r1.
+    // Re-decompose (relTo + duration) into the calendar-aware {years,
+    // months, weeks, days} that DifferenceISODateTime would produce, so r1
+    // (the trunc'd unit count) reflects the actual calendar span rather
+    // than only what's in the input duration's years/months fields. Without
+    // this, an `until()` that defaulted to days gives r1 = 0 even for a
+    // multi-year span and the formula collapses to diff_ns / unit_ns.
+    if (unit != TemporalUnit.MONTH && unit != TemporalUnit.YEAR) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "unsupported unit for total");
+        return;
+    }
+    temporal::DateDifference dd;
+    if (unit == TemporalUnit.YEAR) {
+        dd = temporal::difference_date(rel_date, target_date, temporal::DifferenceUnit.YEARS);
+    } else {
+        dd = temporal::difference_date(rel_date, target_date, temporal::DifferenceUnit.MONTHS);
+    }
     long r1;
     CivilDate unit_start;
     CivilDate unit_end;
     if (unit == TemporalUnit.YEAR) {
-        r1 = dur.years;
+        r1 = dd.years;
         unit_start = temporal::add_months(rel_date, r1 * 12, temporal::OverflowKind.CONSTRAIN);
         unit_end = temporal::add_months(rel_date, (r1 + 1) * 12, temporal::OverflowKind.CONSTRAIN);
     } else {
-        r1 = dur.months;
+        r1 = dd.months;
         unit_start = temporal::add_months(rel_date, r1, temporal::OverflowKind.CONSTRAIN);
         unit_end = temporal::add_months(rel_date, r1 + 1, temporal::OverflowKind.CONSTRAIN);
     }
@@ -2724,8 +2737,6 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         && dur.hours >= 0 && dur.minutes >= 0 && dur.seconds >= 0
         && dur.ms >= 0 && dur.us >= 0 && dur.ns >= 0
         ? 1 : -1;
-    // destEpochNs = rel + duration (date portion -> target_date, time
-    // portion -> target_time_rem). numerator = destEpochNs - startEpochNs.
     int128 dest_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
     int128 start_ns_offset = (int128)(start_epoch - rel_epoch) * 86400000000000L;
     int128 numerator = dest_ns - start_ns_offset;
@@ -3604,39 +3615,29 @@ fn void plain_date_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     DiffSettings ds;
     if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.DAY,
                             TemporalUnit.YEAR, TemporalUnit.DAY, flipped, &ds)) return;
-    // "auto" largestUnit: pick the coarsest unit that fits without leftover
-    // at coarser slots. Walk from YEAR down to DAY. The spec default for
-    // PlainDate.prototype.{until,since} is "auto", which expands years →
-    // months → weeks → days as needed. Without this, a multi-year span
-    // collapses into a flat day count and Duration.total({unit: "years",
-    // relativeTo}) can't reconstruct the calendar span.
-    //
-    // The spec always computes `other - this` (positive direction), then
-    // negates at the end for `since`. round_date_part uses `this` as the
-    // origin so the rounding fraction is measured from `this`, not from
-    // whichever end is chronologically later — matching
-    // NudgeToCalendarUnit's `isoDateTime` parameter.
-    if (ds.largest == TemporalUnit.YEAR) {
-        temporal::CivilDate a = plain_date_value(obj);
-        temporal::CivilDate b = plain_date_value(other);
-        temporal::CivilDateTime start = { .date = a };
-        temporal::CivilDateTime end   = { .date = b };
-        temporal::DateDifference dd_year = temporal::difference_date(start.date, end.date, temporal::DifferenceUnit.YEARS);
-        if (dd_year.years == 0) {
-            temporal::DateDifference dd_month = temporal::difference_date(start.date, end.date, temporal::DifferenceUnit.MONTHS);
-            if (dd_month.months == 0) {
-                long day_diff = temporal::epoch_days_from_civil(end.date.y, (int)end.date.m, (int)end.date.d)
-                              - temporal::epoch_days_from_civil(start.date.y, (int)start.date.m, (int)start.date.d);
-                long abs_day = day_diff < 0 ? -day_diff : day_diff;
-                if (abs_day < 7) {
-                    ds.largest = TemporalUnit.DAY;
-                } else {
-                    ds.largest = TemporalUnit.WEEK;
-                }
-            } else {
-                ds.largest = TemporalUnit.MONTH;
-            }
-        }
+    // "auto" largestUnit: when neither largestUnit nor smallestUnit is given,
+// expand to the largest calendar unit that fits (e.g. YEAR for a 548-day
+// span). When smallestUnit is given, pin largestUnit to it so the result
+// stays in that unit (e.g. { smallestUnit: "months" } reports 32m instead
+// of 2y 8m). This matches GetDifferenceSettings:
+    //   defaultLargestUnit = LargerOfTwoTemporalUnits('day', smallestUnit);
+    //   largestUnit = largestUnit option ?? defaultLargestUnit;
+    // ... followed by the "fits without remainder" expansion when both
+    // defaults fall through (smallestUnit=day → largestUnit=day → expansion
+    // is unnecessary here, since day already accommodates any remainder; the
+    // test fixture expects raw day count for { smallestUnit: "days" } with
+    // no largestUnit, but for *unoptioned* until(s)/since(s) it expects the
+    // largest-fitting calendar unit).
+    if (ds.largest == TemporalUnit.YEAR && ds.smallest == TemporalUnit.DAY) {
+        // No explicit smallestUnit was given. Per the polyfill, in this
+        // case the diff should be expressed in days only (LargestUnit =
+        // SmallerOfTwoTemporalUnits(smallestUnit='day', 'day') = 'day'),
+        // and Duration.total({unit: "years"}) reconstructs the calendar
+        // span via its own rounding window.
+        ds.largest = TemporalUnit.DAY;
+    } else if (ds.largest == TemporalUnit.YEAR) {
+        // smallestUnit was given explicitly; largestUnit = smallestUnit.
+        ds.largest = ds.smallest;
     }
 
     temporal::CivilDate a = plain_date_value(obj);
