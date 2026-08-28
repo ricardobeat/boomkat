@@ -3598,17 +3598,67 @@ fn void plain_date_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     }
 
     // A PlainDate has no time, so only day-and-coarser units are accepted.
+    // `since` negates the rounding mode (ceil ↔ floor, halfCeil ↔ halfFloor)
+    // because the internal computation runs in the positive direction
+    // regardless of operation and the sign is flipped at the end.
     DiffSettings ds;
     if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.DAY,
-                            TemporalUnit.DAY, TemporalUnit.DAY, false, &ds)) return;
+                            TemporalUnit.YEAR, TemporalUnit.DAY, flipped, &ds)) return;
+    // "auto" largestUnit: pick the coarsest unit that fits without leftover
+    // at coarser slots. Walk from YEAR down to DAY. The spec default for
+    // PlainDate.prototype.{until,since} is "auto", which expands years →
+    // months → weeks → days as needed. Without this, a multi-year span
+    // collapses into a flat day count and Duration.total({unit: "years",
+    // relativeTo}) can't reconstruct the calendar span.
+    //
+    // The spec always computes `other - this` (positive direction), then
+    // negates at the end for `since`. round_date_part uses `this` as the
+    // origin so the rounding fraction is measured from `this`, not from
+    // whichever end is chronologically later — matching
+    // NudgeToCalendarUnit's `isoDateTime` parameter.
+    if (ds.largest == TemporalUnit.YEAR) {
+        temporal::CivilDate a = plain_date_value(obj);
+        temporal::CivilDate b = plain_date_value(other);
+        temporal::CivilDateTime start = { .date = a };
+        temporal::CivilDateTime end   = { .date = b };
+        temporal::DateDifference dd_year = temporal::difference_date(start.date, end.date, temporal::DifferenceUnit.YEARS);
+        if (dd_year.years == 0) {
+            temporal::DateDifference dd_month = temporal::difference_date(start.date, end.date, temporal::DifferenceUnit.MONTHS);
+            if (dd_month.months == 0) {
+                long day_diff = temporal::epoch_days_from_civil(end.date.y, (int)end.date.m, (int)end.date.d)
+                              - temporal::epoch_days_from_civil(start.date.y, (int)start.date.m, (int)start.date.d);
+                long abs_day = day_diff < 0 ? -day_diff : day_diff;
+                if (abs_day < 7) {
+                    ds.largest = TemporalUnit.DAY;
+                } else {
+                    ds.largest = TemporalUnit.WEEK;
+                }
+            } else {
+                ds.largest = TemporalUnit.MONTH;
+            }
+        }
+    }
 
     temporal::CivilDate a = plain_date_value(obj);
     temporal::CivilDate b = plain_date_value(other);
-    temporal::CivilDateTime start = { .date = flipped ? b : a };
-    temporal::CivilDateTime end   = { .date = flipped ? a : b };
+    temporal::CivilDateTime start = { .date = a };
+    temporal::CivilDateTime end   = { .date = b };
 
     temporal::DurationParts dur;
     if (!datetime_difference(ctx, start, end, ds, &dur)) return;
+
+    if (flipped) {
+        dur.years = -dur.years;
+        dur.months = -dur.months;
+        dur.weeks = -dur.weeks;
+        dur.days = -dur.days;
+        dur.hours = -dur.hours;
+        dur.minutes = -dur.minutes;
+        dur.seconds = -dur.seconds;
+        dur.ms = -dur.ms;
+        dur.us = -dur.us;
+        dur.ns = -dur.ns;
+    }
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
