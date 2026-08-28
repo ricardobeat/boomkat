@@ -1951,13 +1951,18 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
     }
     HObject* bag = (HObject*)arg_at(ctx, 0).get_heapptr();
     temporal::DurationParts d = duration_value((HObject*)this_val.get_heapptr());
-    char[][] names = { "days", "hours", "minutes", "seconds",
-        "milliseconds", "microseconds", "nanoseconds" };
-    long*[7] slots = { &d.days, &d.hours, &d.minutes, &d.seconds,
-        &d.ms, &d.us, &d.ns };
+    // Spec reads fields in alphabetical order: days, hours, microseconds,
+    // milliseconds, minutes, months, nanoseconds, seconds, weeks, years.
+    // All 10 must be probed even when absent so a Proxy observer sees every
+    // get call (order-of-operations test fixture depends on this).
+    char[][] names = { "days", "hours", "microseconds", "milliseconds",
+        "minutes", "months", "nanoseconds", "seconds", "weeks", "years" };
+    long*[10] slots = { &d.days, &d.hours, &d.us, &d.ms,
+        &d.minutes, &d.months, &d.ns, &d.seconds, &d.weeks, &d.years };
     Vm* v = (Vm*)ctx.vm;
-    for (int k = 0; k < 7; k++) {
-        TVal pv = prop_or_undefined(bag, ctx.heap, names[k]);
+    for (int k = 0; k < 10; k++) {
+        TVal pv = prop_or_undefined_pa(ctx, bag, names[k]);
+        if (ctx.should_throw) return;
         if (pv.is_undefined()) continue;
         double val = vm::vm_to_number(v, &pv);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
