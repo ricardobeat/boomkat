@@ -7239,7 +7239,16 @@ fn void builtin_temporal_plain_monthday_ctor(BuiltinContext* ctx) {
         if (!calendar_from_arg(ctx, arg_at(ctx, 2), &calendar)) return;
     }
 
-    int y = 1972;  // default reference year (leap year)
+    int y = 1972;  // ISO ref year (leap so M02-29 is representable); spec passes through 4th arg
+    if (ctx.argc >= 4) {
+        long yl;
+        if (!to_integer_with_truncation(v, arg_at(ctx, 3), &yl)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "reference year is not an integral number");
+            return;
+        }
+        y = (int)yl;
+    }
     int vy; int vm; int vd;
     if (!fields_to_valid_monthday(ctx, y, m, d, temporal::OverflowKind.REJECT, &vy, &vm, &vd)) return;
 
