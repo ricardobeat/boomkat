@@ -3548,14 +3548,7 @@ fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
     // truncates to 0 (not -1), which is why subtracting -P273790Y8M12DT23H59M59.999...
     // from 1970-01-01 lands on the valid min date -271821-04-19, not one day
     // earlier.
-    long whole_days;
-    if (extra_ns >= 0) {
-        whole_days = (long)(extra_ns / 86_400_000_000_000L);
-    } else {
-        // C integer division truncates toward 0, matching the spec's
-        // MathTrunc semantics for the time-to-day conversion.
-        whole_days = (long)(extra_ns / 86_400_000_000_000L);
-    }
+    long whole_days = (long)(extra_ns / 86_400_000_000_000L);
     long total_months = dur.years * 12 + dur.months;
     long total_days = dur.weeks * 7 + dur.days + whole_days;
 
@@ -3604,15 +3597,10 @@ fn void builtin_temporal_plain_date_proto_subtract(BuiltinContext* ctx) {
     int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
                     ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
                     ((int128)dur.hours * 3_600_000_000_000L);
-    long whole_days;
-    if (extra_ns >= 0) {
-        whole_days = (long)(extra_ns / 86_400_000_000_000L);
-    } else {
-        int128 q = extra_ns / 86_400_000_000_000L;
-        int128 r = extra_ns - q * 86_400_000_000_000L;
-        if (r != 0) q -= 1;
-        whole_days = (long)q;
-    }
+    // C integer division truncates toward 0, matching the spec's MathTrunc
+    // time-to-day conversion: subtracting -PT23H59M59.999... truncates to
+    // adding 0 days, not 1.
+    long whole_days = (long)(extra_ns / 86_400_000_000_000L);
     long total_months = -(dur.years * 12 + dur.months);
     long total_days = -(dur.weeks * 7 + dur.days + whole_days);
 
@@ -4153,14 +4141,18 @@ fn void builtin_temporal_plain_time_proto_add(BuiltinContext* ctx) {
     // Sum hours/minutes/seconds/ms/us/ns into one nanosecond delta. Years,
     // months, weeks and days are silently ignored for PlainTime: their
     // presence is allowed (the spec reads them) but they contribute zero.
-    long extra_ns = (long)dur.ns + (long)dur.us * 1000 + (long)dur.ms * 1_000_000 +
-                    dur.seconds * 1_000_000_000L + dur.minutes * 60_000_000_000L +
-                    dur.hours * 3_600_000_000_000L;
+    // int128 because max-range hours (2501999792983H) times 3.6e12 ns/hour
+    // exceeds long.
+    int128 extra_ns128 = (int128)dur.ns + (int128)dur.us * 1000 + (int128)dur.ms * 1_000_000 +
+                    (int128)dur.seconds * 1_000_000_000 + (int128)dur.minutes * 60_000_000_000 +
+                    (int128)dur.hours * 3_600_000_000_000;
     // Balance into whole seconds + sub-1e9 nanoseconds. The carry_ns is then
     // split into ms/us/ns parts and added to the current sub-second fields,
     // matching the spec's separate-balance approach.
-    long carry_seconds = extra_ns / 1_000_000_000L;
-    long carry_ns = extra_ns - carry_seconds * 1_000_000_000L;
+    int128 carry_seconds128 = extra_ns128 / 1_000_000_000;
+    long carry_ns = (long)(extra_ns128 - carry_seconds128 * 1_000_000_000);
+    // PlainTime wraps at 24h, so only the seconds modulo 86400 matter.
+    long carry_seconds = (long)(carry_seconds128 % 86400);
 
     temporal::CivilTime cur = plain_time_value(obj);
     long day_bump = 0;
@@ -4218,11 +4210,12 @@ fn void builtin_temporal_plain_time_proto_subtract(BuiltinContext* ctx) {
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
 
-    long extra_ns = (long)dur.ns + (long)dur.us * 1000 + (long)dur.ms * 1_000_000 +
-                    dur.seconds * 1_000_000_000L + dur.minutes * 60_000_000_000L +
-                    dur.hours * 3_600_000_000_000L;
-    long carry_seconds = extra_ns / 1_000_000_000L;
-    long carry_ns = extra_ns - carry_seconds * 1_000_000_000L;
+    int128 extra_ns128 = (int128)dur.ns + (int128)dur.us * 1000 + (int128)dur.ms * 1_000_000 +
+                    (int128)dur.seconds * 1_000_000_000 + (int128)dur.minutes * 60_000_000_000 +
+                    (int128)dur.hours * 3_600_000_000_000;
+    int128 carry_seconds128 = extra_ns128 / 1_000_000_000;
+    long carry_ns = (long)(extra_ns128 - carry_seconds128 * 1_000_000_000);
+    long carry_seconds = (long)(carry_seconds128 % 86400);
 
     temporal::CivilTime cur = plain_time_value(obj);
     long day_bump = 0;
@@ -5747,24 +5740,31 @@ fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
         after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
     }
     temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
-    if (!temporal::is_valid_iso_date(date_part.y, (int)date_part.m, (int)date_part.d)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
-        return;
-    }
 
+    // Spec AddDateTime: BalanceTime(time + duration time) yields a day count
+    // that folds into the date, so a negative time crossing midnight pushes
+    // the date back one day (e.g. -PT23H59M59.999999999S from midnight lands
+    // on the previous date at 00:00:00.000000001).
     long day_bump = 0;
     temporal::CivilTime time_part = temporal::add_seconds_to_time(cur.time, sec_part, &day_bump);
-    // day_bump is dropped per spec: PlainDateTime.add cannot cross a date
-    // boundary into the next day. The carry still affects hour/minute/second.
     long total_n = (long)cur.time.ns + ns_part;
     if (total_n >= 1_000_000_000) {
         long _d;
         time_part = temporal::add_seconds_to_time(time_part, 1, &_d);
+        day_bump += _d;
         total_n -= 1_000_000_000;
     } else if (total_n < 0) {
         long _d;
         time_part = temporal::add_seconds_to_time(time_part, -1, &_d);
+        day_bump += _d;
         total_n += 1_000_000_000;
+    }
+    if (day_bump != 0) {
+        date_part = temporal::add_days(date_part, day_bump);
+    }
+    if (!temporal::is_valid_iso_date(date_part.y, (int)date_part.m, (int)date_part.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
+        return;
     }
     long full_subsec = ((long)cur.time.ms * 1_000_000L) + ((long)cur.time.us * 1000L) + total_n;
     time_part.ms = (int)(full_subsec / 1_000_000);
@@ -5798,8 +5798,10 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
     int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
                     ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
                     ((int128)dur.hours * 3_600_000_000_000L);
-    long whole_days = -(long)(extra_ns / 86_400_000_000_000L);
-    long rem_ns = -(long)(extra_ns - (int128)whole_days * 86_400_000_000_000L);
+    long whole_days = (long)(extra_ns / 86_400_000_000_000L);
+    long rem_ns = (long)(extra_ns - (int128)whole_days * 86_400_000_000_000L);
+    whole_days = -whole_days;
+    rem_ns = -rem_ns;
     long sec_part = rem_ns / 1_000_000_000L;
     long ns_part = rem_ns - sec_part * 1_000_000_000L;
     long total_months = -(dur.years * 12 + dur.months);
@@ -5817,10 +5819,6 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
         after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
     }
     temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
-    if (!temporal::is_valid_iso_date(date_part.y, (int)date_part.m, (int)date_part.d)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
-        return;
-    }
 
     long day_bump = 0;
     temporal::CivilTime time_part = temporal::add_seconds_to_time(cur.time, sec_part, &day_bump);
@@ -5828,11 +5826,20 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
     if (total_n >= 1_000_000_000) {
         long _d;
         time_part = temporal::add_seconds_to_time(time_part, 1, &_d);
+        day_bump += _d;
         total_n -= 1_000_000_000;
     } else if (total_n < 0) {
         long _d;
         time_part = temporal::add_seconds_to_time(time_part, -1, &_d);
+        day_bump += _d;
         total_n += 1_000_000_000;
+    }
+    if (day_bump != 0) {
+        date_part = temporal::add_days(date_part, day_bump);
+    }
+    if (!temporal::is_valid_iso_date(date_part.y, (int)date_part.m, (int)date_part.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
+        return;
     }
     long full_subsec = ((long)cur.time.ms * 1_000_000L) + ((long)cur.time.us * 1000L) + total_n;
     time_part.ms = (int)(full_subsec / 1_000_000);
@@ -6710,6 +6717,9 @@ fn void builtin_temporal_plain_yearmonth_proto_toString(BuiltinContext* ctx) {
         len = (usz)libc::snprintf(&buf, 48, "%04ld-%02d", y, m);
     }
     if (show_calendar) {
+        // TemporalYearMonthToString: "always"/"critical" also emit the
+        // reference day so the string round-trips through PlainDate.
+        len += (usz)libc::snprintf(&buf[len], 48 - len, "-%02d", plain_yearmonth_day(obj));
         char[] ann = critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]";
         for (usz k = 0; k < ann.len; k++) buf[len++] = ann[k];
     }
