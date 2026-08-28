@@ -164,7 +164,7 @@ fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz 
 // Parse an ISO 8601 duration string (`[±]P[n]Y[n]M[n]W[n]D[T[n]H[n]M[n]S]`).
 // Fractions are allowed only on the final time component. Returns false on
 // grammar violations ("PT", "P1.5Y", empty). All-zero "P0D" parses fine.
-fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_ns) {
+fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int* frac_len) {
     usz start = *ip;
     if (*ip >= t.len) return false;
     if (!ascii::is_digit(t[*ip])) return false;
@@ -174,7 +174,8 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_ns) {
         *ip += 1;
     }
     *n = v;
-    *frac_ns = 0;
+    *frac_digits = 0;
+    *frac_len = 0;
     if (*ip < t.len && t[*ip] == '.') {
         *ip += 1;
         long f = 0;
@@ -186,8 +187,8 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_ns) {
         }
         if (digits == 0) return false;
         if (*ip < t.len && ascii::is_digit(t[*ip])) return false;
-        while (digits < 9) { f *= 10; digits += 1; }
-        *frac_ns = f;
+        *frac_digits = f;
+        *frac_len = digits;
     }
     return *ip > start;
 }
@@ -216,9 +217,11 @@ fn bool parse_duration(char[] text, DurationParts* out) {
             if (i >= text.len) return false;   // "PxT" dangling
             break;
         }
-        long n, frac;
-        if (!read_duration_number(text, &i, &n, &frac)) return false;
-        if (frac != 0) return false;           // fractions only on time units
+        long n;
+        long frac_digits_unused;
+        int frac_len_unused;
+        if (!read_duration_number(text, &i, &n, &frac_digits_unused, &frac_len_unused)) return false;
+        if (frac_digits_unused != 0) return false;   // fractions only on time units
         if (i >= text.len) return false;
         switch (text[i]) {
             case 'Y': out.years = n; break;
@@ -233,17 +236,56 @@ fn bool parse_duration(char[] text, DurationParts* out) {
 
     bool any_time = false;
     while (i < text.len) {
-        long n, frac;
-        if (!read_duration_number(text, &i, &n, &frac)) return false;
+        long n;
+        long frac_digits;
+        int frac_len;
+        if (!read_duration_number(text, &i, &n, &frac_digits, &frac_len)) return false;
         if (i >= text.len) return false;
         switch (text[i]) {
-            case 'H': out.hours = sign * n; if (frac != 0) return false; break;
-            case 'M': out.minutes = sign * n; if (frac != 0) return false; break;
+            case 'H': {
+                // The fractional digits represent the part of an hour.
+                // Multiply by 3600*10^(9-frac_len) to get nanoseconds.
+                long total_ns = frac_digits;
+                for (int k = frac_len; k < 9; k++) total_ns *= 10;
+                total_ns *= 3600L;
+                long extra_min_int = total_ns / 60_000_000_000L;
+                long rem_ns = total_ns % 60_000_000_000L;
+                long extra_sec_int = rem_ns / 1_000_000_000L;
+                long sec_rem = rem_ns % 1_000_000_000L;
+                long extra_ms = sec_rem / 1_000_000;
+                long extra_us = (sec_rem / 1_000) % 1000;
+                long extra_ns = sec_rem % 1000;
+                out.hours   = sign * n;
+                out.minutes = sign * extra_min_int;
+                out.seconds = sign * extra_sec_int;
+                out.ms = (int)extra_ms;
+                out.us = (int)extra_us;
+                out.ns = (int)extra_ns;
+                break;
+            }
+            case 'M': {
+                long total_ns = frac_digits;
+                for (int k = frac_len; k < 9; k++) total_ns *= 10;
+                total_ns *= 60L;
+                long extra_sec_int = total_ns / 1_000_000_000L;
+                long sec_rem = total_ns % 1_000_000_000L;
+                long extra_ms = sec_rem / 1_000_000;
+                long extra_us = (sec_rem / 1_000) % 1000;
+                long extra_ns = sec_rem % 1000;
+                out.minutes = sign * n;
+                out.seconds = sign * extra_sec_int;
+                out.ms = (int)extra_ms;
+                out.us = (int)extra_us;
+                out.ns = (int)extra_ns;
+                break;
+            }
             case 'S': {
+                long total_ns = frac_digits;
+                for (int k = frac_len; k < 9; k++) total_ns *= 10;
                 out.seconds = sign * n;
-                out.ms = (int)(frac / 1_000_000);
-                out.us = (int)((frac / 1000) % 1000);
-                out.ns = (int)(frac % 1000);
+                out.ms = (int)(total_ns / 1_000_000);
+                out.us = (int)((total_ns / 1_000) % 1000);
+                out.ns = (int)(total_ns % 1000);
                 break;
             }
             default: return false;

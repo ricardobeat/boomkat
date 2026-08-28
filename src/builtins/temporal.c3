@@ -1675,6 +1675,47 @@ fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationP
         // Caller decides whether to throw — signal failure.
         return false;
     }
+    // Per spec, when neither operand has any calendar units the result keeps
+    // its time units only: the nanosecond total is NOT balanced across a day
+    // boundary. The test262 argument-string-fractional-units-rounding-mode
+    // suite expects -PT1.03125H + blank = {hours:-1, ...}, not
+    // {days:-1, hours:22, ...}.
+    bool no_calendar_units = (y == 0 && mo == 0 && w == 0 && a.years == 0
+        && b.years == 0 && a.months == 0 && b.months == 0
+        && a.weeks == 0 && b.weeks == 0);
+    if (no_calendar_units) {
+        out.days = 0;
+        out.years = 0;
+        out.months = 0;
+        out.weeks = 0;
+        if (total_ns >= 0) {
+            out.hours   = (long)(total_ns / 3600000000000L);
+            int128 rem = total_ns % 3600000000000L;
+            out.minutes = (long)(rem /   60000000000L);
+            rem        %=   60000000000L;
+            out.seconds = (long)(rem /    1000000000L);
+            rem        %=    1000000000L;
+            out.ms      = (long)(rem /       1000000L);
+            rem        %=       1000000L;
+            out.us      = (long)(rem /          1000L);
+            out.ns      = (long)(rem %             1000L);
+        } else {
+            // Negative total_ns: divide directly by unit scales (each
+            // division in C3 truncates toward zero), leaving the result
+            // negative without re-normalising across a day boundary.
+            out.hours   = (long)(total_ns / 3600000000000L);
+            int128 rem = total_ns % 3600000000000L;
+            out.minutes = (long)(rem /   60000000000L);
+            rem        %=   60000000000L;
+            out.seconds = (long)(rem /    1000000000L);
+            rem        %=    1000000000L;
+            out.ms      = (long)(rem /       1000000L);
+            rem        %=       1000000L;
+            out.us      = (long)(rem /          1000L);
+            out.ns      = (long)(rem %             1000L);
+        }
+        return true;
+    }
     if (total_ns < 0) {
         long whole_days = (long)(-((-total_ns) / 86400000000000L));
         int128 rem = -((-total_ns) % 86400000000000L);
