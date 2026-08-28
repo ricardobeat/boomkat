@@ -1513,7 +1513,11 @@ fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalR
     if (!f.is_undefined()) {
         if (f.is_string()) {
             HString* s = (HString*)f.get_heapptr();
-            if (s != null && s.is_symbol()) {
+            if (s == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
+                return false;
+            }
+            if (s.is_symbol()) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
                 return false;
             }
