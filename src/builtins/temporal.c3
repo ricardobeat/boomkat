@@ -2690,10 +2690,12 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
 
+    // Per spec, the property bag is read before the options bag (the bag
+    // reads must observe `calendar` first, then day/month/monthCode/year in
+    // alphabetical order). We defer overflow-option parsing until after
+    // the field reads are done.
     temporal::CivilDate result;
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
@@ -2717,13 +2719,22 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
             return;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
-        int dim = temporal::days_in_month(d.y, (int)d.m);
-        if (d.d > dim) {
-            if (overflow == temporal::OverflowKind.REJECT) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
-                return;
+        // For string inputs, overflow defaults to constrain; only parse
+        // overflow when the caller passed an options object.
+        if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+            temporal::OverflowKind overflow;
+            if (!read_overflow_option(ctx, 1, &overflow)) return;
+            int dim = temporal::days_in_month(d.y, (int)d.m);
+            if (d.d > dim) {
+                if (overflow == temporal::OverflowKind.REJECT) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
+                    return;
+                }
+                d.d = dim;
             }
-            d.d = dim;
+        } else {
+            int dim = temporal::days_in_month(d.y, (int)d.m);
+            if (d.d > dim) d.d = dim;
         }
         if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
@@ -2733,20 +2744,27 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
+            // Identity-preserving clone — still respect the overflow option
+            // when the result is constraint-checked (the bag isn't read, so
+            // order-of-operations tests with a PlainDate instance expect
+            // only the options log line).
+            temporal::OverflowKind clone_overflow;
+            if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
+            (void)clone_overflow;
             ctx.result.set_object(o);
             return;
         }
-        HObject* calendar = ctx.heap.temporal_iso_calendar;
-        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
-        if (!cal_v.is_undefined()) {
-            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return;
-        }
+        // Property bag: the `calendar` field is read inside bag_to_fields
+        // (which also drives the day/month/monthCode/year read order), so
+        // the overflow option is the only thing left to read after that.
         temporal::CivilDate fields;
         long _ep;
         if (!bag_to_fields(ctx, o, false, { .y = 0, .m = 1, .d = 1 }, &fields, &_ep)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
+        temporal::OverflowKind overflow;
+        if (!read_overflow_option(ctx, 1, &overflow)) return;
         if (!fields_to_valid_date(ctx, fields, overflow, &result)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
@@ -3527,8 +3545,6 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
 
     temporal::CivilTime result;
@@ -3574,18 +3590,27 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
+            // Identity-preserving clone; read overflow option so the
+            // order-of-operations tests for that case still see the log.
+            temporal::OverflowKind clone_overflow;
+            if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
+            (void)clone_overflow;
             ctx.result.set_object(o);
             return;
         }
+        // Property bag: read fields first, then the overflow option.
         temporal::CivilTime fields;
         temporal::CivilTime cur = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
         if (!bag_to_time_fields(ctx, o, false, cur, &fields)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
+        temporal::OverflowKind overflow;
+        if (!read_overflow_option(ctx, 1, &overflow)) return;
         if (!fields_to_valid_time(ctx, fields, &result)) {
             return;
         }
+        (void)overflow;
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.from: argument must be a string or object");
         return;
