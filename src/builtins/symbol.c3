@@ -30,22 +30,36 @@ fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) 
     uint counter = heap.symbol_counter;
     heap.symbol_counter++;
 
-    char[256] buf;
+    // Descriptions have no length bound (ES2019 §19.4.3.5), so the prefixed
+    // image spills to a heap buffer when it outgrows the stack fast path.
+    usz prefix_len = has_desc ? 2 : 1;
+    usz total = prefix_len + desc.len;
+    char[256] stack_buf;
+    char* heap_buf = null;
+    char[] buf;
+    if (total <= 256) {
+        buf = stack_buf[:256];
+    } else {
+        heap_buf = (char*)heap.alloc_func(heap.heap_udata, total);
+        if (heap_buf == null) return null;
+        buf = heap_buf[:total];
+    }
+
     buf[0] = (char)0xFF;
-    int pos = 1;
+    usz pos = 1;
     if (has_desc) {
         buf[pos] = (char)0x01;
         pos++;
     }
-
-    for (int i = 0; i < desc.len && pos < 255; i++) {
-        buf[pos] = desc[i];
-        pos++;
+    for (usz i = 0; i < desc.len; i++) {
+        buf[pos + i] = desc[i];
     }
+    pos += desc.len;
 
     uint hash = heap.hash_seed ^ counter;  // Simple unique hash
 
-    HString*? sym = hstring::hstring_alloc(heap, buf[:(uint)pos], hash);
+    HString*? sym = hstring::hstring_alloc(heap, buf[:pos], hash);
+    if (heap_buf != null) heap.free_func(heap.heap_udata, heap_buf);
     if (try s = sym) {
         // Not interned, a Symbol is unique, so the content-keyed table would
         // conflate distinct Symbols sharing a description.  It still needs an
@@ -65,19 +79,32 @@ fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
     uint counter = heap.symbol_counter;
     heap.symbol_counter++;
 
-    char[256] buf;
+    // Same layout choice as create_symbol_string: stack fast path, heap
+    // buffer for descriptions longer than it (private names can be long).
+    usz total = 2 + desc.len;
+    char[256] stack_buf;
+    char* heap_buf = null;
+    char[] buf;
+    if (total <= 256) {
+        buf = stack_buf[:256];
+    } else {
+        heap_buf = (char*)heap.alloc_func(heap.heap_udata, total);
+        if (heap_buf == null) return null;
+        buf = heap_buf[:total];
+    }
+
     buf[0] = (char)0xFF;
     buf[1] = (char)0xFF;
-    int pos = 2;
-
-    for (int i = 0; i < desc.len && pos < 255; i++) {
-        buf[pos] = desc[i];
-        pos++;
+    usz pos = 2;
+    for (usz i = 0; i < desc.len; i++) {
+        buf[pos + i] = desc[i];
     }
+    pos += desc.len;
 
     uint hash = heap.hash_seed ^ counter;  // Simple unique hash
 
-    HString*? sym = hstring::hstring_alloc(heap, buf[:(uint)pos], hash);
+    HString*? sym = hstring::hstring_alloc(heap, buf[:pos], hash);
+    if (heap_buf != null) heap.free_func(heap.heap_udata, heap_buf);
     if (try s = sym) {
         // Not interned (hidden symbols are unique); registered so
         // reset()/destroy() can release it, see create_symbol.
