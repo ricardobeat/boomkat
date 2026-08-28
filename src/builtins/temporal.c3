@@ -3558,11 +3558,6 @@ fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
     }
     long total_months = dur.years * 12 + dur.months;
     long total_days = dur.weeks * 7 + dur.days + whole_days;
-    if (ctx.vm != null) {
-        Vm* vv = (Vm*)ctx.vm;
-        io::printfn("PlainDate.add: cur=(%d,%d,%d) dur.years=%d dur.months=%d dur.weeks=%d dur.days=%d dur.ns=%d total_months=%d total_days=%d",
-            cur.y, cur.m, cur.d, dur.years, dur.months, dur.weeks, dur.days, dur.ns, total_months, total_days);
-    }
 
     temporal::CivilDate after_months;
     if (overflow == temporal::OverflowKind.REJECT) {
@@ -5726,11 +5721,15 @@ fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
     if (!read_overflow_option(ctx, 1, &overflow)) return;
 
     temporal::CivilDateTime cur = plain_datetime_value(obj);
-    long extra_ns = dur.ns + ((long)dur.us * 1000) + ((long)dur.ms * 1_000_000) +
-                    (dur.seconds * 1_000_000_000L) + (dur.minutes * 60_000_000_000L) +
-                    (dur.hours * 3_600_000_000_000L);
-    long whole_days = extra_ns / 86_400_000_000_000L;
-    long rem_ns = extra_ns - whole_days * 86_400_000_000_000L;
+    // Time units balance into whole days via MathTrunc (truncation toward 0)
+    // for the same reason as PlainDate.add: the spec's AddDurationToDate
+    // ignores sub-day time and uses the time as a whole-day contribution
+    // truncated to zero. int128 avoids overflow for hour values up to 2.4e9.
+    int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
+                    ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
+                    ((int128)dur.hours * 3_600_000_000_000L);
+    long whole_days = (long)(extra_ns / 86_400_000_000_000L);
+    long rem_ns = (long)(extra_ns - (int128)whole_days * 86_400_000_000_000L);
     long sec_part = rem_ns / 1_000_000_000L;
     long ns_part = rem_ns - sec_part * 1_000_000_000L;
     long total_months = dur.years * 12 + dur.months;
@@ -5796,11 +5795,11 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
     if (!read_overflow_option(ctx, 1, &overflow)) return;
 
     temporal::CivilDateTime cur = plain_datetime_value(obj);
-    long extra_ns = dur.ns + ((long)dur.us * 1000) + ((long)dur.ms * 1_000_000) +
-                    (dur.seconds * 1_000_000_000L) + (dur.minutes * 60_000_000_000L) +
-                    (dur.hours * 3_600_000_000_000L);
-    long whole_days = -(extra_ns / 86_400_000_000_000L);
-    long rem_ns = -(extra_ns - (-whole_days) * 86_400_000_000_000L);
+    int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
+                    ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
+                    ((int128)dur.hours * 3_600_000_000_000L);
+    long whole_days = -(long)(extra_ns / 86_400_000_000_000L);
+    long rem_ns = -(long)(extra_ns - (int128)whole_days * 86_400_000_000_000L);
     long sec_part = rem_ns / 1_000_000_000L;
     long ns_part = rem_ns - sec_part * 1_000_000_000L;
     long total_months = -(dur.years * 12 + dur.months);
