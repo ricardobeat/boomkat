@@ -2690,23 +2690,50 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         ctx.result.set_number((double)(tgt_epoch - rel_epoch) / 7.0);
         return;
     }
-    if (unit != TemporalUnit.MONTH && unit != TemporalUnit.YEAR) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "unsupported unit for total");
+    // Calendar-aware total for month/year: the spec's TotalRelativeDuration
+    // measures the unit length between two adjacent calendar anchors that
+    // bracket one unit at relativeTo (rel + r1 units - rel + (r1-1) units).
+    // For positive durations r1 is the integer part of the unit count
+    // (RoundNumberToIncrement(_, 1, 'trunc') = dur.X for non-negative X),
+    // so unit_start = rel + r1 units and unit_end = rel + r1+1 units.
+    // The total is then (denominator * r1 + numerator * sign) / denominator,
+    // where numerator = destEpochNs - startEpochNs. That keeps
+    // total(dur=2y, unit=year) = 2 exactly (not 3): the destEpochNs is
+    // already 2y past rel, which equals unit_start, so the numerator is 0
+    // and total = r1.
+    long r1;
+    CivilDate unit_start;
+    CivilDate unit_end;
+    if (unit == TemporalUnit.YEAR) {
+        r1 = dur.years;
+        unit_start = temporal::add_months(rel_date, r1 * 12, temporal::OverflowKind.CONSTRAIN);
+        unit_end = temporal::add_months(rel_date, (r1 + 1) * 12, temporal::OverflowKind.CONSTRAIN);
+    } else {
+        r1 = dur.months;
+        unit_start = temporal::add_months(rel_date, r1, temporal::OverflowKind.CONSTRAIN);
+        unit_end = temporal::add_months(rel_date, r1 + 1, temporal::OverflowKind.CONSTRAIN);
+    }
+    long start_epoch = temporal::epoch_days_from_civil(unit_start.y, (int)unit_start.m, (int)unit_start.d);
+    long end_epoch   = temporal::epoch_days_from_civil(unit_end.y, (int)unit_end.m, (int)unit_end.d);
+    int128 unit_ns = (int128)(end_epoch - start_epoch) * 86400000000000L;
+    if (unit_ns <= 0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration out of range");
         return;
     }
-    // Calendar-aware total: break the actual date span into whole
-    // years/months/days (via difference_date), then add the fractional
-    // remainder as a fraction of the calendar unit's true length, rather
-    // than dividing the raw ns span by a fixed 30-day or 365.2425-day
-    // average (which drifts, e.g. across February).
-    temporal::DifferenceUnit diff_unit = (unit == TemporalUnit.YEAR)
-        ? temporal::DifferenceUnit.YEARS : temporal::DifferenceUnit.MONTHS;
-    temporal::DateDifference dd = temporal::difference_date(rel_date, target_date, diff_unit);
-    double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
-    if (unit == TemporalUnit.YEAR) {
-        ctx.result.set_number(total_months / 12.0);
+    long sign = dur.years >= 0 && dur.months >= 0 && dur.weeks >= 0 && dur.days >= 0
+        && dur.hours >= 0 && dur.minutes >= 0 && dur.seconds >= 0
+        && dur.ms >= 0 && dur.us >= 0 && dur.ns >= 0
+        ? 1 : -1;
+    // destEpochNs = rel + duration (date portion -> target_date, time
+    // portion -> target_time_rem). numerator = destEpochNs - startEpochNs.
+    int128 dest_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
+    int128 start_ns_offset = (int128)(start_epoch - rel_epoch) * 86400000000000L;
+    int128 numerator = dest_ns - start_ns_offset;
+    int128 total_num = unit_ns * (int128)r1 + numerator * (int128)sign;
+    if (total_num < 0) {
+        ctx.result.set_number(-((double)(-total_num) / (double)unit_ns));
     } else {
-        ctx.result.set_number(total_months);
+        ctx.result.set_number((double)total_num / (double)unit_ns);
     }
 }
 
