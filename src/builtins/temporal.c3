@@ -9560,6 +9560,17 @@ fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** o
             *out = b_o;
             return true;
         }
+        // ZonedDateTime: copy [[Nanoseconds]] directly so the fast-path
+        // identity tests don't fire toString via ToPrimitive coercion.
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            hbigint::HBigInt*? b_o = hbigint::hbigint_copy(ctx.heap, o.extra.temporal.big_ns);
+            if (catch err = b_o) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Instant.from ZDT copy failed");
+                return false;
+            }
+            *out = b_o;
+            return true;
+        }
         // Non-Instant object (including functions and Temporal.Instant.prototype):
         // ToPrimitive(arg, string) — Object's toString() (or @@toPrimitive) yields a
         // string we parse, or the conversion throws. Symbols fall through to here
