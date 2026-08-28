@@ -2695,7 +2695,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         return;
     }
     if (unit == TemporalUnit.WEEK) {
-        ctx.result.set_number((double)(tgt_epoch - rel_epoch) / 7.0);
+        // Include the time remainder (target_time_rem) so 10 days 12 hours
+        // reports as 1.5 weeks, not 1.42857 (= 10/7). The plain day count
+        // (tgt_epoch - rel_epoch) drops any sub-day remainder, which is
+        // wrong for total().
+        ctx.result.set_number((double)diff_ns / (7.0 * 86400000000000.0));
         return;
     }
     // Re-decompose (relTo + duration) into the calendar-aware {years,
@@ -6068,15 +6072,32 @@ fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipp
 
     DiffSettings ds;
     if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.NANOSECOND,
-                            TemporalUnit.DAY, TemporalUnit.NANOSECOND, false, &ds)) return;
+                            TemporalUnit.DAY, TemporalUnit.NANOSECOND, flipped, &ds)) return;
 
     temporal::CivilDateTime a = plain_datetime_value(obj);
     temporal::CivilDateTime b = plain_datetime_value(other);
-    temporal::CivilDateTime start = flipped ? b : a;
-    temporal::CivilDateTime end   = flipped ? a : b;
+    // Always compute b - a (positive direction). The spec algorithm uses
+    // `this` as the rounding origin (matching NudgeToCalendarUnit's
+    // isoDateTime parameter), regardless of until/since, and flips the
+    // sign at the end for `since`.
+    temporal::CivilDateTime start = a;
+    temporal::CivilDateTime end   = b;
 
     temporal::DurationParts dur;
     if (!datetime_difference(ctx, start, end, ds, &dur)) return;
+
+    if (flipped) {
+        dur.years = -dur.years;
+        dur.months = -dur.months;
+        dur.weeks = -dur.weeks;
+        dur.days = -dur.days;
+        dur.hours = -dur.hours;
+        dur.minutes = -dur.minutes;
+        dur.seconds = -dur.seconds;
+        dur.ms = -dur.ms;
+        dur.us = -dur.us;
+        dur.ns = -dur.ns;
+    }
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
