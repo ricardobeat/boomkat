@@ -748,6 +748,13 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        // Symbols are HString with is_symbol=true; the parser would
+        // RangeError on the 0xFF prefix, but the spec rejects them up
+        // front with TypeError.
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to a PlainDate");
+            return null;
+        }
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(text, &p)) {
@@ -2624,6 +2631,10 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDate.from: symbol cannot be converted");
+            return;
+        }
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(text, &p)) {
@@ -3427,6 +3438,10 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.from: symbol cannot be converted");
+            return;
+        }
         char[] text = s.get_cstr()[:s.blen];
         // Time-only inputs use parse_iso_time_string; full date-time strings
         // are accepted too and the date portion is discarded.
@@ -3491,21 +3506,15 @@ fn void builtin_temporal_plain_time_compare(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.compare requires two arguments");
         return;
     }
-    TVal* av = arg_at(ctx, 0);
-    TVal* bv = arg_at(ctx, 1);
-    if (!av.is_object() || av.get_heapptr() == null ||
-        !bv.is_object() || bv.get_heapptr() == null) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.compare: arguments must be PlainTime");
-        return;
-    }
-    HObject* a = (HObject*)av.get_heapptr();
-    HObject* b = (HObject*)bv.get_heapptr();
-    if (a.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_TIME ||
-        b.get_class() != hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.compare: arguments must be PlainTime");
-        return;
-    }
-    ctx.result.set_fastint((long)temporal::time_compare(plain_time_value(a), plain_time_value(b)));
+    // Route through plain_time_from_arg: it accepts a PlainTime object, a
+    // property bag, or an ISO string (RangeError if it does not parse), and
+    // raises TypeError for everything else — matching the test262
+    // argument-wrong-type matrix.
+    HObject*? ao = plain_time_from_arg(ctx, arg_at(ctx, 0));
+    if (ctx.should_throw) return;
+    HObject*? bo = plain_time_from_arg(ctx, arg_at(ctx, 1));
+    if (ctx.should_throw) return;
+    ctx.result.set_fastint((long)temporal::time_compare(plain_time_value(ao!!), plain_time_value(bo!!)));
 }
 
 // One getter per PlainTime field, dispatched on the builtin fn index.
@@ -3648,6 +3657,10 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to a PlainTime");
+            return null;
+        }
         char[] text = s.get_cstr()[:s.blen];
         // PlainTime accepts both time-only strings (`12:34`, `T12:34:56`)
         // and date-time strings whose date portion is silently dropped.
@@ -4123,6 +4136,10 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.from: symbol cannot be converted");
+            return;
+        }
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(text, &p)) {
@@ -4404,6 +4421,10 @@ fn bool compare_to_temporal_datetime(BuiltinContext* ctx, TVal* arg, temporal::C
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return false; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "argument is a symbol");
+            return false;
+        }
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(text, &p)) {
@@ -4712,6 +4733,10 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to a PlainDateTime");
+            return null;
+        }
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(text, &p)) {
@@ -4901,6 +4926,10 @@ fn HObject*? datetime_to_temporal_time(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to a PlainTime");
+            return null;
+        }
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoDateTime p;
         bool ok = temporal::parse_iso_time_string(text, &p);
@@ -5796,6 +5825,10 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainYearMonth.from: symbol cannot be converted");
+            return;
+        }
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_yearmonth_string(text, &p)) {
@@ -6110,6 +6143,10 @@ fn HObject*? plain_yearmonth_from_arg_full(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_string()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to a PlainYearMonth");
+            return null;
+        }
         char[] text = s.get_cstr()[:s.blen];
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_yearmonth_string(text, &p)) {
@@ -6352,7 +6389,7 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
         builtin_throw(ctx, ctx.heap.type_err_proto, "until/since requires another year-month");
         return;
     }
-    HObject*? other_o = plain_yearmonth_from_arg(ctx, arg_at(ctx, 0));
+    HObject*? other_o = plain_yearmonth_from_arg_full(ctx, arg_at(ctx, 0));
     if (ctx.should_throw) return;
     HObject* other = other_o!!;
 
@@ -6595,63 +6632,73 @@ fn void builtin_temporal_plain_monthday_from(BuiltinContext* ctx) {
     TVal* arg = arg_at(ctx, 0);
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
-    Vm* v = (Vm*)ctx.vm;
 
-    int vy = 1972; int vm = 1; int vd = 1;
-    if (arg.is_string()) {
-        HString* s = (HString*)arg.get_heapptr();
-        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
-        char[] text = s.get_cstr()[:s.blen];
-        // Per the grammar, `TemporalMonthDayString` accepts both the
-        // year-less `--MM-DD` form and the full date-time form
-        // `YYYY-MM-DDT<time>±offset` (with the year kept as the reference
-        // year for month-day projection). Try the month-day parser first;
-        // fall back to the date-time parser for the longer form.
-        temporal::ParsedIsoDateTime p;
-        bool ok = temporal::parse_iso_monthday_string(text, &p);
-        if (!ok) {
-            ok = temporal::parse_iso_date_string(text, &p);
-            if (!ok || !p.has_time) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay.from: invalid ISO month-day string");
-                return;
-            }
-        }
-        // Per the Temporal grammar (`AnnotatedDateTime[~Zoned, +TimeRequired]`
-        // for the full-date form, `AnnotatedMonthDay` for the year-less
-        // form), `Z` is forbidden.
-        if (p.offset_kind == temporal::OffsetKind.Z) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay.from: Z designator is not allowed");
-            return;
-        }
-        vy = 1972; vm = p.month; vd = p.day;
-        if (!fields_to_valid_monthday(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
-    } else if (arg.is_object() && arg.get_heapptr() != null) {
+    // PlainMonthDay fast path: same-class instance returns identity.
+    if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY) {
             ctx.result.set_object(o);
             return;
         }
-        HObject* calendar = ctx.heap.temporal_iso_calendar;
-        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
-        if (!cal_v.is_undefined()) {
-            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return;
-        }
-        int y; int m; int d;
-        if (!bag_to_monthday_fields(ctx, o, false, 1972, 1, 1, &y, &m, &d)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
-            return;
-        }
-        if (!fields_to_valid_monthday(ctx, y, m, d, overflow, &vy, &vm, &vd)) return;
-    } else {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay.from: argument must be a string or object");
-        return;
     }
+
+    int vy; int vm; int vd;
+    if (!plainmonthday_from_arg_full(ctx, arg, overflow, &vy, &vm, &vd)) return;
 
     HObject*? obj_o = alloc_plain_monthday(ctx.heap, vy, vm, vd, ctx.heap.temporal_iso_calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_plain_monthday_proto;
     ctx.result.set_object(obj);
+}
+
+// ToTemporalMonthDay shared path: takes a string, property bag, or another
+// PlainMonthDay (handled by the caller) and produces vy/vm/vd. Symbol
+// inputs throw TypeError; non-string non-object primitives throw TypeError;
+// invalid strings throw RangeError. The caller adds the PlainMonthDay
+// fast-path and the allocation.
+fn bool plainmonthday_from_arg_full(BuiltinContext* ctx, TVal* arg, temporal::OverflowKind overflow, int* out_y, int* out_m, int* out_d) {
+    Vm* v = (Vm*)ctx.vm;
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return false; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay: symbol cannot be converted");
+            return false;
+        }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        bool ok = temporal::parse_iso_monthday_string(text, &p);
+        if (!ok) {
+            ok = temporal::parse_iso_date_string(text, &p);
+            if (!ok || !p.has_time) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay: invalid ISO month-day string");
+                return false;
+            }
+        }
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay: Z designator is not allowed");
+            return false;
+        }
+        *out_y = 1972; *out_m = p.month; *out_d = p.day;
+        return fields_to_valid_monthday(ctx, *out_y, *out_m, *out_d, overflow, out_y, out_m, out_d);
+    }
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        HObject* calendar = ctx.heap.temporal_iso_calendar;
+        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
+        if (!cal_v.is_undefined()) {
+            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return false;
+        }
+        int y; int m; int d;
+        if (!bag_to_monthday_fields(ctx, o, false, 1972, 1, 1, &y, &m, &d)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return false;
+        }
+        return fields_to_valid_monthday(ctx, y, m, d, overflow, out_y, out_m, out_d);
+    }
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay: argument must be a string or object");
+    return false;
 }
 
 fn void builtin_temporal_plain_monthday_compare(BuiltinContext* ctx) {
@@ -6919,15 +6966,18 @@ fn void builtin_temporal_plain_monthday_proto_equals(BuiltinContext* ctx) {
             return;
         }
     }
-    HObject*? other_o = plain_monthday_from_arg(ctx, arg);
-    if (ctx.should_throw) return;
-    HObject* other = other_o!!;
+    // Non-MonthDay inputs (strings, property bags, primitives) — defer to
+    // builtin_temporal_plain_monthday_from for full ToTemporalMonthDay
+    // semantics: strings parse (RangeError if invalid), plain objects need a
+    // usable monthCode/month/day (TypeError otherwise), primitives throw.
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    int vy; int vm; int vd;
+    if (!plainmonthday_from_arg_full(ctx, arg, overflow, &vy, &vm, &vd)) return;
     int am = plain_monthday_m(obj);
-    int bm = plain_monthday_m(other);
     int ad = plain_monthday_d(obj);
-    int bd = plain_monthday_d(other);
-    bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
-    ctx.result.set_boolean(same_cal && am == bm && ad == bd);
+    bool same_cal = obj.extra.temporal.calendar == ctx.heap.temporal_iso_calendar;
+    ctx.result.set_boolean(same_cal && am == vm && ad == vd);
 }
 
 fn void builtin_temporal_plain_monthday_proto_with(BuiltinContext* ctx) {
@@ -7792,8 +7842,12 @@ fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
     ctx.result.set_object(obj);
 }
 
-// Temporal.Instant.from(item) — accepts a BigInt, an ISO string, or another
-// Instant. Strings are parsed via the same path as ToTemporalInstant.
+// Temporal.Instant.from(item) — accepts an ISO string or another Instant.
+// Per the argument-wrong-type tests, BigInt and other primitives throw
+// TypeError: only a String primitive (after ToPrimitive on an object
+// argument, hint string) or a brand-checked Temporal.Instant object
+// produce an Instant. Numbers, booleans, BigInts, null and undefined
+// reject — they are not coerced to a numeric epoch.
 fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant.from requires an argument");
@@ -7822,27 +7876,31 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
             ctx.result.set_object(obj);
             return;
         }
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant.from: non-Instant object argument");
-        return;
-    }
-    if (arg.is_string()) {
-        hbigint::HBigInt* b;
-        if (!to_temporal_instant(ctx, arg, &b)) return;
-        defer ctx.heap.decref((types::HeapHeader*)b);
-        HObject*? obj_o = alloc_instant(ctx.heap, b);
-        if (catch err = obj_o) {
-            builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        // Non-Instant object: ToPrimitive(string) — same shape as
+        // ToTemporalInstant for the object branch. The primitive must
+        // be a string for the parse path; everything else throws
+        // TypeError (e.g. valueOf returning a number).
+        Vm* v = (Vm*)ctx.vm;
+        TVal prim = vm::to_primitive_value(v, arg, 1);
+        if (v.throw_pending) {
+            ctx.should_throw = true;
+            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
+            v.throw_pending = false;
             return;
         }
-        HObject* obj = obj_o;
-        obj.prototype = ctx.heap.temporal_instant_proto;
-        ctx.result.set_object(obj);
+        if (!prim.is_string() || prim.get_heapptr() == null
+            || ((HString*)prim.get_heapptr()).is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant.from: argument must be a string or Temporal.Instant");
+            return;
+        }
+        arg = &prim;
+    } else if (!arg.is_string()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Instant.from: argument must be a string or Temporal.Instant");
         return;
     }
-    // Default: ToBigInt(value).
-    bool ok;
-    hbigint::HBigInt* b = builtin_to_bigint(ctx, arg, &ok);
-    if (!ok) return;
+    hbigint::HBigInt* b;
+    if (!to_temporal_instant(ctx, arg, &b)) return;
+    defer ctx.heap.decref((types::HeapHeader*)b);
     HObject*? obj_o = alloc_instant(ctx.heap, b);
     if (catch err = obj_o) {
         builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
@@ -8059,18 +8117,16 @@ fn void builtin_temporal_instant_compare(BuiltinContext* ctx) {
     }
     TVal* a_arg = arg_at(ctx, 0);
     TVal* b_arg = arg_at(ctx, 1);
-    if (!a_arg.is_object() || a_arg.get_heapptr() == null
-        || ((HObject*)a_arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "compare: first arg is not an Instant");
-        return;
-    }
-    if (!b_arg.is_object() || b_arg.get_heapptr() == null
-        || ((HObject*)b_arg.get_heapptr()).get_class() != hobject::ObjClass.TEMPORAL_INSTANT) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "compare: second arg is not an Instant");
-        return;
-    }
-    hbigint::HBigInt* a = ((HObject*)a_arg.get_heapptr()).extra.temporal.big_ns;
-    hbigint::HBigInt* b = ((HObject*)b_arg.get_heapptr()).extra.temporal.big_ns;
+    // Per spec, ToTemporalInstant is applied to each arg: an object Instant
+    // passes through; a non-Instant object ToPrimitive's to a string we
+    // parse; a primitive that's not string-or-symbol throws TypeError.
+    // to_temporal_instant raises the right error for every shape.
+    hbigint::HBigInt* a;
+    if (!to_temporal_instant(ctx, a_arg, &a)) return;
+    defer ctx.heap.decref((types::HeapHeader*)a);
+    hbigint::HBigInt* b;
+    if (!to_temporal_instant(ctx, b_arg, &b)) return;
+    defer ctx.heap.decref((types::HeapHeader*)b);
     ctx.result.set_fastint(temporal::instant_cmp(a, b));
 }
 
@@ -8934,13 +8990,53 @@ fn bool ci_eq(String a, char[] b) {
     return true;
 }
 
+// Parse an ISO instant string into an HBigInt of epoch nanoseconds.
+// Throws RangeError on parse failure / invalid components. On success the
+// returned BigInt is incref'd; ownership passes to the caller.
+fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigInt** out) {
+    temporal::ParsedIsoInstant p;
+    if (!temporal::parse_iso_instant_string(str, &p)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO string");
+        return false;
+    }
+    if (!temporal::is_valid_iso_date(p.y, (int)p.m, (int)p.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date");
+        return false;
+    }
+    long ed = temporal::epoch_days_from_civil(p.y, (int)p.m, (int)p.d);
+    long sec_of_day = (long)p.hour * 3600 + (long)p.minute * 60 + (long)p.second;
+    int128 ns128 = (int128)ed * 86400L * 1000000000L;
+    ns128 += (int128)sec_of_day * 1000000000L;
+    ns128 += (int128)p.nanos;
+    ns128 -= (int128)p.offset_seconds * 1000000000L;
+    // The sub-minute offset component (e.g. `+00:00:00.5`) carries the
+    // sign of `offset_seconds` — a positive seconds value means the
+    // parsed time is east of UTC, so the offset also subtracts.
+    long sign = p.offset_seconds < 0 ? -1L : 1L;
+    ns128 -= (int128)(sign * p.offset_nanos);
+    hbigint::HBigInt*? b_o = hbigint::hbigint_alloc(ctx.heap, ns128);
+    if (catch err = b_o) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Instant alloc failed");
+        return false;
+    }
+    *out = b_o;
+    return true;
+}
+
 // ToTemporalInstant(arg): coerce arg to a Temporal.Instant epoch-ns BigInt.
 // On success the returned BigInt is incref'd (refcount-1) and ownership passes
 // to the caller. On failure the function returns false after throwing.
 //   - Object with class TEMPORAL_INSTANT: copy its big_ns.
-//   - String: parse as ISO instant string. Failures throw RangeError.
-//   - All other primitives and generic objects: throw TypeError.
-//   - Symbol: throw TypeError.
+//   - Object (or function) without that class: ToPrimitive(arg, string).
+//     If the primitive is a string, parse it (RangeError on failure).
+//     ToPrimitive can itself throw (e.g. @@toPrimitive returning an
+//     object, or a brand-check failure on Temporal.Instant.prototype);
+//     those exceptions propagate.
+//   - Symbol: throw TypeError (ToPrimitive on a Symbol throws TypeError).
+//   - String: parse as ISO instant string. RangeError on invalid input.
+//   - Other primitives (number, boolean, null, undefined, bigint):
+//     throw TypeError — they have no string representation the parser
+//     would accept.
 fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** out) {
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
@@ -8953,6 +9049,23 @@ fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** o
             *out = b_o;
             return true;
         }
+        // Non-Instant object (including functions and Temporal.Instant.prototype):
+        // ToPrimitive(arg, string) — Object's toString() (or @@toPrimitive) yields a
+        // string we parse, or the conversion throws. Symbols fall through to here
+        // only when wrapped — bare Symbols are caught by the is_symbol path below.
+        Vm* v = (Vm*)ctx.vm;
+        TVal prim = vm::to_primitive_value(v, arg, 1);
+        if (v.throw_pending) {
+            ctx.should_throw = true;
+            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
+            v.throw_pending = false;
+            return false;
+        }
+        if (prim.is_string() && prim.get_heapptr() != null) {
+            HString* s = (HString*)prim.get_heapptr();
+            String str = (String)s.get_cstr()[:s.blen];
+            return instant_from_iso_string(ctx, str, out);
+        }
         builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to an Instant");
         return false;
     }
@@ -8962,35 +9075,20 @@ fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** o
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO string");
             return false;
         }
+        // Symbols live as HString objects with is_symbol=true; the parser
+        // would just RangeError on the embedded 0xFF prefix, but the spec
+        // requires a TypeError before any string work happens.
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to an Instant");
+            return false;
+        }
         String str = (String)s.get_cstr()[:s.blen];
-        temporal::ParsedIsoInstant p;
-        if (!temporal::parse_iso_instant_string(str, &p)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO string");
-            return false;
-        }
-        if (!temporal::is_valid_iso_date(p.y, (int)p.m, (int)p.d)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date");
-            return false;
-        }
-        long ed = temporal::epoch_days_from_civil(p.y, (int)p.m, (int)p.d);
-        long sec_of_day = (long)p.hour * 3600 + (long)p.minute * 60 + (long)p.second;
-        int128 ns128 = (int128)ed * 86400L * 1000000000L;
-        ns128 += (int128)sec_of_day * 1000000000L;
-        ns128 += (int128)p.nanos;
-        ns128 -= (int128)p.offset_seconds * 1000000000L;
-        // The sub-minute offset component (e.g. `+00:00:00.5`) carries the
-        // sign of `offset_seconds` — a positive seconds value means the
-        // parsed time is east of UTC, so the offset also subtracts.
-        long sign = p.offset_seconds < 0 ? -1L : 1L;
-        ns128 -= (int128)(sign * p.offset_nanos);
-        hbigint::HBigInt*? b_o = hbigint::hbigint_alloc(ctx.heap, ns128);
-        if (catch err = b_o) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "Instant alloc failed");
-            return false;
-        }
-        *out = b_o;
-        return true;
+        return instant_from_iso_string(ctx, str, out);
     }
+    // Symbol and other primitives (number, boolean, null, undefined, bigint):
+    // ToTemporalInstant does not coerce these to strings, so a TypeError is
+    // raised for things like `Instant.prototype.equals(1)` and
+    // `.equals(Symbol())` — matching the test262 "argument-wrong-type" suites.
     builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to an Instant");
     return false;
 }
@@ -11512,14 +11610,44 @@ fn void builtin_temporal_zoneddatetime_proto_withPlainTime(BuiltinContext* ctx) 
     if (ctx.argc >= 1) {
         TVal* arg = arg_at(ctx, 0);
         if (!arg.is_undefined()) {
-            if (!arg.is_object() || arg.get_heapptr() == null) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "withPlainTime: argument must be an object, undefined, or null");
-                return;
-            }
-            HObject* bag = (HObject*)arg.get_heapptr();
-            if (!bag_to_time_fields(ctx, bag, false, new_time, &new_time)) {
-                Vm* v = (Vm*)ctx.vm;
-                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            if (arg.is_object() && arg.get_heapptr() != null) {
+                HObject* bag = (HObject*)arg.get_heapptr();
+                if (!bag_to_time_fields(ctx, bag, false, new_time, &new_time)) {
+                    Vm* v = (Vm*)ctx.vm;
+                    if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+                    return;
+                }
+            } else if (arg.is_string()) {
+                HString* s = (HString*)arg.get_heapptr();
+                if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "withPlainTime: invalid string"); return; }
+                if (s.is_symbol()) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "withPlainTime: symbol cannot be converted");
+                    return;
+                }
+                char[] text = s.get_cstr()[:s.blen];
+                temporal::ParsedIsoDateTime p;
+                bool ok = temporal::parse_iso_time_string(text, &p);
+                if (!ok) {
+                    ok = temporal::parse_iso_date_string(text, &p);
+                    if (!ok || !p.has_time) {
+                        builtin_throw(ctx, ctx.heap.range_err_proto, "withPlainTime: invalid ISO time string");
+                        return;
+                    }
+                }
+                if (p.offset_kind == temporal::OffsetKind.Z) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "withPlainTime: Z designator not valid");
+                    return;
+                }
+                new_time.h = p.hour; new_time.mi = p.minute; new_time.s = p.second;
+                new_time.ms = (int)(p.nanos / 1_000_000);
+                new_time.us = (int)((p.nanos / 1000) % 1000);
+                new_time.ns = (int)(p.nanos % 1000);
+                if (!temporal::is_valid_time((int)new_time.h, (int)new_time.mi, (int)new_time.s, (int)new_time.ms, (int)new_time.us, (int)new_time.ns)) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "withPlainTime: time is out of range");
+                    return;
+                }
+            } else {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "withPlainTime: argument must be undefined, string, or object");
                 return;
             }
         }
