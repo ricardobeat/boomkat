@@ -3540,16 +3540,21 @@ fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
     int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
                     ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
                     ((int128)dur.hours * 3_600_000_000_000L);
+    // For PlainDate, the time portion must convert to a whole-day
+    // contribution via MathTrunc-style truncation toward zero, not floor. The
+    // spec's ToDateDurationRecord keeps the time sub-day fields normalized
+    // (so any non-zero sub-day here means the duration is invalid) and
+    // adds MathTrunc(time / 86400) to the date's days column. -PT23H59M59.999...
+    // truncates to 0 (not -1), which is why subtracting -P273790Y8M12DT23H59M59.999...
+    // from 1970-01-01 lands on the valid min date -271821-04-19, not one day
+    // earlier.
     long whole_days;
     if (extra_ns >= 0) {
         whole_days = (long)(extra_ns / 86_400_000_000_000L);
     } else {
-        // Negative total: floor toward -infinity (not truncate) so the
-        // sub-day remainder carries to the previous civil day.
-        int128 q = extra_ns / 86_400_000_000_000L;
-        int128 r = extra_ns - q * 86_400_000_000_000L;
-        if (r != 0) q -= 1;
-        whole_days = (long)q;
+        // C integer division truncates toward 0, matching the spec's
+        // MathTrunc semantics for the time-to-day conversion.
+        whole_days = (long)(extra_ns / 86_400_000_000_000L);
     }
     long total_months = dur.years * 12 + dur.months;
     long total_days = dur.weeks * 7 + dur.days + whole_days;
@@ -3597,10 +3602,22 @@ fn void builtin_temporal_plain_date_proto_subtract(BuiltinContext* ctx) {
     if (!read_overflow_option(ctx, 1, &overflow)) return;
 
     temporal::CivilDate cur = plain_date_value(obj);
-    long extra_ns = dur.ns + ((long)dur.us * 1000) + ((long)dur.ms * 1_000_000) +
-                    (dur.seconds * 1_000_000_000L) + (dur.minutes * 60_000_000_000L) +
-                    (dur.hours * 3_600_000_000_000L);
-    long whole_days = (long)math::trunc((double)extra_ns / 86400_000_000_000.0);
+    // Time units balance into whole days (truncating, the spec's floor for
+    // date arithmetic on largerUnit day). Use int128 to avoid overflow:
+    // PT2400000047H... has dur.hours = 2.4e9, which times 3.6e12 overflows
+    // long (max ~9.2e18). int128 holds the full ~8.64e21 ns comfortably.
+    int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
+                    ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
+                    ((int128)dur.hours * 3_600_000_000_000L);
+    long whole_days;
+    if (extra_ns >= 0) {
+        whole_days = (long)(extra_ns / 86_400_000_000_000L);
+    } else {
+        int128 q = extra_ns / 86_400_000_000_000L;
+        int128 r = extra_ns - q * 86_400_000_000_000L;
+        if (r != 0) q -= 1;
+        whole_days = (long)q;
+    }
     long total_months = -(dur.years * 12 + dur.months);
     long total_days = -(dur.weeks * 7 + dur.days + whole_days);
 
