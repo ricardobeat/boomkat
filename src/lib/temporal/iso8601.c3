@@ -251,7 +251,8 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
     *n = v;
     *frac_digits = 0;
     *frac_len = 0;
-    if (*ip < t.len && t[*ip] == '.') {
+    if (*ip < t.len && (t[*ip] == '.' || t[*ip] == ',')) {
+        char sep = t[*ip];
         *ip += 1;
         long f = 0;
         int digits = 0;
@@ -262,6 +263,10 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
         }
         if (digits == 0) return false;
         if (*ip < t.len && ascii::is_digit(t[*ip])) return false;
+        // ISO 8601 lets either '.' or ',' be the decimal mark in extended
+        // form; ',' only counts when there is no '.' elsewhere, but a
+        // single-component token can't have one anyway.
+        (void)sep;
         *frac_digits = f;
         *frac_len = digits;
     }
@@ -279,14 +284,14 @@ fn bool parse_duration(char[] text, DurationParts* out) {
         if (text[i] == '-') sign = -1;
         i += 1;
     }
-    if (i >= text.len || text[i] != 'P') return false;
+    if (i >= text.len || ascii::to_upper(text[i]) != 'P') return false;
     i += 1;
 
     bool time_part = false;
     bool has_date = false;
 
     while (i < text.len && !time_part) {
-        if (text[i] == 'T') {
+        if (ascii::to_upper(text[i]) == 'T') {
             time_part = true;
             i += 1;
             if (i >= text.len) return false;   // "PxT" dangling
@@ -298,7 +303,7 @@ fn bool parse_duration(char[] text, DurationParts* out) {
         if (!read_duration_number(text, &i, &n, &frac_digits_unused, &frac_len_unused)) return false;
         if (frac_digits_unused != 0) return false;   // fractions only on time units
         if (i >= text.len) return false;
-        switch (text[i]) {
+        switch (ascii::to_upper(text[i])) {
             case 'Y': out.years = n; break;
             case 'M': out.months = n; break;
             case 'W': out.weeks = n; break;
@@ -324,7 +329,8 @@ fn bool parse_duration(char[] text, DurationParts* out) {
         if (!read_duration_number(text, &i, &n, &frac_digits, &frac_len)) return false;
         if (i >= text.len) return false;
         int rank;
-        switch (text[i]) {
+        char d = ascii::to_upper(text[i]);
+        switch (d) {
             case 'H': rank = 1;
             case 'M': rank = 2;
             case 'S': rank = 3;
@@ -341,7 +347,7 @@ fn bool parse_duration(char[] text, DurationParts* out) {
         // part. Sub-second columns stay positive here and are negated once,
         // together, by the `sign < 0` block below the loop.
         long total_ns = fraction_to_ns(frac_digits, frac_len);
-        switch (text[i]) {
+        switch (d) {
             case 'H':
                 total_ns *= 3600L;
                 out.hours   = sign * n;
