@@ -6954,18 +6954,23 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
     }
 
     // A PlainYearMonth has no day, so only year and month units are accepted.
+    // For `since` the rounding mode is negated (ceil ↔ floor, halfCeil ↔
+    // halfFloor) and the result is negated at the end, matching
+    // DifferenceTemporalPlainDate / DifferenceTemporalPlainDateTime.
     DiffSettings ds;
     if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.MONTH,
-                            TemporalUnit.YEAR, TemporalUnit.MONTH, false, &ds)) return;
+                            TemporalUnit.YEAR, TemporalUnit.MONTH, flipped, &ds)) return;
 
     long a_y = plain_yearmonth_y(obj);
     int  a_m = plain_yearmonth_m(obj);
     long b_y = plain_yearmonth_y(other);
     int  b_m = plain_yearmonth_m(other);
-    long start_y = flipped ? b_y : a_y;
-    int  start_m = flipped ? b_m : a_m;
-    long end_y   = flipped ? a_y : b_y;
-    int  end_m   = flipped ? a_m : b_m;
+    // Always compute b - a (positive direction); round_date_part uses `a`
+    // as the origin regardless of until/since, mirroring NudgeToCalendarUnit.
+    long start_y = a_y;
+    int  start_m = a_m;
+    long end_y   = b_y;
+    int  end_m   = b_m;
 
     // Use a synthetic date at day 1 so the shared date differencing handles the
     // year/month split identically to the PlainDate path.
@@ -6974,6 +6979,19 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
 
     temporal::DurationParts dur;
     if (!datetime_difference(ctx, start, end, ds, &dur)) return;
+
+    if (flipped) {
+        dur.years = -dur.years;
+        dur.months = -dur.months;
+        dur.weeks = -dur.weeks;
+        dur.days = -dur.days;
+        dur.hours = -dur.hours;
+        dur.minutes = -dur.minutes;
+        dur.seconds = -dur.seconds;
+        dur.ms = -dur.ms;
+        dur.us = -dur.us;
+        dur.ns = -dur.ns;
+    }
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
