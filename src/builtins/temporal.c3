@@ -3150,6 +3150,7 @@ fn void builtin_temporal_plain_date_proto_toString(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_date_proto_toJSON(BuiltinContext* ctx) {
+    ctx.argc = 0;
     builtin_temporal_plain_date_proto_toString(ctx);
 }
 
@@ -3920,6 +3921,7 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_time_proto_toJSON(BuiltinContext* ctx) {
+    ctx.argc = 0;
     builtin_temporal_plain_time_proto_toString(ctx);
 }
 
@@ -5137,6 +5139,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_datetime_proto_toJSON(BuiltinContext* ctx) {
+    ctx.argc = 0;
     builtin_temporal_plain_datetime_proto_toString(ctx);
 }
 
@@ -6688,6 +6691,7 @@ fn void builtin_temporal_plain_yearmonth_proto_toString(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_toJSON(BuiltinContext* ctx) {
+    ctx.argc = 0;
     builtin_temporal_plain_yearmonth_proto_toString(ctx);
 }
 
@@ -7608,13 +7612,7 @@ fn void builtin_temporal_plain_monthday_proto_toString(BuiltinContext* ctx) {
 
     char[48] buf;
     usz len;
-    if (y < 0) {
-        len = (usz)libc::snprintf(&buf, 48, "-%06d-%02d-%02d", -y, m, d);
-    } else if (y > 9999) {
-        len = (usz)libc::snprintf(&buf, 48, "+%06d-%02d-%02d", y, m, d);
-    } else {
-        len = (usz)libc::snprintf(&buf, 48, "%04d-%02d-%02d", y, m, d);
-    }
+    len = (usz)libc::snprintf(&buf, 48, "%02d-%02d", m, d);
     if (show_calendar) {
         char[] ann = critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]";
         for (usz k = 0; k < ann.len; k++) buf[len++] = ann[k];
@@ -7623,6 +7621,7 @@ fn void builtin_temporal_plain_monthday_proto_toString(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_monthday_proto_toJSON(BuiltinContext* ctx) {
+    ctx.argc = 0;
     builtin_temporal_plain_monthday_proto_toString(ctx);
 }
 

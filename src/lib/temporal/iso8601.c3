@@ -400,17 +400,13 @@ fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
     int us = (int)t.us;
     int ns = (int)t.ns;
 
+    bool auto_digits = ns_digits < 0;
     if (ns_digits < 0) {
-        // Trim trailing zeros to the smallest non-zero digit. Spec: omit the
-        // decimal point entirely when the fractional part is zero.
+        // Auto: use full 9-digit precision, then trim trailing zeros.
         if (ms == 0 && us == 0 && ns == 0) {
             ns_digits = 0;
-        } else if (ns != 0) {
-            ns_digits = 9;
-        } else if (us != 0) {
-            ns_digits = 6;
         } else {
-            ns_digits = 3;
+            ns_digits = 9;
         }
     }
     if (ns_digits == 0) {
@@ -427,6 +423,10 @@ fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
     // past `trim_to`. When ns_digits was auto-derived (the trim trail) only
     // drop trailing zeros.
     int cut = trim_to;
+    if (auto_digits) {
+        // In auto mode, trim trailing zeros.
+        while (cut > 0 && frac_buf[cut - 1] == '0') cut--;
+    }
     frac_buf[cut] = '\0';
     return (usz)libc::snprintf(buf, buf_size, "%02d:%02d:%02d.%s", h, mi, s, &frac_buf);
 }
