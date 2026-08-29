@@ -8,8 +8,8 @@ library and plugged in.
 **Calibration up front — there are two different goals here, and only one of them is
 cheap.**
 
-1. **Make a built-in feature removable at build time** (Temporal costs ~188 KB of code
-   even with its data compressed; a build without it should not pay that).
+1. **Make a built-in feature removable at build time** — a build that does not want
+   Temporal should not link it.
 2. **Make new features loadable at runtime from a separate shared library**, the way
    QuickJS's `dlopen` + `js_init_module` works.
 
@@ -23,12 +23,11 @@ cleanly detached from the engine's static tables, there is nothing to hand to a 
 This plan does (1) properly, then builds (2) on top, and is explicit about which
 guarantees each stage buys.
 
-A measured note on motivation: Temporal is ~188 KB of `__text` out of ~2.05 MB. Removing
-it entirely is a 9% binary win. That is real but it is not the main prize — the main
-prize is that the same mechanism lets Intl, a crypto module, a filesystem module, or a
-user's own C library plug in without patching `core.c3`. Build the mechanism for the
-general case; Temporal is the proving ground because it is the most demanding consumer
-(typed objects, GC-traced payloads, deep VM coupling).
+The prize is that one mechanism lets Intl, a crypto module, a filesystem module, or a
+user's own C library plug in without patching `core.c3`. Build it for the general case;
+Temporal is the proving ground because it is the most demanding consumer — typed
+objects, GC-traced payloads, deep VM coupling. Anything that carries Temporal carries
+the rest.
 
 ## Why Temporal cannot be gated today — the measurement
 
@@ -203,14 +202,15 @@ Verify with test262 at each step.
 **Stage 3 — Temporal as a first-class add-on.** Port Temporal onto the registry and
 `ObjClass.HOST`: 10 `ObjClass` variants collapse to host classes, `mark_temporal`
 becomes the class `gc_mark`, 11 heap roots become module-owned. Then the build flag
-works, and `--features` without `TEMPORAL` genuinely drops ~188 KB. Keep it statically
-linked by default.
+works, and `--features` without `TEMPORAL` genuinely drops it. Keep it statically linked
+by default.
 
 **Stage 4 — `dlopen` loader.** `bk_load_addon`, the versioned `BK_ADDON_API` vtable, and
 Temporal built as a `.so`/`.dylib` to prove the ABI carries the most demanding consumer.
 
-Stages 1 and 2 are independently valuable and low-risk. Stage 3 is where the binary win
-lands. Stage 4 is optional and should only follow if stage 3's ABI proved stable.
+Stages 1 and 2 are independently valuable and low-risk. Stage 3 is where a feature first
+becomes genuinely detachable. Stage 4 is optional and should only follow if stage 3's ABI
+proved stable.
 
 ## Risks
 
@@ -233,9 +233,10 @@ Port incrementally, one object kind at a time, running phase 26 at each step.
 
 ## What this does not solve
 
-Temporal's ~188 KB is mostly *code* — 240 handler functions implementing spec
-algorithms. Making it an add-on relocates that code; it does not shrink it. A build
-without Temporal gets smaller; a build with it does not. The tzdata compression (commit
-9dc7c41c, −446 KB) and `optsize=small` (commit a1ababa2, −578 KB) were the size wins.
-This work is about **modularity and extensibility**, with the build-time win as a
-by-product. Worth being clear-eyed about that before spending the effort.
+Making a feature an add-on relocates its code; it does not shrink it. An add-on only
+stops costing anything once you opt out of it — the engine gets a floor, and each
+feature is priced separately at the point you choose to include it.
+
+That is the actual goal: **modularity and extensibility**. A build that wants Temporal
+pays for Temporal either way, so this work should be judged on whether new APIs can be
+added without patching `core.c3`, not on what it does to the default binary.
