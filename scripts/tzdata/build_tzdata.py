@@ -3,22 +3,25 @@
 Generate src/lib/temporal/tzdata_generated.c3 from a directory of IANA TZif
 files (typically the output of `zic -d <dir> -b fat`).
 
-Output is a C3 source file with const tables of zones + transitions. The
-data is a pure C3 compile-time constant — no $embed, no runtime binary
-parsing. At lookup time the tzdb.c3 module binary-searches the per-zone
-sorted transitions array for the query instant and returns the matching
-offset.
+Output is a C3 source file holding a deflate-compressed blob of the
+transition tables plus an uncompressed zone-name index. The blob is decoded
+once, lazily, on the first tzdb lookup (see tzdb_decode_blob in tzdb.c3);
+after that, lookup binary-searches the per-zone sorted transitions slice for
+the query instant and returns the matching offset.
+
+Storing the tables raw cost ~272 KB of binary; delta-varint encoding plus
+deflate brings that under 11 KB.
 
 Layout:
 
     struct TzdbTransition { long epoch_sec; int offset_sec; }
-    struct TzdbZone { String name; TzdbTransition[] transitions; int initial_offset_sec; }
+    struct TzdbZone { String name; int table_idx; int initial_offset_sec; }
 
 For deduplication, the generator groups zones by transition content. IANA
 `backward` is just aliases for canonical zones (e.g. Africa/Abidjan ==
 Africa/Bamako == Atlantic/Reykjavik — all GMT forever), so most zone names
 share one transition table via an index lookup. The generated file is
-~400 KB; the compiled binary grows by ~700 KB with the data embedded.
+~40 KB and the data adds ~11 KB to the compiled binary.
 
 Run scripts/tzdata/build.sh to fetch the latest IANA tzdata, run
 `zic -b fat` to expand POSIX DST rules to year 2100, and emit the C3
@@ -29,11 +32,75 @@ version changes.
 import argparse
 import os
 import struct
+import zlib
 import sys
 import datetime
 
 
 MAGIC = b"TZDB"
+
+
+
+def _varint(v: int) -> bytes:
+    """LEB128-style unsigned varint."""
+    out = bytearray()
+    while True:
+        b = v & 0x7F
+        v >>= 7
+        if v:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            return bytes(out)
+
+
+def _zigzag(v: int) -> int:
+    """Map signed -> unsigned so small magnitudes stay short."""
+    return (v << 1) ^ (v >> 63)
+
+
+def encode_blob(canonical):
+    """Encode the deduped transition tables into one deflate blob.
+
+    Wire format (all varint unless noted), consumed by tzdb_decode_blob()
+    in src/lib/temporal/tzdb.c3:
+
+        n_offsets, then n_offsets * zigzag-varint distinct offset values
+        n_tables,  then per table:
+            n_trans, then n_trans * (zigzag-varint epoch delta, varint offset index)
+
+    Tables are emitted in `canonical` order, so the table indices stored in
+    TZDB_ZONES stay valid. Epoch deltas are relative to the previous entry
+    (transitions are sorted ascending, so deltas are small); offsets index a
+    shared table because the whole tzdb only uses ~68 distinct offsets.
+    """
+    offsets = []
+    index_of = {}
+    for trans_tuple, _members in canonical:
+        for _t, o in (trans_tuple if len(trans_tuple) else ((0, 0),)):
+            if o not in index_of:
+                index_of[o] = len(offsets)
+                offsets.append(o)
+
+    buf = bytearray()
+    buf += _varint(len(offsets))
+    for o in offsets:
+        buf += _varint(_zigzag(o))
+    buf += _varint(len(canonical))
+    for trans_tuple, _members in canonical:
+        tt = list(trans_tuple) if len(trans_tuple) else [(0, 0)]
+        buf += _varint(len(tt))
+        prev = 0
+        for t, o in tt:
+            buf += _varint(_zigzag(int(t) - prev))
+            prev = int(t)
+            buf += _varint(index_of[o])
+    # Raw DEFLATE (no zlib header/checksum): std::compression::deflate in C3
+    # decodes a bare deflate stream, so wrapping it in zlib would fail with
+    # CORRUPTED_DATA. wbits=-15 selects the raw stream.
+    comp = zlib.compressobj(9, zlib.DEFLATED, -15)
+    blob = comp.compress(bytes(buf)) + comp.flush()
+    return blob, offsets, len(buf)
 
 
 def parse_tzif(path: str) -> tuple[int, list[tuple[int, int]], list[str]]:
@@ -175,9 +242,14 @@ def main() -> int:
         print(f"error: {zi_dir} not a directory", file=sys.stderr)
         return 1
 
-    # Read version
+    # Read version. `version_str` is the exact IANA release ("2026c") when we
+    # know it, so the generated header records what the data actually came from
+    # rather than a reconstructed guess.
     year = 2024
     month = 1
+    version_str = None
+    if args.tzdata_version:
+        version_str = args.tzdata_version.strip()
     if args.tzdata_version:
         # like "2025b"
         try:
@@ -192,6 +264,7 @@ def main() -> int:
                     parts = line.split()
                     if len(parts) >= 2:
                         ver = parts[1].rstrip()
+                        version_str = ver
                         try:
                             year = int(ver[:4])
                         except ValueError:
@@ -306,9 +379,14 @@ def main() -> int:
 
     # Emit C3 source
     n_zones = sum(len(members) for _, members in canonical)
-    n_trans = sum(len(h) for h, _ in canonical)
+    # Count what encode_blob actually emits: a table with no transitions is
+    # still written as a single (0, 0) placeholder, because C3 has no
+    # zero-length arrays and the lookup wants at least one entry.
+    n_trans = sum(max(len(h), 1) for h, _ in canonical)
     lines = []
-    lines.append(f"// Auto-generated by scripts/tzdata/build_tzdata.py from IANA tzdata{year}{chr(ord('a') + (month-1)//3) if month else '?'}.")
+    release = version_str or f"{year}{chr(ord('a') + (month - 1) // 3) if month else '?'}"
+    lines.append(f"// Auto-generated by scripts/tzdata/build_tzdata.py from IANA tzdata{release}.")
+    lines.append(f"// Regenerate with: scripts/tzdata/build.sh --version {release}")
     lines.append(f"// {n_zones} zone names -> {len(canonical)} unique transition tables "
                  f"({n_trans} total transitions). Aliases share tables via index.")
     lines.append("// DO NOT EDIT — re-run the generator instead.")
@@ -321,29 +399,36 @@ def main() -> int:
     lines.append("    int  offset_sec;")
     lines.append("}")
     lines.append("")
-    lines.append("// A zone entry: its IANA name, sorted transitions, and the offset")
-    lines.append("// used for instants before the first transition.")
+    lines.append("// A zone entry: its IANA name, the index of its (shared) transition")
+    lines.append("// table, and the offset used for instants before the first transition.")
+    lines.append("// `table_idx` indexes the tables decoded from TZDB_BLOB; aliases that")
+    lines.append("// share a transition list share an index.")
     lines.append("struct TzdbZone {")
     lines.append("    String name;")
-    lines.append("    TzdbTransition[] transitions;")
-    lines.append("    int initial_offset_sec;")
+    lines.append("    int    table_idx;")
+    lines.append("    int    initial_offset_sec;")
     lines.append("}")
     lines.append("")
-    # One transition table per unique-content group.
-    for table_idx, (trans_tuple, _members) in enumerate(canonical):
-        # C3 doesn't allow zero-length arrays. A zone with no transitions still
-        # needs at least one entry — the canonical "epoch 0" placeholder. The
-        # lookup logic short-circuits when transitions.len == 1 and the entry
-        # is the sentinel.
-        if len(trans_tuple) == 0:
-            trans_for_table = [(0, 0)]
-        else:
-            trans_for_table = list(trans_tuple)
-        trans_lit = ", ".join(f"{{{int(t)}, {int(o)}}}" for t, o in trans_for_table)
-        lines.append(f"const TzdbTransition[{len(trans_for_table)}] TZDB_TRANS_{table_idx} = {{ {trans_lit} }};")
+
+    blob, offsets, plain_len = encode_blob(canonical)
+
+    lines.append(f"// Deflate-compressed transition tables: {len(canonical)} tables, "
+                 f"{n_trans} transitions, {len(offsets)} distinct offsets.")
+    lines.append(f"// {plain_len} bytes encoded -> {len(blob)} bytes deflated. Decoded once")
+    lines.append("// on first tzdb lookup by tzdb_decode_blob() in tzdb.c3; see encode_blob()")
+    lines.append("// in scripts/tzdata/build_tzdata.py for the wire format.")
+    lines.append(f"const char[{len(blob)}] TZDB_BLOB = {{")
+    for i in range(0, len(blob), 24):
+        chunk = ", ".join(f"0x{b:02x}" for b in blob[i:i + 24])
+        lines.append(f"    {chunk},")
+    lines.append("};")
     lines.append("")
-    # All zones — one entry per alias name, all sharing the same transition
-    # table by index. Sorted alphabetically by name for binary search.
+    lines.append(f"const usz TZDB_TABLE_COUNT = {len(canonical)};")
+    lines.append(f"const usz TZDB_TRANSITION_COUNT = {n_trans};")
+    lines.append("")
+
+    # All zones — one entry per alias name, all sharing a transition table by
+    # index. Sorted alphabetically by name for binary search.
     all_zones = []
     for table_idx, (_trans_tuple, members) in enumerate(canonical):
         for name, init_off in members:
@@ -351,7 +436,7 @@ def main() -> int:
     all_zones.sort(key=lambda x: x[0])
     lines.append(f"const TzdbZone[{len(all_zones)}] TZDB_ZONES = {{")
     for name, init_off, table_idx in all_zones:
-        lines.append(f"    {{ \"{name}\", TZDB_TRANS_{table_idx}[..], {int(init_off)} }},")
+        lines.append(f"    {{ \"{name}\", {table_idx}, {int(init_off)} }},")
     lines.append("};")
     lines.append("")
 
