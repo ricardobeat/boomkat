@@ -1003,15 +1003,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     // --- Save lexer state ---
-    uint saved_pos    = self.lexer.pos;
-    uint saved_line   = self.lexer.line;
-    uint saved_col    = self.lexer.col;
-    Token saved_cur   = self.lexer.current;
-    Token saved_look  = self.lexer.lookahead;
-    bool  saved_haslk = self.lexer.has_lookahead;
-    Token saved_push  = self.lexer.pushed_back;
-    bool  saved_haspb = self.lexer.has_pushed_back;
-    bool  saved_slt   = self.lexer.seen_line_term;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
 
     char* source_base = &self.lexer.source[0];
 
@@ -1150,15 +1142,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     }
 
     // --- Restore lexer state ---
-    self.lexer.pos             = saved_pos;
-    self.lexer.line            = saved_line;
-    self.lexer.col             = saved_col;
-    self.lexer.current         = saved_cur;
-    self.lexer.lookahead       = saved_look;
-    self.lexer.has_lookahead   = saved_haslk;
-    self.lexer.pushed_back     = saved_push;
-    self.lexer.has_pushed_back = saved_haspb;
-    self.lexer.seen_line_term  = saved_slt;
+    self.restore_lhs_snapshot(snap);
 
     return count;
 }
@@ -1176,15 +1160,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
 fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity) {
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
-    uint saved_pos    = self.lexer.pos;
-    uint saved_line   = self.lexer.line;
-    uint saved_col    = self.lexer.col;
-    Token saved_cur   = self.lexer.current;
-    Token saved_look  = self.lexer.lookahead;
-    bool  saved_haslk = self.lexer.has_lookahead;
-    Token saved_push  = self.lexer.pushed_back;
-    bool  saved_haspb = self.lexer.has_pushed_back;
-    bool  saved_slt   = self.lexer.seen_line_term;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
 
     char* source_base = &self.lexer.source[0];
 
@@ -1317,15 +1293,7 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
         }
     }
 
-    self.lexer.pos             = saved_pos;
-    self.lexer.line            = saved_line;
-    self.lexer.col             = saved_col;
-    self.lexer.current         = saved_cur;
-    self.lexer.lookahead       = saved_look;
-    self.lexer.has_lookahead   = saved_haslk;
-    self.lexer.pushed_back     = saved_push;
-    self.lexer.has_pushed_back = saved_haspb;
-    self.lexer.seen_line_term  = saved_slt;
+    self.restore_lhs_snapshot(snap);
 
     return count;
 }
@@ -1347,15 +1315,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     // --- Save lexer state ---
-    uint saved_pos    = self.lexer.pos;
-    uint saved_line   = self.lexer.line;
-    uint saved_col    = self.lexer.col;
-    Token saved_cur   = self.lexer.current;
-    Token saved_look  = self.lexer.lookahead;
-    bool  saved_haslk = self.lexer.has_lookahead;
-    Token saved_push  = self.lexer.pushed_back;
-    bool  saved_haspb = self.lexer.has_pushed_back;
-    bool  saved_slt   = self.lexer.seen_line_term;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
 
     char* source_base = &self.lexer.source[0];
 
@@ -1570,15 +1530,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     }
 
     // --- Restore lexer state ---
-    self.lexer.pos             = saved_pos;
-    self.lexer.line            = saved_line;
-    self.lexer.col             = saved_col;
-    self.lexer.current         = saved_cur;
-    self.lexer.lookahead       = saved_look;
-    self.lexer.has_lookahead   = saved_haslk;
-    self.lexer.pushed_back     = saved_push;
-    self.lexer.has_pushed_back = saved_haspb;
-    self.lexer.seen_line_term  = saved_slt;
+    self.restore_lhs_snapshot(snap);
 
     return count;
 }
@@ -2558,17 +2510,7 @@ fn void? CompilerContext.for_statement(&self) {
     // is a parenthesized identifier, detect it via a three-token lookahead:
     // '(' IDENTIFIER ')' followed by 'of' or 'in'.
     if (next_tt == TokenType.LPAREN) {
-        uint saved_pos  = self.lexer.pos;
-        uint saved_line = self.lexer.line;
-        uint saved_col  = self.lexer.col;
-        Token saved_cur  = self.lexer.current;
-        Token saved_look = self.lexer.lookahead;
-        bool  saved_hlk  = self.lexer.has_lookahead;
-        Token saved_push = self.lexer.pushed_back;
-        bool  saved_hpb  = self.lexer.has_pushed_back;
-        bool  saved_slt  = self.lexer.seen_line_term;
-        uint  saved_pbc  = self.pushback_count;
-        Token[4] saved_pbs = self.pushback_stack;
+        ForLhsSnapshot paren_snap = self.save_lhs_snapshot();
 
         self.advance()!; // consume '('
         bool paren_is_forof = false;
@@ -2590,17 +2532,7 @@ fn void? CompilerContext.for_statement(&self) {
             }
         }
 
-        self.lexer.pos             = saved_pos;
-        self.lexer.line            = saved_line;
-        self.lexer.col             = saved_col;
-        self.lexer.current         = saved_cur;
-        self.lexer.lookahead       = saved_look;
-        self.lexer.has_lookahead   = saved_hlk;
-        self.lexer.pushed_back     = saved_push;
-        self.lexer.has_pushed_back = saved_hpb;
-        self.lexer.seen_line_term  = saved_slt;
-        self.pushback_count        = saved_pbc;
-        self.pushback_stack        = saved_pbs;
+        self.restore_lhs_snapshot(paren_snap);
 
         if (paren_is_forof) {
             self.advance()!; // consume '('
@@ -2749,17 +2681,7 @@ fn void? CompilerContext.for_statement(&self) {
 
         // Save lexer state for the speculative pattern scan. Same
         // technique as the `let [x] of arr` lookahead at line 946.
-        uint saved_pos = self.lexer.pos;
-        uint saved_line = self.lexer.line;
-        uint saved_col = self.lexer.col;
-        Token saved_cur = self.lexer.current;
-        Token saved_look = self.lexer.lookahead;
-        bool saved_haslk = self.lexer.has_lookahead;
-        Token saved_push = self.lexer.pushed_back;
-        bool saved_haspb = self.lexer.has_pushed_back;
-        bool saved_slt = self.lexer.seen_line_term;
-        uint saved_pbc = self.pushback_count;
-        Token[4] saved_pbs = self.pushback_stack;
+        ForLhsSnapshot bare_snap = self.save_lhs_snapshot();
 
         self.advance()!; // consume '[' or '{'
         uint depth = 1;
@@ -2790,17 +2712,7 @@ fn void? CompilerContext.for_statement(&self) {
         }
 
         // Restore lexer state
-        self.lexer.pos = saved_pos;
-        self.lexer.line = saved_line;
-        self.lexer.col = saved_col;
-        self.lexer.current = saved_cur;
-        self.lexer.lookahead = saved_look;
-        self.lexer.has_lookahead = saved_haslk;
-        self.lexer.pushed_back = saved_push;
-        self.lexer.has_pushed_back = saved_haspb;
-        self.lexer.seen_line_term = saved_slt;
-        self.pushback_count = saved_pbc;
-        self.pushback_stack = saved_pbs;
+        self.restore_lhs_snapshot(bare_snap);
 
         if (is_bare_destr) {
             bool is_array_pattern = (next_tt == TokenType.LBRACKET);

@@ -44,15 +44,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     }
 
     // Save lexer state before any pre-processing.
-    uint saved_pos    = lex.pos;
-    uint saved_line   = lex.line;
-    uint saved_col    = lex.col;
-    Token saved_cur   = lex.current;
-    Token saved_look  = lex.lookahead;
-    bool  saved_haslk = lex.has_lookahead;
-    Token saved_push  = lex.pushed_back;
-    bool  saved_haspb = lex.has_pushed_back;
-    bool  saved_slt   = lex.seen_line_term;
+    ForLhsSnapshot snap = ctx.save_lhs_snapshot();
 
     // Check for "use strict" directive prologue at program level.
     // Scanned strict: the directive is a plain string literal, and nothing
@@ -74,15 +66,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ctx.hoist_lexical_tdz_checks()!;
     ctx.hoist_decls(true, true)!;
     ctx.hoist_global_fn_decls(true)!;
-    lex.pos             = saved_pos;
-    lex.line            = saved_line;
-    lex.col             = saved_col;
-    lex.current         = saved_cur;
-    lex.lookahead       = saved_look;
-    lex.has_lookahead   = saved_haslk;
-    lex.pushed_back     = saved_push;
-    lex.has_pushed_back = saved_haspb;
-    lex.seen_line_term  = saved_slt;
+    ctx.restore_lhs_snapshot(snap);
 
     // Hoist function declarations at the global level (ES5 §10.2.1.1).
     ctx.hoist_global_fn_decls()!;
@@ -99,15 +83,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ctx.hoist_decls(true)!;
 
     // Restore lexer to beginning for statement parsing.
-    lex.pos             = saved_pos;
-    lex.line            = saved_line;
-    lex.col             = saved_col;
-    lex.current         = saved_cur;
-    lex.lookahead       = saved_look;
-    lex.has_lookahead   = saved_haslk;
-    lex.pushed_back     = saved_push;
-    lex.has_pushed_back = saved_haspb;
-    lex.seen_line_term  = saved_slt;
+    ctx.restore_lhs_snapshot(snap);
 
     // Capture pre-scan for global scripts: collect identifiers referenced
     // inside nested closures so for (let ...) loops can skip per-iteration
@@ -321,15 +297,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.emit_abc(Opcode.LDUNDEF, (uint)ctx.eval_acc_reg, 0, 0);
 
     // Save lexer state before any pre-processing.
-    uint saved_pos    = lex.pos;
-    uint saved_line   = lex.line;
-    uint saved_col    = lex.col;
-    Token saved_cur   = lex.current;
-    Token saved_look  = lex.lookahead;
-    bool  saved_haslk = lex.has_lookahead;
-    Token saved_push  = lex.pushed_back;
-    bool  saved_haspb = lex.has_pushed_back;
-    bool  saved_slt   = lex.seen_line_term;
+    ForLhsSnapshot snap = ctx.save_lhs_snapshot();
 
     // Check for "use strict" directive prologue at eval level.
     // Scanned with the lexer still strict: the directive is a plain string
@@ -368,15 +336,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.hoist_decls(true)!;
 
     // Restore lexer to beginning for statement parsing.
-    lex.pos             = saved_pos;
-    lex.line            = saved_line;
-    lex.col             = saved_col;
-    lex.current         = saved_cur;
-    lex.lookahead       = saved_look;
-    lex.has_lookahead   = saved_haslk;
-    lex.pushed_back     = saved_push;
-    lex.has_pushed_back = saved_haspb;
-    lex.seen_line_term  = saved_slt;
+    ctx.restore_lhs_snapshot(snap);
 
     // Capture pre-scan for eval scripts, same as compile() above.
     ctx.pre_scan_captures(false, true);
@@ -481,15 +441,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     ctx.current_module = module_def;
 
     // Save lexer state before any pre-processing.
-    uint saved_pos    = lex.pos;
-    uint saved_line   = lex.line;
-    uint saved_col    = lex.col;
-    Token saved_cur   = lex.current;
-    Token saved_look  = lex.lookahead;
-    bool  saved_haslk = lex.has_lookahead;
-    Token saved_push  = lex.pushed_back;
-    bool  saved_haspb = lex.has_pushed_back;
-    bool  saved_slt   = lex.seen_line_term;
+    ForLhsSnapshot snap = ctx.save_lhs_snapshot();
 
     // Check for "use strict" directive prologue (accepted but a no-op, modules are always strict)
     ctx.parse_directives()!;
@@ -506,15 +458,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     ctx.check_module_duplicate_lexical_names()!;
 
     // Restore lexer to beginning for statement parsing.
-    lex.pos             = saved_pos;
-    lex.line            = saved_line;
-    lex.col             = saved_col;
-    lex.current         = saved_cur;
-    lex.lookahead       = saved_look;
-    lex.has_lookahead   = saved_haslk;
-    lex.pushed_back     = saved_push;
-    lex.has_pushed_back = saved_haspb;
-    lex.seen_line_term  = saved_slt;
+    ctx.restore_lhs_snapshot(snap);
 
     // Parse statements until EOF
     // Note: module top-level `let`/`const` bindings live in the Module
