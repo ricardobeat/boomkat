@@ -534,9 +534,14 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
     long m = (long)digit_at(text, m_start) * 10 + (long)digit_at(text, m_start + 1);
     out.month = (int)m;
 
-    if (i >= len || text[i] != '-') return false;
-    i += 1;
-    if (!parse_two_digits(text, &i, &out.day)) return false;
+    if (i >= len) return false;
+    if (text[i] == '-') {
+        i += 1;
+        if (!parse_two_digits(text, &i, &out.day)) return false;
+    } else {
+        // Compact MMDD format (no separator between month and day).
+        if (!parse_two_digits(text, &i, &out.day)) return false;
+    }
     if (i < len) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len;

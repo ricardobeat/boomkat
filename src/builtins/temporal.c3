@@ -7151,16 +7151,14 @@ fn bool fields_to_valid_monthday(BuiltinContext* ctx, int y, int m, int d,
                                    temporal::OverflowKind overflow,
                                    int* out_y, int* out_m, int* out_d) {
     if (m < 1) {
-        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
-        m = 1;
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false;
     }
     if (m > 12) {
         if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid month"); return false; }
         m = 12;
     }
     if (d < 1) {
-        if (overflow == temporal::OverflowKind.REJECT) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day"); return false; }
-        d = 1;
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid day"); return false;
     }
     int dim = temporal::days_in_month((long)y, (int)m);
     if (d > dim) {
@@ -7237,13 +7235,7 @@ fn void builtin_temporal_plain_monthday_from(BuiltinContext* ctx) {
     }
     TVal* arg = arg_at(ctx, 0);
 
-    // Spec reads the field bag (calendar, day, month, monthCode, year, era,
-    // eraYear) BEFORE the overflow option, so propertyBagObserver sees the
-    // full field-read sequence followed by the option read.
-
-    // PlainMonthDay fast path: same-class instance yields a fresh copy, after
-    // running the option read (per test262 the ordering is options-first for
-    // the PlainMonthDay fast path).
+    // PlainMonthDay fast path: read overflow first, then copy.
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY) {
@@ -7260,25 +7252,76 @@ fn void builtin_temporal_plain_monthday_from(BuiltinContext* ctx) {
         }
     }
 
-    int vy; int vm; int vd;
-    if (!plainmonthday_from_arg_full(ctx, arg, temporal::OverflowKind.CONSTRAIN, &vy, &vm, &vd)) return;
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
-    // Re-validate with the resolved overflow (the initial pass used
-    // CONSTRAIN so the field reads could finish first even when the bag
-    // is invalid; the second pass enforces month/day bounds under the
-    // user's overflow preference).
-    if (overflow == temporal::OverflowKind.REJECT) {
-        if (!fields_to_valid_monthday(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
-    } else {
-        if (!fields_to_valid_monthday(ctx, vy, vm, vd, overflow, &vy, &vm, &vd)) return;
+    // String path: parse first (may throw RangeError without reading overflow),
+    // then validate strictly with REJECT (ISO strings ignore overflow).
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay: symbol cannot be converted");
+            return;
+        }
+        char[] text = s.get_cstr()[:s.blen];
+        temporal::ParsedIsoDateTime p;
+        bool ok = temporal::parse_iso_monthday_string(text, &p);
+        if (!ok) {
+            ok = temporal::parse_iso_date_string(text, &p);
+            if (!ok) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay: invalid ISO month-day string");
+                return;
+            }
+        }
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainMonthDay: Z designator is not allowed");
+            return;
+        }
+        int sy = 1972; int sm = p.month; int sd = p.day;
+        if (!fields_to_valid_monthday(ctx, sy, sm, sd, temporal::OverflowKind.REJECT, &sy, &sm, &sd)) return;
+        // Read overflow after successful parse (test262 observable ordering).
+        temporal::OverflowKind _ov;
+        if (!read_overflow_option(ctx, 1, &_ov)) return;
+        HObject*? obj_o = alloc_plain_monthday(ctx.heap, sy, sm, sd, ctx.heap.temporal_iso_calendar);
+        if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+        HObject* obj = obj_o;
+        obj.prototype = ctx.heap.temporal_plain_monthday_proto;
+        ctx.result.set_object(obj);
+        return;
     }
 
-    HObject*? obj_o = alloc_plain_monthday(ctx.heap, vy, vm, vd, ctx.heap.temporal_iso_calendar);
-    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_plain_monthday_proto;
-    ctx.result.set_object(obj);
+    // Bag path: read fields first, then read overflow, then validate.
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        HObject* calendar = ctx.heap.temporal_iso_calendar;
+        TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
+        if (!cal_v.is_undefined()) {
+            if (!calendar_from_arg(ctx, &cal_v, &calendar)) return;
+        }
+        int y; int m; int d;
+        bool have_mc;
+        int mci;
+        TVal mc_v;
+        Vm* v = (Vm*)ctx.vm;
+        if (!bag_to_monthday_fields(ctx, o, false, 1972, 1, 1, &y, &m, &d,
+                                    &have_mc, &mci, &mc_v)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
+            return;
+        }
+        // Read overflow after bag fields (test262 observable ordering).
+        temporal::OverflowKind overflow;
+        if (!read_overflow_option(ctx, 1, &overflow)) return;
+        // Validate monthCode suitability after overflow is read.
+        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) return;
+        if (!fields_to_valid_monthday(ctx, y, m, d, overflow, &y, &m, &d)) return;
+        HObject*? obj_o = alloc_plain_monthday(ctx.heap, 1972, m, d, ctx.heap.temporal_iso_calendar);
+        if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+        HObject* obj = obj_o;
+        obj.prototype = ctx.heap.temporal_plain_monthday_proto;
+        ctx.result.set_object(obj);
+        return;
+    }
+
+    // Primitive path: throw TypeError without reading overflow.
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainMonthDay: argument must be a string or object");
 }
 
 // ToTemporalMonthDay shared path: takes a string, property bag, or another
@@ -7310,7 +7353,7 @@ fn bool plainmonthday_from_arg_full(BuiltinContext* ctx, TVal* arg, temporal::Ov
             return false;
         }
         *out_y = 1972; *out_m = p.month; *out_d = p.day;
-        return fields_to_valid_monthday(ctx, *out_y, *out_m, *out_d, overflow, out_y, out_m, out_d);
+        return fields_to_valid_monthday(ctx, *out_y, *out_m, *out_d, temporal::OverflowKind.REJECT, out_y, out_m, out_d);
     }
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
