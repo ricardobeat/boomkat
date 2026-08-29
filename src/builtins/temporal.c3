@@ -1311,9 +1311,11 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
         long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
             + (long)valid_t.h * 3600 + (long)valid_t.mi * 60 + (long)valid_t.s;
         long frac_ns = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
-        double naive_ns = (double)wall_secs * 1e9 + (double)frac_ns;
-        double epoch_ns_d = naive_ns - (double)off_sec * 1e9;
-        hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, epoch_ns_d);
+        // Combine in int128: double arithmetic here would drop every bit
+        // below 2^53 and corrupt the sub-microsecond digits.
+        int128 epoch_ns_128 = (int128)wall_secs * (int128)1000000000L + (int128)frac_ns
+            - (int128)off_sec * (int128)1000000000L;
+        hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return false; }
         hbigint::HBigInt* epoch_ns = big_o;
         HString* cal_str = builtin_intern_string(ctx.heap, "iso8601");
@@ -1628,6 +1630,11 @@ fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalR
                 return false;
             }
             *digits = (int)n;
+            // A numeric digit count also fixes the rounding increment, not
+            // just the rendered precision: {fractionalSecondDigits: 6,
+            // roundingMode: "ceil"} must round to 1us even without
+            // smallestUnit.
+            *incr_ns = (*digits == 9) ? 1 : ns_pow10(9 - *digits);
         } else {
             HString* s = builtin_to_string_vm(ctx, &f);
             if (ctx.should_throw) return false;
@@ -2160,6 +2167,26 @@ fn TemporalRoundMode mode_for_negative_magnitude(TemporalRoundMode m) {
         case TemporalRoundMode.HALF_FLOOR: return TemporalRoundMode.HALF_CEIL;
         default: return m;
     }
+}
+
+// Inverse of civil_time_to_ns; the input must lie in [0, day).
+fn temporal::CivilTime civil_time_from_ns(long total) {
+    temporal::CivilTime t;
+    t.h  = total / 3600000000000L; total %= 3600000000000L;
+    t.mi = total /   60000000000L; total %=   60000000000L;
+    t.s  = total /    1000000000L; total %=    1000000000L;
+    t.ms = total /       1000000L; total %=       1000000L;
+    t.us = total /          1000L;
+    t.ns = total %          1000L;
+    return t;
+}
+
+// 10^e nanoseconds, for e in [0, 9]: the rounding increment that a
+// fractional-second digit count implies.
+fn long ns_pow10(int e) {
+    long v = 1;
+    for (int i = 0; i < e; i++) v *= 10;
+    return v;
 }
 
 fn bool parse_unit_str(char[] s, TemporalUnit* out) {
@@ -3942,20 +3969,31 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     int digits = -1;
     TemporalRoundMode rm = TemporalRoundMode.TRUNC;
     if (!to_string_precision(ctx, 0, &digits, &rm, false)) return;
-    // No rounding to apply for PlainTime beyond the digit truncation that
-    // the formatter does directly; the `rm` is consumed here only to keep
-    // the option log faithful to the spec.
-    (void)rm;
 
     int ns_digits;
     if (digits == -10) {
-        // Round to whole minute: a PlainTime cannot change its hour
-        // boundary, so clamp the fraction to a minute-precision render.
         ns_digits = -12;
     } else if (digits < 0) {
         ns_digits = -1;  // auto: smallest non-zero
     } else {
         ns_digits = digits;
+    }
+
+    // Round the time-of-day (RoundTime): the increment is the unit implied
+    // by the precision, whole nanoseconds (no rounding) when "auto". A
+    // PlainTime wraps at midnight, so a rounded-up 24:00 becomes 00:00.
+    long unit_ns = 0;
+    if (ns_digits == -12) {
+        unit_ns = 60000000000L;
+    } else if (ns_digits >= 0 && ns_digits < 9) {
+        unit_ns = ns_pow10(9 - ns_digits);
+    } else if (ns_digits == 9) {
+        unit_ns = 1;
+    }
+    if (unit_ns > 1) {
+        long total = round_long_ns(civil_time_to_ns(t), unit_ns, rm);
+        if (total >= 86400000000000L) total -= 86400000000000L;
+        t = civil_time_from_ns(total);
     }
 
     char[32] buf;
@@ -5063,6 +5101,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
     int ns_digits = -1;
     bool show_calendar = false;
     bool critical = false;
+    TemporalRoundMode rm = TemporalRoundMode.TRUNC;
     if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
         TVal ov = ctx.regs[ctx.base_reg];
         if (!ov.is_object() || ov.get_heapptr() == null) {
@@ -5115,10 +5154,10 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
             }
         }
 
-        TVal rm = prop_or_undefined_pa(ctx, opts, "roundingMode");
+        TVal rm_tv = prop_or_undefined_pa(ctx, opts, "roundingMode");
         if (ctx.should_throw) return;
-        if (!rm.is_undefined()) {
-            rm_s = builtin_to_string_vm(ctx, &rm);
+        if (!rm_tv.is_undefined()) {
+            rm_s = builtin_to_string_vm(ctx, &rm_tv);
             if (ctx.should_throw) return;
             if (rm_s == null) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "roundingMode must be a string");
@@ -5164,9 +5203,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         }
         if (rm_s != null) {
             char[] v = rm_s.get_cstr()[:rm_s.blen];
-            if (v != "ceil" && v != "floor" && v != "expand" && v != "trunc"
-                && v != "halfCeil" && v != "halfFloor" && v != "halfExpand"
-                && v != "halfTrunc" && v != "halfEven") {
+            if (!parse_rm_str(v, &rm)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -5183,11 +5220,36 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
                 if (ns_digits < 0) ns_digits = 6;
             } else if (v == "nanosecond" || v == "nanoseconds") {
                 if (ns_digits < 0) ns_digits = 9;
+            } else if (v == "day" || v == "days") {
+                if (ns_digits < 0) ns_digits = -10;
             } else {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
             }
         }
+    }
+
+    // Round the time-of-day (RoundTime): increment is the unit implied by
+    // the precision; whole nanoseconds (no rounding) when "auto". Rounding
+    // up past midnight folds into the date part for PlainDateTime.
+    long unit_ns = 0;
+    if (ns_digits == -12) {
+        unit_ns = 60000000000L;
+    } else if (ns_digits == -10) {
+        unit_ns = 86400000000000L;
+    } else if (ns_digits >= 0 && ns_digits < 9) {
+        unit_ns = ns_pow10(9 - ns_digits);
+    } else if (ns_digits == 9) {
+        unit_ns = 1;
+    }
+    if (unit_ns > 1) {
+        long total = round_long_ns(civil_time_to_ns(dt.time), unit_ns, rm);
+        if (total >= 86400000000000L) {
+            total -= 86400000000000L;
+            dt.date = temporal::civil_date_from_epoch_days(
+                temporal::epoch_days_from_civil(dt.date.y, (int)dt.date.m, (int)dt.date.d) + 1);
+        }
+        dt.time = civil_time_from_ns(total);
     }
 
     char[64] buf;
@@ -11128,7 +11190,6 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 return;
             }
         }
-        double naive_ns = (double)wall_secs * 1e9 + (double)p.nanos;
         // When the bracket is an offset zone (e.g. `+01:00`) and no explicit
         // offset was given on the date-time, the bracket offset governs.
         // For an IANA zone with no explicit offset, offset_seconds=0 and
@@ -11149,8 +11210,11 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 return;
             }
         }
-        double epoch_ns_d = (double)epoch_ns_128;
-        hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, epoch_ns_d);
+        // Build the BigInt straight from the int128. Going via a double here
+        // would discard every bit below 2^53, so an epoch instant such as
+        // 2000-01-01T12:34:56.98765Z (946730096987650000 ns) came back as
+        // ...987650048 and its `nanosecond` field read 48 instead of 0.
+        hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
         hbigint::HBigInt* epoch_ns = big_o;
         HString* cal = builtin_intern_string(ctx.heap, "iso8601");
@@ -11319,9 +11383,11 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
             + (long)valid_t.h * 3600 + (long)valid_t.mi * 60 + (long)valid_t.s;
         long frac_ns = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
-        double naive_ns = (double)wall_secs * 1e9 + (double)frac_ns;
-        double epoch_ns_d = naive_ns - (double)off_sec * 1e9;
-        hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, epoch_ns_d);
+        // Combine in int128: double arithmetic here would drop every bit
+        // below 2^53 and corrupt the sub-microsecond digits.
+        int128 epoch_ns_128 = (int128)wall_secs * (int128)1000000000L + (int128)frac_ns
+            - (int128)off_sec * (int128)1000000000L;
+        hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
         hbigint::HBigInt* epoch_ns = big_o;
         HString* cal_str = builtin_intern_string(ctx.heap, "iso8601");
@@ -11872,17 +11938,16 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     if (zone.len == 0) { builtin_throw(ctx, ctx.heap.range_err_proto, "zone missing"); return; }
 
     // Current wall time: epoch -> local via the offset in effect at the epoch.
-    hbigint::HBigInt* ns = self.extra.temporal.big_ns;
-    double s_d;
-    if (!bigint_to_epoch_number(ns, &s_d, ctx)) return;
-    long epoch_sec = (long)math::floor(s_d / 1e9);
-    long frac_ns = (long)(s_d - (double)epoch_sec * 1e9);
-    int off = temporal::tzdb_offset_for_zone_at(zone, epoch_sec);
-    temporal::BrokenDownTime bd = temporal::civil_from_seconds(epoch_sec + off);
+    // Go through zdt_wall_fields, which splits the epoch in int128; routing
+    // this through a double instead rounded away everything below 2^53, so
+    // the carried-over sub-microsecond digits were lost for any field the
+    // bag did not overwrite.
+    long cwy, cwm, cwd; int cwh, cwmi, cws, cwms, cwus, cwns, cwoff;
+    zdt_wall_fields(self, &cwy, &cwm, &cwd, &cwh, &cwmi, &cws, &cwms, &cwus, &cwns, &cwoff);
     temporal::CivilDateTime cur = {
-        .date = { .y = bd.y, .m = bd.m + 1, .d = bd.d },
-        .time = { .h = bd.h, .mi = bd.mi, .s = bd.s,
-                  .ms = (int)(frac_ns / 1000000), .us = (int)((frac_ns % 1000000) / 1000), .ns = (int)(frac_ns % 1000) },
+        .date = { .y = cwy, .m = cwm, .d = cwd },
+        .time = { .h = cwh, .mi = cwmi, .s = cws,
+                  .ms = cwms, .us = cwus, .ns = cwns },
     };
 
     temporal::CivilDateTime fields;
@@ -11995,22 +12060,26 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
         }
     }
 
-    double chosen;
-    if (nh == 1) {
-        chosen = hits[0];
-    } else if (nh == 2) {
+    // Candidate selection above only needs second-level accuracy, so it can
+    // run in doubles; but the final instant must be exact. Recover the chosen
+    // candidate's offset (a whole number of seconds) and rebuild the epoch
+    // nanos in int128, or the sub-microsecond digits are rounded away.
+    long chosen_off;
+    if (nh == 1 || nh == 2) {
         // Overlap: "earlier" and "compatible" pick the earlier instant, "later"
         // the later. (compatible normally prefers the offset matching the
         // current instant; for the common single-offset-change case the earlier
         // instant carries that offset.)
-        chosen = hits[0];
+        chosen_off = (long)math::round((naive_ns - hits[0]) / 1e9);
     } else {
         // Gap: "compatible" shifts the wall time across the skipped hour,
         // relocating it to the instant whose local time is the post-gap offset.
-        chosen = naive_ns - (double)temporal::tzdb_offset_for_zone_at(zone, wall_secs + 4 * 3600) * 1e9;
+        chosen_off = (long)temporal::tzdb_offset_for_zone_at(zone, wall_secs + 4 * 3600);
     }
+    int128 chosen_128 = (int128)wall_secs * (int128)1000000000L + (int128)wfrac
+        - (int128)chosen_off * (int128)1000000000L;
 
-    hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, chosen);
+    hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, chosen_128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
     ((types::HeapHeader*)self.extra.temporal.timezone).incref();
     zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
@@ -12751,8 +12820,9 @@ fn void builtin_temporal_zoneddatetime_proto_startOfDay(BuiltinContext* ctx) {
     long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
     zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
     long day_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400;
-    double epoch_ns_d = (double)day_secs * 1e9 - (double)off * 1e9;
-    hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, epoch_ns_d);
+    int128 epoch_ns_128 = (int128)day_secs * (int128)1000000000L
+        - (int128)off * (int128)1000000000L;
+    hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
     ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
     zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, (HString*)obj.extra.temporal.calendar);
@@ -12850,8 +12920,9 @@ fn void builtin_temporal_zoneddatetime_proto_withPlainTime(BuiltinContext* ctx) 
     long day_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400
         + (long)new_time.h * 3600 + (long)new_time.mi * 60 + (long)new_time.s;
     long frac_ns = (long)new_time.ms * 1000000 + (long)new_time.us * 1000 + (long)new_time.ns;
-    double epoch_ns_d = (double)day_secs * 1e9 + (double)frac_ns - (double)off * 1e9;
-    hbigint::HBigInt*? big_o = hbigint::hbigint_from_double(ctx.heap, epoch_ns_d);
+    int128 epoch_ns_128 = (int128)day_secs * (int128)1000000000L + (int128)frac_ns
+        - (int128)off * (int128)1000000000L;
+    hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
     ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
     zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, (HString*)obj.extra.temporal.calendar);
