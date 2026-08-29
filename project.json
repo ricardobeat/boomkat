@@ -28,6 +28,7 @@
         "cli/boomkat.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
@@ -43,6 +44,7 @@
         "cli/boomkat.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
@@ -58,6 +60,7 @@
         "cli/boomkat_debug.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
@@ -171,6 +174,7 @@
         "src"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
@@ -186,6 +190,7 @@
         "src"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
@@ -202,6 +207,7 @@
         "bindings/c3/example/hello.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
       "debug-info": "none",
@@ -228,6 +234,7 @@
         "cli/test262_runner.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "features": [
         "THREADED_DISPATCH"
@@ -266,6 +273,7 @@
         "test/capi/host_fn_phase1.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "features": [
         "THREADED_DISPATCH"
@@ -291,6 +299,7 @@
         "scratch/leak_tester.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true
     },
     "host_fn_phase2": {
@@ -300,6 +309,7 @@
         "test/capi/host_fn_phase2.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "features": [
         "THREADED_DISPATCH"
@@ -338,6 +348,7 @@
         "test/capi/host_fn_phase4.c3"
       ],
       "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "features": [
         "THREADED_DISPATCH"
