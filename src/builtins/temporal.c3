@@ -7813,12 +7813,14 @@ fn void builtin_temporal_plain_monthday_proto_equals(BuiltinContext* ctx) {
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* other = (HObject*)arg.get_heapptr();
         if (other.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY) {
+            int ay = plain_monthday_year(obj);
+            int by = plain_monthday_year(other);
             int am = plain_monthday_m(obj);
             int bm = plain_monthday_m(other);
             int ad = plain_monthday_d(obj);
             int bd = plain_monthday_d(other);
             bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
-            ctx.result.set_boolean(same_cal && am == bm && ad == bd);
+            ctx.result.set_boolean(same_cal && ay == by && am == bm && ad == bd);
             return;
         }
     }
