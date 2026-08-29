@@ -1963,6 +1963,20 @@ fn bool vm_poll_interrupt(Vm* vm, Activation* act, Instruction** curr_pc, bool* 
     return true;
 }
 
+// Shorthand for the vm_check_to_number_throw(vm, ds.act, &ds.curr_pc,
+// &ds.needs_restart) idiom repeated throughout the dispatch switch below.
+// Only wraps the boolean check itself: `return`/`break` cannot escape a
+// macro body to the caller's function/loop in C3, so callers still write
+// out `if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(...);` (and whatever
+// follows, e.g. `if (ds.needs_restart) break;`) themselves.
+// NOTE: takes `ds` BY POINTER — a regular macro param is passed by value, and
+// Dispatch is a plain struct, so passing `ds` itself would copy it and the
+// callee's writes to curr_pc/needs_restart would land on the copy, silently
+// losing thrown-error state at every call site.
+macro bool @tonum_ok(vm, Dispatch* ds) {
+    return vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart);
+}
+
 // Run the bytecode dispatch loop over an activation stack and registers the
 // caller has already set up.
 fn TVal? Vm.run(Vm* vm) {
@@ -2265,22 +2279,22 @@ fn TVal? Vm.run(Vm* vm) {
             TVal prim_c = *rc;
             // ES5 §11.6.1: + operator uses ToPrimitive with no hint (default "number")
             if (rb.get_tag() == OBJECT) { prim_b = to_primitive_value(vm, rb, 0); }
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             if (rc.get_tag() == OBJECT) { prim_c = to_primitive_value(vm, rc, 0); }
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             TValTag pt_b = prim_b.get_tag();
             TValTag pt_c = prim_c.get_tag();
             if (pt_b == STRING || pt_c == STRING) {
                 HString*? left_str = vm_to_string(vm, &prim_b);
                 if (vm.throw_pending) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     continue;
                 }
                 HString*? right_str = vm_to_string(vm, &prim_c);
                 if (vm.throw_pending) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     continue;
                 }
                 if (try ls = left_str && try rs = right_str) {
@@ -2347,14 +2361,14 @@ fn TVal? Vm.run(Vm* vm) {
                 // ES2020 §12.8.5: neither primitive is a String → numeric add.
                 // BigInt operands: both must be BigInt (else TypeError).
                 if (vm_bigint_binop(vm, Opcode.ADD, ra, &prim_b, &prim_c) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
             } else {
                 double add_b = vm_to_number(vm,&prim_b);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 double add_c = vm_to_number(vm,&prim_c);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 ra.set_number(add_b + add_c);
             }
         }
@@ -2362,7 +2376,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.SUB:
             if (rb.is_bigint() || rc.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.SUB, ra, rb, rc) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
@@ -2376,10 +2390,10 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             } else {
                 double sub_b = vm_to_number(vm,rb);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
                 double sub_c = vm_to_number(vm,rc);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 ra.set_number(sub_b - sub_c);
             }
             continue;
@@ -2480,12 +2494,12 @@ fn TVal? Vm.run(Vm* vm) {
             TVal prim_b = *rb;
             if (rb.get_tag() == OBJECT) {
                 prim_b = to_primitive_value(vm, rb, 0);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
                 if (prim_b.is_string() && prim_b.get_heapptr() != null && !((HString*)prim_b.get_heapptr()).is_symbol()) {
                     HString*? left_str_opt = vm_to_string(vm, &prim_b);
                     if (vm.throw_pending) {
-                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                         continue;
                     }
                     if (try left_str = left_str_opt) {
@@ -2529,13 +2543,13 @@ fn TVal? Vm.run(Vm* vm) {
             }
             if (prim_b.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.ADD, ra, &prim_b, &immv) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
             }
             double add_b = vm_to_number(vm, &prim_b);
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             ra.set_number(add_b + (double)imm);
             continue;
@@ -2552,13 +2566,13 @@ fn TVal? Vm.run(Vm* vm) {
             TVal immv; immv.set_fastint(imm);
             if (rb.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.SUB, ra, rb, &immv) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
             }
             double sub_b = vm_to_number(vm, rb);
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             ra.set_number(sub_b - (double)imm);
             continue;
@@ -2567,7 +2581,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.MUL:
             if (rb.is_bigint() || rc.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.MUL, ra, rb, rc) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
@@ -2595,10 +2609,10 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             } else {
                 double mul_b = vm_to_number(vm,rb);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
                 double mul_c = vm_to_number(vm,rc);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 ra.set_number(mul_b * mul_c);
             }
             continue;
@@ -2606,16 +2620,16 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.DIV: {
             if (rb.is_bigint() || rc.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.DIV, ra, rb, rc) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
             }
             double div_b = vm_to_number(vm,rb);
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             double div_c = vm_to_number(vm,rc);
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             ra.set_number(div_b / div_c);
             continue;
         }
@@ -2623,7 +2637,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.MOD:
             if (rb.is_bigint() || rc.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.MOD, ra, rb, rc) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
@@ -2638,10 +2652,10 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             } else {
                 double mod_b = vm_to_number(vm,rb);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
                 double mod_c = vm_to_number(vm,rc);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 ra.set_number((mod_b % mod_c));
             }
             continue;
@@ -2649,16 +2663,16 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.EXP: {
             if (rb.is_bigint() || rc.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.EXP, ra, rb, rc) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
             }
             double exp_b = vm_to_number(vm,rb);
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             double exp_c = vm_to_number(vm,rc);
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             // ES2016 §12.6.4 (same result as Math.pow): a NaN exponent is NaN
             // even for base 1, and abs(base) == 1 with a ±Infinity exponent is
             // NaN. C99 pow returns 1 for both, so patch them here.
@@ -2706,14 +2720,14 @@ fn TVal? Vm.run(Vm* vm) {
             TVal band_prim_b; TVal band_prim_c;
             if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
                 if (!vm_bitwise_to_primitive(vm, rb, rc, &band_prim_b, &band_prim_c)) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 eb = &band_prim_b; ec = &band_prim_c;
             }
             if (eb.is_bigint() || ec.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.BAND, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
@@ -2723,10 +2737,10 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             int band_b = toint32(vm_to_number(vm,eb));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             int band_c = toint32(vm_to_number(vm,ec));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             ra.set_fastint((long)(band_b & band_c));
             continue;
         }
@@ -2740,14 +2754,14 @@ fn TVal? Vm.run(Vm* vm) {
             TVal bor_prim_b; TVal bor_prim_c;
             if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
                 if (!vm_bitwise_to_primitive(vm, rb, rc, &bor_prim_b, &bor_prim_c)) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 eb = &bor_prim_b; ec = &bor_prim_c;
             }
             if (eb.is_bigint() || ec.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.BOR, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
@@ -2757,10 +2771,10 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             int bor_b = toint32(vm_to_number(vm,eb));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             int bor_c = toint32(vm_to_number(vm,ec));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             ra.set_fastint((long)(bor_b | bor_c));
             continue;
         }
@@ -2772,14 +2786,14 @@ fn TVal? Vm.run(Vm* vm) {
             TVal bxor_prim_b; TVal bxor_prim_c;
             if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
                 if (!vm_bitwise_to_primitive(vm, rb, rc, &bxor_prim_b, &bxor_prim_c)) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 eb = &bxor_prim_b; ec = &bxor_prim_c;
             }
             if (eb.is_bigint() || ec.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.BXOR, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
@@ -2789,10 +2803,10 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             int bxor_b = toint32(vm_to_number(vm,eb));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             int bxor_c = toint32(vm_to_number(vm,ec));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             ra.set_fastint((long)(bxor_b ^ bxor_c));
             continue;
         }
@@ -2804,14 +2818,14 @@ fn TVal? Vm.run(Vm* vm) {
             TVal shl_prim_b; TVal shl_prim_c;
             if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
                 if (!vm_bitwise_to_primitive(vm, rb, rc, &shl_prim_b, &shl_prim_c)) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 eb = &shl_prim_b; ec = &shl_prim_c;
             }
             if (eb.is_bigint() || ec.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.SHL, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
@@ -2821,10 +2835,10 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             int shl_b = toint32(vm_to_number(vm,eb));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             int shl_c = toint32(vm_to_number(vm,ec));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             ra.set_fastint((long)(shl_b << (shl_c & 0x1F)));
             continue;
         }
@@ -2836,14 +2850,14 @@ fn TVal? Vm.run(Vm* vm) {
             TVal shr_prim_b; TVal shr_prim_c;
             if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
                 if (!vm_bitwise_to_primitive(vm, rb, rc, &shr_prim_b, &shr_prim_c)) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 eb = &shr_prim_b; ec = &shr_prim_c;
             }
             if (eb.is_bigint() || ec.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.SHR, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
@@ -2853,10 +2867,10 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             int shr_b = toint32(vm_to_number(vm,eb));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             int shr_c = toint32(vm_to_number(vm,ec));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             ra.set_fastint((long)(shr_b >> (shr_c & 0x1F)));
             continue;
         }
@@ -2872,23 +2886,23 @@ fn TVal? Vm.run(Vm* vm) {
             TVal ushr_prim_b; TVal ushr_prim_c;
             if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
                 if (!vm_bitwise_to_primitive(vm, rb, rc, &ushr_prim_b, &ushr_prim_c)) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 eb = &ushr_prim_b; ec = &ushr_prim_c;
             }
             if (eb.is_bigint() || ec.is_bigint()) {
                 if (vm_bigint_binop(vm, Opcode.USHR, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     if (ds.needs_restart) break;
                 }
                 continue;
             }
             uint ushr_b = (uint)toint32(vm_to_number(vm,eb));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
             int  ushr_c = toint32(vm_to_number(vm,ec));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             ra.set_fastint((long)(ushr_b >> (ushr_c & 0x1F)));
             continue;
         }
@@ -2896,12 +2910,12 @@ fn TVal? Vm.run(Vm* vm) {
         // === COMPARISON ===
         case Opcode.EQ:
             ra.set_boolean(abstract_eq(vm, rb, rc));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             continue;
 
         case Opcode.NEQ:
             ra.set_boolean(!abstract_eq(vm, rb, rc));
-            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             continue;
 
         case Opcode.SEQ: {
@@ -3022,7 +3036,7 @@ fn TVal? Vm.run(Vm* vm) {
             } else {
                 bool is_undef;
                 int cmp = vm_relational_compare(vm, rb, rc, &is_undef);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
                 if (is_undef) {
                     // NaN comparisons all yield false
@@ -3071,7 +3085,7 @@ fn TVal? Vm.run(Vm* vm) {
                 cmp_le = db <= dc;
             } else {
                 int cmp = vm_relational_compare(vm, rb, rc, &cmp_undef);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
                 cmp_lt = cmp <  0;
                 cmp_le = cmp <= 0;
@@ -3222,7 +3236,7 @@ fn TVal? Vm.run(Vm* vm) {
                     this_for_getter.set_object(rfunc);
                     TVal getter_result = vm.heap.call_fn(vm, hi_acc.accessor_fn, null, 0, this_for_getter);
                     if (vm_check_call_fn_error(vm)) {
-                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                         continue;
                     }
                     hasinst_val = getter_result;
@@ -3251,7 +3265,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // Call @@hasInstance with this=C(rval), arg=O(lval)
                     TVal result = vm.heap.call_fn(vm, hasinst_val, &lval, 1, rval);
                     if (vm_check_call_fn_error(vm)) {
-                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                         continue;
                     }
                     ra.set_boolean(builtins::builtin_to_boolean(&result));
@@ -3316,7 +3330,7 @@ fn TVal? Vm.run(Vm* vm) {
                 this_for_getter.set_object(rfunc);
                 proto_val = vm.heap.call_fn(vm, acc.accessor_fn, null, 0, this_for_getter);
                 if (vm_check_call_fn_error(vm)) {
-                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                             continue;
                         }
             } else {
@@ -3599,7 +3613,7 @@ fn TVal? Vm.run(Vm* vm) {
                 ds.regs_base = ds.act.bottom;
                 ra = &ds.regs_base[insn.a];
                 if (vm.throw_pending) {
-                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                     continue;
                 }
                 if (try s = str) {
@@ -4984,7 +4998,7 @@ fn TVal? Vm.run(Vm* vm) {
                 cmp_lt = tval_numeric_to_double(rb) < tval_numeric_to_double(gb_val);
             } else {
                 int cmp = vm_relational_compare(vm, rb, gb_val, &cmp_undef);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
                 cmp_lt = cmp < 0;
             }
