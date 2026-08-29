@@ -1614,29 +1614,33 @@ fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalR
     TVal f = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
     if (ctx.should_throw) return false;
     if (!f.is_undefined()) {
-        HString* s = builtin_to_string_vm(ctx, &f);
-        if (ctx.should_throw) return false;
-        if (s == null) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
-            return false;
-        }
-        char[] v = s.get_cstr()[:s.blen];
-        if (v == "auto") { *digits = -1; }
-        else {
-            // Per spec, GetStringOrNumberOption floors non-integer values.
-            char* end_ptr;
-            double dv = libc::strtod(s.get_cstr(), &end_ptr);
-            if (end_ptr == s.get_cstr() || *end_ptr != '\0'
-                || math::is_nan(dv) || math::is_inf(dv)) {
+        // GetStringOrNumberOption branches on the ORIGINAL value's type: a
+        // Number is used numerically (floored, then range-checked), while
+        // anything else is stringified and must match a valid string option
+        // — here only "auto". A non-Number is never numerically parsed, so
+        // e.g. 2n and {} are RangeErrors even though they stringify to "2"
+        // and "[object Object]".
+        if (f.is_numeric()) {
+            double dv = f.get_number_or_fastint();
+            double n = math::floor(dv);
+            if (math::is_nan(dv) || n < 0 || n > 9) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
                 return false;
             }
-            int n = (int)math::floor(dv);
-            if (n < 0 || n > 9) {
+            *digits = (int)n;
+        } else {
+            HString* s = builtin_to_string_vm(ctx, &f);
+            if (ctx.should_throw) return false;
+            if (s == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
+                return false;
+            }
+            char[] v = s.get_cstr()[:s.blen];
+            if (v == "auto") { *digits = -1; }
+            else {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
                 return false;
             }
-            *digits = n;
         }
     }
 
@@ -5077,6 +5081,8 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         HString* fd_s = null;
         HString* rm_s = null;
         HString* su_s = null;
+        bool fd_is_number = false;
+        double fd_num = 0;
 
         TVal cn = prop_or_undefined_pa(ctx, opts, "calendarName");
         if (ctx.should_throw) return;
@@ -5092,11 +5098,20 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         TVal fd = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
         if (ctx.should_throw) return;
         if (!fd.is_undefined()) {
-            fd_s = builtin_to_string_vm(ctx, &fd);
-            if (ctx.should_throw) return;
-            if (fd_s == null) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a string");
-                return;
+            // GetStringOrNumberOption uses a Number numerically and never
+            // stringifies it; only non-Numbers take the string path, where
+            // "auto" is the sole valid value. Reads still happen in spec
+            // order because the property was already fetched above.
+            if (fd.is_numeric()) {
+                fd_is_number = true;
+                fd_num = fd.get_number_or_fastint();
+            } else {
+                fd_s = builtin_to_string_vm(ctx, &fd);
+                if (ctx.should_throw) return;
+                if (fd_s == null) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a string");
+                    return;
+                }
             }
         }
 
@@ -5131,24 +5146,20 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
             else if (v == "never") { show_calendar = false; }
             else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName"); return; }
         }
-        if (fd_s != null) {
+        if (fd_is_number) {
+            // Per spec, GetStringOrNumberOption floors non-integer values.
+            double dv = math::floor(fd_num);
+            if (math::is_nan(fd_num) || dv < 0 || dv > 9) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                return;
+            }
+            ns_digits = (int)dv;
+        } else if (fd_s != null) {
             char[] v = fd_s.get_cstr()[:fd_s.blen];
             if (v == "auto") { ns_digits = -1; }
             else {
-                // Per spec, GetStringOrNumberOption floors non-integer values.
-                char* end_ptr;
-                double dv = libc::strtod(fd_s.get_cstr(), &end_ptr);
-                if (end_ptr == fd_s.get_cstr() || *end_ptr != '\0'
-                    || math::is_nan(dv)) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
-                    return;
-                }
-                dv = math::floor(dv);
-                if (dv < 0 || dv > 9) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
-                    return;
-                }
-                ns_digits = (int)dv;
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                return;
             }
         }
         if (rm_s != null) {
@@ -9154,34 +9165,35 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
     TVal f = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
     if (ctx.should_throw) return false;
     if (!f.is_undefined()) {
-        // GetOption calls ToString first; an object whose toString returns
-        // "auto" is accepted (test262's propertyBagObserver proxies the
-        // value and expects toString to be invoked).
-        HString* f_s = builtin_to_string_vm(ctx, &f);
-        if (ctx.should_throw) return false;
-        if (f_s == null) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
-            return false;
-        }
-        char[] v = f_s.get_cstr()[:f_s.blen];
-        if (v == "auto") { *digits = -1; }
-        else {
-            // Per spec, GetStringOrNumberOption converts to string first,
-            // then ToNumber on the string. "null", "true", "false", etc.
-            // become NaN and must throw RangeError. Floor non-integer values.
-            char* end_ptr;
-            double dv = libc::strtod(f_s.get_cstr(), &end_ptr);
-            if (end_ptr == f_s.get_cstr() || *end_ptr != '\0'
-                || math::is_nan(dv) || math::is_inf(dv)) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
-                return false;
-            }
+        // GetStringOrNumberOption branches on the ORIGINAL value's type: a
+        // Number is used numerically (floored, then range-checked), while
+        // anything else is stringified and must match a valid string option
+        // — here only "auto". A non-Number is never numerically parsed, so
+        // e.g. 2n and {} are RangeErrors even though they stringify to "2"
+        // and "[object Object]". An object whose toString returns "auto" is
+        // still accepted (test262's propertyBagObserver proxies the value
+        // and expects toString, not valueOf, to be invoked).
+        if (f.is_numeric()) {
+            double dv = f.get_number_or_fastint();
             double dc = math::floor(dv);
-            if (dc < 0 || dc > 9) {
+            if (math::is_nan(dv) || dc < 0 || dc > 9) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
                 return false;
             }
             *digits = (int)dc;
+        } else {
+            HString* f_s = builtin_to_string_vm(ctx, &f);
+            if (ctx.should_throw) return false;
+            if (f_s == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
+                return false;
+            }
+            char[] v = f_s.get_cstr()[:f_s.blen];
+            if (v == "auto") { *digits = -1; }
+            else {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
+                return false;
+            }
         }
     }
 
@@ -11610,6 +11622,8 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
         HString* rm_str = null;
         HString* su_s = null;
         HString* tzn_s = null;
+        bool fd_is_number = false;
+        double fd_num = 0;
 
         // calendarName
         TVal cn = prop_or_undefined_pa(ctx, opts, "calendarName");
@@ -11624,8 +11638,16 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
             TVal fd = prop_or_undefined_pa(ctx, opts, "fractionalSecondDigits");
             if (ctx.should_throw) return;
             if (!fd.is_undefined()) {
-                fd_s = builtin_to_string_vm(ctx, &fd);
-                if (ctx.should_throw) return;
+                // GetStringOrNumberOption uses a Number numerically and never
+                // stringifies it; only non-Numbers take the string path,
+                // where "auto" is the sole valid value.
+                if (fd.is_numeric()) {
+                    fd_is_number = true;
+                    fd_num = fd.get_number_or_fastint();
+                } else {
+                    fd_s = builtin_to_string_vm(ctx, &fd);
+                    if (ctx.should_throw) return;
+                }
             }
         }
 
@@ -11685,24 +11707,20 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
         // value was wrapped by the toPrimitiveObserver the coerced string is
         // already the digit text (e.g. "2" or "auto"); don't re-read the
         // bag to honour propertyBagObserver's "one get per option" rule.
-        if (fd_s != null) {
+        if (fd_is_number) {
+            // Per spec, GetStringOrNumberOption floors non-integer values.
+            double dv = math::floor(fd_num);
+            if (math::is_nan(fd_num) || dv < 0 || dv > 9) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                return;
+            }
+            digits = (int)dv;
+        } else if (fd_s != null) {
             char[] v = fd_s.get_cstr()[:fd_s.blen];
             if (v == "auto") { digits = -1; }
             else {
-                // Parse the digit text manually (avoids an extra `get trap`
-                // on the property bag for the numeric case).
-                int dv = 0;
-                bool ok = true;
-                for (usz k = 0; k < fd_s.blen; k++) {
-                    char c = v[k];
-                    if (c < '0' || c > '9') { ok = false; break; }
-                    dv = dv * 10 + (c - '0');
-                }
-                if (!ok || dv < 0 || dv > 9) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
-                    return;
-                }
-                digits = dv;
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                return;
             }
         }
         if (off_s != null) {
