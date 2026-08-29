@@ -3,61 +3,55 @@ module boomkat::compiler;
 import boomkat::lexer;
 import std::io;
 
-// ============================================================================
-// Whole-program primitive-only global proof (GETGLOBAL_PRIM / PUTGLOBAL_PRIM)
-// ============================================================================
+// Whole-program primitive-only global proof (GETGLOBAL_PRIM / PUTGLOBAL_PRIM).
 //
-// A top-level `var`/`function` global is PRIMITIVE-ONLY iff EVERY assignment to
+// A top-level `var`/`function` global is primitive-only if every assignment to
 // its name anywhere in the compilation unit (including nested function bodies)
-// stores a provably-primitive value, AND the unit has no eval/globalThis/window/
-// Function/with/global-`this` observability that could inject a heap value from
-// outside the compiler's view. Reads/writes of such a global then compile to the
-// guard-free GETGLOBAL_PRIM / PUTGLOBAL_PRIM opcodes (no is_heap check, no
-// refcount, no track_heap_store).
+// stores a provably primitive value, and the unit contains no eval, globalThis,
+// window, Function, with, or global-`this` references that could inject a heap
+// value from outside the compiler's view. Reads and writes of these globals
+// compile to GETGLOBAL_PRIM and PUTGLOBAL_PRIM without heap checks, refcounting,
+// or heap-store tracking.
 //
-// SOUNDNESS: the whole correctness argument is
-//   (1) the observability gate: if any escape hatch appears, no global
-//       is treated primitive-only (the entire set is discarded); and
-//   (2) clearing the primitive-only bit on ANY assignment whose right-hand side
-//       is not provably primitive, including assignments inside nested functions
-//       and assignments whose RHS names a non-primitive-only global (resolved to
-//       a fixpoint). Strings and bigints are HEAP in this engine, so a string /
-//       template / bigint literal RHS clears the bit.
+// Soundness rests on:
+// 1. The observability gate: if any escape hatch appears, no global is treated
+//    as primitive-only and the entire candidate set is discarded.
+// 2. Clearing the primitive-only bit on any assignment whose right-hand side is
+//    not provably primitive, including assignments inside nested functions and
+//    assignments whose RHS names a non-primitive-only global (resolved to a
+//    fixpoint). Strings and bigints are heap-allocated, so string literals,
+//    templates, and bigint literals clear the bit.
 //
-// The scan is deliberately CONSERVATIVE: whenever it cannot prove primitiveness
-// (unknown identifier RHS, member/call/new RHS, capacity overflow, or any
-// observability hazard) it falls back to the guarded GETGLOBAL/PUTGLOBAL path.
-// A false negative only costs the optimization; a false positive would be a
-// refcount UAF/leak, so every ambiguous case resolves to "not primitive-only".
+// The scan falls back to guarded GETGLOBAL/PUTGLOBAL whenever primitiveness
+// cannot be proven (such as unknown identifier RHS, member/call/new RHS, table
+// overflow, or observability hazards).
 
 const uint PRIM_MAX_CANDIDATES = 256;
-// Nesting the slot-global pre-scan tracks per delimiter. The scan runs ahead
-// of the parser, so it meets source the parser's own depth limit would later
-// reject, and it indexes its classification stacks by raw depth. Passing the
-// cap discards the proof rather than growing the stacks: source this deep is
-// rejected downstream anyway, and forgoing the optimization is always sound.
+// Maximum nesting tracked per delimiter during the pre-scan. The scan runs
+// before the parser, so it can encounter depth that the parser later rejects.
+// Stacks are indexed by raw depth; exceeding this cap drops the optimization.
 const uint SLOT_MAX_NESTING = 256;
-// Assignments held per parenthesized expression while waiting to see whether
-// a `=>` follows. Beyond this the candidate is disqualified on the spot.
+// Maximum assignments buffered per parenthesized expression while checking for
+// a trailing `=>`. Exceeding this cap disqualifies the candidate immediately.
 const uint SLOT_MAX_PAREN_ASSIGNS = 128;
-const uint PRIM_MAX_DEPS = 8;       // per-candidate RHS-identifier dependencies
+const uint PRIM_MAX_DEPS = 8;       // Per-candidate RHS identifier dependencies
 
 struct PrimCandidate {
     char[64] name;
     ushort   name_len;
-    bool     prim_only;             // still provably primitive-only?
-    bool     declared;              // top-level var/function name (emit target)
-    // Names this candidate's RHS depends on (an RHS bare identifier that is
-    // itself a candidate). If any dep is not primitive-only, this clears too.
+    bool     prim_only;             // Set while still provably primitive-only
+    bool     declared;              // Top-level var/function name (emit target)
+    // Candidate names this RHS depends on. If any dependency is not
+    // primitive-only, this candidate's primitive-only bit is cleared.
     char[64][PRIM_MAX_DEPS] deps;
     ushort[PRIM_MAX_DEPS]    dep_lens;
     uint                     dep_count;
-    bool dep_overflow;              // more deps than PRIM_MAX_DEPS -> not prim
+    bool dep_overflow;              // True when dependencies exceed PRIM_MAX_DEPS
 }
 
-// Reserved identifier names that denote a primitive value even though the lexer
-// tokenizes them as IDENTIFIER (this engine has no dedicated true/false/null
-// tokens). Any other bare identifier in an RHS is treated as a dependency.
+// Identifier names that evaluate to primitive values despite being lexed as
+// IDENTIFIER tokens. Other bare identifiers in an RHS are treated as candidate
+// dependencies.
 fn bool is_primitive_ident_name(char[] name) {
     switch (name.len) {
         case 4:
@@ -81,8 +75,8 @@ fn bool is_primitive_ident_name(char[] name) {
     }
 }
 
-// A bare identifier that, if it appears anywhere in the unit, forces the whole
-// primitive-only analysis off (observability escape hatch).
+// Identifier names that disable the primitive-only analysis for the entire unit
+// due to dynamic global access or scope injection.
 fn bool is_prim_observability_name(char[] name) {
     switch (name.len) {
         case 4:
@@ -98,7 +92,6 @@ fn bool is_prim_observability_name(char[] name) {
     }
 }
 
-// Classifier verdict for the token following the current RHS position.
 fn PrimCandidate* prim_find(PrimCandidate* table, uint count, char[] name) {
     for (uint i = 0; i < count; i++) {
         if (table[i].name_len == name.len) {
@@ -128,15 +121,13 @@ fn PrimCandidate* prim_intern(PrimCandidate* table, uint* count, char[] name, bo
     return c;
 }
 
-// Whole-program pre-scan (Script global scope only). Populates
-// self.prim_only_name_idxs with the constant-pool indices of proven
-// primitive-only top-level globals. Lexer state is fully saved and restored.
+// Scans the Script global scope before compilation, populating
+// prim_only_name_idxs with constant-pool indices of proven primitive-only
+// top-level globals. Restores lexer state upon completion.
 fn void CompilerContext.pre_scan_prim_globals(&self) {
-    // Only Script global scope: modules bind via GETVAR (no GETGLOBAL), and the
-    // opcodes are only substituted at global slot scope anyway.
+    // Only Script global scope: modules bind via GETVAR without GETGLOBAL.
     if (!self.is_global || self.is_module) return;
 
-    // --- Save lexer state ---
     uint saved_pos    = self.lexer.pos;
     uint saved_line   = self.lexer.line;
     uint saved_col    = self.lexer.col;
@@ -151,41 +142,36 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
     PrimCandidate* table = table_sl.ptr;
     uint count = 0;
     bool overflow = false;
-    bool disabled = false;   // observability hazard -> discard everything
+    bool disabled = false;   // Set on observability hazard to discard results
 
-    // Token-walk state.
     TokenType prev_tt = TokenType.EOF_TOKEN;
-    char[64] prev_ident;         // str_value of the previous IDENTIFIER (if prev_tt==IDENTIFIER)
+    char[64] prev_ident;
     ushort   prev_ident_len = 0;
-    bool decl_context = false;   // inside a `var`/`let`/`const` declarator list at global scope
-    bool decl_is_var = false;    // the active declarator list is `var` (no TDZ)
-    int  decl_paren = 0;         // paren depth when the declarator list began
-    int  decl_bracket = 0;       // bracket depth when the declarator list began
-    int  decl_brace = 0;         // brace depth when the declarator list began
+    bool decl_context = false;   // Inside a global `var`/`let`/`const` declarator list
+    bool decl_is_var = false;    // True when the active declarator list is `var` (no TDZ)
+    int  decl_paren = 0;
+    int  decl_bracket = 0;
+    int  decl_brace = 0;
     uint paren_depth = 0;
     uint bracket_depth = 0;
     uint brace_depth = 0;
 
-    // RHS scanning state: when set, we are consuming the right-hand side of an
-    // assignment/initializer for `rhs_target`, tracking whether it stays prim.
+    // RHS tracking: consumes the right-hand side of an assignment or
+    // initializer for `rhs_target` and tracks if the value remains primitive.
     PrimCandidate* rhs_target = null;
     bool rhs_is_prim = true;
     int  rhs_start_paren = 0;
     int  rhs_start_bracket = 0;
     int  rhs_start_brace = 0;
 
-    // for-header tracking: a `for (` header may be a for-of / for-in whose loop
-    // variable is bound to (heap) iteration values. When the header contains
-    // `of` / `in`, the loop variable is NOT primitive-only.
+    // Tracks `for (` headers to detect for-of/for-in forms where the loop
+    // variable receives heap iteration values.
     bool in_for_header = false;
-    int  for_header_paren = 0;   // paren_depth at the `(` after `for`
-    bool for_saw_of_in = false;  // header contains `of` or `in` (binding form)
+    int  for_header_paren = 0;   // paren_depth directly after `for (`
+    bool for_saw_of_in = false;  // True if header contains `of` or `in`
 
-    // Destructuring LHS tracking: an assignment/binding whose target is a `[`/`{`
-    // pattern binds names to (heap/unknown) values. Any candidate name appearing
-    // inside such a pattern is NOT primitive-only. We conservatively clear every
-    // candidate identifier seen inside a pattern that is later closed by `] =` /
-    // `} =` or that follows `var`/`let`/`const [`/`{`.
+    // Tracks destructuring patterns. Candidate names bound in `[`/`{` patterns
+    // receive unknown or heap values and are marked non-primitive.
     bool in_destructure = false;
     int  destructure_paren = 0;
     int  destructure_bracket = 0;
@@ -198,13 +184,8 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
         TokenType tt = tok.type;
         if (tt == TokenType.EOF_TOKEN) break;
 
-        // --- Observability hazards: any occurrence disables the whole proof ---
-        // `with` and any `eval`/`globalThis`/`window`/`Function` reference can
-        // read/assign a global by name out of view. `this` at global scope is
-        // globalThis (so `this.foo = obj` could inject a heap value into global
-        // `foo`); distinguishing global-scope `this` from a method receiver at
-        // token level is not reliable, so ANY `this` disables the proof. These
-        // benches use no `this`, so the conservatism costs nothing here.
+        // Observability hazards: `with`, `this`, `eval`, `globalThis`,
+        // `window`, or `Function` can read or modify globals dynamically.
         if (tt == TokenType.WITH) { disabled = true; break; }
         if (tt == TokenType.THIS) { disabled = true; break; }
         if (tt == TokenType.IDENTIFIER) {
@@ -212,7 +193,8 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
             if (is_prim_observability_name(nm)) { disabled = true; break; }
         }
 
-        // --- Close an active RHS scan when the assignment expression ends ---
+        // Close RHS scan when the assignment expression ends at or above
+        // the starting delimiter depth.
         if (rhs_target != null) {
             bool ends = false;
             if ((tt == TokenType.SEMICOLON || tt == TokenType.COMMA)
@@ -231,12 +213,10 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
                 if (!rhs_is_prim) rhs_target.prim_only = false;
                 rhs_target = null;
             } else {
-                // Accumulate the RHS token's effect on primitiveness.
                 self.prim_rhs_token(tok, tt, prev_tt, rhs_target, &rhs_is_prim, table, count);
             }
         }
 
-        // --- Structural depth bookkeeping ---
         switch (tt) {
             case TokenType.LPAREN:   paren_depth++;
             case TokenType.RPAREN:   if (paren_depth > 0) paren_depth--;
@@ -247,32 +227,25 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
             default: break;
         }
 
-        // --- for-header tracking (detect for-of / for-in binding forms) ---
+        // Detect for-of and for-in binding forms in loop headers.
         if (prev_tt == TokenType.FOR && tt == TokenType.LPAREN) {
             in_for_header = true;
-            for_header_paren = (int)paren_depth;   // depth AFTER consuming `(`
+            for_header_paren = (int)paren_depth;
             for_saw_of_in = false;
         }
         if (in_for_header) {
-            // `of` (contextual) or `in` at header depth marks the binding form;
-            // the loop variable(s) receive heap/unknown iteration values.
             bool is_of = (tt == TokenType.IDENTIFIER && tok.str_value == "of");
             if ((tt == TokenType.IN || is_of) && (int)paren_depth == for_header_paren) {
                 for_saw_of_in = true;
-                // Clear every candidate identifier seen in the header so far.
-                // (The loop variable list precedes `of`/`in`.)
             }
             if (tt == TokenType.RPAREN && (int)paren_depth < for_header_paren) {
                 in_for_header = false;
             }
         }
 
-        // --- Declaration context: `var`/`let`/`const` at global scope ---
-        // Only `var` (and `function`) globals are eligible to be treated
-        // primitive-only: they are hoist-initialized to undefined (no TDZ), so a
-        // guard-free read before assignment is safe. `let`/`const` have a TDZ
-        // whose read must throw, which the guard-free opcodes do not do, so those
-        // are never marked declared (they keep the guarded GETGLOBAL path).
+        // `var` bindings are initialized to undefined without TDZ and qualify
+        // for primitive-only optimizations. `let` and `const` have TDZ checks
+        // that must throw on uninitialized access, so they remain on guarded paths.
         if (tt == TokenType.VAR || tt == TokenType.LET || tt == TokenType.CONST) {
             decl_context = true;
             decl_is_var = (tt == TokenType.VAR);
@@ -281,18 +254,9 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
             decl_brace = (int)brace_depth;
         }
 
-        // --- Destructuring pattern detection ---
-        // A `[` or `{` after `var`/`let`/`const`, or at the start of an
-        // expression-statement assignment, opens a binding pattern whose names
-        // are bound to heap/unknown values. Enter destructure mode; clear any
-        // candidate identifier seen until the pattern closes.
-        // A `[`/`{` in any position where a destructuring TARGET can appear:
-        // after `var`/`let`/`const`, in a for-binding, at statement start, or
-        // after `=` / `(` / `,` (e.g. `a = [x, ...y] = vals`, `([a] = o)`). This
-        // deliberately also catches array/object LITERALS used as an RHS in
-        // those positions; clearing the candidate identifiers they contain is
-        // over-conservative but sound (a false negative only forgoes the
-        // optimization, never a refcount hazard).
+        // Detect destructuring patterns in declarations, bindings, statements,
+        // or assignment contexts (`=`, `(`, `,`). Also covers array and object
+        // literals in these positions; candidate identifiers in them are cleared.
         if (!in_destructure && (tt == TokenType.LBRACKET || tt == TokenType.LBRACE)) {
             bool after_decl = (prev_tt == TokenType.VAR || prev_tt == TokenType.LET
                                || prev_tt == TokenType.CONST);
@@ -315,15 +279,13 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
                 if (dc != null) {
                     dc.prim_only = false;
                 } else {
-                    // A pattern binding to a not-yet-seen name: intern + clear so
-                    // a later fixpoint dep on it fails.
+                    // Intern unknown pattern names and clear them to prevent
+                    // later dependency chains from treating them as primitive.
                     PrimCandidate* nc = prim_intern(table, &count, nm, &overflow);
                     if (overflow) { disabled = true; break; }
                     if (nc != null) nc.prim_only = false;
                 }
             }
-            // Close the pattern once depths return to/below the entry level and
-            // we hit `=`, `;`, `)` or `of`/`in`.
             bool close_pat = false;
             if ((int)bracket_depth <= destructure_bracket && (int)brace_depth <= destructure_brace) {
                 if (tt == TokenType.ASSIGN || tt == TokenType.SEMICOLON
@@ -335,10 +297,7 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
             if (close_pat) in_destructure = false;
         }
 
-        // --- for-of / for-in loop variable clearing ---
-        // When the header binding form is confirmed, clear the loop variable(s).
-        // The variable is the identifier(s) between `(` [optional var/let/const]
-        // and `of`/`in`. We clear the identifier immediately preceding `of`/`in`.
+        // Clear for-of/for-in loop variable names once the binding form is confirmed.
         if (in_for_header && for_saw_of_in) {
             if (prev_tt == TokenType.IDENTIFIER && prev_ident_len > 0) {
                 char[] lv = prev_ident[:prev_ident_len];
@@ -349,12 +308,10 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
                 }
                 if (lc != null) lc.prim_only = false;
             }
-            for_saw_of_in = false;  // clear once; header consumed
+            for_saw_of_in = false;
         }
 
-        // --- Detect an assignment / initializer target ---
-        // Pattern: previous token was an IDENTIFIER and current is `=` (simple
-        // assignment) or a compound-assign / ++ / --. The identifier is the LHS.
+        // Match assignment targets (`=`, compound assignments, `++`, `--`).
         if (prev_tt == TokenType.IDENTIFIER && prev_ident_len > 0) {
             char[] lhs = prev_ident[:prev_ident_len];
             bool is_simple_assign = (tt == TokenType.ASSIGN);
@@ -364,21 +321,17 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
                 || tt == TokenType.LOG_OR_ASSIGN || tt == TokenType.NULLISH_ASSIGN);
 
             if (is_simple_assign || is_compound_numeric || is_compound_plus || is_logical_assign) {
-                // A nested assignment inside an already-open RHS (`a = (b = ...)`)
-                // means the outer target's value flows from an assignment
-                // expression whose result can no longer be tracked, so conservatively
-                // clear the outer target.
+                // Nested assignments (`a = (b = ...)`) invalidate outer target tracking.
                 if (rhs_target != null) rhs_target.prim_only = false;
 
                 PrimCandidate* c = prim_intern(table, &count, lhs, &overflow);
                 if (overflow) { disabled = true; break; }
                 if (c != null) {
-                    // A numeric compound (-=, *=, ...) always yields a number, so
-                    // the target stays primitive regardless of the RHS: no RHS
-                    // scan needed. Simple `=`, `+=`, and logical-assigns flow the
-                    // RHS value into the binding -> the RHS must be provably prim.
+                    // Numeric compound assignments (-=, *=, ...) always evaluate
+                    // to numbers and need no RHS scan. Simple assignments, `+=`,
+                    // and logical assignments propagate the RHS value.
                     if (is_compound_numeric) {
-                        rhs_target = null;   // result is always numeric-primitive
+                        rhs_target = null;
                     } else {
                         rhs_target = c;
                         rhs_is_prim = true;
@@ -392,25 +345,13 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
             }
         }
 
-        // --- Declared var names ---
-        // `var NAME` introduces a binding with no TDZ. Mark it declared (an
-        // eligible PRIM emit target). Detecting a `var` inside a nested function
-        // (a local, not a global) is harmless: it only ever matters combined
-        // with a global-scope GETGLOBAL read of the same name, and any local or
-        // nested assignment to it is scanned and would clear its bit. `let`/
-        // `const` are intentionally excluded (TDZ). A `function NAME` binds NAME
-        // to a closure (heap) -> NOT primitive-only.
-        // A declarator continues after a comma only at the SAME nesting depth as
-        // the `var` keyword. A comma inside the initializer's `f(a, b)` or `[..]`
-        // / `{..}` is not a new declarator (it separates call args / elements).
+        // Track global `var` declarations. Only `var` at top-level brace depth (0)
+        // declares a global binding. Declarations inside function bodies
+        // (brace_depth >= 1) declare local variables and are excluded from the
+        // global emit target list. `function` declarations bind closures (heap).
         bool at_decl_depth = ((int)paren_depth == decl_paren
                               && (int)bracket_depth == decl_bracket
                               && (int)brace_depth == decl_brace);
-        // Only a `var` at top-level brace depth (0) declares a GLOBAL binding;
-        // a `var` inside any function body sits at brace_depth >= 1 (all function
-        // bodies are `{}`-delimited) and is a LOCAL. Gating `declared` on
-        // brace_depth == 0 keeps the emitted PRIM set to real globals and avoids
-        // polluting the top-level constant pool with function-local names.
         if (brace_depth == 0
             && (prev_tt == TokenType.VAR
                 || (decl_context && decl_is_var && at_decl_depth && prev_tt == TokenType.COMMA))
@@ -426,10 +367,8 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
             if (overflow) { disabled = true; break; }
             if (c != null) c.prim_only = false;
         }
-        // Reset declaration context at statement end.
         if (tt == TokenType.SEMICOLON && paren_depth == 0) decl_context = false;
 
-        // --- Track previous identifier for LHS detection ---
         if (tt == TokenType.IDENTIFIER) {
             char[] nm = tok.str_value;
             if (nm.len <= 63) {
@@ -444,7 +383,6 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
         prev_tt = tt;
     }
 
-    // --- Restore lexer state ---
     self.lexer.pos             = saved_pos;
     self.lexer.line            = saved_line;
     self.lexer.col             = saved_col;
@@ -457,9 +395,8 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
 
     if (disabled || overflow || count == 0) return;
 
-    // --- Fixpoint: clear prim_only for any candidate whose dependency set
-    //     references a non-candidate or non-primitive-only name. Iterate until
-    //     stable (monotone clearing terminates in <= count passes). ---
+    // Iteratively clear prim_only on candidates depending on non-candidate
+    // or non-primitive names until the dependency graph stabilizes.
     bool changed = true;
     while (changed) {
         changed = false;
@@ -479,9 +416,7 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
         }
     }
 
-    // --- Emit the proven set: declared global AND primitive-only. Intern each
-    //     name to its canonical constant-pool index (matching emit-time
-    //     add_string_constant) and record it. ---
+    // Record verified candidates: declared at top level and primitive-only.
     for (uint i = 0; i < count; i++) {
         if (table[i].declared && table[i].prim_only) {
             uint idx = self.add_string_constant(table[i].name[:table[i].name_len]);
@@ -492,8 +427,8 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
     }
 }
 
-// A compound-assign whose result is always a number/bigint (never a string):
-// everything except `+=` and the logical-assigns.
+// Compound assignment operators that always produce a numeric result (excluding
+// `+=` which concatenates strings, and logical assignments).
 fn bool prim_is_numeric_compound(TokenType tt) {
     switch (tt) {
         case TokenType.MINUS_ASSIGN:
@@ -513,15 +448,14 @@ fn bool prim_is_numeric_compound(TokenType tt) {
     }
 }
 
-// Fold one RHS token into the running primitiveness verdict for the current
-// assignment target. `rhs_is_prim` starts true and is cleared on any heap-
-// producing construct; primitive-only dependencies are recorded on the target.
+// Evaluates an RHS token against the current assignment target. Clears
+// rhs_is_prim on heap expressions and records candidate dependencies.
 fn void CompilerContext.prim_rhs_token(&self, Token tok, TokenType tt, TokenType prev_tt,
                                        PrimCandidate* target, bool* rhs_is_prim,
                                        PrimCandidate* table, uint count) {
-    if (!*rhs_is_prim) return;   // already heap; nothing more to learn
+    if (!*rhs_is_prim) return;
     switch (tt) {
-        // Heap literals / heap-producing constructs.
+        // Heap literals and object creations
         case TokenType.STRING:
         case TokenType.TEMPLATE:
         case TokenType.TEMPLATE_HEAD:
@@ -529,22 +463,21 @@ fn void CompilerContext.prim_rhs_token(&self, Token tok, TokenType tt, TokenType
         case TokenType.TEMPLATE_TAIL:
         case TokenType.REGEXP:
         case TokenType.BIGINT:
-        case TokenType.LBRACE:      // object literal
-        case TokenType.LBRACKET:    // array literal OR member index -> heap either way
+        case TokenType.LBRACE:      // Object literal
+        case TokenType.LBRACKET:    // Array literal or computed property access
         case TokenType.FUNCTION:
         case TokenType.ARROW:
         case TokenType.CLASS:
         case TokenType.NEW:
-        case TokenType.DOT:         // property read -> possibly heap
+        case TokenType.DOT:         // Property access (may evaluate to heap value)
         case TokenType.SUPER:
         case TokenType.YIELD:
         case TokenType.AWAIT:
             *rhs_is_prim = false;
-            target.prim_only = false;   // clear NOW (survives rhs_target clobber)
+            target.prim_only = false;
             return;
         case TokenType.LPAREN:
-            // A call if directly applied to a value: prev token is an
-            // identifier / `)` / `]`. Grouping `(...)` after an operator is fine.
+            // Function call if invoked on an identifier, `)`, or `]`.
             if (prev_tt == TokenType.IDENTIFIER || prev_tt == TokenType.RPAREN
                 || prev_tt == TokenType.RBRACKET) {
                 *rhs_is_prim = false;
@@ -553,11 +486,9 @@ fn void CompilerContext.prim_rhs_token(&self, Token tok, TokenType tt, TokenType
             return;
         case TokenType.IDENTIFIER:
             char[] nm = tok.str_value;
-            if (is_primitive_ident_name(nm)) return;   // true/false/null/undefined/NaN/Infinity
-            // A bare identifier RHS: primitive only if it is itself a
-            // primitive-only candidate global. Record as a dependency (resolved
-            // to a fixpoint). Unknown identifiers (params, builtins, imports)
-            // will not be found as candidates -> clears the target.
+            if (is_primitive_ident_name(nm)) return;
+            // Record bare identifier RHS as a dependency. Unknown identifiers
+            // (parameters, builtins, imports) fail resolution and clear the target.
             if (target.dep_count < PRIM_MAX_DEPS) {
                 if (nm.len <= 63) {
                     for (usz j = 0; j < nm.len; j++) target.deps[target.dep_count][j] = nm[j];
@@ -572,13 +503,12 @@ fn void CompilerContext.prim_rhs_token(&self, Token tok, TokenType tt, TokenType
             }
             return;
         default:
-            // Numbers, operators (+ - * / typeof void ! comparisons logical),
-            // parentheses grouping, etc. are all primitive-preserving.
+            // Numbers, operators, and grouping parentheses preserve primitiveness.
             return;
     }
 }
 
-// True when the given constant-pool name index was proven primitive-only.
+// True if the constant-pool name index was proven primitive-only.
 fn bool CompilerContext.is_prim_only_global(&self, uint name_idx) {
     if (self.prim_only_name_idxs.len() == 0) return false;
     return self.prim_only_name_idxs.contains(name_idx);
@@ -586,31 +516,22 @@ fn bool CompilerContext.is_prim_only_global(&self, uint name_idx) {
 
 const uint SLOT_GLOBAL_MAX = 64;
 
-// ============================================================================
-// Whole-program register-resident global proof (slot_global_name_idxs)
-// ============================================================================
+// Whole-program register-resident global proof (slot_global_name_idxs).
 //
-// A top-level `var` global is REGISTER-RESIDENT iff the whole unit shows no
-// observability and the name is never referenced from a nested function body:
-//   (1) observability gate: any `eval`/`globalThis`/`window`/`Function`/`with`
-//       /`this` occurrence anywhere discards the entire set (each can read or
-//       write a global by name out of the compiler's view);
-//   (2) per-name gate: the name never appears at brace_depth >= 1 (a closure
-//       reading it would see the stale global property, not the register).
-// Such vars compile to a live home register for the whole top-level body
-// (reads are LDREG, writes are register stores), and the global property is
-// synced once at the end of the script, which preserves GlobalDeclaration
-// Instantiation semantics: DECLVAR_HOIST still creates the binding, any
-// post-Program reader (globalThis.x, Object.keys, the harness) sees the value.
+// A top-level `var` global is register-resident when the unit contains no
+// dynamic observability hazards (`eval`, `globalThis`, `window`, `Function`,
+// `with`, `this`) and the variable is never referenced inside nested callables
+// (brace_depth >= 1 or arrow bodies).
 //
-// SOUNDNESS: every ambiguous case (an observability hazard, a nested refresh,
-// capacity overflow, modules/eval) resolves to "not register-resident", so it
-// falls back to the guarded GETGLOBAL/PUTGLOBAL path unchanged. A false
-// positive (register-eliding a name that IS observed) would hand a stale value
-// to the observer, so the proof is deliberately conservative.
+// Register-resident globals allocate a dedicated home register across the
+// top-level script body (reads use LDREG, writes use register stores). The
+// value is synced to the global object once at script completion.
+//
+// Ambiguous cases, observability hazards, or nested references fall back to
+// the standard GETGLOBAL/PUTGLOBAL paths.
 fn void CompilerContext.pre_scan_global_var_slots(&self) {
-    // Only Script global scope: modules bind via GETVAR, eval may see a caller
-    // env we cannot prove, so neither is slot-eligible.
+    // Only Script global scope: modules bind via GETVAR, eval may reference an
+    // outer caller environment.
     if (!self.is_global || self.is_module || self.in_eval_code) return;
 
     uint saved_pos    = self.lexer.pos;
@@ -627,7 +548,7 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
     ushort[SLOT_GLOBAL_MAX]   name_lens;
     bool[SLOT_GLOBAL_MAX]     declared;
     bool[SLOT_GLOBAL_MAX]     nested_ref;
-    bool[SLOT_GLOBAL_MAX]     value_written;   // had an initializer or an assignment
+    bool[SLOT_GLOBAL_MAX]     value_written;   // Assigned or initialized with a value
     uint count = 0;
     bool disabled = false;
     bool overflow = false;
@@ -642,55 +563,41 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
     int  decl_paren = 0;
     int  decl_bracket = 0;
     int  decl_brace = 0;
-    // Destructuring-binding-pattern tracking: a default value inside a binding
-    // pattern is compiled into a synthetic closure (compile_default_expr) whose
-    // free names are read via the global env. A slot-resident var referenced
-    // there would read the stale (unsynced) property, so any default in a
-    // binding pattern disables the whole proof. Reuses the same conservative
-    // pattern-boundary heuristic as pre_scan_prim_globals.
+    // Tracks destructuring patterns. Default expressions inside patterns
+    // compile into synthetic closures (compile_default_expr) that access free
+    // names via the global environment. References to slot-resident globals
+    // there would read stale values, so any default or binding pattern disables
+    // the proof.
     bool in_destructure = false;
     int  destructure_paren = 0;
     int  destructure_bracket = 0;
     int  destructure_brace = 0;
     bool destructure_was_array = false;
 
-    // Function-body detection. Only references inside an ACTUAL nested callable
-    // (function/arrow/method/class) must disqualify a slot-global: a bare
-    // top-level `for`/`if`/block `{...}` references the same register path, so
-    // its braces must NOT count. We classify each open paren as a control-
-    // structure condition (for/if/while/switch/catch/with) vs anything else; a
-    // `{` that follows a non-control `)` (function/method body) or an arrow or
-    // a `class` keyword is a function boundary, and a `{` that follows a
-    // control `)` or a statement-start/block keyword is a plain block.
+    // Callable body tracking. References inside functions, arrows, methods, or
+    // class bodies disqualify a global from slot residency. Top-level control
+    // blocks (`if`, `for`, `while`, `switch`) share the top-level register frame
+    // and do not disqualify variables.
     bool[SLOT_MAX_NESTING] paren_control;
     bool[SLOT_MAX_NESTING] brace_is_fn;
-    int  cur_fn_depth = 0;      // enclosing nested-function-body count
-    bool last_paren_was_control = false;  // the most recent `)` closed a control cond
-    bool class_pending = false;  // saw `class`; its body `{` is a fn boundary
-    // An arrow expression body has no braces; conservatively treat the region
-    // from `=>` until the arrow's expression ends as a nested function.
+    int  cur_fn_depth = 0;      // Active nested function body count
+    bool last_paren_was_control = false;
+    bool class_pending = false;  // `class` body `{` is a function boundary
+    // Tracks arrow expression bodies (which lack enclosing braces).
     bool arrow_active = false;
     int  arrow_paren = 0;
     int  arrow_bracket = 0;
-    // A `function(...)` signature paren runs default-value expressions in the
-    // CALLEE's frame, so a reference there cannot touch the caller's home
-    // register. Treat the region through the matching body `{` as nested.
+    // Parameter defaults in `function(...)` evaluate in the callee frame;
+    // marks parameter lists as nested through the matching body `{`.
     int  fn_sig_paren = -1;
-    // `function` may be followed by a name (`function f(`) or `*` and a name
-    // (`function* f(`) before its signature `(`; track it across those so the
-    // signature paren is still recognized.
-    bool fn_pending = false;
-    // A template substitution `${ ... }` opens with a TEMPLATE_HEAD/MIDDLE
-    // token, not an LBRACE, but closes with a plain RBRACE. Without tracking
-    // this, the closing `}` decrements brace_depth (and cur_fn_depth) with no
-    // matching increment, desyncing the function-boundary counter: code after a
-    // template inside a function body is misread as top-level, so a name it
-    // references is not disqualified and wrongly stays register-resident.
+    bool fn_pending = false;     // Seen `function` or `function*` before signature `(`
+    // Template substitutions `${ ... }` begin with TEMPLATE_HEAD/MIDDLE and end
+    // with RBRACE without opening an LBRACE. TemplateScan tracks substitution
+    // depth so the closing `}` does not misdecrement block and function depths.
     TemplateScan tscan;
 
-    // Candidates assigned inside the paren group currently open. An arrow's
-    // `=>` is the first token that identifies the group as a parameter list,
-    // and it arrives just after the group closes, so the decision waits here.
+    // Candidates assigned in the active paren group, held until verifying
+    // whether the group is an arrow parameter list followed by `=>`.
     ushort[SLOT_MAX_PAREN_ASSIGNS] pend_aidx;
     ushort[SLOT_MAX_PAREN_ASSIGNS] pend_depth;
     uint pend_count = 0;
@@ -702,17 +609,14 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
         TokenType tt = tok.type;
         if (tt == TokenType.EOF_TOKEN) break;
 
-        // Back at top level with no `=>` in sight: nothing pending can be a
-        // parameter default any more.
+        // Reset pending parameter assignments when returning to top level without `=>`.
         if (paren_depth == 0 && tt != TokenType.ARROW) { pend_count = 0; }
 
-        // Observability hazards: any occurrence discards the whole proof.
         if (tt == TokenType.WITH || tt == TokenType.THIS) { disabled = true; break; }
         if (tt == TokenType.IDENTIFIER && is_prim_observability_name(tok.str_value)) {
             disabled = true; break;
         }
 
-        // Classify delimiters as they open or close, before adjusting depth.
         if (tt == TokenType.LPAREN) {
             paren_depth++;
             if (paren_depth >= SLOT_MAX_NESTING) { disabled = true; break; }
@@ -726,18 +630,12 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
                 last_paren_was_control = paren_control[paren_depth];
                 paren_depth--;
             }
-            // The signature paren's default values are leaf references; once
-            // the paren closes the body `{` (or the next statement) keeps
-            // cur_fn_depth covering the rest, so clear the signature marker.
             if (fn_sig_paren >= 0 && paren_depth < (uint)fn_sig_paren) {
                 fn_sig_paren = -1;
             }
         } else if (tt == TokenType.LBRACE) {
-            // A `{` is a function body iff it directly follows an arrow, a
-            // non-control `)` (function or method body), or a `class` head.
-            // A control-structure `)` (if/for/while/switch/catch/with) or any
-            // statement-start/block position makes it a plain block, which
-            // keeps top-level loop vars on the register path.
+            // A `{` is a function body when following `=>`, a non-control `)`,
+            // or a `class` header. Otherwise it is treated as a block.
             tscan.on_lbrace();
             bool is_fn = prev_tt == TokenType.ARROW
                 || (prev_tt == TokenType.RPAREN && !last_paren_was_control)
@@ -747,18 +645,10 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
             if (brace_depth >= SLOT_MAX_NESTING) { disabled = true; break; }
             brace_is_fn[brace_depth] = is_fn;
             if (is_fn) { cur_fn_depth++; }
-            // A braced arrow/class body is fully tracked by brace_is_fn, so
-            // the (conservative) expression-body tracker hands over to it.
             if (arrow_active) { arrow_active = false; }
         } else if (tt == TokenType.TEMPLATE_HEAD) {
-            // `${` inside a template opens a substitution whose closing `}` is a
-            // plain RBRACE; record it so classify_rbrace can tell that `}` from
-            // a real block close.
             tscan.on_template_head();
         } else if (tt == TokenType.RBRACE) {
-            // Only a real block-close `}` adjusts the brace/function counters; a
-            // `}` that ends a template substitution must not (classify_rbrace
-            // also re-lexes the template continuation on the SUBST path).
             if (tscan.classify_rbrace(self.lexer) == TemplateBrace.BLOCK) {
                 if (brace_depth > 0) {
                     if (brace_is_fn[brace_depth]) { cur_fn_depth--; }
@@ -770,10 +660,8 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
         } else if (tt == TokenType.RBRACKET) {
             if (bracket_depth > 0) bracket_depth--;
         } else if (tt == TokenType.ARROW) {
-            // The group that just closed was a parameter list. Its defaults
-            // compile to thunks that write through the env chain, so anything
-            // assigned inside it cannot be read from a home register
-            // (`((a = (g = 5)) => {})()` left g unchanged).
+            // Parameter defaults evaluate in thunks via the environment chain.
+            // Mark variables assigned in the parameter list as nested.
             if (prev_tt == TokenType.RPAREN) {
                 for (uint k = 0; k < pend_count; k++) {
                     if ((uint)pend_depth[k] > paren_depth) { nested_ref[pend_aidx[k]] = true; }
@@ -788,7 +676,6 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
             class_pending = true;
         }
 
-        // (Conservative) end of an arrow expression body.
         if (arrow_active) {
             if (tt == TokenType.SEMICOLON && paren_depth == 0) { arrow_active = false; }
             else if (tt == TokenType.COMMA
@@ -806,12 +693,8 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
             decl_brace = (int)brace_depth;
         }
 
-        // Destructuring-binding-pattern detection (mirrors prim_globals): a
-        // default `=` inside a binding pattern is wrapped in a synthetic
-        // closure that reads its free names via the env, so it disables the
-        // whole slot proof (a slot-resident free name would read a stale
-        // property). Benchmarks use no binding patterns, so this costs them
-        // nothing; real code that does is conservatively not optimized.
+        // Destructuring patterns: defaults inside patterns run in synthetic
+        // closures that read free names through the environment.
         if (!in_destructure && (tt == TokenType.LBRACKET || tt == TokenType.LBRACE)) {
             bool after_decl = (prev_tt == TokenType.VAR || prev_tt == TokenType.LET
                                || prev_tt == TokenType.CONST);
@@ -828,17 +711,12 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
             }
         }
         if (in_destructure) {
-            // A DEFAULT `=` binds an element INSIDE the pattern (at or above
-            // the pattern's opening depth); the pattern-to-value `=` comes
-            // strictly after the outer bracket closes (below that depth). A
-            // default is wrapped in a synthetic closure that reads its free
-            // names via the env, so it disables the whole proof.
+            // Default assignments (`=`) inside the pattern run through closures.
             int cur = destructure_was_array ? (int)bracket_depth : (int)brace_depth;
             int entry = destructure_was_array ? destructure_bracket : destructure_brace;
             if (tt == TokenType.ASSIGN && cur >= entry) { disabled = true; break; }
-            // Close only once the outer bracket/brace has fully closed (depth
-            // dropped strictly below the pattern's opening depth); an inner
-            // nested pattern's close returns to == entry and must not close us.
+            // Pattern ends when delimiter depth drops below entry depth and
+            // encounters a boundary token.
             bool close_pat = false;
             if (cur < entry) {
                 if (tt == TokenType.ASSIGN || tt == TokenType.SEMICOLON
@@ -848,19 +726,13 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
                 }
             }
             if (close_pat) {
-                // Any binding pattern, not just one with a default, desyncs a
-                // slot-resident global: its leaf targets are written through
-                // env ops (PUTVAR/DECLVAR) while reads use the home register.
-                // Disable the whole proof on any pattern.
+                // Binding patterns write targets through environment operations,
+                // desyncing register-allocated globals.
                 disabled = true; break;
             }
         }
 
-        // A `for (x in obj)` head assigns its iteration variable through the
-        // env, desyncing a slot-resident loop var from its home register. An
-        // `in` directly inside the controlling paren is the loop head; a
-        // binary-operator `in` sits in a nested paren whose control flag is
-        // false. Disable the whole proof on the loop head.
+        // `for (x in obj)` assigns the iteration variable via the environment.
         if (tt == TokenType.IN && paren_control[paren_depth]) { disabled = true; break; }
 
         bool in_fn = cur_fn_depth > 0 || arrow_active
@@ -869,7 +741,6 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
         if (tt == TokenType.IDENTIFIER) {
             char[] nm = tok.str_value;
             int idx = slot_global_find(&names[0], &name_lens[0], count, nm);
-            // Top-level `var NAME` / `var __, NAME` declarator binds a global.
             bool top_decl = brace_depth == 0 && !in_fn
                 && (prev_tt == TokenType.VAR
                     || (decl_context
@@ -884,9 +755,8 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
                 }
                 declared[idx] = true;
             } else if (in_fn) {
-                // A reference inside a nested callable reads the global
-                // property, which only holds the end-of-script mirror:
-                // disqualify it (or remember it for a later declaration).
+                // References in nested callables read the global property
+                // rather than the top-level register. Disqualify the candidate.
                 if (idx < 0) {
                     int ni = slot_global_intern(&names[0], &name_lens[0], &count, nm);
                     if (ni < 0) { overflow = true; break; }
@@ -898,15 +768,14 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
 
         if (tt == TokenType.SEMICOLON && paren_depth == 0) decl_context = false;
 
-        // An assignment/update to a previously-seen identifier names a target
-        // whose global property must be synced at end of script. A bare
-        // `var x;` declaration never writes the property, so it is excluded.
+        // Assignments and updates record variables that require property
+        // synchronization at script completion. Bare `var x;` declarations
+        // do not write properties and are skipped.
         if (slot_global_is_assign_op(tt) && prev_tt == TokenType.IDENTIFIER && prev_ident_len > 0) {
             int aidx = slot_global_find(&names[0], &name_lens[0], count,
                                         prev_ident[:prev_ident_len]);
             if (aidx >= 0) {
                 value_written[aidx] = true;
-                // Hold it until a `=>` says the group was a parameter list.
                 if (paren_depth > 0) {
                     if (pend_count < SLOT_MAX_PAREN_ASSIGNS) {
                         pend_aidx[pend_count]  = (ushort)aidx;
@@ -947,14 +816,9 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
 
     for (uint i = 0; i < count; i++) {
         if (declared[i] && !nested_ref[i]) {
-            // A name that is also a top-level FunctionDeclaration must NOT be
-            // register-resident. The function binding is created in the env
-            // (DECLGLOBALFUNC), so its value lives there, not in a register; a
-            // register home would read undefined (the var's LDUNDEF init) while
-            // the env holds the function, diverging `typeof f`/`f()` from the
-            // hoisted function. Function decls are hoisted before this scan, so
-            // hoisted_fn_names is populated. Leave such names on the guarded
-            // GETGLOBAL/PUTGLOBAL path, which shares the one env binding.
+            // Function declaration bindings live in the environment (DECLGLOBALFUNC).
+            // Retain GETGLOBAL/PUTGLOBAL paths for names sharing a top-level
+            // FunctionDeclaration to prevent reading uninitialized register slots.
             bool is_fn_decl = false;
             for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
                 if (str_eq(self.hoisted_fn_names[hi], names[i][:name_lens[i]])) {
@@ -968,8 +832,8 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
             if (!self.slot_global_name_idxs.contains(idx)) {
                 self.slot_global_name_idxs.push(idx);
             }
-            // Only a value-written binding is synced at end of script; a bare
-            // declaration must leave the (possibly non-writable) property alone.
+            // Only sync values to the global property if an assignment or
+            // initializer occurred; bare declarations do not overwrite properties.
             if (value_written[i] && !self.slot_global_synced_name_idxs.contains(idx)) {
                 self.slot_global_synced_name_idxs.push(idx);
             }
@@ -1000,9 +864,8 @@ fn int slot_global_intern(char[64]* names, ushort* name_lens, uint* count, char[
     return (int)c;
 }
 
-// True when `t` opens a control-structure condition whose closing `)` is
-// followed by a BLOCK `{`, never a function body. Every other parenthesized
-// expression that a function/method body can follow is classified false.
+// True if `t` opens a control-structure condition (such as `if`, `for`,
+// `while`) whose closing `)` leads to a block statement rather than a callable body.
 fn bool slot_global_is_ctrl_paren(TokenType t) {
     switch (t) {
         case TokenType.FOR:
@@ -1017,9 +880,8 @@ fn bool slot_global_is_ctrl_paren(TokenType t) {
     }
 }
 
-// True when `t` writes a value into the identifier it follows: plain
-// assignment, a compound-assign, or ++/--. A `var x;` declaration alone does
-// not write the global property and is intentionally absent.
+// True if `t` is an assignment or increment/decrement operator that writes
+// into the preceding identifier target.
 fn bool slot_global_is_assign_op(TokenType t) {
     switch (t) {
         case TokenType.ASSIGN:
@@ -1045,3 +907,4 @@ fn bool slot_global_is_assign_op(TokenType t) {
             return false;
     }
 }
+

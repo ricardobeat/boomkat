@@ -26,3 +26,7 @@ test262_results
 .attrib/
 qemu_*.core
 __pycache__/
+
+# Compiled native add-ons (build with `just addons`)
+addons/**/*.dylib
+addons/**/*.so

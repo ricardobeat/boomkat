@@ -120,7 +120,7 @@ fn bool atomics_validate_access(BuiltinContext* ctx, HObject* ta, TVal idx_arg, 
 
 // True when the view's backing buffer is detached or the view is out of bounds.
 fn bool atomics_revalidate(HObject* ta) {
-    return ta_is_detached(ta);
+    return ta_is_detached(ta) || view_is_out_of_bounds(ta);
 }
 
 // ============================================================================

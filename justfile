@@ -32,6 +32,11 @@ build-slim:
 test-slim: build-slim
     @bash test/console_format/run_tiny.sh out/boomkat_slim
 
+# Build the example native add-ons (addons/*/) into loadable shared libraries.
+# Add-ons link against no engine symbol; they only need include/boomkat_addon.h.
+addons:
+    @bash scripts/build_addons.sh
+
 # ── Comparison engines ───────────────────────────────────────────────────────
 
 # Fetch Duktape v2.7.0 and QuickJS
@@ -214,6 +219,11 @@ test-unshared-shape-hash-rss:
 test-compile-asan:
     @make out/test262_runner_asan
     bash scripts/check_compile_asan.sh
+
+# Run the native add-on tests (needs `just addons` and out/boomkat)
+test-addons: addons
+    @test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
+    @for f in test/addons/*.js; do echo "--- $f"; ./out/boomkat "$f" || exit 1; done
 
 # ── JS test suites ───────────────────────────────────────────────────────────
 

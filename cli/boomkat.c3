@@ -8,6 +8,7 @@ module boomkat;
 import boomkat::compiler;
 import boomkat::vm;
 import boomkat::heap;
+import boomkat::addon;
 import boomkat::env;
 import boomkat::hobject;
 import boomkat::hstring;
@@ -70,6 +71,10 @@ fn int main(String[] args) {
     defer vm::vm_destroy(v);
 
     hp.set_rejection_tracker(&cli_rejection_tracker, null);
+
+    // The CLI is a trusted host, so it exposes loadAddon(). An embedder that
+    // wants a sandbox simply does not call this.
+    if (v.global_env != null) addon::enable_loading(hp, v.global_env);
 
     // Run TypeScript files with type syntax erased at parse time. Route files
     // with top-level import or export through the ESM pipeline regardless of extension.
