@@ -441,15 +441,6 @@ struct AtomicsWaiter {
 // VM already staged, so no argument copying happens at the boundary itself.
 // `udata` is opaque and passed through untouched. `name` is an interned
 // HString backing Function.prototype.name, and `arity` backs .length.
-// A class registered at runtime by an embedder or add-on. Instances are
-// ObjClass.HOST objects whose extra.host.class_id indexes Heap.host_classes.
-//
-// `gc_mark` is the load-bearing field: without it, JS values held inside a
-// payload are invisible to the collector and get freed underneath the module.
-// It is called during the mark phase with the payload and the Heap, and must
-// call Heap.mark_tval / Heap.mark_hobject for every value it holds. Both
-// callbacks may be null for a payload that holds no JS values and needs no
-// teardown.
 // Called during the mark phase for each live instance of the class. Must mark
 // every JS value the payload holds, via Heap.mark_tval / Heap.mark_hobject.
 alias HostClassMarkFn = fn void(void* payload, Heap* heap, void* udata);
@@ -458,11 +449,23 @@ alias HostClassMarkFn = fn void(void* payload, Heap* heap, void* udata);
 // not allocate on the JS heap or resurrect objects.
 alias HostClassFinalizeFn = fn void(void* payload, void* udata);
 
+// A class registered at runtime by an embedder or add-on. Instances are
+// ObjClass.HOST objects whose extra.host.class_id indexes Heap.host_classes.
+//
+// `gc_mark` is the load-bearing field: without it, JS values held inside a
+// payload are invisible to the collector and get freed underneath the module.
+// Both callbacks may be null for a payload that holds no JS values and needs
+// no teardown.
+//
+// `proto` is the prototype instances get, and is a GC root: the heap marks it
+// for every registered class, so a module does not need engine-side storage
+// for its prototypes.
 struct HostClassEntry {
-    void* finalizer;     // fn void(void* payload, void* udata)
-    void* gc_mark;       // fn void(void* payload, Heap* heap, void* udata)
+    void* finalizer;     // HostClassFinalizeFn
+    void* gc_mark;       // HostClassMarkFn
     void* udata;
     void* name;          // HString*, interned; for diagnostics
+    HObject* proto;      // prototype for instances; marked as a root
 }
 
 struct HostFnEntry {
@@ -594,6 +597,12 @@ struct Heap {
     HostClassEntry* host_classes;
     uint            host_class_count;
     uint            host_class_capacity;
+    // Values handed to add-ons for the duration of one call. A GC root, so a
+    // handle keeps its value alive without the add-on doing anything; reset
+    // per call rather than released individually.
+    TVal*           addon_handles;
+    uint            addon_handle_count;
+    uint            addon_handle_capacity;
 
     // Promoted-builtin cache: the one HObject that represents each LIGHTFUNC
     // builtin, indexed by its Builtin ordinal, materialised on first use.
@@ -699,8 +708,6 @@ struct Heap {
 
     // Built-in constructor prototypes
     HObject* object_proto;
-    // Deflater.prototype, owned by the deflate add-on (src/builtins/addon_deflate.c3).
-    HObject* deflater_proto;
     HObject* bool_proto;
     HObject* string_proto;
     HObject* number_proto;
@@ -1161,6 +1168,9 @@ fn Heap*? create(
     h.host_classes          = null;
     h.host_class_count      = 0;
     h.host_class_capacity   = 0;
+    h.addon_handles         = null;
+    h.addon_handle_count    = 0;
+    h.addon_handle_capacity = 0;
     h.promoted_builtins     = null;
     h.promoted_builtin_capacity = 0;
     h.host_scopes           = null;
@@ -2128,7 +2138,7 @@ fn HostFnEntry* Heap.host_fn_at(&self, uint slot) {
 // dense and start at 0; they are stable for the life of the Heap, so a module
 // can cache the id it gets back and compare against extra.host.class_id to
 // check that an object is one of its own.
-fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* udata, void* name) {
+fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* udata, void* name, HObject* proto) {
     if (self.host_class_count >= self.host_class_capacity) {
         uint new_cap = self.host_class_capacity == 0 ? 4 : self.host_class_capacity * 2;
         usz new_bytes = (usz)new_cap * HostClassEntry::size;
@@ -2142,6 +2152,7 @@ fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* ud
     self.host_classes[id].gc_mark   = gc_mark;
     self.host_classes[id].udata     = udata;
     self.host_classes[id].name      = name;
+    self.host_classes[id].proto     = proto;
     self.host_class_count++;
     return (long)id;
 }
@@ -2149,6 +2160,35 @@ fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* ud
 // Entry for `id`, or null when never registered. As with host_fn_at, callers
 // treat null as "not a host class" rather than faulting, so a forged class_id
 // degrades instead of jumping through a wild pointer.
+// Push `v` into the per-call handle table, returning its slot or -1.
+fn long Heap.addon_handle_push(&self, TVal v) {
+    if (self.addon_handle_count >= self.addon_handle_capacity) {
+        uint new_cap = self.addon_handle_capacity == 0 ? 16 : self.addon_handle_capacity * 2;
+        usz new_bytes = (usz)new_cap * TVal::size;
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.addon_handles, new_bytes);
+        if (grown == null) return -1;
+        self.addon_handles = (TVal*)grown;
+        self.addon_handle_capacity = new_cap;
+    }
+    uint slot = self.addon_handle_count;
+    self.addon_handles[slot] = v;
+    self.addon_handle_count++;
+    return (long)slot;
+}
+
+// The value at `slot`, or empty when out of range: a forged handle reads as
+// undefined rather than off the end of the table.
+fn TVal? Heap.addon_handle_at(&self, usz slot) {
+    if (slot >= (usz)self.addon_handle_count) return HEAP_ALLOC_FAULT~;
+    return self.addon_handles[slot];
+}
+
+// Drop every handle. Called when an add-on call returns; the values themselves
+// are owned by whatever else references them.
+fn void Heap.addon_handles_reset(&self) {
+    self.addon_handle_count = 0;
+}
+
 fn HostClassEntry* Heap.host_class_at(&self, uint id) {
     if (id >= self.host_class_count) return null;
     return &self.host_classes[id];
@@ -3141,7 +3181,15 @@ fn void Heap.mark_roots(&self) {
 
     // Built-in constructor prototypes and intrinsics.
     if (self.object_proto != null) { self.mark_hobject(self.object_proto); }
-    if (self.deflater_proto != null) { self.mark_hobject(self.deflater_proto); }
+    // Values on loan to an add-on stay alive for the duration of its call.
+    for (uint i = 0; i < self.addon_handle_count; i++) {
+        self.mark_tval(&self.addon_handles[i]);
+    }
+    // Every registered host class's prototype is a root, so add-ons need no
+    // engine-side field of their own.
+    for (uint i = 0; i < self.host_class_count; i++) {
+        if (self.host_classes[i].proto != null) { self.mark_hobject(self.host_classes[i].proto); }
+    }
     if (self.array_proto != null) { self.mark_hobject(self.array_proto); }
     if (self.function_proto != null) { self.mark_hobject(self.function_proto); }
     if (self.string_proto != null) { self.mark_hobject(self.string_proto); }

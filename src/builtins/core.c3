@@ -778,14 +778,6 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     ERROR_PROTO_STACK_SET {"set stack", 1, &builtin_error_proto_stack_set},            // set Error.prototype.stack
     ESCAPE {"escape", 1, &builtin_escape},                                             // escape(string) (Annex B §B.2.1.1)
     UNESCAPE {"unescape", 1, &builtin_unescape},                                       // unescape(string) (Annex B §B.2.1.2)
-    // Deflate add-on (src/builtins/addon_deflate.c3), the reference consumer
-    // of the runtime host-class mechanism.
-    DEFLATER_CTOR {"Deflater", 1, &builtin_deflater_ctor},
-    DEFLATER_PROTO_PUSH {"push", 1, &builtin_deflater_push},
-    DEFLATER_PROTO_BYTES_IN {"bytesIn", 0, &builtin_deflater_bytes_in},
-    DEFLATER_PROTO_TAG {"tag", 0, &builtin_deflater_tag},
-    DEFLATE_COMPRESS {"compress", 1, &builtin_deflate_compress},
-    DEFLATE_ROUNDTRIP {"roundtrip", 1, &builtin_deflate_roundtrip},
     LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -3266,7 +3258,12 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
         heap.host_scope_set(depth, heap::HOST_SCOPE_ARG0 + i, ctx.regs[ctx.base_reg + i]);
     }
 
+    // Handles the add-on takes out during this call are rooted until it
+    // returns. Saving the mark and restoring it, rather than clearing, keeps a
+    // nested host call from invalidating its caller's handles.
+    uint addon_handle_mark = heap.addon_handle_count;
     handler(ctx, entry.udata);
+    heap.addon_handle_count = addon_handle_mark;
 
     // ES2015 §9.2.2 step 13: a [[Construct]] call evaluates to the created
     // object unless the host explicitly returned an object of its own.
@@ -3456,6 +3453,24 @@ fn TVal host_new_string(BuiltinContext* ctx, char[] utf8) {
 // builtin_get_metadata about host indices keeps that function pure and its 19
 // call sites untouched; those call sites read metadata only as a fallback for
 // a missing own property.
+// Define `key` on `obj` as a getter-only accessor backed by `getter`. Used by
+// the add-on API so a module can expose computed properties without reaching
+// into PropFlags or the accessor cell layout itself.
+fn bool define_host_accessor(Heap* heap, HObject* obj, HString* key, HObject* getter) {
+    if (obj == null || key == null || getter == null) return false;
+    TVal getter_tv;
+    getter_tv.set_object(getter);
+    TVal undef;
+    undef.set_undefined();
+    hobject::PropFlags acc_flags;
+    acc_flags.writable = false;
+    acc_flags.enumerable = false;
+    acc_flags.configurable = true;
+    acc_flags.is_accessor = true;
+    obj.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
+    return true;
+}
+
 fn HObject*? make_host_function(Heap* heap, uint slot) {
     heap::HostFnEntry* entry = heap.host_fn_at(slot);
     if (entry == null) return heap::HEAP_ALLOC_FAULT~;
@@ -3884,10 +3899,6 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register DataView constructor and prototype (plan 049 stage 3)
     if (!register_dataview(global_env, heap)) return false;
-
-    // Deflate add-on: the reference consumer of the runtime host-class
-    // mechanism (ObjClass.HOST + Heap.register_host_class).
-    if (!register_deflate_addon(global_env, heap)) return false;
 
     // Wire all prototype chains to Object.prototype
     if (heap.number_proto != null) heap.number_proto.prototype = heap.object_proto;
