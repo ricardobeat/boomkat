@@ -690,10 +690,12 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     // to `cur` when the caller asked for with() semantics.
 
     long lv;
+    bool found_any = false;
 
     // hour
     TVal h_v = prop_or_undefined_pa(ctx, bag, "hour");
     if (!h_v.is_undefined()) {
+        found_any = true;
         if (!to_integer_with_truncation(v, &h_v, &lv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
             builtin_throw(ctx, ctx.heap.range_err_proto, "hour is not an integral number");
@@ -707,6 +709,7 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     // microsecond
     TVal us_v = prop_or_undefined_pa(ctx, bag, "microsecond");
     if (!us_v.is_undefined()) {
+        found_any = true;
         if (!to_integer_with_truncation(v, &us_v, &lv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
             builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
@@ -720,6 +723,7 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     // millisecond
     TVal ms_v = prop_or_undefined_pa(ctx, bag, "millisecond");
     if (!ms_v.is_undefined()) {
+        found_any = true;
         if (!to_integer_with_truncation(v, &ms_v, &lv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
             builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
@@ -733,6 +737,7 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     // minute
     TVal mi_v = prop_or_undefined_pa(ctx, bag, "minute");
     if (!mi_v.is_undefined()) {
+        found_any = true;
         if (!to_integer_with_truncation(v, &mi_v, &lv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
             builtin_throw(ctx, ctx.heap.range_err_proto, "minute is not an integral number");
@@ -746,6 +751,7 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     // nanosecond
     TVal ns_v = prop_or_undefined_pa(ctx, bag, "nanosecond");
     if (!ns_v.is_undefined()) {
+        found_any = true;
         if (!to_integer_with_truncation(v, &ns_v, &lv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
             builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
@@ -761,6 +767,7 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
     // already read earlier in this function) override the split.
     TVal s_v = prop_or_undefined_pa(ctx, bag, "second");
     if (!s_v.is_undefined()) {
+        found_any = true;
         double d = vm::vm_to_number(v, &s_v);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
         if (math::is_nan(d) || math::is_inf(d)) {
@@ -773,19 +780,22 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
         }
         long whole = (long)math::trunc(d);
         double frac = d - (double)whole;
-        if (whole == 60) { whole = 59; frac = 0; }
         s = (int)whole;
-        long frac_ns = (long)math::trunc(frac * 1_000_000_000.0);
-        if (frac_ns < 0) frac_ns = 0;
-        if (frac_ns > 999_999_999) frac_ns = 999_999_999;
-        ms = (int)(frac_ns / 1_000_000);
-        us = (int)((frac_ns / 1000) % 1000);
-        ns = (int)(frac_ns % 1000);
-        if (!ms_v.is_undefined() || !us_v.is_undefined() || !ns_v.is_undefined()) {
-            ms = 0; us = 0; ns = 0;
+        if (frac != 0) {
+            long frac_ns = (long)math::trunc(frac * 1_000_000_000.0);
+            if (frac_ns < 0) frac_ns = 0;
+            if (frac_ns > 999_999_999) frac_ns = 999_999_999;
+            if (ms_v.is_undefined()) ms = (int)(frac_ns / 1_000_000);
+            if (us_v.is_undefined()) us = (int)((frac_ns / 1000) % 1000);
+            if (ns_v.is_undefined()) ns = (int)(frac_ns % 1000);
         }
     } else if (!keep_missing) {
         s = 0;
+    }
+
+    if (!found_any && !keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "object must have at least one time field");
+        return false;
     }
 
     out.h = h;
@@ -798,17 +808,36 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
 }
 
 // Validate h/m/s/ms/us/ns as a Temporal time and write it into `out`. Leap
-// seconds (s == 60) collapse to 59 here per spec.
-fn bool fields_to_valid_time(BuiltinContext* ctx, temporal::CivilTime fields, temporal::CivilTime* out) {
-    if (fields.h  < 0 || fields.h  > 23) { builtin_throw(ctx, ctx.heap.range_err_proto, "hour out of range"); return false; }
-    if (fields.mi < 0 || fields.mi > 59) { builtin_throw(ctx, ctx.heap.range_err_proto, "minute out of range"); return false; }
-    if (fields.s  < 0 || fields.s  > 60) { builtin_throw(ctx, ctx.heap.range_err_proto, "second out of range"); return false; }
-    if (fields.ms < 0 || fields.ms > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond out of range"); return false; }
-    if (fields.us < 0 || fields.us > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond out of range"); return false; }
-    if (fields.ns < 0 || fields.ns > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond out of range"); return false; }
-    if (fields.s == 60 && (fields.ms != 0 || fields.us != 0 || fields.ns != 0)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "leap second cannot have a fractional part");
-        return false;
+// seconds (s == 60) collapse to 59 here per spec. With CONSTRAIN, out-of-range
+// fields are clamped to their valid maximum. `allow_leap_second` is true for
+// ISO string inputs where second=60 is valid per the grammar; property bags
+// always reject second=60.
+fn bool fields_to_valid_time(BuiltinContext* ctx, temporal::CivilTime fields, temporal::CivilTime* out,
+                             temporal::OverflowKind overflow, bool allow_leap_second) {
+    if (overflow == temporal::OverflowKind.CONSTRAIN) {
+        if (fields.h  < 0) fields.h  = 0;  if (fields.h  > 23) fields.h  = 23;
+        if (fields.mi < 0) fields.mi = 0;  if (fields.mi > 59) fields.mi = 59;
+        if (fields.s  < 0) fields.s  = 0;  if (fields.s  > 59) fields.s  = 59;
+        if (fields.ms < 0) fields.ms = 0;  if (fields.ms > 999) fields.ms = 999;
+        if (fields.us < 0) fields.us = 0;  if (fields.us > 999) fields.us = 999;
+        if (fields.ns < 0) fields.ns = 0;  if (fields.ns > 999) fields.ns = 999;
+    } else {
+        if (fields.h  < 0 || fields.h  > 23) { builtin_throw(ctx, ctx.heap.range_err_proto, "hour out of range"); return false; }
+        if (fields.mi < 0 || fields.mi > 59) { builtin_throw(ctx, ctx.heap.range_err_proto, "minute out of range"); return false; }
+        if (fields.s  < 0 || fields.s  > 60) { builtin_throw(ctx, ctx.heap.range_err_proto, "second out of range"); return false; }
+        if (fields.ms < 0 || fields.ms > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond out of range"); return false; }
+        if (fields.us < 0 || fields.us > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond out of range"); return false; }
+        if (fields.ns < 0 || fields.ns > 999) { builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond out of range"); return false; }
+    }
+    if (fields.s == 60) {
+        if (!allow_leap_second) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second out of range");
+            return false;
+        }
+        if (fields.ms != 0 || fields.us != 0 || fields.ns != 0) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "leap second cannot have a fractional part");
+            return false;
+        }
     }
     temporal::CivilTime v = fields;
     if (v.s == 60) v.s = 59;
@@ -1239,7 +1268,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
         temporal::CivilDate valid_d;
         if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return false;
         temporal::CivilTime valid_t;
-        if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return false;
+        if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return false;
 
         if (tz == null) {
             // Plain (non-zoned) bag: a PlainDateTime built straight from the
@@ -2452,111 +2481,25 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
 
     // Steps 5-6: isoDateTime = (rel_date, midnight), targetDateTime = (target_date, target_time_rem)
-    // Total ns from isoDateTime to targetDateTime:
-    long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
-    long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-    int128 diff_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
 
-    // Step 7: Round the difference.
+    // Step 7: Round the difference. Delegate to the PlainDateTime path: the
+    // same algorithm that backs PlainDateTime.prototype.round and until/since,
+    // which already balances calendar units at largestUnit and handles the
+    // day-borrow for a negative time-of-day remainder.
+    long rem = (long)target_time_rem;
+    long h  = rem / 3600000000000L; rem = (long)(rem % 3600000000000L);
+    long mi = rem / 60000000000L;   rem = (long)(rem % 60000000000L);
+    long s  = rem / 1000000000L;    rem = (long)(rem % 1000000000L);
+    long ms = rem / 1000000L;       rem = (long)(rem % 1000000L);
+    long us = rem / 1000L;
+    long ns = rem % 1000L;
+    temporal::CivilDateTime iso_dt = { .date = rel_date, .time = {} };
+    temporal::CivilDateTime target_dt = { .date = target_date,
+        .time = { .h = h, .mi = mi, .s = s, .ms = ms, .us = us, .ns = ns } };
+    DiffSettings rds = { .largest = largest_unit, .smallest = smallest_unit,
+                         .mode = rounding_mode, .increment = rounding_increment };
     temporal::DurationParts result;
-    result.years = 0; result.months = 0; result.weeks = 0; result.days = 0;
-    result.hours = 0; result.minutes = 0; result.seconds = 0;
-    result.ms = 0; result.us = 0; result.ns = 0;
-
-    if (smallest_unit == TemporalUnit.DAY) {
-        double frac = (double)diff_ns / 86400000000000.0;
-        double rounded = round_num_to_incr(frac, rounding_increment, rounding_mode);
-        result.days = (long)rounded;
-    } else if (smallest_unit == TemporalUnit.YEAR || smallest_unit == TemporalUnit.MONTH ||
-               smallest_unit == TemporalUnit.WEEK) {
-        // Calendar unit rounding with relativeTo.
-        temporal::DifferenceUnit diff_unit;
-        if (largest_unit == TemporalUnit.YEAR) {
-            diff_unit = temporal::DifferenceUnit.YEARS;
-        } else if (largest_unit == TemporalUnit.MONTH) {
-            diff_unit = temporal::DifferenceUnit.MONTHS;
-        } else {
-            diff_unit = temporal::DifferenceUnit.DAYS;
-        }
-        temporal::DateDifference dd = temporal::difference_date(rel_date, target_date, diff_unit);
-
-        if (smallest_unit == TemporalUnit.YEAR) {
-            double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
-            double total_years = total_months / 12.0;
-            double rounded_years = round_num_to_incr(total_years, rounding_increment, rounding_mode);
-            result.years = (long)rounded_years;
-        } else if (smallest_unit == TemporalUnit.MONTH) {
-            double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
-            double rounded_months = round_num_to_incr(total_months, rounding_increment, rounding_mode);
-            result.months = (long)rounded_months;
-        } else if (smallest_unit == TemporalUnit.WEEK) {
-            double total_weeks = (double)(tgt_epoch - rel_epoch) / 7.0;
-            double rounded_weeks = round_num_to_incr(total_weeks, rounding_increment, rounding_mode);
-            result.weeks = (long)rounded_weeks;
-        }
-    } else if (!is_cal_unit(existing) && !is_cal_unit(largest_unit)) {
-        // Time-only duration with relativeTo: same as no-relativeTo path.
-        long divisor = unit_ns_divisor(smallest_unit);
-        double incr_ns = (double)divisor * rounding_increment;
-        double rounded_ns = round_num_to_incr((double)diff_ns, incr_ns, rounding_mode);
-        decompose_ns((long)rounded_ns, largest_unit, &result);
-    } else {
-        // Duration has calendar units but smallestUnit is a time unit.
-        // For nanosecond/increment=1, the round is a no-op: return the calendar
-        // difference as-is. For other time smallestUnits, compute the calendar
-        // difference and fold any time portion.
-        temporal::DifferenceUnit diff_unit;
-        if (largest_unit == TemporalUnit.YEAR) {
-            diff_unit = temporal::DifferenceUnit.YEARS;
-        } else if (largest_unit == TemporalUnit.MONTH) {
-            diff_unit = temporal::DifferenceUnit.MONTHS;
-        } else {
-            diff_unit = temporal::DifferenceUnit.DAYS;
-        }
-        temporal::DateDifference dd = temporal::difference_date(rel_date, target_date, diff_unit);
-
-        // When smallestUnit is nanosecond and roundingIncrement is 1, no rounding.
-        if (smallest_unit == TemporalUnit.NANOSECOND && rounding_increment == 1) {
-            // Convert to largest_unit format.
-            if (largest_unit == TemporalUnit.WEEK) {
-                long total_days = tgt_epoch - rel_epoch;
-                result.weeks = total_days / 7;
-                result.days = total_days - result.weeks * 7;
-            } else if (largest_unit == TemporalUnit.MONTH) {
-                result.years = dd.years;
-                result.months = dd.months;
-                result.days = dd.days;
-            } else if (largest_unit == TemporalUnit.YEAR) {
-                result.years = dd.years;
-                result.months = dd.months;
-                result.days = dd.days;
-            } else {
-                result.days = tgt_epoch - rel_epoch;
-            }
-        } else if (smallest_unit == TemporalUnit.WEEK) {
-            // Round total days to weeks.
-            double total_weeks = (double)(tgt_epoch - rel_epoch) / 7.0;
-            double rounded_weeks = round_num_to_incr(total_weeks, rounding_increment, rounding_mode);
-            result.weeks = (long)rounded_weeks;
-        } else if (smallest_unit == TemporalUnit.MONTH) {
-            // Round to months.
-            double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
-            double rounded_months = round_num_to_incr(total_months, rounding_increment, rounding_mode);
-            result.months = (long)rounded_months;
-        } else if (smallest_unit == TemporalUnit.YEAR) {
-            // Round to years.
-            double total_months = (double)dd.years * 12 + (double)dd.months + (double)dd.days / 30.0;
-            double total_years = total_months / 12.0;
-            double rounded_years = round_num_to_incr(total_years, rounding_increment, rounding_mode);
-            result.years = (long)rounded_years;
-        } else {
-            // Time unit: round the total ns and decompose.
-            long divisor = unit_ns_divisor(smallest_unit);
-            double incr_ns = (double)divisor * rounding_increment;
-            double rounded_ns = round_num_to_incr((double)diff_ns, incr_ns, rounding_mode);
-            decompose_ns((long)rounded_ns, largest_unit, &result);
-        }
-    }
+    if (!datetime_difference(ctx, iso_dt, target_dt, rds, &result)) return;
 
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -3786,7 +3729,7 @@ fn void builtin_temporal_plain_time_ctor(BuiltinContext* ctx) {
     }
 
     temporal::CivilTime valid;
-    if (!fields_to_valid_time(ctx, t, &valid)) return;
+    if (!fields_to_valid_time(ctx, t, &valid, temporal::OverflowKind.REJECT, true)) return;
 
     HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -3863,6 +3806,20 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
             ctx.result.set_object(copy);
             return;
         }
+        // PlainDateTime: read time fields directly from internal slots.
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            temporal::OverflowKind pdt_overflow;
+            if (!read_overflow_option(ctx, 1, &pdt_overflow)) return;
+            temporal::CivilDateTime dt = plain_datetime_value(o);
+            temporal::CivilTime valid;
+            if (!fields_to_valid_time(ctx, dt.time, &valid, pdt_overflow, false)) return;
+            HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
+            if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* obj = obj_o;
+            obj.prototype = ctx.heap.temporal_plain_time_proto;
+            ctx.result.set_object(obj);
+            return;
+        }
         // Property bag: read fields first, then the overflow option.
         temporal::CivilTime fields;
         temporal::CivilTime cur = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
@@ -3872,10 +3829,9 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
         }
         temporal::OverflowKind overflow;
         if (!read_overflow_option(ctx, 1, &overflow)) return;
-        if (!fields_to_valid_time(ctx, fields, &result)) {
+        if (!fields_to_valid_time(ctx, fields, &result, overflow, false)) {
             return;
         }
-        (void)overflow;
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.from: argument must be a string or object");
         return;
@@ -3996,6 +3952,17 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
     if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) return o;
+        // PlainDateTime: read time fields directly from internal slots.
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            temporal::CivilDateTime dt = plain_datetime_value(o);
+            temporal::CivilTime valid;
+            if (!fields_to_valid_time(ctx, dt.time, &valid, temporal::OverflowKind.REJECT, false)) return null;
+            HObject*? res = alloc_plain_time(ctx.heap, valid);
+            if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+            HObject* r = res;
+            r.prototype = ctx.heap.temporal_plain_time_proto;
+            return r;
+        }
         // ZonedDateTime: ToTemporalTime spec uses the wall-clock time at
         // the ZDT's epoch (after applying the zone offset). Read it via
         // zdt_wall_fields so the sub-second precision (ns_rem = 1 for
@@ -4007,7 +3974,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
             temporal::CivilTime valid;
             if (!fields_to_valid_time(ctx, {
                 .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns,
-            }, &valid)) return null;
+            }, &valid, temporal::OverflowKind.REJECT, false)) return null;
             HObject*? res = alloc_plain_time(ctx.heap, valid);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
@@ -4018,7 +3985,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
         temporal::CivilTime cur = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
         if (!bag_to_time_fields(ctx, o, false, cur, &fields)) return null;
         temporal::CivilTime valid;
-        if (!fields_to_valid_time(ctx, fields, &valid)) return null;
+        if (!fields_to_valid_time(ctx, fields, &valid, temporal::OverflowKind.REJECT, false)) return null;
         HObject*? res = alloc_plain_time(ctx.heap, valid);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
@@ -4099,7 +4066,7 @@ fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
         return;
     }
     temporal::CivilTime valid;
-    if (!fields_to_valid_time(ctx, fields, &valid)) return;
+    if (!fields_to_valid_time(ctx, fields, &valid, temporal::OverflowKind.REJECT, false)) return;
     HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
@@ -4510,7 +4477,7 @@ fn void builtin_temporal_plain_datetime_ctor(BuiltinContext* ctx) {
     }
     temporal::CivilTime t = { .h = h, .mi = mi, .s = s, .ms = ms, .us = us, .ns = ns };
     temporal::CivilTime valid_t;
-    if (!fields_to_valid_time(ctx, t, &valid_t)) return;
+    if (!fields_to_valid_time(ctx, t, &valid_t, temporal::OverflowKind.REJECT, false)) return;
 
     temporal::CivilDateTime dt = { .date = { .y = y, .m = (int)m, .d = (int)d }, .time = valid_t };
     HObject*? obj_o = alloc_plain_datetime(ctx.heap, dt, calendar);
@@ -4618,7 +4585,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
                 .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns,
             };
             if (!fields_to_valid_date(ctx, { .y = wy, .m = (int)wm, .d = (int)wd }, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
-            if (!fields_to_valid_time(ctx, valid_t, &valid_t)) return;
+            if (!fields_to_valid_time(ctx, valid_t, &valid_t, temporal::OverflowKind.REJECT, false)) return;
             temporal::CivilDateTime dt = { .date = valid_d, .time = valid_t };
             HObject*? res = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -4655,7 +4622,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             return;
         }
         temporal::CivilTime valid_t;
-        if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
+        if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return;
         result = { .date = valid_d, .time = valid_t };
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.from: argument must be a string or object");
@@ -5223,7 +5190,7 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
         temporal::CivilDate valid_d;
         if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return null;
         temporal::CivilTime valid_t;
-        if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return null;
+        if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return null;
         temporal::CivilDateTime dt = { .date = valid_d, .time = valid_t };
         HObject*? res = alloc_plain_datetime(ctx.heap, dt, calendar);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
@@ -5530,7 +5497,7 @@ fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
     temporal::CivilDate valid_d;
     if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) return;
     temporal::CivilTime valid_t;
-    if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
+    if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return;
     temporal::CivilDateTime result = { .date = valid_d, .time = valid_t };
     HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -5932,6 +5899,16 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
 
     // For a calendar smallestUnit (day or coarser), the leftover below that
     // unit determines whether the count steps to the next whole one.
+    if (ds.smallest == TemporalUnit.WEEK && ds.largest > TemporalUnit.WEEK) {
+        // round_date_part reads the smallestUnit count out of dp.weeks, and
+        // the coarser components must cover the whole day span. difference_date
+        // at YEAR/MONTH leaves only the sub-month remainder in dp.days, so
+        // rebuild the weeks count from the full day span here.
+        long total_days = temporal::epoch_days_from_civil(ed.y, (int)ed.m, (int)ed.d)
+                        - temporal::epoch_days_from_civil(sd.y, (int)sd.m, (int)sd.d);
+        long w = total_days / 7;
+        dp.years = 0; dp.months = 0; dp.weeks = w; dp.days = total_days - w * 7;
+    }
     if (!round_date_part(ctx, sd, ed, tod_delta, ds, sign, &dp)) return false;
     *out = dp;
     return true;
@@ -11055,7 +11032,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         temporal::CivilDate valid_d;
         if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
         temporal::CivilTime valid_t;
-        if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
+        if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return;
         long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
             + (long)valid_t.h * 3600 + (long)valid_t.mi * 60 + (long)valid_t.s;
         long frac_ns = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
@@ -11686,7 +11663,7 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     temporal::CivilDate valid_d;
     if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
     temporal::CivilTime valid_t;
-    if (!fields_to_valid_time(ctx, fields.time, &valid_t)) return;
+    if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return;
 
     // New wall time as naive UTC epoch nanos.
     long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
