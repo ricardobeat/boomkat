@@ -848,30 +848,342 @@ fn bool fields_to_valid_time(BuiltinContext* ctx, temporal::CivilTime fields, te
     return true;
 }
 
-// Read a PlainDateTime property bag: y/m/d + the six time fields. Missing
-// date fields default to `cur_date`; missing time fields default to
-// `cur_time` (00:00:00 for the constructor, the current time for `with`).
-// `read_tz` is passed through to bag_to_fields so PlainDateTime.prototype.with
-// fires the RejectObjectWithCalendarOrTimeZone probe and PlainDateTime.from
-// does not. The monthCode suitability check is NOT performed here — callers
-// run check_iso_monthcode_suitability after read_overflow_option; the
-// reported values are passed via out_have_mc/out_mci/out_mc_v so the caller
-// can run that check on the right TVal.
-fn bool bag_to_datetime_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing, bool read_tz,
-                                temporal::CivilDate cur_date, temporal::CivilTime cur_time,
-                                temporal::CivilDateTime* out,
-                                bool* out_have_mc, int* out_mci, TVal* out_mc_v) {
+// How a property bag's fields are read. Calendar is always probed (validated
+// for from-style reads, rejected on presence for with-style). `timeZone` and
+// `offset` are probed only by the zoned modes.
+enum TemporalBagMode {
+    TBM_PLAIN,     // PlainDateTime.from / until-since bags: date+time fields only
+    TBM_PLAIN_WITH,// PlainDateTime.with: calendar+timeZone probes, presence rejected
+    TBM_ZDT,       // ZonedDateTime.from / Duration relativeTo: offset between
+                   // nanosecond and second, timeZone between second and year
+    TBM_ZDT_WITH,  // ZonedDateTime.with: probes plus the offset read
+}
+
+// A time-field read (hour/minute/microsecond/...): ToIntegerWithTruncation
+// coerces the primitive immediately after the Get so observers see the
+// valueOf call between the field's get and the next field's get. A missing
+// field resolves to the caller's fallback under keep_missing, else to 0.
+fn bool bag_time_int(BuiltinContext* ctx, HObject* bag, char[] name,
+                     bool keep_missing, int fallback, int* out, char[] msg) {
     Vm* v = (Vm*)ctx.vm;
-    temporal::CivilDate date_fields;
-    long _ep;
-    if (!bag_to_fields(ctx, bag, keep_missing, read_tz, cur_date, &date_fields, &_ep,
-                       out_have_mc, out_mci, out_mc_v)) {
+    TVal fv = prop_or_undefined_pa(ctx, bag, name);
+    if (ctx.should_throw) return false;
+    if (fv.is_undefined()) { *out = keep_missing ? fallback : 0; return true; }
+    long lv;
+    if (!to_integer_with_truncation(v, &fv, &lv)) {
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+        builtin_throw(ctx, ctx.heap.range_err_proto, msg);
         return false;
     }
-    temporal::CivilTime t;
-    if (!bag_to_time_fields(ctx, bag, keep_missing, cur_time, &t)) return false;
-    out.date = date_fields;
-    out.time = t;
+    *out = (int)lv;
+    return true;
+}
+
+// Read an `offset` property for a zoned bag: string-coerce (firing the
+// observer's toString), then enforce the ±HH:MM / ±HHMM grammar that the
+// Temporal offset property accepts. Reports presence and whole-second offset.
+fn bool bag_offset_prop(BuiltinContext* ctx, HObject* bag, bool* out_has, long* out_sec) {
+    Vm* v = (Vm*)ctx.vm;
+    *out_has = false;
+    TVal offset_v = prop_or_undefined_pa(ctx, bag, "offset");
+    if (ctx.should_throw) return false;
+    if (offset_v.is_undefined()) return true;
+    if (offset_v.is_string()) {
+        HString* ohs = (HString*)offset_v.get_heapptr();
+        if (ohs != null && ohs.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "offset must not be a Symbol");
+            return false;
+        }
+    } else if (offset_v.is_object() && offset_v.get_heapptr() != null) {
+        // Object with toString/valueOf: builtin_to_string_vm coerces below.
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
+        return false;
+    }
+    HString* off_s = builtin_to_string_vm(ctx, &offset_v);
+    if (ctx.should_throw) return false;
+    if (off_s == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be convertible to a string");
+        return false;
+    }
+    char[] otxt = (String)off_s.get_cstr()[:off_s.blen];
+    usz pi = 0;
+    long off_sec = 0;
+    if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
+        return false;
+    }
+    // The `offset` property only accepts ±HH:MM or ±HHMM (no seconds, no
+    // fractions). Reject any `.` or a second `:` (±HH:MM:SS form).
+    usz colon_count = 0;
+    bool has_dot = false;
+    for (usz k = 0; k < otxt.len; k++) {
+        if (otxt[k] == '.') {
+            has_dot = true;
+        } else if (otxt[k] == ':') {
+            colon_count = colon_count + 1;
+        }
+    }
+    if (has_dot || colon_count > 1) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
+        return false;
+    }
+    *out_has = true;
+    *out_sec = off_sec;
+    return true;
+}
+
+// Read a PlainDateTime / ZonedDateTime property bag with every field Get and
+// its conversion interleaved in the spec's alphabetical order: calendar, day,
+// hour, microsecond, millisecond, minute, month, monthCode, nanosecond,
+// [offset], second, [timeZone], year. `calendar` is validated for the
+// from-style modes and rejected on presence for the with-style modes (the
+// RejectObjectWithCalendarOrTimeZone probe, which is a [[Get]] per test262
+// order-of-operations). `require_date` makes the reader throw TypeError after
+// the full read when year, month/monthCode, or day is absent (ToRelativeTemporalObject
+// and ToTemporalZonedDateTime). `out_tz`/`out_has_tz`/`out_has_offset`/
+// `out_offset_sec` report the zoned extras so callers can resolve the
+// wall-time. The monthCode suitability check is NOT performed here — callers
+// run check_iso_monthcode_suitability after reading the options bag; the
+// parsed value is reported via out_have_mc/out_mci/out_mc_v.
+fn bool bag_to_datetime_fields_ex(BuiltinContext* ctx, HObject* bag, TemporalBagMode mode,
+                                  bool keep_missing, bool require_date,
+                                  temporal::CivilDate cur_date, temporal::CivilTime cur_time,
+                                  temporal::CivilDateTime* out,
+                                  bool* out_have_mc, int* out_mci, TVal* out_mc_v,
+                                  bool* out_has_tz, HObject** out_tz,
+                                  bool* out_has_offset, long* out_offset_sec) {
+    Vm* v = (Vm*)ctx.vm;
+    *out_have_mc = false;
+    bool with_mode = (mode == TBM_PLAIN_WITH) || (mode == TBM_ZDT_WITH);
+    bool zdt_mode  = (mode == TBM_ZDT)       || (mode == TBM_ZDT_WITH);
+
+    long y = cur_date.y;
+    int m  = (int)cur_date.m;
+    int d  = (int)cur_date.d;
+    int h  = (int)cur_time.h;
+    int mi = (int)cur_time.mi;
+    int s  = (int)cur_time.s;
+    int ms = (int)cur_time.ms;
+    int us = (int)cur_time.us;
+    int ns = (int)cur_time.ns;
+    bool have_us = false;
+    bool have_ms = false;
+    bool have_ns = false;
+
+    // calendar
+    TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
+    if (ctx.should_throw) return false;
+    if (!cal_v.is_undefined()) {
+        if (with_mode) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
+            return false;
+        }
+        HObject* cal;
+        if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+    }
+
+    // timeZone probe (with-style only)
+    if (with_mode) {
+        TVal tz_v = prop_or_undefined_pa(ctx, bag, "timeZone");
+        if (ctx.should_throw) return false;
+        if (!tz_v.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone property");
+            return false;
+        }
+    }
+
+    // day
+    bool have_day = false;
+    TVal day_v = prop_or_undefined_pa(ctx, bag, "day");
+    if (ctx.should_throw) return false;
+    if (!day_v.is_undefined()) {
+        have_day = true;
+        long dl;
+        if (!to_integer_with_truncation(v, &day_v, &dl)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
+            return false;
+        }
+        // PrepareTemporalFields rejects day < 1 even under keep_missing (so
+        // `with({day: -1}, null)` throws RangeError, not TypeError).
+        if (dl < 1) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is out of range");
+            return false;
+        }
+        d = (int)dl;
+    } else if (!keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing day property");
+        return false;
+    }
+
+    // hour, microsecond, millisecond, minute
+    if (!bag_time_int(ctx, bag, "hour", keep_missing, h, &h, "hour is not an integral number")) return false;
+    TVal us_orig_v = prop_or_undefined_pa(ctx, bag, "microsecond");
+    if (ctx.should_throw) return false;
+    if (!us_orig_v.is_undefined()) {
+        have_us = true;
+        long lv;
+        if (!to_integer_with_truncation(v, &us_orig_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "microsecond is not an integral number");
+            return false;
+        }
+        us = (int)lv;
+    } else if (!keep_missing) {
+        us = 0;
+    }
+    TVal ms_orig_v = prop_or_undefined_pa(ctx, bag, "millisecond");
+    if (ctx.should_throw) return false;
+    if (!ms_orig_v.is_undefined()) {
+        have_ms = true;
+        long lv;
+        if (!to_integer_with_truncation(v, &ms_orig_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "millisecond is not an integral number");
+            return false;
+        }
+        ms = (int)lv;
+    } else if (!keep_missing) {
+        ms = 0;
+    }
+    if (!bag_time_int(ctx, bag, "minute", keep_missing, mi, &mi, "minute is not an integral number")) return false;
+
+    // month / monthCode (interleaved after minute per the alphabetical order)
+    bool have_month = false;
+    long month_lv = 0;
+    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
+    if (ctx.should_throw) return false;
+    if (!month_v.is_undefined()) {
+        have_month = true;
+        if (!to_integer_with_truncation(v, &month_v, &month_lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+            return false;
+        }
+    }
+    TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
+    if (ctx.should_throw) return false;
+    if (!mc_v.is_undefined()) {
+        int mci;
+        if (!parse_month_code(ctx, mc_v, &mci)) return false;
+        *out_have_mc = true;
+        *out_mci = mci;
+        *out_mc_v = mc_v;
+        if (have_month && month_lv != mci) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
+            return false;
+        }
+        m = mci;
+    } else if (have_month) {
+        m = (int)month_lv;
+    } else if (!keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
+        return false;
+    }
+
+    // nanosecond
+    TVal ns_orig_v = prop_or_undefined_pa(ctx, bag, "nanosecond");
+    if (ctx.should_throw) return false;
+    if (!ns_orig_v.is_undefined()) {
+        have_ns = true;
+        long lv;
+        if (!to_integer_with_truncation(v, &ns_orig_v, &lv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "nanosecond is not an integral number");
+            return false;
+        }
+        ns = (int)lv;
+    } else if (!keep_missing) {
+        ns = 0;
+    }
+
+    // offset (zoned modes): between nanosecond and second
+    if (zdt_mode) {
+        bool has_off = false;
+        long off_sec = 0;
+        if (!bag_offset_prop(ctx, bag, &has_off, &off_sec)) return false;
+        if (out_has_offset != null) *out_has_offset = has_off;
+        if (out_offset_sec != null) *out_offset_sec = off_sec;
+    }
+
+    // second — supports an optional fractional part that splits into
+    // ms/us/ns; explicitly set millisecond/microsecond/nanosecond (already
+    // read above) override the split.
+    TVal s_v = prop_or_undefined_pa(ctx, bag, "second");
+    if (ctx.should_throw) return false;
+    if (!s_v.is_undefined()) {
+        double d_sec = vm::vm_to_number(v, &s_v);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+        if (math::is_nan(d_sec) || math::is_inf(d_sec)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second is not a finite number");
+            return false;
+        }
+        if (d_sec < 0 || d_sec > 60) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "second out of range");
+            return false;
+        }
+        long whole = (long)math::trunc(d_sec);
+        double frac = d_sec - (double)whole;
+        s = (int)whole;
+        if (frac != 0) {
+            long frac_ns_v = (long)math::trunc(frac * 1_000_000_000.0);
+            if (frac_ns_v < 0) frac_ns_v = 0;
+            if (frac_ns_v > 999_999_999) frac_ns_v = 999_999_999;
+            if (!have_ms) ms = (int)(frac_ns_v / 1_000_000);
+            if (!have_us) us = (int)((frac_ns_v / 1000) % 1000);
+            if (!have_ns) ns = (int)(frac_ns_v % 1000);
+        }
+    } else if (!keep_missing) {
+        s = 0;
+    }
+
+    // timeZone (from-style zoned): between second and year
+    if (zdt_mode && !with_mode) {
+        if (out_has_tz != null) *out_has_tz = false;
+        TVal tz_v = prop_or_undefined_pa(ctx, bag, "timeZone");
+        if (ctx.should_throw) return false;
+        if (out_tz != null) *out_tz = null;
+        if (!tz_v.is_undefined()) {
+            if (try maybe_tz = to_temporal_tz(ctx, &tz_v)) {
+                if (out_has_tz != null) *out_has_tz = true;
+                if (out_tz != null) *out_tz = maybe_tz;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    // year (last, per the spec ordering of PrepareTemporalFields)
+    bool have_year = false;
+    TVal year_v = prop_or_undefined_pa(ctx, bag, "year");
+    if (ctx.should_throw) return false;
+    if (!year_v.is_undefined()) {
+        have_year = true;
+        if (!to_integer_with_truncation(v, &year_v, &y)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
+            return false;
+        }
+    } else if (!keep_missing) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing year property");
+        return false;
+    }
+
+    if (require_date && (!have_year || (!have_month && !*out_have_mc) || !have_day)) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing required date property");
+        return false;
+    }
+
+    out.date.y = y;
+    out.date.m = m;
+    out.date.d = d;
+    out.time.h = h;
+    out.time.mi = mi;
+    out.time.s = s;
+    out.time.ms = ms;
+    out.time.us = us;
+    out.time.ns = ns;
     return true;
 }
 
@@ -1182,92 +1494,25 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
             return true;
         }
 
-        // Property bag. `timeZone` present makes this ZonedDateTime-relative
-        // per ToRelativeTemporalObject; resolve it with the same helper
-        // ZonedDateTime.from uses, then read `offset` (a UTC offset string
-        // used to disambiguate the wall time), then the date/time fields
-        // (which also validates `calendar`, if present, and defaults missing
-        // time units to 0).
-        TVal tz_v = prop_or_undefined_pa(ctx, ro, "timeZone");
-        if (ctx.should_throw) return false;
-        HObject* tz = null;
-        if (!tz_v.is_undefined()) {
-            if (try maybe_tz = to_temporal_tz(ctx, &tz_v)) {
-                tz = maybe_tz;
-            } else {
-                return false;
-            }
-        }
-
-        long off_sec = 0;
-        bool has_offset_prop = false;
-        TVal offset_v = prop_or_undefined_pa(ctx, ro, "offset");
-        if (ctx.should_throw) return false;
-        if (!offset_v.is_undefined()) {
-            if (offset_v.is_string()) {
-                HString* ohs = (HString*)offset_v.get_heapptr();
-                if (ohs != null && ohs.is_symbol()) {
-                    builtin_throw(ctx, ctx.heap.type_err_proto, "offset must not be a Symbol");
-                    return false;
-                }
-            } else if (offset_v.is_object() && offset_v.get_heapptr() != null) {
-                // Object with toString/valueOf: let builtin_to_string_vm below
-                // handle the coercion.
-            } else {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
-                return false;
-            }
-            HString* off_s = builtin_to_string_vm(ctx, &offset_v);
-            if (ctx.should_throw) return false;
-            if (off_s == null) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be convertible to a string");
-                return false;
-            }
-            char[] otxt = (String)off_s.get_cstr()[:off_s.blen];
-            usz pi = 0;
-            if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
-                return false;
-            }
-            has_offset_prop = true;
-        }
-
-        // Per spec (ToRelativeTemporalObject / PrepareTemporalFields), the
-        // bag must carry year, month (or monthCode), and day; missing time
-        // fields default to 0. `bag_to_datetime_fields`'s `keep_missing`
-        // flag would silently substitute `cur`'s value for a missing date
-        // field, so require the three date fields explicitly (mirroring
-        // `builtin_temporal_zoneddatetime_from`'s property-bag path) and
-        // pass `keep_missing = true` only to get 0-default time fields.
-        TVal y_v = prop_or_undefined_pa(ctx, ro, "year");
-        if (ctx.should_throw) return false;
-        if (y_v.is_undefined()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo: missing year property");
-            return false;
-        }
-        TVal m_v = prop_or_undefined_pa(ctx, ro, "month");
-        if (ctx.should_throw) return false;
-        TVal mc_v = prop_or_undefined_pa(ctx, ro, "monthCode");
-        if (ctx.should_throw) return false;
-        if (m_v.is_undefined() && mc_v.is_undefined()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo: missing month property");
-            return false;
-        }
-        TVal d_v = prop_or_undefined_pa(ctx, ro, "day");
-        if (ctx.should_throw) return false;
-        if (d_v.is_undefined()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "relativeTo: missing day property");
-            return false;
-        }
-
+        // Property bag. ToRelativeTemporalObject reads every field via
+        // PrepareTemporalFields in alphabetical order (calendar, day, hour,
+        // ..., offset, second, timeZone, year); the unified reader resolves
+        // `timeZone` and validates `offset` at their positions and reports
+        // whether the bag is zoned. Missing date fields are a TypeError
+        // (require_date); missing time fields default to 0.
         Vm* v = (Vm*)ctx.vm;
         temporal::CivilDateTime cur = { .date = { .y = 1970, .m = 1, .d = 1 }, .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 } };
         temporal::CivilDateTime fields;
         bool _have_mc;
         int _mci;
         TVal _mc_v;
-        if (!bag_to_datetime_fields(ctx, ro, true, false, cur.date, cur.time, &fields,
-                                    &_have_mc, &_mci, &_mc_v)) {
+        bool has_tz = false;
+        HObject* tz = null;
+        bool has_offset_prop = false;
+        long off_sec = 0;
+        if (!bag_to_datetime_fields_ex(ctx, ro, TBM_ZDT, true, true, cur.date, cur.time, &fields,
+                                       &_have_mc, &_mci, &_mc_v,
+                                       &has_tz, &tz, &has_offset_prop, &off_sec)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return false;
         }
@@ -3952,7 +4197,7 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     // sentinel -10 (minute), 0 (second), 3/6/9 (sub-second).
     int digits = -1;
     TemporalRoundMode rm = TemporalRoundMode.TRUNC;
-    if (!to_string_precision(ctx, 0, &digits, &rm, false)) return;
+    if (!to_string_precision(ctx, 0, &digits, &rm, false, null)) return;
 
     int ns_digits;
     if (digits == -10) {
@@ -4128,8 +4373,21 @@ fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
         return;
     }
     HObject* bag = (HObject*)arg.get_heapptr();
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    if (!reject_temporal_object_bag(ctx, bag)) return;
+    // RejectObjectWithCalendarOrTimeZone ([[Get]] probes, per test262
+    // order-of-operations): a present calendar or timeZone is a TypeError.
+    TVal cal_f = prop_or_undefined_pa(ctx, bag, "calendar");
+    if (ctx.should_throw) return;
+    if (!cal_f.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
+        return;
+    }
+    TVal tz_f = prop_or_undefined_pa(ctx, bag, "timeZone");
+    if (ctx.should_throw) return;
+    if (!tz_f.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone property");
+        return;
+    }
     Vm* v = (Vm*)ctx.vm;
 
     temporal::CivilTime cur = plain_time_value(obj);
@@ -4138,6 +4396,8 @@ fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     temporal::CivilTime valid;
     if (!fields_to_valid_time(ctx, fields, &valid, temporal::OverflowKind.REJECT, false)) return;
     HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
@@ -4596,8 +4856,11 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             return;
         }
         if (!p.has_time) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDateTime.from: string has no time portion");
-            return;
+            // A date-only string is valid: the time portion defaults to
+            // 00:00:00.000000000 (Temporal.PlainDateTime.from("2001-05-02")
+            // is accepted by the DateTime grammar, which releases the
+            // time-part requirement).
+            p.hour = 0; p.minute = 0; p.second = 0; p.nanos = 0;
         }
         temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
         // For string inputs, only parse overflow when the caller passed
@@ -4681,9 +4944,9 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
         bool have_mc;
         int mci;
         TVal mc_v;
-        if (!bag_to_datetime_fields(ctx, o, false, false, { .y = 0, .m = 1, .d = 1 },
+        if (!bag_to_datetime_fields_ex(ctx, o, TBM_PLAIN, false, false, { .y = 0, .m = 1, .d = 1 },
                                     { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields,
-                                    &have_mc, &mci, &mc_v)) {
+                                    &have_mc, &mci, &mc_v, null, null, null, null)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
@@ -5312,9 +5575,9 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
         bool have_mc;
         int mci;
         TVal mc_v;
-        if (!bag_to_datetime_fields(ctx, o, false, false, { .y = 0, .m = 1, .d = 1 },
+        if (!bag_to_datetime_fields_ex(ctx, o, TBM_PLAIN, false, false, { .y = 0, .m = 1, .d = 1 },
                                     { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 }, &fields,
-                                    &have_mc, &mci, &mc_v)) return null;
+                                    &have_mc, &mci, &mc_v, null, null, null, null)) return null;
         if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) return null;
         temporal::CivilDate valid_d;
         if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return null;
@@ -5701,8 +5964,6 @@ fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
     }
     HObject* bag = (HObject*)arg.get_heapptr();
     if (!reject_temporal_object_bag(ctx, bag)) return;
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
 
     temporal::CivilDateTime cur = plain_datetime_value(obj);
@@ -5710,11 +5971,13 @@ fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
     bool have_mc;
     int mci;
     TVal mc_v;
-    if (!bag_to_datetime_fields(ctx, bag, true, true, cur.date, cur.time, &fields,
-                                &have_mc, &mci, &mc_v)) {
+    if (!bag_to_datetime_fields_ex(ctx, bag, TBM_PLAIN_WITH, true, false, cur.date, cur.time, &fields,
+                                &have_mc, &mci, &mc_v, null, null, null, null)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     temporal::CivilDate valid_d;
     if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) return;
     temporal::CivilTime valid_t;
@@ -6403,26 +6666,85 @@ fn void builtin_temporal_plain_datetime_proto_withCalendar(BuiltinContext* ctx) 
 // Property reads follow PrepareCalendarFields's order: `calendar` is read
 // first (GetTemporalCalendarIdentifierWithISODefault), then the ISO
 // calendar's field set (`month`, `monthCode`, `year`) in alphabetical
-// order. The ISO calendar's `extraFields()` is empty, so `day`/`era`/
-// `eraYear` are never read at all — they are simply not calendar fields
-// for a year-month projection, mirroring bag_to_fields (PlainDate), which
-// likewise never probes era/eraYear.
-fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
+// order, each Get followed by its conversion so observers see the
+// valueOf/toString calls between the gets. The ISO calendar's
+// `extraFields()` is empty, so `day`/`era`/`eraYear` are never read at
+// all. With `with_mode` (PlainYearMonth.with), `calendar` and `timeZone`
+// are Get-probed and rejected on presence (RejectObjectWithCalendarOrTimeZone,
+// which is a [[Get]] per test262 order-of-operations), and the bag must
+// carry at least one of month/monthCode/year.
+fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing, bool with_mode,
                                 long cur_y, int cur_m, int cur_day,
                                 long* out_y, int* out_m, int* out_day,
                                 bool* out_have_mc, int* out_mci, TVal* out_mc_v) {
     Vm* v = (Vm*)ctx.vm;
     *out_have_mc = false;
-    TVal cal_v   = prop_or_undefined_pa(ctx, bag, "calendar");
-    if (!cal_v.is_undefined()) {
-        HObject* cal;
-        if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+    if (with_mode) {
+        TVal cal_p = prop_or_undefined_pa(ctx, bag, "calendar");
+        if (ctx.should_throw) return false;
+        if (!cal_p.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
+            return false;
+        }
+        TVal tz_p = prop_or_undefined_pa(ctx, bag, "timeZone");
+        if (ctx.should_throw) return false;
+        if (!tz_p.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone property");
+            return false;
+        }
+    } else {
+        TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
+        if (ctx.should_throw) return false;
+        if (!cal_v.is_undefined()) {
+            HObject* cal;
+            if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+        }
     }
+
+    // month, then monthCode, then year, each converted immediately after
+    // its Get (alphabetical PrepareCalendarFields order).
+    int m = cur_m;
+    bool have_month = false;
+    bool have_mc = false;
+    long mv = 0;
     TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
-    TVal mc_v    = prop_or_undefined_pa(ctx, bag, "monthCode");
-    TVal year_v  = prop_or_undefined_pa(ctx, bag, "year");
+    if (ctx.should_throw) return false;
+    if (!month_v.is_undefined()) {
+        have_month = true;
+        if (!to_integer_with_truncation(v, &month_v, &mv)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+            return false;
+        }
+    }
+    TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
+    if (ctx.should_throw) return false;
+    if (!mc_v.is_undefined()) {
+        have_mc = true;
+        int mci;
+        if (!parse_month_code(ctx, mc_v, &mci)) return false;
+        // Report the parsed monthCode so the caller can run the ISO
+        // suitability check after read_overflow_option (options-read-
+        // before-algorithmic-validation.js expects overflow read first
+        // when monthCode is unsuitable).
+        *out_have_mc = true;
+        *out_mci = mci;
+        *out_mc_v = mc_v;
+        if (have_month && mv != mci) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
+            return false;
+        }
+        m = mci;
+    } else if (have_month) {
+        m = (int)mv;
+    } else if (!keep_missing && !with_mode) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
+        return false;
+    }
 
     long y = cur_y;
+    TVal year_v = prop_or_undefined_pa(ctx, bag, "year");
+    if (ctx.should_throw) return false;
     if (!year_v.is_undefined()) {
         if (!to_integer_with_truncation(v, &year_v, &y)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
@@ -6434,41 +6756,9 @@ fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_mis
         return false;
     }
 
-    int m = cur_m;
-    if (month_v.is_undefined() && mc_v.is_undefined()) {
-        if (!keep_missing) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
-            return false;
-        }
-    } else {
-        long mv = 0;
-        bool have_month = false;
-        if (!month_v.is_undefined()) {
-            if (!to_integer_with_truncation(v, &month_v, &mv)) {
-                if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-                builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
-                return false;
-            }
-            have_month = true;
-        }
-        if (!mc_v.is_undefined()) {
-            int mci;
-            if (!parse_month_code(ctx, mc_v, &mci)) return false;
-            // Report the parsed monthCode so the caller can run the ISO
-            // suitability check after read_overflow_option (options-read-
-            // before-algorithmic-validation.js expects overflow read first
-            // when monthCode is unsuitable).
-            *out_have_mc = true;
-            *out_mci = mci;
-            *out_mc_v = mc_v;
-            if (have_month && mv != mci) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
-                return false;
-            }
-            m = mci;
-        } else if (have_month) {
-            m = (int)mv;
-        }
+    if (with_mode && !have_month && !have_mc && year_v.is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "with() requires at least one recognised field");
+        return false;
     }
 
     // `day` is never a calendar field for the year-month projection (the
@@ -6648,7 +6938,7 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
         bool have_mc;
         int mci;
         TVal mc_v;
-        if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d,
+        if (!bag_to_yearmonth_fields(ctx, o, false, false, 0, 1, 1, &y, &m, &d,
                                      &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
@@ -6890,13 +7180,15 @@ fn void builtin_temporal_plain_yearmonth_proto_toString(BuiltinContext* ctx) {
             return;
         }
         HObject* opts = (HObject*)ov.get_heapptr();
-        TVal cn = prop_or_undefined(opts, ctx.heap, "calendarName");
+        TVal cn = prop_or_undefined_pa(ctx, opts, "calendarName");
+        if (ctx.should_throw) return;
         if (!cn.is_undefined()) {
-            if (!cn.is_string()) {
+            HString* s = builtin_to_string_vm(ctx, &cn);
+            if (ctx.should_throw) return;
+            if (s == null) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "calendarName must be a string");
                 return;
             }
-            HString* s = (HString*)cn.get_heapptr();
             char[] v = s.get_cstr()[:s.blen];
             if (v == "auto") { show_calendar = false; }
             else if (v == "always") { show_calendar = true; }
@@ -6976,7 +7268,7 @@ fn HObject*? plain_yearmonth_from_arg_full(BuiltinContext* ctx, TVal* arg) {
         bool have_mc;
         int mci;
         TVal mc_v;
-        if (!bag_to_yearmonth_fields(ctx, o, false, 0, 1, 1, &y, &m, &d,
+        if (!bag_to_yearmonth_fields(ctx, o, false, false, 0, 1, 1, &y, &m, &d,
                                      &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return null;
@@ -7029,46 +7321,23 @@ fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
     }
     HObject* bag = (HObject*)arg.get_heapptr();
     if (!reject_temporal_object_bag(ctx, bag)) return;
-    // A calendar or timeZone field in a with() bag is a TypeError, and the
-    // bag must carry at least one recognised field.
-    TVal cal_f = prop_or_undefined_pa(ctx, bag, "calendar");
-    if (ctx.should_throw) return;
-    if (!cal_f.is_undefined()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar field");
-        return;
-    }
-    TVal tz_f = prop_or_undefined_pa(ctx, bag, "timeZone");
-    if (ctx.should_throw) return;
-    if (!tz_f.is_undefined()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone field");
-        return;
-    }
-    bool any_field = false;
-    char[][] ym_names = { "era", "eraYear", "month", "monthCode", "year" };
-    for (int fi = 0; fi < 5; fi++) {
-        TVal fv = prop_or_undefined_pa(ctx, bag, ym_names[fi]);
-        if (ctx.should_throw) return;
-        if (!fv.is_undefined()) { any_field = true; break; }
-    }
-    if (!any_field) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "with() requires at least one recognised field");
-        return;
-    }
+    // The bag reader probes calendar/timeZone ([[Get]], rejecting either on
+    // presence) and requires at least one recognised field.
     temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
 
     long y; int m; int d;
     bool have_mc;
     int mci;
     TVal mc_v;
-    if (!bag_to_yearmonth_fields(ctx, bag, true,
+    if (!bag_to_yearmonth_fields(ctx, bag, true, true,
                                   plain_yearmonth_y(obj), plain_yearmonth_m(obj), plain_yearmonth_day(obj),
                                   &y, &m, &d,
                                   &have_mc, &mci, &mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
@@ -7302,7 +7571,7 @@ fn HObject*? plain_yearmonth_from_arg(BuiltinContext* ctx, TVal* arg) {
 // specific leap-year checks. The reference year default is a leap year
 // (1972) per the polyfill so Feb 29 is recognized as valid; spec lets the
 // caller override.
-fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
+fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing, bool with_mode,
                                 int cur_y, int cur_m, int cur_d,
                                 int* out_y, int* out_m, int* out_d,
                                 bool* out_have_mc, int* out_mci, TVal* out_mc_v) {
@@ -7313,11 +7582,30 @@ fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_miss
     // are NOT in ISO PrepareTemporalFields and are intentionally not
     // probed here; propertyBagObserver expects the fire of these five
     // traps in lexicographic order, with each property's valueOf/toString
-    // triple landing between the get and the next field's get.
-    TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
-    if (!cal_v.is_undefined()) {
-        HObject* cal;
-        if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+    // triple landing between the get and the next field's get. With
+    // `with_mode`, `calendar` and `timeZone` are Get-probed and rejected
+    // on presence (RejectObjectWithCalendarOrTimeZone, a [[Get]] per
+    // test262 order-of-operations).
+    if (with_mode) {
+        TVal cal_p = prop_or_undefined_pa(ctx, bag, "calendar");
+        if (ctx.should_throw) return false;
+        if (!cal_p.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
+            return false;
+        }
+        TVal tz_p = prop_or_undefined_pa(ctx, bag, "timeZone");
+        if (ctx.should_throw) return false;
+        if (!tz_p.is_undefined()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone property");
+            return false;
+        }
+    } else {
+        TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
+        if (ctx.should_throw) return false;
+        if (!cal_v.is_undefined()) {
+            HObject* cal;
+            if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
+        }
     }
 
     // day (alphabetical position 2): read, then coerce via
@@ -7549,7 +7837,7 @@ fn void builtin_temporal_plain_monthday_from(BuiltinContext* ctx) {
         int mci;
         TVal mc_v;
         Vm* v = (Vm*)ctx.vm;
-        if (!bag_to_monthday_fields(ctx, o, false, 1972, 1, 1, &y, &m, &d,
+        if (!bag_to_monthday_fields(ctx, o, false, false, 1972, 1, 1, &y, &m, &d,
                                     &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
@@ -7614,7 +7902,7 @@ fn bool plainmonthday_from_arg_full(BuiltinContext* ctx, TVal* arg, temporal::Ov
         bool have_mc;
         int mci;
         TVal mc_v;
-        if (!bag_to_monthday_fields(ctx, o, false, 1972, 1, 1, &y, &m, &d,
+        if (!bag_to_monthday_fields(ctx, o, false, false, 1972, 1, 1, &y, &m, &d,
                                     &have_mc, &mci, &mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return false;
@@ -7842,13 +8130,15 @@ fn void builtin_temporal_plain_monthday_proto_toString(BuiltinContext* ctx) {
             return;
         }
         HObject* opts = (HObject*)ov.get_heapptr();
-        TVal cn = prop_or_undefined(opts, ctx.heap, "calendarName");
+        TVal cn = prop_or_undefined_pa(ctx, opts, "calendarName");
+        if (ctx.should_throw) return;
         if (!cn.is_undefined()) {
-            if (!cn.is_string()) {
+            HString* s = builtin_to_string_vm(ctx, &cn);
+            if (ctx.should_throw) return;
+            if (s == null) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "calendarName must be a string");
                 return;
             }
-            HString* s = (HString*)cn.get_heapptr();
             char[] v = s.get_cstr()[:s.blen];
             if (v == "auto") { show_calendar = false; }
             else if (v == "always") { show_calendar = true; }
@@ -7935,20 +8225,21 @@ fn void builtin_temporal_plain_monthday_proto_with(BuiltinContext* ctx) {
         return;
     }
     HObject* bag = (HObject*)arg.get_heapptr();
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    if (!reject_temporal_object_bag(ctx, bag)) return;
     Vm* v = (Vm*)ctx.vm;
 
     int y; int m; int d;
     bool have_mc;
     int mci;
     TVal mc_v;
-    if (!bag_to_monthday_fields(ctx, bag, true,
+    if (!bag_to_monthday_fields(ctx, bag, true, true,
                                 plain_monthday_year(obj), plain_monthday_m(obj), plain_monthday_d(obj),
                                 &y, &m, &d, &have_mc, &mci, &mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
@@ -9252,7 +9543,7 @@ fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRou
 // 9). `rounding_mode` defaults to TRUNC; "ceil", "floor", "expand", "trunc",
 // "halfCeil", "halfFloor", "halfExpand", "halfTrunc", "halfEven" are valid.
 // Returns false on a malformed option (after throwing).
-fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits, TemporalRoundMode* rm, bool read_time_zone) {
+fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits, TemporalRoundMode* rm, bool read_time_zone, TVal* out_time_zone) {
     *digits = -1;  // auto when no options
     *rm = TemporalRoundMode.TRUNC;
     if (ctx.argc <= options_index) return true;
@@ -9348,7 +9639,7 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
     if (read_time_zone) {
         TVal _tz = prop_or_undefined_pa(ctx, opts, "timeZone");
         if (ctx.should_throw) return false;
-        (void)_tz;
+        if (out_time_zone != null) *out_time_zone = _tz;
     }
     if (!su_valid) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
@@ -9363,29 +9654,20 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
     int digits;
     TemporalRoundMode rm;
-    if (!to_string_precision(ctx, 0, &digits, &rm, true)) return;
+    TVal tzv;
+    tzv.set_undefined();
+    // to_string_precision probes timeZone last (after fractionalSecondDigits,
+    // roundingMode, smallestUnit), matching the spec's alphabetical option
+    // read order; undefined means UTC ("Z" suffix).
+    if (!to_string_precision(ctx, 0, &digits, &rm, true, &tzv)) return;
 
-    // Read `timeZone` after fractionalSecondDigits/roundingMode/smallestUnit
-    // (to_string_precision above), matching the spec's alphabetical option
-    // read order (fractionalSecondDigits, roundingMode, smallestUnit,
-    // timeZone). undefined means UTC ("Z" suffix); otherwise resolve it the
-    // same way ZonedDateTime does (string offset/IANA name or a
-    // Temporal.TimeZone-like object).
     HObject* tz = null;
-    if (ctx.argc > 0) {
-        TVal ov = ctx.regs[ctx.base_reg + 0];
-        if (!ov.is_undefined() && ov.is_object() && ov.get_heapptr() != null) {
-            HObject* opts = (HObject*)ov.get_heapptr();
-            TVal tzv = prop_or_undefined_pa(ctx, opts, "timeZone");
+    if (!tzv.is_undefined()) {
+        if (try maybe_tz = to_temporal_tz(ctx, &tzv)) {
             if (ctx.should_throw) return;
-            if (!tzv.is_undefined()) {
-                if (try maybe_tz = to_temporal_tz(ctx, &tzv)) {
-                    if (ctx.should_throw) return;
-                    tz = maybe_tz;
-                } else {
-                    return;
-                }
-            }
+            tz = maybe_tz;
+        } else {
+            return;
         }
     }
 
@@ -11105,7 +11387,10 @@ fn HObject*? to_temporal_tz(BuiltinContext* ctx, TVal* arg) {
 // Validate the `offset`, `disambiguation` and `overflow` options accepted by
 // ZonedDateTime.from/with. Returns the resolved offset mode (-1 on error):
 // 0 = default (prefer), 1 = use, 2 = ignore, 3 = prefer, 4 = reject.
-fn int validate_zdt_from_options(BuiltinContext* ctx) {
+// Reads must go through the Proxy-aware path so observers see the option
+// gets in alphabetical order (disambiguation, offset, overflow).
+fn int validate_zdt_from_options(BuiltinContext* ctx, temporal::OverflowKind* out_overflow) {
+    *out_overflow = temporal::OverflowKind.CONSTRAIN;
     if (ctx.argc < 2) return 0;
     TVal ov = ctx.regs[ctx.base_reg + 1];
     if (ov.is_undefined()) return 0;
@@ -11114,7 +11399,8 @@ fn int validate_zdt_from_options(BuiltinContext* ctx) {
         return -1;
     }
     HObject* opts = (HObject*)ov.get_heapptr();
-    TVal dv = prop_or_undefined(opts, ctx.heap, "disambiguation");
+    TVal dv = prop_or_undefined_pa(ctx, opts, "disambiguation");
+    if (ctx.should_throw) return -1;
     if (!dv.is_undefined()) {
         HString* ds = builtin_to_string_vm(ctx, &dv);
         if (ctx.should_throw) return -1;
@@ -11124,7 +11410,8 @@ fn int validate_zdt_from_options(BuiltinContext* ctx) {
             return -1;
         }
     }
-    TVal offv = prop_or_undefined(opts, ctx.heap, "offset");
+    TVal offv = prop_or_undefined_pa(ctx, opts, "offset");
+    if (ctx.should_throw) return -1;
     int offset_mode = 0;
     if (!offv.is_undefined()) {
         HString* os = builtin_to_string_vm(ctx, &offv);
@@ -11139,7 +11426,8 @@ fn int validate_zdt_from_options(BuiltinContext* ctx) {
             return -1;
         }
     }
-    TVal ofv = prop_or_undefined(opts, ctx.heap, "overflow");
+    TVal ofv = prop_or_undefined_pa(ctx, opts, "overflow");
+    if (ctx.should_throw) return -1;
     if (!ofv.is_undefined()) {
         HString* os2 = builtin_to_string_vm(ctx, &ofv);
         if (ctx.should_throw) return -1;
@@ -11148,6 +11436,7 @@ fn int validate_zdt_from_options(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid overflow option");
             return -1;
         }
+        *out_overflow = ostr2 == "reject" ? temporal::OverflowKind.REJECT : temporal::OverflowKind.CONSTRAIN;
     }
     return offset_mode;
 }
@@ -11189,7 +11478,8 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         // Validate options for the string path. Returns the offset mode so
         // the wall-day range check can be skipped for `use`/`ignore`, where
         // the exact time is pinned and the wall instant need not be computed.
-        int offset_mode = validate_zdt_from_options(ctx);
+        temporal::OverflowKind _str_overflow;
+        int offset_mode = validate_zdt_from_options(ctx, &_str_overflow);
         if (offset_mode < 0) return;
         // Resolve timezone from annotation or offset. If the bracket is an
         // offset like `+01:00` and there was NO explicit offset on the
@@ -11299,13 +11589,14 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         return;
     }
 
-    // Object input: fast path for ZDT identity. Per spec, options are read
-        // (and validated) before the ZDT identity copy path runs.
-        if (arg.is_object() && arg.get_heapptr() != null) {
-        int om = validate_zdt_from_options(ctx);
-        if (om < 0) return;
+    // Object input. Options are read before the ZDT identity copy path; the
+    // property-bag path reads them after the fields (order-of-operations).
+    if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            temporal::OverflowKind om_overflow;
+            int om = validate_zdt_from_options(ctx, &om_overflow);
+            if (om < 0) return;
             // Per spec, a ZonedDateTime argument produces a copy rather
             // than the same instance. The shared sub-objects (time-zone,
             // calendar) are incref'd in `alloc_zoneddatetime` so this
@@ -11326,73 +11617,33 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             ctx.result.set_object(obj);
             return;
         }
-        // Property bag.
+        // Property bag. Read all fields in the spec's alphabetical order:
+        // the unified reader resolves `timeZone` and validates `offset` at
+        // their positions (offset between nanosecond and second, timeZone
+        // between second and year) and requires the date fields. The
+        // disambiguation/offset/overflow options are read AFTER the fields
+        // per the order-of-operations fixture, before field validation so
+        // `overflow: "reject"` is honored (test262 overflow-options.js,
+        // calendarresolvefields-error-ordering.js).
+        Vm* v = (Vm*)ctx.vm;
+        temporal::CivilDateTime fields;
+        temporal::CivilDateTime cur = { .date = { .y = 1970, .m = 1, .d = 1 }, .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 } };
+        bool _zdt_have_mc;
+        int _zdt_mci;
+        TVal _zdt_mc_v;
+        bool has_tz = false;
         HObject* tz = null;
-        TVal tz_v = prop_or_undefined_pa(ctx, o, "timeZone");
-        if (!tz_v.is_undefined()) {
-            if (try maybe_tz = to_temporal_tz(ctx, &tz_v)) {
-                if (ctx.should_throw) return;
-                tz = maybe_tz;
-            } else {
-                return;
-            }
-        }
-        if (tz == null) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag requires a timeZone property");
+        bool has_offset_prop = false;
+        long off_sec = 0;
+        if (!bag_to_datetime_fields_ex(ctx, o, TBM_ZDT, true, true, cur.date, cur.time, &fields,
+                                       &_zdt_have_mc, &_zdt_mci, &_zdt_mc_v,
+                                       &has_tz, &tz, &has_offset_prop, &off_sec)) {
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
-        // Per spec (ToTemporalZonedDateTime), the offset string is validated
-        // *before* the date/time fields so a syntactically bad offset raises
-        // RangeError even when other fields are ill-typed.
-        long off_sec = 0;
-        bool has_offset_prop = false;
-        TVal offset_v = prop_or_undefined_pa(ctx, o, "offset");
-        if (!offset_v.is_undefined()) {
-            // Per spec the offset value is coerced to a string, which fires
-            // the observer's `toString` getter (test262 `order-of-operations`).
-            // Non-string / non-object types (number, null, boolean, BigInt)
-            // throw TypeError; Symbols are rejected here. Everything else
-            // goes through `builtin_to_string_vm`.
-            if (offset_v.is_string()) {
-                HString* ohs = (HString*)offset_v.get_heapptr();
-                if (ohs != null && ohs.is_symbol()) {
-                    builtin_throw(ctx, ctx.heap.type_err_proto, "offset must not be a Symbol");
-                    return;
-                }
-            } else if (offset_v.is_object() && offset_v.get_heapptr() != null) {
-                // Object with a toString / valueOf that returns a string is OK
-                // (per spec, ToString is called on the value). Let the
-                // builtin_to_string_vm path handle it below.
-            } else {
-                // null / number / boolean / BigInt: TypeError.
-                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be a string");
-                return;
-            }
-            HString* s_str = builtin_to_string_vm(ctx, &offset_v);
-            if (ctx.should_throw) return;
-            if (s_str == null) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "offset must be convertible to a string");
-                return;
-            }
-            char[] otxt = (String)s_str.get_cstr()[:s_str.blen];
-            usz pi = 0;
-            if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
-                return;
-            }
-            // The `offset` property only accepts ±HH:MM or ±HHMM (no seconds,
-            // no fractions). Reject any `.` or a second `:` (±HH:MM:SS form).
-            usz colon_count = 0;
-            bool has_dot = false;
-            for (usz k = 0; k < otxt.len; k++) {
-                if (otxt[k] == '.') { has_dot = true; }
-                else if (otxt[k] == ':') { colon_count++; }
-            }
-            if (has_dot || colon_count > 1) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
-                return;
-            }
-            has_offset_prop = true;
+        if (!has_tz) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag requires a timeZone property");
+            return;
         }
         // If no `offset` was supplied but the time zone is an offset zone
         // (e.g. "+01:46"), use that offset to convert the wall time to UTC.
@@ -11421,49 +11672,13 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 }
             }
         }
-        Vm* v = (Vm*)ctx.vm;
-        temporal::CivilDateTime fields;
-        // Defaults for missing fields per InterpretTemporalDateTimeFields:
-        // date defaults to 1970-01-01, time fields to 0. Pass `keep_missing`
-        // true so a property bag with only year/month/day and timeZone is
-        // accepted (hour/minute/... are optional and resolve to 0).
-        temporal::CivilDateTime cur = { .date = { .y = 1970, .m = 1, .d = 1 }, .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 } };
-        // Per spec, `ToTemporalZonedDateTime` rejects the property bag if
-        // it lacks any of `year`, `month`/`monthCode`, or `day`. The
-        // shared `bag_to_datetime_fields` is permissive (used by `with()`
-        // which to falls back to the current value), so enforce the
-        // required-field check here.
-        TVal y_v = prop_or_undefined_pa(ctx, o, "year");
-        if (y_v.is_undefined()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag is missing required year property");
-            return;
-        }
-        TVal m_v = prop_or_undefined_pa(ctx, o, "month");
-        TVal mc_v = prop_or_undefined_pa(ctx, o, "monthCode");
-        if (m_v.is_undefined() && mc_v.is_undefined()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag is missing required month property");
-            return;
-        }
-        TVal d_v = prop_or_undefined_pa(ctx, o, "day");
-        if (d_v.is_undefined()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from: property bag is missing required day property");
-            return;
-        }
-        bool _zdt_have_mc;
-        int _zdt_mci;
-        TVal _zdt_mc_v;
-        if (!bag_to_datetime_fields(ctx, o, true, false, cur.date, cur.time, &fields,
-                                    &_zdt_have_mc, &_zdt_mci, &_zdt_mc_v)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
-            return;
-        }
-        // On the property-bag path the overflow option is read BEFORE field
-        // validation so `overflow: "reject"` is honored (test262
-        // `overflow-options.js`, `calendarresolvefields-error-ordering.js`).
-        // Read it here, after the observer has already been fired for
-        // timeZone/offset but before the field bag is validated.
         temporal::OverflowKind zdt_overflow;
-        if (!read_overflow_option(ctx, 1, &zdt_overflow)) return;
+        {
+            temporal::OverflowKind ov_kind;
+            int om_b = validate_zdt_from_options(ctx, &ov_kind);
+            if (om_b < 0) return;
+            zdt_overflow = ov_kind;
+        }
         if (!check_iso_monthcode_suitability(ctx, _zdt_have_mc, _zdt_mci, _zdt_mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
@@ -12048,26 +12263,10 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     if (zone.len == 0) { builtin_throw(ctx, ctx.heap.range_err_proto, "zone missing"); return; }
 
     // RejectObjectWithCalendarOrTimeZone (spec step 4-5): throw TypeError
-    // if the bag is a Temporal object or has "calendar" or "timeZone" properties.
+    // if the bag is a Temporal object or has "calendar"/"timeZone" Get-
+    // probed properties. The bag reader below probes both (calendar, then
+    // timeZone) and rejects on presence.
     if (!reject_temporal_object_bag(ctx, bag)) return;
-    {
-        HString* cal_key = builtin_intern_string(ctx.heap, "calendar");
-        bool has_cal = false;
-        if (!js_has_property(ctx.vm, ctx.heap, bag, cal_key, &has_cal)) return;
-        if (has_cal) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
-            return;
-        }
-    }
-    {
-        HString* tz_key = builtin_intern_string(ctx.heap, "timeZone");
-        bool has_tz = false;
-        if (!js_has_property(ctx.vm, ctx.heap, bag, tz_key, &has_tz)) return;
-        if (has_tz) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone property");
-            return;
-        }
-    }
 
     // Current wall time: epoch -> local via the offset in effect at the epoch.
     // Go through zdt_wall_fields, which splits the epoch in int128; routing
@@ -12086,8 +12285,8 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     bool have_mc;
     int mci;
     TVal mc_v;
-    if (!bag_to_datetime_fields(ctx, bag, true, true, cur.date, cur.time, &fields,
-                                &have_mc, &mci, &mc_v)) {
+    if (!bag_to_datetime_fields_ex(ctx, bag, TBM_ZDT_WITH, true, false, cur.date, cur.time, &fields,
+                                &have_mc, &mci, &mc_v, null, null, null, null)) {
         Vm* v = (Vm*)ctx.vm;
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
@@ -12958,12 +13157,37 @@ fn void builtin_temporal_zoneddatetime_proto_getTimeZoneTransition(BuiltinContex
     if (catch err = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* inst = inst_o;
     inst.prototype = ctx.heap.temporal_instant_proto;
-    // Read direction.
+    // Read direction: a plain string, or a `direction` property on an
+    // options bag (GetDirectionOption — Proxy-aware so observers see
+    // `get ...direction` / toString). Only this property is read; the
+    // other bag fields (year/month/day/...) are ignored per spec.
     TVal* dir_arg = arg_at(ctx, 0);
     String dir = "next";
+    TVal dir_tv;
+    dir_tv.set_undefined();
     if (dir_arg.is_string()) {
         HString* ds = (HString*)dir_arg.get_heapptr();
         if (ds != null) dir = (String)ds.get_cstr()[:ds.blen];
+    } else if (dir_arg.is_object() && dir_arg.get_heapptr() != null) {
+        HObject* dbag = (HObject*)dir_arg.get_heapptr();
+        dir_tv = prop_or_undefined_pa(ctx, dbag, "direction");
+        if (ctx.should_throw) return;
+        if (!dir_tv.is_undefined()) {
+            HString* ds = builtin_to_string_vm(ctx, &dir_tv);
+            if (ctx.should_throw) return;
+            if (ds == null) {
+                builtin_throw(ctx, ctx.heap.type_err_proto, "direction must be a string");
+                return;
+            }
+            dir = (String)ds.get_cstr()[:ds.blen];
+        }
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "direction must be a string or object");
+        return;
+    }
+    if (dir != "next" && dir != "previous") {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid direction");
+        return;
     }
     // Delegate to TimeZone method.
     TVal saved_this = ctx.this_val;
