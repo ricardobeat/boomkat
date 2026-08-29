@@ -3283,6 +3283,30 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
     zdt_from_parts(ctx, ns, tz, (HString*)obj.extra.temporal.calendar);
 }
 
+fn void builtin_temporal_plain_date_proto_toPlainYearMonth(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilDate d = plain_date_value(obj);
+    HObject*? ym_o = alloc_plain_yearmonth(ctx.heap, d.y, (int)d.m, 1, obj.extra.temporal.calendar);
+    if (catch err = ym_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* ym = ym_o;
+    ym.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.result.set_object(ym);
+}
+
+fn void builtin_temporal_plain_date_proto_toPlainMonthDay(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilDate d = plain_date_value(obj);
+    HObject*? md_o = alloc_plain_monthday(ctx.heap, (int)d.y, (int)d.m, (int)d.d, obj.extra.temporal.calendar);
+    if (catch err = md_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* md = md_o;
+    md.prototype = ctx.heap.temporal_plain_monthday_proto;
+    ctx.result.set_object(md);
+}
+
 fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
@@ -5469,6 +5493,98 @@ fn void builtin_temporal_plain_datetime_proto_withPlainTime(BuiltinContext* ctx)
     HObject* r = obj_o;
     r.prototype = ctx.heap.temporal_plain_datetime_proto;
     ctx.result.set_object(r);
+}
+
+fn void builtin_temporal_plain_datetime_proto_toPlainDate(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilDate d = plain_date_value(obj);
+    HObject*? date_o = alloc_plain_date(ctx.heap, d, obj.extra.temporal.calendar);
+    if (catch err = date_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* date_obj = date_o;
+    date_obj.prototype = ctx.heap.temporal_plain_date_proto;
+    ctx.result.set_object(date_obj);
+}
+
+fn void builtin_temporal_plain_datetime_proto_toPlainTime(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilTime t;
+    t.h  = obj.extra.temporal.long_d;
+    t.mi = obj.extra.temporal.long_e;
+    t.s  = obj.extra.temporal.long_f;
+    t.ms = obj.extra.temporal.long_g;
+    t.us = obj.extra.temporal.long_h;
+    t.ns = obj.extra.temporal.long_i;
+    HObject*? time_o = alloc_plain_time(ctx.heap, t);
+    if (catch err = time_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* time_obj = time_o;
+    time_obj.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.result.set_object(time_obj);
+}
+
+fn void builtin_temporal_plain_datetime_proto_toZonedDateTime(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+
+    if (ctx.argc < 1 || ctx.regs[ctx.base_reg].is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "toZonedDateTime requires a time zone");
+        return;
+    }
+    TVal* tz_arg = arg_at(ctx, 0);
+
+    // Read and validate options BEFORE resolving timezone (spec order of operations).
+    if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+        TVal* opts_val = arg_at(ctx, 1);
+        if (!opts_val.is_object() || opts_val.get_heapptr() == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+            return;
+        }
+        HObject* opts = (HObject*)opts_val.get_heapptr();
+        TVal dis_v = prop_or_undefined_pa(ctx, opts, "disambiguation");
+        if (ctx.should_throw) return;
+        if (!dis_v.is_undefined()) {
+            HString* ds = builtin_to_string_vm(ctx, &dis_v);
+            if (ctx.should_throw) return;
+            char[] dstr = ds.get_cstr()[:ds.blen];
+            if (dstr != "compatible" && dstr != "earlier" && dstr != "later" && dstr != "reject") {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation");
+                return;
+            }
+        }
+    }
+
+    // Resolve timezone.
+    HObject* tz = null;
+    if (try maybe_tz = to_temporal_tz(ctx, tz_arg)) {
+        if (ctx.should_throw) return;
+        tz = maybe_tz;
+    } else { return; }
+
+    // Convert datetime to epoch nanoseconds.
+    temporal::CivilDateTime cdt = plain_datetime_value(obj);
+    long wall_secs = temporal::epoch_days_from_civil(cdt.date.y, (int)cdt.date.m, (int)cdt.date.d) * 86400
+        + cdt.time.h * 3600 + cdt.time.mi * 60 + cdt.time.s;
+    long wall_frac = cdt.time.ms * 1000000 + cdt.time.us * 1000 + cdt.time.ns;
+    String zone = timezone_name(tz);
+    int128 epoch_ns = zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+
+    // Instant range check: ±100,000,000 days × 86400 × 1e9 ns.
+    {
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        if (epoch_ns > ns_limit || epoch_ns < -ns_limit) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside the representable range");
+            return;
+        }
+    }
+
+    hbigint::HBigInt*? ns_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns);
+    if (catch err = ns_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+    hbigint::HBigInt* ns = ns_o;
+    zdt_from_parts(ctx, ns, tz, (HString*)obj.extra.temporal.calendar);
 }
 
 fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
@@ -8049,6 +8165,8 @@ fn bool setUpTemporalPlainDate(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "withCalendar", Builtin.TEMPORAL_PLAIN_DATE_PROTO_WITHCALENDAR.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toPlainDateTime", Builtin.TEMPORAL_PLAIN_DATE_PROTO_TOPLAINDATETIME.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toZonedDateTime", Builtin.TEMPORAL_PLAIN_DATE_PROTO_TOZONEDDATETIME.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toPlainYearMonth", Builtin.TEMPORAL_PLAIN_DATE_PROTO_TOPLAINYEARMONTH.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toPlainMonthDay", Builtin.TEMPORAL_PLAIN_DATE_PROTO_TOPLAINMONTHDAY.ordinal)) return false;
 
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_DATE_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_DATE_COMPARE.ordinal)) return false;
@@ -8198,6 +8316,9 @@ fn bool setUpTemporalPlainDateTime(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "withCalendar", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WITHCALENDAR.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "round", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_ROUND.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "withPlainTime", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WITHPLAINTIME.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toZonedDateTime", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOZONEDDATETIME.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toPlainDate", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOPLAINDATE.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toPlainTime", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOPLAINTIME.ordinal)) return false;
 
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_PLAIN_DATETIME_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "compare", Builtin.TEMPORAL_PLAIN_DATETIME_COMPARE.ordinal)) return false;
