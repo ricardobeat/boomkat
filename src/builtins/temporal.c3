@@ -2375,11 +2375,15 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             Vm* v = (Vm*)ctx.vm;
             double ri_val = vm::vm_to_number(v, &ri_tv);
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-            if (math::is_nan(ri_val) || math::is_inf(ri_val) || ri_val < 1 || math::floor(ri_val) != ri_val) {
+            if (math::is_nan(ri_val) || math::is_inf(ri_val)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
                 return;
             }
-            rounding_increment = ri_val;
+            rounding_increment = math::floor(ri_val);
+            if (rounding_increment < 1) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+                return;
+            }
         }
         // roundingMode
         TVal rm_tv = prop_or_undefined_pa(ctx, opts, "roundingMode");
@@ -4360,11 +4364,15 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
             Vm* v = (Vm*)ctx.vm;
             double ri_val = vm::vm_to_number(v, &ri_v);
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-            if (math::is_nan(ri_val) || math::is_inf(ri_val) || ri_val < 1 || math::floor(ri_val) != ri_val) {
+            if (math::is_nan(ri_val) || math::is_inf(ri_val)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
                 return;
             }
-            rounding_increment = ri_val;
+            rounding_increment = math::floor(ri_val);
+            if (rounding_increment < 1) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+                return;
+            }
         }
         TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
         if (ctx.should_throw) return;
@@ -5764,11 +5772,15 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
             Vm* v = (Vm*)ctx.vm;
             double ri_val = vm::vm_to_number(v, &ri_v);
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-            if (math::is_nan(ri_val) || math::is_inf(ri_val) || ri_val < 1 || math::floor(ri_val) != ri_val) {
+            if (math::is_nan(ri_val) || math::is_inf(ri_val)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
                 return;
             }
-            rounding_increment = ri_val;
+            rounding_increment = math::floor(ri_val);
+            if (rounding_increment < 1) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+                return;
+            }
         }
         TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
         if (ctx.should_throw) return;
@@ -13036,48 +13048,68 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
     if (ctx.argc < 1) { builtin_throw(ctx, ctx.heap.type_err_proto, "round requires an options argument"); return; }
     TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "round options must be an object"); return; }
-    HObject* opts = (HObject*)arg.get_heapptr();
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
 
-    TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
-    if (su_v.is_undefined()) { builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option"); return; }
-    HString* su_str = builtin_to_string_vm(ctx, &su_v);
-    if (ctx.should_throw) return;
     TemporalUnit smallest_unit;
-    if (!parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
+    double rounding_increment = 1;
+    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+
+    if (arg.is_string()) {
+        HString* s = builtin_to_string_vm(ctx, arg);
+        if (ctx.should_throw) return;
+        if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
+            return;
+        }
+    } else if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* opts = (HObject*)arg.get_heapptr();
+        TVal ri_v = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
+        if (ctx.should_throw) return;
+        if (!ri_v.is_undefined()) {
+            Vm* v = (Vm*)ctx.vm;
+            double ri_val = vm::vm_to_number(v, &ri_v);
+            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
+            if (math::is_nan(ri_val) || math::is_inf(ri_val)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+                return;
+            }
+            rounding_increment = math::floor(ri_val);
+            if (rounding_increment < 1) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
+                return;
+            }
+        }
+
+        TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
+        if (ctx.should_throw) return;
+        if (!rm_v.is_undefined()) {
+            HString* rm_str = builtin_to_string_vm(ctx, &rm_v);
+            if (ctx.should_throw) return;
+            if (!parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
+                return;
+            }
+        }
+
+        TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+        if (ctx.should_throw) return;
+        if (su_v.is_undefined()) { builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option"); return; }
+        HString* su_str = builtin_to_string_vm(ctx, &su_v);
+        if (ctx.should_throw) return;
+        if (!parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
+            return;
+        }
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "round options must be an object");
         return;
     }
 
-    double rounding_increment = 1;
-    TVal ri_v = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
-    if (!ri_v.is_undefined()) {
-        Vm* v = (Vm*)ctx.vm;
-        double ri_val = vm::vm_to_number(v, &ri_v);
-        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-        if (math::is_nan(ri_val) || math::is_inf(ri_val) || ri_val < 1 || math::floor(ri_val) != ri_val) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
-            return;
-        }
-        rounding_increment = ri_val;
-    }
-    long max_incr = (smallest_unit == TemporalUnit.DAY) ? 1 : max_round_incr(smallest_unit);
-    if (max_incr > 0 && rounding_increment > max_incr) {
+    if (smallest_unit == TemporalUnit.DAY && rounding_increment != 1) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
         return;
     }
-
-    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
-    TVal rm_v = prop_or_undefined_pa(ctx, opts, "roundingMode");
-    if (!rm_v.is_undefined()) {
-        HString* rm_str = builtin_to_string_vm(ctx, &rm_v);
-        if (ctx.should_throw) return;
-        if (!parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
-            return;
-        }
-    }
+    if (!validate_rounding_increment(ctx, smallest_unit, rounding_increment)) return;
 
     long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
     zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
@@ -13104,6 +13136,16 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         // rounds to the nearer local calendar-day boundary.
         long local_secs = epoch_secs + woff;
         long day_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400;
+        // Validate day boundaries: GetStartOfDay converts midnight local to
+        // UTC via startNs = day_secs - woff.  Both the current day's start
+        // and the next day's start must lie in the representable range.
+        int128 start_ns = ((int128)day_secs - (int128)woff) * 1000000000;
+        int128 end_ns = ((int128)day_secs + 86400 - (int128)woff) * 1000000000;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        if (start_ns <= -ns_limit || start_ns >= ns_limit || end_ns <= -ns_limit || end_ns >= ns_limit) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
+            return;
+        }
         double day_frac = (double)(local_secs - day_secs) + (double)ns_rem / 1e9;
         double rounded_days = round_num_to_incr(day_frac / 86400.0, 1, rounding_mode);
         result_secs = day_secs + (long)rounded_days * 86400 - woff;
@@ -13111,24 +13153,62 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     } else {
         long divisor = unit_ns_divisor(smallest_unit);
         long incr_ns = divisor * (long)rounding_increment;
-        // local_ns can exceed 2^53 (modern epoch ns are ~1.6e18), so we
-        // route through round_long_ns which keeps the magnitude as a long.
-        // woff is the zone offset in seconds; the wall-time-in-ns form is
-        // (epoch_secs + woff) * 1e9 + ns_rem, and the rounded result is
-        // then shifted back to UTC ns.
-        long local_ns = (epoch_secs + woff) * 1000000000L + ns_rem;
-        long rounded_local_ns = round_long_ns(local_ns, incr_ns, rounding_mode);
-        long result_local_ns = rounded_local_ns - woff * 1000000000L;
-        result_secs = result_local_ns / 1000000000L;
-        result_ns = result_local_ns - result_secs * 1000000000L;
+        // The spec rounds the nanoseconds within the local calendar day
+        // (always non-negative), not the epoch nanoseconds.  Compute the
+        // day start in local-ns, then round the offset from it.
+        long day_start_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400;
+        int128 local_ns = (int128)(epoch_secs + woff) * 1000000000 + (int128)ns_rem;
+        int128 day_start_ns = (int128)day_start_secs * 1000000000;
+        int128 ns_in_day = local_ns - day_start_ns;
+        int128 incr = (int128)incr_ns;
+        int128 q = ns_in_day / incr;
+        int128 r = ns_in_day - q * incr;
+        if (r != 0) {
+            switch (rounding_mode) {
+                case TemporalRoundMode.TRUNC:
+                case TemporalRoundMode.FLOOR: break;
+                case TemporalRoundMode.EXPAND:
+                case TemporalRoundMode.CEIL: q += 1; break;
+                default: {
+                    int128 twice = r * 2;
+                    if (twice > incr) {
+                        q += 1;
+                    } else if (twice == incr) {
+                        switch (rounding_mode) {
+                            case TemporalRoundMode.HALF_TRUNC:
+                            case TemporalRoundMode.HALF_FLOOR: break;
+                            case TemporalRoundMode.HALF_EXPAND:
+                            case TemporalRoundMode.HALF_CEIL: q += 1; break;
+                            case TemporalRoundMode.HALF_EVEN: if ((q & 1) != 0) q += 1; break;
+                            default: break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        int128 rounded_ns_in_day = q * incr;
+        int128 result_local_ns = day_start_ns + rounded_ns_in_day;
+        int128 total_i128 = result_local_ns - (int128)woff * 1000000000;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        if (total_i128 >= ns_limit || total_i128 <= -ns_limit) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
+            return;
+        }
+        hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, total_i128);
+        if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
+        ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
+        zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, (HString*)obj.extra.temporal.calendar);
+        return;
     }
 
     // Combine result_secs and result_ns as a BigInt to avoid the 2^53
     // ceiling on double precision. `(double)result_secs * 1e9` rounds
     // values past ~1973 by 1 ns or more.
     int128 total_i128 = (int128)result_secs * 1000000000 + (int128)result_ns;
-    if (total_i128 < (int128)0) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "round produced a negative epoch");
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    if (total_i128 >= ns_limit || total_i128 <= -ns_limit) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
         return;
     }
     hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, total_i128);
