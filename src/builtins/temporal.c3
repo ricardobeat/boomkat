@@ -5135,11 +5135,16 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
             char[] v = fd_s.get_cstr()[:fd_s.blen];
             if (v == "auto") { ns_digits = -1; }
             else {
-                // numeric string case
-                Vm* v2 = (Vm*)ctx.vm;
-                double dv = builtin_to_number_getdouble(ctx, &fd);
-                if (v2.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v2.throw_value); v2.throw_pending = false; return; }
-                if (math::is_nan(dv) || dv < 0 || dv > 9 || math::floor(dv) != dv) {
+                // Per spec, GetStringOrNumberOption floors non-integer values.
+                char* end_ptr;
+                double dv = libc::strtod(fd_s.get_cstr(), &end_ptr);
+                if (end_ptr == fd_s.get_cstr() || *end_ptr != '\0'
+                    || math::is_nan(dv)) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
+                    return;
+                }
+                dv = math::floor(dv);
+                if (dv < 0 || dv > 9) {
                     builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
                     return;
                 }
@@ -5158,7 +5163,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         if (su_s != null) {
             char[] v = su_s.get_cstr()[:su_s.blen];
             if (v == "minute" || v == "minutes") {
-                if (ns_digits < 0) ns_digits = 0;
+                if (ns_digits < 0) ns_digits = -12;
             } else if (v == "second" || v == "seconds") {
                 if (ns_digits < 0) ns_digits = 0;
             } else if (v == "millisecond" || v == "milliseconds") {

@@ -400,6 +400,14 @@ fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
     int us = (int)t.us;
     int ns = (int)t.ns;
 
+    // Special sentinel values for smallestUnit precision:
+    // -11 = hour only (HH), -12 = minute precision (HH:MM)
+    if (ns_digits == -11) {
+        return (usz)libc::snprintf(buf, buf_size, "%02d", h);
+    }
+    if (ns_digits == -12) {
+        return (usz)libc::snprintf(buf, buf_size, "%02d:%02d", h, mi);
+    }
     bool auto_digits = ns_digits < 0;
     if (ns_digits < 0) {
         // Auto: use full 9-digit precision, then trim trailing zeros.
@@ -440,6 +448,10 @@ fn usz format_civil_datetime(CivilDateTime dt, char* buf, usz buf_size, int ns_d
     // date_len <= 13; copy into buf then append time
     for (usz k = 0; k < date_len; k++) buf[k] = date_buf[k];
     usz off = date_len;
+    // ns_digits == -10 means day precision: date only, no time component.
+    if (ns_digits == -10) {
+        return off;
+    }
     buf[off++] = 'T';
     char[ISO8601_TIME_BUFSIZE + 1] time_buf;
     usz time_len = format_civil_time(dt.time, &time_buf, ISO8601_TIME_BUFSIZE, ns_digits);
