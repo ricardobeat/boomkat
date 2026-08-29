@@ -8752,6 +8752,41 @@ fn HObject*? alloc_instant(Heap* hp, hbigint::HBigInt* ns) {
     return obj;
 }
 
+// Date.prototype.toTemporalInstant() — the Temporal proposal's bridge from the
+// legacy Date object. Lives here rather than in date.c3 because it needs the
+// Instant allocator and the BigInt helpers.
+//
+// 1. Let dateObject be the this value.
+// 2. Perform ? RequireInternalSlot(dateObject, [[DateValue]]).
+// 3. Let t be dateObject.[[DateValue]]; if t is NaN, throw a RangeError.
+// 4. Let ns be ℤ(ℝ(t) × 10^6).
+// 5. Return ! CreateTemporalInstant(ns).
+fn void builtin_date_proto_toTemporalInstant(BuiltinContext* ctx) {
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+    // Handles the [[DateValue]] brand check, throwing TypeError for a
+    // non-Date this value (including Date.prototype itself).
+    double tv = date_this_time_value(ctx, &this_val);
+    if (ctx.should_throw) return;
+    if (math::is_nan(tv)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid Date");
+        return;
+    }
+    // A valid time value is an integral number of milliseconds within
+    // ±8.64e15, so the nanosecond count fits int128 exactly. Scaling in
+    // int128 rather than double keeps the full range representable —
+    // ±8.64e21 ns is far beyond 2^53.
+    int128 ns_128 = (int128)(long)tv * (int128)1000000L;
+    hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, ns_128);
+    if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
+    hbigint::HBigInt* ns = big_o;
+    HObject*? obj_o = alloc_instant(ctx.heap, ns);
+    ctx.heap.decref((types::HeapHeader*)ns);
+    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+    HObject* obj = obj_o;
+    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.result.set_object(obj);
+}
+
 // Extract the BigInt from a Temporal.Instant heap object. Returns null if the
 // object is missing the slot (defensive — should never happen for a valid
 // TEMPORAL_INSTANT object).

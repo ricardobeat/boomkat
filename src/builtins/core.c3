@@ -665,6 +665,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     DATE_PROTO_SETUTCMONTH {"setUTCMonth", 2, &builtin_date_proto_setUTCMonth},
     DATE_PROTO_SETUTCFULLYEAR {"setUTCFullYear", 3, &builtin_date_proto_setUTCFullYear},
     DATE_PROTO_TOISOSTRING {"toISOString", 0, &builtin_date_proto_toISOString},
+    DATE_PROTO_TOTEMPORALINSTANT {"toTemporalInstant", 0, &builtin_date_proto_toTemporalInstant},
     DATE_PROTO_TOUTCSTRING {"toUTCString", 0, &builtin_date_proto_toUTCString},
     DATE_PROTO_TODATESTRING {"toDateString", 0, &builtin_date_proto_toDateString},
     DATE_PROTO_TOTIMESTRING {"toTimeString", 0, &builtin_date_proto_toTimeString},
