@@ -29,9 +29,9 @@ assertEq(new Temporal.PlainTime().toString(), "00:00:00", "PlainTime() = midnigh
 assertEq(new Temporal.PlainTime(13).toString(), "13:00:00", "PlainTime(hour)");
 assertEq(new Temporal.PlainTime(13, 45).toString(), "13:45:00", "PlainTime(hour, minute)");
 assertEq(new Temporal.PlainTime(13, 45, 30).toString(), "13:45:30", "PlainTime(hour, minute, second)");
-assertEq(new Temporal.PlainTime(13, 45, 30, 500).toString(), "13:45:30.500", "PlainTime ms");
-assertEq(new Temporal.PlainTime(13, 45, 30, 500, 250).toString(), "13:45:30.500250", "PlainTime us");
-assertEq(new Temporal.PlainTime(13, 45, 30, 500, 250, 750).toString(), "13:45:30.500250750", "PlainTime ns");
+assertEq(new Temporal.PlainTime(13, 45, 30, 500).toString(), "13:45:30.5", "PlainTime ms");
+assertEq(new Temporal.PlainTime(13, 45, 30, 500, 250).toString(), "13:45:30.50025", "PlainTime us");
+assertEq(new Temporal.PlainTime(13, 45, 30, 500, 250, 750).toString(), "13:45:30.50025075", "PlainTime ns");
 
 // Getters.
 var t = new Temporal.PlainTime(13, 45, 30, 500, 250, 750);
@@ -44,7 +44,7 @@ assertEq(t.nanosecond, 750, "get ns");
 
 // from() with strings.
 assertEq(Temporal.PlainTime.from("13:45:30").toString(), "13:45:30", "from HH:MM:SS");
-assertEq(Temporal.PlainTime.from("13:45:30.500250750").toString(), "13:45:30.500250750", "from with ns");
+assertEq(Temporal.PlainTime.from("13:45:30.500250750").toString(), "13:45:30.50025075", "from with ns");
 assertEq(Temporal.PlainTime.from("1330").toString(), "13:30:00", "from basic");
 // Z designator is rejected by the grammar (DateTimeUTCOffset[~Z] forbids
 // it). Numeric UTC offsets are silently dropped.
@@ -58,7 +58,8 @@ assertEq(tBag.minute, 30, "from bag minute");
 
 // from() identity: a PlainTime returns itself.
 var t1 = new Temporal.PlainTime(13, 45, 30);
-assertTrue(Temporal.PlainTime.from(t1) === t1, "from identity");
+assertFalse(Temporal.PlainTime.from(t1) === t1, "from identity: copies, does not return by reference");
+assertTrue(Temporal.PlainTime.from(t1).equals(t1), "from identity: copy is equal by value");
 
 // compare().
 assertEq(Temporal.PlainTime.compare(t, t), 0, "compare equal");
@@ -72,14 +73,14 @@ assertTrue(t.equals(Temporal.PlainTime.from(t.toString())), "equals round-trip")
 assertFalse(t.equals(t2), "equals different");
 
 // with().
-assertEq(t.with({ hour: 10 }).toString(), "10:45:30.500250750", "with hour");
-assertEq(t.with({ minute: 0 }).toString(), "13:00:30.500250750", "with minute");
-assertEq(t.with({ hour: 10, minute: 0 }).toString(), "10:00:30.500250750", "with both");
+assertEq(t.with({ hour: 10 }).toString(), "10:45:30.50025075", "with hour");
+assertEq(t.with({ minute: 0 }).toString(), "13:00:30.50025075", "with minute");
+assertEq(t.with({ hour: 10, minute: 0 }).toString(), "10:00:30.50025075", "with both");
 
 // add() / subtract().
-assertEq(t.add({ hours: 1 }).toString(), "14:45:30.500250750", "add 1h");
-assertEq(t.add({ hours: 1, minutes: 30 }).toString(), "15:15:30.500250750", "add 1h30m");
-assertEq(t.subtract({ hours: 1 }).toString(), "12:45:30.500250750", "subtract 1h");
+assertEq(t.add({ hours: 1 }).toString(), "14:45:30.50025075", "add 1h");
+assertEq(t.add({ hours: 1, minutes: 30 }).toString(), "15:15:30.50025075", "add 1h30m");
+assertEq(t.subtract({ hours: 1 }).toString(), "12:45:30.50025075", "subtract 1h");
 
 // until() / since(): default largestUnit is "hours".
 var tA = new Temporal.PlainTime(13, 0, 0);
@@ -103,7 +104,7 @@ try { t.valueOf(); } catch (e) { threw = (e && e.constructor.name === "TypeError
 assertTrue(threw, "valueOf throws TypeError");
 
 // toJSON.
-assertEq(t.toJSON(), "13:45:30.500250750", "toJSON = toString");
+assertEq(t.toJSON(), "13:45:30.50025075", "toJSON = toString");
 
 // Invalid constructor arguments.
 var bad = false;
@@ -134,7 +135,7 @@ var dt3 = Temporal.PlainDateTime.from({ year: 2025, month: 6, day: 1, hour: 12 }
 assertEq(dt3.toString(), "2025-06-01T12:00:00", "dt from object");
 
 var dt4 = new Temporal.PlainDateTime(2024, 1, 15, 13, 45, 30, 500, 250, 750);
-assertEq(dt4.toString(), "2024-01-15T13:45:30.500250750", "dt with sub-seconds");
+assertEq(dt4.toString(), "2024-01-15T13:45:30.50025075", "dt with sub-seconds");
 
 // with(): fields carry over.
 var dt5 = dt4.with({ year: 2025 });

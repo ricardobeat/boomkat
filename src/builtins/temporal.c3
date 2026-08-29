@@ -5210,18 +5210,19 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         }
         if (su_s != null) {
             char[] v = su_s.get_cstr()[:su_s.blen];
+            // smallestUnit wins over fractionalSecondDigits when both are
+            // given (ToSecondsStringPrecisionRecord keeps the unit's own
+            // precision).
             if (v == "minute" || v == "minutes") {
-                if (ns_digits < 0) ns_digits = -12;
+                ns_digits = -12;
             } else if (v == "second" || v == "seconds") {
-                if (ns_digits < 0) ns_digits = 0;
+                ns_digits = 0;
             } else if (v == "millisecond" || v == "milliseconds") {
-                if (ns_digits < 0) ns_digits = 3;
+                ns_digits = 3;
             } else if (v == "microsecond" || v == "microseconds") {
-                if (ns_digits < 0) ns_digits = 6;
+                ns_digits = 6;
             } else if (v == "nanosecond" || v == "nanoseconds") {
-                if (ns_digits < 0) ns_digits = 9;
-            } else if (v == "day" || v == "days") {
-                if (ns_digits < 0) ns_digits = -10;
+                ns_digits = 9;
             } else {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
@@ -5235,8 +5236,6 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
     long unit_ns = 0;
     if (ns_digits == -12) {
         unit_ns = 60000000000L;
-    } else if (ns_digits == -10) {
-        unit_ns = 86400000000000L;
     } else if (ns_digits >= 0 && ns_digits < 9) {
         unit_ns = ns_pow10(9 - ns_digits);
     } else if (ns_digits == 9) {
@@ -5250,6 +5249,16 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
                 temporal::epoch_days_from_civil(dt.date.y, (int)dt.date.m, (int)dt.date.d) + 1);
         }
         dt.time = civil_time_from_ns(total);
+        // The balanced datetime must still lie in the representable instant
+        // range, an open interval at ±8.64e21 ns (so -271821-04-19T00:00:00.000
+        // and 275760-09-14T00:00:00.000 are both out of range).
+        int128 epoch_ns = (int128)temporal::epoch_days_from_civil(dt.date.y, (int)dt.date.m, (int)dt.date.d)
+            * (int128)86400000000000L + (int128)total;
+        int128 ns_limit = (int128)86400000000000L * (int128)100000000L;
+        if (epoch_ns <= -ns_limit || epoch_ns >= ns_limit) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
+            return;
+        }
     }
 
     char[64] buf;
@@ -11634,13 +11643,31 @@ fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, in
     temporal::BrokenDownTime bd = temporal::civil_from_seconds(local_secs);
     char[64] buf;
     int n;
+    // Year formatting per GetISOPartsFromEpoch: 0..9999 renders as a 4-digit
+    // unsigned year; negative or >9999 renders as a 6-digit signed year.
+    long y = bd.y;
     if (digits == -10) {
-        // Minute smallestUnit: print YYYY-MM-DDTHH:MM with no seconds.
-        n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld",
-            bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi);
+        if (y < 0) {
+            n = libc::snprintf(&buf, 64, "-%06ld-%02ld-%02ldT%02ld:%02ld",
+                -y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi);
+        } else if (y > 9999) {
+            n = libc::snprintf(&buf, 64, "+%06ld-%02ld-%02ldT%02ld:%02ld",
+                y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi);
+        } else {
+            n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld",
+                y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi);
+        }
     } else {
-        n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
-            bd.y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        if (y < 0) {
+            n = libc::snprintf(&buf, 64, "-%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+                -y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        } else if (y > 9999) {
+            n = libc::snprintf(&buf, 64, "+%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+                y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        } else {
+            n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
+                y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
+        }
         n += format_fractional_seconds(&buf[n], ns_rem, digits, rm);
     }
     format_offset_seconds(&buf[n], off);

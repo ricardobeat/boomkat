@@ -35,8 +35,8 @@ assertEq(epoch.toString(), "1970-01-01T00:00:00Z", "epoch.toString"); // auto pr
 var frac = new Temporal.Instant(1000000001n);         // 1s + 1ns
 assertEq(frac.toString(), "1970-01-01T00:00:01.000000001Z", "frac auto (1ns)");
 assertEq(frac.toString({ fractionalSecondDigits: 9 }), "1970-01-01T00:00:01.000000001Z", "frac 9 digits");
-assertEq(frac.toString({ fractionalSecondDigits: 3 }), "1970-01-01T00:00:01Z", "frac trunc to 0");
-assertEq(frac.toString({ smallestUnit: "millisecond" }), "1970-01-01T00:00:01Z", "frac ms unit trunc");
+assertEq(frac.toString({ fractionalSecondDigits: 3 }), "1970-01-01T00:00:01.000Z", "frac fixed 3 digits");
+assertEq(frac.toString({ smallestUnit: "millisecond" }), "1970-01-01T00:00:01.000Z", "frac ms unit");
 var frac500 = new Temporal.Instant(1000500000000n);    // 500ms past the epoch minute
 assertEq(frac500.toString(), "1970-01-01T00:16:40.5Z", "frac auto (500ms trim)");
 assertEq(frac500.toString({ smallestUnit: "nanosecond" }), "1970-01-01T00:16:40.500000000Z", "frac ns unit");
@@ -188,7 +188,7 @@ assertTrue(zsummer.equals(zsummer), "zsummer equals self");
 assertFalse(zsummer.equals(zutc), "zsummer != zutc");
 
 // toJSON keeps the offset, drops the zone bracket.
-assertEq(zsummer.toJSON(), "2024-07-14T19:33:20-04:00", "zsummer.toJSON");
+assertEq(zsummer.toJSON(), "2024-07-14T19:33:20-04:00[America/New_York]", "zsummer.toJSON");
 
 // withTimeZone keeps the instant, changes the zone.
 var zutc2 = zsummer.withTimeZone(utc);
