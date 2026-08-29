@@ -12789,7 +12789,7 @@ fn void builtin_temporal_zoneddatetime_proto_withPlainTime(BuiltinContext* ctx) 
         if (!arg.is_undefined()) {
             if (arg.is_object() && arg.get_heapptr() != null) {
                 HObject* bag = (HObject*)arg.get_heapptr();
-                if (!bag_to_time_fields(ctx, bag, false, new_time, &new_time)) {
+                if (!bag_to_time_fields(ctx, bag, false, new_time, &new_time, true)) {
                     Vm* v = (Vm*)ctx.vm;
                     if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
                     return;
