@@ -357,6 +357,13 @@ fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
         case builtins::Builtin.PROXY.ordinal:
         case builtins::Builtin.BIGINT.ordinal:
             return true;
+        case builtins::Builtin.DEFLATER_CTOR.ordinal:
+            // Deflate add-on. A statically-registered add-on still has to be
+            // listed here; only host functions (HOST_FN_BASE and above) carry
+            // their own constructable flag. Generalising this table is part of
+            // the registry work in plan 078 -- until then an add-on that wants
+            // `new` adds one line.
+            return true;
         case builtins::Builtin.PROXY_CALL.ordinal:
             // Callable proxy trampoline: constructability mirrors the proxy
             // target and is checked via flags.constructable before dispatch.

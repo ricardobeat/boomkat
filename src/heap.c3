@@ -441,6 +441,30 @@ struct AtomicsWaiter {
 // VM already staged, so no argument copying happens at the boundary itself.
 // `udata` is opaque and passed through untouched. `name` is an interned
 // HString backing Function.prototype.name, and `arity` backs .length.
+// A class registered at runtime by an embedder or add-on. Instances are
+// ObjClass.HOST objects whose extra.host.class_id indexes Heap.host_classes.
+//
+// `gc_mark` is the load-bearing field: without it, JS values held inside a
+// payload are invisible to the collector and get freed underneath the module.
+// It is called during the mark phase with the payload and the Heap, and must
+// call Heap.mark_tval / Heap.mark_hobject for every value it holds. Both
+// callbacks may be null for a payload that holds no JS values and needs no
+// teardown.
+// Called during the mark phase for each live instance of the class. Must mark
+// every JS value the payload holds, via Heap.mark_tval / Heap.mark_hobject.
+alias HostClassMarkFn = fn void(void* payload, Heap* heap, void* udata);
+
+// Called when an instance is collected. Frees whatever the payload owns; must
+// not allocate on the JS heap or resurrect objects.
+alias HostClassFinalizeFn = fn void(void* payload, void* udata);
+
+struct HostClassEntry {
+    void* finalizer;     // fn void(void* payload, void* udata)
+    void* gc_mark;       // fn void(void* payload, Heap* heap, void* udata)
+    void* udata;
+    void* name;          // HString*, interned; for diagnostics
+}
+
 struct HostFnEntry {
     void* handler;
     void* udata;
@@ -567,6 +591,9 @@ struct Heap {
     HostFnEntry* host_fns;
     uint         host_fn_count;
     uint         host_fn_capacity;
+    HostClassEntry* host_classes;
+    uint            host_class_count;
+    uint            host_class_capacity;
 
     // Promoted-builtin cache: the one HObject that represents each LIGHTFUNC
     // builtin, indexed by its Builtin ordinal, materialised on first use.
@@ -672,6 +699,8 @@ struct Heap {
 
     // Built-in constructor prototypes
     HObject* object_proto;
+    // Deflater.prototype, owned by the deflate add-on (src/builtins/addon_deflate.c3).
+    HObject* deflater_proto;
     HObject* bool_proto;
     HObject* string_proto;
     HObject* number_proto;
@@ -1129,6 +1158,9 @@ fn Heap*? create(
     h.host_fns              = null;
     h.host_fn_count         = 0;
     h.host_fn_capacity      = 0;
+    h.host_classes          = null;
+    h.host_class_count      = 0;
+    h.host_class_capacity   = 0;
     h.promoted_builtins     = null;
     h.promoted_builtin_capacity = 0;
     h.host_scopes           = null;
@@ -2092,6 +2124,36 @@ fn HostFnEntry* Heap.host_fn_at(&self, uint slot) {
     return &self.host_fns[slot];
 }
 
+// Register a host class, returning its id or -1 on allocation failure. Ids are
+// dense and start at 0; they are stable for the life of the Heap, so a module
+// can cache the id it gets back and compare against extra.host.class_id to
+// check that an object is one of its own.
+fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* udata, void* name) {
+    if (self.host_class_count >= self.host_class_capacity) {
+        uint new_cap = self.host_class_capacity == 0 ? 4 : self.host_class_capacity * 2;
+        usz new_bytes = (usz)new_cap * HostClassEntry::size;
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_classes, new_bytes);
+        if (grown == null) return -1;
+        self.host_classes = (HostClassEntry*)grown;
+        self.host_class_capacity = new_cap;
+    }
+    uint id = self.host_class_count;
+    self.host_classes[id].finalizer = finalizer;
+    self.host_classes[id].gc_mark   = gc_mark;
+    self.host_classes[id].udata     = udata;
+    self.host_classes[id].name      = name;
+    self.host_class_count++;
+    return (long)id;
+}
+
+// Entry for `id`, or null when never registered. As with host_fn_at, callers
+// treat null as "not a host class" rather than faulting, so a forged class_id
+// degrades instead of jumping through a wild pointer.
+fn HostClassEntry* Heap.host_class_at(&self, uint id) {
+    if (id >= self.host_class_count) return null;
+    return &self.host_classes[id];
+}
+
 // ============================================================================
 // Host call scopes
 // ============================================================================
@@ -2975,6 +3037,16 @@ fn void Heap.drain_gray(&self) {
             case ObjClass.DATE:
                 self.mark_tval(&(*obj.extra_ptr()).prim.primitive_value);
                 break;
+            case ObjClass.HOST:
+                // Hand the payload to the class's own mark callback so values
+                // it holds stay reachable. A class with no JS values in its
+                // payload registers a null gc_mark and costs one branch.
+                HostClassEntry* hc = self.host_class_at((*obj.extra_ptr()).host.class_id);
+                if (hc != null && hc.gc_mark != null) {
+                    HostClassMarkFn mark_fn = (HostClassMarkFn)hc.gc_mark;
+                    mark_fn((*obj.extra_ptr()).host.payload, self, hc.udata);
+                }
+                break;
             case ObjClass.ARRAY_ITERATOR:
             case ObjClass.MAP_ITERATOR:
             case ObjClass.SET_ITERATOR:
@@ -3069,6 +3141,7 @@ fn void Heap.mark_roots(&self) {
 
     // Built-in constructor prototypes and intrinsics.
     if (self.object_proto != null) { self.mark_hobject(self.object_proto); }
+    if (self.deflater_proto != null) { self.mark_hobject(self.deflater_proto); }
     if (self.array_proto != null) { self.mark_hobject(self.array_proto); }
     if (self.function_proto != null) { self.mark_hobject(self.function_proto); }
     if (self.string_proto != null) { self.mark_hobject(self.string_proto); }

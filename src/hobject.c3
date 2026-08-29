@@ -153,6 +153,9 @@ enum ObjClass : char {
     WRAP_FOR_VALID_ITERATOR,
     // Internal GC cell for boxed accessor pairs (getter + setter).
     GETTER_SETTER,
+    // Instance of a runtime-registered host class (embedder or add-on). The
+    // concrete type is Heap.host_classes[extra.host.class_id]; see HostClass.
+    HOST,
 }
 
 // How a callable object is invoked. HObject.callable_kind() infers it from
@@ -510,6 +513,19 @@ struct HObjectFunction {
     HObject*          bound_args;
 }
 
+// Host object (ObjClass.HOST): an instance of a class registered at runtime
+// by an embedder or add-on. `class_id` indexes Heap.host_classes, which holds
+// the finalizer and GC-mark callbacks; `payload` is opaque to the engine and
+// owned by the registering module.
+//
+// Two words, so this adds nothing to HObjectExtra::size -- the union is already
+// sized by larger members such as HObjectBufferView. Host classes therefore
+// cost nothing in per-object memory for programs that never use one.
+struct HObjectHost {
+    void*             payload;
+    uint              class_id;
+}
+
 // Primitive wrapper (Boolean, Number, String objects).
 struct HObjectPrimitive {
     TVal              primitive_value;
@@ -688,6 +704,7 @@ union HObjectExtra {
     HObjectWrapForValidIterator  wrap_iter;
     HObjectIteratorHelper        iter_helper;
     HObjectGetterSetter          gs;
+    HObjectHost                  host;
     HObjectProxy                 proxy;
     HObjectArrayBuffer           ab;
     HObjectBufferView            view;
@@ -1997,6 +2014,21 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     // destroy() and reset() free every node directly and must not also release
     // references into a string table they are sweeping.
     heap::Heap* hp = (heap::Heap*)heap_ptr;
+
+    // A host class's finalizer owns whatever the payload points at. It runs
+    // even during teardown, since the memory belongs to the module rather than
+    // to the JS heap and would otherwise leak.
+    if (obj.flags.obj_class == ObjClass.HOST) {
+        void* payload = (*obj.extra_ptr()).host.payload;
+        if (payload != null) {
+            heap::HostClassEntry* hc = hp.host_class_at((*obj.extra_ptr()).host.class_id);
+            if (hc != null && hc.finalizer != null) {
+                heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
+                fin(payload, hc.udata);
+            }
+            (*obj.extra_ptr()).host.payload = null;
+        }
+    }
 
     if (obj.flags.obj_class == ObjClass.REGEXP && (*obj.extra_ptr()).regexp.regexp_data != null) {
         re_bindings::re_free((*obj.extra_ptr()).regexp.regexp_data);

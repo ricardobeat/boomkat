@@ -778,6 +778,14 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     ERROR_PROTO_STACK_SET {"set stack", 1, &builtin_error_proto_stack_set},            // set Error.prototype.stack
     ESCAPE {"escape", 1, &builtin_escape},                                             // escape(string) (Annex B §B.2.1.1)
     UNESCAPE {"unescape", 1, &builtin_unescape},                                       // unescape(string) (Annex B §B.2.1.2)
+    // Deflate add-on (src/builtins/addon_deflate.c3), the reference consumer
+    // of the runtime host-class mechanism.
+    DEFLATER_CTOR {"Deflater", 1, &builtin_deflater_ctor},
+    DEFLATER_PROTO_PUSH {"push", 1, &builtin_deflater_push},
+    DEFLATER_PROTO_BYTES_IN {"bytesIn", 0, &builtin_deflater_bytes_in},
+    DEFLATER_PROTO_TAG {"tag", 0, &builtin_deflater_tag},
+    DEFLATE_COMPRESS {"compress", 1, &builtin_deflate_compress},
+    DEFLATE_ROUNDTRIP {"roundtrip", 1, &builtin_deflate_roundtrip},
     LAST {"", -1, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -3876,6 +3884,10 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register DataView constructor and prototype (plan 049 stage 3)
     if (!register_dataview(global_env, heap)) return false;
+
+    // Deflate add-on: the reference consumer of the runtime host-class
+    // mechanism (ObjClass.HOST + Heap.register_host_class).
+    if (!register_deflate_addon(global_env, heap)) return false;
 
     // Wire all prototype chains to Object.prototype
     if (heap.number_proto != null) heap.number_proto.prototype = heap.object_proto;
