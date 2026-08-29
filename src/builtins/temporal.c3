@@ -1622,21 +1622,21 @@ fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalR
         }
         char[] v = s.get_cstr()[:s.blen];
         if (v == "auto") { *digits = -1; }
-        else if (v.len > 0 && v[0] >= '0' && v[0] <= '9') {
-            int n = 0;
-            usz pi = 0;
-            while (pi < v.len && v[pi] >= '0' && v[pi] <= '9') {
-                n = n * 10 + (v[pi] - '0');
-                pi++;
-            }
-            if (pi != v.len || n > 9) {
+        else {
+            // Per spec, GetStringOrNumberOption floors non-integer values.
+            char* end_ptr;
+            double dv = libc::strtod(s.get_cstr(), &end_ptr);
+            if (end_ptr == s.get_cstr() || *end_ptr != '\0'
+                || math::is_nan(dv) || math::is_inf(dv)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
                 return false;
             }
-            *digits = (int)n;
-        } else {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
-            return false;
+            int n = (int)math::floor(dv);
+            if (n < 0 || n > 9) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be \"auto\" or 0-9");
+                return false;
+            }
+            *digits = n;
         }
     }
 
