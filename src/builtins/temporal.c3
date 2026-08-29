@@ -3947,7 +3947,7 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     if (digits == -10) {
         // Round to whole minute: a PlainTime cannot change its hour
         // boundary, so clamp the fraction to a minute-precision render.
-        ns_digits = 0;
+        ns_digits = -12;
     } else if (digits < 0) {
         ns_digits = -1;  // auto: smallest non-zero
     } else {
@@ -9164,14 +9164,13 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
         char[] v = f_s.get_cstr()[:f_s.blen];
         if (v == "auto") { *digits = -1; }
         else {
-            // The spec falls back to numeric parsing only after the string
-            // matches none of the valid option names; the test262 fixtures
-            // all pass either "auto" or a primitive number, so use ToNumber
-            // on the raw value (the proxy's valueOf path gives the same
-            // primitive as toString for these fixtures).
-            double dv = builtin_to_number_getdouble(ctx, &f);
-            if (ctx.should_throw) return false;
-            if (math::is_nan(dv) || math::is_inf(dv)) {
+            // Per spec, GetStringOrNumberOption converts to string first,
+            // then ToNumber on the string. "null", "true", "false", etc.
+            // become NaN and must throw RangeError. Floor non-integer values.
+            char* end_ptr;
+            double dv = libc::strtod(f_s.get_cstr(), &end_ptr);
+            if (end_ptr == f_s.get_cstr() || *end_ptr != '\0'
+                || math::is_nan(dv) || math::is_inf(dv)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
                 return false;
             }
