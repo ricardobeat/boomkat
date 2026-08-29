@@ -1083,28 +1083,31 @@ fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
         if (arg.is_undefined()) continue; // spec: undefined args treated as zero
         double val = vm::vm_to_number(v, arg);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-        if (math::is_nan(val) || math::is_inf(val)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite numbers");
-            return;
-        }
-        // Date units must be integers; time units may carry fractions that
-        // fold into nanoseconds (whole remaining units plus the fraction).
-        bool date_unit = k < 4;
+        if (!duration_field_integral(ctx, val)) return;
         long whole = (long)math::trunc(val);
         switch (k) {
             case 0: d.years = whole; break;
             case 1: d.months = whole; break;
             case 2: d.weeks = whole; break;
             case 3: d.days = whole; break;
-            case 4: d.hours = whole; d.ns += (int)((val - (double)whole) * 3.6e12); break;
-            case 5: d.minutes = whole; d.ns += (int)((val - (double)whole) * 6e10); break;
-            case 6: d.seconds = whole; d.ns += (int)((val - (double)whole) * 1e9); break;
-            case 7: d.ms = whole; d.ns += (int)((val - (double)whole) * 1e6); break;
-            case 8: d.us = whole; d.ns += (int)((val - (double)whole) * 1e3); break;
+            case 4: d.hours = whole; break;
+            case 5: d.minutes = whole; break;
+            case 6: d.seconds = whole; break;
+            case 7: d.ms = whole; break;
+            case 8: d.us = whole; break;
             default: d.ns = whole; break;
         }
-        if (date_unit && math::floor(val) != val) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "years/months/weeks/days must be integers");
+    }
+    // IsValidDuration: the constructor result must be sign-consistent.
+    int overall_sign = 0;
+    long*[10] comps = { &d.years, &d.months, &d.weeks, &d.days, &d.hours,
+        &d.minutes, &d.seconds, &d.ms, &d.us, &d.ns };
+    for (int k = 0; k < 10; k++) {
+        if (*comps[k] == 0) continue;
+        int s = *comps[k] < 0 ? -1 : 1;
+        if (overall_sign == 0) { overall_sign = s; }
+        else if (overall_sign != s) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration: mixed signs");
             return;
         }
     }
@@ -1453,64 +1456,9 @@ fn int128 duration_total_ns_from(CivilDate rel_date, temporal::DurationParts dur
 // Reused by the + / - / until / since / round operations on every Temporal
 // type that takes a Duration argument.
 fn bool duration_from_arg(BuiltinContext* ctx, TVal* arg, temporal::DurationParts* out) {
-    if (arg.is_string()) {
-        HString* s = (HString*)arg.get_heapptr();
-        if (s == null || !temporal::parse_duration(s.get_cstr()[:s.blen], out)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
-            return false;
-        }
-        return true;
-    }
-    if (arg.is_object() && arg.get_heapptr() != null) {
-        HObject* o = (HObject*)arg.get_heapptr();
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_DURATION) {
-            *out = duration_value(o);
-            return true;
-        }
-        Vm* v = (Vm*)ctx.vm;
-        // Spec order: ToTemporalDuration reads the fields in alphabetical
-        // order (CreateDurationRecord / the Duration field table), which
-        // test262's order-of-operations tests assert exactly. `slot` maps a
-        // read position back to the field it fills.
-        char[][] names = { "days", "hours", "microseconds", "milliseconds",
-            "minutes", "months", "nanoseconds", "seconds", "weeks", "years" };
-        int[] slot = { 3, 4, 8, 7, 5, 1, 9, 6, 2, 0 };
-        out.years = 0; out.months = 0; out.weeks = 0; out.days = 0;
-        out.hours = 0; out.minutes = 0; out.seconds = 0;
-        out.ms = 0; out.us = 0; out.ns = 0;
-        for (int i = 0; i < 10; i++) {
-            int k = slot[i];
-            TVal pv = prop_or_undefined_pa(ctx, o, names[i]);
-            if (ctx.should_throw) return false;
-            if (pv.is_undefined()) continue;
-            double val = vm::vm_to_number(v, &pv);
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            if (math::is_nan(val) || math::is_inf(val)) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
-                return false;
-            }
-            if (k < 4 && math::floor(val) != val) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "date duration fields must be integers");
-                return false;
-            }
-            long whole = (long)math::trunc(val);
-            switch (k) {
-                case 0: out.years = whole; break;
-                case 1: out.months = whole; break;
-                case 2: out.weeks = whole; break;
-                case 3: out.days = whole; break;
-                case 4: out.hours = whole; out.ns += (int)((val - (double)whole) * 3.6e12); break;
-                case 5: out.minutes = whole; out.ns += (int)((val - (double)whole) * 6e10); break;
-                case 6: out.seconds = whole; out.ns += (int)((val - (double)whole) * 1e9); break;
-                case 7: out.ms = whole; out.ns += (int)((val - (double)whole) * 1e6); break;
-                case 8: out.us = whole; out.ns += (int)((val - (double)whole) * 1e3); break;
-                default: out.ns = whole; break;
-            }
-        }
-        return true;
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.from requires a string or object");
-    return false;
+    // Duration.from and Duration.compare need the full ToTemporalDuration
+    // validation: integral fields, sign consistency, and a recognized field.
+    return duration_record_from_arg(ctx, arg, out);
 }
 
 // One getter for all ten duration fields, dispatched on the builtin index.
@@ -1995,10 +1943,7 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
         if (pv.is_undefined()) continue;
         double val = vm::vm_to_number(v, &pv);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-        if (math::is_nan(val) || math::is_inf(val)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
-            return;
-        }
+        if (!duration_field_integral(ctx, val)) return;
         long whole = (long)math::trunc(val);
         *slots[k] = whole;
     }
@@ -2069,6 +2014,23 @@ fn long max_round_incr(TemporalUnit u) {
 }
 
 fn TemporalUnit larger_unit(TemporalUnit a, TemporalUnit b) { return a < b ? a : b; }
+
+// Throws unless the increment is a legal divisor of the next-higher unit
+// (divides it evenly, and is not the full unit). Calendar units have no fixed
+// length, so any positive integer is accepted there. Returns false after
+// throwing.
+fn bool validate_rounding_increment(BuiltinContext* ctx, TemporalUnit unit, double increment) {
+    long max_incr = max_round_incr(unit);
+    if (max_incr > 0) {
+        if (increment > (double)max_incr
+            || (double)max_incr / increment != math::floor((double)max_incr / increment)
+            || increment == (double)max_incr) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
+            return false;
+        }
+    }
+    return true;
+}
 
 fn TemporalUnit default_largest_unit(temporal::DurationParts d) {
     if (d.years != 0)   return TemporalUnit.YEAR;
@@ -2226,8 +2188,14 @@ fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
             case TemporalRoundMode.TRUNC:      return (x >= 0) ? math::floor(x) : math::ceil(x);
             case TemporalRoundMode.HALF_CEIL:  { double f = math::floor(x); return (x - f >= 0.5) ? f + 1 : f; }
             case TemporalRoundMode.HALF_FLOOR: { double f = math::floor(x); return (x - f > 0.5) ? f + 1 : f; }
-            case TemporalRoundMode.HALF_EXPAND: { double f = math::floor(x); return (x - f >= 0.5) ? f + 1 : f; }
-            case TemporalRoundMode.HALF_TRUNC: { double f = math::floor(x); return (x - f > 0.5) ? f + 1 : f; }
+            case TemporalRoundMode.HALF_EXPAND: {
+                if (x >= 0) { double f = math::floor(x); return (x - f >= 0.5) ? f + 1 : f; }
+                double c = math::ceil(x); return (c - x >= 0.5) ? c - 1 : c;
+            }
+            case TemporalRoundMode.HALF_TRUNC: {
+                if (x >= 0) { double f = math::floor(x); return (x - f > 0.5) ? f + 1 : f; }
+                double c = math::ceil(x); return (c - x > 0.5) ? c - 1 : c;
+            }
             case TemporalRoundMode.HALF_EVEN: {
                 double f = math::floor(x);
                 double frac = x - f;
@@ -2254,8 +2222,8 @@ fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
         case TemporalRoundMode.TRUNC:      return (x >= 0) ? r1 : r2;
         case TemporalRoundMode.HALF_CEIL:  return (rem >= incr / 2) ? r2 : r1;
         case TemporalRoundMode.HALF_FLOOR: return (rem > incr / 2) ? r2 : r1;
-        case TemporalRoundMode.HALF_EXPAND: return (rem >= incr / 2) ? r2 : r1;
-        case TemporalRoundMode.HALF_TRUNC: return (rem > incr / 2) ? r2 : r1;
+        case TemporalRoundMode.HALF_EXPAND: return ((x >= 0 ? rem >= incr / 2 : rem > incr / 2)) ? r2 : r1;
+        case TemporalRoundMode.HALF_TRUNC: return ((x >= 0 ? rem > incr / 2 : rem >= incr / 2)) ? r2 : r1;
         case TemporalRoundMode.HALF_EVEN: {
             double half = incr / 2;
             if (rem < half) return r1;
@@ -2342,7 +2310,11 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     temporal::DurationParts dur = duration_value((HObject*)this_val.get_heapptr());
 
     TVal* round_to = arg_at(ctx, 0);
-    bool string_shorthand = !round_to.is_object();
+    bool string_shorthand = round_to.is_string();
+    if (!string_shorthand && !round_to.is_object()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.prototype.round requires an object or string argument");
+        return;
+    }
     HObject* opts = null;
     TemporalUnit smallest_unit = TemporalUnit.NANOSECOND;
     bool smallest_was_set = false;
@@ -2351,6 +2323,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     double rounding_increment = 1;
     TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
     HObject* relative_to = null;
+    bool largest_provided = false;
 
     if (string_shorthand) {
         HString* ss = builtin_to_string_vm(ctx, round_to);
@@ -2369,6 +2342,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         // largestUnit
         TVal lu_tv = prop_or_undefined_pa(ctx, opts, "largestUnit");
         if (!lu_tv.is_undefined()) {
+            largest_provided = true;
             HString* lu_s = builtin_to_string_vm(ctx, &lu_tv);
             if (ctx.should_throw) return;
             char[] lu_str = lu_s.get_cstr()[:lu_s.blen];
@@ -2421,7 +2395,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     TemporalUnit default_lu = larger_unit(existing, smallest_unit);
     if (!largest_was_set) largest_unit = default_lu;
 
-    if (!smallest_was_set && !largest_was_set) {
+    if (!smallest_was_set && !largest_provided) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "at least one of smallestUnit or largestUnit must be provided");
         return;
     }
@@ -2429,11 +2403,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit must not be smaller than smallestUnit");
         return;
     }
-    long max_incr = max_round_incr(smallest_unit);
-    if (max_incr > 0 && rounding_increment > max_incr) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
-        return;
-    }
+    if (!validate_rounding_increment(ctx, smallest_unit, rounding_increment)) return;
     if (rounding_increment > 1 && largest_unit != smallest_unit && is_cal_unit(smallest_unit)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement > 1 is not allowed with calendar smallestUnit unless largestUnit equals smallestUnit");
         return;
@@ -2562,7 +2532,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     temporal::DurationParts dur = duration_value((HObject*)this_val.get_heapptr());
 
     TVal* total_of = arg_at(ctx, 0);
-    bool string_shorthand = !total_of.is_object();
+    bool string_shorthand = total_of.is_string();
+    if (!string_shorthand && !total_of.is_object()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.prototype.total requires an object or string argument");
+        return;
+    }
     HObject* opts = null;
     TemporalUnit unit = TemporalUnit.NANOSECOND;
     HObject* relative_to = null;
@@ -3417,6 +3391,24 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
 // duration_from_arg: alphabetical read order, prop_or_undefined_pa (so a
 // Proxy's get trap fires and the order-of-operations test262 tests see the
 // expected log), and a TypeError when none of the ten fields is present.
+// One duration component: ToIntegerIfIntegralOrInfinity plus the component
+// ceiling. Returns false after throwing.
+fn bool duration_field_integral(BuiltinContext* ctx, double val) {
+    if (math::is_nan(val) || math::is_inf(val)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
+        return false;
+    }
+    if (math::floor(val) != val) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
+        return false;
+    }
+    if (math::abs(val) > 9007199254740991.0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration field is too large");
+        return false;
+    }
+    return true;
+}
+
 fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::DurationParts* out) {
     Vm* v = (Vm*)ctx.vm;
     out.years = 0;
@@ -3471,18 +3463,10 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
         any_field = true;
         double val = vm::vm_to_number(v, &pv);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-        if (math::is_nan(val) || math::is_inf(val)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
-            return false;
-        }
+        if (!duration_field_integral(ctx, val)) return false;
         // All ten fields must be integers — fractional time components are
         // only allowed via ISO strings (where the parser balances them into
-        // smaller units) or the {fractional: true} shape used by other APIs,
-        // not in a plain property bag.
-        if (math::floor(val) != val) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
-            return false;
-        }
+        // smaller units), not in a plain property bag.
         if (val != 0) {
             int s = val < 0 ? -1 : 1;
             if (overall_sign == 0) {
@@ -3645,32 +3629,7 @@ fn void plain_date_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     // regardless of operation and the sign is flipped at the end.
     DiffSettings ds;
     if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.DAY,
-                            TemporalUnit.YEAR, TemporalUnit.DAY, flipped, &ds)) return;
-    // "auto" largestUnit: when neither largestUnit nor smallestUnit is given,
-// expand to the largest calendar unit that fits (e.g. YEAR for a 548-day
-// span). When smallestUnit is given, pin largestUnit to it so the result
-// stays in that unit (e.g. { smallestUnit: "months" } reports 32m instead
-// of 2y 8m). This matches GetDifferenceSettings:
-    //   defaultLargestUnit = LargerOfTwoTemporalUnits('day', smallestUnit);
-    //   largestUnit = largestUnit option ?? defaultLargestUnit;
-    // ... followed by the "fits without remainder" expansion when both
-    // defaults fall through (smallestUnit=day → largestUnit=day → expansion
-    // is unnecessary here, since day already accommodates any remainder; the
-    // test fixture expects raw day count for { smallestUnit: "days" } with
-    // no largestUnit, but for *unoptioned* until(s)/since(s) it expects the
-    // largest-fitting calendar unit).
-    if (ds.largest == TemporalUnit.YEAR && ds.smallest == TemporalUnit.DAY) {
-        // No explicit smallestUnit was given. Per the polyfill, in this
-        // case the diff should be expressed in days only (LargestUnit =
-        // SmallerOfTwoTemporalUnits(smallestUnit='day', 'day') = 'day'),
-        // and Duration.total({unit: "years"}) reconstructs the calendar
-        // span via its own rounding window.
-        ds.largest = TemporalUnit.DAY;
-    } else if (ds.largest == TemporalUnit.YEAR) {
-        // smallestUnit was given explicitly; largestUnit = smallestUnit.
-        ds.largest = ds.smallest;
-    }
-
+                            TemporalUnit.DAY, TemporalUnit.DAY, flipped, &ds)) return;
     temporal::CivilDate a = plain_date_value(obj);
     temporal::CivilDate b = plain_date_value(other);
     temporal::CivilDateTime start = { .date = a };
@@ -6132,15 +6091,13 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
 
     // For a calendar smallestUnit (day or coarser), the leftover below that
     // unit determines whether the count steps to the next whole one.
-    if (ds.smallest == TemporalUnit.WEEK && ds.largest > TemporalUnit.WEEK) {
-        // round_date_part reads the smallestUnit count out of dp.weeks, and
-        // the coarser components must cover the whole day span. difference_date
-        // at YEAR/MONTH leaves only the sub-month remainder in dp.days, so
-        // rebuild the weeks count from the full day span here.
-        long total_days = temporal::epoch_days_from_civil(ed.y, (int)ed.m, (int)ed.d)
-                        - temporal::epoch_days_from_civil(sd.y, (int)sd.m, (int)sd.d);
-        long w = total_days / 7;
-        dp.years = 0; dp.months = 0; dp.weeks = w; dp.days = total_days - w * 7;
+    if (ds.smallest == TemporalUnit.WEEK && ds.largest != TemporalUnit.WEEK) {
+        // round_date_part reads the smallestUnit count out of dp.weeks.
+        // difference_date left the sub-month remainder in dp.days (the
+        // coarser components keep the year/month structure of largestUnit),
+        // so split just that remainder into weeks and days.
+        dp.weeks = dp.days / 7;
+        dp.days = dp.days % 7;
     }
     if (!round_date_part(ctx, sd, ed, tod_delta, ds, sign, &dp)) return false;
     *out = dp;
@@ -6181,6 +6138,9 @@ fn bool rebalance_date_part(BuiltinContext* ctx, temporal::CivilDate start, Diff
     if (ds.largest == TemporalUnit.WEEK) {
         dp.weeks = dd.days / 7;
         dp.days = dd.days % 7;
+    } else if (ds.smallest == TemporalUnit.WEEK) {
+        dp.weeks = dp.days / 7;
+        dp.days = dp.days % 7;
     }
     return true;
 }
@@ -6247,7 +6207,15 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     }
     set_smallest_unit_count(dp, ds.smallest, step_up ? kept + sign * incr : kept);
     clear_below(dp, ds.smallest);
-    return rebalance_date_part(ctx, start, ds, dp);
+    // When smallestUnit == largestUnit the rounding has already decided the
+    // final value and clear_below zeroed everything finer. Rebalancing would
+    // re-derive the canonical difference through add_months + difference_date,
+    // which loses month counts at end-of-month boundaries (e.g., rounding
+    // 10m30d up to 11m then rebalancing May31+11m → Apr30 → 10m30d).
+    if (ds.smallest != ds.largest) {
+        if (!rebalance_date_part(ctx, start, ds, dp)) return false;
+    }
+    return true;
 }
 
 fn bool is_half_mode(TemporalRoundMode m) {
@@ -9721,6 +9689,7 @@ struct DiffSettings {
     TemporalUnit smallest;
     TemporalRoundMode mode;
     double increment;
+    bool largest_provided;
 }
 
 // Read largestUnit / smallestUnit / roundingIncrement / roundingMode for an
@@ -9775,6 +9744,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
                     return false;
                 }
                 largest_given = true;
+                out.largest_provided = true;
             }
         }
 
@@ -9839,10 +9809,10 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
         return false;
     }
 
-    // An explicit smallestUnit coarser than the default widens largestUnit to
-    // match, so `{smallestUnit: "hour"}` alone still reports hours.
-    if (smallest_given && !largest_given && out.smallest < out.largest) {
-        out.largest = out.smallest;
+    // Per the spec, defaultLargestUnit = LargerOfTwoTemporalUnits(defaultLargest, smallestUnit).
+    // When the user did not explicitly set largestUnit, recompute it.
+    if (!largest_given) {
+        out.largest = larger_unit(default_largest, out.smallest);
     }
     if (out.largest > out.smallest) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit must be coarser than largestUnit");
@@ -9853,12 +9823,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
     if (max_incr > 0) {
         // The increment must divide the unit evenly, and cannot span a whole
         // unit — 60 minutes is not a legal minute increment.
-        if (out.increment > (double)max_incr
-            || (double)max_incr / out.increment != math::floor((double)max_incr / out.increment)
-            || out.increment == (double)max_incr) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
-            return false;
-        }
+        if (!validate_rounding_increment(ctx, out.smallest, out.increment)) return false;
     }
     // Calendar units and "day" have no fixed length for an increment to divide
     // into, so any positive integer is accepted there and the [1, 1e9] check
@@ -11088,46 +11053,54 @@ fn HObject*? to_temporal_tz(BuiltinContext* ctx, TVal* arg) {
 // Symbol/string/BigInt) throw TypeError. The spec calls GetOption on each
 // key, which only succeeds when the option is a string member of the
 // allowed set; reading happens before any algorithmic validation.
-fn bool validate_zdt_from_options(BuiltinContext* ctx) {
-    if (ctx.argc < 2) return true;
+// Validate the `offset`, `disambiguation` and `overflow` options accepted by
+// ZonedDateTime.from/with. Returns the resolved offset mode (-1 on error):
+// 0 = default (prefer), 1 = use, 2 = ignore, 3 = prefer, 4 = reject.
+fn int validate_zdt_from_options(BuiltinContext* ctx) {
+    if (ctx.argc < 2) return 0;
     TVal ov = ctx.regs[ctx.base_reg + 1];
-    if (ov.is_undefined()) return true;
+    if (ov.is_undefined()) return 0;
     if (!ov.is_object() || ov.get_heapptr() == null) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
-        return false;
+        return -1;
     }
     HObject* opts = (HObject*)ov.get_heapptr();
     TVal dv = prop_or_undefined(opts, ctx.heap, "disambiguation");
     if (!dv.is_undefined()) {
         HString* ds = builtin_to_string_vm(ctx, &dv);
-        if (ctx.should_throw) return false;
+        if (ctx.should_throw) return -1;
         char[] dstr = ds.get_cstr()[:ds.blen];
         if (dstr != "compatible" && dstr != "earlier" && dstr != "later" && dstr != "reject") {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation");
-            return false;
+            return -1;
         }
     }
     TVal offv = prop_or_undefined(opts, ctx.heap, "offset");
+    int offset_mode = 0;
     if (!offv.is_undefined()) {
         HString* os = builtin_to_string_vm(ctx, &offv);
-        if (ctx.should_throw) return false;
+        if (ctx.should_throw) return -1;
         char[] ostr = os.get_cstr()[:os.blen];
-        if (ostr != "prefer" && ostr != "use" && ostr != "ignore" && ostr != "reject") {
+        if (ostr == "use") { offset_mode = 1; }
+        else if (ostr == "ignore") { offset_mode = 2; }
+        else if (ostr == "prefer") { offset_mode = 3; }
+        else if (ostr == "reject") { offset_mode = 4; }
+        else {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset option");
-            return false;
+            return -1;
         }
     }
     TVal ofv = prop_or_undefined(opts, ctx.heap, "overflow");
     if (!ofv.is_undefined()) {
         HString* os2 = builtin_to_string_vm(ctx, &ofv);
-        if (ctx.should_throw) return false;
+        if (ctx.should_throw) return -1;
         char[] ostr2 = os2.get_cstr()[:os2.blen];
         if (ostr2 != "constrain" && ostr2 != "reject") {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid overflow option");
-            return false;
+            return -1;
         }
     }
-    return true;
+    return offset_mode;
 }
 
 fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
@@ -11164,8 +11137,11 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: invalid ISO string");
             return;
         }
-        // Validate options for the string path.
-        if (!validate_zdt_from_options(ctx)) return;
+        // Validate options for the string path. Returns the offset mode so
+        // the wall-day range check can be skipped for `use`/`ignore`, where
+        // the exact time is pinned and the wall instant need not be computed.
+        int offset_mode = validate_zdt_from_options(ctx);
+        if (offset_mode < 0) return;
         // Resolve timezone from annotation or offset. If the bracket is an
         // offset like `+01:00` and there was NO explicit offset on the
         // date-time (i.e. the parser left offset_seconds at 0 without seeing
@@ -11226,7 +11202,10 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         // epoch (per spec, to keep the intermediate arithmetic representable).
         // Without this, `-271821-04-19T23:00-01:00[-01:00]` is silently
         // accepted even though the wall date is one day below the limit.
-        {
+        // However, when the offset option is `use` or `ignore` the exact
+        // instant is pinned by the explicit offset and the wall instant need
+        // not be computed, so a wall date outside the limit is allowed.
+        if (offset_mode != 1 && offset_mode != 2) {
             long wall_day = temporal::epoch_days_from_civil(p.year, p.month, p.day);
             long day_limit = 100000000L;
             if (wall_day > day_limit || wall_day < -day_limit) {
@@ -11272,9 +11251,10 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
     }
 
     // Object input: fast path for ZDT identity. Per spec, options are read
-    // (and validated) before the ZDT identity copy path runs.
-    if (arg.is_object() && arg.get_heapptr() != null) {
-        if (!validate_zdt_from_options(ctx)) return;
+        // (and validated) before the ZDT identity copy path runs.
+        if (arg.is_object() && arg.get_heapptr() != null) {
+        int om = validate_zdt_from_options(ctx);
+        if (om < 0) return;
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
             // Per spec, a ZonedDateTime argument produces a copy rather
@@ -11351,6 +11331,18 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
                 return;
             }
+            // The `offset` property only accepts ±HH:MM or ±HHMM (no seconds,
+            // no fractions). Reject any `.` or a second `:` (±HH:MM:SS form).
+            usz colon_count = 0;
+            bool has_dot = false;
+            for (usz k = 0; k < otxt.len; k++) {
+                if (otxt[k] == '.') { has_dot = true; }
+                else if (otxt[k] == ':') { colon_count++; }
+            }
+            if (has_dot || colon_count > 1) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
+                return;
+            }
             has_offset_prop = true;
         }
         // If no `offset` was supplied but the time zone is an offset zone
@@ -11416,12 +11408,19 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
+        // On the property-bag path the overflow option is read BEFORE field
+        // validation so `overflow: "reject"` is honored (test262
+        // `overflow-options.js`, `calendarresolvefields-error-ordering.js`).
+        // Read it here, after the observer has already been fired for
+        // timeZone/offset but before the field bag is validated.
+        temporal::OverflowKind zdt_overflow;
+        if (!read_overflow_option(ctx, 1, &zdt_overflow)) return;
         if (!check_iso_monthcode_suitability(ctx, _zdt_have_mc, _zdt_mci, _zdt_mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
         temporal::CivilDate valid_d;
-        if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
+        if (!fields_to_valid_date(ctx, fields.date, zdt_overflow, &valid_d)) return;
         temporal::CivilTime valid_t;
         if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return;
         long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
@@ -12445,9 +12444,30 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     if (until) { a = other.extra.temporal.big_ns; b = self.extra.temporal.big_ns; }
     else       { a = self.extra.temporal.big_ns;  b = other.extra.temporal.big_ns; }
 
+    // Time-only largestUnit: difference on the exact epoch axis, round to the
+    // smallest-unit increment, split by largestUnit. The difference is taken
+    // in the other-minus-self direction (rounding origin = receiver) and
+    // negated at the end for `since`, matching the calendar path below.
     if (!is_cal_unit(ds.largest) && ds.largest != TemporalUnit.DAY) {
-        HObject* dur;
-        if (!instant_ns_diff_duration(ctx, a, b, unit_ns_divisor(ds.largest), &dur)) return;
+        assert(self.extra.temporal.big_ns.fits_int128() && other.extra.temporal.big_ns.fits_int128(),
+               "ZonedDateTime epochNanoseconds out of int128 range");
+        int128 self_ns = self.extra.temporal.big_ns.to_int128();
+        int128 other_ns = other.extra.temporal.big_ns.to_int128();
+        long total = (long)(other_ns - self_ns);
+        long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
+        if (incr_ns > 1) total = round_long_ns(total, incr_ns, ds.mode);
+        temporal::DurationParts dp = time_ns_split(total, ds.largest);
+        if (!until) {
+            dp.hours = -dp.hours;
+            dp.minutes = -dp.minutes;
+            dp.seconds = -dp.seconds;
+            dp.ms = -dp.ms;
+            dp.us = -dp.us;
+            dp.ns = -dp.ns;
+        }
+        HObject*? dur_o = alloc_duration(ctx.heap, dp);
+        if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+        HObject* dur = dur_o;
         dur.prototype = ctx.heap.temporal_duration_proto;
         ctx.result.set_object(dur);
         return;
@@ -12459,8 +12479,8 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     //
     // The spec's NudgeToCalendarUnit uses the receiver as the rounding origin
     // regardless of until/since, and flips the sign at the end for `since`.
-    // Mirror that here: `from = self` always (so the year/month lengths are
-    // measured at `self`), `to = other` always, and negate the resulting
+    // Mirror that here: `start = self` always (so the year/month lengths are
+    // measured at `self`), `end = other` always, and negate the resulting
     // duration when this is a `since` call.
     HObject* from = self;
     HObject* to   = other;
@@ -12469,58 +12489,17 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     zdt_wall_fields(from, &fy, &fm, &fd, &fh, &fmi, &fs, &fms, &fus, &fns, &foff);
     zdt_wall_fields(to, &ty, &tm, &td, &th, &tmi, &ts, &tms, &tus, &tns, &toff);
 
-    long from_tod = (long)fh * 3600000000000L + (long)fmi * 60000000000L + (long)fs * 1000000000L
-                  + (long)fms * 1000000L + (long)fus * 1000L + (long)fns;
-    long to_tod = (long)th * 3600000000000L + (long)tmi * 60000000000L + (long)ts * 1000000000L
-                + (long)tms * 1000000L + (long)tus * 1000L + (long)tns;
+    temporal::CivilDateTime start_dt = {
+        .date = { .y = fy, .m = fm, .d = fd },
+        .time = { .h = fh, .mi = fmi, .s = fs, .ms = fms, .us = fus, .ns = fns },
+    };
+    temporal::CivilDateTime end_dt = {
+        .date = { .y = ty, .m = tm, .d = td },
+        .time = { .h = th, .mi = tmi, .s = ts, .ms = tms, .us = tus, .ns = tns },
+    };
 
-    temporal::CivilDate start = { .y = fy, .m = fm, .d = fd };
-    temporal::CivilDate end = { .y = ty, .m = tm, .d = td };
-    long tod_delta = to_tod - from_tod;
-
-    // Borrow a day when the wall time of day runs backwards, so the date
-    // difference counts only whole days.
-    long sign = 1;
-    if (end.y < start.y
-        || (end.y == start.y && (end.m < start.m || (end.m == start.m && end.d < start.d)))
-        || (end.y == start.y && end.m == start.m && end.d == start.d && tod_delta < 0)) {
-        sign = -1;
-    }
-    if (sign > 0 && tod_delta < 0) {
-        tod_delta += 86400000000000L;
-        end = temporal::add_days(end, -1);
-    } else if (sign < 0 && tod_delta > 0) {
-        tod_delta -= 86400000000000L;
-        end = temporal::add_days(end, 1);
-    }
-
-    temporal::DifferenceUnit du;
-    switch (ds.largest) {
-        case TemporalUnit.YEAR:  du = temporal::DifferenceUnit.YEARS; break;
-        case TemporalUnit.MONTH: du = temporal::DifferenceUnit.MONTHS; break;
-        case TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
-        default:                 du = temporal::DifferenceUnit.DAYS; break;
-    }
-    temporal::DateDifference dd = temporal::difference_date(start, end, du);
-
-    temporal::DurationParts dp = {};
-    dp.years = dd.years;
-    dp.months = dd.months;
-    dp.days = dd.days;
-    if (ds.largest == TemporalUnit.WEEK) {
-        dp.weeks = dd.days / 7;
-        dp.days = dd.days % 7;
-    }
-    dp.hours = tod_delta / 3600000000000L;
-    long rem = tod_delta % 3600000000000L;
-    dp.minutes = rem / 60000000000L;
-    rem %= 60000000000L;
-    dp.seconds = rem / 1000000000L;
-    rem %= 1000000000L;
-    dp.ms = rem / 1000000L;
-    rem %= 1000000L;
-    dp.us = rem / 1000L;
-    dp.ns = rem % 1000L;
+    temporal::DurationParts dp;
+    if (!datetime_difference(ctx, start_dt, end_dt, ds, &dp)) return;
 
     if (!until) {
         // `since` negates the result. read_diff_settings already negated
