@@ -2005,6 +2005,12 @@ fn void builtin_temporal_duration_proto_toJSON(BuiltinContext* ctx) {
     builtin_temporal_duration_proto_toString(ctx);
 }
 
+fn void builtin_temporal_duration_proto_toLocaleString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
+    ctx.argc = 0;
+    builtin_temporal_duration_proto_toString(ctx);
+}
+
 fn void builtin_temporal_duration_proto_valueOf(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
@@ -3157,6 +3163,12 @@ fn void builtin_temporal_plain_date_proto_toJSON(BuiltinContext* ctx) {
     builtin_temporal_plain_date_proto_toString(ctx);
 }
 
+fn void builtin_temporal_plain_date_proto_toLocaleString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    ctx.argc = 0;
+    builtin_temporal_plain_date_proto_toString(ctx);
+}
+
 fn void builtin_temporal_plain_date_proto_equals(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
@@ -3674,7 +3686,7 @@ fn void builtin_temporal_plain_date_proto_since(BuiltinContext* ctx) {
 fn void builtin_temporal_plain_date_proto_withCalendar(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    if (ctx.argc < 1) {
+    if (ctx.argc < 1 || ctx.regs[ctx.base_reg].is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "PlainDate.prototype.withCalendar requires a calendar argument");
         return;
     }
@@ -3948,6 +3960,12 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_time_proto_toJSON(BuiltinContext* ctx) {
+    ctx.argc = 0;
+    builtin_temporal_plain_time_proto_toString(ctx);
+}
+
+fn void builtin_temporal_plain_time_proto_toLocaleString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
     ctx.argc = 0;
     builtin_temporal_plain_time_proto_toString(ctx);
 }
@@ -5170,6 +5188,12 @@ fn void builtin_temporal_plain_datetime_proto_toJSON(BuiltinContext* ctx) {
     builtin_temporal_plain_datetime_proto_toString(ctx);
 }
 
+fn void builtin_temporal_plain_datetime_proto_toLocaleString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
+    ctx.argc = 0;
+    builtin_temporal_plain_datetime_proto_toString(ctx);
+}
+
 fn void builtin_temporal_plain_datetime_proto_equals(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
@@ -6260,7 +6284,7 @@ fn void builtin_temporal_plain_datetime_proto_since(BuiltinContext* ctx) {
 fn void builtin_temporal_plain_datetime_proto_withCalendar(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
-    if (ctx.argc < 1) {
+    if (ctx.argc < 1 || ctx.regs[ctx.base_reg].is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "PlainDateTime.prototype.withCalendar requires a calendar argument");
         return;
     }
@@ -6817,6 +6841,12 @@ fn void builtin_temporal_plain_yearmonth_proto_toString(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_toJSON(BuiltinContext* ctx) {
+    ctx.argc = 0;
+    builtin_temporal_plain_yearmonth_proto_toString(ctx);
+}
+
+fn void builtin_temporal_plain_yearmonth_proto_toLocaleString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     ctx.argc = 0;
     builtin_temporal_plain_yearmonth_proto_toString(ctx);
 }
@@ -7760,6 +7790,12 @@ fn void builtin_temporal_plain_monthday_proto_toJSON(BuiltinContext* ctx) {
     builtin_temporal_plain_monthday_proto_toString(ctx);
 }
 
+fn void builtin_temporal_plain_monthday_proto_toLocaleString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    ctx.argc = 0;
+    builtin_temporal_plain_monthday_proto_toString(ctx);
+}
+
 fn void builtin_temporal_plain_monthday_proto_equals(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
@@ -8023,6 +8059,7 @@ fn bool setUpTemporalDuration(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "abs", Builtin.TEMPORAL_DURATION_PROTO_ABS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_DURATION_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_DURATION_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.TEMPORAL_DURATION_PROTO_TOLOCALESTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_DURATION_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_DURATION_PROTO_ADD.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "subtract", Builtin.TEMPORAL_DURATION_PROTO_SUBTRACT.ordinal)) return false;
@@ -8156,6 +8193,7 @@ fn bool setUpTemporalPlainDate(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_DATE_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_DATE_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_DATE_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.TEMPORAL_PLAIN_DATE_PROTO_TOLOCALESTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_DATE_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_DATE_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_DATE_PROTO_ADD.ordinal)) return false;
@@ -8226,6 +8264,7 @@ fn bool setUpTemporalPlainTime(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_TIME_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_TIME_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_TIME_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.TEMPORAL_PLAIN_TIME_PROTO_TOLOCALESTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_TIME_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_TIME_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_TIME_PROTO_ADD.ordinal)) return false;
@@ -8307,6 +8346,7 @@ fn bool setUpTemporalPlainDateTime(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_TOLOCALESTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_ADD.ordinal)) return false;
@@ -8398,6 +8438,7 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "daysInWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINWEEK.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOLOCALESTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_EQUALS.ordinal)) return false;
@@ -8477,6 +8518,7 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOLOCALESTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_UNTIL.ordinal)) return false;
@@ -9326,6 +9368,43 @@ fn void builtin_temporal_instant_proto_toJSON(BuiltinContext* ctx) {
     // caller's arguments must not reach the toString delegate.
     ctx.argc = 0;
     builtin_temporal_instant_proto_toString(ctx);
+}
+
+fn void builtin_temporal_instant_proto_toLocaleString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    ctx.argc = 0;
+    builtin_temporal_instant_proto_toString(ctx);
+}
+
+fn void builtin_temporal_instant_proto_toZonedDateTimeISO(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
+
+    // 1. Require timezone argument.
+    if (ctx.argc < 1 || ctx.regs[ctx.base_reg].is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "toZonedDateTimeISO requires a time zone");
+        return;
+    }
+    TVal* tz_arg = arg_at(ctx, 0);
+
+    // 2. Resolve timezone.
+    HObject* tz = null;
+    if (try maybe_tz = to_temporal_tz(ctx, tz_arg)) {
+        if (ctx.should_throw) return;
+        tz = maybe_tz;
+    } else { return; }
+
+    // 3. Get the instant's epoch nanoseconds and create ZonedDateTime with ISO calendar.
+    hbigint::HBigInt* ns;
+    if (try ns_o = instant_value(obj)) {
+        ns = ns_o;
+    } else {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "invalid Instant");
+        return;
+    }
+    ((types::HeapHeader*)ns).incref();
+    HString* cal = builtin_intern_string(ctx.heap, "iso8601");
+    zdt_from_parts(ctx, ns, tz, cal);
 }
 
 fn void builtin_temporal_instant_proto_valueOf(BuiltinContext* ctx) {
@@ -10606,6 +10685,7 @@ fn bool setUpTemporalInstant(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "epochNanoseconds", Builtin.TEMPORAL_INSTANT_PROTO_EPOCHNANOSECONDS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_INSTANT_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_INSTANT_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.TEMPORAL_INSTANT_PROTO_TOLOCALESTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_INSTANT_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_INSTANT_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "add", Builtin.TEMPORAL_INSTANT_PROTO_ADD.ordinal)) return false;
@@ -10613,6 +10693,7 @@ fn bool setUpTemporalInstant(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "round", Builtin.TEMPORAL_INSTANT_PROTO_ROUND.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "since", Builtin.TEMPORAL_INSTANT_PROTO_SINCE.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "until", Builtin.TEMPORAL_INSTANT_PROTO_UNTIL.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toZonedDateTimeISO", Builtin.TEMPORAL_INSTANT_PROTO_TOZONEDDATETIMEISO.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "from", Builtin.TEMPORAL_INSTANT_FROM.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "fromEpochSeconds", Builtin.TEMPORAL_INSTANT_FROM_EPOCH_SECONDS.ordinal)) return false;
     if (!register_string_proto_method(ctor, heap, "fromEpochMilliseconds", Builtin.TEMPORAL_INSTANT_FROM_EPOCH_MILLISECONDS.ordinal)) return false;
@@ -11673,11 +11754,17 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_zoneddatetime_proto_toJSON(BuiltinContext* ctx) {
-    // toJSON keeps the offset but drops the [Zone] bracket and uses auto
-    // precision, so the string round-trips through from() in the same zone.
+    // toJSON delegates to toString: auto precision, full output including [Zone].
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, -1, TemporalRoundMode.TRUNC, true);
+    ctx.argc = 0;
+    builtin_temporal_zoneddatetime_proto_toString(ctx);
+}
+
+fn void builtin_temporal_zoneddatetime_proto_toLocaleString(BuiltinContext* ctx) {
+    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
+    ctx.argc = 0;
+    builtin_temporal_zoneddatetime_proto_toString(ctx);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
@@ -12030,36 +12117,17 @@ fn void builtin_temporal_zoneddatetime_proto_withTimeZone(BuiltinContext* ctx) {
 // a non-iso8601 or non-Calendar argument throws.
 fn void builtin_temporal_zoneddatetime_proto_withCalendar(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "withCalendar requires a Temporal.Calendar");
+    if (ctx.argc < 1 || ctx.regs[ctx.base_reg].is_undefined()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "withCalendar requires a calendar");
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    if (arg.is_object() && arg.get_heapptr() != null
-        && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_CALENDAR) {
-        // This engine supports only the iso8601 calendar, so any Calendar
-        // object is acceptable here.
-        HObject* self = (HObject*)ctx.this_val.get_heapptr();
-        ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
-        ((types::HeapHeader*)self.extra.temporal.timezone).incref();
-        zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
-        return;
-    }
-    // Spec accepts a string calendar id too; Phase 2 supports only iso8601.
-    if (arg.is_string()) {
-        HString* hs = (HString*)arg.get_heapptr();
-        String s = (String)hs.get_cstr()[:hs.blen];
-        if (s != "iso8601") {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "unsupported calendar");
-            return;
-        }
-        HObject* self = (HObject*)ctx.this_val.get_heapptr();
-        ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
-        ((types::HeapHeader*)self.extra.temporal.timezone).incref();
-        zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
-        return;
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "withCalendar requires a Temporal.Calendar");
+    HObject* cal = null;
+    if (!calendar_from_arg(ctx, arg, &cal)) return;
+    HObject* self = (HObject*)ctx.this_val.get_heapptr();
+    ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
+    ((types::HeapHeader*)self.extra.temporal.timezone).incref();
+    zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, (HString*)cal);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_add(BuiltinContext* ctx) {
@@ -12921,6 +12989,7 @@ fn bool setUpTemporalZonedDateTime(Heap* heap) {
     if (!register_string_proto_method(proto, heap, "with", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_WITH.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOJSON.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_TOLOCALESTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "equals", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_EQUALS.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "withTimeZone", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_WITHTIMEZONE.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "withCalendar", Builtin.TEMPORAL_ZONEDDATETIME_PROTO_WITHCALENDAR.ordinal)) return false;
