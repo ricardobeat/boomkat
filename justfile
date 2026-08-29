@@ -37,6 +37,10 @@ test-slim: build-slim
 addons:
     @bash scripts/build_addons.sh
 
+# Check that src/lib/temporal builds and runs with no engine imports
+test-temporal-standalone:
+    @bash scripts/check_temporal_standalone.sh
+
 # ── Comparison engines ───────────────────────────────────────────────────────
 
 # Fetch Duktape v2.7.0 and QuickJS

@@ -95,6 +95,9 @@ ROB_RC=$?
 # output, which the self-asserting flat sweep cannot express.
 echo ""
 bash "$DIR/console_format/run.sh" "$ENGINE"
+
+# The calendrical layer must stay free of engine types; see the script header.
+bash "$DIR/../scripts/check_temporal_standalone.sh"
 CFMT_RC=$?
 
 # Compile-error messages — every parse failure must report a non-empty message

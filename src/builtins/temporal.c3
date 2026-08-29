@@ -9032,6 +9032,34 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
 // Phase 2 — Temporal.Instant
 // ============================================================================
 
+// Bridge between the JS-facing BigInt representation and the pure int128
+// arithmetic in lib/temporal/instant.c3. Temporal exposes epoch nanoseconds as
+// a BigInt, so the value arrives and leaves as an HBigInt; the calendrical
+// arithmetic itself needs no heap and no engine, which is why it lives in the
+// library rather than here.
+//
+// int128 covers the spec's +/-8.64e21 ns range with room to spare, so these
+// cannot overflow for in-range inputs. Out-of-range results are a spec error
+// and are rejected by the caller's range check, not here.
+fn hbigint::HBigInt*? instant_add_big(hbigint::HBigInt* a, hbigint::HBigInt* delta, Heap* hp) {
+    if (a == null || delta == null) return null;
+    return hbigint::hbigint_alloc(hp, temporal::instant_add(a.to_int128(), delta.to_int128()));
+}
+
+fn hbigint::HBigInt*? instant_sub_big(hbigint::HBigInt* a, hbigint::HBigInt* delta, Heap* hp) {
+    if (a == null || delta == null) return null;
+    return hbigint::hbigint_alloc(hp, temporal::instant_sub(a.to_int128(), delta.to_int128()));
+}
+
+// Ordering on the BigInt representation. Null sorts before any value, matching
+// the previous behaviour of the library function this replaced.
+fn int instant_cmp_big(hbigint::HBigInt* a, hbigint::HBigInt* b) {
+    if (a == null && b == null) return 0;
+    if (a == null) return -1;
+    if (b == null) return 1;
+    return temporal::instant_cmp(a.to_int128(), b.to_int128());
+}
+
 fn HObject*? alloc_instant(Heap* hp, hbigint::HBigInt* ns) {
     if (ns == null) return null;
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_INSTANT);
@@ -9436,7 +9464,7 @@ fn void builtin_temporal_instant_compare(BuiltinContext* ctx) {
     hbigint::HBigInt* b;
     if (!to_temporal_instant(ctx, b_arg, &b)) return;
     defer ctx.heap.decref((types::HeapHeader*)b);
-    ctx.result.set_fastint(temporal::instant_cmp(a, b));
+    ctx.result.set_fastint(instant_cmp_big(a, b));
 }
 
 // All four getters: epochSeconds, epochMilliseconds, epochMicroseconds,
@@ -9910,7 +9938,7 @@ fn void builtin_temporal_instant_proto_add(BuiltinContext* ctx) {
         }
         delta = new_delta;
     }
-    hbigint::HBigInt*? result = temporal::instant_add(base, delta, ctx.heap);
+    hbigint::HBigInt*? result = instant_add_big(base, delta, ctx.heap);
     ctx.heap.decref((types::HeapHeader*)delta);
     if (catch err = result) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "add: failed");
@@ -9988,7 +10016,7 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
         }
         delta = new_delta;
     }
-    hbigint::HBigInt*? result = temporal::instant_sub(base, delta, ctx.heap);
+    hbigint::HBigInt*? result = instant_sub_big(base, delta, ctx.heap);
     ctx.heap.decref((types::HeapHeader*)delta);
     if (catch err = result) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: failed");
@@ -11779,7 +11807,7 @@ fn void builtin_temporal_zoneddatetime_compare(BuiltinContext* ctx) {
         b_ns = ((HObject*)ctx.result.get_heapptr()).extra.temporal.big_ns;
     }
 
-    ctx.result.set_fastint(temporal::instant_cmp(a_ns, b_ns));
+    ctx.result.set_fastint(instant_cmp_big(a_ns, b_ns));
 }
 
 fn hbigint::HBigInt* zdt_value(BuiltinContext* ctx) {
@@ -12633,9 +12661,9 @@ fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
     }
     hbigint::HBigInt*? result;
     if (subtract) {
-        result = temporal::instant_sub(base, delta, ctx.heap);
+        result = instant_sub_big(base, delta, ctx.heap);
     } else {
-        result = temporal::instant_add(base, delta, ctx.heap);
+        result = instant_add_big(base, delta, ctx.heap);
     }
     ctx.heap.decref((types::HeapHeader*)delta);
     ctx.heap.decref((types::HeapHeader*)base);
