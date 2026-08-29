@@ -595,8 +595,8 @@ struct CompilerContext {
     // Register allocation ceiling (0xFFFF = no cap). alloc_reg/alloc_regs
     // clamp at it and flag reg_overflow instead of handing out a register at
     // or above it. Holds a spread call's trailing-argument evaluation below
-    // first_arg; an expression needing more registers than the reserved
-    // region is a compile error, never a corrupted argument list.
+    // the shifted callee; an expression needing more registers than the
+    // reserved region is a compile error, never a corrupted argument list.
     ushort reg_cap;
 
     // Global scope flag: when true, all var decls use environment only (no register cache)

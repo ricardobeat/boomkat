@@ -2776,7 +2776,11 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
                     // cannot reach it.
                     ushort saved_cap = self.reg_cap;
                     self.next_reg = self.spread_eval_base;
-                    self.reg_cap = first_arg;
+                    // The region ends at the shifted callee slot, not
+                    // first_arg: the two registers in between hold the
+                    // callee and receiver, and an eval temp landing there
+                    // would be called as the callee.
+                    self.reg_cap = callee_reg;
                     arg_reg = self.assignment_expr()!;
                     self.reg_cap = saved_cap;
                     self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)arg_reg);
@@ -3251,11 +3255,11 @@ fn ushort? CompilerContext.new_expr(&self) {
                         ushort arg_reg;
                         if (has_spread) {
                             // See emit_call: evaluate into the reserved
-                            // below-first_arg region, outside the spread's
+                            // below-callee region, outside the spread's
                             // runtime dest window, then PUTARG directly.
                             ushort saved_cap = self.reg_cap;
                             self.next_reg = self.spread_eval_base;
-                            self.reg_cap = first_arg;
+                            self.reg_cap = ctor_reg;
                             arg_reg = self.assignment_expr()!;
                             self.reg_cap = saved_cap;
                             self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)arg_reg);
@@ -4756,11 +4760,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                             ushort arg_reg;
                             if (has_spread) {
                                 // See emit_call: evaluate into the reserved
-                                // below-first_arg region, outside the spread's
+                                // below-callee region, outside the spread's
                                 // runtime dest window, then PUTARG directly.
                                 ushort saved_cap = self.reg_cap;
                                 self.next_reg = self.spread_eval_base;
-                                self.reg_cap = first_arg;
+                                self.reg_cap = super_reg;
                                 arg_reg = self.assignment_expr()!;
                                 self.reg_cap = saved_cap;
                                 self.emit_abc(Opcode.PUTARG, (uint)first_arg, (uint)total_count_reg, (uint)arg_reg);

@@ -199,14 +199,15 @@ fn ushort CompilerContext.alloc_persistent_reg(&self) {
 // already written to clobbers a real argument. So the frame is shifted up by
 // `2 + SPREAD_EVAL_REGS`: the lower freed slot becomes the count register,
 // and the next `SPREAD_EVAL_REGS` slots form the evaluation region
-// (`spread_eval_base .. first_arg`) that a trailing argument's expression is
-// compiled into (see emit_call). `first_arg` caps allocation there, so an
+// (`spread_eval_base .. new_callee`) that a trailing argument's expression is
+// compiled into (see emit_call). The region ends at the shifted callee, so
+// the shifted callee/this/argument slots above it stay untouched; an
 // expression needing more registers than the region is a compile error, not a
 // silently corrupted argument list.
 //
 // `callee_reg`, `first_arg`, and `arg_count` are updated in place. Returns the
 // count register (initialized to `arg_count` by the caller via LDINT).
-const uint SPREAD_EVAL_REGS = 6;
+const uint SPREAD_EVAL_REGS = 12;
 fn ushort CompilerContext.begin_spread_args(&self, ushort* callee_reg, ushort* first_arg, ushort arg_count) {
     ushort old_callee = *callee_reg;
     ushort count_reg = old_callee;
@@ -255,9 +256,9 @@ fn ushort CompilerContext.begin_spread_args(&self, ushort* callee_reg, ushort* f
 // and any PUTARG'd trailing args. Evaluating the source with the normal
 // allocator could land in one of those slots and destroy an argument
 // before SPREAD_ARG runs. So the source is compiled into the reserved
-// below-first_arg region, exactly like a trailing arg (reg_cap = first_arg
-// caps the allocation there; an expression too big for the region is a
-// compile error, not a silently corrupted argument list).
+// region below the shifted callee, exactly like a trailing arg (an
+// expression too big for the region is a compile error, not a silently
+// corrupted argument list).
 fn ushort? CompilerContext.compile_spread_source(&self, ushort first_arg, ushort arg_count, bool is_first_spread) {
     ushort spread_reg;
     if (is_first_spread) {
@@ -272,7 +273,10 @@ fn ushort? CompilerContext.compile_spread_source(&self, ushort first_arg, ushort
     } else {
         ushort saved_cap = self.reg_cap;
         self.next_reg = self.spread_eval_base;
-        self.reg_cap = first_arg;
+        // The region ends at the shifted callee slot, not first_arg: the two
+        // registers in between hold the callee and receiver, and an eval
+        // temp landing there would be called as the callee.
+        self.reg_cap = self.spread_eval_base + (ushort)SPREAD_EVAL_REGS;
         spread_reg = self.assignment_expr()!;
         self.reg_cap = saved_cap;
     }
