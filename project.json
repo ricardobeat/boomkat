@@ -37,6 +37,24 @@
         "THREADED_DISPATCH"
       ]
     },
+    "boomkat_slim": {
+      "type": "executable",
+      "name": "boomkat_slim",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O2",
+      "optsize": "small",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH",
+        "SLIM"
+      ]
+    },
     "boomkat_threaded": {
       "type": "executable",
       "sources": [

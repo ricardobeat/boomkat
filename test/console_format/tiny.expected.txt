@@ -1,0 +1,30 @@
+hi
+{}
+[]
+{ a: 1, b: true }
+[ 1, 2, 3 ]
+{ s: 'x' }
+[ 1, <empty>, 3 ]
+{ ok_key: 1 }
+{ 'needs space': 1 }
+{ '9bad': 1 }
+-0
+[ NaN, Infinity ]
+undefined
+null
+Symbol(s)
+{ [Symbol(k)]: 1 }
+1.5 1e+21
+[ 'it\'s', 'say "hi"', 'tab\there', 'nl\nhere' ]
+[Function: foo]
+[Function (anonymous)]
+[Map] [Set] [RegExp] [Date] [Error]
+{ a: { b: { c: [Object] } } }
+[ [ 1, [ 2, [Array] ] ] ]
+{ a: [Object] }
+{ a: 1 }
+{ boom: [Getter] }
+getter invocations: 0
+{ self: { self: { self: [Object] } } }
+[ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, ... 8 more items ]
+done

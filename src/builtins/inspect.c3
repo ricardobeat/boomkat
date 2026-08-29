@@ -70,7 +70,7 @@ struct InspectCtx {
 // Render `val` the way console.log renders a top-level argument, appending to
 // `out`. A top-level string is emitted bare; everything else takes its
 // structured form.
-fn bool inspect_root(Heap* heap, void* vm, TVal* val, StrBuf* out) {
+fn bool inspect_root(Heap* heap, void* vm, TVal* val, StrBuf* out) @feat(!SLIM) {
     if (val.is_string()) {
         HString* s = (HString*)val.get_heapptr();
         // A Symbol is tagged STRING but is not a string: it renders as
@@ -85,7 +85,7 @@ fn bool inspect_root(Heap* heap, void* vm, TVal* val, StrBuf* out) {
 // Render `val` as it appears in a NON-root position, where a string is quoted.
 // This is what %o, %O and console.dir want, since none of them is the
 // bare-string case.
-fn bool inspect_nested(Heap* heap, void* vm, TVal* val, StrBuf* out) {
+fn bool inspect_nested(Heap* heap, void* vm, TVal* val, StrBuf* out) @feat(!SLIM) {
     return inspect_at_depth(heap, vm, val, out, 0);
 }
 
@@ -93,7 +93,7 @@ fn bool inspect_nested(Heap* heap, void* vm, TVal* val, StrBuf* out) {
 // effective depth budget by that many levels. %s passes 2, leaving one level,
 // since %s renders one level shallower than a plain argument
 // and so prints `{ a: [Object] }` where a plain argument expands the `b`.
-fn bool inspect_at_depth(Heap* heap, void* vm, TVal* val, StrBuf* out, int start_depth) {
+fn bool inspect_at_depth(Heap* heap, void* vm, TVal* val, StrBuf* out, int start_depth) @feat(!SLIM) {
     InspectCtx ctx;
     ctx.heap = heap;
     ctx.vm = vm;
@@ -1075,7 +1075,7 @@ fn HString* inspect_call_method(InspectCtx* ctx, HObject* obj, char[] name) {
 // A builtin's own toString does not count: an Array, a Map
 // and an Error rather than printing "1,2" or "[object Map]", so only a
 // toString reached before any builtin prototype qualifies.
-fn bool inspect_has_custom_tostring(Heap* heap, HObject* obj) {
+fn bool inspect_has_custom_tostring(Heap* heap, HObject* obj) @feat(!SLIM) {
     HString* key = heap.str(heap::BuiltinStr.TO_STRING);
     if (key == null) return false;
     HObject* cur = obj;

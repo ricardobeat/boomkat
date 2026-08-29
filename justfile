@@ -23,6 +23,15 @@ build-batch:
 build-bench:
     @make out/boomkat out/test262_runner
 
+# Build the SLIM engine: the tiny console formatter in place of the full one.
+# See src/builtins/inspect_entry.c3 for what the SLIM feature selects.
+build-slim:
+    c3c build boomkat_slim
+
+# Check the tiny formatter's contract (needs the SLIM build)
+test-slim: build-slim
+    @bash test/console_format/run_tiny.sh out/boomkat_slim
+
 # ── Comparison engines ───────────────────────────────────────────────────────
 
 # Fetch Duktape v2.7.0 and QuickJS
