@@ -1341,10 +1341,23 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
     if (rv.is_string()) {
         HString* rs = builtin_to_string_vm(ctx, &rv);
         if (ctx.should_throw) return false;
+        char[] rtxt = rs.get_cstr()[:rs.blen];
         temporal::ParsedIsoDateTime p;
-        if (!temporal::parse_iso_date_string(rs.get_cstr()[:rs.blen], &p)) {
+        if (!temporal::parse_iso_date_string(rtxt, &p)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid relativeTo string");
             return false;
+        }
+        // A date-time + Z (UTC designator) without an IANA bracket
+        // annotation is ambiguous — reject it.
+        if (p.offset_kind == temporal::OffsetKind.Z) {
+            bool has_bracket = false;
+            for (usz ci = 0; ci < rtxt.len; ci++) {
+                if (rtxt[ci] == '[') { has_bracket = true; break; }
+            }
+            if (!has_bracket) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "date-time + Z without an IANA annotation");
+                return false;
+            }
         }
         if (p.has_time) {
             temporal::CivilDateTime dt = {
@@ -2489,6 +2502,10 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     if (dur.months != 0) target_date = temporal::add_months(target_date, dur.months, temporal::OverflowKind.CONSTRAIN);
     if (dur.weeks != 0) target_date = temporal::add_days(target_date, dur.weeks * 7);
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
+    if (!temporal::is_valid_iso_date(target_date.y, (int)target_date.m, (int)target_date.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "date out of range");
+        return;
+    }
 
     // Steps 5-6: isoDateTime = (rel_date, midnight), targetDateTime = (target_date, target_time_rem)
 
@@ -2563,7 +2580,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         TVal unit_tv = prop_or_undefined_pa(ctx, opts, "unit");
         if (ctx.should_throw) return;
         if (unit_tv.is_undefined()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "unit is required");
+            builtin_throw(ctx, ctx.heap.range_err_proto, "unit is required");
             return;
         }
         HString* unit_s = builtin_to_string_vm(ctx, &unit_tv);
@@ -2589,7 +2606,10 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     }
     // Time-only with relativeTo: same as no-relativeTo. A day is a fixed
     // 86400e9 ns here; unit_ns_divisor covers only the sub-day tiers.
-    if (!is_cal_unit(unit)) {
+    // Skip this fast path when the duration contains calendar units
+    // (years, months, weeks) — they need calendar resolution via relativeTo.
+    bool has_cal = dur.years != 0 || dur.months != 0 || dur.weeks != 0;
+    if (!is_cal_unit(unit) && !has_cal) {
         int128 time_ns = duration_to_time_ns(dur);
         double divisor = unit == TemporalUnit.DAY
             ? 86400000000000.0
@@ -2630,6 +2650,10 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     if (dur.months != 0) target_date = temporal::add_months(target_date, dur.months, temporal::OverflowKind.CONSTRAIN);
     if (dur.weeks != 0) target_date = temporal::add_days(target_date, dur.weeks * 7);
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
+    if (!temporal::is_valid_iso_date(target_date.y, (int)target_date.m, (int)target_date.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "date out of range");
+        return;
+    }
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
     long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
     int128 diff_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
@@ -2667,32 +2691,33 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         dd = temporal::difference_date(rel_date, target_date, temporal::DifferenceUnit.MONTHS);
     }
     long r1;
+    long sign = dur.years >= 0 && dur.months >= 0 && dur.weeks >= 0 && dur.days >= 0
+        && dur.hours >= 0 && dur.minutes >= 0 && dur.seconds >= 0
+        && dur.ms >= 0 && dur.us >= 0 && dur.ns >= 0
+        ? 1 : -1;
     CivilDate unit_start;
     CivilDate unit_end;
     if (unit == TemporalUnit.YEAR) {
         r1 = dd.years;
         unit_start = temporal::add_months(rel_date, r1 * 12, temporal::OverflowKind.CONSTRAIN);
-        unit_end = temporal::add_months(rel_date, (r1 + 1) * 12, temporal::OverflowKind.CONSTRAIN);
+        unit_end = temporal::add_months(rel_date, (r1 + sign) * 12, temporal::OverflowKind.CONSTRAIN);
     } else {
         r1 = dd.months;
         unit_start = temporal::add_months(rel_date, r1, temporal::OverflowKind.CONSTRAIN);
-        unit_end = temporal::add_months(rel_date, r1 + 1, temporal::OverflowKind.CONSTRAIN);
+        unit_end = temporal::add_months(rel_date, r1 + sign, temporal::OverflowKind.CONSTRAIN);
     }
     long start_epoch = temporal::epoch_days_from_civil(unit_start.y, (int)unit_start.m, (int)unit_start.d);
     long end_epoch   = temporal::epoch_days_from_civil(unit_end.y, (int)unit_end.m, (int)unit_end.d);
     int128 unit_ns = (int128)(end_epoch - start_epoch) * 86400000000000L;
+    if (unit_ns < 0) unit_ns = -unit_ns;
     if (unit_ns <= 0) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration out of range");
         return;
     }
-    long sign = dur.years >= 0 && dur.months >= 0 && dur.weeks >= 0 && dur.days >= 0
-        && dur.hours >= 0 && dur.minutes >= 0 && dur.seconds >= 0
-        && dur.ms >= 0 && dur.us >= 0 && dur.ns >= 0
-        ? 1 : -1;
     int128 dest_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
     int128 start_ns_offset = (int128)(start_epoch - rel_epoch) * 86400000000000L;
     int128 numerator = dest_ns - start_ns_offset;
-    int128 total_num = unit_ns * (int128)r1 + numerator * (int128)sign;
+    int128 total_num = unit_ns * (int128)r1 + numerator;
     if (total_num < 0) {
         ctx.result.set_number(-((double)(-total_num) / (double)unit_ns));
     } else {
@@ -3400,10 +3425,6 @@ fn bool duration_field_integral(BuiltinContext* ctx, double val) {
     }
     if (math::floor(val) != val) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
-        return false;
-    }
-    if (math::abs(val) > 9007199254740991.0) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "duration field is too large");
         return false;
     }
     return true;
@@ -9540,6 +9561,10 @@ fn void builtin_temporal_instant_proto_add(BuiltinContext* ctx) {
     // (no calendar units — Instant rejects years/months/weeks/days).
     temporal::DurationParts dp;
     if (!duration_record_from_arg(ctx, arg, &dp)) return;
+    if (dp.years != 0 || dp.months != 0 || dp.weeks != 0 || dp.days != 0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Instant does not accept calendar units");
+        return;
+    }
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* base = self.extra.temporal.big_ns;
     // Convert DurationParts to nanoseconds-as-BigInt.
@@ -9618,6 +9643,10 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
     TVal* arg = arg_at(ctx, 0);
     temporal::DurationParts dp;
     if (!duration_record_from_arg(ctx, arg, &dp)) return;
+    if (dp.years != 0 || dp.months != 0 || dp.weeks != 0 || dp.days != 0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Instant does not accept calendar units");
+        return;
+    }
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* base = self.extra.temporal.big_ns;
     hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
@@ -10948,6 +10977,7 @@ fn HObject* resolve_tz_from_string(BuiltinContext* ctx, String s) {
     bool off_known = false;
     String zone_name = (String)"";
     bool zone_known = false;
+    bool is_z = false;
     // Reject bare sub-minute offsets like `+01:35:00.000000000` or
     // `-12:12:59.9`. The sub-minute `.` / `,` form is only valid inside
     // the date-time prefix of a ZonedDateTime ISO string (e.g. the
@@ -10971,12 +11001,19 @@ fn HObject* resolve_tz_from_string(BuiltinContext* ctx, String s) {
             return null;
         }
     }
-    if (!now_resolve_tz(ctx, s, &off_sec, &off_known, &zone_name, &zone_known)) {
+    if (!now_resolve_tz(ctx, s, &off_sec, &off_known, &zone_name, &zone_known, &is_z)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone string");
         return null;
     }
 
     if (off_known) {
+        if (is_z) {
+            // Z designator (not +HH:MM) in a datetime string without bracket
+            // annotation means the UTC time zone, not +00:00.
+            HObject*? tz_o = alloc_timezone(ctx.heap, (String)"UTC");
+            if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
+            return tz_o;
+        }
         // Canonicalize as a "+HH:MM" string for the TimeZone id.
         char[8] buf;
         long mag = off_sec < 0 ? -off_sec : off_sec;
@@ -11998,6 +12035,28 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     String zone = timezone_name(self.extra.temporal.timezone);
     if (zone.len == 0) { builtin_throw(ctx, ctx.heap.range_err_proto, "zone missing"); return; }
 
+    // RejectObjectWithCalendarOrTimeZone (spec step 4-5): throw TypeError
+    // if the bag is a Temporal object or has "calendar" or "timeZone" properties.
+    if (!reject_temporal_object_bag(ctx, bag)) return;
+    {
+        HString* cal_key = builtin_intern_string(ctx.heap, "calendar");
+        bool has_cal = false;
+        if (!js_has_property(ctx.vm, ctx.heap, bag, cal_key, &has_cal)) return;
+        if (has_cal) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
+            return;
+        }
+    }
+    {
+        HString* tz_key = builtin_intern_string(ctx.heap, "timeZone");
+        bool has_tz = false;
+        if (!js_has_property(ctx.vm, ctx.heap, bag, tz_key, &has_tz)) return;
+        if (has_tz) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone property");
+            return;
+        }
+    }
+
     // Current wall time: epoch -> local via the offset in effect at the epoch.
     // Go through zdt_wall_fields, which splits the epoch in int128; routing
     // this through a double instead rounded away everything below 2^53, so
@@ -12026,6 +12085,7 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     // / non-undefined value here throws TypeError, so the call sequence
     // for `with({day:5}, null)` (TypeError) vs `with({day:-1}, null)`
     // (RangeError) matches the test262 expectation.
+    temporal::OverflowKind overflow = temporal::OverflowKind.CONSTRAIN;
     if (ctx.argc >= 2) {
         TVal* ov = arg_at(ctx, 1);
         if (ov != null && !ov.is_undefined()) {
@@ -12034,38 +12094,9 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
                 return;
             }
             HObject* opts = (HObject*)ov.get_heapptr();
-            // Read `offset` (per spec a string in {prefer, use, ignore, reject}).
-            TVal offv = prop_or_undefined(opts, ctx.heap, "offset");
-            if (!offv.is_undefined()) {
-                HString* s = builtin_to_string_vm(ctx, &offv);
-                if (ctx.should_throw) return;
-                if (s == null) {
-                    builtin_throw(ctx, ctx.heap.type_err_proto, "offset option must be a string");
-                    return;
-                }
-                char[] ostr = (String)s.get_cstr()[:s.blen];
-                if (ostr != "prefer" && ostr != "use" && ostr != "ignore" && ostr != "reject") {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset option");
-                    return;
-                }
-            }
-            // Read `overflow` (constrain | reject).
-            TVal ovv = prop_or_undefined(opts, ctx.heap, "overflow");
-            if (!ovv.is_undefined()) {
-                HString* s = builtin_to_string_vm(ctx, &ovv);
-                if (ctx.should_throw) return;
-                if (s == null) {
-                    builtin_throw(ctx, ctx.heap.type_err_proto, "overflow option must be a string");
-                    return;
-                }
-                char[] ostr = (String)s.get_cstr()[:s.blen];
-                if (ostr != "constrain" && ostr != "reject") {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid overflow option");
-                    return;
-                }
-            }
-            // Read `disambiguation` (compatible | earlier | later | reject).
-            TVal disv = prop_or_undefined(opts, ctx.heap, "disambiguation");
+            // Spec order: disambiguation, offset, overflow.
+            TVal disv = prop_or_undefined_pa(ctx, opts, "disambiguation");
+            if (ctx.should_throw) return;
             if (!disv.is_undefined()) {
                 HString* s = builtin_to_string_vm(ctx, &disv);
                 if (ctx.should_throw) return;
@@ -12079,12 +12110,44 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
                     return;
                 }
             }
+            TVal offv = prop_or_undefined_pa(ctx, opts, "offset");
+            if (ctx.should_throw) return;
+            if (!offv.is_undefined()) {
+                HString* s = builtin_to_string_vm(ctx, &offv);
+                if (ctx.should_throw) return;
+                if (s == null) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "offset option must be a string");
+                    return;
+                }
+                char[] ostr = (String)s.get_cstr()[:s.blen];
+                if (ostr != "prefer" && ostr != "use" && ostr != "ignore" && ostr != "reject") {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset option");
+                    return;
+                }
+            }
+            TVal ovv = prop_or_undefined_pa(ctx, opts, "overflow");
+            if (ctx.should_throw) return;
+            if (!ovv.is_undefined()) {
+                HString* s = builtin_to_string_vm(ctx, &ovv);
+                if (ctx.should_throw) return;
+                if (s == null) {
+                    builtin_throw(ctx, ctx.heap.type_err_proto, "overflow option must be a string");
+                    return;
+                }
+                char[] ostr = (String)s.get_cstr()[:s.blen];
+                if (ostr == "reject") {
+                    overflow = temporal::OverflowKind.REJECT;
+                } else if (ostr != "constrain") {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid overflow option");
+                    return;
+                }
+            }
         }
     }
     temporal::CivilDate valid_d;
-    if (!fields_to_valid_date(ctx, fields.date, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
+    if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) return;
     temporal::CivilTime valid_t;
-    if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return;
+    if (!fields_to_valid_time(ctx, fields.time, &valid_t, overflow, false)) return;
 
     // New wall time as naive UTC epoch nanos.
     long wall_secs = temporal::epoch_days_from_civil(valid_d.y, (int)valid_d.m, (int)valid_d.d) * 86400
@@ -13405,9 +13468,11 @@ fn bool now_find_bracket_zone(char[] text, usz* i, usz* out_start, usz* out_len)
 // Throws RangeError on grammar failures (bare date-time, sub-minute offset,
 // unknown IANA name, negative-zero year, etc.).
 fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
-                       bool* offset_known, String* out_zone_name, bool* out_zone_known) {
+                       bool* offset_known, String* out_zone_name, bool* out_zone_known,
+                       bool* out_is_z) {
     *offset_known = false;
     *out_zone_known = false;
+    *out_is_z = false;
     // Caller is responsible for handling the missing-argument case before
     // reaching here. An explicit empty string from the user is a RangeError.
     if (text.len == 0) return false;
@@ -13467,6 +13532,7 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
         long off = 0;
         if (prefix_end < text.len && parse_offset_only(text, &prefix_end, &off)) {
             if (prefix_end != text.len) return false;
+            *out_is_z = (text[prefix_end - 1] == 'Z' || text[prefix_end - 1] == 'z');
             // Reject sub-minute offsets: scan the offset tail for `.` or `,`
             // (fractional separator) or for a third `:` (the seconds tier).
             // `prefix_end` is the position right after the offset, so the
@@ -13533,6 +13599,7 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
     long off2 = 0;
     if (parse_offset_only(text, &saved, &off2)) {
         if (saved != text.len) return false;
+        *out_is_z = (text[0] == 'Z' || text[0] == 'z');
         *out_offset_sec = off2;
         *offset_known = true;
         return true;
@@ -13579,7 +13646,8 @@ fn bool now_resolve_current_offset(BuiltinContext* ctx, String text, bool is_def
     bool off_known = false;
     String zone = (String)"";
     bool zone_known = false;
-    if (!now_resolve_tz(ctx, text, &off, &off_known, &zone, &zone_known)) {
+    bool unused_is_z = false;
+    if (!now_resolve_tz(ctx, text, &off, &off_known, &zone, &zone_known, &unused_is_z)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid time zone");
         return false;
     }
@@ -13674,8 +13742,9 @@ fn void builtin_temporal_now_zoned_date_time_iso(BuiltinContext* ctx) {
     bool off_known = false;
     String zone = (String)"";
     bool zone_known = false;
+    bool unused_is_z = false;
     if (!is_default) {
-        if (!now_resolve_tz(ctx, text, &off2, &off_known, &zone, &zone_known)) {
+        if (!now_resolve_tz(ctx, text, &off2, &off_known, &zone, &zone_known, &unused_is_z)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid time zone");
             return;
         }
