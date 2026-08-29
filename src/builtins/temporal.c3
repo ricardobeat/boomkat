@@ -666,8 +666,11 @@ fn bool fields_to_valid_date(BuiltinContext* ctx, temporal::CivilDate fields,
 // true, missing fields fall back to `cur` (used by with()). Sub-second
 // precision is read from a single fractional `seconds` argument so callers
 // pass `null` for the other sub-second fields, per the polyfill spec.
+// `require_any` when true throws TypeError if no time fields are present
+// (PlainTime.from requires at least one; PlainDateTime.from does not).
 fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
-                           temporal::CivilTime cur, temporal::CivilTime* out) {
+                           temporal::CivilTime cur, temporal::CivilTime* out,
+                           bool require_any = false) {
     Vm* v = (Vm*)ctx.vm;
     int  h  = (int)cur.h;
     int  mi = (int)cur.mi;
@@ -793,7 +796,7 @@ fn bool bag_to_time_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing,
         s = 0;
     }
 
-    if (!found_any && !keep_missing) {
+    if (require_any && !found_any) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "object must have at least one time field");
         return false;
     }
@@ -3824,7 +3827,7 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
         // Property bag: read fields first, then the overflow option.
         temporal::CivilTime fields;
         temporal::CivilTime cur = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
-        if (!bag_to_time_fields(ctx, o, false, cur, &fields)) {
+        if (!bag_to_time_fields(ctx, o, false, cur, &fields, true)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
             return;
         }
@@ -3985,7 +3988,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
         }
         temporal::CivilTime fields;
         temporal::CivilTime cur = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
-        if (!bag_to_time_fields(ctx, o, false, cur, &fields)) return null;
+        if (!bag_to_time_fields(ctx, o, false, cur, &fields, true)) return null;
         temporal::CivilTime valid;
         if (!fields_to_valid_time(ctx, fields, &valid, temporal::OverflowKind.REJECT, false)) return null;
         HObject*? res = alloc_plain_time(ctx.heap, valid);
@@ -6478,6 +6481,13 @@ fn void builtin_temporal_plain_yearmonth_proto_year(BuiltinContext* ctx) {
     ctx.result.set_number((double)plain_yearmonth_y(obj));
 }
 
+fn void builtin_temporal_plain_yearmonth_proto_referenceISOYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)plain_yearmonth_y(obj));
+}
+
 fn void builtin_temporal_plain_yearmonth_proto_month(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
@@ -7412,6 +7422,13 @@ fn void builtin_temporal_plain_monthday_proto_year(BuiltinContext* ctx) {
     ctx.result.set_number((double)plain_monthday_year(obj));
 }
 
+fn void builtin_temporal_plain_monthday_proto_referenceISOYear(BuiltinContext* ctx) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result.set_number((double)plain_monthday_year(obj));
+}
+
 fn void builtin_temporal_plain_monthday_proto_month(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
@@ -7612,10 +7629,12 @@ fn void builtin_temporal_plain_monthday_proto_toString(BuiltinContext* ctx) {
 
     char[48] buf;
     usz len;
-    len = (usz)libc::snprintf(&buf, 48, "%02d-%02d", m, d);
     if (show_calendar) {
+        len = (usz)libc::snprintf(&buf, 48, "%04d-%02d-%02d", y, m, d);
         char[] ann = critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]";
         for (usz k = 0; k < ann.len; k++) buf[len++] = ann[k];
+    } else {
+        len = (usz)libc::snprintf(&buf, 48, "%02d-%02d", m, d);
     }
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
@@ -8254,6 +8273,7 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "dayOfYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYOFYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "weekOfYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_WEEKOFYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAROFWEEK.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "referenceISOYear", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_REFERENCEISOYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "daysInWeek", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINWEEK.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_YEARMONTH_PROTO_TOJSON.ordinal)) return false;
@@ -8332,6 +8352,7 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
     if (!register_proto_getter_accessor(proto, heap, "monthsInYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTHSINYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "weekOfYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_WEEKOFYEAR.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_YEAROFWEEK.ordinal)) return false;
+    if (!register_proto_getter_accessor(proto, heap, "referenceISOYear", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_REFERENCEISOYEAR.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_VALUEOF.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toString", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "toJSON", Builtin.TEMPORAL_PLAIN_MONTHDAY_PROTO_TOJSON.ordinal)) return false;
