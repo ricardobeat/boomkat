@@ -1569,9 +1569,21 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
         if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.CONSTRAIN, true)) return false;
 
         if (tz == null) {
-            // Plain (non-zoned) bag: a PlainDateTime built straight from the
-            // fields, ignoring any `offset` (it only matters once a time
-            // zone is present).
+            // If no time fields were supplied on the property bag, build a PlainDate;
+            // otherwise build a PlainDateTime.
+            bool has_time_props = !prop_or_undefined(ro, ctx.heap, "hour").is_undefined() ||
+                                  !prop_or_undefined(ro, ctx.heap, "minute").is_undefined() ||
+                                  !prop_or_undefined(ro, ctx.heap, "second").is_undefined() ||
+                                  !prop_or_undefined(ro, ctx.heap, "millisecond").is_undefined() ||
+                                  !prop_or_undefined(ro, ctx.heap, "microsecond").is_undefined() ||
+                                  !prop_or_undefined(ro, ctx.heap, "nanosecond").is_undefined();
+            if (ctx.should_throw) return false;
+            if (!has_time_props) {
+                HObject*? d_o = alloc_plain_date(ctx.heap, valid_d, ctx.heap.temporal_iso_calendar);
+                if (catch err = d_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
+                *out_relative_to = d_o;
+                return true;
+            }
             temporal::CivilDateTime dt = { .date = valid_d, .time = valid_t };
             HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
             if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
@@ -1618,15 +1630,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
         ctx.heap.decref((types::HeapHeader*)epoch_ns);
         if (catch err = zdt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
         HObject* zdt = zdt_o;
-        long zwy, zwm, zwd; int zwh, zwmi, zws, zwms, zwus, zwns, zwoff;
-        zdt_wall_fields(zdt, &zwy, &zwm, &zwd, &zwh, &zwmi, &zws, &zwms, &zwus, &zwns, &zwoff);
-        temporal::CivilDateTime zdt_local = {
-            .date = { .y = zwy, .m = zwm, .d = zwd },
-            .time = { .h = zwh, .mi = zwmi, .s = zws, .ms = zwms, .us = zwus, .ns = zwns },
-        };
-        HObject*? out_o = alloc_plain_datetime(ctx.heap, zdt_local, ctx.heap.temporal_iso_calendar);
-        if (catch err = out_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
-        *out_relative_to = out_o;
+        *out_relative_to = zdt;
         return true;
     }
 
@@ -1647,15 +1651,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
             if (ctx.result.is_object() && ctx.result.get_heapptr() != null) {
                 HObject* zdt = (HObject*)ctx.result.get_heapptr();
                 *ctx.result = saved_res;
-                long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
-                zdt_wall_fields(zdt, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
-                temporal::CivilDateTime dt = {
-                    .date = { .y = wy, .m = wm, .d = wd },
-                    .time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns },
-                };
-                HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
-                if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
-                *out_relative_to = dt_o;
+                *out_relative_to = zdt;
                 return true;
             }
             *ctx.result = saved_res;
@@ -1672,6 +1668,11 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
             return false;
         }
         if (p.has_time) {
+            if (!temporal::is_valid_iso_datetime(p.year, p.month, p.day, p.hour, p.minute, p.second,
+                                                 p.nanos / 1000000, (p.nanos / 1000) % 1000, p.nanos % 1000)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo datetime outside valid ISO range");
+                return false;
+            }
             temporal::CivilDateTime dt = {
                 .date = { .y = p.year, .m = p.month, .d = p.day },
                 .time = { .h = p.hour, .mi = p.minute, .s = p.second,
@@ -1682,6 +1683,10 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
             if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
             *out_relative_to = dt_o;
         } else {
+            if (!temporal::is_valid_iso_date(p.year, p.month, p.day)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo date outside valid ISO range");
+                return false;
+            }
             temporal::CivilDate dd = { .y = p.year, .m = p.month, .d = p.day };
             HObject*? dt_o = alloc_plain_date(ctx.heap, dd, ctx.heap.temporal_iso_calendar);
             if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
@@ -1740,9 +1745,24 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
 
     // With relativeTo: add each duration's date part to relativeTo's date and
     // compute total nanoseconds relative to that same origin, then compare.
-    CivilDate rel_date = { .y = relative_to.extra.temporal.long_a,
-                           .m = relative_to.extra.temporal.long_b,
-                           .d = relative_to.extra.temporal.long_c };
+    CivilDate rel_date;
+    if (relative_to.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+        long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
+        zdt_wall_fields(relative_to, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
+        rel_date = { .y = wy, .m = wm, .d = wd };
+    } else {
+        rel_date = { .y = relative_to.extra.temporal.long_a,
+                     .m = relative_to.extra.temporal.long_b,
+                     .d = relative_to.extra.temporal.long_c };
+    }
+
+    if (!is_cal_unit(default_largest_unit(da)) && !is_cal_unit(default_largest_unit(db))) {
+        int128 na = duration_to_time_ns(da);
+        int128 nb = duration_to_time_ns(db);
+        long cmp = na < nb ? -1 : (na > nb ? 1 : 0);
+        ctx.result.set_number((double)cmp);
+        return;
+    }
 
     int128 total_a = duration_total_ns_from(rel_date, da);
     int128 total_b = duration_total_ns_from(rel_date, db);
@@ -2756,6 +2776,20 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         return;
     }
 
+    bool is_blank = dur.years == 0 && dur.months == 0 && dur.weeks == 0 && dur.days == 0 &&
+                    dur.hours == 0 && dur.minutes == 0 && dur.seconds == 0 &&
+                    dur.ms == 0 && dur.us == 0 && dur.ns == 0;
+    if (is_blank && !is_cal_unit(smallest_unit) && smallest_unit != TemporalUnit.DAY &&
+                    !is_cal_unit(largest_unit) && largest_unit != TemporalUnit.DAY) {
+        temporal::DurationParts zero_dur = {};
+        HObject*? obj_o = alloc_duration(ctx.heap, zero_dur);
+        if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+        HObject* obj = obj_o;
+        obj.prototype = ctx.heap.temporal_duration_proto;
+        ctx.result.set_object(obj);
+        return;
+    }
+
     // No-relativeTo: time-only path.
     if (relative_to == null) {
         if (is_cal_unit(existing) || is_cal_unit(largest_unit)) {
@@ -2805,9 +2839,39 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     // date-times, round, decompose.
 
     // Extract relativeTo date fields.
-    CivilDate rel_date = { .y = relative_to.extra.temporal.long_a,
-                           .m = relative_to.extra.temporal.long_b,
-                           .d = relative_to.extra.temporal.long_c };
+    CivilDate rel_date;
+    temporal::CivilTime rel_time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+    bool is_zdt = (relative_to.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
+    if (is_zdt) {
+        long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
+        zdt_wall_fields(relative_to, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
+        rel_date = { .y = wy, .m = wm, .d = wd };
+        rel_time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns };
+        hbigint::HBigInt* start_big = (hbigint::HBigInt*)relative_to.extra.temporal.big_ns;
+        int128 start_ns = start_big.to_int128();
+        int128 dur_time_ns = duration_to_time_ns(dur);
+        int128 target_instant_ns = start_ns + dur_time_ns;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+            return;
+        }
+    } else {
+        rel_date = { .y = relative_to.extra.temporal.long_a,
+                     .m = relative_to.extra.temporal.long_b,
+                     .d = relative_to.extra.temporal.long_c };
+        if (relative_to.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            rel_time = plain_datetime_value(relative_to).time;
+        }
+    }
+
+    if (!is_cal_unit(smallest_unit) && smallest_unit != TemporalUnit.DAY) {
+        long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
+        if (rel_days < -100000000L || rel_days > 100000000L) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
+            return;
+        }
+    }
 
     // Step 1: Compute time-only (no days) for AddTime.
     int128 time_only_ns = (int128)0;
@@ -2836,7 +2900,21 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     if (dur.months != 0) target_date = temporal::add_months(target_date, dur.months, temporal::OverflowKind.CONSTRAIN);
     if (dur.weeks != 0) target_date = temporal::add_days(target_date, dur.weeks * 7);
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
-    if (!temporal::is_valid_iso_date(target_date.y, (int)target_date.m, (int)target_date.d)) {
+    long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
+    long tgt_days = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
+    if (rel_days < -100000000L || rel_days > 100000000L || tgt_days < -100000000L || tgt_days > 100000000L) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date outside representable range");
+        return;
+    }
+
+    long rem = (long)target_time_rem;
+    long h  = rem / 3600000000000L; rem = (long)(rem % 3600000000000L);
+    long mi = rem / 60000000000L;   rem = (long)(rem % 60000000000L);
+    long s  = rem / 1000000000L;    rem = (long)(rem % 1000000000L);
+    long ms = rem / 1000000L;       rem = (long)(rem % 1000000L);
+    long us = rem / 1000L;
+    long ns = rem % 1000L;
+    if (!temporal::is_valid_iso_datetime(target_date.y, target_date.m, target_date.d, h, mi, s, ms, us, ns)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "date out of range");
         return;
     }
@@ -2847,13 +2925,6 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     // same algorithm that backs PlainDateTime.prototype.round and until/since,
     // which already balances calendar units at largestUnit and handles the
     // day-borrow for a negative time-of-day remainder.
-    long rem = (long)target_time_rem;
-    long h  = rem / 3600000000000L; rem = (long)(rem % 3600000000000L);
-    long mi = rem / 60000000000L;   rem = (long)(rem % 60000000000L);
-    long s  = rem / 1000000000L;    rem = (long)(rem % 1000000000L);
-    long ms = rem / 1000000L;       rem = (long)(rem % 1000000L);
-    long us = rem / 1000L;
-    long ns = rem % 1000L;
     temporal::CivilDateTime iso_dt = { .date = rel_date, .time = {} };
     temporal::CivilDateTime target_dt = { .date = target_date,
         .time = { .h = h, .mi = mi, .s = s, .ms = ms, .us = us, .ns = ns } };
@@ -2925,6 +2996,14 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         }
     }
 
+    bool is_blank = dur.years == 0 && dur.months == 0 && dur.weeks == 0 && dur.days == 0 &&
+                    dur.hours == 0 && dur.minutes == 0 && dur.seconds == 0 &&
+                    dur.ms == 0 && dur.us == 0 && dur.ns == 0;
+    if (is_blank && !is_cal_unit(unit) && unit != TemporalUnit.DAY) {
+        ctx.result.set_number(0.0);
+        return;
+    }
+
     TemporalUnit existing = default_largest_unit(dur);
     if (relative_to == null) {
         if (is_cal_unit(existing) || is_cal_unit(unit)) {
@@ -2938,33 +3017,53 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         ctx.result.set_number((double)time_ns / divisor);
         return;
     }
-    // Time-only with relativeTo: same as no-relativeTo. A day is a fixed
-    // 86400e9 ns here; unit_ns_divisor covers only the sub-day tiers.
-    // Skip this fast path when the duration contains calendar units
-    // (years, months, weeks) — they need calendar resolution via relativeTo.
-    bool has_cal = dur.years != 0 || dur.months != 0 || dur.weeks != 0;
-    if (!is_cal_unit(unit) && !has_cal) {
-        int128 time_ns = duration_to_time_ns(dur);
-        double divisor = unit == TemporalUnit.DAY
-            ? 86400000000000.0
-            : (double)unit_ns_divisor(unit);
-        ctx.result.set_number((double)time_ns / divisor);
-        return;
+    // Always compute and validate target datetime with relative_to:
+    CivilDate rel_date;
+    temporal::CivilTime rel_time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+    bool is_zdt = (relative_to.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
+    if (is_zdt) {
+        long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
+        zdt_wall_fields(relative_to, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
+        rel_date = { .y = wy, .m = wm, .d = wd };
+        rel_time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns };
+        hbigint::HBigInt* start_big = (hbigint::HBigInt*)relative_to.extra.temporal.big_ns;
+        int128 start_ns = start_big.to_int128();
+        int128 dur_time_ns = duration_to_time_ns(dur);
+        int128 target_instant_ns = start_ns + dur_time_ns;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+            return;
+        }
+        if (unit == TemporalUnit.DAY || unit == TemporalUnit.WEEK || unit == TemporalUnit.MONTH || unit == TemporalUnit.YEAR) {
+            int128 one_day_ns = (int128)86400000000000L;
+            bool is_neg = dur.years < 0 || dur.months < 0 || dur.weeks < 0 || dur.days < 0 ||
+                          dur.hours < 0 || dur.minutes < 0 || dur.seconds < 0 || dur.ms < 0 || dur.us < 0 || dur.ns < 0;
+            if (!is_neg && start_ns + one_day_ns > ns_limit) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+                return;
+            }
+            if (is_neg && start_ns - one_day_ns < -ns_limit) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+                return;
+            }
+        }
+    } else {
+        rel_date = { .y = relative_to.extra.temporal.long_a,
+                     .m = relative_to.extra.temporal.long_b,
+                     .d = relative_to.extra.temporal.long_c };
+        if (relative_to.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+            rel_time = plain_datetime_value(relative_to).time;
+        }
     }
-    // Calendar unit total with relativeTo: the spec re-runs calendar arithmetic
-    // (DifferenceISODateTime) on relTo + duration before measuring total, so
-    // a duration like "548 days" decomposes into (1y 6m 1d) anchored at
-    // relTo. We do the same: fold the sub-day time into target_time_days,
-    // add (years, months, weeks, days) to rel_to, and treat that as the
-    // calendar date of rel_to + duration. From there the total is
-    // (denominator * r1 + numerator * sign) / denominator with denominator =
-    // relTo + (r1+sign) units - relTo + r1 units (so the year length tracks
-    // the unit's actual calendar span at rel_to, not a 365-day constant).
-    CivilDate rel_date = { .y = relative_to.extra.temporal.long_a,
-                           .m = relative_to.extra.temporal.long_b,
-                           .d = relative_to.extra.temporal.long_c };
-    // Sub-day time becomes a delta-days offset on the date portion: 548h
-    // rolls over into 22 full days plus a sub-day remainder.
+
+    if (!is_cal_unit(unit) && unit != TemporalUnit.DAY) {
+        long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
+        if (rel_days < -100000000L || rel_days > 100000000L) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
+            return;
+        }
+    }
     int128 time_only_ns = (int128)0;
     time_only_ns += (int128)dur.hours   * 3600000000000L;
     time_only_ns += (int128)dur.minutes *   60000000000L;
@@ -2972,6 +3071,12 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     time_only_ns += (int128)dur.ms      *       1000000L;
     time_only_ns += (int128)dur.us      *          1000L;
     time_only_ns += (int128)dur.ns;
+    time_only_ns += (int128)rel_time.h  * 3600000000000L +
+                    (int128)rel_time.mi *   60000000000L +
+                    (int128)rel_time.s  *    1000000000L +
+                    (int128)rel_time.ms *       1000000L +
+                    (int128)rel_time.us *          1000L +
+                    (int128)rel_time.ns;
     long target_time_days = (long)(time_only_ns / 86400000000000L);
     int128 target_time_rem = time_only_ns % 86400000000000L;
     if (time_only_ns < 0 && target_time_rem != 0) {
@@ -2984,8 +3089,42 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     if (dur.months != 0) target_date = temporal::add_months(target_date, dur.months, temporal::OverflowKind.CONSTRAIN);
     if (dur.weeks != 0) target_date = temporal::add_days(target_date, dur.weeks * 7);
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
-    if (!temporal::is_valid_iso_date(target_date.y, (int)target_date.m, (int)target_date.d)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "date out of range");
+
+    if (!temporal::is_valid_iso_date(target_date.y, (int)target_date.m, (int)target_date.d) ||
+        !temporal::is_valid_iso_date(rel_date.y, (int)rel_date.m, (int)rel_date.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date outside representable range");
+        return;
+    }
+
+    if (relative_to.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+        long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
+        long tgt_days = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
+        if (rel_days < -100000000L || rel_days > 100000000L || tgt_days < -100000000L || tgt_days > 100000000L) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date outside representable range");
+            return;
+        }
+    }
+
+    int128 rem_work = target_time_rem;
+    long tgt_h = (long)(rem_work / 3600000000000L); rem_work %= 3600000000000L;
+    long tgt_mi = (long)(rem_work / 60000000000L); rem_work %= 60000000000L;
+    long tgt_s = (long)(rem_work / 1000000000L); rem_work %= 1000000000L;
+    long tgt_ms = (long)(rem_work / 1000000L); rem_work %= 1000000L;
+    long tgt_us = (long)(rem_work / 1000L); rem_work %= 1000L;
+    long tgt_ns = (long)rem_work;
+
+    if (!temporal::is_valid_iso_datetime(target_date.y, target_date.m, target_date.d, tgt_h, tgt_mi, tgt_s, tgt_ms, tgt_us, tgt_ns)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo + duration is out of range");
+        return;
+    }
+
+    bool has_cal = dur.years != 0 || dur.months != 0 || dur.weeks != 0;
+    if (!is_cal_unit(unit) && !has_cal) {
+        int128 time_ns = duration_to_time_ns(dur);
+        double divisor = unit == TemporalUnit.DAY
+            ? 86400000000000.0
+            : (double)unit_ns_divisor(unit);
+        ctx.result.set_number((double)time_ns / divisor);
         return;
     }
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);

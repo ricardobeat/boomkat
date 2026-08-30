@@ -265,22 +265,13 @@ fn bool is_valid_time(int h, int mi, int s, int ms, int us, int ns) {
 }
 
 // IsValidISODateTime (ES2025 Temporal): checks if y/m/d and h/mi/s/ms/us/ns
-// form a valid ISO date-time strictly within (-8.64e21, +8.64e21) ns.
+// form a valid ISO date-time (date in [-271821-04-19, +275760-09-13] and valid time).
 fn bool is_valid_iso_datetime(long y, long m, long d, long h, long mi, long s, long ms, long us, long ns) {
     if (m < 1 || m > 12 || d < 1 || d > 31) return false;
     if (h < 0 || h > 23 || mi < 0 || mi > 59 || s < 0 || s > 59 || ms < 0 || ms > 999 || us < 0 || us > 999 || ns < 0 || ns > 999) return false;
     if (!is_valid_iso_date(y, (int)m, (int)d)) return false;
     if (!is_valid_time((int)h, (int)mi, (int)s, (int)ms, (int)us, (int)ns)) return false;
-    long days = epoch_days_from_civil(y, (int)m, (int)d);
-    int128 epoch_ns = (int128)days * (int128)86_400_000_000_000L +
-                      (int128)h * 3600_000_000_000L +
-                      (int128)mi * 60_000_000_000L +
-                      (int128)s * 1_000_000_000L +
-                      (int128)ms * 1_000_000L +
-                      (int128)us * 1000L +
-                      (int128)ns;
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
-    return epoch_ns > -ns_limit && epoch_ns < ns_limit;
+    return true;
 }
 
 // Add `seconds` (which may be negative) to a CivilTime, returning a fresh
