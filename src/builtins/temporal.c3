@@ -1468,10 +1468,6 @@ fn bool duration_field_integral(BuiltinContext* ctx, double val) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
         return false;
     }
-    if (math::abs(val) > 9007199254740991.0) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "duration field exceeds max safe integer");
-        return false;
-    }
     return true;
 }
 
@@ -3065,7 +3061,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     bool is_blank = dur.years == 0 && dur.months == 0 && dur.weeks == 0 && dur.days == 0 &&
                     dur.hours == 0 && dur.minutes == 0 && dur.seconds == 0 &&
                     dur.ms == 0 && dur.us == 0 && dur.ns == 0;
-    if (is_blank && !is_cal_unit(unit) && unit != TemporalUnit.DAY) {
+    if (is_blank) {
         ctx.result.set_number(0.0);
         return;
     }
@@ -3195,7 +3191,22 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     }
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
     long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-    int128 diff_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
+    // Calculate relativeTo time in nanoseconds
+    int128 relativeTo_time_ns = (int128)rel_time.h * 3600000000000L +
+                                (int128)rel_time.mi * 60000000000L +
+                                (int128)rel_time.s * 1000000000L +
+                                (int128)rel_time.ms * 1000000L +
+                                (int128)rel_time.us * 1000L +
+                                (int128)rel_time.ns;
+    // Calculate time difference: (relativeTo time + duration time) - relativeTo time
+    int128 time_diff_ns = target_time_rem - relativeTo_time_ns;
+    int128 days_diff_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L;
+    // Handle negative time difference by borrowing a day
+    if (time_diff_ns < 0) {
+        days_diff_ns -= 86400000000000L;
+        time_diff_ns += 86400000000000L;
+    }
+    int128 diff_ns = days_diff_ns + time_diff_ns;
     long divisor = unit_ns_divisor(unit);
     if (divisor > 0) {
         ctx.result.set_number((double)diff_ns / (double)divisor);
@@ -4676,12 +4687,12 @@ fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
     ctx.result.set_object(obj2);
 }
 
-fn void builtin_temporal_plain_time_proto_add(BuiltinContext* ctx) {
+fn void plain_time_add_sub(BuiltinContext* ctx, bool subtract) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "add requires a duration");
+        builtin_throw(ctx, ctx.heap.type_err_proto, subtract ? "subtract requires a duration" : "add requires a duration");
         return;
     }
     temporal::DurationParts dur;
@@ -4689,58 +4700,30 @@ fn void builtin_temporal_plain_time_proto_add(BuiltinContext* ctx) {
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
 
-    // Sum hours/minutes/seconds/ms/us/ns into one nanosecond delta. Years,
-    // months, weeks and days are silently ignored for PlainTime: their
-    // presence is allowed (the spec reads them) but they contribute zero.
-    // int128 because max-range hours (2501999792983H) times 3.6e12 ns/hour
-    // exceeds long.
-    int128 extra_ns128 = (int128)dur.ns + (int128)dur.us * 1000 + (int128)dur.ms * 1_000_000 +
-                    (int128)dur.seconds * 1_000_000_000 + (int128)dur.minutes * 60_000_000_000 +
-                    (int128)dur.hours * 3_600_000_000_000;
-    // Balance into whole seconds + sub-1e9 nanoseconds. The carry_ns is then
-    // split into ms/us/ns parts and added to the current sub-second fields,
-    // matching the spec's separate-balance approach.
-    int128 carry_seconds128 = extra_ns128 / 1_000_000_000;
-    long carry_ns = (long)(extra_ns128 - carry_seconds128 * 1_000_000_000);
-    // PlainTime wraps at 24h, so only the seconds modulo 86400 matter.
-    long carry_seconds = (long)(carry_seconds128 % 86400);
-
     temporal::CivilTime cur = plain_time_value(obj);
-    long day_bump = 0;
-    temporal::CivilTime result = temporal::add_seconds_to_time(cur, carry_seconds, &day_bump);
-    // day_bump is dropped per spec: PlainTime.add cannot cross midnight into
-    // a different date. The carry still affects hour/minute/second.
-    (void)day_bump;
-    long full_subsec = ((long)cur.ms * 1_000_000L) + ((long)cur.us * 1000L) + ((long)cur.ns) + carry_ns;
-    if (full_subsec >= 1_000_000_000L) {
-        full_subsec -= 1_000_000_000L;
-        // Re-add 1s to result; carry_seconds already incremented by add_seconds_to_time only when
-        // its own overflow triggered. Here we manually propagate.
-        temporal::CivilTime bumped;
-        bumped.h = result.h; bumped.mi = result.mi; bumped.s = result.s;
-        bumped.ms = 0; bumped.us = 0; bumped.ns = 0;
-        day_bump = 0;
-        bumped = temporal::add_seconds_to_time(bumped, 1, &day_bump);
-        result = bumped;
-    } else if (full_subsec < 0) {
-        full_subsec += 1_000_000_000L;
-        temporal::CivilTime bumped;
-        bumped.h = result.h; bumped.mi = result.mi; bumped.s = result.s;
-        bumped.ms = 0; bumped.us = 0; bumped.ns = 0;
-        day_bump = 0;
-        bumped = temporal::add_seconds_to_time(bumped, -1, &day_bump);
-        result = bumped;
-    }
-    result.ms = (int)(full_subsec / 1_000_000);
-    full_subsec -= (long)result.ms * 1_000_000;
-    result.us = (int)(full_subsec / 1000);
-    full_subsec -= (long)result.us * 1000;
-    result.ns = (int)full_subsec;
+    int128 cur_ns = (int128)cur.h * 3_600_000_000_000L + (int128)cur.mi * 60_000_000_000L +
+                    (int128)cur.s * 1_000_000_000L + (int128)cur.ms * 1_000_000L +
+                    (int128)cur.us * 1000L + (int128)cur.ns;
+    int128 dur_ns = (int128)dur.hours * 3_600_000_000_000L + (int128)dur.minutes * 60_000_000_000L +
+                    (int128)dur.seconds * 1_000_000_000L + (int128)dur.ms * 1_000_000L +
+                    (int128)dur.us * 1000L + (int128)dur.ns;
+    int128 sum_ns = subtract ? (cur_ns - dur_ns) : (cur_ns + dur_ns);
+    int128 day_ns = (int128)86_400_000_000_000L;
+    int128 rem_ns = sum_ns % day_ns;
+    if (rem_ns < 0) rem_ns += day_ns;
 
-    if (!temporal::is_valid_time((int)result.h, (int)result.mi, (int)result.s, (int)result.ms, (int)result.us, (int)result.ns)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "result time is out of range");
-        return;
-    }
+    temporal::CivilTime result;
+    result.h = (int)(rem_ns / 3_600_000_000_000L);
+    rem_ns %= 3_600_000_000_000L;
+    result.mi = (int)(rem_ns / 60_000_000_000L);
+    rem_ns %= 60_000_000_000L;
+    result.s = (int)(rem_ns / 1_000_000_000L);
+    rem_ns %= 1_000_000_000L;
+    result.ms = (int)(rem_ns / 1_000_000L);
+    rem_ns %= 1_000_000L;
+    result.us = (int)(rem_ns / 1000L);
+    result.ns = (int)(rem_ns % 1000L);
+
     HObject*? obj_o = alloc_plain_time(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
@@ -4748,63 +4731,12 @@ fn void builtin_temporal_plain_time_proto_add(BuiltinContext* ctx) {
     ctx.result.set_object(obj2);
 }
 
+fn void builtin_temporal_plain_time_proto_add(BuiltinContext* ctx) {
+    plain_time_add_sub(ctx, false);
+}
+
 fn void builtin_temporal_plain_time_proto_subtract(BuiltinContext* ctx) {
-    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
-    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract requires a duration");
-        return;
-    }
-    temporal::DurationParts dur;
-    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
-
-    int128 extra_ns128 = (int128)dur.ns + (int128)dur.us * 1000 + (int128)dur.ms * 1_000_000 +
-                    (int128)dur.seconds * 1_000_000_000 + (int128)dur.minutes * 60_000_000_000 +
-                    (int128)dur.hours * 3_600_000_000_000;
-    int128 carry_seconds128 = extra_ns128 / 1_000_000_000;
-    long carry_ns = (long)(extra_ns128 - carry_seconds128 * 1_000_000_000);
-    long carry_seconds = (long)(carry_seconds128 % 86400);
-
-    temporal::CivilTime cur = plain_time_value(obj);
-    long day_bump = 0;
-    temporal::CivilTime result = temporal::add_seconds_to_time(cur, -carry_seconds, &day_bump);
-    (void)day_bump;
-    long full_subsec = ((long)cur.ms * 1_000_000L) + ((long)cur.us * 1000L) + ((long)cur.ns) - carry_ns;
-    if (full_subsec >= 1_000_000_000L) {
-        full_subsec -= 1_000_000_000L;
-        temporal::CivilTime bumped;
-        bumped.h = result.h; bumped.mi = result.mi; bumped.s = result.s;
-        bumped.ms = 0; bumped.us = 0; bumped.ns = 0;
-        day_bump = 0;
-        bumped = temporal::add_seconds_to_time(bumped, 1, &day_bump);
-        result = bumped;
-    } else if (full_subsec < 0) {
-        full_subsec += 1_000_000_000L;
-        temporal::CivilTime bumped;
-        bumped.h = result.h; bumped.mi = result.mi; bumped.s = result.s;
-        bumped.ms = 0; bumped.us = 0; bumped.ns = 0;
-        day_bump = 0;
-        bumped = temporal::add_seconds_to_time(bumped, -1, &day_bump);
-        result = bumped;
-    }
-    result.ms = (int)(full_subsec / 1_000_000);
-    full_subsec -= (long)result.ms * 1_000_000;
-    result.us = (int)(full_subsec / 1000);
-    full_subsec -= (long)result.us * 1000;
-    result.ns = (int)full_subsec;
-
-    if (!temporal::is_valid_time((int)result.h, (int)result.mi, (int)result.s, (int)result.ms, (int)result.us, (int)result.ns)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "result time is out of range");
-        return;
-    }
-    HObject*? obj_o = alloc_plain_time(ctx.heap, result);
-    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* obj2 = obj_o;
-    obj2.prototype = ctx.heap.temporal_plain_time_proto;
-    ctx.result.set_object(obj2);
+    plain_time_add_sub(ctx, true);
 }
 
 fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) {
@@ -5165,6 +5097,10 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "time is out of range");
             return;
         }
+        if (!temporal::is_valid_plain_datetime(d.y, (int)d.m, (int)d.d, (int)t.h, (int)t.mi, (int)t.s, (int)t.ms, (int)t.us, (int)t.ns)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date-time is out of range");
+            return;
+        }
         result = { .date = d, .time = t };
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
@@ -5233,6 +5169,11 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
         }
         temporal::CivilTime valid_t;
         if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return;
+        if (!temporal::is_valid_plain_datetime(valid_d.y, (int)valid_d.m, (int)valid_d.d,
+                (int)valid_t.h, (int)valid_t.mi, (int)valid_t.s, (int)valid_t.ms, (int)valid_t.us, (int)valid_t.ns)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date-time is out of range");
+            return;
+        }
         result = { .date = valid_d, .time = valid_t };
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDateTime.from: argument must be a string or object");
@@ -6450,12 +6391,12 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
     ctx.result.set_object(obj2);
 }
 
-fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
+fn void plain_datetime_add_sub(BuiltinContext* ctx, bool subtract) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "add requires a duration");
+        builtin_throw(ctx, ctx.heap.type_err_proto, subtract ? "subtract requires a duration" : "add requires a duration");
         return;
     }
     temporal::DurationParts dur;
@@ -6464,19 +6405,8 @@ fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
     if (!read_overflow_option(ctx, 1, &overflow)) return;
 
     temporal::CivilDateTime cur = plain_datetime_value(obj);
-    // Time units balance into whole days via MathTrunc (truncation toward 0)
-    // for the same reason as PlainDate.add: the spec's AddDurationToDate
-    // ignores sub-day time and uses the time as a whole-day contribution
-    // truncated to zero. int128 avoids overflow for hour values up to 2.4e9.
-    int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
-                    ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
-                    ((int128)dur.hours * 3_600_000_000_000L);
-    long whole_days = (long)(extra_ns / 86_400_000_000_000L);
-    long rem_ns = (long)(extra_ns - (int128)whole_days * 86_400_000_000_000L);
-    long sec_part = rem_ns / 1_000_000_000L;
-    long ns_part = rem_ns - sec_part * 1_000_000_000L;
-    long total_months = dur.years * 12 + dur.months;
-    long total_days = dur.weeks * 7 + dur.days + whole_days;
+    long sign = subtract ? -1 : 1;
+    long total_months = sign * (dur.years * 12 + dur.months);
 
     temporal::CivilDate after_months;
     if (overflow == temporal::OverflowKind.REJECT) {
@@ -6489,35 +6419,36 @@ fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
     } else {
         after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
     }
-    temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
 
-    // Spec AddDateTime: BalanceTime(time + duration time) yields a day count
-    // that folds into the date, so a negative time crossing midnight pushes
-    // the date back one day (e.g. -PT23H59M59.999999999S from midnight lands
-    // on the previous date at 00:00:00.000000001).
-    long day_bump = 0;
-    temporal::CivilTime time_part = temporal::add_seconds_to_time(cur.time, sec_part, &day_bump);
-    long total_n = (long)cur.time.ns + ns_part;
-    if (total_n >= 1_000_000_000) {
-        long _d;
-        time_part = temporal::add_seconds_to_time(time_part, 1, &_d);
-        day_bump += _d;
-        total_n -= 1_000_000_000;
-    } else if (total_n < 0) {
-        long _d;
-        time_part = temporal::add_seconds_to_time(time_part, -1, &_d);
-        day_bump += _d;
-        total_n += 1_000_000_000;
+    int128 cur_time_ns = (int128)cur.time.h * 3_600_000_000_000L + (int128)cur.time.mi * 60_000_000_000L +
+                         (int128)cur.time.s * 1_000_000_000L + (int128)cur.time.ms * 1_000_000L +
+                         (int128)cur.time.us * 1000L + (int128)cur.time.ns;
+    int128 dur_time_ns = (int128)dur.hours * 3_600_000_000_000L + (int128)dur.minutes * 60_000_000_000L +
+                         (int128)dur.seconds * 1_000_000_000L + (int128)dur.ms * 1_000_000L +
+                         (int128)dur.us * 1000L + (int128)dur.ns;
+    int128 sum_time_ns = subtract ? (cur_time_ns - dur_time_ns) : (cur_time_ns + dur_time_ns);
+    int128 day_ns = (int128)86_400_000_000_000L;
+    int128 time_days = sum_time_ns / day_ns;
+    int128 rem_time_ns = sum_time_ns % day_ns;
+    if (rem_time_ns < 0) {
+        rem_time_ns += day_ns;
+        time_days -= 1;
     }
-    if (day_bump != 0) {
-        date_part = temporal::add_days(date_part, day_bump);
-    }
-    long full_subsec = ((long)cur.time.ms * 1_000_000L) + ((long)cur.time.us * 1000L) + total_n;
-    time_part.ms = (int)(full_subsec / 1_000_000);
-    full_subsec -= (long)time_part.ms * 1_000_000;
-    time_part.us = (int)(full_subsec / 1000);
-    full_subsec -= (long)time_part.us * 1000;
-    time_part.ns = (int)full_subsec;
+
+    temporal::CivilTime time_part;
+    time_part.h = (int)(rem_time_ns / 3_600_000_000_000L);
+    int128 rem_ns = rem_time_ns % 3_600_000_000_000L;
+    time_part.mi = (int)(rem_ns / 60_000_000_000L);
+    rem_ns %= 60_000_000_000L;
+    time_part.s = (int)(rem_ns / 1_000_000_000L);
+    rem_ns %= 1_000_000_000L;
+    time_part.ms = (int)(rem_ns / 1_000_000L);
+    rem_ns %= 1_000_000L;
+    time_part.us = (int)(rem_ns / 1000L);
+    time_part.ns = (int)(rem_ns % 1000L);
+
+    long total_days = sign * (dur.weeks * 7 + dur.days) + (long)time_days;
+    temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
 
     if (!temporal::is_valid_iso_datetime(date_part.y, (int)date_part.m, (int)date_part.d,
                                          time_part.h, time_part.mi, time_part.s,
@@ -6534,82 +6465,12 @@ fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
     ctx.result.set_object(obj2);
 }
 
+fn void builtin_temporal_plain_datetime_proto_add(BuiltinContext* ctx) {
+    plain_datetime_add_sub(ctx, false);
+}
+
 fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
-    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
-    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract requires a duration");
-        return;
-    }
-    temporal::DurationParts dur;
-    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
-
-    temporal::CivilDateTime cur = plain_datetime_value(obj);
-    int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
-                    ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
-                    ((int128)dur.hours * 3_600_000_000_000L);
-    long whole_days = (long)(extra_ns / 86_400_000_000_000L);
-    long rem_ns = (long)(extra_ns - (int128)whole_days * 86_400_000_000_000L);
-    whole_days = -whole_days;
-    rem_ns = -rem_ns;
-    long sec_part = rem_ns / 1_000_000_000L;
-    long ns_part = rem_ns - sec_part * 1_000_000_000L;
-    long total_months = -(dur.years * 12 + dur.months);
-    long total_days = -(dur.weeks * 7 + dur.days) + whole_days;
-
-    temporal::CivilDate after_months;
-    if (overflow == temporal::OverflowKind.REJECT) {
-        temporal::CivilDate m = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
-        if (cur.date.d > temporal::days_in_month(m.y, (int)m.m)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
-            return;
-        }
-        after_months = { .y = m.y, .m = m.m, .d = cur.date.d };
-    } else {
-        after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
-    }
-    temporal::CivilDate date_part = temporal::add_days(after_months, total_days);
-
-    long day_bump = 0;
-    temporal::CivilTime time_part = temporal::add_seconds_to_time(cur.time, sec_part, &day_bump);
-    long total_n = (long)cur.time.ns + ns_part;
-    if (total_n >= 1_000_000_000) {
-        long _d;
-        time_part = temporal::add_seconds_to_time(time_part, 1, &_d);
-        day_bump += _d;
-        total_n -= 1_000_000_000;
-    } else if (total_n < 0) {
-        long _d;
-        time_part = temporal::add_seconds_to_time(time_part, -1, &_d);
-        day_bump += _d;
-        total_n += 1_000_000_000;
-    }
-    if (day_bump != 0) {
-        date_part = temporal::add_days(date_part, day_bump);
-    }
-    long full_subsec = ((long)cur.time.ms * 1_000_000L) + ((long)cur.time.us * 1000L) + total_n;
-    time_part.ms = (int)(full_subsec / 1_000_000);
-    full_subsec -= (long)time_part.ms * 1_000_000;
-    time_part.us = (int)(full_subsec / 1000);
-    full_subsec -= (long)time_part.us * 1000;
-    time_part.ns = (int)full_subsec;
-
-    if (!temporal::is_valid_iso_datetime(date_part.y, (int)date_part.m, (int)date_part.d,
-                                         time_part.h, time_part.mi, time_part.s,
-                                         time_part.ms, time_part.us, time_part.ns)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
-        return;
-    }
-
-    temporal::CivilDateTime result = { .date = date_part, .time = time_part };
-    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
-    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* obj2 = obj_o;
-    obj2.prototype = ctx.heap.temporal_plain_datetime_proto;
-    ctx.result.set_object(obj2);
+    plain_datetime_add_sub(ctx, true);
 }
 
 // Difference two wall-clock date-times into a Duration, honoring largestUnit
@@ -7121,7 +6982,7 @@ fn bool fields_to_valid_yearmonth(BuiltinContext* ctx, long y, int m, int d,
         }
         d = dim;
     }
-    if (!temporal::is_valid_iso_date(y, (int)m, (int)d)) {
+    if (!temporal::is_valid_iso_yearmonth(y, (int)m)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
         return false;
     }
@@ -9383,12 +9244,16 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
 // and are rejected by the caller's range check, not here.
 fn hbigint::HBigInt*? instant_add_big(hbigint::HBigInt* a, hbigint::HBigInt* delta, Heap* hp) {
     if (a == null || delta == null) return null;
-    return hbigint::hbigint_alloc(hp, temporal::instant_add(a.to_int128(), delta.to_int128()));
+    int128 res = temporal::instant_add(a.to_int128(), delta.to_int128());
+    if (!temporal::instant_in_range(res)) return null;
+    return hbigint::hbigint_alloc(hp, res);
 }
 
 fn hbigint::HBigInt*? instant_sub_big(hbigint::HBigInt* a, hbigint::HBigInt* delta, Heap* hp) {
     if (a == null || delta == null) return null;
-    return hbigint::hbigint_alloc(hp, temporal::instant_sub(a.to_int128(), delta.to_int128()));
+    int128 res = temporal::instant_sub(a.to_int128(), delta.to_int128());
+    if (!temporal::instant_in_range(res)) return null;
+    return hbigint::hbigint_alloc(hp, res);
 }
 
 // Ordering on the BigInt representation. Null sorts before any value, matching
@@ -9402,6 +9267,7 @@ fn int instant_cmp_big(hbigint::HBigInt* a, hbigint::HBigInt* b) {
 
 fn HObject*? alloc_instant(Heap* hp, hbigint::HBigInt* ns) {
     if (ns == null) return null;
+    if (!temporal::instant_in_range(ns.to_int128())) return null;
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_INSTANT);
     if (catch err = raw) return err~;
     HObject* obj = raw;
@@ -10281,13 +10147,22 @@ fn void builtin_temporal_instant_proto_add(BuiltinContext* ctx) {
     hbigint::HBigInt*? result = instant_add_big(base, delta, ctx.heap);
     ctx.heap.decref((types::HeapHeader*)delta);
     if (catch err = result) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "add: failed");
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant is out of range");
+        return;
+    }
+    if (result == null) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant is out of range");
         return;
     }
     HObject*? obj_o = alloc_instant(ctx.heap, result);
     if (catch err2 = obj_o) {
         ctx.heap.decref((types::HeapHeader*)result);
-        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant is out of range");
+        return;
+    }
+    if (obj_o == null) {
+        ctx.heap.decref((types::HeapHeader*)result);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant is out of range");
         return;
     }
     HObject* obj = obj_o;
@@ -10359,13 +10234,22 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
     hbigint::HBigInt*? result = instant_sub_big(base, delta, ctx.heap);
     ctx.heap.decref((types::HeapHeader*)delta);
     if (catch err = result) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: failed");
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant is out of range");
+        return;
+    }
+    if (result == null) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant is out of range");
         return;
     }
     HObject*? obj_o = alloc_instant(ctx.heap, result);
     if (catch err2 = obj_o) {
         ctx.heap.decref((types::HeapHeader*)result);
-        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant is out of range");
+        return;
+    }
+    if (obj_o == null) {
+        ctx.heap.decref((types::HeapHeader*)result);
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant is out of range");
         return;
     }
     HObject* obj = obj_o;
