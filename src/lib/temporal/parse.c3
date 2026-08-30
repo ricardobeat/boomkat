@@ -404,7 +404,7 @@ fn bool parse_iso_date_string(char[] text, ParsedIsoDateTime* out) {
         usz cal_start, cal_len;
         if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
         if (cal_len != 0) {
-            char[] cal = text[cal_start..cal_start + cal_len];
+            char[] cal = text[cal_start:cal_len];
             if (!ci_equals(cal, "iso8601")) return false;
         }
         if (i != len) return false;
@@ -498,7 +498,7 @@ fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
         usz cal_start, cal_len;
         if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
         if (cal_len != 0) {
-            char[] cal = text[cal_start..cal_start + cal_len];
+            char[] cal = text[cal_start:cal_len];
             if (!ci_equals(cal, "iso8601")) return false;
         }
         if (i != len) return false;
@@ -547,7 +547,7 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
         usz cal_start, cal_len;
         if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
         if (cal_len != 0) {
-            char[] cal = text[cal_start..cal_start + cal_len];
+            char[] cal = text[cal_start:cal_len];
             if (!ci_equals(cal, "iso8601")) return false;
         }
         if (i != len) return false;
@@ -972,10 +972,10 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     if (!parse_annotations(text, &i, &cal_start, &cal_len, &tz_start, &tz_len, false)) return false;
     if (tz_len == 0) return false;
     if (cal_len != 0) {
-        char[] cal = text[cal_start..cal_start + cal_len];
+        char[] cal = text[cal_start:cal_len];
         if (!ci_equals(cal, "iso8601")) return false;
     }
-    out.timezone = text[tz_start..tz_start + tz_len - 1];
+    out.timezone = text[tz_start:tz_len];
     out.has_offset = has_offset;
     out.is_z = is_z;
     if (i != len) return false;
