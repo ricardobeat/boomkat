@@ -46,26 +46,138 @@ that different classes get different sizes is established — but two of those
 three still embed the whole union, and everything else falls through to
 `OBJ_SIZE_FUNC`.
 
-## The mechanism
+## What mature engines do
 
-Two independent moves, applicable per class:
+Worth settling before choosing a mechanism, because neither reference engine
+does what this plan first proposed.
 
-**A. Right-size the tail.** `alloc_size_for_class` returns
-`HObjectBase::size + <this class's payload> + INLINE_EXTRA` instead of
-`… + HObjectExtra::size + …`. The union stays as the accessor type; only the
-*allocation* shrinks. This is what `OBJ_SIZE_GS` already does for
-GETTER_SETTER, so it needs no new machinery — just a size per class and the
-discipline that allocation and free agree.
+**QuickJS** uses a union, like this engine. The difference is what goes in it:
+almost every member is a **pointer to a separately allocated struct**
+(`quickjs.c`, `struct JSObject`):
 
-**B. Externalise the outliers.** For a payload far larger than the rest,
-allocate it separately and reach it through a pointer (`HObjectHost.payload`
-is already in the union and already does this for host classes). This removes
-the member from the union entirely, so it stops sizing anything.
+```c
+union {
+    struct JSMapState *map_state;        /* js_malloc'd */
+    struct JSPromiseData *promise_data;
+    struct JSProxyData *proxy_data;
+    struct JSTypedArray *typed_array;
+    struct { ... } func;                 /* 24 bytes, inline */
+    struct { ... } array;                /* 24 bytes, inline */
+    JSRegExp regexp;                     /* 16 bytes, inline */
+    ...
+} u;
+```
 
-(A) is cheap and safe and should come first: it captures most of the win with
-no lifetime changes and no new failure modes. (B) is only worth it for a member
-that dominates, and it trades memory *back* on the class being externalised —
-see the measurements.
+Their union is **24 bytes on 64-bit** — the source comments say so per member
+(`12/24 bytes`, `12/20 bytes`, `8/16 bytes`). Only small, hot payloads live
+inline; anything larger is `js_malloc(ctx, sizeof(*s))` behind a pointer. The
+union cannot grow, because there is an implicit ceiling on what may go in it.
+
+**V8** does not use a union at all: separate `JSObject` subclasses, each with
+its own `kHeaderSize` and instance size, dispatched on `InstanceType`. Different
+mechanism, same principle — no object pays for another class's fields.
+
+Neither uses flexible array members for this.
+
+## The mechanism: cap the union, spill the rest
+
+The defect here is not "we use a union". It is that a 104-byte payload was put
+**inside** it. QuickJS would never have hit this, because `HObjectTemporal`
+would have been a pointer from the start.
+
+So adopt QuickJS's rule explicitly:
+
+1. **Cap `HObjectExtra` at 32 bytes**, enforced by `$assert` so it cannot
+   silently regress. The existing comment in `src/hobject.c3` — that widening
+   Temporal's slots meant "every FUNCTION/REGEXP/PROMISE object now pays +20
+   bytes" — describes exactly the regression a cap would have caught at compile
+   time instead of in a code review.
+2. **Anything over the cap becomes a pointer** to a separately allocated
+   struct, freed by the owning class.
+3. **Everything at or under stays inline**, where it costs nothing.
+
+Measured against a 32-byte cap:
+
+| Over the cap → pointer | Bytes |
+|---|---|
+| `HObjectTemporal` | 104 |
+| `HObjectFunction` | 72 |
+| `HObjectIteratorHelper` | 64 |
+| `HObjectPromise` | 40 |
+
+| At/under the cap → stays inline | Bytes |
+|---|---|
+| `HObjectGenerator`, `HObjectProxy`, `HObjectArrayBuffer`, `HObjectBufferView` | 32 |
+| `HObjectRegExp`, `HObjectRegExpStringIterator` | 24 |
+| `HObjectIterator`, `HObjectWrapForValidIterator`, `HObjectGetterSetter`, `HObjectHost` | 16 |
+| `HObjectPrimitive`, `HObjectError` | 8 |
+
+Union today 104 → 32 with the cap: **72 bytes off every object**.
+
+Twelve of sixteen members already fit. The cap is not a redesign; it names a
+rule the code mostly follows already, and flags the four places it does not.
+
+### The cap also finds *why* a struct is oversized
+
+`HObjectFunction` is 72 bytes where QuickJS's `func` is 24. Reading it shows
+why: it carries arrow-function fields (`captured_this`, `captured_new_target`)
+and bound-function fields (`bound_target`, `bound_this`, `bound_args`) inline —
+5 fields, 40 bytes, dead on an ordinary function. QuickJS puts bound-function
+state in a separate `JSBoundFunction*`.
+
+So exceeding the cap is a signal, not just a size to fix: it usually means a
+struct is carrying a rare variant's fields for every instance. The remedy may be
+splitting the variant out rather than making the whole payload indirect — which
+is the better fix for FUNCTION, the hottest allocation path in the engine.
+
+## Rejected: flexible array members
+
+`Ty[*]` is real and specified — the last field of a struct may be an unsized
+array, contributing no size, with storage extending past the declared size.
+An audit found it would be **safe** here: 3,320 `HObject*` uses and **zero**
+by-value uses, no nesting, no array-of-HObject, so all three spec restrictions
+(no embedding, no array element, no copy by value) already hold. The engine
+already runs the pattern by hand in `HBigInt` (`header + limbs()` at
+`(char*)self + HBigInt::size`) and in `HObject.extra_ptr()`.
+
+It was rejected anyway:
+
+- Neither QuickJS nor V8 uses it for this, so it would be a novel mechanism
+  where a well-tested one exists.
+- Per-class allocation sizes require the allocation path and the free path to
+  agree on a computed size. A mismatch is heap corruption with no diagnostic.
+  The cap has no such hazard: every object is one size.
+- **The compiler does not enforce the spec's restrictions.** `struct Nested
+  { Obj inner; }` compiles silently despite being forbidden. The audit would
+  have to become a permanent CI guard rather than a one-time check.
+
+Two constructs found alongside it are still worth using and are independent of
+the mechanism:
+
+**Contract-checked payload access.** `@require` becomes a runtime assertion in
+safe builds and an optimizer hint in release:
+
+```c3
+<*
+ @require o != null
+ @require o.base.cls == $expect : "payload class mismatch"
+*>
+macro @pay($Type, Cls $expect, Obj* o) => ...;
+```
+
+Verified: safe mode reports `@require "o.base.cls == $expect" violated:
+'payload class mismatch'`; release elides it. A union permits reading any
+member of any object silently — which is how the TimeZone `HString*` pun below
+went unnoticed. This turns that class of bug into a caught violation.
+
+**Enum associated values as a size table**, derived from the structs
+themselves so it cannot drift:
+
+```c3
+enum ObjClass : char (usz psize) { ARRAY { ArrP::size }, ... }
+```
+
+`c.psize` reads at runtime off the enum value, no switch.
 
 ## What was tried
 
