@@ -245,7 +245,9 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
     if (!ascii::is_digit(t[*ip])) return false;
     long v = 0;
     while (*ip < t.len && ascii::is_digit(t[*ip])) {
-        v = v * 10 + (long)(t[*ip] - '0');
+        long d = (long)(t[*ip] - '0');
+        if (v > 9007199254740991L / 10L || (v == 9007199254740991L / 10L && d > 9007199254740991L % 10L)) return false;
+        v = v * 10 + d;
         *ip += 1;
     }
     *n = v;

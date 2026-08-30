@@ -271,7 +271,7 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
                 // occurrence is silently dropped, leaving the first value
                 // in `out_cal_start/len`.
                 if (cal_seen && (critical || critical_seen)) return false;
-                if (!cal_seen) { *out_cal_start = v_start; *out_cal_len = *i - v_start - 1; }
+                if (!cal_seen) { *out_cal_start = v_start; *out_cal_len = *i - v_start; }
                 cal_seen = true;
             } else {
                 // Unknown key: a critical flag forces a syntax error,
@@ -562,6 +562,42 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
     return true;
 }
 
+fn bool is_ambiguous_plain_time_string(char[] text) {
+    usz end = text.len;
+    for (usz k = 0; k < text.len; k++) {
+        if (text[k] == '[') { end = k; break; }
+    }
+    char[] s = text[:end];
+    // YYYY-MM: 4 digits, '-', 2 digits
+    if (s.len == 7 && ascii::is_digit(s[0]) && ascii::is_digit(s[1]) && ascii::is_digit(s[2]) && ascii::is_digit(s[3]) &&
+        s[4] == '-' && ascii::is_digit(s[5]) && ascii::is_digit(s[6])) {
+        int m = (int)(s[5] - '0') * 10 + (int)(s[6] - '0');
+        if (m >= 1 && m <= 12) return true;
+    }
+    // YYYYMM: 6 digits
+    if (s.len == 6 && ascii::is_digit(s[0]) && ascii::is_digit(s[1]) && ascii::is_digit(s[2]) &&
+        ascii::is_digit(s[3]) && ascii::is_digit(s[4]) && ascii::is_digit(s[5])) {
+        int m = (int)(s[4] - '0') * 10 + (int)(s[5] - '0');
+        if (m >= 1 && m <= 12) return true;
+    }
+    // MM-DD: 2 digits, '-', 2 digits
+    if (s.len == 5 && ascii::is_digit(s[0]) && ascii::is_digit(s[1]) && s[2] == '-' &&
+        ascii::is_digit(s[3]) && ascii::is_digit(s[4])) {
+        int m = (int)(s[0] - '0') * 10 + (int)(s[1] - '0');
+        int d = (int)(s[3] - '0') * 10 + (int)(s[4] - '0');
+        if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return true;
+    }
+    // MMDD: 4 digits
+    if (s.len == 4 && ascii::is_digit(s[0]) && ascii::is_digit(s[1]) &&
+        ascii::is_digit(s[2]) && ascii::is_digit(s[3])) {
+        int m = (int)(s[0] - '0') * 10 + (int)(s[1] - '0');
+        int d = (int)(s[2] - '0') * 10 + (int)(s[3] - '0');
+        int[13] max_days = { 0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+        if (m >= 1 && m <= 12 && d >= 1 && d <= max_days[m]) return true;
+    }
+    return false;
+}
+
 // Parse a time-only ISO 8601 string (optional `T`/`t` time designator, then
 // `HH[:MM[:SS[.frac]]]`, optional `±HH:MM` offset). Used by
 // Temporal.PlainTime.from when the input is a bare time string. Per the
@@ -570,9 +606,14 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
 // discarded by the caller.
 fn bool parse_iso_time_string(char[] text, ParsedIsoDateTime* out) {
     usz i = 0;
+    bool has_t = false;
     // Optional `T`/`t` designator before the time component (per the
     // grammar's first alternative `TimeDesignator Time …`).
-    if (i < text.len && (text[i] == 'T' || text[i] == 't')) i += 1;
+    if (i < text.len && (text[i] == 'T' || text[i] == 't')) {
+        has_t = true;
+        i += 1;
+    }
+    if (!has_t && is_ambiguous_plain_time_string(text)) return false;
     if (!parse_time(text, &i, &out.hour, &out.minute, &out.second, &out.nanos)) return false;
     out.has_time = true;
     if (out.hour == 24) {
@@ -588,10 +629,6 @@ fn bool parse_iso_time_string(char[] text, ParsedIsoDateTime* out) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len;
         if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
-        if (cal_len != 0) {
-            char[] cal = text[cal_start..cal_start + cal_len];
-            if (!ci_equals(cal, "iso8601")) return false;
-        }
         if (i != text.len) return false;
     }
     out.year = 0;

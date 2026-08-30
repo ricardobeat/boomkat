@@ -1048,6 +1048,7 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_ZONEDDATETIME_PROTO_HOURSINDAY {"hoursInDay", 0, &builtin_temporal_zoneddatetime_proto_hoursInDay},
     TEMPORAL_ZONEDDATETIME_PROTO_ERA {"era", 0, &builtin_temporal_zoneddatetime_proto_era},
     TEMPORAL_ZONEDDATETIME_PROTO_ERAYEAR {"eraYear", 0, &builtin_temporal_zoneddatetime_proto_eraYear},
+    TEMPORAL_ZONEDDATETIME_PROTO_VALUEOF {"valueOf", 0, &builtin_temporal_zoneddatetime_proto_valueOf},
     TEMPORAL_NOW_INSTANT {"instant", 0, &builtin_temporal_now_instant},
     TEMPORAL_NOW_TIME_ZONE_ID {"timeZoneId", 0, &builtin_temporal_now_time_zone_id},
     TEMPORAL_NOW_PLAIN_DATE_ISO {"plainDateISO", 0, &builtin_temporal_now_plain_date_iso},
