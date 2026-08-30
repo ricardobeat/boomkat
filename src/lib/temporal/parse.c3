@@ -369,11 +369,13 @@ fn bool parse_iso_date_string(char[] text, ParsedIsoDateTime* out) {
     bool date_sep = false;
     if (i < len && text[i] == '-') { date_sep = true; i += 1; }
     if (!parse_two_digits(text, &i, &out.month)) return false;
+    if (out.month < 1 || out.month > 12) return false;
     if (date_sep) {
         if (i >= len || text[i] != '-') return false;
         i += 1;
     }
     if (!parse_two_digits(text, &i, &out.day)) return false;
+    if (out.day < 1 || out.day > days_in_month(out.year, out.month)) return false;
 
     out.has_time = false;
     out.hour = 0;
@@ -533,6 +535,7 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
     if (i - m_start != 2) return false;
     long m = (long)digit_at(text, m_start) * 10 + (long)digit_at(text, m_start + 1);
     out.month = (int)m;
+    if (out.month < 1 || out.month > 12) return false;
 
     if (i >= len) return false;
     if (text[i] == '-') {
@@ -542,6 +545,8 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
         // Compact MMDD format (no separator between month and day).
         if (!parse_two_digits(text, &i, &out.day)) return false;
     }
+    // Reference year 1972 for leap-year day-count (Feb 29 is valid).
+    if (out.day < 1 || out.day > days_in_month(1972, out.month)) return false;
     if (i < len) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len;

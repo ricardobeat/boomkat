@@ -2445,10 +2445,13 @@ fn TemporalUnit larger_unit(TemporalUnit a, TemporalUnit b) { return a < b ? a :
 // length, so any positive integer is accepted there. Returns false after
 // throwing.
 fn bool validate_rounding_increment(BuiltinContext* ctx, TemporalUnit unit, double increment) {
+    if (increment < 1.0 || increment > 1e9) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
+        return false;
+    }
     long max_incr = max_round_incr(unit);
     if (max_incr > 0) {
-        if (increment > (double)max_incr
-            || (double)max_incr / increment != math::floor((double)max_incr / increment)
+        if ((double)max_incr / increment != math::floor((double)max_incr / increment)
             || increment == (double)max_incr) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
             return false;
@@ -2859,26 +2862,27 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             return;
         }
         int128 time_ns = duration_to_time_ns(dur);
+        long rounded_ns;
         if (smallest_unit == TemporalUnit.DAY) {
-            double frac = (double)time_ns / 86400000000000.0;
-            double rounded = round_num_to_incr(frac, rounding_increment, rounding_mode);
-            temporal::DurationParts result;
-            result.years = 0; result.months = 0; result.weeks = 0;
-            result.days = (long)rounded;
-            result.hours = 0; result.minutes = 0; result.seconds = 0;
-            result.ms = 0; result.us = 0; result.ns = 0;
-            HObject*? obj_o = alloc_duration(ctx.heap, result);
-            if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-            HObject* obj = obj_o;
-            obj.prototype = ctx.heap.temporal_duration_proto;
-            ctx.result.set_object(obj);
-            return;
+            // Round on integer nanoseconds, then divide. The float64 form
+            // loses precision near and beyond 2^53 ns (~104 days).
+            long incr_ns = (long)rounding_increment * 86400000000000L;
+            if (incr_ns <= 0) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement too large");
+                return;
+            }
+            rounded_ns = round_long_ns((long)time_ns, incr_ns, rounding_mode);
+        } else {
+            // Spec rounds via ℝ(𝔽(time / divisor)). For values under 2^53 ns
+            // the float64 step is exact; above it, test262 expects the loss
+            // to show through into the output.
+            long divisor = unit_ns_divisor(smallest_unit);
+            double incr_d = (double)divisor * rounding_increment;
+            double rounded_d = round_num_to_incr((double)time_ns, incr_d, rounding_mode);
+            rounded_ns = (long)rounded_d;
         }
-        long divisor = unit_ns_divisor(smallest_unit);
-        double incr_ns = (double)divisor * rounding_increment;
-        double rounded_ns = round_num_to_incr((double)time_ns, incr_ns, rounding_mode);
         temporal::DurationParts result;
-        decompose_ns((long)rounded_ns, largest_unit, &result);
+        decompose_ns(rounded_ns, largest_unit, &result);
         HObject*? obj_o = alloc_duration(ctx.heap, result);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
@@ -3073,10 +3077,17 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
             return;
         }
         int128 time_ns = duration_to_time_ns(dur);
-        double divisor = unit == TemporalUnit.DAY
-            ? 86400000000000.0
-            : (double)unit_ns_divisor(unit);
-        ctx.result.set_number((double)time_ns / divisor);
+        long div_ns = unit == TemporalUnit.DAY
+            ? 86400000000000L
+            : unit_ns_divisor(unit);
+        // Integer quotient + float64 remainder, so the total reflects the
+        // nanoseconds that the integer→float64 conversion would lose above
+        // 2^53 ns (Duration.prototype.total must expose the FP-loss result,
+        // matching the spec's `whole + remainder` shape).
+        long whole = (long)(time_ns / (int128)div_ns);
+        int128 rem = time_ns - (int128)whole * (int128)div_ns;
+        double rem_d = (double)rem / (double)div_ns;
+        ctx.result.set_number((double)whole + rem_d);
         return;
     }
     // Always compute and validate target datetime with relative_to:
@@ -3183,10 +3194,15 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     bool has_cal = dur.years != 0 || dur.months != 0 || dur.weeks != 0;
     if (!is_cal_unit(unit) && !has_cal) {
         int128 time_ns = duration_to_time_ns(dur);
-        double divisor = unit == TemporalUnit.DAY
-            ? 86400000000000.0
-            : (double)unit_ns_divisor(unit);
-        ctx.result.set_number((double)time_ns / divisor);
+        long div_ns = unit == TemporalUnit.DAY
+            ? 86400000000000L
+            : unit_ns_divisor(unit);
+        // Integer quotient + float64 remainder, matching the no-relativeTo
+        // path and exposing the FP-loss result for the precision tests.
+        long whole = (long)(time_ns / (int128)div_ns);
+        int128 rem_ns = time_ns - (int128)whole * (int128)div_ns;
+        double rem_d = (double)rem_ns / (double)div_ns;
+        ctx.result.set_number((double)whole + rem_d);
         return;
     }
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
@@ -3209,11 +3225,18 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     int128 diff_ns = days_diff_ns + time_diff_ns;
     long divisor = unit_ns_divisor(unit);
     if (divisor > 0) {
-        ctx.result.set_number((double)diff_ns / (double)divisor);
+        // Integer quotient + float64 remainder preserves the sub-quantum ns.
+        long whole = (long)(diff_ns / (int128)divisor);
+        int128 rem_ns = diff_ns - (int128)whole * (int128)divisor;
+        double rem_d = (double)rem_ns / (double)divisor;
+        ctx.result.set_number((double)whole + rem_d);
         return;
     }
     if (unit == TemporalUnit.DAY) {
-        ctx.result.set_number((double)diff_ns / 86400000000000.0);
+        long whole = (long)(diff_ns / (int128)86400000000000L);
+        int128 rem_ns = diff_ns - (int128)whole * (int128)86400000000000L;
+        double rem_d = (double)rem_ns / 86400000000000.0;
+        ctx.result.set_number((double)whole + rem_d);
         return;
     }
     if (unit == TemporalUnit.WEEK) {
@@ -3221,7 +3244,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // reports as 1.5 weeks, not 1.42857 (= 10/7). The plain day count
         // (tgt_epoch - rel_epoch) drops any sub-day remainder, which is
         // wrong for total().
-        ctx.result.set_number((double)diff_ns / (7.0 * 86400000000000.0));
+        long div_ns = 7L * 86400000000000L;
+        long whole = (long)(diff_ns / (int128)div_ns);
+        int128 rem_ns = diff_ns - (int128)whole * (int128)div_ns;
+        double rem_d = (double)rem_ns / (double)div_ns;
+        ctx.result.set_number((double)whole + rem_d);
         return;
     }
     // Re-decompose (relTo + duration) into the calendar-aware {years,
@@ -3268,11 +3295,10 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     int128 start_ns_offset = (int128)(start_epoch - rel_epoch) * 86400000000000L;
     int128 numerator = dest_ns - start_ns_offset;
     int128 total_num = unit_ns * (int128)r1 + numerator;
-    if (total_num < 0) {
-        ctx.result.set_number(-((double)(-total_num) / (double)unit_ns));
-    } else {
-        ctx.result.set_number((double)total_num / (double)unit_ns);
-    }
+    long whole = (long)(total_num / unit_ns);
+    int128 rem_ns = total_num - (int128)whole * unit_ns;
+    double rem_d = (double)rem_ns / (double)unit_ns;
+    ctx.result.set_number((double)whole + rem_d);
 }
 
 // ============================================================================
@@ -6378,9 +6404,9 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
             .ms = rms, .us = rus, .ns = rns,
         },
     };
-    if (!temporal::is_valid_iso_datetime(result.date.y, (int)result.date.m, (int)result.date.d,
-                                         result.time.h, result.time.mi, result.time.s,
-                                         result.time.ms, result.time.us, result.time.ns)) {
+    if (!temporal::is_valid_plain_datetime(result.date.y, (int)result.date.m, (int)result.date.d,
+                                            (int)result.time.h, (int)result.time.mi, (int)result.time.s,
+                                            (int)result.time.ms, (int)result.time.us, (int)result.time.ns)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "rounded datetime outside representable limits");
         return;
     }

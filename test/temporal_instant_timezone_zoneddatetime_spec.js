@@ -164,7 +164,7 @@ assertEq(nyc.getNextTransition(epoch).toString(), "1970-04-26T07:00:00Z", "next 
 var in2024 = new Temporal.Instant(1721000000000000000n);
 assertEq(nyc.getPreviousTransition(in2024).toString(), "2024-03-10T07:00:00Z", "prev transition before 2024-07");
 var year2100 = new Temporal.Instant(4102444800000000000n);
-assertEq(nyc.getNextTransition(year2100), undefined, "no transition after 2100");
+assertEq(nyc.getNextTransition(year2100), null, "no transition after 2100");
 
 // ============================================================================
 // Temporal.ZonedDateTime

@@ -99,6 +99,29 @@ const long ISO_DATE_MAX_YEAR  = 275760;
 const int  ISO_DATE_MAX_MONTH = 9;
 const int  ISO_DATE_MAX_DAY   = 13;
 
+// True if y/m is a valid year-month within the Temporal representable range.
+// Used by PlainYearMonth and PlainMonthDay where the day is not yet known.
+fn bool is_valid_iso_yearmonth(long y, int m) {
+    if (m < 1 || m > 12) return false;
+    if (y < ISO_DATE_MIN_YEAR || y > ISO_DATE_MAX_YEAR) return false;
+    if (y == ISO_DATE_MIN_YEAR && m < ISO_DATE_MIN_MONTH) return false;
+    if (y == ISO_DATE_MAX_YEAR && m > ISO_DATE_MAX_MONTH) return false;
+    return true;
+}
+
+// True if the date+time falls within the PlainDateTime representable range.
+// The boundaries are exclusive at midnight: -271821-04-19T00:00:00.000000000
+// and +275760-09-14T00:00:00.000000000 are outside the range.
+fn bool is_valid_plain_datetime(long y, int m, int d, int h, int mi, int s, int ms, int us, int ns) {
+    if (!is_valid_iso_date(y, m, d)) return false;
+    if (!is_valid_time(h, mi, s, ms, us, ns)) return false;
+    // At the lower boundary, midnight (all-zero time) is excluded.
+    if (y == ISO_DATE_MIN_YEAR && m == ISO_DATE_MIN_MONTH && d == ISO_DATE_MIN_DAY) {
+        if (h == 0 && mi == 0 && s == 0 && ms == 0 && us == 0 && ns == 0) return false;
+    }
+    return true;
+}
+
 // True if y/m/d is a valid proleptic Gregorian calendar date within the
 // Temporal range. Out-of-range inputs (month 13, day 31 of February, dates
 // outside -271821-04-19 .. +275760-09-13) return false. Negative years are
