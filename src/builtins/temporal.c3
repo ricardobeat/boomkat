@@ -1424,14 +1424,15 @@ fn bool is_valid_duration(temporal::DurationParts* d) {
         if (overall_sign == 0) { overall_sign = s; }
         else if (overall_sign != s) { return false; }
     }
-    double totalSeconds = (double)d.days * 86400.0 +
-                          (double)d.hours * 3600.0 +
-                          (double)d.minutes * 60.0 +
-                          (double)d.seconds +
-                          math::floor((double)d.ms / 1000.0) +
-                          math::floor((double)d.us / 1000000.0) +
-                          math::floor((double)d.ns / 1000000000.0);
-    if (math::abs(totalSeconds) > 9007199254740991.0) {
+    int128 total_ns = (int128)d.days * (int128)86400_000_000_000L +
+                      (int128)d.hours * (int128)3600_000_000_000L +
+                      (int128)d.minutes * (int128)60_000_000_000L +
+                      (int128)d.seconds * (int128)1000_000_000L +
+                      (int128)d.ms * (int128)1000_000L +
+                      (int128)d.us * (int128)1000L +
+                      (int128)d.ns;
+    int128 max_ns = (int128)9007199254740991L * (int128)1000_000_000L + (int128)999_999_999L;
+    if (total_ns > max_ns || total_ns < -max_ns) {
         return false;
     }
     return true;
