@@ -543,6 +543,10 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing, bool
             builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
             return false;
         }
+        if (mv < 1) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is out of range");
+            return false;
+        }
         have_month = true;
     }
 
@@ -3837,8 +3841,6 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     }
     HObject* bag = (HObject*)arg.get_heapptr();
     if (!reject_temporal_object_bag(ctx, bag)) return;
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
 
     Vm* v = (Vm*)ctx.vm;
     temporal::CivilDate cur = plain_date_value(obj);
@@ -3851,6 +3853,8 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
@@ -4592,9 +4596,6 @@ fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone property");
         return;
     }
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
-
     Vm* v = (Vm*)ctx.vm;
     temporal::CivilTime cur = plain_time_value(obj);
     temporal::CivilTime fields;
@@ -4602,6 +4603,8 @@ fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     temporal::CivilTime valid;
     if (!fields_to_valid_time(ctx, fields, &valid, overflow, false)) return;
     HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
@@ -6199,8 +6202,6 @@ fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
     }
     HObject* bag = (HObject*)arg.get_heapptr();
     if (!reject_temporal_object_bag(ctx, bag)) return;
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
 
     Vm* v = (Vm*)ctx.vm;
     temporal::CivilDateTime cur = plain_datetime_value(obj);
@@ -6213,6 +6214,8 @@ fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     temporal::CivilDate valid_d;
     if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) return;
     temporal::CivilTime valid_t;
@@ -6968,6 +6971,10 @@ fn bool bag_to_yearmonth_fields(BuiltinContext* ctx, HObject* bag, bool keep_mis
             builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
             return false;
         }
+        if (mv < 1) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is out of range");
+            return false;
+        }
     }
     TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
     if (ctx.should_throw) return false;
@@ -7573,10 +7580,6 @@ fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
     }
     HObject* bag = (HObject*)arg.get_heapptr();
     if (!reject_temporal_object_bag(ctx, bag)) return;
-    // The bag reader probes calendar/timeZone ([[Get]], rejecting either on
-    // presence) and requires at least one recognised field.
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
 
     Vm* v = (Vm*)ctx.vm;
 
@@ -7591,6 +7594,8 @@ fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
@@ -7876,6 +7881,10 @@ fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_miss
             builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
             return false;
         }
+        if (dl < 1) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "day is out of range");
+            return false;
+        }
         d = (int)dl;
     } else if (!keep_missing) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "missing day property");
@@ -7891,6 +7900,10 @@ fn bool bag_to_monthday_fields(BuiltinContext* ctx, HObject* bag, bool keep_miss
         if (!to_integer_with_truncation(v, &month_v, &mv)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
             builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
+            return false;
+        }
+        if (mv < 1) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "month is out of range");
             return false;
         }
         have_month = true;
@@ -8487,8 +8500,6 @@ fn void builtin_temporal_plain_monthday_proto_with(BuiltinContext* ctx) {
     }
     HObject* bag = (HObject*)arg.get_heapptr();
     if (!reject_temporal_object_bag(ctx, bag)) return;
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
     Vm* v = (Vm*)ctx.vm;
 
     int y; int m; int d;
@@ -8501,6 +8512,8 @@ fn void builtin_temporal_plain_monthday_proto_with(BuiltinContext* ctx) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
     }
+    temporal::OverflowKind overflow;
+    if (!read_overflow_option(ctx, 1, &overflow)) return;
     if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
         return;
@@ -12580,6 +12593,15 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
                   .ms = cwms, .us = cwus, .ns = cwns },
     };
 
+    temporal::CivilDateTime fields;
+    bool have_mc;
+    int mci;
+    TVal mc_v;
+    if (!bag_to_datetime_fields_ex(ctx, bag, TBM_ZDT_WITH, true, false, cur.date, cur.time, &fields,
+                                &have_mc, &mci, &mc_v, null, null, null, null)) {
+        return;
+    }
+
     temporal::OverflowKind overflow = temporal::OverflowKind.CONSTRAIN;
     if (ctx.argc >= 2) {
         TVal* ov = arg_at(ctx, 1);
@@ -12638,17 +12660,6 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
                 }
             }
         }
-    }
-
-    temporal::CivilDateTime fields;
-    bool have_mc;
-    int mci;
-    TVal mc_v;
-    if (!bag_to_datetime_fields_ex(ctx, bag, TBM_ZDT_WITH, true, false, cur.date, cur.time, &fields,
-                                &have_mc, &mci, &mc_v, null, null, null, null)) {
-        Vm* v = (Vm*)ctx.vm;
-        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
-        return;
     }
     temporal::CivilDate valid_d;
     if (!fields_to_valid_date(ctx, fields.date, overflow, &valid_d)) return;
