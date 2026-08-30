@@ -459,14 +459,9 @@ fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
 // Read monthCode "M01".."M12" from `tv`, or throw (TypeError for non-strings,
 // RangeError for malformed or out-of-range codes).
 fn bool parse_month_code(BuiltinContext* ctx, TVal tv, int* out) {
-    if (!tv.is_string()) {
-        HString* s = builtin_to_string_vm(ctx, &tv);
-        if (ctx.should_throw) return false;
-        if (s == null) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "monthCode must be convertible to a string");
-            return false;
-        }
-        tv.set_string(s);
+    if (!tv.is_string() || ((HString*)tv.get_heapptr()).is_symbol()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "monthCode must be a string");
+        return false;
     }
     HString* s = (HString*)tv.get_heapptr();
     char[] text = s.get_cstr()[:s.blen];
