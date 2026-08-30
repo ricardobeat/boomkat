@@ -459,11 +459,32 @@ fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
 // Read monthCode "M01".."M12" from `tv`, or throw (TypeError for non-strings,
 // RangeError for malformed or out-of-range codes).
 fn bool parse_month_code(BuiltinContext* ctx, TVal tv, int* out) {
-    if (!tv.is_string() || ((HString*)tv.get_heapptr()).is_symbol()) {
+    if (!tv.is_string() && !tv.is_object()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "monthCode must be a string");
         return false;
     }
-    HString* s = (HString*)tv.get_heapptr();
+    if (tv.is_string() && ((HString*)tv.get_heapptr()).is_symbol()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "monthCode must be a string");
+        return false;
+    }
+    HString* s;
+    if (tv.is_object()) {
+        Vm* vm_ptr = (Vm*)ctx.vm;
+        TVal prim = vm::to_primitive_value(vm_ptr, &tv, 1);
+        if (vm_ptr.throw_pending) {
+            ctx.should_throw = true;
+            ctx.throw_value = vm_ptr.throw_value;
+            vm_ptr.throw_pending = false;
+            return false;
+        }
+        if (!prim.is_string() || ((HString*)prim.get_heapptr()).is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "monthCode must be a string");
+            return false;
+        }
+        s = (HString*)prim.get_heapptr();
+    } else {
+        s = (HString*)tv.get_heapptr();
+    }
     char[] text = s.get_cstr()[:s.blen];
     // Spec's monthCode grammar is `M01..M12` or `M01L..M12L` (leap-month
     // suffix). The syntactic check fires first; suitability (the
