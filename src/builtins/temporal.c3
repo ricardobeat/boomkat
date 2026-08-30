@@ -4205,7 +4205,7 @@ fn void builtin_temporal_plain_date_proto_withCalendar(BuiltinContext* ctx) {
         return;
     }
     HObject* cal;
-    if (!to_temporal_calendar_identifier(ctx, arg_at(ctx, 0), &cal)) return;
+    if (!calendar_from_arg(ctx, arg_at(ctx, 0), &cal)) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::CivilDate cur = plain_date_value(obj);
     ((types::HeapHeader*)cal).incref();
@@ -6941,7 +6941,7 @@ fn void builtin_temporal_plain_datetime_proto_withCalendar(BuiltinContext* ctx) 
         return;
     }
     HObject* cal;
-    if (!to_temporal_calendar_identifier(ctx, arg_at(ctx, 0), &cal)) return;
+    if (!calendar_from_arg(ctx, arg_at(ctx, 0), &cal)) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::CivilDateTime cur = plain_datetime_value(obj);
     ((types::HeapHeader*)cal).incref();
@@ -12903,7 +12903,7 @@ fn void builtin_temporal_zoneddatetime_proto_withCalendar(BuiltinContext* ctx) {
     }
     TVal* arg = arg_at(ctx, 0);
     HObject* cal = null;
-    if (!to_temporal_calendar_identifier(ctx, arg, &cal)) return;
+    if (!calendar_from_arg(ctx, arg, &cal)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
     ((types::HeapHeader*)self.extra.temporal.timezone).incref();
