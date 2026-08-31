@@ -11024,7 +11024,13 @@ fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigIn
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO string");
         return false;
     }
-    if (!temporal::is_valid_iso_date(p.y, (int)p.m, (int)p.d)) {
+    // Reject only the obvious garbage (month/day out of their natural
+    // ranges). The year bound, leap-year check, and ±100,000,000-day epoch
+    // window are enforced below by computing the epoch nanoseconds and
+    // comparing against ns_limit — a date like `+275760-09-14` paired with a
+    // sub-minute offset lands *inside* the representable epoch range, so
+    // strict `is_valid_iso_date` would over-reject.
+    if (p.m < 1 || p.m > 12 || p.d < 1 || p.d > 31) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date");
         return false;
     }
@@ -11034,11 +11040,12 @@ fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigIn
     ns128 += (int128)sec_of_day * 1000000000L;
     ns128 += (int128)p.nanos;
     ns128 -= (int128)p.offset_seconds * 1000000000L;
-    // The sub-minute offset component (e.g. `+00:00:00.5`) carries the
-    // sign of `offset_seconds` — a positive seconds value means the
-    // parsed time is east of UTC, so the offset also subtracts.
-    long sign = p.offset_seconds < 0 ? -1L : 1L;
-    ns128 -= (int128)(sign * p.offset_nanos);
+    // The offset's sub-minute fraction already carries the offset's sign
+    // (parsed with `negative ? -off_nanos : off_nanos`), so it subtracts
+    // directly. A positive seconds value means the parsed time is east of
+    // UTC, so the offset subtracts; the signed fraction behaves the same
+    // way.
+    ns128 -= (int128)p.offset_nanos;
     // ToTemporalInstant rejects an instant outside NS_MIN..NS_MAX
     // (±100,000,000 days * 86400e9), e.g. the maximum wall date with a
     // negative offset pushes the epoch over the top.
