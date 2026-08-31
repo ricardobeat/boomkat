@@ -946,7 +946,7 @@ fn bool bag_time_int(BuiltinContext* ctx, HObject* bag, char[] name,
 }
 
 // Read an `offset` property for a zoned bag: string-coerce (firing the
-// observer's toString), then enforce the ±HH:MM / ±HHMM grammar that the
+// observer's toString), then enforce the TimeZoneOffsetString grammar that the
 // Temporal offset property accepts. Reports presence and whole-second offset.
 fn bool bag_offset_prop(BuiltinContext* ctx, HObject* bag, bool* out_has, long* out_sec) {
     Vm* v = (Vm*)ctx.vm;
@@ -979,21 +979,8 @@ fn bool bag_offset_prop(BuiltinContext* ctx, HObject* bag, bool* out_has, long* 
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
         return false;
     }
-    // The `offset` property only accepts ±HH:MM or ±HHMM (no seconds, no
-    // fractions). Reject any `.` or a second `:` (±HH:MM:SS form).
-    usz colon_count = 0;
-    bool has_dot = false;
-    for (usz k = 0; k < otxt.len; k++) {
-        if (otxt[k] == '.') {
-            has_dot = true;
-        } else if (otxt[k] == ':') {
-            colon_count = colon_count + 1;
-        }
-    }
-    if (has_dot || colon_count > 1) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
-        return false;
-    }
+    // The `offset` property follows the full TimeZoneOffsetString grammar
+    // (seconds and fractions allowed), so parse_offset_only handles it.
     *out_has = true;
     *out_sec = off_sec;
     return true;
@@ -10761,6 +10748,14 @@ fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigIn
     // parsed time is east of UTC, so the offset also subtracts.
     long sign = p.offset_seconds < 0 ? -1L : 1L;
     ns128 -= (int128)(sign * p.offset_nanos);
+    // ToTemporalInstant rejects an instant outside NS_MIN..NS_MAX
+    // (±100,000,000 days * 86400e9), e.g. the maximum wall date with a
+    // negative offset pushes the epoch over the top.
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    if (ns128 > ns_limit || ns128 < -ns_limit) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside the representable epoch-nanoseconds range");
+        return false;
+    }
     hbigint::HBigInt*? b_o = hbigint::hbigint_alloc(ctx.heap, ns128);
     if (catch err = b_o) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Instant alloc failed");
@@ -11823,6 +11818,33 @@ fn int validate_zdt_from_options(BuiltinContext* ctx, temporal::OverflowKind* ou
     return offset_mode;
 }
 
+// Validate that an explicit UTC offset agrees with the time zone's actual
+// offset at the instant it produces, per GetEpochNanosecondsFor. `mode` is
+// the offset option (0=default,1=use,2=ignore,3=prefer,4=reject). On
+// disagreement, reject/default throw RangeError, prefer falls back to the
+// zone's own offset, and use/ignore never throw (ignore ignores the provided
+// offset entirely). Writes the chosen epoch back through `epoch_ns_128`.
+fn bool zdt_check_offset_agreement(BuiltinContext* ctx, String zone_name, int128 wall_ns_128,
+                                   long off_sec, int mode, int128* epoch_ns_128) {
+    if (mode == 1 /* use */) return true;
+    if (mode == 2 /* ignore */) {
+        // Ignore the supplied offset: resolve the wall time by the zone.
+        long wall_secs = (long)(wall_ns_128 / 1000000000);
+        long zone_off = (long)temporal::tzdb_offset_for_zone_at(zone_name, wall_secs);
+        *epoch_ns_128 = wall_ns_128 - (int128)zone_off * (int128)1000000000L;
+        return true;
+    }
+    long epoch_secs = (long)(*epoch_ns_128 / 1000000000);
+    long zone_off = (long)temporal::tzdb_offset_for_zone_at(zone_name, epoch_secs);
+    if (zone_off == off_sec) return true;
+    if (mode == 3 /* prefer */) {
+        *epoch_ns_128 = wall_ns_128 - (int128)zone_off * (int128)1000000000L;
+        return true;
+    }
+    builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
+    return false;
+}
+
 fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.ZonedDateTime.from requires an argument");
@@ -11872,27 +11894,16 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         HObject* tz;
         long bracket_off = 0;
         bool bracket_is_offset = false;
+        String zname = "";
         if (p.timezone.len > 0) {
             char[] tz_id = p.timezone;
             String tzid_str = (String)tz_id;
+            zname = tzid_str;
             usz j = 0;
             long off_check = 0;
             if (parse_offset_only(tzid_str, &j, &off_check) && j == tzid_str.len) {
                 bracket_off = off_check;
                 bracket_is_offset = true;
-            }
-            // Per spec: when the bracket is an offset zone like `+01:00` and the
-            // date-time carried a numeric offset, they must match. The `Z`
-            // designator is treated as offset 0 only for exact-time semantics;
-            // it does NOT participate in the offset-agreement check (so
-            // `Z[+01:00]` is valid: `Z` pins the instant, the bracket is just
-            // the zone identifier). So enforce the agreement only when the
-            // date-time offset was a numeric `±HH:MM`, not `Z`.
-            // (See test262 `zoneddatetime-string.js` cases.)
-            if (bracket_is_offset && p.has_offset && !p.is_z
-                && p.offset_seconds != bracket_off) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: bracket offset disagrees with date-time offset");
-                return;
             }
             if (temporal::tzdb_zone_exists((String)tz_id)) {
                 HObject*? tz_o = alloc_timezone(ctx.heap, (String)tz_id);
@@ -11913,6 +11924,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             off_buf[4] = (char)('0' + (int)((mag % 3600) / 60 / 10));
             off_buf[5] = (char)('0' + (int)((mag % 3600) / 60 % 10));
             off_buf[6] = 0;
+            zname = (String)off_buf[:6];
             HObject*? tz_o = alloc_timezone(ctx.heap, (String)off_buf[:6]);
             if (catch err = tz_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             tz = tz_o;
@@ -11953,6 +11965,17 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: instant outside the representable range");
                 return;
             }
+        }
+        // An explicit numeric offset (a `Z`/`±HH:MM` between time and bracket)
+        // must agree with the zone's actual offset at the instant it produces,
+        // per the offset option semantics (reject/default throw, use/ignore
+        // pass, prefer falls back to the zone offset). `Z` pins the instant;
+        // it is the bracket that is merely the zone identifier, so it is
+        // excluded from this agreement check.
+        if (p.has_offset && !p.is_z) {
+            int128 agree_epoch = epoch_ns_128;
+            if (!zdt_check_offset_agreement(ctx, zname, wall_ns_128, p.offset_seconds, offset_mode, &agree_epoch)) return;
+            epoch_ns_128 = agree_epoch;
         }
         // Build the BigInt straight from the int128. Going via a double here
         // would discard every bit below 2^53, so an epoch instant such as
@@ -12040,26 +12063,14 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
                 has_offset_prop = true;
             }
         }
-        // If the time zone is an offset zone (e.g. "+01:00") and an `offset`
-        // property was supplied, they must agree. A disagreement is a
-        // RangeError per spec.
-        if (has_offset_prop) {
-            String tzid_str = timezone_name(tz);
-            usz k = 0;
-            long tz_off = 0;
-            if (parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
-                if (tz_off != off_sec) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: offset property does not agree with time zone");
-                    return;
-                }
-            }
-        }
         temporal::OverflowKind zdt_overflow;
+        int zdt_offset_mode = 0;
         {
             temporal::OverflowKind ov_kind;
             int om_b = validate_zdt_from_options(ctx, &ov_kind);
             if (om_b < 0) return;
             zdt_overflow = ov_kind;
+            zdt_offset_mode = om_b;
         }
         if (!check_iso_monthcode_suitability(ctx, _zdt_have_mc, _zdt_mci, _zdt_mc_v)) {
             if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
@@ -12076,6 +12087,18 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         // below 2^53 and corrupt the sub-microsecond digits.
         int128 epoch_ns_128 = (int128)wall_secs * (int128)1000000000L + (int128)frac_ns
             - (int128)off_sec * (int128)1000000000L;
+        // The supplied offset must agree with the time zone's actual offset
+        // at the instant it produces, per the offset option semantics. When
+        // the offset was synthesized from an offset-form zone id it agrees
+        // trivially; an explicit property offset on an IANA zone is the real
+        // check that can throw (see `offset-does-not-match-iana-time-zone`).
+        if (has_offset_prop) {
+            int128 agree_epoch = epoch_ns_128;
+            String zname = timezone_name(tz);
+            if (!zdt_check_offset_agreement(ctx, zname, epoch_ns_128 + (int128)off_sec * (int128)1000000000L,
+                                            off_sec, zdt_offset_mode, &agree_epoch)) return;
+            epoch_ns_128 = agree_epoch;
+        }
         hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
         hbigint::HBigInt* epoch_ns = big_o;
@@ -14070,8 +14093,10 @@ fn bool parse_offset_only(char[] text, usz* i, long* offset_seconds) {
         if (*i < len && text[*i] == '.') {
             *i += 1;
             usz fstart = *i;
-            while (*i < len && temporal::digit_at(text, *i) >= 0) *i += 1;
+            while (*i < len && temporal::digit_at(text, *i) >= 0 && *i - fstart < 9) *i += 1;
             if (*i == fstart) return false;
+            // TimeZoneOffsetString allows at most 9 fraction digits.
+            if (*i < len && temporal::digit_at(text, *i) >= 0) return false;
         }
     }
     long total = (long)h * 3600 + (long)mi * 60 + (long)sec;

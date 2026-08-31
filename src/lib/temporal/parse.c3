@@ -775,7 +775,11 @@ fn bool parse_iso_instant_string(char[] text, ParsedIsoInstant* out) {
     if (i < len) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len;
-        if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
+        // A time-zone annotation's identifier follows `TimeZoneIdentifier`,
+        // whose UTC offset form never carries sub-minute precision. Instant
+        // accepts sub-minute in the date-time *offset*, but not in the
+        // bracketed zone annotation.
+        if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null, false)) return false;
         // Instant has no calendar component, so any u-ca= annotation (including
         // critical or non-iso8601) is silently ignored. parse_annotations has
         // already enforced the uppercase-rejection and critical-unknown-key
