@@ -11877,6 +11877,20 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
     bool ok;
     hbigint::HBigInt* b = builtin_to_bigint(ctx, narg, &ok);
     if (!ok) return;
+    // Per spec step 3: `IsValidEpochNanoseconds` rejects values outside
+    // ±100,000,000 days of 1970-01-01T00:00:00Z. The check needs the BigInt
+    // in 128-bit form; BigInts larger than int128 are *always* outside the
+    // range, so a BigInt that doesn't fit int128 also rejects.
+    {
+        bool fits = b.fits_int128();
+        int128 ns128 = b.to_int128();
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        if (!fits || ns128 > ns_limit || ns128 < -ns_limit) {
+            ctx.heap.decref((types::HeapHeader*)b);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime: epochNanoseconds outside valid range");
+            return;
+        }
+    }
 
     // timeZone may be a string or a Temporal.TimeZone object.
     TVal* tzarg = arg_at(ctx, 1);
@@ -12031,10 +12045,21 @@ fn HObject* resolve_tz_from_string(BuiltinContext* ctx, String s) {
 // Convert string or TimeZone to a TimeZone HObject. Per spec, anything that
 // cannot be converted to a string (Symbols, plain objects without a useful
 // toString) raises TypeError; unparseable offset strings raise RangeError.
+// `ToTemporalTimeZone` also accepts a `Temporal.ZonedDateTime` and reads its
+// [[TimeZone]] slot, so the engine unwraps that here.
 fn HObject*? to_temporal_tz(BuiltinContext* ctx, TVal* arg) {
-    if (arg.is_object() && arg.get_heapptr() != null
-        && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_TIMEZONE) {
-        return (HObject*)arg.get_heapptr();
+    if (arg.is_object() && arg.get_heapptr() != null) {
+        HObject* o = (HObject*)arg.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_TIMEZONE) {
+            return o;
+        }
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            // ZDT.[[TimeZone]] is a TimeZone HObject stored in slot 1.
+            HObject* tz = (HObject*)o.extra.temporal.timezone;
+            if (tz == null) return null;
+            ((types::HeapHeader*)tz).incref();
+            return tz;
+        }
     }
     if (arg.is_string()) {
         HString* hs = (HString*)arg.get_heapptr();
@@ -13190,6 +13215,10 @@ fn bool duration_to_ns_delta(BuiltinContext* ctx, temporal::DurationParts dp, hb
 // Build a ZonedDateTime from an epoch-ns BigInt, a TimeZone object, and the
 // zone's calendar String, setting the correct prototype.
 fn void zdt_from_parts(BuiltinContext* ctx, hbigint::HBigInt* ns, HObject* tz, HString* cal) {
+    if (ns == null) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "ZonedDateTime: resulting instant outside valid epoch-nanoseconds range");
+        return;
+    }
     HObject*? obj_o = alloc_zoneddatetime(ctx.heap, ns, tz, cal);
     if (catch err = obj_o) { ctx.heap.decref((types::HeapHeader*)ns); builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
@@ -13285,8 +13314,13 @@ fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
         long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
         zdt_wall_fields(self, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
         temporal::CivilDate d = { .y = wy, .m = wm, .d = wd };
-        if (dp.years != 0)  d = temporal::add_months(d, sign * dp.years * 12, temporal::OverflowKind.CONSTRAIN);
-        if (dp.months != 0) d = temporal::add_months(d, sign * dp.months, temporal::OverflowKind.CONSTRAIN);
+        if (dp.years != 0)  d = temporal::add_months(d, sign * dp.years * 12, overflow);
+        if (dp.months != 0) d = temporal::add_months(d, sign * dp.months, overflow);
+        if (temporal::add_months_rejected(d)) {
+            ctx.heap.decref((types::HeapHeader*)base);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "ZonedDateTime: date overflow with overflow:reject");
+            return;
+        }
         long day_shift = sign * (dp.weeks * 7 + dp.days);
         if (day_shift != 0) d = temporal::add_days(d, day_shift);
 

@@ -59,8 +59,21 @@ fn CivilDate add_months(CivilDate d, long months, OverflowKind overflow) {
     else if (new_month > 12) { new_year += 1; new_month -= 12; }
     int dim = days_in_month(new_year, (int)new_month);
     int new_day = (int)d.d;
-    if (new_day > dim) new_day = dim;
+    if (new_day > dim) {
+        if (overflow == OverflowKind.REJECT) {
+            // Caller wants strict validation; signal via the sentinel below.
+            return { .y = 0, .m = 0, .d = 0 };
+        }
+        new_day = dim;
+    }
     return { .y = new_year, .m = (long)new_month, .d = (long)new_day };
+}
+
+// True when `add_months` returned the reject sentinel (overflow:reject and
+// the source day exceeded the target month's days_in_month). Callers that
+// pass `overflow: REJECT` should check this after each call.
+fn bool add_months_rejected(CivilDate d) {
+    return d.y == 0 && d.m == 0 && d.d == 0;
 }
 
 // Largest unit for difference_date, mirroring the polyfill's diffCalendarDates:
