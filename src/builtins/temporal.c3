@@ -3181,7 +3181,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         // int128 so a duration longer than ~292 years does not overflow a
         // 64-bit count, and the ℝ(𝔽()) precision loss lands at decomposition.
         long divisor = (smallest_unit == TemporalUnit.DAY) ? 86400000000000L : unit_ns_divisor(smallest_unit);
-        int128 incr_ns = (int128)((long)rounding_increment * divisor);
+        int128 incr_ns = (int128)rounding_increment * (int128)divisor;
         if (incr_ns <= 0) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement too large");
             return;
