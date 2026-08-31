@@ -3225,6 +3225,10 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         }
         temporal::DurationParts result;
         decompose_ns_128(rounded_ns, largest_unit, &result);
+        if (!is_valid_duration(&result)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
+            return;
+        }
         HObject*? obj_o = alloc_duration(ctx.heap, result);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
@@ -3342,6 +3346,10 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     temporal::DurationParts result;
     if (!datetime_difference(ctx, iso_dt, target_dt, rds, &result)) return;
 
+    if (!is_valid_duration(&result)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
+        return;
+    }
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
