@@ -1661,15 +1661,16 @@ fn bool duration_arg_to_ns_bigint(BuiltinContext* ctx, TVal* arg, hbigint::HBigI
         if (ctx.should_throw) { ctx.heap.decref((types::HeapHeader*)total); return false; }
         if (pv.is_undefined()) continue;
         any_field = true;
-        // Reject calendar units outright.
-        if (k == 0 || k == 1 || k == 2 || k == 3) {
+        double val = vm::vm_to_number(v, &pv);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; ctx.heap.decref((types::HeapHeader*)total); return false; }
+        if (!duration_field_integral(ctx, val)) { ctx.heap.decref((types::HeapHeader*)total); return false; }
+        // Only reject non-zero calendar units.
+        if ((k == 0 || k == 1 || k == 2 || k == 3) && val != 0) {
             ctx.heap.decref((types::HeapHeader*)total);
             builtin_throw(ctx, ctx.heap.range_err_proto, "Instant does not accept calendar units");
             return false;
         }
-        double val = vm::vm_to_number(v, &pv);
-        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; ctx.heap.decref((types::HeapHeader*)total); return false; }
-        if (!duration_field_integral(ctx, val)) { ctx.heap.decref((types::HeapHeader*)total); return false; }
+        if (k == 0 || k == 1 || k == 2 || k == 3) continue;
         if (val != 0) {
             int s = val < 0 ? -1 : 1;
             if (overall_sign == 0) {
