@@ -11906,6 +11906,15 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
         HString* tzs_str = builtin_to_string_vm(ctx, tzarg);
         if (ctx.should_throw) return;
         String s = tzs_str != null ? (String)tzs_str.get_cstr()[:tzs_str.blen] : (String)"";
+        // A bare timezone identifier is an offset or an IANA name. An ISO
+        // date-time string is valid input to `Temporal.ZonedDateTime.from`
+        // (extracting the offset/bracket zone) but not as a constructor
+        // argument here, so reject it (test262 ZonedDateTime/timezone-iso-string).
+        usz probe = 0;
+        if (now_skip_iso_prefix((char[])s, &probe)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date-time string is not a valid time zone identifier");
+            return;
+        }
         HObject* tz_o = resolve_tz_from_string(ctx, s);
         if (tz_o == null) return;
         tz = tz_o;
