@@ -793,6 +793,7 @@ fn bool parse_iso_instant_string(char[] text, ParsedIsoInstant* out) {
         // Basic form: require two more digits, no separator before time.
     }
     if (!parse_two_digits(text, &i, &day)) return false;
+    if (day < 1 || day > days_in_month(out.y, month)) return false;
 
     // --- Time separator (T or space) ---
     if (i >= len || (text[i] != 'T' && text[i] != 't' && text[i] != ' ')) return false;
