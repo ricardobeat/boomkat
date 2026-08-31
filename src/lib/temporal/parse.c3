@@ -633,6 +633,9 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
         }
         // Optional UTC offset: `Z` or `±HH:MM` / `±HHMM`. Sub-minute forms
         // are not in the MonthDay grammar.
+        if (i < len && (text[i] == 'Z' || text[i] == 'z')) {
+            out.offset_kind = OffsetKind.Z;
+        }
         if (i < len && (text[i] == '+' || text[i] == '-' || text[i] == 'Z' || text[i] == 'z')) {
             if (!parse_simple_offset(text, &i)) return false;
         }
