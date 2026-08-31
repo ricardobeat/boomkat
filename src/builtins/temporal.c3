@@ -138,9 +138,18 @@ fn HObject*? alloc_duration(Heap* hp, temporal::DurationParts d) {
     obj.extra.temporal.long_g = (long)(double)d.seconds;
     // Sub-second fields stored as float64 bit patterns so values exceeding
     // int64 range survive round-tripping through the HObject long slots.
-    obj.extra.temporal.long_h = (long)bitcast(d.ms, ulong);
-    obj.extra.temporal.long_i = (long)bitcast(d.us, ulong);
-    obj.extra.temporal.long_j = (long)bitcast(d.ns, ulong);
+    // Normalize -0.0 to 0.0: IEEE 754 arithmetic (negation, subtraction)
+    // can produce -0.0 for zero sub-second fields, but the spec treats
+    // Duration fields as mathematical values where 0 has no sign.
+    ulong ms_bits = bitcast(d.ms, ulong);
+    ulong us_bits = bitcast(d.us, ulong);
+    ulong ns_bits = bitcast(d.ns, ulong);
+    if ((ms_bits & 0x7FFFFFFFFFFFFFFF) == 0) ms_bits = 0;
+    if ((us_bits & 0x7FFFFFFFFFFFFFFF) == 0) us_bits = 0;
+    if ((ns_bits & 0x7FFFFFFFFFFFFFFF) == 0) ns_bits = 0;
+    obj.extra.temporal.long_h = (long)ms_bits;
+    obj.extra.temporal.long_i = (long)us_bits;
+    obj.extra.temporal.long_j = (long)ns_bits;
     return obj;
 }
 
