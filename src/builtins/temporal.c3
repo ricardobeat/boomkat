@@ -3391,10 +3391,14 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // nanoseconds that the integer→float64 conversion would lose above
         // 2^53 ns (Duration.prototype.total must expose the FP-loss result,
         // matching the spec's `whole + remainder` shape).
-        long whole = (long)(time_ns / (int128)div_ns);
-        int128 rem = time_ns - (int128)whole * (int128)div_ns;
-        double rem_d = (double)rem / (double)div_ns;
-        ctx.result.set_number((double)whole + rem_d);
+        // Keep whole in int128: `seconds * 1e9 + us * 1e3 + ns` can exceed
+        // LONG_MAX (e.g. 8692288669465520 s × 1e9 ns/s = 8.7e24 ns), and the
+        // spec requires the nearest-double result (test262
+        // precision-exact-mathematical-values-5..7).
+        int128 whole_i = time_ns / (int128)div_ns;
+        int128 rem_i = time_ns - whole_i * (int128)div_ns;
+        double rem_d = (double)rem_i / (double)div_ns;
+        ctx.result.set_number((double)whole_i + rem_d);
         return;
     }
     // Always compute and validate target datetime with relative_to:
@@ -3506,10 +3510,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
             : unit_ns_divisor(unit);
         // Integer quotient + float64 remainder, matching the no-relativeTo
         // path and exposing the FP-loss result for the precision tests.
-        long whole = (long)(time_ns / (int128)div_ns);
-        int128 rem_ns = time_ns - (int128)whole * (int128)div_ns;
+        // Hold `whole` in int128 so large durations don't overflow long.
+        int128 whole_i = time_ns / (int128)div_ns;
+        int128 rem_ns = time_ns - whole_i * (int128)div_ns;
         double rem_d = (double)rem_ns / (double)div_ns;
-        ctx.result.set_number((double)whole + rem_d);
+        ctx.result.set_number((double)whole_i + rem_d);
         return;
     }
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
@@ -3533,17 +3538,17 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     long divisor = unit_ns_divisor(unit);
     if (divisor > 0) {
         // Integer quotient + float64 remainder preserves the sub-quantum ns.
-        long whole = (long)(diff_ns / (int128)divisor);
-        int128 rem_ns = diff_ns - (int128)whole * (int128)divisor;
+        int128 whole_i = diff_ns / (int128)divisor;
+        int128 rem_ns = diff_ns - whole_i * (int128)divisor;
         double rem_d = (double)rem_ns / (double)divisor;
-        ctx.result.set_number((double)whole + rem_d);
+        ctx.result.set_number((double)whole_i + rem_d);
         return;
     }
     if (unit == TemporalUnit.DAY) {
-        long whole = (long)(diff_ns / (int128)86400000000000L);
-        int128 rem_ns = diff_ns - (int128)whole * (int128)86400000000000L;
+        int128 whole_i = diff_ns / (int128)86400000000000L;
+        int128 rem_ns = diff_ns - whole_i * (int128)86400000000000L;
         double rem_d = (double)rem_ns / 86400000000000.0;
-        ctx.result.set_number((double)whole + rem_d);
+        ctx.result.set_number((double)whole_i + rem_d);
         return;
     }
     if (unit == TemporalUnit.WEEK) {
@@ -3552,10 +3557,10 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // (tgt_epoch - rel_epoch) drops any sub-day remainder, which is
         // wrong for total().
         long div_ns = 7L * 86400000000000L;
-        long whole = (long)(diff_ns / (int128)div_ns);
-        int128 rem_ns = diff_ns - (int128)whole * (int128)div_ns;
+        int128 whole_i = diff_ns / (int128)div_ns;
+        int128 rem_ns = diff_ns - whole_i * (int128)div_ns;
         double rem_d = (double)rem_ns / (double)div_ns;
-        ctx.result.set_number((double)whole + rem_d);
+        ctx.result.set_number((double)whole_i + rem_d);
         return;
     }
     // Re-decompose (relTo + duration) into the calendar-aware {years,
@@ -3602,10 +3607,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     int128 start_ns_offset = (int128)(start_epoch - rel_epoch) * 86400000000000L;
     int128 numerator = dest_ns - start_ns_offset;
     int128 total_num = unit_ns * (int128)r1 + numerator;
-    long whole = (long)(total_num / unit_ns);
-    int128 rem_ns = total_num - (int128)whole * unit_ns;
-    double rem_d = (double)rem_ns / (double)unit_ns;
-    ctx.result.set_number((double)whole + rem_d);
+    // Convert the full `r1 + numerator/unit_ns` to a Number in one cast,
+    // not as `(double)r1 + (double)numerator/(double)unit_ns` — the latter
+    // double-rounds and can land on the wrong adjacent double (test262
+    // precision-exact-mathematical-values-5..7).
+    ctx.result.set_number((double)total_num / (double)unit_ns);
 }
 
 // ============================================================================
