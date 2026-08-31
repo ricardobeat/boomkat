@@ -5212,17 +5212,6 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
         }
     } else {
         opts = (HObject*)round_to.get_heapptr();
-        TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
-        if (ctx.should_throw) return;
-        if (!su_v.is_undefined()) {
-            HString* s = builtin_to_string_vm(ctx, &su_v);
-            if (ctx.should_throw) return;
-            if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.HOUR) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
-                return;
-            }
-            smallest_given = true;
-        }
         TVal ri_v = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
         if (ctx.should_throw) return;
         if (!ri_v.is_undefined()) {
@@ -5233,7 +5222,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
                 return;
             }
-            rounding_increment = math::floor(ri_val);
+            rounding_increment = math::trunc(ri_val);
             if (rounding_increment < 1) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
                 return;
@@ -5248,6 +5237,17 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
+        }
+        TVal su_v = prop_or_undefined_pa(ctx, opts, "smallestUnit");
+        if (ctx.should_throw) return;
+        if (!su_v.is_undefined()) {
+            HString* s = builtin_to_string_vm(ctx, &su_v);
+            if (ctx.should_throw) return;
+            if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.HOUR) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
+                return;
+            }
+            smallest_given = true;
         }
     }
     if (!smallest_given) {
