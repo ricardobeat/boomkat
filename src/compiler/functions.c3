@@ -821,10 +821,10 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     DestructIterState[MAX_DESTRUCT_BINDS] iter_states;
     uint iter_count = 0;
 
-    // Track the next expected index per source register (for hole/elision gaps).
-    // Source registers are argument slots (low numbers), so we index by arg_idx.
-    ushort[64] expected_idx;
-    for (uint i = 0; i < 64; i++) expected_idx[i] = 0xFFFF;
+    // The expected iterator index for each bind's source register is computed
+    // on demand by scanning earlier binds (line ~910) — the source register
+    // can be anywhere in the up-to-65535 register space, so a flat
+    // register-indexed table is wasteful and easy to OOB.
 
     // Pre-scan: allocate group_regs for rest synthetics before any iterator
     // setup, so they land below callee_reg and survive the per-iteration CALL
@@ -889,8 +889,24 @@ fn void CompilerContext.emit_destruct_bindings(&self,
         // For any array bind (not object), ensure iterator is at the target index.
         // This covers: element binds, synthetic binds, and rest binds.
         if (!binds[di].is_object) {
-            ushort ei = expected_idx[src_reg];
-            if (ei == 0xFFFF) ei = 0;
+            // Walk earlier binds to find the highest consumed iterator index
+            // for this source register (sentinel "no prior bind" → 0). The
+            // source register can be any value up to MAX_REGISTERS, so a flat
+            // register-indexed table would be wasteful and easy to OOB.
+            ushort ei = 0;
+            for (uint dj = 0; dj < di; dj++) {
+                if (binds[dj].is_object) continue;
+                if (binds[dj].key_idx == 0xFFFF) continue;
+                ushort dj_src;
+                if (binds[dj].parent_idx == 0xFFFF) {
+                    dj_src = binds[dj].arg_idx;
+                } else {
+                    dj_src = group_regs[binds[dj].parent_idx];
+                }
+                if (dj_src != src_reg) continue;
+                ushort after = (ushort)(binds[dj].index + 1);
+                if (after > ei) ei = after;
+            }
             ushort target = binds[di].index;
             while (ei < target) {
                 ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
@@ -904,11 +920,6 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.free_reg(hole_reg);
                 ei++;
             }
-        }
-        // Update expected next index after consuming this element.
-        if (!binds[di].is_object && binds[di].key_idx != 0xFFFF) {
-            if (expected_idx[src_reg] == 0xFFFF) expected_idx[src_reg] = 0;
-            expected_idx[src_reg] = (ushort)(binds[di].index + 1);
         }
 
         // Hole / elision entry: advance iterator once and continue.
@@ -924,8 +935,6 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             ushort hole_reg = self.alloc_reg();
             self.emit_destruct_iter_next(&iter_states[iter_idx], hole_reg);
             self.free_reg(hole_reg);
-            if (expected_idx[src_reg] == 0xFFFF) expected_idx[src_reg] = 0;
-            expected_idx[src_reg] = (ushort)(binds[di].index + 1);
             continue;
         }
 
@@ -1942,15 +1951,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     defer self.is_async = enclosing_is_async;
 
     // --- Save lexer state (for final restore) ---
-    uint saved_pos    = self.lexer.pos;
-    uint saved_line   = self.lexer.line;
-    uint saved_col    = self.lexer.col;
-    Token saved_cur   = self.lexer.current;
-    Token saved_look  = self.lexer.lookahead;
-    bool  saved_haslk = self.lexer.has_lookahead;
-    Token saved_push  = self.lexer.pushed_back;
-    bool  saved_haspb = self.lexer.has_pushed_back;
-    bool  saved_slt   = self.lexer.seen_line_term;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
 
     uint brace_depth = 0;
     // For a global/module-level scan, the lexer starts at the Program's own
@@ -2539,15 +2540,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     }
 
     // --- Restore lexer state ---
-    self.lexer.pos             = saved_pos;
-    self.lexer.line            = saved_line;
-    self.lexer.col             = saved_col;
-    self.lexer.current         = saved_cur;
-    self.lexer.lookahead       = saved_look;
-    self.lexer.has_lookahead   = saved_haslk;
-    self.lexer.pushed_back     = saved_push;
-    self.lexer.has_pushed_back = saved_haspb;
-    self.lexer.seen_line_term  = saved_slt;
+    self.restore_lhs_snapshot(snap);
 }
 
 // True when `tt` can end an ExpressionStatement, so a LineTerminator after
@@ -2600,15 +2593,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
     defer self.is_async = enclosing_is_async;
 
     // --- Save lexer state (for final restore) ---
-    uint saved_pos    = self.lexer.pos;
-    uint saved_line   = self.lexer.line;
-    uint saved_col    = self.lexer.col;
-    Token saved_cur   = self.lexer.current;
-    Token saved_look  = self.lexer.lookahead;
-    bool  saved_haslk = self.lexer.has_lookahead;
-    Token saved_push  = self.lexer.pushed_back;
-    bool  saved_haspb = self.lexer.has_pushed_back;
-    bool  saved_slt   = self.lexer.seen_line_term;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
 
     uint brace_depth = 0;
     // Template-aware brace classification (see TemplateScan): a RBRACE that
@@ -3002,15 +2987,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
     }
 
     // --- Restore lexer state ---
-    self.lexer.pos             = saved_pos;
-    self.lexer.line            = saved_line;
-    self.lexer.col             = saved_col;
-    self.lexer.current         = saved_cur;
-    self.lexer.lookahead       = saved_look;
-    self.lexer.has_lookahead   = saved_haslk;
-    self.lexer.pushed_back     = saved_push;
-    self.lexer.has_pushed_back = saved_haspb;
-    self.lexer.seen_line_term  = saved_slt;
+    self.restore_lhs_snapshot(snap);
 }
 
 // Emit the parameter prologue: the function-level lexical scope, the TDZ
