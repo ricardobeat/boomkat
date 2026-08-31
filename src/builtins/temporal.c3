@@ -2059,8 +2059,13 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
         return;
     }
 
-    int128 total_a = duration_total_ns_from(rel_date, da);
-    int128 total_b = duration_total_ns_from(rel_date, db);
+    int128 total_a = 0;
+    int128 total_b = 0;
+    if (!duration_total_ns_from(rel_date, da, &total_a) ||
+        !duration_total_ns_from(rel_date, db, &total_b)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "date outside valid ISO range");
+        return;
+    }
     long cmp = total_a < total_b ? -1 : (total_a > total_b ? 1 : 0);
     ctx.result.set_number((double)cmp);
 }
@@ -2069,7 +2074,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
 // from time-only overflow) to `rel_date` and returns the total nanoseconds
 // from `rel_date` (midnight) to the resulting date-time. Mirrors the
 // relativeTo path of builtin_temporal_duration_proto_round.
-fn int128 duration_total_ns_from(CivilDate rel_date, temporal::DurationParts dur) {
+fn bool duration_total_ns_from(CivilDate rel_date, temporal::DurationParts dur, int128* out) {
     int128 time_only_ns = (int128)0;
     time_only_ns += (int128)dur.hours   * 3600000000000L;
     time_only_ns += (int128)dur.minutes *   60000000000L;
@@ -2095,7 +2100,9 @@ fn int128 duration_total_ns_from(CivilDate rel_date, temporal::DurationParts dur
 
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
     long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-    return (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
+    if (tgt_epoch > 100000000L || tgt_epoch < -100000000L) return false;
+    *out = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
+    return true;
 }
 
 // Shared coercion from a string, Duration, or property bag into a Duration.
@@ -2413,7 +2420,8 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     // value derived solely from the time portion. Fold any pre-existing
     // date-unit days into the bound check too, so {days: N, seconds: x}
     // with x + N*86400 ≥ 2^53 also throws.
-    int128 sec_total = (int128)rd.seconds + (int128)rd.days * 86400L;
+    int128 sec_total = (int128)rd.seconds + (int128)rd.days * 86400L
+                     + (int128)rd.hours * 3600L + (int128)rd.minutes * 60L;
     int128 max_secs = (int128)9007199254740992L;  // 2^53
     if (sec_total >= max_secs || sec_total <= -max_secs) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration out of range");
@@ -3273,7 +3281,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         int128 dur_time_ns = duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
         int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
-        io::eprintfn("[TOTAL_DEBUG] start_ns=%d dur_time_ns=%d target=%d ns_limit=%d fits=%d", (long)(start_ns / 1000000000L), (long)dur_time_ns, (long)(target_instant_ns / 1000000000L), (long)(ns_limit / 1000000000L), (long)(target_instant_ns > ns_limit));
+
         if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
@@ -3458,7 +3466,6 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     CivilDate rel_date;
     temporal::CivilTime rel_time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
     bool is_zdt = (relative_to.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
-    io::eprintfn("[TOTAL_DEBUG] is_zdt=%d class=%d ZDT=%d", (int)is_zdt, (int)relative_to.get_class(), (int)hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
     if (is_zdt) {
         long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
         zdt_wall_fields(relative_to, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
@@ -3469,7 +3476,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         int128 dur_time_ns = duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
         int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
-        io::eprintfn("[TOTAL_DEBUG] start_ns=%d dur_time_ns=%d target=%d ns_limit=%d fits=%d", (long)(start_ns / 1000000000L), (long)dur_time_ns, (long)(target_instant_ns / 1000000000L), (long)(ns_limit / 1000000000L), (long)(target_instant_ns > ns_limit));
+
         if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
@@ -11938,7 +11945,7 @@ fn HObject*? alloc_zoneddatetime(Heap* hp, hbigint::HBigInt* ns, HObject* tz, HS
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
     if (catch err = raw) return err~;
     HObject* obj = raw;
-    io::eprintfn("[ZDT_ALLOC] class=%d ZDT=%d", (int)obj.get_class(), (int)hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
+
     ((types::HeapHeader*)ns).incref();
     ((types::HeapHeader*)tz).incref();
     if (calendar != null) { ((types::HeapHeader*)calendar).incref(); }
