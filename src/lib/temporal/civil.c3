@@ -302,6 +302,17 @@ fn bool is_valid_iso_datetime(long y, long m, long d, long h, long mi, long s, l
     return true;
 }
 
+// True when `d` is representable as an Instant at midnight. Stricter than
+// IsValidISODate on the negative side: the ISO date range is asymmetric
+// (-271821-04-19 .. +275760-09-13, epoch_days [-1e8-1, +1e8]), but the
+// Instant range is symmetric (-1e8 days .. +1e8 days). A boundary date like
+// -271821-04-19 is a valid ISO date but its epoch ns are below the Instant
+// minimum, so a calendar-unit nudge that lands there must throw.
+fn bool is_instant_representable_date(CivilDate d) {
+    long days = epoch_days_from_civil(d.y, (int)d.m, (int)d.d);
+    return days >= -100000000L && days <= 100000000L;
+}
+
 // Add `seconds` (which may be negative) to a CivilTime, returning a fresh
 // CivilTime that wraps midnight as needed. `out_day_delta` receives the
 // number of whole days to advance (negative = rewind) the carrying date.

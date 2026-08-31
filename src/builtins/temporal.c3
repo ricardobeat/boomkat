@@ -7092,15 +7092,18 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     long span = total_days_between(lo, hi) * 86_400_000_000_000L;
     if (span == 0) return true;
 
-    // The nudged endpoint must be a representable ISO date when it is actually
-    // materialized to make a rounding decision: a rounding increment that shoves
-    // the boundary past the ±275760 range is a RangeError (NudgeToCalendarUnit
-    // CalendarDateAdd). An exact multiple at increment 1 (to_end == 0) steps to
-    // the natural next boundary and never needs the increment-beyond one, so it
-    // need not be representable (test262 PlainYearMonth argument-string-limits).
+    // The nudged endpoint must be representable as an Instant at midnight:
+    // the spec's NudgeToCalendarUnit uses CalendarDateAdd to compute the
+    // bound and ConvertToEpochNanoseconds to lift it, and that lifts throws
+    // for any date whose epoch ns fall outside [-1e8, +1e8] days. The ISO
+    // date range is asymmetric (-271821-04-19 .. +275760-09-13), so check
+    // the Instant range, not just IsValidISODate. An exact multiple at
+    // increment 1 (to_end == 0) steps to the natural next boundary and
+    // never needs the increment-beyond one, so it need not be
+    // representable (test262 PlainYearMonth argument-string-limits).
     if (to_end != 0 || ds.increment > 1) {
-        if (!temporal::is_valid_iso_date(lo.y, (int)lo.m, (int)lo.d) ||
-            !temporal::is_valid_iso_date(hi.y, (int)hi.m, (int)hi.d)) {
+        if (!temporal::is_instant_representable_date(lo) ||
+            !temporal::is_instant_representable_date(hi)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "rounded date outside valid ISO range");
             return false;
         }
