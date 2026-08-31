@@ -2412,7 +2412,12 @@ enum TemporalRoundMode : int {
     HALF_CEIL, HALF_FLOOR, HALF_EXPAND, HALF_TRUNC, HALF_EVEN,
 }
 
+// spec's IsCalendarUnit: years/months/weeks only (used for plain-relativeTo
+// "calendar unit" branches that should NOT include days)
 fn bool is_cal_unit(TemporalUnit u) { return u <= TemporalUnit.WEEK; }
+
+// spec's TemporalUnitCategory == "date": years/months/weeks/days
+fn bool is_date_unit(TemporalUnit u) { return u <= TemporalUnit.DAY; }
 
 fn long unit_ns_divisor(TemporalUnit u) {
     switch (u) {
@@ -2543,6 +2548,44 @@ fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
         }
     }
     long out = q * incr_ns;
+    return neg ? -out : out;
+}
+
+// int128 counterpart of round_long_ns, for nanosecond counts that exceed the
+// 64-bit range (~292 years). Same magnitude-first rounding, sign reapplied at
+// the end, direction-sensitive modes mirrored for a negative count.
+fn int128 round_long_ns_128(int128 v, int128 incr_ns, TemporalRoundMode mode) {
+    bool neg = v < 0;
+    int128 mag = neg ? -v : v;
+    if (neg) mode = mode_for_negative_magnitude(mode);
+
+    int128 q = mag / incr_ns;
+    int128 r = mag - q * incr_ns;
+    if (r != 0) {
+        switch (mode) {
+            case TemporalRoundMode.TRUNC:
+            case TemporalRoundMode.FLOOR: break;
+            case TemporalRoundMode.EXPAND:
+            case TemporalRoundMode.CEIL: q += 1; break;
+            default: {
+                int128 twice = r * 2;
+                if (twice > incr_ns) {
+                    q += 1;
+                } else if (twice == incr_ns) {
+                    switch (mode) {
+                        case TemporalRoundMode.HALF_TRUNC:
+                        case TemporalRoundMode.HALF_FLOOR: break;
+                        case TemporalRoundMode.HALF_EXPAND:
+                        case TemporalRoundMode.HALF_CEIL: q += 1; break;
+                        case TemporalRoundMode.HALF_EVEN: if ((q & 1) != 0) q += 1; break;
+                        default: break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    int128 out = q * incr_ns;
     return neg ? -out : out;
 }
 
@@ -2724,6 +2767,64 @@ fn void decompose_ns(long ns, TemporalUnit largest, temporal::DurationParts* out
     out.ns = sign * (long)rem;
 }
 
+// ℝ(𝔽(x)): a Duration slot is a float64-representable number. The spec stores
+// every component via this conversion in CreateTemporalDuration; below 2^53 it
+// is the identity, and above it the value snaps to the nearest float64. That
+// loss shows up only once a component exceeds 2^53 (a microseconds field for a
+// 584-year since() is ~1.8e16), so a split carried out in exact int128 must
+// round each field back through float64 to reproduce it.
+fn long f64_field(long x) { return (long)(double)x; }
+
+// The inverse of decompose_ns for values too large for int64 (any duration
+// longer than ~292 years in nanoseconds). Like decompose_ns it walks the unit
+// ladder from `largest` down; each field is ℝ(𝔽())-rounded and the middle
+// int128 remainder avoids the 64-bit overflow that a `long` count would hit.
+fn void decompose_ns_128(int128 ns, TemporalUnit largest, temporal::DurationParts* out) {
+    long sign = ns < 0 ? -1 : 1;
+    int128 rem = ns < 0 ? -ns : ns;
+    out.years = 0;
+    out.months = 0;
+    out.weeks = 0;
+    out.days = 0;
+    out.hours = 0;
+    out.minutes = 0;
+    out.seconds = 0;
+    out.ms = 0;
+    out.us = 0;
+    out.ns = 0;
+    if (largest == TemporalUnit.DAY) {
+        out.days = sign * (long)(rem / 86400000000000L);
+        rem %= 86400000000000L;
+    } else if (largest == TemporalUnit.WEEK) {
+        int128 total_days = rem / 86400000000000L;
+        rem %= 86400000000000L;
+        out.weeks = sign * (long)(total_days / 7);
+        out.days = sign * (long)(total_days % 7);
+    }
+    // Decompose time units only down to largest_unit.
+    if (largest <= TemporalUnit.HOUR) {
+        out.hours = sign * f64_field((long)(rem / 3600000000000L));
+        rem %= 3600000000000L;
+    }
+    if (largest <= TemporalUnit.MINUTE) {
+        out.minutes = sign * f64_field((long)(rem / 60000000000L));
+        rem %= 60000000000L;
+    }
+    if (largest <= TemporalUnit.SECOND) {
+        out.seconds = sign * f64_field((long)(rem / 1000000000L));
+        rem %= 1000000000L;
+    }
+    if (largest <= TemporalUnit.MILLISECOND) {
+        out.ms = sign * f64_field((long)(rem / 1000000L));
+        rem %= 1000000L;
+    }
+    if (largest <= TemporalUnit.MICROSECOND) {
+        out.us = sign * f64_field((long)(rem / 1000L));
+        rem %= 1000L;
+    }
+    out.ns = sign * f64_field((long)rem);
+}
+
 // ============================================================================
 // Temporal.Duration.prototype.round
 // ============================================================================
@@ -2836,7 +2937,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         return;
     }
     if (!validate_rounding_increment(ctx, smallest_unit, rounding_increment)) return;
-    if (rounding_increment > 1 && largest_unit != smallest_unit && is_cal_unit(smallest_unit)) {
+    if (rounding_increment > 1 && largest_unit != smallest_unit && is_date_unit(smallest_unit)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement > 1 is not allowed with calendar smallestUnit unless largestUnit equals smallestUnit");
         return;
     }
@@ -2862,27 +2963,24 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             return;
         }
         int128 time_ns = duration_to_time_ns(dur);
-        long rounded_ns;
-        if (smallest_unit == TemporalUnit.DAY) {
-            // Round on integer nanoseconds, then divide. The float64 form
-            // loses precision near and beyond 2^53 ns (~104 days).
-            long incr_ns = (long)rounding_increment * 86400000000000L;
-            if (incr_ns <= 0) {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement too large");
-                return;
-            }
-            rounded_ns = round_long_ns((long)time_ns, incr_ns, rounding_mode);
+        // Spec's RoundTimeDuration is an integer operation on the time
+        // duration (RoundNumberToIncrement on nanoseconds); rounding stays in
+        // int128 so a duration longer than ~292 years does not overflow a
+        // 64-bit count, and the ℝ(𝔽()) precision loss lands at decomposition.
+        long divisor = (smallest_unit == TemporalUnit.DAY) ? 86400000000000L : unit_ns_divisor(smallest_unit);
+        int128 incr_ns = (int128)((long)rounding_increment * divisor);
+        if (incr_ns <= 0) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement too large");
+            return;
+        }
+        int128 rounded_ns;
+        if (incr_ns == 1) {
+            rounded_ns = time_ns;
         } else {
-            // Spec rounds via ℝ(𝔽(time / divisor)). For values under 2^53 ns
-            // the float64 step is exact; above it, test262 expects the loss
-            // to show through into the output.
-            long divisor = unit_ns_divisor(smallest_unit);
-            double incr_d = (double)divisor * rounding_increment;
-            double rounded_d = round_num_to_incr((double)time_ns, incr_d, rounding_mode);
-            rounded_ns = (long)rounded_d;
+            rounded_ns = round_long_ns_128(time_ns, incr_ns, rounding_mode);
         }
         temporal::DurationParts result;
-        decompose_ns(rounded_ns, largest_unit, &result);
+        decompose_ns_128(rounded_ns, largest_unit, &result);
         HObject*? obj_o = alloc_duration(ctx.heap, result);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
@@ -6539,10 +6637,10 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
     if (ds.largest > TemporalUnit.DAY) {
         long days = temporal::epoch_days_from_civil(ed.y, (int)ed.m, (int)ed.d)
                   - temporal::epoch_days_from_civil(sd.y, (int)sd.m, (int)sd.d);
-        long total = days * 86_400_000_000_000L + tod_delta;
-        long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
-        if (incr_ns > 1) total = round_long_ns(total, incr_ns, ds.mode);
-        *out = time_ns_split(total, ds.largest);
+        int128 total = (int128)days * 86_400_000_000_000L + (int128)tod_delta;
+        int128 incr_ns = (int128)(unit_ns_divisor(ds.smallest) * (long)ds.increment);
+        if (incr_ns > 1) total = round_long_ns_128(total, incr_ns, ds.mode);
+        decompose_ns_128(total, ds.largest, out);
         return true;
     }
 
@@ -13005,10 +13103,11 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
                "ZonedDateTime epochNanoseconds out of int128 range");
         int128 self_ns = self.extra.temporal.big_ns.to_int128();
         int128 other_ns = other.extra.temporal.big_ns.to_int128();
-        long total = (long)(other_ns - self_ns);
-        long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
-        if (incr_ns > 1) total = round_long_ns(total, incr_ns, ds.mode);
-        temporal::DurationParts dp = time_ns_split(total, ds.largest);
+        int128 total = other_ns - self_ns;
+        int128 incr_ns = (int128)(unit_ns_divisor(ds.smallest) * (long)ds.increment);
+        if (incr_ns > 1) total = round_long_ns_128(total, incr_ns, ds.mode);
+        temporal::DurationParts dp;
+        decompose_ns_128(total, ds.largest, &dp);
         if (!until) {
             dp.hours = -dp.hours;
             dp.minutes = -dp.minutes;
