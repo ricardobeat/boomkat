@@ -294,6 +294,11 @@ fn bool is_valid_iso_datetime(long y, long m, long d, long h, long mi, long s, l
     if (h < 0 || h > 23 || mi < 0 || mi > 59 || s < 0 || s > 59 || ms < 0 || ms > 999 || us < 0 || us > 999 || ns < 0 || ns > 999) return false;
     if (!is_valid_iso_date(y, (int)m, (int)d)) return false;
     if (!is_valid_time((int)h, (int)mi, (int)s, (int)ms, (int)us, (int)ns)) return false;
+    // The boundary is exclusive at midnight: the lower edge date's all-zero
+    // time is outside the PlainDateTime range (its instant is below NS_MIN).
+    if (m == ISO_DATE_MIN_MONTH && d == ISO_DATE_MIN_DAY && y == ISO_DATE_MIN_YEAR) {
+        if (h == 0 && mi == 0 && s == 0 && ms == 0 && us == 0 && ns == 0) return false;
+    }
     return true;
 }
 

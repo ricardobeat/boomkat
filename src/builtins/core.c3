@@ -887,6 +887,8 @@ enum Builtin : uint (String js_name, int js_arity, BuiltinFunc handler) {
     TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINMONTH {"daysInMonth", 0, &builtin_temporal_plain_datetime_getter},
     TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINYEAR {"daysInYear", 0, &builtin_temporal_plain_datetime_getter},
     TEMPORAL_PLAIN_DATETIME_PROTO_MONTHSINYEAR {"monthsInYear", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_ERA {"era", 0, &builtin_temporal_plain_datetime_getter},
+    TEMPORAL_PLAIN_DATETIME_PROTO_ERAYEAR {"eraYear", 0, &builtin_temporal_plain_datetime_getter},
     TEMPORAL_PLAIN_DATETIME_PROTO_INLEAPYEAR {"inLeapYear", 0, &builtin_temporal_plain_datetime_getter},
     TEMPORAL_PLAIN_DATETIME_PROTO_MONTHCODE {"monthCode", 0, &builtin_temporal_plain_datetime_getter},
     TEMPORAL_PLAIN_DATETIME_PROTO_VALUEOF {"valueOf", 0, &builtin_temporal_plain_datetime_proto_valueOf},
