@@ -3227,6 +3227,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         int128 dur_time_ns = duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
         int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        io::eprintfn("[TOTAL_DEBUG] start_ns=%d dur_time_ns=%d target=%d ns_limit=%d fits=%d", (long)(start_ns / 1000000000L), (long)dur_time_ns, (long)(target_instant_ns / 1000000000L), (long)(ns_limit / 1000000000L), (long)(target_instant_ns > ns_limit));
         if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
@@ -3407,6 +3408,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     CivilDate rel_date;
     temporal::CivilTime rel_time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
     bool is_zdt = (relative_to.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
+    io::eprintfn("[TOTAL_DEBUG] is_zdt=%d class=%d ZDT=%d", (int)is_zdt, (int)relative_to.get_class(), (int)hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
     if (is_zdt) {
         long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
         zdt_wall_fields(relative_to, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
@@ -3417,6 +3419,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         int128 dur_time_ns = duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
         int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        io::eprintfn("[TOTAL_DEBUG] start_ns=%d dur_time_ns=%d target=%d ns_limit=%d fits=%d", (long)(start_ns / 1000000000L), (long)dur_time_ns, (long)(target_instant_ns / 1000000000L), (long)(ns_limit / 1000000000L), (long)(target_instant_ns > ns_limit));
         if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
@@ -8463,6 +8466,10 @@ fn void builtin_temporal_plain_monthday_ctor(BuiltinContext* ctx) {
     }
     int vy; int vm; int vd;
     if (!fields_to_valid_monthday(ctx, y, m, d, temporal::OverflowKind.REJECT, &vy, &vm, &vd)) return;
+    if (!temporal::is_valid_iso_date((long)vy, vm, vd)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "PlainMonthDay: reference year is out of range");
+        return;
+    }
 
     HObject*? obj_o = alloc_plain_monthday(ctx.heap, vy, vm, vd, calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -11874,6 +11881,7 @@ fn HObject*? alloc_zoneddatetime(Heap* hp, hbigint::HBigInt* ns, HObject* tz, HS
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
     if (catch err = raw) return err~;
     HObject* obj = raw;
+    io::eprintfn("[ZDT_ALLOC] class=%d ZDT=%d", (int)obj.get_class(), (int)hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
     ((types::HeapHeader*)ns).incref();
     ((types::HeapHeader*)tz).incref();
     if (calendar != null) { ((types::HeapHeader*)calendar).incref(); }
