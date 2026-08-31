@@ -1483,13 +1483,11 @@ fn bool duration_field_integral(BuiltinContext* ctx, double val) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
         return false;
     }
-    // A Number like Number.MAX_VALUE (1.8e308) silently truncates to
-    // LONG_MAX via the `(long)` cast below, and the resulting LONG_MAX
-    // field slips past `is_valid_duration` for sub-second fields (because
-    // LONG_MAX * 1000 < 2^53 * 1e9). Reject magnitudes past LONG_MAX up
-    // front so a sub-second field cannot masquerade as Long.MAX. The
-    // spec's per-field 2^32/2^53 limits are still enforced by
-    // `is_valid_duration`.
+    return true;
+}
+
+fn bool duration_field_integral_long(BuiltinContext* ctx, double val) {
+    if (!duration_field_integral(ctx, val)) return false;
     if (math::abs(val) > 9223372036854775807.0) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration field magnitude exceeds long range");
         return false;
@@ -1730,7 +1728,7 @@ fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
         if (arg.is_undefined()) continue; // spec: undefined args treated as zero
         double val = vm::vm_to_number(v, arg);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-        if (!duration_field_integral(ctx, val)) return;
+        if (!duration_field_integral_long(ctx, val)) return;
         long whole = (long)math::trunc(val);
         switch (k) {
             case 0: d.years = whole; break;
@@ -2573,7 +2571,7 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
         found_any = true;
         double val = vm::vm_to_number(v, &pv);
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
-        if (!duration_field_integral(ctx, val)) return;
+        if (!duration_field_integral_long(ctx, val)) return;
         long whole = (long)math::trunc(val);
         *slots[k] = whole;
     }
