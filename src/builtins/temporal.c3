@@ -14593,47 +14593,24 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
             *out_is_z = (text[prefix_end - 1] == 'Z' || text[prefix_end - 1] == 'z');
             // Reject sub-minute offsets: scan the offset tail for `.` or `,`
             // (fractional separator) or for a third `:` (the seconds tier).
-            // `prefix_end` is the position right after the offset, so the
-            // offset itself lives in `text[time_end..prefix_end]`. We don't
-            // have `time_end` tracked here, but the only thing after `time_end`
-            // and before `prefix_end` is the offset (and possibly trailing
-            // junk we already rejected with `prefix_end != text.len`).
-            // Use the time zone name path's check: count colons in the
-            // tail and reject when the offset has 2+.
-            int tail_colons = 0;
-            // Walk backwards from prefix_end to find the offset's start
-            // (the first non-`±HH:MM:SS[.frac]` char).
-            // Cheaper: re-walk from the end and detect a third `:` at the
-            // offset tier. The date-time time portion has the form
-            // `HH:MM:SS[.frac]`, so there are exactly 2 colons. Anything
-            // beyond the time tier (after the time's `T`) is the offset
-            // and adds 1 or 2 colons. Sub-minute offset = 2 colons
-            // (`±HH:MM:SS`); reject when offset has 2 colons.
-            // Walk from prefix_end backward to find `:T`-style boundary.
-            // Simpler approximation: count colons in the entire `prefix_end..text.len`
-            // tail; the time part is the only thing before the offset,
-            // and our offset parser already knows the offset ends here.
-            // For now, scan the entire tail starting at `prefix_end` minus
-            // the offset's start.
-            // Concrete approach: find the time separator (`T`/`t`/` `) in
-            // the text, walk forward, count colons in the offset suffix
-            // (the part from there to the end, up to but not including any
-            // optional bracket).
-            usz k = 0;
-            while (k < text.len && text[k] != 'T' && text[k] != 't' && text[k] != ' ') k++;
-            if (k < text.len) {
-                // After the time separator, count colons in the time
-                // portion (we expect exactly 2) and in the offset portion.
-                // We approximate: any third `:` from there to the end is
-                // the offset's `:SS` tier.
-                int cs = 0;
-                for (usz j = k + 1; j < text.len; j++) {
-                    if (text[j] == ':') cs++;
-                }
-                // Subtract 2 for the time portion itself; if anything
-                // remains, the offset has more than `±HH:MM`.
-                if (cs > 2) return false;
+            // Walk backwards from `prefix_end` over the parsed offset to find
+            // its start, then re-scan the offset itself for colons. Anything
+            // beyond a single `:` in the offset means a `:SS` tier.
+            int off_colons = 0;
+            // The offset starts with `+`/`-`/`Z`; rewind over the digits
+            // and `:`. Easier: re-parse from `prefix_end - off_len` to count.
+            // We don't have off_len, so re-derive it: scan backward until we
+            // hit a non-`+/-/Z/0-9/:` char.
+            usz o_start = prefix_end;
+            while (o_start > 0) {
+                char c = text[o_start - 1];
+                if (c == '+' || c == '-' || c == 'Z' || c == 'z') break;
+                o_start -= 1;
             }
+            for (usz j = o_start; j < prefix_end; j++) {
+                if (text[j] == ':') off_colons++;
+            }
+            if (off_colons > 1) return false;
             *out_offset_sec = off;
             *offset_known = true;
             return true;
