@@ -1529,18 +1529,30 @@ fn bool is_valid_duration(temporal::DurationParts* d) {
         if (overall_sign == 0) { overall_sign = s; }
         else if (overall_sign != s) { return false; }
     }
-    // Use int128 nanosecond arithmetic for the range check to avoid
-    // float64 precision loss in the sub-second division.
+    // Spec IsValidDuration computes normalizedNs as:
+    //   days*86400e9 + hours*3600e9 + mins*60e9 + secs*1e9
+    //     + ℝ(𝔽(ms))*1e6 + ℝ(𝔽(us))*1000 + ℝ(𝔽(ns))
+    // and rejects if abs(normalizedNs) >= 10^9 * 2^53. For integers <= 2^53
+    // the ℝ(𝔽(...)) round-trip is exact, but a value like 9007199254740991926258
+    // µs (produced by dividing a >1e24 ns total by 1000) is rounded up to the
+    // nearest double — which can push the total over the threshold even though
+    // the exact int128 sum does not. Round-trip via double before summing the
+    // sub-second fields so the check matches the spec. Cast straight from
+    // double to int128 to avoid an intermediate long overflow on values above
+    // 2^63.
     int128 total_ns = (int128)0;
     total_ns += (int128)math::abs(d.days) * 86400000000000L;
     total_ns += (int128)math::abs(d.hours) * 3600000000000L;
     total_ns += (int128)math::abs(d.minutes) * 60000000000L;
     total_ns += (int128)math::abs(d.seconds) * 1000000000L;
-    total_ns += (int128)math::abs(d.ms) * 1000000L;
-    total_ns += (int128)math::abs(d.us) * 1000L;
-    total_ns += (int128)math::abs(d.ns);
+    double[3] sub_abs = { math::abs(d.ms), math::abs(d.us), math::abs(d.ns) };
+    long[3] mult = { 1000000L, 1000L, 1L };
+    for (int k = 0; k < 3; k++) {
+        int128 rounded = (int128)(double)sub_abs[k];
+        total_ns += math::abs(rounded) * mult[k];
+    }
     // 2^53 * 10^9 = 9007199254740992000000000
-    if (total_ns >= (int128)9007199254740992L * 1000000000L) {
+    if (total_ns >= (int128)9007199254740992L * (int128)1000000000L) {
         return false;
     }
     return true;
@@ -2481,6 +2493,17 @@ fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationP
     TemporalUnit largest = default_largest_unit(a);
     TemporalUnit largest_b = default_largest_unit(b);
     if (largest_b < largest) largest = largest_b;
+
+    // Spec TemporalDurationFromInternal produces the *unbalanced* form:
+    // units strictly larger than `largestUnit` stay zero, and the time total
+    // is broken into units from `largestUnit` down to nanoseconds. For
+    // `largestUnit = "hour"`, hours = floor(time/3600e9) ns and the result
+    // keeps the sub-day units intact (24h stays 24h, not 1d). For
+    // `largestUnit = "microsecond"`, µs = floor(time/1000) and ns = time%1000,
+    // which lets IsValidDuration's 𝔽→ℝ round-trip catch a 1e24-ish ns column
+    // whose µs field rounds above the 10^9 * 2^53 threshold (test262
+    // Duration/add result-out-of-range-3). Validate this unbalanced form
+    // before returning, so an out-of-range result throws via the spec path.
     out.years = 0;
     out.months = 0;
     out.weeks = 0;
@@ -2505,14 +2528,18 @@ fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationP
         rem %= 1000000000L;
     }
     if (largest <= TemporalUnit.MILLISECOND) {
-        out.ms = (long)(rem / 1000000L);
+        out.ms = (double)(rem / 1000000L);
         rem %= 1000000L;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
-        out.us = (long)(rem / 1000L);
+        out.us = (double)(rem / 1000L);
         rem %= 1000L;
     }
-    out.ns = (long)rem;
+    out.ns = (double)rem;
+    if (!is_valid_duration(out)) {
+        // Caller decides whether to throw — signal failure.
+        return false;
+    }
     return true;
 }
 
