@@ -39,7 +39,9 @@ fn usz format_civil_date(CivilDate d, char* buf, usz buf_size) {
 
 // Duration fields in the fixed ISO 8601 ordering. Date components are whole
 // numbers; the time portion folds fractional seconds into ms/us/ns so the
-// value type stays integer-only.
+// value type stays integer-only.  Sub-second fields use double so that
+// values exceeding int64 range (e.g. microseconds: 4.5e21 from a property
+// bag) survive round-tripping through DurationParts without overflow.
 struct DurationParts {
     long years;
     long months;
@@ -48,9 +50,9 @@ struct DurationParts {
     long hours;
     long minutes;
     long seconds;
-    long ms;
-    long us;
-    long ns;
+    double ms;
+    double us;
+    double ns;
 }
 
 // A DurationParts reduced to the canonical shape the ISO 8601 duration
@@ -231,9 +233,9 @@ fn long fraction_to_ns(long digits, int len) @local {
 fn void split_subseconds(long total_ns, long sign, DurationParts* out) @local {
     out.seconds += sign * (total_ns / 1_000_000_000L);
     long rem = total_ns % 1_000_000_000L;
-    out.ms = rem / 1_000_000;
-    out.us = (rem / 1_000) % 1000;
-    out.ns = rem % 1000;
+    out.ms = (double)(rem / 1_000_000);
+    out.us = (double)((rem / 1_000) % 1000);
+    out.ns = (double)(rem % 1000);
 }
 
 // Parse an ISO 8601 duration string (`[±]P[n]Y[n]M[n]W[n]D[T[n]H[n]M[n]S]`).

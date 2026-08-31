@@ -136,9 +136,11 @@ fn HObject*? alloc_duration(Heap* hp, temporal::DurationParts d) {
     obj.extra.temporal.long_e = (long)(double)d.hours;
     obj.extra.temporal.long_f = (long)(double)d.minutes;
     obj.extra.temporal.long_g = (long)(double)d.seconds;
-    obj.extra.temporal.long_h = (long)(double)d.ms;
-    obj.extra.temporal.long_i = (long)(double)d.us;
-    obj.extra.temporal.long_j = (long)(double)d.ns;
+    // Sub-second fields stored as float64 bit patterns so values exceeding
+    // int64 range survive round-tripping through the HObject long slots.
+    obj.extra.temporal.long_h = (long)bitcast(d.ms, ulong);
+    obj.extra.temporal.long_i = (long)bitcast(d.us, ulong);
+    obj.extra.temporal.long_j = (long)bitcast(d.ns, ulong);
     return obj;
 }
 
@@ -196,9 +198,10 @@ fn temporal::DurationParts duration_value(HObject* obj) {
     d.hours   = obj.extra.temporal.long_e;
     d.minutes = obj.extra.temporal.long_f;
     d.seconds = obj.extra.temporal.long_g;
-    d.ms      = obj.extra.temporal.long_h;
-    d.us      = obj.extra.temporal.long_i;
-    d.ns      = obj.extra.temporal.long_j;
+    // Sub-second fields stored as float64 bit patterns; bitcast back.
+    d.ms      = bitcast((ulong)obj.extra.temporal.long_h, double);
+    d.us      = bitcast((ulong)obj.extra.temporal.long_i, double);
+    d.ns      = bitcast((ulong)obj.extra.temporal.long_j, double);
     return d;
 }
 
@@ -1502,24 +1505,33 @@ fn bool is_valid_duration(temporal::DurationParts* d) {
         return false;
     }
     int overall_sign = 0;
-    long*[10] comps = { &d.years, &d.months, &d.weeks, &d.days, &d.hours,
-        &d.minutes, &d.seconds, &d.ms, &d.us, &d.ns };
-    for (int k = 0; k < 10; k++) {
+    long*[7] comps = { &d.years, &d.months, &d.weeks, &d.days, &d.hours,
+        &d.minutes, &d.seconds };
+    for (int k = 0; k < 7; k++) {
         if (*comps[k] == 0) continue;
         int s = *comps[k] < 0 ? -1 : 1;
         if (overall_sign == 0) { overall_sign = s; }
         else if (overall_sign != s) { return false; }
     }
-    // Use floating-point division for sub-second fields per spec:
-    // ms/1000 + us/1e6 + ns/1e9, then add the integer second fields.
-    double total_sec = (double)d.days * 86400.0
-        + (double)d.hours * 3600.0
-        + (double)d.minutes * 60.0
-        + (double)d.seconds
-        + (double)d.ms / 1000.0
-        + (double)d.us / 1000000.0
-        + (double)d.ns / 1000000000.0;
-    if (math::abs(total_sec) >= 9007199254740992.0) {
+    double[3] sub = { d.ms, d.us, d.ns };
+    for (int k = 0; k < 3; k++) {
+        if (sub[k] == 0.0) continue;
+        int s = sub[k] < 0.0 ? -1 : 1;
+        if (overall_sign == 0) { overall_sign = s; }
+        else if (overall_sign != s) { return false; }
+    }
+    // Use int128 nanosecond arithmetic for the range check to avoid
+    // float64 precision loss in the sub-second division.
+    int128 total_ns = (int128)0;
+    total_ns += (int128)math::abs(d.days) * 86400000000000L;
+    total_ns += (int128)math::abs(d.hours) * 3600000000000L;
+    total_ns += (int128)math::abs(d.minutes) * 60000000000L;
+    total_ns += (int128)math::abs(d.seconds) * 1000000000L;
+    total_ns += (int128)math::abs(d.ms) * 1000000L;
+    total_ns += (int128)math::abs(d.us) * 1000L;
+    total_ns += (int128)math::abs(d.ns);
+    // 2^53 * 10^9 = 9007199254740992000000000
+    if (total_ns >= (int128)9007199254740992L * 1000000000L) {
         return false;
     }
     return true;
@@ -1571,9 +1583,9 @@ fn bool duration_arg_to_ns_bigint(BuiltinContext* ctx, TVal* arg, hbigint::HBigI
         part_vals[0] = parts.hours;   part_scales[0] = 3600000000000L;
         part_vals[1] = parts.minutes; part_scales[1] = 60000000000L;
         part_vals[2] = parts.seconds; part_scales[2] = 1000000000L;
-        part_vals[3] = parts.ms;      part_scales[3] = 1000000L;
-        part_vals[4] = parts.us;      part_scales[4] = 1000L;
-        part_vals[5] = parts.ns;      part_scales[5] = 1L;
+        part_vals[3] = (long)parts.ms;      part_scales[3] = 1000000L;
+        part_vals[4] = (long)parts.us;      part_scales[4] = 1000L;
+        part_vals[5] = (long)parts.ns;      part_scales[5] = 1L;
         for (int k = 0; k < 6; k++) {
             if (part_vals[k] == 0) continue;
             hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)part_vals[k]);
@@ -1616,9 +1628,9 @@ fn bool duration_arg_to_ns_bigint(BuiltinContext* ctx, TVal* arg, hbigint::HBigI
         part_vals[0] = parts.hours;   part_scales[0] = 3600000000000L;
         part_vals[1] = parts.minutes; part_scales[1] = 60000000000L;
         part_vals[2] = parts.seconds; part_scales[2] = 1000000000L;
-        part_vals[3] = parts.ms;      part_scales[3] = 1000000L;
-        part_vals[4] = parts.us;      part_scales[4] = 1000L;
-        part_vals[5] = parts.ns;      part_scales[5] = 1L;
+        part_vals[3] = (long)parts.ms;      part_scales[3] = 1000000L;
+        part_vals[4] = (long)parts.us;      part_scales[4] = 1000L;
+        part_vals[5] = (long)parts.ns;      part_scales[5] = 1L;
         for (int k = 0; k < 6; k++) {
             if (part_vals[k] == 0) continue;
             hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)part_vals[k]);
@@ -2101,9 +2113,9 @@ fn void builtin_temporal_duration_getter(BuiltinContext* ctx) {
         case Builtin.TEMPORAL_DURATION_PROTO_HOURS:        val = (double)obj.extra.temporal.long_e; break;
         case Builtin.TEMPORAL_DURATION_PROTO_MINUTES:      val = (double)obj.extra.temporal.long_f; break;
         case Builtin.TEMPORAL_DURATION_PROTO_SECONDS:      val = (double)obj.extra.temporal.long_g; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MILLISECONDS: val = (double)obj.extra.temporal.long_h; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MICROSECONDS: val = (double)obj.extra.temporal.long_i; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_NANOSECONDS:  val = (double)obj.extra.temporal.long_j; break;
+        case Builtin.TEMPORAL_DURATION_PROTO_MILLISECONDS: val = bitcast((ulong)obj.extra.temporal.long_h, double); break;
+        case Builtin.TEMPORAL_DURATION_PROTO_MICROSECONDS: val = bitcast((ulong)obj.extra.temporal.long_i, double); break;
+        case Builtin.TEMPORAL_DURATION_PROTO_NANOSECONDS:  val = bitcast((ulong)obj.extra.temporal.long_j, double); break;
         default: break;
     }
     ctx.result.set_number(val);
@@ -2382,9 +2394,9 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
         rd.minutes = 0;
     }
     rd.seconds = rsign * (long)(rmag /    1000000000L); rmag %=    1000000000L;
-    rd.ms      = rsign * (long)(rmag /       1000000L); rmag %=       1000000L;
-    rd.us      = rsign * (long)(rmag /          1000L); rmag %=          1000L;
-    rd.ns      = rsign * (long)(rmag);
+    rd.ms      = (double)(rsign * (long)(rmag /       1000000L)); rmag %=       1000000L;
+    rd.us      = (double)(rsign * (long)(rmag /          1000L)); rmag %=          1000L;
+    rd.ns      = (double)(rsign * (long)(rmag));
 
     // Per spec, after rounding the time portion must remain within ±2^53
     // seconds (RegulateTimeDuration / IsValidDuration). Calendar-unit
@@ -2502,6 +2514,10 @@ fn void builtin_temporal_duration_proto_add(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Duration arithmetic produced an out-of-range result");
         return;
     }
+    if (!is_valid_duration(&result)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
+        return;
+    }
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
@@ -2535,6 +2551,10 @@ fn void builtin_temporal_duration_proto_subtract(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Duration arithmetic produced an out-of-range result");
         return;
     }
+    if (!is_valid_duration(&result)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
+        return;
+    }
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
@@ -2561,8 +2581,9 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
     // get call (order-of-operations test fixture depends on this).
     char[][] names = { "days", "hours", "microseconds", "milliseconds",
         "minutes", "months", "nanoseconds", "seconds", "weeks", "years" };
-    long*[10] slots = { &d.days, &d.hours, &d.us, &d.ms,
-        &d.minutes, &d.months, &d.ns, &d.seconds, &d.weeks, &d.years };
+    // Slot index maps alphabetical read order back to field position:
+    // 0=years 1=months 2=weeks 3=days 4=hours 5=minutes 6=seconds 7=ms 8=us 9=ns
+    int[10] slot = { 3, 4, 8, 7, 5, 1, 9, 6, 2, 0 };
     Vm* v = (Vm*)ctx.vm;
     bool found_any = false;
     for (int k = 0; k < 10; k++) {
@@ -2574,7 +2595,18 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
         if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return; }
         if (!duration_field_integral_long(ctx, val)) return;
         long whole = (long)math::trunc(val);
-        *slots[k] = whole;
+        switch (slot[k]) {
+            case 0: d.years = whole; break;
+            case 1: d.months = whole; break;
+            case 2: d.weeks = whole; break;
+            case 3: d.days = whole; break;
+            case 4: d.hours = whole; break;
+            case 5: d.minutes = whole; break;
+            case 6: d.seconds = whole; break;
+            case 7: d.ms = (double)whole; break;
+            case 8: d.us = (double)whole; break;
+            case 9: d.ns = (double)whole; break;
+        }
     }
     if (!found_any) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.prototype.with requires at least one recognized property");
@@ -2711,14 +2743,14 @@ fn temporal::DurationParts time_ns_split(long v, TemporalUnit largest) {
         v %= 1_000_000_000L;
     }
     if (largest <= TemporalUnit.MILLISECOND) {
-        dp.ms = v / 1_000_000L;
+        dp.ms = (double)(v / 1_000_000L);
         v %= 1_000_000L;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
-        dp.us = v / 1000L;
+        dp.us = (double)(v / 1000L);
         v %= 1000L;
     }
-    dp.ns = v;
+    dp.ns = (double)v;
     return dp;
 }
 
@@ -2969,14 +3001,14 @@ fn void decompose_ns(long ns, TemporalUnit largest, temporal::DurationParts* out
         rem %= 1000000000L;
     }
     if (largest <= TemporalUnit.MILLISECOND) {
-        out.ms = sign * (long)(rem / 1000000L);
+        out.ms = (double)(sign * (long)(rem / 1000000L));
         rem %= 1000000L;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
-        out.us = sign * (long)(rem / 1000L);
+        out.us = (double)(sign * (long)(rem / 1000L));
         rem %= 1000L;
     }
-    out.ns = sign * (long)rem;
+    out.ns = (double)(sign * (long)rem);
 }
 
 // ℝ(𝔽(x)): a Duration slot is a float64-representable number. The spec stores
@@ -3027,14 +3059,14 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, temporal::DurationPart
         rem %= 1000000000L;
     }
     if (largest <= TemporalUnit.MILLISECOND) {
-        out.ms = sign * f64_field((long)(rem / 1000000L));
+        out.ms = (double)(sign * f64_field((long)(rem / 1000000L)));
         rem %= 1000000L;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
-        out.us = sign * f64_field((long)(rem / 1000L));
+        out.us = (double)(sign * f64_field((long)(rem / 1000L)));
         rem %= 1000L;
     }
-    out.ns = sign * f64_field((long)rem);
+    out.ns = (double)(sign * f64_field((long)rem));
 }
 
 // ============================================================================
@@ -4423,18 +4455,25 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
                 return false;
             }
         }
-        long whole = (long)math::trunc(val);
-        switch (k) {
-            case 0: out.years = whole; break;
-            case 1: out.months = whole; break;
-            case 2: out.weeks = whole; break;
-            case 3: out.days = whole; break;
-            case 4: out.hours = whole; break;
-            case 5: out.minutes = whole; break;
-            case 6: out.seconds = whole; break;
-            case 7: out.ms = whole; break;
-            case 8: out.us = whole; break;
-            default: out.ns = whole; break;
+        // Sub-second fields are stored as double so values exceeding int64
+        // range (e.g. microseconds: 4.5e21) survive round-tripping.
+        if (k >= 7) {
+            switch (k) {
+                case 7: out.ms = val; break;
+                case 8: out.us = val; break;
+                default: out.ns = val; break;
+            }
+        } else {
+            long whole = (long)math::trunc(val);
+            switch (k) {
+                case 0: out.years = whole; break;
+                case 1: out.months = whole; break;
+                case 2: out.weeks = whole; break;
+                case 3: out.days = whole; break;
+                case 4: out.hours = whole; break;
+                case 5: out.minutes = whole; break;
+                default: out.seconds = whole; break;
+            }
         }
     }
     if (!any_field) {
@@ -13244,9 +13283,9 @@ fn bool duration_to_ns_delta(BuiltinContext* ctx, temporal::DurationParts dp, hb
     parts[0] = dp.hours;   scales[0] = 3600000000000L;
     parts[1] = dp.minutes; scales[1] = 60000000000L;
     parts[2] = dp.seconds; scales[2] = 1000000000L;
-    parts[3] = dp.ms;      scales[3] = 1000000L;
-    parts[4] = dp.us;      scales[4] = 1000L;
-    parts[5] = dp.ns;      scales[5] = 1L;
+    parts[3] = (long)dp.ms;      scales[3] = 1000000L;
+    parts[4] = (long)dp.us;      scales[4] = 1000L;
+    parts[5] = (long)dp.ns;      scales[5] = 1L;
     for (int k = 0; k < 6; k++) {
         if (parts[k] == 0) continue;
         hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)parts[k]);
