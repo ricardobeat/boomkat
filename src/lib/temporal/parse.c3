@@ -629,10 +629,7 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
                 if (!parse_fraction(text, &i, &nanos)) return false;
             }
         } else if (i < len && (text[i] == '.' || text[i] == ',')) {
-            // HHMM.frac or HH.frac: seconds tier missing, fraction attached
-            // to the minute field. `parse_fraction` is exact: it reads up to
-            // 9 digits and pads.
-            if (!parse_fraction(text, &i, &nanos)) return false;
+            return false;
         }
         // Optional UTC offset: `Z` or `±HH:MM` / `±HHMM`. Sub-minute forms
         // are not in the MonthDay grammar.
