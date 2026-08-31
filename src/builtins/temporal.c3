@@ -3600,6 +3600,31 @@ fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
             ctx.result.set_object(copy);
             return;
         }
+        // Slot-extraction fast path for PlainDateTime / ZonedDateTime
+        // (ToTemporalDate steps 2.b / 2.c): no property-bag getters fire.
+        // The options bag is still observed when present.
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME ||
+            o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
+            temporal::OverflowKind fast_overflow;
+            if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+                if (!read_overflow_option(ctx, 1, &fast_overflow)) return;
+            }
+            temporal::CivilDate cd;
+            if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
+                cd = plain_date_value(o);
+            } else {
+                long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
+                zdt_wall_fields(o, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
+                (void)wh; (void)wmi; (void)ws; (void)wms; (void)wus; (void)wns; (void)off;
+                cd = { .y = wy, .m = (int)wm, .d = (int)wd };
+            }
+            HObject*? fast_o = alloc_plain_date(ctx.heap, cd, ctx.heap.temporal_iso_calendar);
+            if (catch err = fast_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* fast = fast_o;
+            fast.prototype = ctx.heap.temporal_plain_date_proto;
+            ctx.result.set_object(fast);
+            return;
+        }
         // Property bag: read fields first, then the overflow option. The
         // monthCode suitability check runs AFTER the option bag so the
         // options bag is observed even when the field bag is unsuitable
@@ -3934,6 +3959,14 @@ fn void builtin_temporal_plain_date_proto_toPlainDateTime(BuiltinContext* ctx) {
 
     temporal::CivilDate d = plain_date_value(obj);
     temporal::CivilDateTime result = { .date = d, .time = t };
+    // The combined date+time must be representable: the minimum date's
+    // midnight (below the PlainDateTime lower edge) is invalid.
+    if (!temporal::is_valid_iso_datetime(result.date.y, (int)result.date.m, (int)result.date.d,
+                                         result.time.h, result.time.mi, result.time.s,
+                                         result.time.ms, result.time.us, result.time.ns)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "datetime outside representable PlainDateTime range");
+        return;
+    }
     HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
@@ -4001,11 +4034,28 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
     }
 
     temporal::CivilDate d = plain_date_value(obj);
+    // ISODateTimeWithinLimits: the combined wall date+time must be a
+    // representable PlainDateTime; the minimum date at midnight (below the
+    // lower edge) throws.
+    if (!temporal::is_valid_iso_datetime(d.y, (int)d.m, (int)d.d,
+                                         t.h, t.mi, t.s, t.ms, t.us, t.ns)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "combined date-time outside representable PlainDateTime range");
+        return;
+    }
     long wall_secs = temporal::epoch_days_from_civil(d.y, (int)d.m, (int)d.d) * 86400
         + (long)t.h * 3600 + (long)t.mi * 60 + (long)t.s;
     long wall_frac = (long)t.ms * 1000000 + (long)t.us * 1000 + (long)t.ns;
     String zone = timezone_name(tz);
     int128 epoch_ns_128 = zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+
+    // GetStartOfDay resolves midnight; the resulting UTC instant must fall
+    // within the representable epoch range (±8.64e21 ns). A wall date at the
+    // ISO boundary with an offset can land past NS_MIN/NS_MAX.
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    if (epoch_ns_128 > ns_limit || epoch_ns_128 < -ns_limit) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+        return;
+    }
 
     hbigint::HBigInt*? ns_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
     if (catch err = ns_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
@@ -4453,7 +4503,9 @@ fn void builtin_temporal_plain_time_ctor(BuiltinContext* ctx) {
     }
 
     temporal::CivilTime valid;
-    if (!fields_to_valid_time(ctx, t, &valid, temporal::OverflowKind.REJECT, true)) return;
+    // A PlainTime holds no leap-second concept: second 60 is out of range
+    // (IsValidTime). Only the ISO-string date-time parser folds a :60 to 59.
+    if (!fields_to_valid_time(ctx, t, &valid, temporal::OverflowKind.REJECT, false)) return;
 
     HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -5260,6 +5312,28 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             ctx.result.set_object(copy);
             return;
         }
+        // PlainDate → PlainDateTime: date slots plus midnight, no property-bag
+        // getters (ToTemporalDateTime step 2.b).
+        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
+            temporal::OverflowKind fast_overflow;
+            if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+                if (!read_overflow_option(ctx, 1, &fast_overflow)) return;
+            }
+            temporal::CivilDate cd = plain_date_value(o);
+            temporal::CivilDateTime dt = { .date = cd, .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 } };
+            if (!temporal::is_valid_iso_datetime(dt.date.y, (int)dt.date.m, (int)dt.date.d,
+                                                 dt.time.h, dt.time.mi, dt.time.s,
+                                                 dt.time.ms, dt.time.us, dt.time.ns)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "date-time is out of range");
+                return;
+            }
+            HObject*? fast_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            if (catch err = fast_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
+            HObject* fast = fast_o;
+            fast.prototype = ctx.heap.temporal_plain_datetime_proto;
+            ctx.result.set_object(fast);
+            return;
+        }
         if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
             // ZonedDateTime → PlainDateTime: read the wall-clock fields of
             // the ZDT directly via zdt_wall_fields and synthesize a PDT.
@@ -5312,7 +5386,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             return;
         }
         temporal::CivilTime valid_t;
-        if (!fields_to_valid_time(ctx, fields.time, &valid_t, temporal::OverflowKind.REJECT, false)) return;
+        if (!fields_to_valid_time(ctx, fields.time, &valid_t, overflow, false)) return;
         if (!temporal::is_valid_plain_datetime(valid_d.y, (int)valid_d.m, (int)valid_d.d,
                 (int)valid_t.h, (int)valid_t.mi, (int)valid_t.s, (int)valid_t.ms, (int)valid_t.us, (int)valid_t.ns)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date-time is out of range");
@@ -5529,6 +5603,12 @@ fn bool compare_to_temporal_datetime(BuiltinContext* ctx, TVal* arg, temporal::C
         // with no options argument, so the overflow defaults to ~constrain~.
         out.date = valid_d;
         out.time = regulate_time_constrain(fields.time);
+        if (!temporal::is_valid_iso_datetime(out.date.y, (int)out.date.m, (int)out.date.d,
+                                             out.time.h, out.time.mi, out.time.s,
+                                             out.time.ms, out.time.us, out.time.ns)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date-time is out of range");
+            return false;
+        }
         return true;
     }
     if (arg.is_string()) {
@@ -5564,6 +5644,14 @@ fn bool compare_to_temporal_datetime(BuiltinContext* ctx, TVal* arg, temporal::C
         }
         out.date = d;
         out.time = t;
+        // ISODateTimeWithinLimits: a date-time at the ISO edge (min date at
+        // midnight, or a date past the max) is outside the PlainDateTime range.
+        if (!temporal::is_valid_iso_datetime(out.date.y, (int)out.date.m, (int)out.date.d,
+                                             out.time.h, out.time.mi, out.time.s,
+                                             out.time.ms, out.time.us, out.time.ns)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "date-time is out of range");
+            return false;
+        }
         return true;
     }
     builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainDateTime, string, or object");
@@ -6240,6 +6328,14 @@ fn void builtin_temporal_plain_datetime_proto_withPlainTime(BuiltinContext* ctx)
 
     temporal::CivilDateTime cur = plain_datetime_value(obj);
     temporal::CivilDateTime result = { .date = cur.date, .time = new_time };
+    // CreateTemporalDateTime validates the combined date+time; the minimum
+    // date at midnight (below the PlainDateTime lower edge) throws.
+    if (!temporal::is_valid_iso_datetime(result.date.y, (int)result.date.m, (int)result.date.d,
+                                         result.time.h, result.time.mi, result.time.s,
+                                         result.time.ms, result.time.us, result.time.ns)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "datetime outside representable PlainDateTime range");
+        return;
+    }
     HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, obj.extra.temporal.calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* r = obj_o;
@@ -6809,6 +6905,20 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     long to_end = total_days_between(lo, end) * 86_400_000_000_000L + tod_delta;
     long span = total_days_between(lo, hi) * 86_400_000_000_000L;
     if (span == 0) return true;
+
+    // The nudged endpoint must be a representable ISO date when it is actually
+    // materialized to make a rounding decision: a rounding increment that shoves
+    // the boundary past the ±275760 range is a RangeError (NudgeToCalendarUnit
+    // CalendarDateAdd). An exact multiple at increment 1 (to_end == 0) steps to
+    // the natural next boundary and never needs the increment-beyond one, so it
+    // need not be representable (test262 PlainYearMonth argument-string-limits).
+    if (to_end != 0 || ds.increment > 1) {
+        if (!temporal::is_valid_iso_date(lo.y, (int)lo.m, (int)lo.d) ||
+            !temporal::is_valid_iso_date(hi.y, (int)hi.m, (int)hi.d)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "rounded date outside valid ISO range");
+            return false;
+        }
+    }
 
     // round_long_ns takes the offset past the boundary and reports whether it
     // reaches the next one.
@@ -7746,10 +7856,25 @@ fn void builtin_temporal_plain_yearmonth_proto_add(BuiltinContext* ctx) {
     if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
+    // PlainYearMonth holds no day component: any non-zero unit below months
+    // (days, hours, …) is a RangeError, regardless of overflow (test262
+    // argument-lower-units, end-of-month-out-of-range).
+    if (dur.weeks != 0 || dur.days != 0 || dur.hours != 0 || dur.minutes != 0 || dur.seconds != 0 ||
+        dur.ms != 0 || dur.us != 0 || dur.ns != 0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "cannot add a unit lower than months to a PlainYearMonth");
+        return;
+    }
 
     long cur_y = plain_yearmonth_y(obj);
     int cur_m = plain_yearmonth_m(obj);
     int cur_d = plain_yearmonth_day(obj);
+    // The intermediate date (reference day in the receiver's month) must itself
+    // be representable; a year-month at the ISO boundary (e.g. -271821-04 with
+    // reference day 1, below the 04-19 minimum) cannot be added to at all.
+    if (!temporal::is_valid_iso_date(cur_y, cur_m, cur_d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "year-month reference date is out of range");
+        return;
+    }
     long total_months = dur.years * 12 + dur.months;
     // Reference day may need re-clamping if month rollover changes month length.
     long after_y = cur_y + total_months / 12;
@@ -7786,10 +7911,19 @@ fn void builtin_temporal_plain_yearmonth_proto_subtract(BuiltinContext* ctx) {
     if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
     temporal::OverflowKind overflow;
     if (!read_overflow_option(ctx, 1, &overflow)) return;
+    if (dur.weeks != 0 || dur.days != 0 || dur.hours != 0 || dur.minutes != 0 || dur.seconds != 0 ||
+        dur.ms != 0 || dur.us != 0 || dur.ns != 0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "cannot subtract a unit lower than months from a PlainYearMonth");
+        return;
+    }
 
     long cur_y = plain_yearmonth_y(obj);
     int cur_m = plain_yearmonth_m(obj);
     int cur_d = plain_yearmonth_day(obj);
+    if (!temporal::is_valid_iso_date(cur_y, cur_m, cur_d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "year-month reference date is out of range");
+        return;
+    }
     long total_months = -(dur.years * 12 + dur.months);
     long after_y = cur_y + total_months / 12;
     long after_m = (long)cur_m + total_months % 12;
@@ -7853,6 +7987,18 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
     // year/month split identically to the PlainDate path.
     temporal::CivilDateTime start = { .date = { .y = start_y, .m = start_m, .d = 1 } };
     temporal::CivilDateTime end   = { .date = { .y = end_y,   .m = end_m,   .d = 1 } };
+
+    // DifferenceTemporalPlainYearMonth forms each operand as a day-1 date and
+    // throws when that date is outside the representable ISO range. Equal
+    // operands short-circuit to a zero difference before that formation (so
+    // the minimum year-month compared to itself yields PT0S).
+    if (a_y != b_y || a_m != b_m) {
+        if (!temporal::is_valid_iso_date(start_y, start_m, 1) ||
+            !temporal::is_valid_iso_date(end_y, end_m, 1)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "year-month outside usable date range");
+            return;
+        }
+    }
 
     temporal::DurationParts dur;
     if (!datetime_difference(ctx, start, end, ds, &dur)) return;
