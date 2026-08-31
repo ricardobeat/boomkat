@@ -690,17 +690,14 @@ fn bool parse_iso_instant_string(char[] text, ParsedIsoInstant* out) {
     if (month < 1 || month > 12) return false;
     // Day: extended form requires another '-' before the two digits, basic
     // form requires the next two chars to be digits.
+    int day;
     if (i < len && text[i] == '-') {
         if (!date_sep) return false;
         i += 1;
     } else {
         if (date_sep) return false;
         // Basic form: require two more digits, no separator before time.
-        if (!parse_two_digits(text, &i, &month)) return false; // would re-read; bail
-        // Actually, rewind and parse the day as the next two digits.
-        i -= 2;
     }
-    int day;
     if (!parse_two_digits(text, &i, &day)) return false;
 
     // --- Time separator (T or space) ---
@@ -723,10 +720,11 @@ fn bool parse_iso_instant_string(char[] text, ParsedIsoInstant* out) {
     if (i >= len) return false;
     long off_sec = 0;
     long off_nanos = 0;
+    bool negative = false;
     if (text[i] == 'Z' || text[i] == 'z') {
         i += 1;
     } else if (text[i] == '+' || text[i] == '-') {
-        bool negative = (text[i] == '-');
+        negative = (text[i] == '-');
         i += 1;
         int oh;
         int omi = 0;
@@ -795,7 +793,10 @@ fn bool parse_iso_instant_string(char[] text, ParsedIsoInstant* out) {
     out.second = s;
     out.nanos = nanos;
     out.offset_seconds = off_sec;
-    out.offset_nanos = off_nanos;
+    // The fraction parsed from the offset carries the offset's sign: a
+    // negative offset's fraction is also negative. parse_fraction returns a
+    // non-negative value, so apply the sign here.
+    out.offset_nanos = negative ? -off_nanos : off_nanos;
     return true;
 }
 
