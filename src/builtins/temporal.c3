@@ -1410,7 +1410,8 @@ fn bool read_diff_options(BuiltinContext* ctx, int options_index,
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingIncrement");
             return false;
         }
-        if (d < 1 || math::floor(d) != d) {
+        d = math::trunc(d);
+        if (d < 1) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
             return false;
         }
