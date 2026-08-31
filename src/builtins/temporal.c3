@@ -7173,7 +7173,21 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     temporal::CivilDate hi = apply_date_part(start, next);
 
     long to_end = total_days_between(lo, end) * 86_400_000_000_000L + tod_delta;
-    long span = total_days_between(lo, hi) * 86_400_000_000_000L;
+    // Compute the span in int128: (kept+incr) - kept in days at smallestUnit
+    // granularity, lifted to nanoseconds. For calendar units like months and
+    // years the actual `hi` date is variable, but we only need the ratio
+    // between `to_end` and one full increment to decide whether to step up.
+    // For uniform units (day and smaller) one increment is exactly
+    // `incr * unit_ns_divisor(smallestUnit)` ns; for non-uniform units (week,
+    // month, year) `incr` weeks/days differ by sign and so `apply_date_part`
+    // gives the right span for the kept-boundary, which is what we compare.
+    int128 span;
+    if (ds.smallest >= TemporalUnit.DAY) {
+        long unit_ns = (ds.smallest == TemporalUnit.DAY) ? 86_400_000_000_000L : unit_ns_divisor(ds.smallest);
+        span = (int128)incr * (int128)unit_ns;
+    } else {
+        span = (int128)total_days_between(lo, hi) * 86_400_000_000_000L;
+    }
     if (span == 0) return true;
 
     // The nudged endpoint must be representable as an Instant at midnight:
@@ -7184,21 +7198,54 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     // the Instant range, not just IsValidISODate. An exact multiple at
     // increment 1 (to_end == 0) steps to the natural next boundary and
     // never needs the increment-beyond one, so it need not be
-    // representable (test262 PlainYearMonth argument-string-limits).
-    if (to_end != 0 || ds.increment > 1) {
-        if (!temporal::is_instant_representable_date(lo) ||
-            !temporal::is_instant_representable_date(hi)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "rounded date outside valid ISO range");
-            return false;
-        }
+    // representable (test262 PlainYearMonth argument-string-limits). When
+    // the increment-beyond boundary (`hi`) would land outside the ISO range
+    // but the actual endpoint `end` is representable, the rounding result
+    // is determined by `to_end` alone: any unit larger than `to_end` is a
+    // valid step-up, and `incr * unit_ns` already exceeds the representable
+    // nanosecond range. Skip the `hi` check in that case; test262
+    // roundingincrement-{non-integer,days-large} exercises this.
+    bool lo_ok = temporal::is_instant_representable_date(lo);
+    bool hi_ok = temporal::is_instant_representable_date(hi);
+    // The spec's NudgeToCalendarUnit throws when CalendarDateAdd produces a
+    // date outside the representable ISO range. Two test262 cases pin down
+    // when this validation runs:
+    //   - PlainYearMonth/until-argument-string-limits, PlainDate
+    //     until-argument-string-limits: when `incr == 1` and the difference
+    //     lands exactly on `lo` (`to_end == 0`), the algorithm does not
+    //     advance past `lo` and the validation is skipped, even if `lo`
+    //     sits at the ISO lower edge -271821-04-19 and `hi` would be
+    //     unreachable.
+    //   - PlainYearMonth/throws-if-rounded-date-outside-valid-iso-range:
+    //     when `incr > 1`, CalendarDateAdd is called unconditionally on
+    //     `start + (kept+incr)` and a throw propagates even if the nudge
+    //     ultimately does not move.
+    // For uniform smallestUnit (day and smaller), the nudge operates on a
+    // day-scale window and never asks for the increment-beyond date, so a
+    // far-out `hi` does not throw (PlainDate
+    // roundingincrement-{non-integer,days-large}). A zoned receiver is the
+    // exception: the spec treats days as a calendar unit when the time
+    // zone must disambiguate the day boundary, so CalendarDateAdd runs and
+    // an out-of-range `hi` throws (ZonedDateTime
+    // roundingincrement-addition-out-of-range).
+    bool calendar_unit = is_cal_unit(ds.smallest) || (ds.is_zoned && ds.smallest == TemporalUnit.DAY);
+    bool incr_gt_one = ds.increment > 1;
+    bool lo_at_edge_safe = (to_end == 0) && !incr_gt_one;
+    if (!lo_ok && !lo_at_edge_safe) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "rounded date outside valid ISO range");
+        return false;
+    }
+    if (calendar_unit && incr_gt_one && !hi_ok) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "rounded date outside valid ISO range");
+        return false;
     }
 
     // round_long_ns takes the offset past the boundary and reports whether it
     // reaches the next one.
-    long mag_span = span < 0 ? -span : span;
+    int128 mag_span = span < 0 ? -span : span;
     long mag_end = to_end < 0 ? -to_end : to_end;
     bool step_up;
-    if (mag_end * 2 == mag_span && is_half_mode(ds.mode)) {
+    if ((int128)mag_end * 2 == mag_span && is_half_mode(ds.mode)) {
         // An exact halfway point is settled here rather than in round_long_ns,
         // which breaks ties on the quotient within a single span. That quotient
         // is always 0, and halfEven needs the parity of the unit count.
@@ -7215,7 +7262,7 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
                 step_up = false;
         }
     } else {
-        step_up = round_long_ns(to_end, mag_span, ds.mode) != 0;
+        step_up = round_long_ns_128((int128)to_end, mag_span, ds.mode) != 0;
     }
     set_smallest_unit_count(dp, ds.smallest, step_up ? kept + sign * incr : kept);
     clear_below(dp, ds.smallest);
@@ -10758,6 +10805,11 @@ struct DiffSettings {
     TemporalRoundMode mode;
     double increment;
     bool largest_provided;
+    // True when the receiver is a ZonedDateTime. The spec's
+    // NudgeToCalendarUnit treats days as a calendar unit for a zoned
+    // receiver, so a far-out `hi` boundary throws even though PlainDate
+    // (which routes through NudgeToDayOrTime) does not.
+    bool is_zoned;
 }
 
 // Read largestUnit / smallestUnit / roundingIncrement / roundingMode for an
@@ -10783,6 +10835,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
     out.smallest = fallback_smallest;
     out.mode = TemporalRoundMode.TRUNC;
     out.increment = 1;
+    out.is_zoned = false;
 
     HObject* opts = null;
     if (ctx.argc > options_index) {
@@ -13544,6 +13597,7 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     DiffSettings ds;
     if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.NANOSECOND,
                             TemporalUnit.HOUR, TemporalUnit.NANOSECOND, !until, &ds)) return;
+    ds.is_zoned = true;
 
     // Both zones must agree for a calendar-unit difference to mean anything:
     // the wall-clock breakdown below is only defined against a single zone.
