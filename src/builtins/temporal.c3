@@ -12985,8 +12985,10 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     int mci;
     TVal mc_v;
     bool found_any;
+    bool has_offset_from_bag = false;
+    long bag_offset_sec = 0;
     if (!bag_to_datetime_fields_ex(ctx, bag, TBM_ZDT_WITH, true, false, cur.date, cur.time, &fields,
-                                &found_any, &have_mc, &mci, &mc_v, null, null, null, null)) {
+                                &found_any, &have_mc, &mci, &mc_v, null, null, &has_offset_from_bag, &bag_offset_sec)) {
         return;
     }
     if (!found_any) {
@@ -13069,15 +13071,37 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     // getPossibleInstantsFor).
     int[8] cand;
     int nc = 0;
-    tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
-    temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
-    long window = 2 * 86400;
-    for (usz i = 0; i < trans.len; i++) {
-        if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
-            tz_cand_add(cand[..], &nc, trans[i].offset_sec);
+    // When the bag carried an explicit `offset` property, restrict the
+    // candidate set to just that offset; per spec, `InterpretISODateTimeOffset`
+    // uses the requested offset as the only acceptable UTC offset.
+    if (has_offset_from_bag) {
+        // Per spec, an explicit `offset` property in the bag makes the
+        // disambiguation unambiguous: the only candidate instant is
+        // `wall_time - offset`. A result that would fall outside the
+        // representable epoch range is a RangeError.
+        int128 explicit_epoch = (int128)wall_secs * (int128)1000000000L + (int128)wfrac
+            - (int128)bag_offset_sec * (int128)1000000000L;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        if (explicit_epoch > ns_limit || explicit_epoch < -ns_limit) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+            return;
         }
+        hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, explicit_epoch);
+        if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+        ((types::HeapHeader*)self.extra.temporal.timezone).incref();
+        zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
+        return;
+    } else {
+        tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
+        temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
+        long window = 2 * 86400;
+        for (usz i = 0; i < trans.len; i++) {
+            if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
+                tz_cand_add(cand[..], &nc, trans[i].offset_sec);
+            }
+        }
+        if (nc == 0) tz_cand_add(cand[..], &nc, 0);
     }
-    if (nc == 0) tz_cand_add(cand[..], &nc, 0);
     double[4] hits;
     int nh = 0;
     for (int k = 0; k < nc; k++) {
