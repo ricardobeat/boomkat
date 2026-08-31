@@ -1482,13 +1482,15 @@ fn bool duration_field_integral(BuiltinContext* ctx, double val) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
         return false;
     }
-    // A field with magnitude > 2^53 cannot round-trip through a JS number
-    // (Number.MAX_SAFE_INTEGER). Naively truncating to long would accept e.g.
-    // Number.MAX_VALUE and silently store LONG_MAX, which `is_valid_duration`
-    // would then let through (test262 Duration/large-number). The constructor
-    // must reject any value past MAX_SAFE_INTEGER up front.
-    if (math::abs(val) > 9007199254740991.0) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "duration field magnitude exceeds Number.MAX_SAFE_INTEGER");
+    // A Number like Number.MAX_VALUE (1.8e308) silently truncates to
+    // LONG_MAX via the `(long)` cast below, and the resulting LONG_MAX
+    // field slips past `is_valid_duration` for sub-second fields (because
+    // LONG_MAX * 1000 < 2^53 * 1e9). Reject magnitudes past LONG_MAX up
+    // front so a sub-second field cannot masquerade as Long.MAX. The
+    // spec's per-field 2^32/2^53 limits are still enforced by
+    // `is_valid_duration`.
+    if (math::abs(val) > 9223372036854775807.0) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration field magnitude exceeds long range");
         return false;
     }
     return true;
