@@ -1514,6 +1514,192 @@ fn bool is_valid_duration(temporal::DurationParts* d) {
     return true;
 }
 
+// Read a Temporal.DurationLike argument and return its total nanoseconds as a
+// freshly allocated BigInt. Used by AddDurationToOrSubtractDurationFromInstant
+// so that sub-second fields larger than int64 (`{nanoseconds: 2e22}`) survive
+// the conversion. The duration must be a Duration instance, a string, or a
+// property bag with hour/minute/second/ms/us/ns; calendar units (years/months/
+// weeks/days) are rejected with RangeError, matching the spec for Instant.
+//
+// On success, the returned BigInt's refcount is 1 and ownership passes to the
+// caller. On failure the function has already thrown and returned false; the
+// caller must not touch `*out_ns`.
+fn bool duration_arg_to_ns_bigint(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** out_ns) {
+    Vm* v = (Vm*)ctx.vm;
+    // Start at zero.
+    hbigint::HBigInt*? total_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
+    if (catch err = total_o) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration: alloc failed");
+        return false;
+    }
+    hbigint::HBigInt* total = total_o;
+
+    // Strings: parse to DurationParts, then convert.
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return false; }
+        if (s.is_symbol()) { ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.type_err_proto, "Duration: symbol cannot be converted"); return false; }
+        temporal::DurationParts parts;
+        if (!temporal::parse_duration(s.get_cstr()[:s.blen], &parts)) {
+            ctx.heap.decref((types::HeapHeader*)total);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
+            return false;
+        }
+        if (!is_valid_duration(&parts)) {
+            ctx.heap.decref((types::HeapHeader*)total);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
+            return false;
+        }
+        if (parts.years != 0 || parts.months != 0 || parts.weeks != 0 || parts.days != 0) {
+            ctx.heap.decref((types::HeapHeader*)total);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Instant does not accept calendar units");
+            return false;
+        }
+        long[6] part_vals;
+        long[6] part_scales;
+        part_vals[0] = parts.hours;   part_scales[0] = 3600000000000L;
+        part_vals[1] = parts.minutes; part_scales[1] = 60000000000L;
+        part_vals[2] = parts.seconds; part_scales[2] = 1000000000L;
+        part_vals[3] = parts.ms;      part_scales[3] = 1000000L;
+        part_vals[4] = parts.us;      part_scales[4] = 1000L;
+        part_vals[5] = parts.ns;      part_scales[5] = 1L;
+        for (int k = 0; k < 6; k++) {
+            if (part_vals[k] == 0) continue;
+            hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)part_vals[k]);
+            if (catch err = part_o) { ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: alloc failed"); return false; }
+            hbigint::HBigInt* part = part_o;
+            hbigint::HBigInt*? scale_o = hbigint::hbigint_alloc(ctx.heap, (int128)part_scales[k]);
+            if (catch err = scale_o) { ctx.heap.decref((types::HeapHeader*)part); ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: alloc failed"); return false; }
+            hbigint::HBigInt* scale = scale_o;
+            hbigint::HBigInt*? scaled = hbigint::hbigint_mul(ctx.heap, part, scale);
+            ctx.heap.decref((types::HeapHeader*)part);
+            ctx.heap.decref((types::HeapHeader*)scale);
+            if (catch err = scaled) { ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: multiply failed"); return false; }
+            hbigint::HBigInt*? new_total = hbigint::hbigint_addsub(ctx.heap, total, scaled, false);
+            ctx.heap.decref((types::HeapHeader*)scaled);
+            ctx.heap.decref((types::HeapHeader*)total);
+            if (catch err = new_total) { builtin_throw(ctx, ctx.heap.range_err_proto, "duration: addsub failed"); return false; }
+            total = new_total;
+        }
+        *out_ns = total;
+        return true;
+    }
+
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        ctx.heap.decref((types::HeapHeader*)total);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.Duration, duration string, or object");
+        return false;
+    }
+    HObject* o = (HObject*)arg.get_heapptr();
+
+    // Duration instance: copy the parts (calendar-unit check below).
+    if (o.get_class() == hobject::ObjClass.TEMPORAL_DURATION) {
+        temporal::DurationParts parts = duration_value(o);
+        if (parts.years != 0 || parts.months != 0 || parts.weeks != 0 || parts.days != 0) {
+            ctx.heap.decref((types::HeapHeader*)total);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Instant does not accept calendar units");
+            return false;
+        }
+        long[6] part_vals;
+        long[6] part_scales;
+        part_vals[0] = parts.hours;   part_scales[0] = 3600000000000L;
+        part_vals[1] = parts.minutes; part_scales[1] = 60000000000L;
+        part_vals[2] = parts.seconds; part_scales[2] = 1000000000L;
+        part_vals[3] = parts.ms;      part_scales[3] = 1000000L;
+        part_vals[4] = parts.us;      part_scales[4] = 1000L;
+        part_vals[5] = parts.ns;      part_scales[5] = 1L;
+        for (int k = 0; k < 6; k++) {
+            if (part_vals[k] == 0) continue;
+            hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)part_vals[k]);
+            if (catch err = part_o) { ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: alloc failed"); return false; }
+            hbigint::HBigInt* part = part_o;
+            hbigint::HBigInt*? scale_o = hbigint::hbigint_alloc(ctx.heap, (int128)part_scales[k]);
+            if (catch err = scale_o) { ctx.heap.decref((types::HeapHeader*)part); ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: alloc failed"); return false; }
+            hbigint::HBigInt* scale = scale_o;
+            hbigint::HBigInt*? scaled = hbigint::hbigint_mul(ctx.heap, part, scale);
+            ctx.heap.decref((types::HeapHeader*)part);
+            ctx.heap.decref((types::HeapHeader*)scale);
+            if (catch err = scaled) { ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: multiply failed"); return false; }
+            hbigint::HBigInt*? new_total = hbigint::hbigint_addsub(ctx.heap, total, scaled, false);
+            ctx.heap.decref((types::HeapHeader*)scaled);
+            ctx.heap.decref((types::HeapHeader*)total);
+            if (catch err = new_total) { builtin_throw(ctx, ctx.heap.range_err_proto, "duration: addsub failed"); return false; }
+            total = new_total;
+        }
+        *out_ns = total;
+        return true;
+    }
+
+    // Property bag. Reject calendar units; read hour/minute/second/ms/us/ns
+    // as doubles, convert each to BigInt via hbigint_from_doubleint (exact
+    // for finite integer doubles), then scale and add. The key trick: we
+    // never go through `long`, so values like 2e22 ns survive.
+    char[][] names = { "days", "hours", "microseconds", "milliseconds",
+        "minutes", "months", "nanoseconds", "seconds", "weeks", "years" };
+    int[] slot = { 3, 4, 8, 7, 5, 1, 9, 6, 2, 0 };
+    bool any_field = false;
+    int overall_sign = 0;
+    // hours(4) minutes(5) seconds(6) ms(7) us(8) ns(9) contribute; years/months/weeks/days
+    // are calendar units (rejected below).
+    int[6] part_slot = { 4, 5, 6, 7, 8, 9 };
+    long[6] part_scales = { 3600000000000L, 60000000000L, 1000000000L, 1000000L, 1000L, 1L };
+    for (int i = 0; i < 10; i++) {
+        int k = slot[i];
+        TVal pv = prop_or_undefined_pa(ctx, o, names[i]);
+        if (ctx.should_throw) { ctx.heap.decref((types::HeapHeader*)total); return false; }
+        if (pv.is_undefined()) continue;
+        any_field = true;
+        // Reject calendar units outright.
+        if (k == 0 || k == 1 || k == 2 || k == 3) {
+            ctx.heap.decref((types::HeapHeader*)total);
+            builtin_throw(ctx, ctx.heap.range_err_proto, "Instant does not accept calendar units");
+            return false;
+        }
+        double val = vm::vm_to_number(v, &pv);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; ctx.heap.decref((types::HeapHeader*)total); return false; }
+        if (!duration_field_integral(ctx, val)) { ctx.heap.decref((types::HeapHeader*)total); return false; }
+        if (val != 0) {
+            int s = val < 0 ? -1 : 1;
+            if (overall_sign == 0) {
+                overall_sign = s;
+            } else if (overall_sign != s) {
+                ctx.heap.decref((types::HeapHeader*)total);
+                builtin_throw(ctx, ctx.heap.range_err_proto, "mixed-sign duration properties are not allowed");
+                return false;
+            }
+        }
+        // Find the scale for this slot.
+        int scale_idx = -1;
+        for (int s_i = 0; s_i < 6; s_i++) {
+            if (part_slot[s_i] == k) { scale_idx = s_i; break; }
+        }
+        if (scale_idx < 0) continue;  // already rejected calendar units above
+        if (val == 0) continue;
+        hbigint::HBigInt*? part_o = hbigint::hbigint_from_double(ctx.heap, val);
+        if (catch err = part_o) { ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: alloc failed"); return false; }
+        hbigint::HBigInt* part = part_o;
+        hbigint::HBigInt*? scale_o = hbigint::hbigint_alloc(ctx.heap, (int128)part_scales[scale_idx]);
+        if (catch err = scale_o) { ctx.heap.decref((types::HeapHeader*)part); ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: alloc failed"); return false; }
+        hbigint::HBigInt* scale = scale_o;
+        hbigint::HBigInt*? scaled = hbigint::hbigint_mul(ctx.heap, part, scale);
+        ctx.heap.decref((types::HeapHeader*)part);
+        ctx.heap.decref((types::HeapHeader*)scale);
+        if (catch err = scaled) { ctx.heap.decref((types::HeapHeader*)total); builtin_throw(ctx, ctx.heap.range_err_proto, "duration: multiply failed"); return false; }
+        hbigint::HBigInt*? new_total = hbigint::hbigint_addsub(ctx.heap, total, scaled, false);
+        ctx.heap.decref((types::HeapHeader*)scaled);
+        ctx.heap.decref((types::HeapHeader*)total);
+        if (catch err = new_total) { builtin_throw(ctx, ctx.heap.range_err_proto, "duration: addsub failed"); return false; }
+        total = new_total;
+    }
+    if (!any_field) {
+        ctx.heap.decref((types::HeapHeader*)total);
+        builtin_throw(ctx, ctx.heap.type_err_proto, "duration property bag has no recognized fields");
+        return false;
+    }
+    *out_ns = total;
+    return true;
+}
+
 fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Duration requires new");
@@ -10400,64 +10586,15 @@ fn void builtin_temporal_instant_proto_add(BuiltinContext* ctx) {
     // Per spec, AddDurationToOrSubtractDurationFromInstant's argument is a
     // Temporal.DurationLike: a Temporal.Duration instance, a duration
     // string, or a property bag with hour/minute/second/ms/us/ns fields
-    // (no calendar units — Instant rejects years/months/weeks/days).
-    temporal::DurationParts dp;
-    if (!duration_record_from_arg(ctx, arg, &dp)) return;
-    if (dp.years != 0 || dp.months != 0 || dp.weeks != 0 || dp.days != 0) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "Instant does not accept calendar units");
-        return;
-    }
+    // (no calendar units; Instant rejects years/months/weeks/days).
+    // We compute the total-nanoseconds delta via BigInt arithmetic so values
+    // larger than int64 range (e.g. `{nanoseconds: 2e22}`) survive the
+    // conversion; truncating each field to `long` first would wrap to a
+    // garbage value around 2e18 ns.
+    hbigint::HBigInt* delta;
+    if (!duration_arg_to_ns_bigint(ctx, arg, &delta)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* base = self.extra.temporal.big_ns;
-    // Convert DurationParts to nanoseconds-as-BigInt.
-    hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
-    if (catch err = delta_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "add: alloc failed"); return; }
-    hbigint::HBigInt* delta = delta_o;
-    // hours/minutes/seconds/ms/us/ns contribute via scaling.
-    // Use (dp.x * scale) + delta, repeated. The numbers here fit in int64 so
-    // we use the int128 path.
-    long[6] parts;
-    long[6] scales;
-    parts[0] = dp.hours;   scales[0] = 3600000000000L;
-    parts[1] = dp.minutes; scales[1] = 60000000000L;
-    parts[2] = dp.seconds; scales[2] = 1000000000L;
-    parts[3] = dp.ms;      scales[3] = 1000000L;
-    parts[4] = dp.us;      scales[4] = 1000L;
-    parts[5] = dp.ns;      scales[5] = 1L;
-    for (int k = 0; k < 6; k++) {
-        if (parts[k] == 0) continue;
-        hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)parts[k]);
-        if (catch err = part_o) {
-            ctx.heap.decref((types::HeapHeader*)delta);
-            builtin_throw(ctx, ctx.heap.range_err_proto, "add: alloc failed");
-            return;
-        }
-        hbigint::HBigInt* part = part_o;
-        hbigint::HBigInt*? scale_o = hbigint::hbigint_alloc(ctx.heap, (int128)scales[k]);
-        if (catch err = scale_o) {
-            ctx.heap.decref((types::HeapHeader*)part);
-            ctx.heap.decref((types::HeapHeader*)delta);
-            builtin_throw(ctx, ctx.heap.range_err_proto, "add: alloc failed");
-            return;
-        }
-        hbigint::HBigInt* scale = scale_o;
-        hbigint::HBigInt*? scaled = hbigint::hbigint_mul(ctx.heap, part, scale);
-        ctx.heap.decref((types::HeapHeader*)part);
-        ctx.heap.decref((types::HeapHeader*)scale);
-        if (catch err = scaled) {
-            ctx.heap.decref((types::HeapHeader*)delta);
-            builtin_throw(ctx, ctx.heap.range_err_proto, "add: multiply failed");
-            return;
-        }
-        hbigint::HBigInt*? new_delta = hbigint::hbigint_addsub(ctx.heap, delta, scaled, false);
-        ctx.heap.decref((types::HeapHeader*)scaled);
-        ctx.heap.decref((types::HeapHeader*)delta);
-        if (catch err = new_delta) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "add: addsub failed");
-            return;
-        }
-        delta = new_delta;
-    }
     hbigint::HBigInt*? result = instant_add_big(base, delta, ctx.heap);
     ctx.heap.decref((types::HeapHeader*)delta);
     if (catch err = result) {
@@ -10492,59 +10629,10 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    temporal::DurationParts dp;
-    if (!duration_record_from_arg(ctx, arg, &dp)) return;
-    if (dp.years != 0 || dp.months != 0 || dp.weeks != 0 || dp.days != 0) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "Instant does not accept calendar units");
-        return;
-    }
+    hbigint::HBigInt* delta;
+    if (!duration_arg_to_ns_bigint(ctx, arg, &delta)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* base = self.extra.temporal.big_ns;
-    hbigint::HBigInt*? delta_o = hbigint::hbigint_from_slimb(ctx.heap, 0);
-    if (catch err = delta_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: alloc failed"); return; }
-    hbigint::HBigInt* delta = delta_o;
-    long[6] parts;
-    long[6] scales;
-    parts[0] = dp.hours;   scales[0] = 3600000000000L;
-    parts[1] = dp.minutes; scales[1] = 60000000000L;
-    parts[2] = dp.seconds; scales[2] = 1000000000L;
-    parts[3] = dp.ms;      scales[3] = 1000000L;
-    parts[4] = dp.us;      scales[4] = 1000L;
-    parts[5] = dp.ns;      scales[5] = 1L;
-    for (int k = 0; k < 6; k++) {
-        if (parts[k] == 0) continue;
-        hbigint::HBigInt*? part_o = hbigint::hbigint_alloc(ctx.heap, (int128)parts[k]);
-        if (catch err = part_o) {
-            ctx.heap.decref((types::HeapHeader*)delta);
-            builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: alloc failed");
-            return;
-        }
-        hbigint::HBigInt* part = part_o;
-        hbigint::HBigInt*? scale_o = hbigint::hbigint_alloc(ctx.heap, (int128)scales[k]);
-        if (catch err = scale_o) {
-            ctx.heap.decref((types::HeapHeader*)part);
-            ctx.heap.decref((types::HeapHeader*)delta);
-            builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: alloc failed");
-            return;
-        }
-        hbigint::HBigInt* scale = scale_o;
-        hbigint::HBigInt*? scaled = hbigint::hbigint_mul(ctx.heap, part, scale);
-        ctx.heap.decref((types::HeapHeader*)part);
-        ctx.heap.decref((types::HeapHeader*)scale);
-        if (catch err = scaled) {
-            ctx.heap.decref((types::HeapHeader*)delta);
-            builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: multiply failed");
-            return;
-        }
-        hbigint::HBigInt*? new_delta = hbigint::hbigint_addsub(ctx.heap, delta, scaled, false);
-        ctx.heap.decref((types::HeapHeader*)scaled);
-        ctx.heap.decref((types::HeapHeader*)delta);
-        if (catch err = new_delta) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "subtract: addsub failed");
-            return;
-        }
-        delta = new_delta;
-    }
     hbigint::HBigInt*? result = instant_sub_big(base, delta, ctx.heap);
     ctx.heap.decref((types::HeapHeader*)delta);
     if (catch err = result) {

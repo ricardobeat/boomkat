@@ -523,11 +523,55 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
     usz len = text.len;
     usz i = 0;
 
-    // Optional `--` prefix marks a year-less month-day string.
+    // Optional `--` prefix marks a year-less month-day string. Optional signed
+    // year (`+YYYYYY` / `-YYYYYY`) follows when no `--`. An unsigned 4-digit
+    // year is also accepted (`YYYY-MM-DD`); the difference between
+    // `YYYY-MM-DD` and `MMDD` is the year length and a `-` separator after
+    // it: if the next 4 chars are all digits and the 5th is `-`, it's a
+    // year; otherwise treat as a year-less basic MMDD form.
     bool has_year_omitted = false;
+    bool has_year = false;
+    long year = 1972;  // reference year for day-of-month validation
     if (i + 1 < len && text[i] == '-' && text[i + 1] == '-') {
         has_year_omitted = true;
         i += 2;
+    } else if (i < len && (text[i] == '+' || text[i] == '-')) {
+        // Signed extended year: sign + 6 digits, or sign + 4-digit basic.
+        bool negative = (text[i] == '-');
+        if (negative && len - i < 7) return false;
+        i += 1;
+        usz y_start = i;
+        while (i < len && digit_at(text, i) >= 0 && (i - y_start) < 6) i += 1;
+        usz y_digits = i - y_start;
+        if (y_digits != 6 && y_digits != 4) return false;
+        if (negative && y_digits == 4) return false;  // -YYYY is not a valid year form here
+        long y = 0;
+        for (usz k = y_start; k < i; k++) y = y * 10 + (long)digit_at(text, k);
+        if (negative && y == 0) return false;
+        year = negative ? -y : y;
+        has_year = true;
+    } else {
+        // Look ahead 5 chars: 4 digits + `-` => unsigned year; else fall back
+        // to year-less MMDD/MM-DD form (the basic day parse below reads MM).
+        usz y_start = i;
+        usz k = i;
+        while (k < len && digit_at(text, k) >= 0 && (k - y_start) < 4) k += 1;
+        if (k - y_start == 4 && k < len && text[k] == '-') {
+            // Unsigned 4-digit year: `YYYY-MM-DD` form.
+            long y = 0;
+            for (usz kk = y_start; kk < k; kk++) y = y * 10 + (long)digit_at(text, kk);
+            year = y;
+            has_year = true;
+            i = k;
+        }
+        // else: no year; the MM parse below starts at `i`.
+    }
+
+    if (has_year && !has_year_omitted && i >= len) return false;
+    if (has_year && !has_year_omitted) {
+        // Year present: require `-` before month.
+        if (text[i] != '-') return false;
+        i += 1;
     }
 
     usz m_start = i;
@@ -537,27 +581,77 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
     out.month = (int)m;
     if (out.month < 1 || out.month > 12) return false;
 
-    if (i >= len) return false;
-    if (text[i] == '-') {
+    // Separator before day: required if any separator was used before month,
+    // optional in basic MMDD form when no year was given. When a year is
+    // present the `-` between year and month is mandatory, so the same `-`
+    // separator style extends: extended form `YYYY-MM-DD`, basic form
+    // `YYYYMMDD` is not valid (year and month would be ambiguous).
+    bool sep_before_day = has_year;
+    if (i < len && text[i] == '-') {
         i += 1;
         if (!parse_two_digits(text, &i, &out.day)) return false;
     } else {
-        // Compact MMDD format (no separator between month and day).
+        // No separator; only valid when no year was given (basic MMDD).
+        if (has_year) return false;
         if (!parse_two_digits(text, &i, &out.day)) return false;
     }
-    // Reference year 1972 for leap-year day-count (Feb 29 is valid).
-    if (out.day < 1 || out.day > days_in_month(1972, out.month)) return false;
+    // Day range uses the supplied year when given (so Feb 29 requires a leap
+    // year), else the reference year 1972 (Feb 29 is valid in 1972).
+    int ref_year = has_year ? (int)year : 1972;
+    if (out.day < 1 || out.day > days_in_month(ref_year, out.month)) return false;
+
+    // Optional time-of-day + UTC offset suffix. The grammar accepts
+    // `T HH[:MM[:SS[.frac]]][±HH[:MM[:SS[.frac]]]]` after the date. The values
+    // are discarded by PlainMonthDay callers (which only reads month/day), but
+    // the syntax must validate.
+    if (i < len && text[i] != '[') {
+        if (text[i] != 'T' && text[i] != 't' && text[i] != ' ') return false;
+        i += 1;
+        int hh;
+        int mi = 0;
+        int s = 0;
+        long nanos = 0;
+        if (!parse_two_digits(text, &i, &hh)) return false;
+        if (hh > 23) return false;
+        if (i < len && text[i] == ':') {
+            i += 1;
+            if (!parse_two_digits(text, &i, &mi)) return false;
+            if (mi > 59) return false;
+        } else if (i < len && digit_at(text, i) >= 0) {
+            if (!parse_two_digits(text, &i, &mi)) return false;
+            if (mi > 59) return false;
+        }
+        if (i < len && text[i] == ':') {
+            i += 1;
+            if (!parse_two_digits(text, &i, &s)) return false;
+            if (s > 59) return false;
+            if (i < len && (text[i] == '.' || text[i] == ',')) {
+                if (!parse_fraction(text, &i, &nanos)) return false;
+            }
+        } else if (i < len && (text[i] == '.' || text[i] == ',')) {
+            // HHMM.frac or HH.frac: seconds tier missing, fraction attached
+            // to the minute field. `parse_fraction` is exact: it reads up to
+            // 9 digits and pads.
+            if (!parse_fraction(text, &i, &nanos)) return false;
+        }
+        // Optional UTC offset: `Z` or `±HH:MM` / `±HHMM`. Sub-minute forms
+        // are not in the MonthDay grammar.
+        if (i < len && (text[i] == '+' || text[i] == '-' || text[i] == 'Z' || text[i] == 'z')) {
+            if (!parse_simple_offset(text, &i)) return false;
+        }
+    }
+
     if (i < len) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len;
-        if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
+        if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null, false)) return false;
         if (cal_len != 0) {
             char[] cal = text[cal_start:cal_len];
             if (!ci_equals(cal, "iso8601")) return false;
         }
         if (i != len) return false;
     }
-    out.year = 0;
+    out.year = (int)year;
     out.has_time = false;
     out.hour = 0;
     out.minute = 0;
@@ -989,5 +1083,30 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     out.has_offset = has_offset;
     out.is_z = is_z;
     if (i != len) return false;
+    return true;
+}
+
+
+// Parse `Z` or `±HH:MM` / `±HHMM` (no seconds tier, no fraction). Used by
+// date-only and month-day strings which the grammar restricts to minute-
+// precision offsets. `i` advances past the offset on success.
+fn bool parse_simple_offset(char[] text, usz* i) {
+    usz len = text.len;
+    if (*i >= len) return false;
+    if (text[*i] == 'Z' || text[*i] == 'z') { *i += 1; return true; }
+    if (text[*i] != '+' && text[*i] != '-') return false;
+    *i += 1;
+    int h;
+    int m = 0;
+    if (!parse_two_digits(text, i, &h)) return false;
+    if (h > 23) return false;
+    if (*i >= len) return true;
+    if (text[*i] == ':') {
+        *i += 1;
+        if (!parse_two_digits(text, i, &m)) return false;
+    } else if (digit_at(text, *i) >= 0) {
+        if (!parse_two_digits(text, i, &m)) return false;
+    }
+    if (m > 59) return false;
     return true;
 }
