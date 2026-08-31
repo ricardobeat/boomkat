@@ -13795,20 +13795,37 @@ fn void builtin_temporal_zoneddatetime_proto_hoursInDay(BuiltinContext* ctx) {
     long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
     zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
     String zone = obj.extra.temporal.timezone == null ? "" : timezone_name(obj.extra.temporal.timezone);
-    long epoch_secs;
-    hbigint::HBigInt* b = obj.extra.temporal.big_ns;
-    if (b.fits_int128()) { epoch_secs = (long)(b.to_int128() / 1000000000); }
-    else { double s_d; if (!bigint_to_epoch_number(b, &s_d, ctx)) return; epoch_secs = (long)math::floor(s_d / 1e9); }
-    int off_start = 0;
-    int off_end = 0;
+    // Per spec: compute GetStartOfDay for today and tomorrow. Either
+    // endpoint outside the Instant range throws (test262 hoursInDay/
+    // next-day-out-of-range and hoursInDay/get-start-of-day-throws).
+    temporal::CivilDate today = { .y = wy, .m = wm, .d = wd };
+    temporal::CivilDate tomorrow = temporal::add_days(today, 1);
+    long today_secs = temporal::epoch_days_from_civil(today.y, (int)today.m, (int)today.d) * 86400;
+    long tomorrow_secs = temporal::epoch_days_from_civil(tomorrow.y, (int)tomorrow.m, (int)tomorrow.d) * 86400;
+    int off_start = off;
+    int off_end = off;
     if (zone.len > 0 && zone.ptr != null) {
-        long day_start_local = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400;
-        long day_start_epoch = day_start_local - off;
-        off_start = temporal::tzdb_offset_for_zone_at(zone, day_start_epoch);
-        long day_end_epoch = day_start_epoch + 86400;
-        off_end = temporal::tzdb_offset_for_zone_at(zone, day_end_epoch);
+        usz zone_j = 0;
+        long zone_off = 0;
+        bool zone_is_offset = parse_offset_only((char[])zone, &zone_j, &zone_off) && zone_j == zone.len;
+        if (!zone_is_offset) {
+            // For an IANA zone the offset can change across the day boundary;
+            // read each side's offset independently so a DST gap shows as
+            // 23 hours and a fall-back as 25.
+            long today_epoch = today_secs - off;
+            long tomorrow_epoch = tomorrow_secs - off;
+            off_start = temporal::tzdb_offset_for_zone_at(zone, today_epoch);
+            off_end = temporal::tzdb_offset_for_zone_at(zone, tomorrow_epoch);
+        }
     }
-    double hours = (double)(86400 + off_end - off_start) / 3600.0;
+    int128 today_ns = (int128)today_secs * (int128)1000000000L - (int128)off_start * (int128)1000000000L;
+    int128 tomorrow_ns = (int128)tomorrow_secs * (int128)1000000000L - (int128)off_end * (int128)1000000000L;
+    if (!temporal::instant_in_range(today_ns) || !temporal::instant_in_range(tomorrow_ns)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "hoursInDay boundary is outside the valid time range");
+        return;
+    }
+    int128 diff_ns = tomorrow_ns - today_ns;
+    double hours = (double)diff_ns / 3_600_000_000_000.0;
     ctx.result.set_number(hours);
 }
 
@@ -13888,6 +13905,13 @@ fn void builtin_temporal_zoneddatetime_proto_startOfDay(BuiltinContext* ctx) {
     long day_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400;
     int128 epoch_ns_128 = (int128)day_secs * (int128)1000000000L
         - (int128)off * (int128)1000000000L;
+    // The Instant range is symmetric at the boundaries (-1e8 days). For wall
+    // dates whose midnight lands outside, the spec's GetStartOfDay throws
+    // (test262 startOfDay/throws-if-epoch-nanoseconds-outside-valid-limits).
+    if (!temporal::instant_in_range(epoch_ns_128)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "start of day is outside the valid time range");
+        return;
+    }
     hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
     ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
