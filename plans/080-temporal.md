@@ -468,8 +468,11 @@ The existing `OP_ADD` etc. handle the rare integer cases. Spec ops like
 - `src/lib/temporal/calendar.c3` — NEW, ~180 LOC. `add_days_to_date`,
   `add_months_to_date`, ISO 8601 / Gregorian arithmetic per polyfill
   spec.
-- `src/lib/temporal/duration.c3` — NEW, ~150 LOC. Duration value type,
-  arithmetic, balance, round, total.
+- `src/lib/temporal/duration.c3` — NEW, ~400 LOC. Duration value type,
+  arithmetic, balance, round, total. NOT YET BUILT: the arithmetic
+  currently lives in `src/builtins/temporal.c3` and `DurationParts` is
+  declared in `iso8601.c3`. See the 2026-09-01 addendum for the
+  measured inventory and the `units.c3` ordering constraint.
 - `src/lib/temporal/instant.c3` — NEW, ~80 LOC. Instant + ns arithmetic.
 - `src/lib/temporal/tzdb.c3` — NEW, ~250 LOC. `$embed` + binary-search
   lookup.
@@ -638,3 +641,132 @@ coverage once the ISO-calendar gaps above are closed.
   same as a small `Date` (~216 B vs ~120 B).
 - **Build time:** the `tzdata.bin` generator runs in <2 s and is
   committed; no per-build network access.
+
+---
+
+## Addendum (2026-09-01) — code layout audit and the `relativeTo` zoned-ness bug
+
+Written after a phase-26 audit at 13 failures, all in
+`Duration.{round,total,compare}`. Two findings: a correctness bug in a
+shared helper, and a measured inventory of what can still be split out
+of `src/builtins/temporal.c3`.
+
+### Finding 1 (bug): `read_relative_to_option` discards zoned-ness
+
+`read_relative_to_option` (`src/builtins/temporal.c3`) accepts the
+`relativeTo` option for `Duration.prototype.round`,
+`Duration.prototype.total`, and `Duration.compare`. When handed a
+`Temporal.ZonedDateTime` it reads the wall-clock fields and allocates a
+**`Temporal.PlainDateTime`**, returning only that. The fact that the
+argument was zoned is not returned anywhere.
+
+All three callers then attempt to recover it from the returned object:
+
+```c
+bool is_zdt = (relative_to.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
+```
+
+The object is the *converted* `PlainDateTime`, so this is **always
+false**. Every zoned branch reachable through these three builtins is
+dead code.
+
+This matters because the spec distinguishes the two cases: with a
+`PlainDate`/`PlainDateTime` relativeTo, days fold into the time total as
+uniform 24-hour days (`Add24HourDaysToTimeDuration`, via
+`NudgeToDayOrTime`); with a `ZonedDateTime`, a day is whatever the tz
+rules make it, and `NudgeToZonedTime` applies. The two agree exactly
+when the zone has no offset transitions — which is why UTC-based tests
+pass and the bug survived.
+
+Runtime demonstration across a US spring-forward (local day = 23 h):
+
+```js
+const zdt = Temporal.ZonedDateTime.from("2024-03-09T00:00:00[America/New_York]");
+new Temporal.Duration(0,0,0,1,12).total({unit:"day", relativeTo: zdt});
+// produced: 1.5                  (flat 24 h days — unzoned path)
+// expected: 1.5217391304347827   (1 + 12/23 — zoned path)
+```
+
+**Resolution.** Return a tagged value rather than a bare object:
+
+```c
+struct RelativeTo { HObject* dt; bool is_zoned; }
+```
+
+Preferred over an `out_is_zoned bool*` out-parameter because it makes
+the invariant impossible to ignore at a call site — an out-param can be
+silently dropped by a future fourth caller. The `PlainDateTime`
+conversion itself is kept: the ISO-calendar difference math wants
+wall-clock fields, and only the discarded flag was the defect.
+
+Suspected to be implicated in several of the baseline-13 failures,
+including `Duration/compare/throws-when-target-zoned-date-time-outside-valid-limits.js`,
+`Duration/prototype/total/relativeto-total-of-each-unit.js`, and
+`Duration/prototype/round/relativeto-date-limits.js`.
+
+### Finding 2 (layout): ~905 pure LOC remain in the engine layer
+
+`src/builtins/temporal.c3` is 15,201 lines / 407 functions: 241
+`builtin_temporal_*` JS entry points and 166 helpers. Classifying each
+helper body by whether it references `BuiltinContext`, `HObject`,
+`TVal`, `Heap`, `hbigint`, or `ctx.`:
+
+- **43 helpers are already pure — ~905 LOC**, movable with no signature
+  change.
+- 123 helpers are legitimately engine-coupled and belong where they are.
+
+Proposed destinations:
+
+| File | Contents | ~LOC |
+|---|---|---|
+| `duration.c3` (NEW) | `add_durations_no_relative`, `is_valid_duration`, `decompose_ns`/`_128`, `duration_total_ns_from`, `time_ns_split`, `duration_to_time_ns`, `default_largest_unit`, `smallest_unit_count`/`set_`/`clear_below`/`apply_date_part` | ~400 |
+| `units.c3` (NEW) | `TemporalUnit` + `TemporalRoundMode` enums, `round_num_to_incr`, `round_long_ns`/`_128`, `unit_ns_divisor`, `max_round_incr`, `is_cal_unit`, `is_date_unit`, `negate_round_mode`, `mode_for_negative*`, `is_half_mode` | ~250 |
+| `parse.c3` (existing) | `parse_offset_only`, `parse_unit_str`, `parse_rm_str`, `now_skip_iso_prefix`, `now_find_bracket_zone`, `ci_eq` | ~160 |
+| `iso8601.c3` (existing) | `format_fractional_seconds`, `format_offset_seconds` | ~55 |
+
+**Ordering constraint.** `TemporalUnit` and `TemporalRoundMode` are
+defined in the engine layer and are parameters to most of the pure
+duration helpers. Nothing moves into `duration.c3` until `units.c3`
+exists. These enums are shared vocabulary (PlainDate / PlainTime /
+ZonedDateTime rounding use them too), which is why they get their own
+file rather than living in `duration.c3`.
+
+**`DurationParts` is currently misplaced**: the struct is declared in
+`iso8601.c3`, a file about string formatting, while all of its
+arithmetic lives in the engine layer. It moves to `duration.c3`.
+
+**`round_date_part` is the one signature change.** It is the sole
+duration helper with engine coupling, and shallow: two `builtin_throw`
+sites plus a `rebalance_date_part` call. Moving it means returning a
+status enum and letting the caller raise the `RangeError` — the library
+layer should not know about JS exceptions. Worth doing as its own step.
+
+### Duplication worth collapsing (after the move, not before)
+
+The literal `3600000000000L` occurs at **45 sites**. The
+hours→nanoseconds accumulation is re-inlined at ~7 of them (including
+lines 1545, 2091, 2337, 2463, 3002, 3335) even though
+`duration_to_time_ns` already does exactly this; those should call it.
+
+Care is required: several nearby sites are *decomposition* rather than
+accumulation and differ in sign handling and in `int128` vs `long`
+width. These are near-duplicates, not duplicates. Consolidate after the
+files are split, when the remaining differences are visible side by
+side.
+
+### Sequencing
+
+1. Fix `read_relative_to_option` (Finding 1) — a correctness bug,
+   independent of any refactor, and the enabling change for the
+   remaining zoned-relativeTo failures.
+2. Drive phase 26 to 0 failures.
+3. `units.c3`, then `duration.c3` — pure code motion, verified by the
+   phase-26 count not moving.
+4. `round_date_part` status-enum conversion.
+5. Extend `scripts/check_temporal_standalone.sh` with duration
+   assertions so the new boundary is enforced, not merely intended.
+6. Collapse the accumulation duplication.
+
+Steps 3 and 4 are safest once step 2 has landed: the phase-26 count is
+the only real correctness signal for pure code motion, and it is most
+trustworthy at zero.
