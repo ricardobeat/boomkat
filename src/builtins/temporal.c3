@@ -3536,6 +3536,61 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
                 return;
             }
         }
+
+        // Spec TotalRelativeDuration for a zoned relativeTo. Days here are
+        // calendar days resolved against the zone, not a flat 24 hours, so
+        // the total has to be measured on the instant axis via
+        // AddZonedDateTime rather than by the shared uniform-day path below.
+        if (!is_cal_unit(unit)) {
+            int128 target_ns;
+            if (!add_zoned_datetime(relative_to, dur, 1, temporal::OverflowKind.CONSTRAIN, &target_ns)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+                return;
+            }
+            int128 elapsed = target_ns - start_ns;
+
+            if (unit != TemporalUnit.DAY) {
+                // Hours and below are uniform on the instant axis.
+                long div_ns = unit_ns_divisor(unit);
+                int128 whole = elapsed / (int128)div_ns;
+                int128 rem = elapsed - whole * (int128)div_ns;
+                ctx.result.set_number((double)whole + (double)rem / (double)div_ns);
+                return;
+            }
+
+            // Days are not uniform in a zone with offset transitions: the
+            // spec's NudgeToCalendarUnit walks whole calendar days from the
+            // start, then expresses the leftover as a fraction of the *next*
+            // day's own length. Across a US spring-forward, 1d12h is 24h then
+            // 12h into a 23h day, i.e. 1 + 12/23 -- not 36/24.
+            long step = elapsed < 0 ? -1 : 1;
+            long days = 0;
+            int128 prev = (int128)0;
+            temporal::DurationParts probe = {};
+            while (true) {
+                probe.days = days + step;
+                int128 next_ns;
+                if (!add_zoned_datetime(relative_to, probe, 1, temporal::OverflowKind.CONSTRAIN, &next_ns)) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+                    return;
+                }
+                int128 next = next_ns - start_ns;
+                // Stop once one more whole day would overshoot the target.
+                if (step > 0 ? next > elapsed : next < elapsed) {
+                    // `day_len` and `rem` share the direction's sign, so their
+                    // quotient is a positive fraction of one day; `days`
+                    // already carries the sign.
+                    int128 day_len = next - prev;
+                    if (day_len == 0) { ctx.result.set_number((double)days); return; }
+                    int128 rem = elapsed - prev;
+                    double frac = (double)rem / (double)day_len;
+                    ctx.result.set_number((double)days + (double)step * frac);
+                    return;
+                }
+                prev = next;
+                days += step;
+            }
+        }
     } else {
         rel_date = { .y = relative_to.extra.temporal.long_a,
                      .m = relative_to.extra.temporal.long_b,
@@ -13501,6 +13556,57 @@ fn void builtin_temporal_zoneddatetime_proto_subtract(BuiltinContext* ctx) {
 
 // this.add(duration) / this.subtract(duration) — add the Duration's time delta
 // to the underlying instant, keeping the zone and calendar.
+// Spec AddZonedDateTime: add a duration to an instant in a time zone.
+//
+// The two halves of a duration move on different axes, which is the whole
+// point of the zoned case. Years/months/weeks/days are *calendar* units: they
+// shift the local wall-clock date, which is then re-resolved against the zone,
+// so a "day" across a DST boundary is 23 or 25 hours rather than a fixed 24.
+// Hours and below are an exact elapsed-nanosecond shift on the instant, which
+// no offset transition affects.
+//
+// Returns false on overflow of the representable instant range. `zone` may be
+// empty for a fixed-offset (UTC) zone, in which case the local axis and the
+// instant axis coincide and every day is exactly 24 hours.
+fn bool add_zoned_datetime(HObject* zdt, temporal::DurationParts dp, long sign,
+                           temporal::OverflowKind overflow, int128* out) {
+    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
+    zdt_wall_fields(zdt, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
+
+    hbigint::HBigInt* base_big = (hbigint::HBigInt*)zdt.extra.temporal.big_ns;
+    int128 base = base_big.to_int128();
+
+    if (dp.years != 0 || dp.months != 0 || dp.weeks != 0 || dp.days != 0) {
+        temporal::CivilDate d = { .y = wy, .m = wm, .d = wd };
+        if (dp.years != 0)  d = temporal::add_months(d, sign * dp.years * 12, overflow);
+        if (dp.months != 0) d = temporal::add_months(d, sign * dp.months, overflow);
+        if (temporal::add_months_rejected(d)) return false;
+        long day_shift = sign * (dp.weeks * 7 + dp.days);
+        if (day_shift != 0) d = temporal::add_days(d, day_shift);
+        if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) return false;
+
+        long wall_secs = temporal::epoch_days_from_civil(d.y, (int)d.m, (int)d.d) * 86400
+            + (long)wh * 3600 + (long)wmi * 60 + (long)ws;
+        long wall_frac = (long)wms * 1000000 + (long)wus * 1000 + (long)wns;
+        String zone = zdt.extra.temporal.timezone == null ? "" : timezone_name(zdt.extra.temporal.timezone);
+        base = zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+    }
+
+    // Time units: an exact shift on the instant axis.
+    int128 time_ns = (int128)0;
+    time_ns += (int128)dp.hours   * 3600000000000L;
+    time_ns += (int128)dp.minutes *   60000000000L;
+    time_ns += (int128)dp.seconds *    1000000000L;
+    time_ns += (int128)dp.ms      *       1000000L;
+    time_ns += (int128)dp.us      *          1000L;
+    time_ns += (int128)dp.ns;
+
+    int128 result = base + (int128)sign * time_ns;
+    if (!temporal::instant_in_range(result)) return false;
+    *out = result;
+    return true;
+}
+
 fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
     if (ctx.argc < 1) {
