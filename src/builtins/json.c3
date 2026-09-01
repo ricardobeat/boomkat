@@ -241,7 +241,11 @@ fn TVal json_parse_number(JsonParseCtx* jctx) {
     // JSON.parse("-0") must yield -0 (ES §25.5.1 → ToNumber preserves it).
     long fi = (long)d;
     bool is_neg_zero = d == 0.0 && (1.0 / d) < 0.0;
-    if (!is_neg_zero && (double)fi == d && fi >= types::MIN_SAFE_INT && fi <= types::MAX_SAFE_INT) {
+    // The bound is the fastint payload range (±2^47), not the safe-integer
+    // range (±(2^53-1)): a JSON number like 2251799813685248 (2^51) is a safe
+    // integer but overflows set_fastint's 48-bit nanbox encoding and would be
+    // silently truncated. Same defect as builtin_to_number's STRING case.
+    if (!is_neg_zero && (double)fi == d && fi >= types::FASTINT_MIN && fi <= types::FASTINT_MAX) {
         TVal r; r.set_fastint(fi); return r;
     }
     TVal r; r.set_number(d); return r;
