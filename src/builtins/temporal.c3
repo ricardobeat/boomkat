@@ -3450,7 +3450,12 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         }
     }
 
-    if (!is_cal_unit(smallest_unit) && smallest_unit != TemporalUnit.DAY) {
+    // RoundRelativeDuration returns before any range validation when the
+    // duration is blank, so a relativeTo one step outside the representable
+    // range (the minimum date -271821-04-19) rounds a blank duration to zero
+    // but still throws for a non-blank one. test262 round/relativeto-date-
+    // limits covers the first, round/relativeto-string-limits the second.
+    if (!is_blank && !is_cal_unit(smallest_unit) && smallest_unit != TemporalUnit.DAY) {
         long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
         if (rel_days < -100000000L || rel_days > 100000000L) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
@@ -3485,11 +3490,14 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     if (dur.months != 0) target_date = temporal::add_months(target_date, dur.months, temporal::OverflowKind.CONSTRAIN);
     if (dur.weeks != 0) target_date = temporal::add_days(target_date, dur.weeks * 7);
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
-    long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
-    long tgt_days = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-    if (rel_days < -100000000L || rel_days > 100000000L || tgt_days < -100000000L || tgt_days > 100000000L) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date outside representable range");
-        return;
+    // As above: skipped entirely for a blank duration.
+    if (!is_blank) {
+        long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
+        long tgt_days = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
+        if (rel_days < -100000000L || rel_days > 100000000L || tgt_days < -100000000L || tgt_days > 100000000L) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date outside representable range");
+            return;
+        }
     }
 
     long rem = (long)target_time_rem;
@@ -3499,7 +3507,13 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     long ms = rem / 1000000L;       rem = (long)(rem % 1000000L);
     long us = rem / 1000L;
     long ns = rem % 1000L;
-    if (!temporal::is_valid_iso_datetime(target_date.y, target_date.m, target_date.d, h, mi, s, ms, us, ns)) {
+    // is_valid_iso_datetime excludes the minimum date at exactly midnight,
+    // because that instant falls below the PlainDateTime range. That rule is
+    // right for a PlainDateTime but not for a PlainDate relativeTo, which the
+    // spec keeps on the date axis: rounding a blank duration relative to
+    // -271821-04-19 yields zero (test262 round/relativeto-date-limits).
+    if (!is_blank &&
+        !temporal::is_valid_iso_datetime(target_date.y, target_date.m, target_date.d, h, mi, s, ms, us, ns)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "date out of range");
         return;
     }
