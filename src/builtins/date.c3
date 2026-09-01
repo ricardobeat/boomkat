@@ -2480,7 +2480,12 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
 
     // Add Date.prototype.toISOString()
     if (!register_string_proto_method(proto, heap, "toISOString", Builtin.DATE_PROTO_TOISOSTRING.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "toTemporalInstant", Builtin.DATE_PROTO_TOTEMPORALINSTANT.ordinal)) return false;
+    // Date.prototype.toTemporalInstant is the one Temporal entry point that
+    // hangs off a core prototype, so it is gated here rather than with the
+    // rest of Temporal.
+    $if !$feature(NO_TEMPORAL):
+        if (!register_string_proto_method(proto, heap, "toTemporalInstant", Builtin.DATE_PROTO_TOTEMPORALINSTANT.ordinal)) return false;
+    $endif
 
     // Add Date.prototype.toUTCString()
     if (!register_string_proto_method(proto, heap, "toUTCString", Builtin.DATE_PROTO_TOUTCSTRING.ordinal)) return false;

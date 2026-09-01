@@ -5,7 +5,7 @@
 // The arithmetic itself is in lib/temporal/duration.c3; what remains here is
 // argument coercion, options reading, and translating a library `false`
 // return into the RangeError the spec asks for.
-module boomkat::builtins;
+module boomkat::builtins @feat(!NO_TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

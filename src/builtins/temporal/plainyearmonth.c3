@@ -1,6 +1,6 @@
 // Temporal.PlainYearMonth bindings: constructor, statics, getters, and
 // prototype methods.
-module boomkat::builtins;
+module boomkat::builtins @feat(!NO_TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

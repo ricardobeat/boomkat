@@ -1,7 +1,7 @@
 // Temporal.TimeZone bindings: constructor, from(), id, and
 // getOffsetNanosecondsFor. The tz database lookup itself is in
 // lib/temporal/tzdb.c3.
-module boomkat::builtins;
+module boomkat::builtins @feat(!NO_TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

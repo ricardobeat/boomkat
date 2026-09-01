@@ -5,7 +5,7 @@
 // rounding mode, relativeTo, difference settings). Everything here touches
 // BuiltinContext, HObject or TVal -- the pure arithmetic lives in
 // boomkat::lib::temporal.
-module boomkat::builtins;
+module boomkat::builtins @feat(!NO_TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

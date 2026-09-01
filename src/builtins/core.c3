@@ -670,7 +670,7 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     DATE_PROTO_SETUTCMONTH {"setUTCMonth", 2, false, &builtin_date_proto_setUTCMonth},
     DATE_PROTO_SETUTCFULLYEAR {"setUTCFullYear", 3, false, &builtin_date_proto_setUTCFullYear},
     DATE_PROTO_TOISOSTRING {"toISOString", 0, false, &builtin_date_proto_toISOString},
-    DATE_PROTO_TOTEMPORALINSTANT {"toTemporalInstant", 0, false, &builtin_date_proto_toTemporalInstant},
+    DATE_PROTO_TOTEMPORALINSTANT @feat(!NO_TEMPORAL) {"toTemporalInstant", 0, false, &builtin_date_proto_toTemporalInstant},
     DATE_PROTO_TOUTCSTRING {"toUTCString", 0, false, &builtin_date_proto_toUTCString},
     DATE_PROTO_TODATESTRING {"toDateString", 0, false, &builtin_date_proto_toDateString},
     DATE_PROTO_TOTIMESTRING {"toTimeString", 0, false, &builtin_date_proto_toTimeString},
@@ -2763,7 +2763,11 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         Builtin b = (Builtin)idx;
         return { b.js_name, b.js_arity };
     }
-    return temporal_get_metadata(idx);
+    $if $feature(NO_TEMPORAL):
+        return { "", -1 };
+    $else
+        return temporal_get_metadata(idx);
+    $endif
 }
 
 // ============================================================================
@@ -3188,7 +3192,23 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
 // Sized to span every index space that dispatches through it: the engine's
 // own Builtin range, then the Temporal range starting at TEMPORAL_BASE.
 // TEMPORAL_COUNT is 0 when Temporal is not built in.
-const uint BUILTIN_TABLE_LEN = TEMPORAL_BASE + TEMPORAL_COUNT;
+// Temporal's builtins occupy [TEMPORAL_BASE, TEMPORAL_BASE + slot count).
+// Defined here rather than beside the enum so it survives a NO_TEMPORAL
+// build, where it simply equals the table length.
+const uint TEMPORAL_BASE = Builtin.LAST.ordinal;
+
+// How far past TEMPORAL_BASE the table must reach. A macro rather than a
+// ternary because both arms of a ternary are name-resolved, and
+// TemporalBuiltin does not exist in a NO_TEMPORAL build; $if inside a macro
+// body defers that lookup to the taken branch.
+macro uint temporal_slot_count() {
+    $if $feature(NO_TEMPORAL):
+        return 0;
+    $else
+        return TEMPORAL_COUNT;
+    $endif
+}
+const uint BUILTIN_TABLE_LEN = TEMPORAL_BASE + temporal_slot_count();
 BuiltinFunc[BUILTIN_TABLE_LEN] builtin_dispatch_table;
 
 // ============================================================================
@@ -3594,7 +3614,9 @@ fn void init_builtin_dispatch_table() @init
             builtin_dispatch_table[$b.ordinal] = $b.handler;
         $endif
     $endforeach
-    init_temporal_dispatch_table();
+    $if !$feature(NO_TEMPORAL):
+        init_temporal_dispatch_table();
+    $endif
 }
 
 fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
@@ -3963,14 +3985,16 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_dataview(global_env, heap)) return false;
 
     // Register Temporal namespace
-    if (!setUpTemporalCalendar(heap)) return false;
-    if (!setUpTemporalDuration(heap)) return false;
-    if (!setUpTemporalPlainDate(heap)) return false;
-    if (!setUpTemporalPlainTime(heap)) return false;
-    if (!setUpTemporalPlainDateTime(heap)) return false;
-    if (!setUpTemporalPlainYearMonth(heap)) return false;
-    if (!setUpTemporalPlainMonthDay(heap)) return false;
-    if (!setUpTemporalNamespace(global_env, heap)) return false;
+    $if !$feature(NO_TEMPORAL):
+        if (!setUpTemporalCalendar(heap)) return false;
+        if (!setUpTemporalDuration(heap)) return false;
+        if (!setUpTemporalPlainDate(heap)) return false;
+        if (!setUpTemporalPlainTime(heap)) return false;
+        if (!setUpTemporalPlainDateTime(heap)) return false;
+        if (!setUpTemporalPlainYearMonth(heap)) return false;
+        if (!setUpTemporalPlainMonthDay(heap)) return false;
+        if (!setUpTemporalNamespace(global_env, heap)) return false;
+    $endif
 
     // Wire all prototype chains to Object.prototype
     if (heap.number_proto != null) heap.number_proto.prototype = heap.object_proto;

@@ -1,7 +1,7 @@
 // Temporal.PlainDateTime bindings: constructor, statics, getters, and
 // prototype methods, including the shared date-time difference and rounding
 // paths that PlainDate and ZonedDateTime delegate into.
-module boomkat::builtins;
+module boomkat::builtins @feat(!NO_TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

@@ -52,7 +52,8 @@
       "debug-info": "none",
       "features": [
         "THREADED_DISPATCH",
-        "SLIM"
+        "NO_INSPECT",
+        "NO_TEMPORAL"
       ]
     },
     "boomkat_threaded": {

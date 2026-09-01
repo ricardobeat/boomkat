@@ -4,7 +4,7 @@
 // This is where the instant axis and the local wall-clock axis meet, so it
 // owns add_zoned_datetime (the spec's AddZonedDateTime) that Duration.total,
 // Duration.compare and round() all share.
-module boomkat::builtins;
+module boomkat::builtins @feat(!NO_TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

@@ -1,7 +1,7 @@
 // Temporal namespace and prototype registration: the setUpTemporal*
 // functions that install constructors, prototypes, and their property
 // descriptors on the global object.
-module boomkat::builtins;
+module boomkat::builtins @feat(!NO_TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;
