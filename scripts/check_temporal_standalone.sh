@@ -2,8 +2,9 @@
 # src/lib/temporal/ must build and run without the engine.
 #
 # The calendrical layer -- civil date arithmetic, ISO 8601 parsing, the tz
-# database, and instant arithmetic -- is deliberately free of engine types, so
-# it can be reused and tested on its own. Nothing enforces that but this check:
+# database, instant arithmetic, and the Duration value type with its unit and
+# rounding vocabulary -- is deliberately free of engine types, so it can be
+# reused and tested on its own. Nothing enforces that but this check:
 # a single `import boomkat::heap` added for convenience would re-couple it, and
 # the engine build would still pass because the engine has those symbols.
 #
@@ -53,6 +54,39 @@ fn int main() {
     // Timezone database: Amsterdam is CEST (+2h) at the end of August.
     int off = temporal::tzdb_offset_for_zone_at("Europe/Amsterdam", (long)(base / 1000000000));
     if (off != 7200) { io::printfn("FAIL tz offset: %d != 7200", off); fails++; }
+
+    // Duration value type: validity, balancing, and the exact division that
+    // total() needs. Pure integer arithmetic -- no calendar, no engine.
+    temporal::DurationParts d1 = {};
+    d1.hours = 1; d1.minutes = 30;
+    if (temporal::duration_to_time_ns(d1) != (int128)5400 * 1000000000) {
+        io::printn("FAIL duration_to_time_ns"); fails++;
+    }
+    if (!temporal::is_valid_duration(&d1)) { io::printn("FAIL is_valid_duration"); fails++; }
+    // Mixed signs are not a valid duration.
+    temporal::DurationParts d2 = {};
+    d2.hours = 1; d2.minutes = -1;
+    if (temporal::is_valid_duration(&d2)) { io::printn("FAIL is_valid_duration mixed signs"); fails++; }
+    // 90 minutes decomposes to 1h30m at largestUnit = hour.
+    temporal::DurationParts d3;
+    temporal::decompose_ns(5400L * 1000000000L, temporal::TemporalUnit.HOUR, &d3);
+    if (d3.hours != 1 || d3.minutes != 30) {
+        io::printfn("FAIL decompose_ns: %dh%dm", d3.hours, d3.minutes); fails++;
+    }
+    // The unit vocabulary and its rounding primitives.
+    if (temporal::unit_ns_divisor(temporal::TemporalUnit.SECOND) != 1000000000L) {
+        io::printn("FAIL unit_ns_divisor"); fails++;
+    }
+    if (!temporal::is_cal_unit(temporal::TemporalUnit.MONTH) ||
+         temporal::is_cal_unit(temporal::TemporalUnit.DAY)) {
+        io::printn("FAIL is_cal_unit"); fails++;
+    }
+    if (temporal::round_long_ns(1500L, 1000L, temporal::TemporalRoundMode.HALF_EXPAND) != 2000L) {
+        io::printn("FAIL round_long_ns half-expand"); fails++;
+    }
+    if (temporal::round_long_ns(1500L, 1000L, temporal::TemporalRoundMode.TRUNC) != 1000L) {
+        io::printn("FAIL round_long_ns trunc"); fails++;
+    }
 
     if (fails == 0) { io::printn("temporal standalone: OK"); return 0; }
     io::printfn("temporal standalone: %d FAILED", fails);

@@ -42,18 +42,6 @@ fn usz format_civil_date(CivilDate d, char* buf, usz buf_size) {
 // value type stays integer-only.  Sub-second fields use double so that
 // values exceeding int64 range (e.g. microseconds: 4.5e21 from a property
 // bag) survive round-tripping through DurationParts without overflow.
-struct DurationParts {
-    long years;
-    long months;
-    long weeks;
-    long days;
-    long hours;
-    long minutes;
-    long seconds;
-    double ms;
-    double us;
-    double ns;
-}
 
 // A DurationParts reduced to the canonical shape the ISO 8601 duration
 // formatters need: every field is a non-negative magnitude, `negative`

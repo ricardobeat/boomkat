@@ -1507,56 +1507,6 @@ fn bool duration_field_integral_long(BuiltinContext* ctx, double val) {
     return true;
 }
 
-fn bool is_valid_duration(temporal::DurationParts* d) {
-    if (math::abs((double)d.years) >= 4294967296.0 ||
-        math::abs((double)d.months) >= 4294967296.0 ||
-        math::abs((double)d.weeks) >= 4294967296.0) {
-        return false;
-    }
-    int overall_sign = 0;
-    long*[7] comps = { &d.years, &d.months, &d.weeks, &d.days, &d.hours,
-        &d.minutes, &d.seconds };
-    for (int k = 0; k < 7; k++) {
-        if (*comps[k] == 0) continue;
-        int s = *comps[k] < 0 ? -1 : 1;
-        if (overall_sign == 0) { overall_sign = s; }
-        else if (overall_sign != s) { return false; }
-    }
-    double[3] sub = { d.ms, d.us, d.ns };
-    for (int k = 0; k < 3; k++) {
-        if (sub[k] == 0.0) continue;
-        int s = sub[k] < 0.0 ? -1 : 1;
-        if (overall_sign == 0) { overall_sign = s; }
-        else if (overall_sign != s) { return false; }
-    }
-    // Spec IsValidDuration computes normalizedNs as:
-    //   days*86400e9 + hours*3600e9 + mins*60e9 + secs*1e9
-    //     + ℝ(𝔽(ms))*1e6 + ℝ(𝔽(us))*1000 + ℝ(𝔽(ns))
-    // and rejects if abs(normalizedNs) >= 10^9 * 2^53. For integers <= 2^53
-    // the ℝ(𝔽(...)) round-trip is exact, but a value like 9007199254740991926258
-    // µs (produced by dividing a >1e24 ns total by 1000) is rounded up to the
-    // nearest double — which can push the total over the threshold even though
-    // the exact int128 sum does not. Round-trip via double before summing the
-    // sub-second fields so the check matches the spec. Cast straight from
-    // double to int128 to avoid an intermediate long overflow on values above
-    // 2^63.
-    int128 total_ns = (int128)0;
-    total_ns += (int128)math::abs(d.days) * 86400000000000L;
-    total_ns += (int128)math::abs(d.hours) * 3600000000000L;
-    total_ns += (int128)math::abs(d.minutes) * 60000000000L;
-    total_ns += (int128)math::abs(d.seconds) * 1000000000L;
-    double[3] sub_abs = { math::abs(d.ms), math::abs(d.us), math::abs(d.ns) };
-    long[3] mult = { 1000000L, 1000L, 1L };
-    for (int k = 0; k < 3; k++) {
-        int128 rounded = (int128)(double)sub_abs[k];
-        total_ns += math::abs(rounded) * mult[k];
-    }
-    // 2^53 * 10^9 = 9007199254740992000000000
-    if (total_ns >= (int128)9007199254740992L * (int128)1000000000L) {
-        return false;
-    }
-    return true;
-}
 
 // Read a Temporal.DurationLike argument and return its total nanoseconds as a
 // freshly allocated BigInt. Used by AddDurationToOrSubtractDurationFromInstant
@@ -1589,7 +1539,7 @@ fn bool duration_arg_to_ns_bigint(BuiltinContext* ctx, TVal* arg, hbigint::HBigI
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
             return false;
         }
-        if (!is_valid_duration(&parts)) {
+        if (!temporal::is_valid_duration(&parts)) {
             ctx.heap.decref((types::HeapHeader*)total);
             builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
             return false;
@@ -1777,7 +1727,7 @@ fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
             default: d.ns = whole; break;
         }
     }
-    if (!is_valid_duration(&d)) {
+    if (!temporal::is_valid_duration(&d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration: components out of range or mixed signs");
         return;
     }
@@ -2052,12 +2002,12 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
     }
 
     if (relative_to == null) {
-        if (temporal::is_cal_unit(default_largest_unit(da)) || temporal::is_cal_unit(default_largest_unit(db))) {
+        if (temporal::is_cal_unit(temporal::default_largest_unit(da)) || temporal::is_cal_unit(temporal::default_largest_unit(db))) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is required to compare durations with calendar units");
             return;
         }
-        int128 na = duration_to_time_ns(da);
-        int128 nb = duration_to_time_ns(db);
+        int128 na = temporal::duration_to_time_ns(da);
+        int128 nb = temporal::duration_to_time_ns(db);
         long cmp = na < nb ? -1 : (na > nb ? 1 : 0);
         ctx.result.set_number((double)cmp);
         return;
@@ -2075,7 +2025,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
     // skips AddZonedDateTime entirely and compares elapsed nanoseconds, so a
     // 5-minute duration relative to the maximum instant compares fine rather
     // than throwing (test262 compare/relativeto-string-limits).
-    bool date_cat = temporal::is_date_unit(default_largest_unit(da)) || temporal::is_date_unit(default_largest_unit(db));
+    bool date_cat = temporal::is_date_unit(temporal::default_largest_unit(da)) || temporal::is_date_unit(temporal::default_largest_unit(db));
     if (rel_is_zoned && date_cat) {
         int128 after_a;
         int128 after_b;
@@ -2102,9 +2052,9 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
                      .d = relative_to.extra.temporal.long_c };
     }
 
-    if (!temporal::is_cal_unit(default_largest_unit(da)) && !temporal::is_cal_unit(default_largest_unit(db))) {
-        int128 na = duration_to_time_ns(da);
-        int128 nb = duration_to_time_ns(db);
+    if (!temporal::is_cal_unit(temporal::default_largest_unit(da)) && !temporal::is_cal_unit(temporal::default_largest_unit(db))) {
+        int128 na = temporal::duration_to_time_ns(da);
+        int128 nb = temporal::duration_to_time_ns(db);
         long cmp = na < nb ? -1 : (na > nb ? 1 : 0);
         ctx.result.set_number((double)cmp);
         return;
@@ -2112,8 +2062,8 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
 
     int128 total_a = 0;
     int128 total_b = 0;
-    if (!duration_total_ns_from(rel_date, da, &total_a) ||
-        !duration_total_ns_from(rel_date, db, &total_b)) {
+    if (!temporal::duration_total_ns_from(rel_date, da, &total_a) ||
+        !temporal::duration_total_ns_from(rel_date, db, &total_b)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "date outside valid ISO range");
         return;
     }
@@ -2121,40 +2071,6 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
     ctx.result.set_number((double)cmp);
 }
 
-// Adds a duration's date part (years/months/weeks/days, with days folded in
-// from time-only overflow) to `rel_date` and returns the total nanoseconds
-// from `rel_date` (midnight) to the resulting date-time. Mirrors the
-// relativeTo path of builtin_temporal_duration_proto_round.
-fn bool duration_total_ns_from(CivilDate rel_date, temporal::DurationParts dur, int128* out) {
-    int128 time_only_ns = (int128)0;
-    time_only_ns += (int128)dur.hours   * 3600000000000L;
-    time_only_ns += (int128)dur.minutes *   60000000000L;
-    time_only_ns += (int128)dur.seconds *    1000000000L;
-    time_only_ns += (int128)dur.ms      *       1000000L;
-    time_only_ns += (int128)dur.us      *          1000L;
-    time_only_ns += (int128)dur.ns;
-
-    long target_time_days = (long)(time_only_ns / 86400000000000L);
-    int128 target_time_rem = time_only_ns % 86400000000000L;
-    if (time_only_ns < 0 && target_time_rem != 0) {
-        target_time_days -= 1;
-        target_time_rem += 86400000000000L;
-    }
-
-    long adj_days = dur.days + target_time_days;
-
-    CivilDate target_date = rel_date;
-    if (dur.years != 0) target_date = temporal::add_months(target_date, dur.years * 12, temporal::OverflowKind.CONSTRAIN);
-    if (dur.months != 0) target_date = temporal::add_months(target_date, dur.months, temporal::OverflowKind.CONSTRAIN);
-    if (dur.weeks != 0) target_date = temporal::add_days(target_date, dur.weeks * 7);
-    if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
-
-    long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
-    long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-    if (tgt_epoch > 100000000L || tgt_epoch < -100000000L) return false;
-    *out = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
-    return true;
-}
 
 // Shared coercion from a string, Duration, or property bag into a Duration.
 // Returns true on success; on failure throws and writes `ctx.should_throw`.
@@ -2484,103 +2400,6 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 
-// Add two durations without relativeTo. Date fields sum; time fields are
-// summed as a single nanosecond count and split back into days/hours/min/sec/
-// ms/us/ns (1 day = 86 400 000 000 000 ns). The split-off days join the date
-// sum. Years/months/weeks don't interact with each other in this code path,
-// matching the spec's no-relativeTo behavior.
-fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationParts b, temporal::DurationParts* out) {
-    // Sum date units directly; balance only happens within the time column.
-    long y  = a.years   + b.years;
-    long mo = a.months  + b.months;
-    long w  = a.weeks   + b.weeks;
-    long d  = a.days    + b.days;
-    // Convert each time column to ns, sum, then split. The per-field sums
-    // must widen to int128 before adding: two fields near LONG_MAX (the
-    // spec allows ms/us/ns up to ~9e18 each) overflow a long sum.
-    int128 total_ns = (int128)0;
-    total_ns += ((int128)a.hours + (int128)b.hours)    * 3600000000000L;
-    total_ns += ((int128)a.minutes + (int128)b.minutes) *   60000000000L;
-    total_ns += ((int128)a.seconds + (int128)b.seconds) *    1000000000L;
-    total_ns += ((int128)a.ms + (int128)b.ms)           *       1000000L;
-    total_ns += ((int128)a.us + (int128)b.us)           *          1000L;
-    total_ns += (int128)a.ns + (int128)b.ns;
-    // Per spec, IsValidDuration rejects any duration whose time column
-    // (after balancing days into seconds) exceeds ±2^53 seconds. Year/month/week
-    // units are unbounded in the spec — only their absolute value needs to
-    // remain within int64. We validate only the time column here; caller is
-    // responsible for year/month range.
-    int128 days_secs = (int128)d * 86400L;
-    int128 combined_secs = days_secs + total_ns / 1000000000L;
-    int128 max_secs = (int128)9007199254740992L;  // 2^53
-    if (combined_secs >= max_secs || combined_secs <= -max_secs) {
-        // Caller decides whether to throw — signal failure.
-        return false;
-    }
-    // Spec AddDuration with no relativeTo: any calendar unit (years, months,
-    // weeks) in either operand is a RangeError.
-    bool no_calendar_units = (y == 0 && mo == 0 && w == 0 && a.years == 0
-        && b.years == 0 && a.months == 0 && b.months == 0
-        && a.weeks == 0 && b.weeks == 0);
-    if (!no_calendar_units) return false;
-
-    // BalanceTimeDuration(norm, largestUnit) with largestUnit = the larger of
-    // the two operands' default largest units: the time total truncates toward
-    // zero into whole units of largestUnit and the same-sign remainder fills
-    // the columns below it, so {minutes:100,...} - {minutes:10,...} reports
-    // 91m while P50DT50H + itself balances 100 of the 101 hours into days.
-    temporal::TemporalUnit largest = default_largest_unit(a);
-    temporal::TemporalUnit largest_b = default_largest_unit(b);
-    if (largest_b < largest) largest = largest_b;
-
-    // Spec TemporalDurationFromInternal produces the *unbalanced* form:
-    // units strictly larger than `largestUnit` stay zero, and the time total
-    // is broken into units from `largestUnit` down to nanoseconds. For
-    // `largestUnit = "hour"`, hours = floor(time/3600e9) ns and the result
-    // keeps the sub-day units intact (24h stays 24h, not 1d). For
-    // `largestUnit = "microsecond"`, µs = floor(time/1000) and ns = time%1000,
-    // which lets IsValidDuration's 𝔽→ℝ round-trip catch a 1e24-ish ns column
-    // whose µs field rounds above the 10^9 * 2^53 threshold (test262
-    // Duration/add result-out-of-range-3). Validate this unbalanced form
-    // before returning, so an out-of-range result throws via the spec path.
-    out.years = 0;
-    out.months = 0;
-    out.weeks = 0;
-    out.days = d;
-    out.hours = 0; out.minutes = 0; out.seconds = 0;
-    out.ms = 0; out.us = 0; out.ns = 0;
-    int128 rem = total_ns;
-    if (largest <= temporal::TemporalUnit.DAY) {
-        out.days += (long)(rem / 86400000000000L);
-        rem %= 86400000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.HOUR) {
-        out.hours = (long)(rem / 3600000000000L);
-        rem %= 3600000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.MINUTE) {
-        out.minutes = (long)(rem / 60000000000L);
-        rem %= 60000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.SECOND) {
-        out.seconds = (long)(rem / 1000000000L);
-        rem %= 1000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.MILLISECOND) {
-        out.ms = (double)(rem / 1000000L);
-        rem %= 1000000L;
-    }
-    if (largest <= temporal::TemporalUnit.MICROSECOND) {
-        out.us = (double)(rem / 1000L);
-        rem %= 1000L;
-    }
-    out.ns = (double)rem;
-    if (!is_valid_duration(out)) {
-        // Caller decides whether to throw — signal failure.
-        return false;
-    }
-    return true;
-}
 
 fn void builtin_temporal_duration_proto_add(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
@@ -2593,11 +2412,11 @@ fn void builtin_temporal_duration_proto_add(BuiltinContext* ctx) {
     if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &other)) return;
     temporal::DurationParts a = duration_value((HObject*)this_val.get_heapptr());
     temporal::DurationParts result;
-    if (!add_durations_no_relative(a, other, &result)) {
+    if (!temporal::add_durations_no_relative(a, other, &result)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Duration arithmetic produced an out-of-range result");
         return;
     }
-    if (!is_valid_duration(&result)) {
+    if (!temporal::is_valid_duration(&result)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
         return;
     }
@@ -2630,11 +2449,11 @@ fn void builtin_temporal_duration_proto_subtract(BuiltinContext* ctx) {
     other.ns = -other.ns;
     temporal::DurationParts a = duration_value((HObject*)this_val.get_heapptr());
     temporal::DurationParts result;
-    if (!add_durations_no_relative(a, other, &result)) {
+    if (!temporal::add_durations_no_relative(a, other, &result)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Duration arithmetic produced an out-of-range result");
         return;
     }
-    if (!is_valid_duration(&result)) {
+    if (!temporal::is_valid_duration(&result)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
         return;
     }
@@ -2695,7 +2514,7 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Duration.prototype.with requires at least one recognized property");
         return;
     }
-    if (!is_valid_duration(&d)) {
+    if (!temporal::is_valid_duration(&d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration result");
         return;
     }
@@ -2756,50 +2575,7 @@ fn bool validate_rounding_increment(BuiltinContext* ctx, temporal::TemporalUnit 
     return true;
 }
 
-fn temporal::TemporalUnit default_largest_unit(temporal::DurationParts d) {
-    if (d.years != 0)   return temporal::TemporalUnit.YEAR;
-    if (d.months != 0)  return temporal::TemporalUnit.MONTH;
-    if (d.weeks != 0)   return temporal::TemporalUnit.WEEK;
-    if (d.days != 0)    return temporal::TemporalUnit.DAY;
-    if (d.hours != 0)   return temporal::TemporalUnit.HOUR;
-    if (d.minutes != 0) return temporal::TemporalUnit.MINUTE;
-    if (d.seconds != 0) return temporal::TemporalUnit.SECOND;
-    if (d.ms != 0)      return temporal::TemporalUnit.MILLISECOND;
-    if (d.us != 0)      return temporal::TemporalUnit.MICROSECOND;
-    return temporal::TemporalUnit.NANOSECOND;
-}
 
-// Split a signed nanosecond count across the time units from `largest` down to
-// nanoseconds. Callers round to smallestUnit first, which leaves the units
-// below it zero.
-//
-// Division truncates toward zero, so a negative count gives uniformly negative
-// fields, as a Duration requires.
-fn temporal::DurationParts time_ns_split(long v, temporal::TemporalUnit largest) {
-    temporal::DurationParts dp = {};
-    if (largest <= temporal::TemporalUnit.HOUR) {
-        dp.hours = v / 3_600_000_000_000L;
-        v %= 3_600_000_000_000L;
-    }
-    if (largest <= temporal::TemporalUnit.MINUTE) {
-        dp.minutes = v / 60_000_000_000L;
-        v %= 60_000_000_000L;
-    }
-    if (largest <= temporal::TemporalUnit.SECOND) {
-        dp.seconds = v / 1_000_000_000L;
-        v %= 1_000_000_000L;
-    }
-    if (largest <= temporal::TemporalUnit.MILLISECOND) {
-        dp.ms = (double)(v / 1_000_000L);
-        v %= 1_000_000L;
-    }
-    if (largest <= temporal::TemporalUnit.MICROSECOND) {
-        dp.us = (double)(v / 1000L);
-        v %= 1000L;
-    }
-    dp.ns = (double)v;
-    return dp;
-}
 
 
 
@@ -2820,210 +2596,12 @@ fn temporal::CivilTime civil_time_from_ns(long total) {
 
 
 
-fn int128 duration_to_time_ns(temporal::DurationParts d) {
-    int128 ns = (int128)0;
-    ns += (int128)d.days    * 86400000000000L;
-    ns += (int128)d.hours   * 3600000000000L;
-    ns += (int128)d.minutes *   60000000000L;
-    ns += (int128)d.seconds *    1000000000L;
-    ns += (int128)d.ms      *       1000000L;
-    ns += (int128)d.us      *          1000L;
-    ns += (int128)d.ns;
-    return ns;
-}
 
-// DivideNormalizedTimeDuration(d, divisor): the spec divides the exact
-// mathematical nanosecond total by divisor and converts to a Number in a
-// single step (only one rounding, to nearest, ties-to-even). Neither
-// `(double)num / (double)div` nor `whole + (double)rem / (double)div` matches
-// that: the first rounds num to a double *before* dividing (losing precision
-// once num exceeds 2^53, e.g. a >9e21ns total), and the second rounds the
-// quotient and the remainder/div term separately, then adds two already-
-// rounded doubles (wrong whenever the true fractional part sits near a
-// halfway point between representable doubles, test262
-// precision-exact-mathematical-values-6/7).
-//
-// This computes the quotient+remainder exactly in int128, then re-expands
-// the remainder into `shift` extra fractional bits (also exact, since
-// shifting and dividing integers loses nothing but a tracked sticky bit),
-// giving a single fixed-point integer that carries every bit of `num/div`
-// down to 2^-shift. Rounding that combined integer to 53 significant bits
-// with round-half-to-even (using the sticky bit to break exact-half ties
-// correctly) reproduces the one required rounding step.
-//
-// `shift` is chosen per call, not fixed, because a shift sized only for the
-// quotient's magnitude can starve the fraction of precision when the result
-// is small (a numerator as tiny as 1ns needs the shift to reach down near
-// its own leading bit before 53 more bits of precision beyond it) — and the
-// reverse fixed shift (large enough for tiny results) overflows int128 once
-// the quotient itself is large. `shift` is capped by both operands' own bit
-// widths so `quotient << shift` and `remainder << shift` each stay within
-// int128's 127-bit magnitude: IsValidDuration bounds |num| to just under
-// 2^53 * 10^9 (~2^83), and remainder is always < divisor (~2^47 at most, for
-// days), so this never has to trade one operand's headroom for the other's.
-fn int bit_length_i128(int128 v) {
-    int bits = 0;
-    int128 probe = v;
-    while (probe != (int128)0) { probe >>= 1; bits++; }
-    return bits;
-}
 
-// Exact `num / div` rounded to the nearest double (ties to even). `div` must
-// be positive; `num` may be negative, with the sign split off before the
-// exact-magnitude division.
-fn double divide_time_duration(int128 num, int128 div) {
-    if (num == (int128)0) return 0.0;
-    bool neg = num < (int128)0;
-    int128 mag = neg ? -num : num;
-    int128 d = div;
-    int128 q = mag / d;
-    int128 r = mag - q * d;
-    double result;
-    if (r == (int128)0) {
-        result = (double)q;
-    } else {
-        int bits_q = bit_length_i128(q);
-        int bits_r = bit_length_i128(r);
-        int shift = 126 - (bits_q > bits_r ? bits_q : bits_r);
-        if (shift < 1) shift = 1;
-        int128 scaled_r = r << shift;
-        int128 frac_q = scaled_r / d;
-        int128 frac_r = scaled_r - frac_q * d;
-        int128 combined = (q << shift) | frac_q;
-        bool sticky = frac_r != (int128)0;
-        int bits = bit_length_i128(combined);
-        if (bits <= 53) {
-            result = (double)combined / dtoa_pow2(shift);
-        } else {
-            int drop = bits - 53;
-            int128 keep = combined >> drop;
-            int128 rem = combined - (keep << drop);
-            int128 half = (int128)1 << (drop - 1);
-            bool round_up = rem > half ||
-                (rem == half && (sticky || (keep & (int128)1) != (int128)0));
-            if (round_up) keep += (int128)1;
-            result = (double)keep * dtoa_pow2(drop - shift);
-        }
-    }
-    return neg ? -result : result;
-}
 
-// 2^n as a double, n in [-127, 127] for the exponents divide_time_duration needs.
-fn double dtoa_pow2(int n) {
-    if (n >= 0) return (double)((int128)1 << n);
-    return 1.0 / (double)((int128)1 << (-n));
-}
 
-fn void decompose_ns(long ns, temporal::TemporalUnit largest, temporal::DurationParts* out) {
-    long abs_ns = ns < 0 ? -ns : ns;
-    long sign = ns < 0 ? -1 : 1;
-    long rem = abs_ns;
-    out.years = 0;
-    out.months = 0;
-    out.weeks = 0;
-    out.days = 0;
-    out.hours = 0;
-    out.minutes = 0;
-    out.seconds = 0;
-    out.ms = 0;
-    out.us = 0;
-    out.ns = 0;
-    if (largest == temporal::TemporalUnit.DAY) {
-        out.days = sign * (long)(rem / 86400000000000L);
-        rem %= 86400000000000L;
-    } else if (largest == temporal::TemporalUnit.WEEK) {
-        long total_days = (long)(rem / 86400000000000L);
-        rem %= 86400000000000L;
-        out.weeks = sign * (total_days / 7);
-        out.days = sign * (total_days % 7);
-    }
-    // Decompose time units only down to largest_unit.
-    if (largest <= temporal::TemporalUnit.HOUR) {
-        out.hours = sign * (long)(rem / 3600000000000L);
-        rem %= 3600000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.MINUTE) {
-        out.minutes = sign * (long)(rem / 60000000000L);
-        rem %= 60000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.SECOND) {
-        out.seconds = sign * (long)(rem / 1000000000L);
-        rem %= 1000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.MILLISECOND) {
-        out.ms = (double)(sign * (long)(rem / 1000000L));
-        rem %= 1000000L;
-    }
-    if (largest <= temporal::TemporalUnit.MICROSECOND) {
-        out.us = (double)(sign * (long)(rem / 1000L));
-        rem %= 1000L;
-    }
-    out.ns = (double)(sign * (long)rem);
-}
 
-// ℝ(𝔽(x)): a Duration slot is a float64-representable number. The spec stores
-// every component via this conversion in CreateTemporalDuration; below 2^53 it
-// is the identity, and above it the value snaps to the nearest float64. That
-// loss shows up only once a component exceeds 2^53 (a microseconds field for a
-// 584-year since() is ~1.8e16), so a split carried out in exact int128 must
-// round each field back through float64 to reproduce it.
-fn long f64_field(long x) { return (long)(double)x; }
 
-// The inverse of decompose_ns for values too large for int64 (any duration
-// longer than ~292 years in nanoseconds). Like decompose_ns it walks the unit
-// ladder from `largest` down; each field is ℝ(𝔽())-rounded and the middle
-// int128 remainder avoids the 64-bit overflow that a `long` count would hit.
-fn void decompose_ns_128(int128 ns, temporal::TemporalUnit largest, temporal::DurationParts* out) {
-    long sign = ns < 0 ? -1 : 1;
-    double sign_d = (double)sign;
-    int128 rem = ns < 0 ? -ns : ns;
-    out.years = 0;
-    out.months = 0;
-    out.weeks = 0;
-    out.days = 0;
-    out.hours = 0;
-    out.minutes = 0;
-    out.seconds = 0;
-    out.ms = 0;
-    out.us = 0;
-    out.ns = 0;
-    if (largest == temporal::TemporalUnit.DAY) {
-        out.days = sign * (long)(rem / 86400000000000L);
-        rem %= 86400000000000L;
-    } else if (largest == temporal::TemporalUnit.WEEK) {
-        int128 total_days = rem / 86400000000000L;
-        rem %= 86400000000000L;
-        out.weeks = sign * (long)(total_days / 7);
-        out.days = sign * (long)(total_days % 7);
-    }
-    // Decompose time units only down to largest_unit.
-    if (largest <= temporal::TemporalUnit.HOUR) {
-        out.hours = sign * f64_field((long)(rem / 3600000000000L));
-        rem %= 3600000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.MINUTE) {
-        out.minutes = sign * f64_field((long)(rem / 60000000000L));
-        rem %= 60000000000L;
-    }
-    if (largest <= temporal::TemporalUnit.SECOND) {
-        out.seconds = sign * f64_field((long)(rem / 1000000000L));
-        rem %= 1000000000L;
-    }
-    // The largest field absorbs the full remaining magnitude once it's a
-    // sub-second unit, which can exceed long's 63-bit range (e.g. ~8.7e21
-    // microseconds, test262 precision-exact-in-balance-time-duration):
-    // convert straight from int128 via ℝ(𝔽()) rather than routing through a
-    // `long` that would silently wrap first.
-    if (largest <= temporal::TemporalUnit.MILLISECOND) {
-        out.ms = sign_d * (double)(rem / 1000000L);
-        rem %= 1000000L;
-    }
-    if (largest <= temporal::TemporalUnit.MICROSECOND) {
-        out.us = sign_d * (double)(rem / 1000L);
-        rem %= 1000L;
-    }
-    out.ns = sign_d * (double)rem;
-}
 
 // ============================================================================
 // Temporal.Duration.prototype.round
@@ -3125,7 +2703,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         }
     }
 
-    temporal::TemporalUnit existing = default_largest_unit(dur);
+    temporal::TemporalUnit existing = temporal::default_largest_unit(dur);
     temporal::TemporalUnit default_lu = temporal::larger_unit(existing, smallest_unit);
     if (!largest_was_set) largest_unit = default_lu;
 
@@ -3163,7 +2741,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is required for calendar units");
             return;
         }
-        int128 time_ns = duration_to_time_ns(dur);
+        int128 time_ns = temporal::duration_to_time_ns(dur);
         // Spec's RoundTimeDuration is an integer operation on the time
         // duration (RoundNumberToIncrement on nanoseconds); rounding stays in
         // int128 so a duration longer than ~292 years does not overflow a
@@ -3181,8 +2759,8 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             rounded_ns = temporal::round_long_ns_128(time_ns, incr_ns, rounding_mode);
         }
         temporal::DurationParts result;
-        decompose_ns_128(rounded_ns, largest_unit, &result);
-        if (!is_valid_duration(&result)) {
+        temporal::decompose_ns_128(rounded_ns, largest_unit, &result);
+        if (!temporal::is_valid_duration(&result)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
             return;
         }
@@ -3218,7 +2796,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         rel_time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns };
         hbigint::HBigInt* start_big = (hbigint::HBigInt*)relative_to.extra.temporal.big_ns;
         int128 start_ns = start_big.to_int128();
-        int128 dur_time_ns = duration_to_time_ns(dur);
+        int128 dur_time_ns = temporal::duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
         int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
 
@@ -3347,7 +2925,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     temporal::DurationParts result;
     if (!datetime_difference(ctx, iso_dt, target_dt, rds, &result)) return;
 
-    if (!is_valid_duration(&result)) {
+    if (!temporal::is_valid_duration(&result)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
         return;
     }
@@ -3427,13 +3005,13 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         return;
     }
 
-    temporal::TemporalUnit existing = default_largest_unit(dur);
+    temporal::TemporalUnit existing = temporal::default_largest_unit(dur);
     if (relative_to == null) {
         if (temporal::is_cal_unit(existing) || temporal::is_cal_unit(unit)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is required for calendar units");
             return;
         }
-        int128 time_ns = duration_to_time_ns(dur);
+        int128 time_ns = temporal::duration_to_time_ns(dur);
         long div_ns = unit == temporal::TemporalUnit.DAY
             ? 86400000000000L
             : temporal::unit_ns_divisor(unit);
@@ -3442,7 +3020,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // divide_time_duration for why neither a plain int128→double cast-
         // then-divide nor a `whole + rem/div` split reproduces that single
         // rounding step (test262 precision-exact-mathematical-values-6/7).
-        ctx.result.set_number(divide_time_duration(time_ns, div_ns));
+        ctx.result.set_number(temporal::divide_time_duration(time_ns, div_ns));
         return;
     }
     // Always compute and validate target datetime with relative_to:
@@ -3456,7 +3034,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         rel_time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns };
         hbigint::HBigInt* start_big = (hbigint::HBigInt*)relative_to.extra.temporal.big_ns;
         int128 start_ns = start_big.to_int128();
-        int128 dur_time_ns = duration_to_time_ns(dur);
+        int128 dur_time_ns = temporal::duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
         int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
 
@@ -3621,11 +3199,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
 
     bool has_cal = dur.years != 0 || dur.months != 0 || dur.weeks != 0;
     if (!temporal::is_cal_unit(unit) && !has_cal) {
-        int128 time_ns = duration_to_time_ns(dur);
+        int128 time_ns = temporal::duration_to_time_ns(dur);
         long div_ns = unit == temporal::TemporalUnit.DAY
             ? 86400000000000L
             : temporal::unit_ns_divisor(unit);
-        ctx.result.set_number(divide_time_duration(time_ns, div_ns));
+        ctx.result.set_number(temporal::divide_time_duration(time_ns, div_ns));
         return;
     }
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
@@ -3648,11 +3226,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     int128 diff_ns = days_diff_ns + time_diff_ns;
     long divisor = temporal::unit_ns_divisor(unit);
     if (divisor > 0) {
-        ctx.result.set_number(divide_time_duration(diff_ns, divisor));
+        ctx.result.set_number(temporal::divide_time_duration(diff_ns, divisor));
         return;
     }
     if (unit == temporal::TemporalUnit.DAY) {
-        ctx.result.set_number(divide_time_duration(diff_ns, 86400000000000L));
+        ctx.result.set_number(temporal::divide_time_duration(diff_ns, 86400000000000L));
         return;
     }
     if (unit == temporal::TemporalUnit.WEEK) {
@@ -3661,7 +3239,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // (tgt_epoch - rel_epoch) drops any sub-day remainder, which is
         // wrong for total().
         long div_ns = 7L * 86400000000000L;
-        ctx.result.set_number(divide_time_duration(diff_ns, div_ns));
+        ctx.result.set_number(temporal::divide_time_duration(diff_ns, div_ns));
         return;
     }
     // Re-decompose (relTo + duration) into the calendar-aware {years,
@@ -3725,7 +3303,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     // (or a `whole + rem/div` split) double-rounds and can land on the
     // wrong adjacent double (test262 precision-exact-mathematical-values-5..7,
     // relativeto-total-of-each-unit).
-    ctx.result.set_number(divide_time_duration(total_num, unit_ns));
+    ctx.result.set_number(temporal::divide_time_duration(total_num, unit_ns));
 }
 
 // ============================================================================
@@ -4484,7 +4062,7 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
             return false;
         }
-        if (!is_valid_duration(out)) {
+        if (!temporal::is_valid_duration(out)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
             return false;
         }
@@ -4556,7 +4134,7 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
         builtin_throw(ctx, ctx.heap.type_err_proto, "duration property bag has no recognized fields");
         return false;
     }
-    if (!is_valid_duration(out)) {
+    if (!temporal::is_valid_duration(out)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
         return false;
     }
@@ -5286,7 +4864,7 @@ fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     long incr_ns = temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment;
     if (incr_ns > 1) delta = temporal::round_long_ns(delta, incr_ns, ds.mode);
 
-    temporal::DurationParts dur = time_ns_split(delta, ds.largest);
+    temporal::DurationParts dur = temporal::time_ns_split(delta, ds.largest);
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -7089,7 +6667,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
         int128 total = (int128)days * 86_400_000_000_000L + (int128)tod_delta;
         int128 incr_ns = (int128)(temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment);
         if (incr_ns > 1) total = temporal::round_long_ns_128(total, incr_ns, ds.mode);
-        decompose_ns_128(total, ds.largest, out);
+        temporal::decompose_ns_128(total, ds.largest, out);
         return true;
     }
 
@@ -7102,7 +6680,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
     }
     temporal::DateDifference dd = temporal::difference_date(sd, ed, du);
 
-    temporal::DurationParts dp = time_ns_split(tod_delta, temporal::TemporalUnit.HOUR);
+    temporal::DurationParts dp = temporal::time_ns_split(tod_delta, temporal::TemporalUnit.HOUR);
     dp.years = dd.years;
     dp.months = dd.months;
     dp.days = dd.days;
@@ -7129,7 +6707,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
                         dp.ms = 0; dp.us = 0; dp.ns = 0;
                         if (!bump_date_part(ctx, sd, ds, sign, &dp)) return false;
                     } else {
-                        temporal::DurationParts t = time_ns_split(rounded, temporal::TemporalUnit.HOUR);
+                        temporal::DurationParts t = temporal::time_ns_split(rounded, temporal::TemporalUnit.HOUR);
                         dp.hours = t.hours; dp.minutes = t.minutes; dp.seconds = t.seconds;
                         dp.ms = t.ms; dp.us = t.us; dp.ns = t.ns;
                     }
@@ -7153,7 +6731,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
                 rem = (long)(total - (int128)whole_days * 86_400_000_000_000L);
             }
             dp.days = whole_days;
-            temporal::DurationParts t = time_ns_split(rem, temporal::TemporalUnit.HOUR);
+            temporal::DurationParts t = temporal::time_ns_split(rem, temporal::TemporalUnit.HOUR);
             dp.hours = t.hours; dp.minutes = t.minutes; dp.seconds = t.seconds;
             dp.ms = t.ms; dp.us = t.us; dp.ns = t.ns;
             if (whole_days != 0) {
@@ -7236,7 +6814,7 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     // smallestUnit first loses that structure, since a month is 4 weeks and 3
     // days and no whole number of weeks recovers P1M.
     long incr = (long)ds.increment;
-    long units = smallest_unit_count(*dp, ds.smallest);
+    long units = temporal::smallest_unit_count(*dp, ds.smallest);
     long kept = units - units % incr;
 
     // `lo` and `hi` are the boundaries at `kept` and one increment beyond it,
@@ -7245,14 +6823,14 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     // so everything finer is cleared first: a leftover month would carry `lo`
     // past the year boundary it marks.
     temporal::DurationParts base = *dp;
-    set_smallest_unit_count(&base, ds.smallest, kept);
-    clear_below(&base, ds.smallest);
-    temporal::CivilDate lo = apply_date_part(start, base);
+    temporal::set_smallest_unit_count(&base, ds.smallest, kept);
+    temporal::clear_below(&base, ds.smallest);
+    temporal::CivilDate lo = temporal::apply_date_part(start, base);
     temporal::DurationParts next = base;
-    set_smallest_unit_count(&next, ds.smallest, kept + sign * incr);
-    temporal::CivilDate hi = apply_date_part(start, next);
+    temporal::set_smallest_unit_count(&next, ds.smallest, kept + sign * incr);
+    temporal::CivilDate hi = temporal::apply_date_part(start, next);
 
-    long to_end = total_days_between(lo, end) * 86_400_000_000_000L + tod_delta;
+    long to_end = temporal::total_days_between(lo, end) * 86_400_000_000_000L + tod_delta;
     // Compute the span in int128: (kept+incr) - kept in days at smallestUnit
     // granularity, lifted to nanoseconds. For calendar units like months and
     // years the actual `hi` date is variable, but we only need the ratio
@@ -7266,7 +6844,7 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
         long unit_ns = (ds.smallest == temporal::TemporalUnit.DAY) ? 86_400_000_000_000L : temporal::unit_ns_divisor(ds.smallest);
         span = (int128)incr * (int128)unit_ns;
     } else {
-        span = (int128)total_days_between(lo, hi) * 86_400_000_000_000L;
+        span = (int128)temporal::total_days_between(lo, hi) * 86_400_000_000_000L;
     }
     if (span == 0) return true;
 
@@ -7344,8 +6922,8 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     } else {
         step_up = temporal::round_long_ns_128((int128)to_end, mag_span, ds.mode) != 0;
     }
-    set_smallest_unit_count(dp, ds.smallest, step_up ? kept + sign * incr : kept);
-    clear_below(dp, ds.smallest);
+    temporal::set_smallest_unit_count(dp, ds.smallest, step_up ? kept + sign * incr : kept);
+    temporal::clear_below(dp, ds.smallest);
     // When smallestUnit == largestUnit the rounding has already decided the
     // final value and clear_below zeroed everything finer. Rebalancing would
     // re-derive the canonical difference through add_months + difference_date,
@@ -7358,50 +6936,10 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
 }
 
 
-// The count held in `dp`'s smallestUnit field, not the difference folded into
-// that unit. A roundingIncrement of 5 months under largestUnit "years" snaps
-// the months within the year (2y8m -> 2y5m); under largestUnit "months" the
-// whole span sits in the months field and snaps there (32m -> 30m).
-fn long smallest_unit_count(temporal::DurationParts dp, temporal::TemporalUnit unit) {
-    switch (unit) {
-        case temporal::TemporalUnit.YEAR:  return dp.years;
-        case temporal::TemporalUnit.MONTH: return dp.months;
-        case temporal::TemporalUnit.WEEK:  return dp.weeks;
-        default:                 return dp.days;
-    }
-}
 
-// Set the count of `unit`, leaving the coarser components alone.
-fn void set_smallest_unit_count(temporal::DurationParts* dp, temporal::TemporalUnit unit, long n) {
-    switch (unit) {
-        case temporal::TemporalUnit.YEAR:  dp.years = n; break;
-        case temporal::TemporalUnit.MONTH: dp.months = n; break;
-        case temporal::TemporalUnit.WEEK:  dp.weeks = n; break;
-        default:                 dp.days = n; break;
-    }
-}
 
-// Zero every component finer than `unit`; rounding to it leaves no remainder.
-fn void clear_below(temporal::DurationParts* dp, temporal::TemporalUnit unit) {
-    if (unit <= temporal::TemporalUnit.YEAR)  dp.months = 0;
-    if (unit <= temporal::TemporalUnit.MONTH) dp.weeks = 0;
-    if (unit <= temporal::TemporalUnit.WEEK)  dp.days = 0;
-    dp.hours = 0; dp.minutes = 0; dp.seconds = 0;
-    dp.ms = 0; dp.us = 0; dp.ns = 0;
-}
 
-// Advance a date by the date-level components of a Duration.
-fn temporal::CivilDate apply_date_part(temporal::CivilDate d, temporal::DurationParts dp) {
-    temporal::CivilDate r = d;
-    long months = dp.years * 12 + dp.months;
-    if (months != 0) r = temporal::add_months(r, months, temporal::OverflowKind.CONSTRAIN);
-    return temporal::add_days(r, dp.weeks * 7 + dp.days);
-}
 
-fn long total_days_between(temporal::CivilDate a, temporal::CivilDate b) {
-    return temporal::epoch_days_from_civil(b.y, (int)b.m, (int)b.d)
-         - temporal::epoch_days_from_civil(a.y, (int)a.m, (int)a.d);
-}
 
 fn long civil_time_to_ns(temporal::CivilTime t) {
     return ((long)t.h * 3600 + (long)t.mi * 60 + (long)t.s) * 1_000_000_000L
@@ -13729,7 +13267,7 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
         int128 incr_ns = (int128)(temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment);
         if (incr_ns > 1) total = temporal::round_long_ns_128(total, incr_ns, ds.mode);
         temporal::DurationParts dp;
-        decompose_ns_128(total, ds.largest, &dp);
+        temporal::decompose_ns_128(total, ds.largest, &dp);
         if (!until) {
             dp.hours = -dp.hours;
             dp.minutes = -dp.minutes;
