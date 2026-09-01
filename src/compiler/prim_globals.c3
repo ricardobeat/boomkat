@@ -128,15 +128,7 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
     // Only Script global scope: modules bind via GETVAR without GETGLOBAL.
     if (!self.is_global || self.is_module) return;
 
-    uint saved_pos    = self.lexer.pos;
-    uint saved_line   = self.lexer.line;
-    uint saved_col    = self.lexer.col;
-    Token saved_cur   = self.lexer.current;
-    Token saved_look  = self.lexer.lookahead;
-    bool  saved_haslk = self.lexer.has_lookahead;
-    Token saved_push  = self.lexer.pushed_back;
-    bool  saved_haspb = self.lexer.has_pushed_back;
-    bool  saved_slt   = self.lexer.seen_line_term;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
 
     PrimCandidate[] table_sl = mem::temp_array(PrimCandidate, PRIM_MAX_CANDIDATES);
     PrimCandidate* table = table_sl.ptr;
@@ -383,15 +375,7 @@ fn void CompilerContext.pre_scan_prim_globals(&self) {
         prev_tt = tt;
     }
 
-    self.lexer.pos             = saved_pos;
-    self.lexer.line            = saved_line;
-    self.lexer.col             = saved_col;
-    self.lexer.current         = saved_cur;
-    self.lexer.lookahead       = saved_look;
-    self.lexer.pushed_back     = saved_push;
-    self.lexer.has_pushed_back = saved_haspb;
-    self.lexer.has_lookahead   = saved_haslk;
-    self.lexer.seen_line_term  = saved_slt;
+    self.restore_lhs_snapshot(snap);
 
     if (disabled || overflow || count == 0) return;
 
@@ -534,15 +518,7 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
     // outer caller environment.
     if (!self.is_global || self.is_module || self.in_eval_code) return;
 
-    uint saved_pos    = self.lexer.pos;
-    uint saved_line   = self.lexer.line;
-    uint saved_col    = self.lexer.col;
-    Token saved_cur   = self.lexer.current;
-    Token saved_look  = self.lexer.lookahead;
-    bool  saved_haslk = self.lexer.has_lookahead;
-    Token saved_push  = self.lexer.pushed_back;
-    bool  saved_haspb = self.lexer.has_pushed_back;
-    bool  saved_slt   = self.lexer.seen_line_term;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
 
     char[64][SLOT_GLOBAL_MAX] names;
     ushort[SLOT_GLOBAL_MAX]   name_lens;
@@ -802,15 +778,7 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
         prev_tt = tt;
     }
 
-    self.lexer.pos             = saved_pos;
-    self.lexer.line            = saved_line;
-    self.lexer.col             = saved_col;
-    self.lexer.current         = saved_cur;
-    self.lexer.lookahead       = saved_look;
-    self.lexer.pushed_back     = saved_push;
-    self.lexer.has_pushed_back = saved_haspb;
-    self.lexer.has_lookahead   = saved_haslk;
-    self.lexer.seen_line_term  = saved_slt;
+    self.restore_lhs_snapshot(snap);
 
     if (disabled || overflow || count == 0) return;
 

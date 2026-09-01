@@ -81,15 +81,7 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
 // or a top-level `,` / `;`). The lexer state is fully restored on return.
 fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool global_mode = false) {
     // --- Save lexer state ---
-    uint saved_pos    = self.lexer.pos;
-    uint saved_line   = self.lexer.line;
-    uint saved_col    = self.lexer.col;
-    Token saved_cur   = self.lexer.current;
-    Token saved_look  = self.lexer.lookahead;
-    bool  saved_haslk = self.lexer.has_lookahead;
-    Token saved_push  = self.lexer.pushed_back;
-    bool  saved_haspb = self.lexer.has_pushed_back;
-    bool  saved_slt   = self.lexer.seen_line_term;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
 
     uint brace_depth = 0;        // `{`/`}` nesting within the scanned span
     TemplateScan tscan;          // template-aware `}` classification (see template_scan.c3)
@@ -497,15 +489,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     }
 
     // --- Restore lexer state ---
-    self.lexer.pos             = saved_pos;
-    self.lexer.line            = saved_line;
-    self.lexer.col             = saved_col;
-    self.lexer.current         = saved_cur;
-    self.lexer.lookahead       = saved_look;
-    self.lexer.pushed_back     = saved_push;
-    self.lexer.has_pushed_back = saved_haspb;
-    self.lexer.has_lookahead   = saved_haslk;
-    self.lexer.seen_line_term  = saved_slt;
+    self.restore_lhs_snapshot(snap);
 
     // Parameters (and destructured-parameter leaves) were declared before
     // this scan ran, so retroactively mark any the capture set names. Their

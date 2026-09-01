@@ -1577,15 +1577,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // speculative scan) and route it through the same fast path as a bare
             // identifier; anything else inside the parens falls through below.
             if (self.check(TokenType.LPAREN)) {
-                uint saved_pos    = self.lexer.pos;
-                uint saved_line   = self.lexer.line;
-                uint saved_col    = self.lexer.col;
-                Token saved_cur   = self.lexer.current;
-                Token saved_look  = self.lexer.lookahead;
-                bool  saved_haslk = self.lexer.has_lookahead;
-                Token saved_push  = self.lexer.pushed_back;
-                bool  saved_haspb = self.lexer.has_pushed_back;
-                bool  saved_slt   = self.lexer.seen_line_term;
+                ForLhsSnapshot typeof_snap = self.save_lhs_snapshot();
 
                 self.advance()!;  // consume '('
                 Token? id_opt = self.lexer.next_token();
@@ -1657,15 +1649,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
 
                 // Not the simple `( IDENTIFIER )` shape, restore and fall
                 // through to normal typeof expr parsing.
-                self.lexer.pos             = saved_pos;
-                self.lexer.line            = saved_line;
-                self.lexer.col             = saved_col;
-                self.lexer.current         = saved_cur;
-                self.lexer.lookahead       = saved_look;
-                self.lexer.has_lookahead   = saved_haslk;
-                self.lexer.pushed_back     = saved_push;
-                self.lexer.has_pushed_back = saved_haspb;
-                self.lexer.seen_line_term  = saved_slt;
+                self.restore_lhs_snapshot(typeof_snap);
             }
             {
                 Token? peeked = self.lexer.peek();
@@ -4032,25 +4016,15 @@ fn ushort? CompilerContext.primary_expr(&self) {
             uint lparen_pos = self.lexer.token_start;
 
             // Save lexer state before speculative scan
-            uint saved_pos    = self.lexer.pos;
-            uint saved_line   = self.lexer.line;
-            uint saved_col    = self.lexer.col;
-            Token saved_cur   = self.lexer.current;
-            Token saved_look  = self.lexer.lookahead;
-            bool  saved_haslk = self.lexer.has_lookahead;
-            Token saved_push  = self.lexer.pushed_back;
-            bool  saved_haspb = self.lexer.has_pushed_back;
-            bool  saved_slt   = self.lexer.seen_line_term;
-            bool saved_inside_parens = self.inside_parens;
-            self.inside_parens = true;
             // The compiler's own pushback stack is separate from the lexer's
             // buffers: the speculative scan's try_skip_ts_optional_marker /
             // try_skip_ts_type_annotation push rejected tokens onto it, so it
             // must be restored alongside the lexer or the grouping re-parse
             // reads a stale token first (e.g. `(t ? 1 : 2)` re-parsed as
             // starting at the `?`).
-            uint saved_pb_count = self.pushback_count;
-            Token[4] saved_pb_stack = self.pushback_stack;
+            ForLhsSnapshot lparen_snap = self.save_lhs_snapshot();
+            bool saved_inside_parens = self.inside_parens;
+            self.inside_parens = true;
 
             // Check for empty parens: () => ...
             if (self.check(TokenType.RPAREN)) {
@@ -4061,32 +4035,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // No-param arrow: () => ...
                     // Restore lexer to right after '(', parse_arrow_function_reparse
                     // will re-parse from source.
-                    self.lexer.pos             = saved_pos;
-                    self.lexer.line            = saved_line;
-                    self.lexer.col             = saved_col;
-                    self.lexer.current         = saved_cur;
-                    self.lexer.lookahead       = saved_look;
-                    self.lexer.has_lookahead   = saved_haslk;
-                    self.lexer.pushed_back     = saved_push;
-                    self.lexer.has_pushed_back = saved_haspb;
-                    self.lexer.seen_line_term  = saved_slt;
-                    self.pushback_count = saved_pb_count;
-                    self.pushback_stack = saved_pb_stack;
+                    self.restore_lhs_snapshot(lparen_snap);
                     self.inside_parens = saved_inside_parens;
                     return self.parse_arrow_function_reparse(lparen_pos)!;
                 }
                 // Not an arrow: restore lexer and parse as grouping expression
-                self.lexer.pos             = saved_pos;
-                self.lexer.line            = saved_line;
-                self.lexer.col             = saved_col;
-                self.lexer.current         = saved_cur;
-                self.lexer.lookahead       = saved_look;
-                self.lexer.has_lookahead   = saved_haslk;
-                self.lexer.pushed_back     = saved_push;
-                self.lexer.has_pushed_back = saved_haspb;
-                self.lexer.seen_line_term  = saved_slt;
-                self.pushback_count = saved_pb_count;
-                self.pushback_stack = saved_pb_stack;
+                self.restore_lhs_snapshot(lparen_snap);
                 ushort inner2 = self.expression()!;
                 // A parenthesized expression is never a bare IdentifierReference,
                 // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
@@ -4233,33 +4187,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (is_arrow) {
                     // Restore lexer to right after '(', compile_arrow_inner
                     // will re-parse params from source (handling defaults).
-                    self.lexer.pos             = saved_pos;
-                    self.lexer.line            = saved_line;
-                    self.lexer.col             = saved_col;
-                    self.lexer.current         = saved_cur;
-                    self.lexer.lookahead       = saved_look;
-                    self.lexer.has_lookahead   = saved_haslk;
-                    self.lexer.pushed_back     = saved_push;
-                    self.lexer.has_pushed_back = saved_haspb;
-                    self.lexer.seen_line_term  = saved_slt;
-                    self.pushback_count = saved_pb_count;
-                    self.pushback_stack = saved_pb_stack;
+                    self.restore_lhs_snapshot(lparen_snap);
                     self.inside_parens = saved_inside_parens;
                     return self.parse_arrow_function_reparse(lparen_pos)!;
                 }
 
                 // Not an arrow: restore lexer state and parse as grouping expression
-                self.lexer.pos             = saved_pos;
-                self.lexer.line            = saved_line;
-                self.lexer.col             = saved_col;
-                self.lexer.current         = saved_cur;
-                self.lexer.lookahead       = saved_look;
-                self.lexer.has_lookahead   = saved_haslk;
-                self.lexer.pushed_back     = saved_push;
-                self.lexer.has_pushed_back = saved_haspb;
-                self.lexer.seen_line_term  = saved_slt;
-                self.pushback_count = saved_pb_count;
-                self.pushback_stack = saved_pb_stack;
+                self.restore_lhs_snapshot(lparen_snap);
                 ushort inner2 = self.expression()!;
                 // A parenthesized expression is never a bare IdentifierReference,
                 // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
@@ -4299,32 +4233,25 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 bool is_arrow = self.scan_destruct_param_to_arrow();
 
                 if (is_arrow) {
-                    // Restore lexer to right after '(' for re-parse
-                    self.lexer.pos             = saved_pos;
-                    self.lexer.line            = saved_line;
-                    self.lexer.col             = saved_col;
-                    self.lexer.current         = saved_cur;
-                    self.lexer.lookahead       = saved_look;
-                    self.lexer.has_lookahead   = saved_haslk;
-                    self.lexer.pushed_back     = saved_push;
-                    self.lexer.has_pushed_back = saved_haspb;
-                    self.lexer.seen_line_term  = saved_slt;
+                    // Restore lexer to right after '(' for re-parse.
+                    // NOTE: deliberately not restore_lhs_snapshot() here —
+                    // unlike the other branches above, this one does not
+                    // restore pushback_count/pushback_stack.
+                    self.lexer.pos             = lparen_snap.pos;
+                    self.lexer.line            = lparen_snap.line;
+                    self.lexer.col             = lparen_snap.col;
+                    self.lexer.current         = lparen_snap.cur;
+                    self.lexer.lookahead       = lparen_snap.look;
+                    self.lexer.has_lookahead   = lparen_snap.haslk;
+                    self.lexer.pushed_back     = lparen_snap.push;
+                    self.lexer.has_pushed_back = lparen_snap.haspb;
+                    self.lexer.seen_line_term  = lparen_snap.slt;
                     self.inside_parens = saved_inside_parens;
                     return self.parse_arrow_function_reparse(lparen_pos)!;
                 }
 
                 // Not an arrow: restore lexer and parse as grouping expression
-                self.lexer.pos             = saved_pos;
-                self.lexer.line            = saved_line;
-                self.lexer.col             = saved_col;
-                self.lexer.current         = saved_cur;
-                self.lexer.lookahead       = saved_look;
-                self.lexer.has_lookahead   = saved_haslk;
-                self.lexer.pushed_back     = saved_push;
-                self.lexer.has_pushed_back = saved_haspb;
-                self.lexer.seen_line_term  = saved_slt;
-                self.pushback_count = saved_pb_count;
-                self.pushback_stack = saved_pb_stack;
+                self.restore_lhs_snapshot(lparen_snap);
                 ushort inner2 = self.expression()!;
                 // A parenthesized expression is never a bare IdentifierReference,
                 // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
