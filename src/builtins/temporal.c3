@@ -3475,7 +3475,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     bool is_blank = dur.years == 0 && dur.months == 0 && dur.weeks == 0 && dur.days == 0 &&
                     dur.hours == 0 && dur.minutes == 0 && dur.seconds == 0 &&
                     dur.ms == 0 && dur.us == 0 && dur.ns == 0;
-    if (is_blank) {
+    // A blank duration adds nothing, but AddZonedDateTime/CalendarDateAdd
+    // still run against relativeTo per spec, so a relativeTo outside the
+    // representable range must still throw. Only skip straight to 0 when
+    // there is no relativeTo to validate.
+    if (is_blank && relative_to == null) {
         ctx.result.set_number(0.0);
         return;
     }
@@ -3600,13 +3604,6 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         }
     }
 
-    if (!is_cal_unit(unit) && unit != TemporalUnit.DAY) {
-        long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
-        if (rel_days < -100000000L || rel_days > 100000000L) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
-            return;
-        }
-    }
     int128 time_only_ns = (int128)0;
     time_only_ns += (int128)dur.hours   * 3600000000000L;
     time_only_ns += (int128)dur.minutes *   60000000000L;
@@ -3633,6 +3630,30 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     if (dur.weeks != 0) target_date = temporal::add_days(target_date, dur.weeks * 7);
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
 
+    int128 rem_work = target_time_rem;
+    long tgt_h = (long)(rem_work / 3600000000000L); rem_work %= 3600000000000L;
+    long tgt_mi = (long)(rem_work / 60000000000L); rem_work %= 60000000000L;
+    long tgt_s = (long)(rem_work / 1000000000L); rem_work %= 1000000000L;
+    long tgt_ms = (long)(rem_work / 1000000L); rem_work %= 1000000L;
+    long tgt_us = (long)(rem_work / 1000L); rem_work %= 1000L;
+    long tgt_ns = (long)rem_work;
+
+    // DifferencePlainDateTimeWithTotal: if the two ISO date-times are equal
+    // (e.g. a blank duration), it returns 0 immediately -- before any range
+    // validation of either date-time runs. That short-circuit is why a
+    // relativeTo sitting exactly on an excluded boundary (a valid ISODate,
+    // but not a valid ISODateTime) still totals to 0 rather than throwing,
+    // and why the fraction-of-a-unit math below never runs (and can't leave
+    // a floating-point residual) when nothing changed.
+    bool datetimes_equal = target_date.y == rel_date.y && target_date.m == rel_date.m &&
+                           target_date.d == rel_date.d && tgt_h == rel_time.h && tgt_mi == rel_time.mi &&
+                           tgt_s == rel_time.s && tgt_ms == rel_time.ms && tgt_us == rel_time.us &&
+                           tgt_ns == rel_time.ns;
+    if (datetimes_equal) {
+        ctx.result.set_number(0.0);
+        return;
+    }
+
     if (!temporal::is_valid_iso_date(target_date.y, (int)target_date.m, (int)target_date.d) ||
         !temporal::is_valid_iso_date(rel_date.y, (int)rel_date.m, (int)rel_date.d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date outside representable range");
@@ -3648,13 +3669,13 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         }
     }
 
-    int128 rem_work = target_time_rem;
-    long tgt_h = (long)(rem_work / 3600000000000L); rem_work %= 3600000000000L;
-    long tgt_mi = (long)(rem_work / 60000000000L); rem_work %= 60000000000L;
-    long tgt_s = (long)(rem_work / 1000000000L); rem_work %= 1000000000L;
-    long tgt_ms = (long)(rem_work / 1000000L); rem_work %= 1000000L;
-    long tgt_us = (long)(rem_work / 1000L); rem_work %= 1000L;
-    long tgt_ns = (long)rem_work;
+    if (!is_cal_unit(unit) && unit != TemporalUnit.DAY) {
+        long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
+        if (rel_days < -100000000L || rel_days > 100000000L) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
+            return;
+        }
+    }
 
     if (!temporal::is_valid_iso_datetime(target_date.y, target_date.m, target_date.d, tgt_h, tgt_mi, tgt_s, tgt_ms, tgt_us, tgt_ns)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo + duration is out of range");
