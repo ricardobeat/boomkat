@@ -2063,6 +2063,32 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
         return;
     }
 
+    // Spec step 12: with a zoned relativeTo and a date-category largestUnit,
+    // each duration is added via AddZonedDateTime and the resulting instants
+    // are compared. That add is also the range check -- a duration that pushes
+    // the target past the representable instant range throws rather than
+    // comparing (test262 compare/throws-when-target-zoned-date-time-outside-
+    // valid-limits), and it gets the day lengths right in a zone with offset
+    // transitions.
+    // Step 12 is gated on TemporalUnitCategory(largestUnit) being "date" for
+    // at least one operand. A time-only pair (largestUnit hour or smaller)
+    // skips AddZonedDateTime entirely and compares elapsed nanoseconds, so a
+    // 5-minute duration relative to the maximum instant compares fine rather
+    // than throwing (test262 compare/relativeto-string-limits).
+    bool date_cat = is_date_unit(default_largest_unit(da)) || is_date_unit(default_largest_unit(db));
+    if (rel_is_zoned && date_cat) {
+        int128 after_a;
+        int128 after_b;
+        if (!add_zoned_datetime(relative_to, da, 1, temporal::OverflowKind.CONSTRAIN, &after_a) ||
+            !add_zoned_datetime(relative_to, db, 1, temporal::OverflowKind.CONSTRAIN, &after_b)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
+            return;
+        }
+        long zcmp = after_a < after_b ? -1 : (after_a > after_b ? 1 : 0);
+        ctx.result.set_number((double)zcmp);
+        return;
+    }
+
     // With relativeTo: add each duration's date part to relativeTo's date and
     // compute total nanoseconds relative to that same origin, then compare.
     CivilDate rel_date;
