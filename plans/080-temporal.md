@@ -829,3 +829,61 @@ Two were invisible to test262 and worth recording:
 
 The first is now covered by `test/temporal_duration_dst_spec.js`, which
 asserts the non-24-hour day lengths test262 never exercises.
+
+
+## Addendum 3 (2026-09-01) — layout and deduplication
+
+Note on earlier sections: references to `src/builtins/temporal.c3` as a
+single file are historical. It is now the directory
+`src/builtins/temporal/`.
+
+### The builtins layer is a directory
+
+The single file reached 14,470 lines. That size is not bloat — Temporal
+exposes 242 JS entry points, which account for 7,358 of those lines —
+but it split cleanly along the section banners it already carried, one
+file per type:
+
+| File | LOC | Owns |
+|---|---|---|
+| `shared.c3` | 1478 | coercion, allocation, options readers |
+| `duration.c3` | 1825 | Duration, incl. round/total |
+| `plaindate.c3` | 1041 | Calendar singleton + PlainDate |
+| `plaintime.c3` | 682 | |
+| `plaindatetime.c3` | 2031 | plus the shared difference/rounding paths |
+| `plainyearmonth.c3` | 974 | |
+| `plainmonthday.c3` | 865 | |
+| `instant.c3` | 1624 | incl. the BigInt ↔ int128 boundary |
+| `timezone.c3` | 303 | |
+| `zoneddatetime.c3` | 2529 | incl. `add_zoned_datetime` |
+| `now.c3` | 536 | |
+| `registration.c3` | 797 | the `setUpTemporal*` functions |
+
+Every file stays in `module boomkat::builtins`, so no symbol moved
+between modules and no call site changed. `project.json`'s sources entry
+is `"src"`, which is recursive, so no build change was needed.
+
+### Constants and shared primitives
+
+Two families of magic number were stated once each:
+
+- **`NS_PER_US/MS/SEC/MIN/HOUR/DAY`** in `units.c3`. The nanosecond
+  literals appeared at 293 sites, spelled inconsistently
+  (`3600000000000L` in some places, `3_600_000_000_000L` in others). A
+  mistyped zero count in a bare literal is a silent factor-of-ten bug;
+  a mistyped constant name does not compile.
+- **`INSTANT_MAX_DAYS` / `INSTANT_MAX_NS` / `epoch_days_in_range`** in
+  `instant.c3`. The ±1e8 epoch-day bound was hand-inlined at 30 sites in
+  the engine layer despite `INSTANT_MAX_NS` already existing. Every
+  zoned-relativeTo bug fixed in this branch was a mistake about exactly
+  this bound, so having one definition matters more than the line count.
+  `INSTANT_MAX_NS` is now derived from the day form so the two cannot
+  drift, and `is_instant_representable_date` wraps the predicate.
+
+`duration_time_part_ns` covers the hours-and-below sum that five sites
+re-inlined. They could not call `duration_to_time_ns` because that
+includes days at a flat 24 hours, which `AddTime` and `AddZonedDateTime`
+must not do; `duration_to_time_ns` is now days plus the time part.
+
+Sites left alone deliberately: `now_epoch_*` divides microseconds, not
+nanoseconds, so its literals are a different quantity.
