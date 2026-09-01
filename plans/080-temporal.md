@@ -468,11 +468,11 @@ The existing `OP_ADD` etc. handle the rare integer cases. Spec ops like
 - `src/lib/temporal/calendar.c3` — NEW, ~180 LOC. `add_days_to_date`,
   `add_months_to_date`, ISO 8601 / Gregorian arithmetic per polyfill
   spec.
-- `src/lib/temporal/duration.c3` — NEW, ~400 LOC. Duration value type,
-  arithmetic, balance, round, total. NOT YET BUILT: the arithmetic
-  currently lives in `src/builtins/temporal.c3` and `DurationParts` is
-  declared in `iso8601.c3`. See the 2026-09-01 addendum for the
-  measured inventory and the `units.c3` ordering constraint.
+- `src/lib/temporal/duration.c3` — 513 LOC. Duration value type,
+  arithmetic, balance, round, total. DONE (2026-09-01).
+- `src/lib/temporal/units.c3` — 276 LOC. `TemporalUnit` /
+  `TemporalRoundMode` and their pure predicates and rounding
+  primitives. DONE (2026-09-01).
 - `src/lib/temporal/instant.c3` — NEW, ~80 LOC. Instant + ns arithmetic.
 - `src/lib/temporal/tzdb.c3` — NEW, ~250 LOC. `$embed` + binary-search
   lookup.
@@ -770,3 +770,62 @@ side.
 Steps 3 and 4 are safest once step 2 has landed: the phase-26 count is
 the only real correctness signal for pure code motion, and it is most
 trustworthy at zero.
+
+
+## Addendum 2 (2026-09-01) — the split is done
+
+Phase 26 reached 4600/4600, and the pure/engine split the plan called
+for is complete.
+
+`src/builtins/temporal.c3` went from 15,520 to 14,488 lines and now
+contains **no pure functions at all**: every one of its 155 remaining
+helpers genuinely touches `BuiltinContext`, `HObject`, `TVal`, `Heap`,
+`HString` or `hbigint`. It is the JS binding layer — coercion,
+allocation, property access, error raising — and nothing else.
+
+Three commits, each pure code motion verified by the phase-26 count not
+moving:
+
+1. `units.c3` (276 LOC) — the enums plus 15 helpers. This had to come
+   first: most pure Duration arithmetic takes a `TemporalUnit` or a
+   `TemporalRoundMode`, so nothing else could move while they sat in
+   the engine.
+2. `duration.c3` (513 LOC) — `DurationParts` (lifted out of
+   `iso8601.c3`, where a formatting file had been holding the type)
+   plus its 17 arithmetic helpers.
+3. The last 15 helpers distributed into `civil.c3`, `iso8601.c3`,
+   `parse.c3`, `tzdb.c3` and `instant.c3` by topic.
+
+`scripts/check_temporal_standalone.sh` now exercises the Duration and
+unit surface as well as the calendar one, so the boundary is enforced
+rather than intended. The guard was verified to still fail as designed
+by injecting an engine import into `duration.c3`.
+
+### Why Duration was the one that rotted
+
+Duration was the only Temporal type whose arithmetic never left the
+engine layer, and it is where every precision and range bug in this
+round of work turned out to live. With no standalone surface, its
+int128/float64 conversion logic accumulated across a series of fixes
+that could only be validated through the full engine. The other value
+types, which had been pure from the start, produced none of these.
+
+### Bugs found along the way
+
+Two were invisible to test262 and worth recording:
+
+- `read_relative_to_option` downgraded a `ZonedDateTime` relativeTo to a
+  `PlainDateTime`, so `is_zdt` was permanently false and every zoned
+  branch in `Duration.{round,total,compare}` was dead code. Fixing it
+  exposed that the tz-aware arithmetic had never been written for
+  `total` at all: days were flat 24-hour spans. The correct algorithm
+  already existed in `zdt_add_sub` and is now shared as
+  `add_zoned_datetime`.
+- `builtin_to_number` and `json_parse_number` both guarded
+  `set_fastint` with the safe-integer range (±(2^53−1)) when the nanbox
+  payload is 48 bits (±2^47), silently corrupting
+  `Number("9007199254740991")` and `JSON.parse("9007199254740991")` to
+  `-1`. Engine-wide, unrelated to Temporal.
+
+The first is now covered by `test/temporal_duration_dst_spec.js`, which
+asserts the non-24-hour day lengths test262 never exercises.
