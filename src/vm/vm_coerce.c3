@@ -324,9 +324,9 @@ fn HObject* lightfunc_get_proto(Vm* vm, uint fn_idx) {
 // True when the builtin behind `fn_idx` is a constructor. Builtin FUNCTION
 // objects are allocated with flags.constructable=true by default, so the flag
 // cannot distinguish `new DataView(...)` from `new String.prototype.charAt`, so
-// classify by function index instead: the lightfunc constructor table plus the
-// constructors installed as full HObjects (typed arrays, ArrayBuffer,
-// DataView, Proxy).
+// classify by function index instead: the lightfunc constructor table, then
+// the enum's own `constructable` value for the constructors installed as full
+// HObjects (typed arrays, ArrayBuffer, DataView, Proxy, Temporal).
 fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
     // Host functions carry their own constructable flag. Tested before
     // lightfunc_get_proto, which would index its table with a host index.
@@ -338,47 +338,11 @@ fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
         return entry != null && entry.constructable;
     }
     if (lightfunc_get_proto(vm, fn_idx) != null) return true;
-    switch (fn_idx) {
-        case builtins::Builtin.INT8ARRAY.ordinal:
-        case builtins::Builtin.UINT8ARRAY.ordinal:
-        case builtins::Builtin.UINT8CLAMPEDARRAY.ordinal:
-        case builtins::Builtin.INT16ARRAY.ordinal:
-        case builtins::Builtin.UINT16ARRAY.ordinal:
-        case builtins::Builtin.INT32ARRAY.ordinal:
-        case builtins::Builtin.UINT32ARRAY.ordinal:
-        case builtins::Builtin.FLOAT16ARRAY.ordinal:
-        case builtins::Builtin.FLOAT32ARRAY.ordinal:
-        case builtins::Builtin.FLOAT64ARRAY.ordinal:
-        case builtins::Builtin.BIGINT64ARRAY.ordinal:
-        case builtins::Builtin.BIGUINT64ARRAY.ordinal:
-        case builtins::Builtin.ARRAYBUFFER.ordinal:
-        case builtins::Builtin.SHAREDARRAYBUFFER.ordinal:
-        case builtins::Builtin.DATAVIEW.ordinal:
-        case builtins::Builtin.PROXY.ordinal:
-        case builtins::Builtin.BIGINT.ordinal:
-            return true;
-        case builtins::Builtin.PROXY_CALL.ordinal:
-            // Callable proxy trampoline: constructability mirrors the proxy
-            // target and is checked via flags.constructable before dispatch.
-            return true;
-        case builtins::Builtin.ASYNC_FUNCTION.ordinal:
-        case builtins::Builtin.ASYNC_GENERATOR_FUNCTION.ordinal:
-            // %AsyncFunction% / %AsyncGeneratorFunction% intrinsic constructor.
-            return true;
-        case builtins::Builtin.TEMPORAL_PLAIN_DATE_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_PLAIN_TIME_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_PLAIN_DATETIME_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_PLAIN_YEARMONTH_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_PLAIN_MONTHDAY_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_CALENDAR_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_DURATION_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_INSTANT_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_TIMEZONE_CTOR.ordinal:
-        case builtins::Builtin.TEMPORAL_ZONEDDATETIME_CTOR.ordinal:
-            return true;
-        default:
-            return false;
-    }
+    // Everything else is answered by the Builtin enum's own `constructable`
+    // associated value, so adding a constructor is one field on its enum line
+    // rather than a new case in a switch living in another file.
+    if (fn_idx >= builtins::Builtin.LAST.ordinal) return false;
+    return ((builtins::Builtin)fn_idx).constructable;
 }
 
 fn TVal get_prop_with_proto(HObject* obj, void* key, Heap* h) {
