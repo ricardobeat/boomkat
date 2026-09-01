@@ -3868,6 +3868,17 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         unit_start = temporal::add_months(rel_date, r1, temporal::OverflowKind.CONSTRAIN);
         unit_end = temporal::add_months(rel_date, r1 + sign, temporal::OverflowKind.CONSTRAIN);
     }
+    // NudgeToCalendarUnit step 8 computes the increment-beyond boundary with
+    // CalendarDateAdd, which rejects a result outside the representable ISO
+    // range. add_months constrains silently instead, so check both boundaries
+    // explicitly: at the maximum date (+275760-09-13) one more year or month
+    // is not representable and total() must throw (test262 total/
+    // throws-if-date-time-invalid-with-plaindate-relative).
+    if (!temporal::is_valid_iso_date(unit_start.y, (int)unit_start.m, (int)unit_start.d) ||
+        !temporal::is_valid_iso_date(unit_end.y, (int)unit_end.m, (int)unit_end.d)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "rounded date outside valid ISO range");
+        return;
+    }
     long start_epoch = temporal::epoch_days_from_civil(unit_start.y, (int)unit_start.m, (int)unit_start.d);
     long end_epoch   = temporal::epoch_days_from_civil(unit_end.y, (int)unit_end.m, (int)unit_end.d);
     int128 unit_ns = (int128)(end_epoch - start_epoch) * 86400000000000L;
