@@ -1515,10 +1515,15 @@ fn void builtin_to_number(TVal* val, TVal* result) {
             return;
         case STRING: {
             double d = builtin_string_to_number((HString*)val.get_heapptr());
-            // Try fastint preservation, but not for -0 (fastint can't represent it)
+            // Try fastint preservation, but not for -0 (fastint can't represent it).
+            // The fastint payload is 48 bits (±2^47), narrower than
+            // MIN/MAX_SAFE_INT (±(2^53-1)): a safe-integer string like
+            // "2251799813685248" (2^51) satisfies the safe-integer bound but
+            // overflows the fastint tag, silently truncating through
+            // set_fastint's nanbox encoding.
             if (d != 0.0 || !math::signbit(d)) {
                 long fi = (long)d;
-                if ((double)fi == d && fi >= types::MIN_SAFE_INT && fi <= types::MAX_SAFE_INT) {
+                if ((double)fi == d && fi >= types::FASTINT_MIN && fi <= types::FASTINT_MAX) {
                     result.set_fastint(fi);
                     return;
                 }

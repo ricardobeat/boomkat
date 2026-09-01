@@ -3021,6 +3021,88 @@ fn int128 duration_to_time_ns(temporal::DurationParts d) {
     return ns;
 }
 
+// DivideNormalizedTimeDuration(d, divisor): the spec divides the exact
+// mathematical nanosecond total by divisor and converts to a Number in a
+// single step (only one rounding, to nearest, ties-to-even). Neither
+// `(double)num / (double)div` nor `whole + (double)rem / (double)div` matches
+// that: the first rounds num to a double *before* dividing (losing precision
+// once num exceeds 2^53, e.g. a >9e21ns total), and the second rounds the
+// quotient and the remainder/div term separately, then adds two already-
+// rounded doubles (wrong whenever the true fractional part sits near a
+// halfway point between representable doubles, test262
+// precision-exact-mathematical-values-6/7).
+//
+// This computes the quotient+remainder exactly in int128, then re-expands
+// the remainder into `shift` extra fractional bits (also exact, since
+// shifting and dividing integers loses nothing but a tracked sticky bit),
+// giving a single fixed-point integer that carries every bit of `num/div`
+// down to 2^-shift. Rounding that combined integer to 53 significant bits
+// with round-half-to-even (using the sticky bit to break exact-half ties
+// correctly) reproduces the one required rounding step.
+//
+// `shift` is chosen per call, not fixed, because a shift sized only for the
+// quotient's magnitude can starve the fraction of precision when the result
+// is small (a numerator as tiny as 1ns needs the shift to reach down near
+// its own leading bit before 53 more bits of precision beyond it) — and the
+// reverse fixed shift (large enough for tiny results) overflows int128 once
+// the quotient itself is large. `shift` is capped by both operands' own bit
+// widths so `quotient << shift` and `remainder << shift` each stay within
+// int128's 127-bit magnitude: IsValidDuration bounds |num| to just under
+// 2^53 * 10^9 (~2^83), and remainder is always < divisor (~2^47 at most, for
+// days), so this never has to trade one operand's headroom for the other's.
+fn int bit_length_i128(int128 v) {
+    int bits = 0;
+    int128 probe = v;
+    while (probe != (int128)0) { probe >>= 1; bits++; }
+    return bits;
+}
+
+// Exact `num / div` rounded to the nearest double (ties to even). `div` must
+// be positive; `num` may be negative, with the sign split off before the
+// exact-magnitude division.
+fn double divide_time_duration(int128 num, int128 div) {
+    if (num == (int128)0) return 0.0;
+    bool neg = num < (int128)0;
+    int128 mag = neg ? -num : num;
+    int128 d = div;
+    int128 q = mag / d;
+    int128 r = mag - q * d;
+    double result;
+    if (r == (int128)0) {
+        result = (double)q;
+    } else {
+        int bits_q = bit_length_i128(q);
+        int bits_r = bit_length_i128(r);
+        int shift = 126 - (bits_q > bits_r ? bits_q : bits_r);
+        if (shift < 1) shift = 1;
+        int128 scaled_r = r << shift;
+        int128 frac_q = scaled_r / d;
+        int128 frac_r = scaled_r - frac_q * d;
+        int128 combined = (q << shift) | frac_q;
+        bool sticky = frac_r != (int128)0;
+        int bits = bit_length_i128(combined);
+        if (bits <= 53) {
+            result = (double)combined / dtoa_pow2(shift);
+        } else {
+            int drop = bits - 53;
+            int128 keep = combined >> drop;
+            int128 rem = combined - (keep << drop);
+            int128 half = (int128)1 << (drop - 1);
+            bool round_up = rem > half ||
+                (rem == half && (sticky || (keep & (int128)1) != (int128)0));
+            if (round_up) keep += (int128)1;
+            result = (double)keep * dtoa_pow2(drop - shift);
+        }
+    }
+    return neg ? -result : result;
+}
+
+// 2^n as a double, n in [-127, 127] for the exponents divide_time_duration needs.
+fn double dtoa_pow2(int n) {
+    if (n >= 0) return (double)((int128)1 << n);
+    return 1.0 / (double)((int128)1 << (-n));
+}
+
 fn void decompose_ns(long ns, TemporalUnit largest, temporal::DurationParts* out) {
     long abs_ns = ns < 0 ? -ns : ns;
     long sign = ns < 0 ? -1 : 1;
@@ -3082,6 +3164,7 @@ fn long f64_field(long x) { return (long)(double)x; }
 // int128 remainder avoids the 64-bit overflow that a `long` count would hit.
 fn void decompose_ns_128(int128 ns, TemporalUnit largest, temporal::DurationParts* out) {
     long sign = ns < 0 ? -1 : 1;
+    double sign_d = (double)sign;
     int128 rem = ns < 0 ? -ns : ns;
     out.years = 0;
     out.months = 0;
@@ -3115,15 +3198,20 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, temporal::DurationPart
         out.seconds = sign * f64_field((long)(rem / 1000000000L));
         rem %= 1000000000L;
     }
+    // The largest field absorbs the full remaining magnitude once it's a
+    // sub-second unit, which can exceed long's 63-bit range (e.g. ~8.7e21
+    // microseconds, test262 precision-exact-in-balance-time-duration):
+    // convert straight from int128 via ℝ(𝔽()) rather than routing through a
+    // `long` that would silently wrap first.
     if (largest <= TemporalUnit.MILLISECOND) {
-        out.ms = (double)(sign * f64_field((long)(rem / 1000000L)));
+        out.ms = sign_d * (double)(rem / 1000000L);
         rem %= 1000000L;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
-        out.us = (double)(sign * f64_field((long)(rem / 1000L)));
+        out.us = sign_d * (double)(rem / 1000L);
         rem %= 1000L;
     }
-    out.ns = (double)(sign * f64_field((long)rem));
+    out.ns = sign_d * (double)rem;
 }
 
 // ============================================================================
@@ -3495,18 +3583,12 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         long div_ns = unit == TemporalUnit.DAY
             ? 86400000000000L
             : unit_ns_divisor(unit);
-        // Integer quotient + float64 remainder, so the total reflects the
-        // nanoseconds that the integer→float64 conversion would lose above
-        // 2^53 ns (Duration.prototype.total must expose the FP-loss result,
-        // matching the spec's `whole + remainder` shape).
-        // Keep whole in int128: `seconds * 1e9 + us * 1e3 + ns` can exceed
-        // LONG_MAX (e.g. 8692288669465520 s × 1e9 ns/s = 8.7e24 ns), and the
-        // spec requires the nearest-double result (test262
-        // precision-exact-mathematical-values-5..7).
-        int128 whole_i = time_ns / (int128)div_ns;
-        int128 rem_i = time_ns - whole_i * (int128)div_ns;
-        double rem_d = (double)rem_i / (double)div_ns;
-        ctx.result.set_number((double)whole_i + rem_d);
+        // DivideNormalizedTimeDuration divides the exact mathematical total
+        // by the divisor once, rounding straight to the nearest double; see
+        // divide_time_duration for why neither a plain int128→double cast-
+        // then-divide nor a `whole + rem/div` split reproduces that single
+        // rounding step (test262 precision-exact-mathematical-values-6/7).
+        ctx.result.set_number(divide_time_duration(time_ns, div_ns));
         return;
     }
     // Always compute and validate target datetime with relative_to:
@@ -3689,13 +3771,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         long div_ns = unit == TemporalUnit.DAY
             ? 86400000000000L
             : unit_ns_divisor(unit);
-        // Integer quotient + float64 remainder, matching the no-relativeTo
-        // path and exposing the FP-loss result for the precision tests.
-        // Hold `whole` in int128 so large durations don't overflow long.
-        int128 whole_i = time_ns / (int128)div_ns;
-        int128 rem_ns = time_ns - whole_i * (int128)div_ns;
-        double rem_d = (double)rem_ns / (double)div_ns;
-        ctx.result.set_number((double)whole_i + rem_d);
+        ctx.result.set_number(divide_time_duration(time_ns, div_ns));
         return;
     }
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
@@ -3718,18 +3794,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     int128 diff_ns = days_diff_ns + time_diff_ns;
     long divisor = unit_ns_divisor(unit);
     if (divisor > 0) {
-        // Integer quotient + float64 remainder preserves the sub-quantum ns.
-        int128 whole_i = diff_ns / (int128)divisor;
-        int128 rem_ns = diff_ns - whole_i * (int128)divisor;
-        double rem_d = (double)rem_ns / (double)divisor;
-        ctx.result.set_number((double)whole_i + rem_d);
+        ctx.result.set_number(divide_time_duration(diff_ns, divisor));
         return;
     }
     if (unit == TemporalUnit.DAY) {
-        int128 whole_i = diff_ns / (int128)86400000000000L;
-        int128 rem_ns = diff_ns - whole_i * (int128)86400000000000L;
-        double rem_d = (double)rem_ns / 86400000000000.0;
-        ctx.result.set_number((double)whole_i + rem_d);
+        ctx.result.set_number(divide_time_duration(diff_ns, 86400000000000L));
         return;
     }
     if (unit == TemporalUnit.WEEK) {
@@ -3738,10 +3807,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // (tgt_epoch - rel_epoch) drops any sub-day remainder, which is
         // wrong for total().
         long div_ns = 7L * 86400000000000L;
-        int128 whole_i = diff_ns / (int128)div_ns;
-        int128 rem_ns = diff_ns - whole_i * (int128)div_ns;
-        double rem_d = (double)rem_ns / (double)div_ns;
-        ctx.result.set_number((double)whole_i + rem_d);
+        ctx.result.set_number(divide_time_duration(diff_ns, div_ns));
         return;
     }
     // Re-decompose (relTo + duration) into the calendar-aware {years,
@@ -3788,11 +3854,13 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     int128 start_ns_offset = (int128)(start_epoch - rel_epoch) * 86400000000000L;
     int128 numerator = dest_ns - start_ns_offset;
     int128 total_num = unit_ns * (int128)r1 + numerator;
-    // Convert the full `r1 + numerator/unit_ns` to a Number in one cast,
-    // not as `(double)r1 + (double)numerator/(double)unit_ns` — the latter
-    // double-rounds and can land on the wrong adjacent double (test262
-    // precision-exact-mathematical-values-5..7).
-    ctx.result.set_number((double)total_num / (double)unit_ns);
+    // Convert the full `r1 + numerator/unit_ns` to a Number with the one
+    // rounding step TotalRelativeDuration's exact division requires — see
+    // divide_time_duration for why a plain int128→double cast-then-divide
+    // (or a `whole + rem/div` split) double-rounds and can land on the
+    // wrong adjacent double (test262 precision-exact-mathematical-values-5..7,
+    // relativeto-total-of-each-unit).
+    ctx.result.set_number(divide_time_duration(total_num, unit_ns));
 }
 
 // ============================================================================
