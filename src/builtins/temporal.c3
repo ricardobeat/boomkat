@@ -2052,7 +2052,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
     }
 
     if (relative_to == null) {
-        if (is_cal_unit(default_largest_unit(da)) || is_cal_unit(default_largest_unit(db))) {
+        if (temporal::is_cal_unit(default_largest_unit(da)) || temporal::is_cal_unit(default_largest_unit(db))) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is required to compare durations with calendar units");
             return;
         }
@@ -2075,7 +2075,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
     // skips AddZonedDateTime entirely and compares elapsed nanoseconds, so a
     // 5-minute duration relative to the maximum instant compares fine rather
     // than throwing (test262 compare/relativeto-string-limits).
-    bool date_cat = is_date_unit(default_largest_unit(da)) || is_date_unit(default_largest_unit(db));
+    bool date_cat = temporal::is_date_unit(default_largest_unit(da)) || temporal::is_date_unit(default_largest_unit(db));
     if (rel_is_zoned && date_cat) {
         int128 after_a;
         int128 after_b;
@@ -2102,7 +2102,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
                      .d = relative_to.extra.temporal.long_c };
     }
 
-    if (!is_cal_unit(default_largest_unit(da)) && !is_cal_unit(default_largest_unit(db))) {
+    if (!temporal::is_cal_unit(default_largest_unit(da)) && !temporal::is_cal_unit(default_largest_unit(db))) {
         int128 na = duration_to_time_ns(da);
         int128 nb = duration_to_time_ns(db);
         long cmp = na < nb ? -1 : (na > nb ? 1 : 0);
@@ -2253,9 +2253,9 @@ fn void builtin_temporal_duration_proto_abs(BuiltinContext* ctx) {
 // or below "second" — "minute", "hour", and any calendar unit are a
 // RangeError here. Options are read in the spec's alphabetical order:
 // fractionalSecondDigits, roundingMode, smallestUnit.
-fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalRoundMode* rm, long* incr_ns) {
+fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, temporal::TemporalRoundMode* rm, long* incr_ns) {
     *digits = -1;   // auto
-    *rm = TemporalRoundMode.TRUNC;
+    *rm = temporal::TemporalRoundMode.TRUNC;
     *incr_ns = 1;
     if (ctx.argc < 1) return true;
     TVal ov = ctx.regs[ctx.base_reg + 0];
@@ -2287,7 +2287,7 @@ fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalR
             // just the rendered precision: {fractionalSecondDigits: 6,
             // roundingMode: "ceil"} must round to 1us even without
             // smallestUnit.
-            *incr_ns = (*digits == 9) ? 1 : ns_pow10(9 - *digits);
+            *incr_ns = (*digits == 9) ? 1 : temporal::ns_pow10(9 - *digits);
         } else {
             HString* s = builtin_to_string_vm(ctx, &f);
             if (ctx.should_throw) return false;
@@ -2311,15 +2311,15 @@ fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, TemporalR
         if (ctx.should_throw) return false;
         if (rm_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "roundingMode must be a string"); return false; }
         char[] v = rm_s.get_cstr()[:rm_s.blen];
-        if (v == "ceil") { *rm = TemporalRoundMode.CEIL; }
-        else if (v == "floor") { *rm = TemporalRoundMode.FLOOR; }
-        else if (v == "expand") { *rm = TemporalRoundMode.EXPAND; }
-        else if (v == "trunc") { *rm = TemporalRoundMode.TRUNC; }
-        else if (v == "halfCeil") { *rm = TemporalRoundMode.HALF_CEIL; }
-        else if (v == "halfFloor") { *rm = TemporalRoundMode.HALF_FLOOR; }
-        else if (v == "halfExpand") { *rm = TemporalRoundMode.HALF_EXPAND; }
-        else if (v == "halfTrunc") { *rm = TemporalRoundMode.HALF_TRUNC; }
-        else if (v == "halfEven") { *rm = TemporalRoundMode.HALF_EVEN; }
+        if (v == "ceil") { *rm = temporal::TemporalRoundMode.CEIL; }
+        else if (v == "floor") { *rm = temporal::TemporalRoundMode.FLOOR; }
+        else if (v == "expand") { *rm = temporal::TemporalRoundMode.EXPAND; }
+        else if (v == "trunc") { *rm = temporal::TemporalRoundMode.TRUNC; }
+        else if (v == "halfCeil") { *rm = temporal::TemporalRoundMode.HALF_CEIL; }
+        else if (v == "halfFloor") { *rm = temporal::TemporalRoundMode.HALF_FLOOR; }
+        else if (v == "halfExpand") { *rm = temporal::TemporalRoundMode.HALF_EXPAND; }
+        else if (v == "halfTrunc") { *rm = temporal::TemporalRoundMode.HALF_TRUNC; }
+        else if (v == "halfEven") { *rm = temporal::TemporalRoundMode.HALF_EVEN; }
         else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode"); return false; }
     }
 
@@ -2347,7 +2347,7 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
     int digits;
-    TemporalRoundMode rm;
+    temporal::TemporalRoundMode rm;
     long incr_ns;
     if (!duration_to_string_precision(ctx, &digits, &rm, &incr_ns)) return;
 
@@ -2388,27 +2388,27 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     if (remv != 0) {
         bool round_up;
         switch (rm) {
-            case TemporalRoundMode.TRUNC:
-            case TemporalRoundMode.FLOOR: round_up = false; break;
-            case TemporalRoundMode.EXPAND:
-            case TemporalRoundMode.CEIL: round_up = true; break;
+            case temporal::TemporalRoundMode.TRUNC:
+            case temporal::TemporalRoundMode.FLOOR: round_up = false; break;
+            case temporal::TemporalRoundMode.EXPAND:
+            case temporal::TemporalRoundMode.CEIL: round_up = true; break;
             default: {
                 // Half-* modes: compare remainder against half the
                 // increment. mode_for_negative_magnitude flips ceil/floor
                 // bias for a negative-signed duration so half-ceil/half-floor
                 // remain magnitude-symmetric around zero (mirrors
                 // round_long_ns's handling elsewhere in this file).
-                TemporalRoundMode eff = sign_i < 0 ? mode_for_negative_magnitude(rm) : rm;
+                temporal::TemporalRoundMode eff = sign_i < 0 ? temporal::mode_for_negative_magnitude(rm) : rm;
                 int128 twice = remv * 2;
                 if (twice < incr) { round_up = false; }
                 else if (twice > incr) { round_up = true; }
                 else {
                     switch (eff) {
-                        case TemporalRoundMode.HALF_TRUNC:
-                        case TemporalRoundMode.HALF_FLOOR: round_up = false; break;
-                        case TemporalRoundMode.HALF_EXPAND:
-                        case TemporalRoundMode.HALF_CEIL: round_up = true; break;
-                        case TemporalRoundMode.HALF_EVEN: round_up = (q & 1) != 0; break;
+                        case temporal::TemporalRoundMode.HALF_TRUNC:
+                        case temporal::TemporalRoundMode.HALF_FLOOR: round_up = false; break;
+                        case temporal::TemporalRoundMode.HALF_EXPAND:
+                        case temporal::TemporalRoundMode.HALF_CEIL: round_up = true; break;
+                        case temporal::TemporalRoundMode.HALF_EVEN: round_up = (q & 1) != 0; break;
                         default: round_up = false; break;
                     }
                 }
@@ -2529,8 +2529,8 @@ fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationP
     // zero into whole units of largestUnit and the same-sign remainder fills
     // the columns below it, so {minutes:100,...} - {minutes:10,...} reports
     // 91m while P50DT50H + itself balances 100 of the 101 hours into days.
-    TemporalUnit largest = default_largest_unit(a);
-    TemporalUnit largest_b = default_largest_unit(b);
+    temporal::TemporalUnit largest = default_largest_unit(a);
+    temporal::TemporalUnit largest_b = default_largest_unit(b);
     if (largest_b < largest) largest = largest_b;
 
     // Spec TemporalDurationFromInternal produces the *unbalanced* form:
@@ -2550,27 +2550,27 @@ fn bool add_durations_no_relative(temporal::DurationParts a, temporal::DurationP
     out.hours = 0; out.minutes = 0; out.seconds = 0;
     out.ms = 0; out.us = 0; out.ns = 0;
     int128 rem = total_ns;
-    if (largest <= TemporalUnit.DAY) {
+    if (largest <= temporal::TemporalUnit.DAY) {
         out.days += (long)(rem / 86400000000000L);
         rem %= 86400000000000L;
     }
-    if (largest <= TemporalUnit.HOUR) {
+    if (largest <= temporal::TemporalUnit.HOUR) {
         out.hours = (long)(rem / 3600000000000L);
         rem %= 3600000000000L;
     }
-    if (largest <= TemporalUnit.MINUTE) {
+    if (largest <= temporal::TemporalUnit.MINUTE) {
         out.minutes = (long)(rem / 60000000000L);
         rem %= 60000000000L;
     }
-    if (largest <= TemporalUnit.SECOND) {
+    if (largest <= temporal::TemporalUnit.SECOND) {
         out.seconds = (long)(rem / 1000000000L);
         rem %= 1000000000L;
     }
-    if (largest <= TemporalUnit.MILLISECOND) {
+    if (largest <= temporal::TemporalUnit.MILLISECOND) {
         out.ms = (double)(rem / 1000000L);
         rem %= 1000000L;
     }
-    if (largest <= TemporalUnit.MICROSECOND) {
+    if (largest <= temporal::TemporalUnit.MICROSECOND) {
         out.us = (double)(rem / 1000L);
         rem %= 1000L;
     }
@@ -2729,59 +2729,23 @@ fn void builtin_temporal_duration_proto_valueOf(BuiltinContext* ctx) {
 // Duration.prototype.round / .total — unit, rounding, helpers
 // ============================================================================
 
-enum TemporalUnit : int {
-    YEAR, MONTH, WEEK, DAY,
-    HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND,
-}
 
-enum TemporalRoundMode : int {
-    CEIL, FLOOR, EXPAND, TRUNC,
-    HALF_CEIL, HALF_FLOOR, HALF_EXPAND, HALF_TRUNC, HALF_EVEN,
-}
 
-// spec's IsCalendarUnit: years/months/weeks only (used for plain-relativeTo
-// "calendar unit" branches that should NOT include days)
-fn bool is_cal_unit(TemporalUnit u) { return u <= TemporalUnit.WEEK; }
 
-// spec's TemporalUnitCategory == "date": years/months/weeks/days
-fn bool is_date_unit(TemporalUnit u) { return u <= TemporalUnit.DAY; }
 
-fn long unit_ns_divisor(TemporalUnit u) {
-    switch (u) {
-        case TemporalUnit.HOUR:        return 3600000000000L;
-        case TemporalUnit.MINUTE:      return   60000000000L;
-        case TemporalUnit.SECOND:      return    1000000000L;
-        case TemporalUnit.MILLISECOND: return       1000000L;
-        case TemporalUnit.MICROSECOND: return          1000L;
-        case TemporalUnit.NANOSECOND:  return             1L;
-        default: return 0;
-    }
-}
 
-fn long max_round_incr(TemporalUnit u) {
-    switch (u) {
-        case TemporalUnit.HOUR:        return 24;
-        case TemporalUnit.MINUTE:      return 60;
-        case TemporalUnit.SECOND:      return 60;
-        case TemporalUnit.MILLISECOND: return 1000;
-        case TemporalUnit.MICROSECOND: return 1000;
-        case TemporalUnit.NANOSECOND:  return 1000;
-        default: return 0;
-    }
-}
 
-fn TemporalUnit larger_unit(TemporalUnit a, TemporalUnit b) { return a < b ? a : b; }
 
 // Throws unless the increment is a legal divisor of the next-higher unit
 // (divides it evenly, and is not the full unit). Calendar units have no fixed
 // length, so any positive integer is accepted there. Returns false after
 // throwing.
-fn bool validate_rounding_increment(BuiltinContext* ctx, TemporalUnit unit, double increment) {
+fn bool validate_rounding_increment(BuiltinContext* ctx, temporal::TemporalUnit unit, double increment) {
     if (increment < 1.0 || increment > 1e9) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
         return false;
     }
-    long max_incr = max_round_incr(unit);
+    long max_incr = temporal::max_round_incr(unit);
     if (max_incr > 0) {
         if ((double)max_incr / increment != math::floor((double)max_incr / increment)
             || increment == (double)max_incr) {
@@ -2792,17 +2756,17 @@ fn bool validate_rounding_increment(BuiltinContext* ctx, TemporalUnit unit, doub
     return true;
 }
 
-fn TemporalUnit default_largest_unit(temporal::DurationParts d) {
-    if (d.years != 0)   return TemporalUnit.YEAR;
-    if (d.months != 0)  return TemporalUnit.MONTH;
-    if (d.weeks != 0)   return TemporalUnit.WEEK;
-    if (d.days != 0)    return TemporalUnit.DAY;
-    if (d.hours != 0)   return TemporalUnit.HOUR;
-    if (d.minutes != 0) return TemporalUnit.MINUTE;
-    if (d.seconds != 0) return TemporalUnit.SECOND;
-    if (d.ms != 0)      return TemporalUnit.MILLISECOND;
-    if (d.us != 0)      return TemporalUnit.MICROSECOND;
-    return TemporalUnit.NANOSECOND;
+fn temporal::TemporalUnit default_largest_unit(temporal::DurationParts d) {
+    if (d.years != 0)   return temporal::TemporalUnit.YEAR;
+    if (d.months != 0)  return temporal::TemporalUnit.MONTH;
+    if (d.weeks != 0)   return temporal::TemporalUnit.WEEK;
+    if (d.days != 0)    return temporal::TemporalUnit.DAY;
+    if (d.hours != 0)   return temporal::TemporalUnit.HOUR;
+    if (d.minutes != 0) return temporal::TemporalUnit.MINUTE;
+    if (d.seconds != 0) return temporal::TemporalUnit.SECOND;
+    if (d.ms != 0)      return temporal::TemporalUnit.MILLISECOND;
+    if (d.us != 0)      return temporal::TemporalUnit.MICROSECOND;
+    return temporal::TemporalUnit.NANOSECOND;
 }
 
 // Split a signed nanosecond count across the time units from `largest` down to
@@ -2811,25 +2775,25 @@ fn TemporalUnit default_largest_unit(temporal::DurationParts d) {
 //
 // Division truncates toward zero, so a negative count gives uniformly negative
 // fields, as a Duration requires.
-fn temporal::DurationParts time_ns_split(long v, TemporalUnit largest) {
+fn temporal::DurationParts time_ns_split(long v, temporal::TemporalUnit largest) {
     temporal::DurationParts dp = {};
-    if (largest <= TemporalUnit.HOUR) {
+    if (largest <= temporal::TemporalUnit.HOUR) {
         dp.hours = v / 3_600_000_000_000L;
         v %= 3_600_000_000_000L;
     }
-    if (largest <= TemporalUnit.MINUTE) {
+    if (largest <= temporal::TemporalUnit.MINUTE) {
         dp.minutes = v / 60_000_000_000L;
         v %= 60_000_000_000L;
     }
-    if (largest <= TemporalUnit.SECOND) {
+    if (largest <= temporal::TemporalUnit.SECOND) {
         dp.seconds = v / 1_000_000_000L;
         v %= 1_000_000_000L;
     }
-    if (largest <= TemporalUnit.MILLISECOND) {
+    if (largest <= temporal::TemporalUnit.MILLISECOND) {
         dp.ms = (double)(v / 1_000_000L);
         v %= 1_000_000L;
     }
-    if (largest <= TemporalUnit.MICROSECOND) {
+    if (largest <= temporal::TemporalUnit.MICROSECOND) {
         dp.us = (double)(v / 1000L);
         v %= 1000L;
     }
@@ -2837,97 +2801,8 @@ fn temporal::DurationParts time_ns_split(long v, TemporalUnit largest) {
     return dp;
 }
 
-// Round a signed nanosecond count to a multiple of `incr_ns`.
-//
-// until/since round by magnitude: "trunc" moves toward zero in both directions.
-// The rounding therefore runs on the absolute value, with the sign reapplied at
-// the end, and the direction-sensitive modes (ceil, floor and their half-*
-// forms) mirrored for a negative count.
-fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
-    bool neg = v < 0;
-    long mag = neg ? -v : v;
-    if (neg) mode = mode_for_negative_magnitude(mode);
 
-    long q = mag / incr_ns;
-    long r = mag - q * incr_ns;
-    if (r != 0) {
-        switch (mode) {
-            case TemporalRoundMode.TRUNC:
-            case TemporalRoundMode.FLOOR: break;
-            case TemporalRoundMode.EXPAND:
-            case TemporalRoundMode.CEIL: q += 1; break;
-            default: {
-                long twice = r * 2;
-                if (twice > incr_ns) {
-                    q += 1;
-                } else if (twice == incr_ns) {
-                    switch (mode) {
-                        case TemporalRoundMode.HALF_TRUNC:
-                        case TemporalRoundMode.HALF_FLOOR: break;
-                        case TemporalRoundMode.HALF_EXPAND:
-                        case TemporalRoundMode.HALF_CEIL: q += 1; break;
-                        case TemporalRoundMode.HALF_EVEN: if ((q & 1) != 0) q += 1; break;
-                        default: break;
-                    }
-                }
-                break;
-            }
-        }
-    }
-    long out = q * incr_ns;
-    return neg ? -out : out;
-}
 
-// int128 counterpart of round_long_ns, for nanosecond counts that exceed the
-// 64-bit range (~292 years). Same magnitude-first rounding, sign reapplied at
-// the end, direction-sensitive modes mirrored for a negative count.
-fn int128 round_long_ns_128(int128 v, int128 incr_ns, TemporalRoundMode mode) {
-    bool neg = v < 0;
-    int128 mag = neg ? -v : v;
-    if (neg) mode = mode_for_negative_magnitude(mode);
-
-    int128 q = mag / incr_ns;
-    int128 r = mag - q * incr_ns;
-    if (r != 0) {
-        switch (mode) {
-            case TemporalRoundMode.TRUNC:
-            case TemporalRoundMode.FLOOR: break;
-            case TemporalRoundMode.EXPAND:
-            case TemporalRoundMode.CEIL: q += 1; break;
-            default: {
-                int128 twice = r * 2;
-                if (twice > incr_ns) {
-                    q += 1;
-                } else if (twice == incr_ns) {
-                    switch (mode) {
-                        case TemporalRoundMode.HALF_TRUNC:
-                        case TemporalRoundMode.HALF_FLOOR: break;
-                        case TemporalRoundMode.HALF_EXPAND:
-                        case TemporalRoundMode.HALF_CEIL: q += 1; break;
-                        case TemporalRoundMode.HALF_EVEN: if ((q & 1) != 0) q += 1; break;
-                        default: break;
-                    }
-                }
-                break;
-            }
-        }
-    }
-    int128 out = q * incr_ns;
-    return neg ? -out : out;
-}
-
-// The mode giving the same result when applied to a negative value's magnitude.
-// On a magnitude, "toward negative infinity" means "toward zero", so ceil and
-// floor swap. trunc and expand are defined relative to zero and pass through.
-fn TemporalRoundMode mode_for_negative_magnitude(TemporalRoundMode m) {
-    switch (m) {
-        case TemporalRoundMode.CEIL:       return TemporalRoundMode.FLOOR;
-        case TemporalRoundMode.FLOOR:      return TemporalRoundMode.CEIL;
-        case TemporalRoundMode.HALF_CEIL:  return TemporalRoundMode.HALF_FLOOR;
-        case TemporalRoundMode.HALF_FLOOR: return TemporalRoundMode.HALF_CEIL;
-        default: return m;
-    }
-}
 
 // Inverse of civil_time_to_ns; the input must lie in [0, day).
 fn temporal::CivilTime civil_time_from_ns(long total) {
@@ -2941,99 +2816,9 @@ fn temporal::CivilTime civil_time_from_ns(long total) {
     return t;
 }
 
-// 10^e nanoseconds, for e in [0, 9]: the rounding increment that a
-// fractional-second digit count implies.
-fn long ns_pow10(int e) {
-    long v = 1;
-    for (int i = 0; i < e; i++) v *= 10;
-    return v;
-}
 
-fn bool parse_unit_str(char[] s, TemporalUnit* out) {
-    if (s == "year"  || s == "years")      { *out = TemporalUnit.YEAR; return true; }
-    if (s == "month" || s == "months")     { *out = TemporalUnit.MONTH; return true; }
-    if (s == "week"  || s == "weeks")      { *out = TemporalUnit.WEEK; return true; }
-    if (s == "day"   || s == "days")       { *out = TemporalUnit.DAY; return true; }
-    if (s == "hour"  || s == "hours")      { *out = TemporalUnit.HOUR; return true; }
-    if (s == "minute" || s == "minutes")   { *out = TemporalUnit.MINUTE; return true; }
-    if (s == "second" || s == "seconds")   { *out = TemporalUnit.SECOND; return true; }
-    if (s == "millisecond" || s == "milliseconds") { *out = TemporalUnit.MILLISECOND; return true; }
-    if (s == "microsecond" || s == "microseconds") { *out = TemporalUnit.MICROSECOND; return true; }
-    if (s == "nanosecond" || s == "nanoseconds")   { *out = TemporalUnit.NANOSECOND; return true; }
-    return false;
-}
 
-fn bool parse_rm_str(char[] s, TemporalRoundMode* out) {
-    if (s == "ceil")       { *out = TemporalRoundMode.CEIL; return true; }
-    if (s == "floor")      { *out = TemporalRoundMode.FLOOR; return true; }
-    if (s == "expand")     { *out = TemporalRoundMode.EXPAND; return true; }
-    if (s == "trunc")      { *out = TemporalRoundMode.TRUNC; return true; }
-    if (s == "halfCeil")   { *out = TemporalRoundMode.HALF_CEIL; return true; }
-    if (s == "halfFloor")  { *out = TemporalRoundMode.HALF_FLOOR; return true; }
-    if (s == "halfExpand") { *out = TemporalRoundMode.HALF_EXPAND; return true; }
-    if (s == "halfTrunc")  { *out = TemporalRoundMode.HALF_TRUNC; return true; }
-    if (s == "halfEven")   { *out = TemporalRoundMode.HALF_EVEN; return true; }
-    return false;
-}
 
-fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
-    if (incr == 1) {
-        // Round to nearest integer.
-        switch (mode) {
-            case TemporalRoundMode.CEIL:       return math::ceil(x);
-            case TemporalRoundMode.FLOOR:      return math::floor(x);
-            case TemporalRoundMode.EXPAND:     return (x >= 0) ? math::ceil(x) : math::floor(x);
-            case TemporalRoundMode.TRUNC:      return (x >= 0) ? math::floor(x) : math::ceil(x);
-            case TemporalRoundMode.HALF_CEIL:  { double f = math::floor(x); return (x - f >= 0.5) ? f + 1 : f; }
-            case TemporalRoundMode.HALF_FLOOR: { double f = math::floor(x); return (x - f > 0.5) ? f + 1 : f; }
-            case TemporalRoundMode.HALF_EXPAND: {
-                if (x >= 0) { double f = math::floor(x); return (x - f >= 0.5) ? f + 1 : f; }
-                double c = math::ceil(x); return (c - x >= 0.5) ? c - 1 : c;
-            }
-            case TemporalRoundMode.HALF_TRUNC: {
-                if (x >= 0) { double f = math::floor(x); return (x - f > 0.5) ? f + 1 : f; }
-                double c = math::ceil(x); return (c - x > 0.5) ? c - 1 : c;
-            }
-            case TemporalRoundMode.HALF_EVEN: {
-                double f = math::floor(x);
-                double frac = x - f;
-                if (frac < 0.5) return f;
-                if (frac > 0.5) return f + 1;
-                return (math::floor(f / 2) * 2 == f) ? f : f + 1;
-            }
-        }
-    }
-    double q = x / incr;
-    double r1, r2;
-    if (x >= 0) {
-        r1 = math::floor(q) * incr;
-        r2 = r1 + incr;
-    } else {
-        r2 = math::ceil(q) * incr;
-        r1 = r2 - incr;
-    }
-    double rem = x - r1;
-    switch (mode) {
-        case TemporalRoundMode.CEIL:       return r2;
-        case TemporalRoundMode.FLOOR:      return r1;
-        case TemporalRoundMode.EXPAND:     return (x >= 0) ? r2 : r1;
-        case TemporalRoundMode.TRUNC:      return (x >= 0) ? r1 : r2;
-        case TemporalRoundMode.HALF_CEIL:  return (rem >= incr / 2) ? r2 : r1;
-        case TemporalRoundMode.HALF_FLOOR: return (rem > incr / 2) ? r2 : r1;
-        case TemporalRoundMode.HALF_EXPAND: return ((x >= 0 ? rem >= incr / 2 : rem > incr / 2)) ? r2 : r1;
-        case TemporalRoundMode.HALF_TRUNC: return ((x >= 0 ? rem > incr / 2 : rem >= incr / 2)) ? r2 : r1;
-        case TemporalRoundMode.HALF_EVEN: {
-            double half = incr / 2;
-            if (rem < half) return r1;
-            if (rem > half) return r2;
-            // Tie: pick the multiple whose factor (qb) is even.
-            double qb = math::floor(q);
-            if (math::floor(qb / 2) * 2 == qb) return r1;
-            return r2;
-        }
-    }
-    return x;
-}
 
 fn int128 duration_to_time_ns(temporal::DurationParts d) {
     int128 ns = (int128)0;
@@ -3129,7 +2914,7 @@ fn double dtoa_pow2(int n) {
     return 1.0 / (double)((int128)1 << (-n));
 }
 
-fn void decompose_ns(long ns, TemporalUnit largest, temporal::DurationParts* out) {
+fn void decompose_ns(long ns, temporal::TemporalUnit largest, temporal::DurationParts* out) {
     long abs_ns = ns < 0 ? -ns : ns;
     long sign = ns < 0 ? -1 : 1;
     long rem = abs_ns;
@@ -3143,33 +2928,33 @@ fn void decompose_ns(long ns, TemporalUnit largest, temporal::DurationParts* out
     out.ms = 0;
     out.us = 0;
     out.ns = 0;
-    if (largest == TemporalUnit.DAY) {
+    if (largest == temporal::TemporalUnit.DAY) {
         out.days = sign * (long)(rem / 86400000000000L);
         rem %= 86400000000000L;
-    } else if (largest == TemporalUnit.WEEK) {
+    } else if (largest == temporal::TemporalUnit.WEEK) {
         long total_days = (long)(rem / 86400000000000L);
         rem %= 86400000000000L;
         out.weeks = sign * (total_days / 7);
         out.days = sign * (total_days % 7);
     }
     // Decompose time units only down to largest_unit.
-    if (largest <= TemporalUnit.HOUR) {
+    if (largest <= temporal::TemporalUnit.HOUR) {
         out.hours = sign * (long)(rem / 3600000000000L);
         rem %= 3600000000000L;
     }
-    if (largest <= TemporalUnit.MINUTE) {
+    if (largest <= temporal::TemporalUnit.MINUTE) {
         out.minutes = sign * (long)(rem / 60000000000L);
         rem %= 60000000000L;
     }
-    if (largest <= TemporalUnit.SECOND) {
+    if (largest <= temporal::TemporalUnit.SECOND) {
         out.seconds = sign * (long)(rem / 1000000000L);
         rem %= 1000000000L;
     }
-    if (largest <= TemporalUnit.MILLISECOND) {
+    if (largest <= temporal::TemporalUnit.MILLISECOND) {
         out.ms = (double)(sign * (long)(rem / 1000000L));
         rem %= 1000000L;
     }
-    if (largest <= TemporalUnit.MICROSECOND) {
+    if (largest <= temporal::TemporalUnit.MICROSECOND) {
         out.us = (double)(sign * (long)(rem / 1000L));
         rem %= 1000L;
     }
@@ -3188,7 +2973,7 @@ fn long f64_field(long x) { return (long)(double)x; }
 // longer than ~292 years in nanoseconds). Like decompose_ns it walks the unit
 // ladder from `largest` down; each field is ℝ(𝔽())-rounded and the middle
 // int128 remainder avoids the 64-bit overflow that a `long` count would hit.
-fn void decompose_ns_128(int128 ns, TemporalUnit largest, temporal::DurationParts* out) {
+fn void decompose_ns_128(int128 ns, temporal::TemporalUnit largest, temporal::DurationParts* out) {
     long sign = ns < 0 ? -1 : 1;
     double sign_d = (double)sign;
     int128 rem = ns < 0 ? -ns : ns;
@@ -3202,25 +2987,25 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, temporal::DurationPart
     out.ms = 0;
     out.us = 0;
     out.ns = 0;
-    if (largest == TemporalUnit.DAY) {
+    if (largest == temporal::TemporalUnit.DAY) {
         out.days = sign * (long)(rem / 86400000000000L);
         rem %= 86400000000000L;
-    } else if (largest == TemporalUnit.WEEK) {
+    } else if (largest == temporal::TemporalUnit.WEEK) {
         int128 total_days = rem / 86400000000000L;
         rem %= 86400000000000L;
         out.weeks = sign * (long)(total_days / 7);
         out.days = sign * (long)(total_days % 7);
     }
     // Decompose time units only down to largest_unit.
-    if (largest <= TemporalUnit.HOUR) {
+    if (largest <= temporal::TemporalUnit.HOUR) {
         out.hours = sign * f64_field((long)(rem / 3600000000000L));
         rem %= 3600000000000L;
     }
-    if (largest <= TemporalUnit.MINUTE) {
+    if (largest <= temporal::TemporalUnit.MINUTE) {
         out.minutes = sign * f64_field((long)(rem / 60000000000L));
         rem %= 60000000000L;
     }
-    if (largest <= TemporalUnit.SECOND) {
+    if (largest <= temporal::TemporalUnit.SECOND) {
         out.seconds = sign * f64_field((long)(rem / 1000000000L));
         rem %= 1000000000L;
     }
@@ -3229,11 +3014,11 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, temporal::DurationPart
     // microseconds, test262 precision-exact-in-balance-time-duration):
     // convert straight from int128 via ℝ(𝔽()) rather than routing through a
     // `long` that would silently wrap first.
-    if (largest <= TemporalUnit.MILLISECOND) {
+    if (largest <= temporal::TemporalUnit.MILLISECOND) {
         out.ms = sign_d * (double)(rem / 1000000L);
         rem %= 1000000L;
     }
-    if (largest <= TemporalUnit.MICROSECOND) {
+    if (largest <= temporal::TemporalUnit.MICROSECOND) {
         out.us = sign_d * (double)(rem / 1000L);
         rem %= 1000L;
     }
@@ -3260,12 +3045,12 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         return;
     }
     HObject* opts = null;
-    TemporalUnit smallest_unit = TemporalUnit.NANOSECOND;
+    temporal::TemporalUnit smallest_unit = temporal::TemporalUnit.NANOSECOND;
     bool smallest_was_set = false;
-    TemporalUnit largest_unit = TemporalUnit.NANOSECOND;
+    temporal::TemporalUnit largest_unit = temporal::TemporalUnit.NANOSECOND;
     bool largest_was_set = false;
     double rounding_increment = 1;
-    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+    temporal::TemporalRoundMode rounding_mode = temporal::TemporalRoundMode.HALF_EXPAND;
     HObject* relative_to = null;
     bool rel_is_zoned = false;
     bool largest_provided = false;
@@ -3273,7 +3058,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     if (string_shorthand) {
         HString* ss = builtin_to_string_vm(ctx, round_to);
         if (ctx.should_throw) return;
-        if (!parse_unit_str(ss.get_cstr()[:ss.blen], &smallest_unit)) {
+        if (!temporal::parse_unit_str(ss.get_cstr()[:ss.blen], &smallest_unit)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
             return;
         }
@@ -3293,7 +3078,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             char[] lu_str = lu_s.get_cstr()[:lu_s.blen];
             if (lu_str != "auto") {
                 largest_was_set = true;
-                if (!parse_unit_str(lu_str, &largest_unit)) {
+                if (!temporal::parse_unit_str(lu_str, &largest_unit)) {
                     builtin_throw(ctx, ctx.heap.range_err_proto, "invalid largestUnit");
                     return;
                 }
@@ -3322,7 +3107,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         if (!rm_tv.is_undefined()) {
             HString* rm_s = builtin_to_string_vm(ctx, &rm_tv);
             if (ctx.should_throw) return;
-            if (!parse_rm_str(rm_s.get_cstr()[:rm_s.blen], &rounding_mode)) {
+            if (!temporal::parse_rm_str(rm_s.get_cstr()[:rm_s.blen], &rounding_mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -3333,27 +3118,27 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             smallest_was_set = true;
             HString* su_s = builtin_to_string_vm(ctx, &su_tv);
             if (ctx.should_throw) return;
-            if (!parse_unit_str(su_s.get_cstr()[:su_s.blen], &smallest_unit)) {
+            if (!temporal::parse_unit_str(su_s.get_cstr()[:su_s.blen], &smallest_unit)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
             }
         }
     }
 
-    TemporalUnit existing = default_largest_unit(dur);
-    TemporalUnit default_lu = larger_unit(existing, smallest_unit);
+    temporal::TemporalUnit existing = default_largest_unit(dur);
+    temporal::TemporalUnit default_lu = temporal::larger_unit(existing, smallest_unit);
     if (!largest_was_set) largest_unit = default_lu;
 
     if (!smallest_was_set && !largest_provided) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "at least one of smallestUnit or largestUnit must be provided");
         return;
     }
-    if (larger_unit(largest_unit, smallest_unit) != largest_unit) {
+    if (temporal::larger_unit(largest_unit, smallest_unit) != largest_unit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit must not be smaller than smallestUnit");
         return;
     }
     if (!validate_rounding_increment(ctx, smallest_unit, rounding_increment)) return;
-    if (rounding_increment > 1 && largest_unit != smallest_unit && is_date_unit(smallest_unit)) {
+    if (rounding_increment > 1 && largest_unit != smallest_unit && temporal::is_date_unit(smallest_unit)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement > 1 is not allowed with calendar smallestUnit unless largestUnit equals smallestUnit");
         return;
     }
@@ -3361,8 +3146,8 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     bool is_blank = dur.years == 0 && dur.months == 0 && dur.weeks == 0 && dur.days == 0 &&
                     dur.hours == 0 && dur.minutes == 0 && dur.seconds == 0 &&
                     dur.ms == 0 && dur.us == 0 && dur.ns == 0;
-    if (is_blank && !is_cal_unit(smallest_unit) && smallest_unit != TemporalUnit.DAY &&
-                    !is_cal_unit(largest_unit) && largest_unit != TemporalUnit.DAY) {
+    if (is_blank && !temporal::is_cal_unit(smallest_unit) && smallest_unit != temporal::TemporalUnit.DAY &&
+                    !temporal::is_cal_unit(largest_unit) && largest_unit != temporal::TemporalUnit.DAY) {
         temporal::DurationParts zero_dur = {};
         HObject*? obj_o = alloc_duration(ctx.heap, zero_dur);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -3374,7 +3159,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
 
     // No-relativeTo: time-only path.
     if (relative_to == null) {
-        if (is_cal_unit(existing) || is_cal_unit(largest_unit)) {
+        if (temporal::is_cal_unit(existing) || temporal::is_cal_unit(largest_unit)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is required for calendar units");
             return;
         }
@@ -3383,7 +3168,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         // duration (RoundNumberToIncrement on nanoseconds); rounding stays in
         // int128 so a duration longer than ~292 years does not overflow a
         // 64-bit count, and the ℝ(𝔽()) precision loss lands at decomposition.
-        long divisor = (smallest_unit == TemporalUnit.DAY) ? 86400000000000L : unit_ns_divisor(smallest_unit);
+        long divisor = (smallest_unit == temporal::TemporalUnit.DAY) ? 86400000000000L : temporal::unit_ns_divisor(smallest_unit);
         int128 incr_ns = (int128)rounding_increment * (int128)divisor;
         if (incr_ns <= 0) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement too large");
@@ -3393,7 +3178,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         if (incr_ns == 1) {
             rounded_ns = time_ns;
         } else {
-            rounded_ns = round_long_ns_128(time_ns, incr_ns, rounding_mode);
+            rounded_ns = temporal::round_long_ns_128(time_ns, incr_ns, rounding_mode);
         }
         temporal::DurationParts result;
         decompose_ns_128(rounded_ns, largest_unit, &result);
@@ -3456,8 +3241,8 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         // instead, which derives its own boundary and must not be pre-empted
         // here -- doing so throws for the blank-duration cases in
         // round/relativeto-date-limits.
-        if (largest_unit == TemporalUnit.DAY &&
-            !is_cal_unit(smallest_unit) && smallest_unit != TemporalUnit.DAY) {
+        if (largest_unit == temporal::TemporalUnit.DAY &&
+            !temporal::is_cal_unit(smallest_unit) && smallest_unit != temporal::TemporalUnit.DAY) {
             bool neg = dur.years < 0 || dur.months < 0 || dur.weeks < 0 || dur.days < 0 ||
                        dur.hours < 0 || dur.minutes < 0 || dur.seconds < 0 ||
                        dur.ms < 0 || dur.us < 0 || dur.ns < 0;
@@ -3484,7 +3269,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     // range (the minimum date -271821-04-19) rounds a blank duration to zero
     // but still throws for a non-blank one. test262 round/relativeto-date-
     // limits covers the first, round/relativeto-string-limits the second.
-    if (!is_blank && !is_cal_unit(smallest_unit) && smallest_unit != TemporalUnit.DAY) {
+    if (!is_blank && !temporal::is_cal_unit(smallest_unit) && smallest_unit != temporal::TemporalUnit.DAY) {
         long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
         if (rel_days < -100000000L || rel_days > 100000000L) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
@@ -3593,14 +3378,14 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         return;
     }
     HObject* opts = null;
-    TemporalUnit unit = TemporalUnit.NANOSECOND;
+    temporal::TemporalUnit unit = temporal::TemporalUnit.NANOSECOND;
     HObject* relative_to = null;
     bool rel_is_zoned = false;
 
     if (string_shorthand) {
         HString* ss = builtin_to_string_vm(ctx, total_of);
         if (ctx.should_throw) return;
-        if (!parse_unit_str(ss.get_cstr()[:ss.blen], &unit)) {
+        if (!temporal::parse_unit_str(ss.get_cstr()[:ss.blen], &unit)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid unit");
             return;
         }
@@ -3624,7 +3409,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         }
         HString* unit_s = builtin_to_string_vm(ctx, &unit_tv);
         if (ctx.should_throw) return;
-        if (!parse_unit_str(unit_s.get_cstr()[:unit_s.blen], &unit)) {
+        if (!temporal::parse_unit_str(unit_s.get_cstr()[:unit_s.blen], &unit)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid unit");
             return;
         }
@@ -3642,16 +3427,16 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         return;
     }
 
-    TemporalUnit existing = default_largest_unit(dur);
+    temporal::TemporalUnit existing = default_largest_unit(dur);
     if (relative_to == null) {
-        if (is_cal_unit(existing) || is_cal_unit(unit)) {
+        if (temporal::is_cal_unit(existing) || temporal::is_cal_unit(unit)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is required for calendar units");
             return;
         }
         int128 time_ns = duration_to_time_ns(dur);
-        long div_ns = unit == TemporalUnit.DAY
+        long div_ns = unit == temporal::TemporalUnit.DAY
             ? 86400000000000L
-            : unit_ns_divisor(unit);
+            : temporal::unit_ns_divisor(unit);
         // DivideNormalizedTimeDuration divides the exact mathematical total
         // by the divisor once, rounding straight to the nearest double; see
         // divide_time_duration for why neither a plain int128→double cast-
@@ -3679,7 +3464,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
         }
-        if (unit == TemporalUnit.DAY || unit == TemporalUnit.WEEK || unit == TemporalUnit.MONTH || unit == TemporalUnit.YEAR) {
+        if (unit == temporal::TemporalUnit.DAY || unit == temporal::TemporalUnit.WEEK || unit == temporal::TemporalUnit.MONTH || unit == temporal::TemporalUnit.YEAR) {
             int128 one_day_ns = (int128)86400000000000L;
             bool is_neg = dur.years < 0 || dur.months < 0 || dur.weeks < 0 || dur.days < 0 ||
                           dur.hours < 0 || dur.minutes < 0 || dur.seconds < 0 || dur.ms < 0 || dur.us < 0 || dur.ns < 0;
@@ -3697,7 +3482,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // calendar days resolved against the zone, not a flat 24 hours, so
         // the total has to be measured on the instant axis via
         // AddZonedDateTime rather than by the shared uniform-day path below.
-        if (!is_cal_unit(unit)) {
+        if (!temporal::is_cal_unit(unit)) {
             int128 target_ns;
             if (!add_zoned_datetime(relative_to, dur, 1, temporal::OverflowKind.CONSTRAIN, &target_ns)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
@@ -3705,9 +3490,9 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
             }
             int128 elapsed = target_ns - start_ns;
 
-            if (unit != TemporalUnit.DAY) {
+            if (unit != temporal::TemporalUnit.DAY) {
                 // Hours and below are uniform on the instant axis.
-                long div_ns = unit_ns_divisor(unit);
+                long div_ns = temporal::unit_ns_divisor(unit);
                 int128 whole = elapsed / (int128)div_ns;
                 int128 rem = elapsed - whole * (int128)div_ns;
                 ctx.result.set_number((double)whole + (double)rem / (double)div_ns);
@@ -3821,7 +3606,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         }
     }
 
-    if (!is_cal_unit(unit) && unit != TemporalUnit.DAY) {
+    if (!temporal::is_cal_unit(unit) && unit != temporal::TemporalUnit.DAY) {
         long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
         if (rel_days < -100000000L || rel_days > 100000000L) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
@@ -3835,11 +3620,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     }
 
     bool has_cal = dur.years != 0 || dur.months != 0 || dur.weeks != 0;
-    if (!is_cal_unit(unit) && !has_cal) {
+    if (!temporal::is_cal_unit(unit) && !has_cal) {
         int128 time_ns = duration_to_time_ns(dur);
-        long div_ns = unit == TemporalUnit.DAY
+        long div_ns = unit == temporal::TemporalUnit.DAY
             ? 86400000000000L
-            : unit_ns_divisor(unit);
+            : temporal::unit_ns_divisor(unit);
         ctx.result.set_number(divide_time_duration(time_ns, div_ns));
         return;
     }
@@ -3861,16 +3646,16 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         time_diff_ns += 86400000000000L;
     }
     int128 diff_ns = days_diff_ns + time_diff_ns;
-    long divisor = unit_ns_divisor(unit);
+    long divisor = temporal::unit_ns_divisor(unit);
     if (divisor > 0) {
         ctx.result.set_number(divide_time_duration(diff_ns, divisor));
         return;
     }
-    if (unit == TemporalUnit.DAY) {
+    if (unit == temporal::TemporalUnit.DAY) {
         ctx.result.set_number(divide_time_duration(diff_ns, 86400000000000L));
         return;
     }
-    if (unit == TemporalUnit.WEEK) {
+    if (unit == temporal::TemporalUnit.WEEK) {
         // Include the time remainder (target_time_rem) so 10 days 12 hours
         // reports as 1.5 weeks, not 1.42857 (= 10/7). The plain day count
         // (tgt_epoch - rel_epoch) drops any sub-day remainder, which is
@@ -3885,12 +3670,12 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     // than only what's in the input duration's years/months fields. Without
     // this, an `until()` that defaulted to days gives r1 = 0 even for a
     // multi-year span and the formula collapses to diff_ns / unit_ns.
-    if (unit != TemporalUnit.MONTH && unit != TemporalUnit.YEAR) {
+    if (unit != temporal::TemporalUnit.MONTH && unit != temporal::TemporalUnit.YEAR) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "unsupported unit for total");
         return;
     }
     temporal::DateDifference dd;
-    if (unit == TemporalUnit.YEAR) {
+    if (unit == temporal::TemporalUnit.YEAR) {
         dd = temporal::difference_date(rel_date, target_date, temporal::DifferenceUnit.YEARS);
     } else {
         dd = temporal::difference_date(rel_date, target_date, temporal::DifferenceUnit.MONTHS);
@@ -3902,7 +3687,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         ? 1 : -1;
     CivilDate unit_start;
     CivilDate unit_end;
-    if (unit == TemporalUnit.YEAR) {
+    if (unit == temporal::TemporalUnit.YEAR) {
         r1 = dd.years;
         unit_start = temporal::add_months(rel_date, r1 * 12, temporal::OverflowKind.CONSTRAIN);
         unit_end = temporal::add_months(rel_date, (r1 + sign) * 12, temporal::OverflowKind.CONSTRAIN);
@@ -4909,8 +4694,8 @@ fn void plain_date_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     // because the internal computation runs in the positive direction
     // regardless of operation and the sign is flipped at the end.
     DiffSettings ds;
-    if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.DAY,
-                            TemporalUnit.DAY, TemporalUnit.DAY, flipped, &ds)) return;
+    if (!read_diff_settings(ctx, 1, temporal::TemporalUnit.YEAR, temporal::TemporalUnit.DAY,
+                            temporal::TemporalUnit.DAY, temporal::TemporalUnit.DAY, flipped, &ds)) return;
     temporal::CivilDate a = plain_date_value(obj);
     temporal::CivilDate b = plain_date_value(other);
     temporal::CivilDateTime start = { .date = a };
@@ -5209,7 +4994,7 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     // order-of-operations log). The smallestUnit branch is encoded as
     // sentinel -10 (minute), 0 (second), 3/6/9 (sub-second).
     int digits = -1;
-    TemporalRoundMode rm = TemporalRoundMode.TRUNC;
+    temporal::TemporalRoundMode rm = temporal::TemporalRoundMode.TRUNC;
     if (!to_string_precision(ctx, 0, &digits, &rm, false, null)) return;
 
     int ns_digits;
@@ -5228,12 +5013,12 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     if (ns_digits == -12) {
         unit_ns = 60000000000L;
     } else if (ns_digits >= 0 && ns_digits < 9) {
-        unit_ns = ns_pow10(9 - ns_digits);
+        unit_ns = temporal::ns_pow10(9 - ns_digits);
     } else if (ns_digits == 9) {
         unit_ns = 1;
     }
     if (unit_ns > 1) {
-        long total = round_long_ns(civil_time_to_ns(t), unit_ns, rm);
+        long total = temporal::round_long_ns(civil_time_to_ns(t), unit_ns, rm);
         if (total >= 86400000000000L) total -= 86400000000000L;
         t = civil_time_from_ns(total);
     }
@@ -5483,8 +5268,8 @@ fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
 
     // PlainTime carries no date, so only hour-and-finer units are accepted.
     DiffSettings ds;
-    if (!read_diff_settings(ctx, 1, TemporalUnit.HOUR, TemporalUnit.NANOSECOND,
-                            TemporalUnit.HOUR, TemporalUnit.NANOSECOND, false, &ds)) return;
+    if (!read_diff_settings(ctx, 1, temporal::TemporalUnit.HOUR, temporal::TemporalUnit.NANOSECOND,
+                            temporal::TemporalUnit.HOUR, temporal::TemporalUnit.NANOSECOND, false, &ds)) return;
 
     temporal::CivilTime a = plain_time_value(obj);
     temporal::CivilTime b = plain_time_value(other);
@@ -5498,8 +5283,8 @@ fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
                   + (long)end.ms  * 1_000_000L + (long)end.us  * 1000L + (long)end.ns;
     long delta = end_ns - start_ns;
 
-    long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
-    if (incr_ns > 1) delta = round_long_ns(delta, incr_ns, ds.mode);
+    long incr_ns = temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment;
+    if (incr_ns > 1) delta = temporal::round_long_ns(delta, incr_ns, ds.mode);
 
     temporal::DurationParts dur = time_ns_split(delta, ds.largest);
 
@@ -5520,17 +5305,17 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
     HObject* self = (HObject*)this_val.get_heapptr();
     TVal* round_to = arg_at(ctx, 0);
     HObject* opts = null;
-    TemporalUnit smallest_unit = TemporalUnit.NANOSECOND;
+    temporal::TemporalUnit smallest_unit = temporal::TemporalUnit.NANOSECOND;
     bool smallest_given = false;
     double rounding_increment = 1;
-    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+    temporal::TemporalRoundMode rounding_mode = temporal::TemporalRoundMode.HALF_EXPAND;
     if (!round_to.is_object() || round_to.get_heapptr() == null) {
         // String shorthand: smallestUnit = the string.
         if (round_to.is_string() || (round_to.is_object() && round_to.get_heapptr() != null && !((HObject*)round_to.get_heapptr()).flags.callable)) {
             HString* s = builtin_to_string_vm(ctx, round_to);
             if (ctx.should_throw) return;
             char[] str = s.get_cstr()[:s.blen];
-            if (!parse_unit_str(str, &smallest_unit) || smallest_unit < TemporalUnit.HOUR) {
+            if (!temporal::parse_unit_str(str, &smallest_unit) || smallest_unit < temporal::TemporalUnit.HOUR) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
             }
@@ -5562,7 +5347,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
         if (!rm_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &rm_v);
             if (ctx.should_throw) return;
-            if (!parse_rm_str(s.get_cstr()[:s.blen], &rounding_mode)) {
+            if (!temporal::parse_rm_str(s.get_cstr()[:s.blen], &rounding_mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -5572,7 +5357,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
         if (!su_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &su_v);
             if (ctx.should_throw) return;
-            if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.HOUR) {
+            if (!temporal::parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < temporal::TemporalUnit.HOUR) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
             }
@@ -5583,7 +5368,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option");
         return;
     }
-    long max_incr = max_round_incr(smallest_unit);
+    long max_incr = temporal::max_round_incr(smallest_unit);
     if (max_incr > 0 && (rounding_increment > (double)max_incr
         || (double)max_incr / rounding_increment != math::floor((double)max_incr / rounding_increment)
         || rounding_increment == (double)max_incr)) {
@@ -5591,7 +5376,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
         return;
     }
 
-    long divisor = unit_ns_divisor(smallest_unit);
+    long divisor = temporal::unit_ns_divisor(smallest_unit);
     long incr_ns = divisor * (long)rounding_increment;
     // PlainTime stores its fields directly. Build the total ns value:
     long h = self.extra.temporal.long_a;
@@ -5602,7 +5387,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
     long ns = self.extra.temporal.long_f;
     long total_ns = h * 3600000000000L + m * 60000000000L + s * 1000000000L
                   + ms * 1000000L + us * 1000L + ns;
-    long rounded = round_long_ns(total_ns, incr_ns, rounding_mode);
+    long rounded = temporal::round_long_ns(total_ns, incr_ns, rounding_mode);
     temporal::BrokenDownTime bd = temporal::civil_from_seconds(rounded / 1000000000L);
     int rh = bd.h;
     long rem = rounded - (rounded / 1000000000L) * 1000000000L;
@@ -6337,7 +6122,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
     int ns_digits = -1;
     bool show_calendar = false;
     bool critical = false;
-    TemporalRoundMode rm = TemporalRoundMode.TRUNC;
+    temporal::TemporalRoundMode rm = temporal::TemporalRoundMode.TRUNC;
     if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
         TVal ov = ctx.regs[ctx.base_reg];
         if (!ov.is_object() || ov.get_heapptr() == null) {
@@ -6439,7 +6224,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         }
         if (rm_s != null) {
             char[] v = rm_s.get_cstr()[:rm_s.blen];
-            if (!parse_rm_str(v, &rm)) {
+            if (!temporal::parse_rm_str(v, &rm)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -6473,12 +6258,12 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
     if (ns_digits == -12) {
         unit_ns = 60000000000L;
     } else if (ns_digits >= 0 && ns_digits < 9) {
-        unit_ns = ns_pow10(9 - ns_digits);
+        unit_ns = temporal::ns_pow10(9 - ns_digits);
     } else if (ns_digits == 9) {
         unit_ns = 1;
     }
     if (unit_ns > 1) {
-        long total = round_long_ns(civil_time_to_ns(dt.time), unit_ns, rm);
+        long total = temporal::round_long_ns(civil_time_to_ns(dt.time), unit_ns, rm);
         if (total >= 86400000000000L) {
             total -= 86400000000000L;
             dt.date = temporal::civil_date_from_epoch_days(
@@ -7034,17 +6819,17 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
     HObject* self = (HObject*)this_val.get_heapptr();
     TVal* round_to = arg_at(ctx, 0);
     HObject* opts = null;
-    TemporalUnit smallest_unit = TemporalUnit.NANOSECOND;
+    temporal::TemporalUnit smallest_unit = temporal::TemporalUnit.NANOSECOND;
     bool smallest_given = false;
     double rounding_increment = 1;
-    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+    temporal::TemporalRoundMode rounding_mode = temporal::TemporalRoundMode.HALF_EXPAND;
     if (!round_to.is_object() || round_to.get_heapptr() == null) {
         // String shorthand: smallestUnit = the string.
         if (round_to.is_string() || (round_to.is_object() && round_to.get_heapptr() != null && !((HObject*)round_to.get_heapptr()).flags.callable)) {
             HString* s = builtin_to_string_vm(ctx, round_to);
             if (ctx.should_throw) return;
             char[] str = s.get_cstr()[:s.blen];
-            if (!parse_unit_str(str, &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
+            if (!temporal::parse_unit_str(str, &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
             }
@@ -7084,7 +6869,7 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
         if (!rm_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &rm_v);
             if (ctx.should_throw) return;
-            if (!parse_rm_str(s.get_cstr()[:s.blen], &rounding_mode)) {
+            if (!temporal::parse_rm_str(s.get_cstr()[:s.blen], &rounding_mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -7094,7 +6879,7 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
         if (!su_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &su_v);
             if (ctx.should_throw) return;
-            if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
+            if (!temporal::parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
             }
@@ -7105,7 +6890,7 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option");
         return;
     }
-    if (smallest_unit == TemporalUnit.DAY) {
+    if (smallest_unit == temporal::TemporalUnit.DAY) {
         // "day" allows only roundingIncrement 1: there is exactly one day
         // per rounding unit, so nothing larger can divide evenly.
         if (rounding_increment > 1) {
@@ -7113,7 +6898,7 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
             return;
         }
     } else {
-        long max_incr = max_round_incr(smallest_unit);
+        long max_incr = temporal::max_round_incr(smallest_unit);
         if (max_incr > 0 && (rounding_increment > (double)max_incr
             || (double)max_incr / rounding_increment != math::floor((double)max_incr / rounding_increment)
             || rounding_increment == (double)max_incr)) {
@@ -7128,17 +6913,17 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
 
     long day_delta;
     long rounded_ns;
-    if (smallest_unit == TemporalUnit.DAY) {
+    if (smallest_unit == temporal::TemporalUnit.DAY) {
         // roundingIncrement is fixed at 1 for "day" (checked above), so this
         // rounds the whole time-of-day to the nearer midnight.
         double day_frac = (double)total_ns / 86400000000000.0;
-        double rounded_days = round_num_to_incr(day_frac, 1, rounding_mode);
+        double rounded_days = temporal::round_num_to_incr(day_frac, 1, rounding_mode);
         day_delta = (long)rounded_days;
         rounded_ns = 0;
     } else {
-        long divisor = unit_ns_divisor(smallest_unit);
+        long divisor = temporal::unit_ns_divisor(smallest_unit);
         long incr_ns = divisor * (long)rounding_increment;
-        long rounded = round_long_ns(total_ns, incr_ns, rounding_mode);
+        long rounded = temporal::round_long_ns(total_ns, incr_ns, rounding_mode);
         // A whole day of nanoseconds (86400000000000) can only be reached by
         // rounding up past the last representable time-of-day value; carry
         // that into the date and keep the time-of-day in [0, 1 day).
@@ -7298,43 +7083,43 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
 
     // A time-only largestUnit folds the date span into the time delta, leaving
     // a flat nanosecond count to round.
-    if (ds.largest > TemporalUnit.DAY) {
+    if (ds.largest > temporal::TemporalUnit.DAY) {
         long days = temporal::epoch_days_from_civil(ed.y, (int)ed.m, (int)ed.d)
                   - temporal::epoch_days_from_civil(sd.y, (int)sd.m, (int)sd.d);
         int128 total = (int128)days * 86_400_000_000_000L + (int128)tod_delta;
-        int128 incr_ns = (int128)(unit_ns_divisor(ds.smallest) * (long)ds.increment);
-        if (incr_ns > 1) total = round_long_ns_128(total, incr_ns, ds.mode);
+        int128 incr_ns = (int128)(temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment);
+        if (incr_ns > 1) total = temporal::round_long_ns_128(total, incr_ns, ds.mode);
         decompose_ns_128(total, ds.largest, out);
         return true;
     }
 
     temporal::DifferenceUnit du;
     switch (ds.largest) {
-        case TemporalUnit.YEAR:  du = temporal::DifferenceUnit.YEARS; break;
-        case TemporalUnit.MONTH: du = temporal::DifferenceUnit.MONTHS; break;
-        case TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
+        case temporal::TemporalUnit.YEAR:  du = temporal::DifferenceUnit.YEARS; break;
+        case temporal::TemporalUnit.MONTH: du = temporal::DifferenceUnit.MONTHS; break;
+        case temporal::TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
         default:                 du = temporal::DifferenceUnit.DAYS; break;
     }
     temporal::DateDifference dd = temporal::difference_date(sd, ed, du);
 
-    temporal::DurationParts dp = time_ns_split(tod_delta, TemporalUnit.HOUR);
+    temporal::DurationParts dp = time_ns_split(tod_delta, temporal::TemporalUnit.HOUR);
     dp.years = dd.years;
     dp.months = dd.months;
     dp.days = dd.days;
-    if (ds.largest == TemporalUnit.WEEK) {
+    if (ds.largest == temporal::TemporalUnit.WEEK) {
         dp.weeks = dd.days / 7;
         dp.days = dd.days % 7;
     }
 
-    if (ds.smallest > TemporalUnit.DAY) {
-        long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
+    if (ds.smallest > temporal::TemporalUnit.DAY) {
+        long incr_ns = temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment;
         if (ds.is_zoned) {
             // NudgeToZonedTime: a day is a real, possibly non-24-hour calendar
             // day resolved against the zone, so it cannot be folded into the
             // time column. Rounding stays inside the time of day and can carry
             // at most one full day into the date part.
             if (incr_ns > 1) {
-                long rounded = round_long_ns(tod_delta, incr_ns, ds.mode);
+                long rounded = temporal::round_long_ns(tod_delta, incr_ns, ds.mode);
                 if (rounded != tod_delta) {
                     if (rounded == 86_400_000_000_000L || rounded == -86_400_000_000_000L) {
                         // A carry of a whole day empties the time of day and adds a
@@ -7344,7 +7129,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
                         dp.ms = 0; dp.us = 0; dp.ns = 0;
                         if (!bump_date_part(ctx, sd, ds, sign, &dp)) return false;
                     } else {
-                        temporal::DurationParts t = time_ns_split(rounded, TemporalUnit.HOUR);
+                        temporal::DurationParts t = time_ns_split(rounded, temporal::TemporalUnit.HOUR);
                         dp.hours = t.hours; dp.minutes = t.minutes; dp.seconds = t.seconds;
                         dp.ms = t.ms; dp.us = t.us; dp.ns = t.ns;
                     }
@@ -7357,7 +7142,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
             // hours/minutes/etc rather than being held fixed. This is what
             // makes a halfEven tie resolve differently from the zoned case.
             int128 total = (int128)dp.days * 86_400_000_000_000L + (int128)tod_delta;
-            if (incr_ns > 1) total = round_long_ns_128(total, (int128)incr_ns, ds.mode);
+            if (incr_ns > 1) total = temporal::round_long_ns_128(total, (int128)incr_ns, ds.mode);
             long whole_days = (long)(total / 86_400_000_000_000L);
             long rem = (long)(total % 86_400_000_000_000L);
             if (rem != 0 && ((rem < 0) != (whole_days < 0)) && whole_days != 0) {
@@ -7368,7 +7153,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
                 rem = (long)(total - (int128)whole_days * 86_400_000_000_000L);
             }
             dp.days = whole_days;
-            temporal::DurationParts t = time_ns_split(rem, TemporalUnit.HOUR);
+            temporal::DurationParts t = time_ns_split(rem, temporal::TemporalUnit.HOUR);
             dp.hours = t.hours; dp.minutes = t.minutes; dp.seconds = t.seconds;
             dp.ms = t.ms; dp.us = t.us; dp.ns = t.ns;
             if (whole_days != 0) {
@@ -7381,7 +7166,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
 
     // For a calendar smallestUnit (day or coarser), the leftover below that
     // unit determines whether the count steps to the next whole one.
-    if (ds.smallest == TemporalUnit.WEEK && ds.largest != TemporalUnit.WEEK) {
+    if (ds.smallest == temporal::TemporalUnit.WEEK && ds.largest != temporal::TemporalUnit.WEEK) {
         // round_date_part reads the smallestUnit count out of dp.weeks.
         // difference_date left the sub-month remainder in dp.days (the
         // coarser components keep the year/month structure of largestUnit),
@@ -7415,9 +7200,9 @@ fn bool rebalance_date_part(BuiltinContext* ctx, temporal::CivilDate start, Diff
 
     temporal::DifferenceUnit du;
     switch (ds.largest) {
-        case TemporalUnit.YEAR:  du = temporal::DifferenceUnit.YEARS; break;
-        case TemporalUnit.MONTH: du = temporal::DifferenceUnit.MONTHS; break;
-        case TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
+        case temporal::TemporalUnit.YEAR:  du = temporal::DifferenceUnit.YEARS; break;
+        case temporal::TemporalUnit.MONTH: du = temporal::DifferenceUnit.MONTHS; break;
+        case temporal::TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
         default:                 du = temporal::DifferenceUnit.DAYS; break;
     }
     temporal::DateDifference dd = temporal::difference_date(start, end, du);
@@ -7425,10 +7210,10 @@ fn bool rebalance_date_part(BuiltinContext* ctx, temporal::CivilDate start, Diff
     dp.months = dd.months;
     dp.weeks = 0;
     dp.days = dd.days;
-    if (ds.largest == TemporalUnit.WEEK) {
+    if (ds.largest == temporal::TemporalUnit.WEEK) {
         dp.weeks = dd.days / 7;
         dp.days = dd.days % 7;
-    } else if (ds.smallest == TemporalUnit.WEEK) {
+    } else if (ds.smallest == temporal::TemporalUnit.WEEK) {
         dp.weeks = dp.days / 7;
         dp.days = dp.days % 7;
     }
@@ -7473,12 +7258,12 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     // years the actual `hi` date is variable, but we only need the ratio
     // between `to_end` and one full increment to decide whether to step up.
     // For uniform units (day and smaller) one increment is exactly
-    // `incr * unit_ns_divisor(smallestUnit)` ns; for non-uniform units (week,
+    // `incr * temporal::unit_ns_divisor(smallestUnit)` ns; for non-uniform units (week,
     // month, year) `incr` weeks/days differ by sign and so `apply_date_part`
     // gives the right span for the kept-boundary, which is what we compare.
     int128 span;
-    if (ds.smallest >= TemporalUnit.DAY) {
-        long unit_ns = (ds.smallest == TemporalUnit.DAY) ? 86_400_000_000_000L : unit_ns_divisor(ds.smallest);
+    if (ds.smallest >= temporal::TemporalUnit.DAY) {
+        long unit_ns = (ds.smallest == temporal::TemporalUnit.DAY) ? 86_400_000_000_000L : temporal::unit_ns_divisor(ds.smallest);
         span = (int128)incr * (int128)unit_ns;
     } else {
         span = (int128)total_days_between(lo, hi) * 86_400_000_000_000L;
@@ -7523,7 +7308,7 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     // zone must disambiguate the day boundary, so CalendarDateAdd runs and
     // an out-of-range `hi` throws (ZonedDateTime
     // roundingincrement-addition-out-of-range).
-    bool calendar_unit = is_cal_unit(ds.smallest) || (ds.is_zoned && ds.smallest == TemporalUnit.DAY);
+    bool calendar_unit = temporal::is_cal_unit(ds.smallest) || (ds.is_zoned && ds.smallest == temporal::TemporalUnit.DAY);
     bool incr_gt_one = ds.increment > 1;
     bool lo_at_edge_safe = (to_end == 0) && !incr_gt_one;
     if (!lo_ok && !lo_at_edge_safe) {
@@ -7540,24 +7325,24 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     int128 mag_span = span < 0 ? -span : span;
     long mag_end = to_end < 0 ? -to_end : to_end;
     bool step_up;
-    if ((int128)mag_end * 2 == mag_span && is_half_mode(ds.mode)) {
+    if ((int128)mag_end * 2 == mag_span && temporal::is_half_mode(ds.mode)) {
         // An exact halfway point is settled here rather than in round_long_ns,
         // which breaks ties on the quotient within a single span. That quotient
         // is always 0, and halfEven needs the parity of the unit count.
         // Stepping up means away from zero, so ceil and floor swap for a
         // negative difference.
-        TemporalRoundMode tie = sign < 0 ? mode_for_negative_magnitude(ds.mode) : ds.mode;
+        temporal::TemporalRoundMode tie = sign < 0 ? temporal::mode_for_negative_magnitude(ds.mode) : ds.mode;
         switch (tie) {
-            case TemporalRoundMode.HALF_EVEN:
+            case temporal::TemporalRoundMode.HALF_EVEN:
                 step_up = (kept / incr) % 2 != 0;
-            case TemporalRoundMode.HALF_EXPAND:
-            case TemporalRoundMode.HALF_CEIL:
+            case temporal::TemporalRoundMode.HALF_EXPAND:
+            case temporal::TemporalRoundMode.HALF_CEIL:
                 step_up = true;
             default:
                 step_up = false;
         }
     } else {
-        step_up = round_long_ns_128((int128)to_end, mag_span, ds.mode) != 0;
+        step_up = temporal::round_long_ns_128((int128)to_end, mag_span, ds.mode) != 0;
     }
     set_smallest_unit_count(dp, ds.smallest, step_up ? kept + sign * incr : kept);
     clear_below(dp, ds.smallest);
@@ -7572,38 +7357,35 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     return true;
 }
 
-fn bool is_half_mode(TemporalRoundMode m) {
-    return m >= TemporalRoundMode.HALF_CEIL;
-}
 
 // The count held in `dp`'s smallestUnit field, not the difference folded into
 // that unit. A roundingIncrement of 5 months under largestUnit "years" snaps
 // the months within the year (2y8m -> 2y5m); under largestUnit "months" the
 // whole span sits in the months field and snaps there (32m -> 30m).
-fn long smallest_unit_count(temporal::DurationParts dp, TemporalUnit unit) {
+fn long smallest_unit_count(temporal::DurationParts dp, temporal::TemporalUnit unit) {
     switch (unit) {
-        case TemporalUnit.YEAR:  return dp.years;
-        case TemporalUnit.MONTH: return dp.months;
-        case TemporalUnit.WEEK:  return dp.weeks;
+        case temporal::TemporalUnit.YEAR:  return dp.years;
+        case temporal::TemporalUnit.MONTH: return dp.months;
+        case temporal::TemporalUnit.WEEK:  return dp.weeks;
         default:                 return dp.days;
     }
 }
 
 // Set the count of `unit`, leaving the coarser components alone.
-fn void set_smallest_unit_count(temporal::DurationParts* dp, TemporalUnit unit, long n) {
+fn void set_smallest_unit_count(temporal::DurationParts* dp, temporal::TemporalUnit unit, long n) {
     switch (unit) {
-        case TemporalUnit.YEAR:  dp.years = n; break;
-        case TemporalUnit.MONTH: dp.months = n; break;
-        case TemporalUnit.WEEK:  dp.weeks = n; break;
+        case temporal::TemporalUnit.YEAR:  dp.years = n; break;
+        case temporal::TemporalUnit.MONTH: dp.months = n; break;
+        case temporal::TemporalUnit.WEEK:  dp.weeks = n; break;
         default:                 dp.days = n; break;
     }
 }
 
 // Zero every component finer than `unit`; rounding to it leaves no remainder.
-fn void clear_below(temporal::DurationParts* dp, TemporalUnit unit) {
-    if (unit <= TemporalUnit.YEAR)  dp.months = 0;
-    if (unit <= TemporalUnit.MONTH) dp.weeks = 0;
-    if (unit <= TemporalUnit.WEEK)  dp.days = 0;
+fn void clear_below(temporal::DurationParts* dp, temporal::TemporalUnit unit) {
+    if (unit <= temporal::TemporalUnit.YEAR)  dp.months = 0;
+    if (unit <= temporal::TemporalUnit.MONTH) dp.weeks = 0;
+    if (unit <= temporal::TemporalUnit.WEEK)  dp.days = 0;
     dp.hours = 0; dp.minutes = 0; dp.seconds = 0;
     dp.ms = 0; dp.us = 0; dp.ns = 0;
 }
@@ -7643,8 +7425,8 @@ fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipp
     }
 
     DiffSettings ds;
-    if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.NANOSECOND,
-                            TemporalUnit.DAY, TemporalUnit.NANOSECOND, flipped, &ds)) return;
+    if (!read_diff_settings(ctx, 1, temporal::TemporalUnit.YEAR, temporal::TemporalUnit.NANOSECOND,
+                            temporal::TemporalUnit.DAY, temporal::TemporalUnit.NANOSECOND, flipped, &ds)) return;
 
     temporal::CivilDateTime a = plain_datetime_value(obj);
     temporal::CivilDateTime b = plain_datetime_value(other);
@@ -8584,8 +8366,8 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
     // halfFloor) and the result is negated at the end, matching
     // DifferenceTemporalPlainDate / DifferenceTemporalPlainDateTime.
     DiffSettings ds;
-    if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.MONTH,
-                            TemporalUnit.YEAR, TemporalUnit.MONTH, flipped, &ds)) return;
+    if (!read_diff_settings(ctx, 1, temporal::TemporalUnit.YEAR, temporal::TemporalUnit.MONTH,
+                            temporal::TemporalUnit.YEAR, temporal::TemporalUnit.MONTH, flipped, &ds)) return;
 
     long a_y = plain_yearmonth_y(obj);
     int  a_m = plain_yearmonth_m(obj);
@@ -10658,7 +10440,7 @@ fn void builtin_temporal_instant_proto_epochNanoseconds(BuiltinContext* ctx) {
 // rounding pushes ns_rem to 1_000_000_000 (a full second), the caller must
 // increment whole_secs — see the wrapper in this file that handles the
 // carry.
-fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRoundMode mode) {
+fn int format_fractional_seconds(char* buf, long ns_rem, int digits, temporal::TemporalRoundMode mode) {
     if (ns_rem < 0) ns_rem = -ns_rem;
     int d = digits;
     // Explicit fixed digits request (`fractionalSecondDigits` was given):
@@ -10690,7 +10472,7 @@ fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRou
     long v;
     {
         double x = (double)ns_rem / (double)divisor;
-        v = (long)round_num_to_incr(x, 1.0, mode);
+        v = (long)temporal::round_num_to_incr(x, 1.0, mode);
     }
     if (v == 0) return 0;
     buf[0] = '.';
@@ -10710,9 +10492,9 @@ fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRou
 // 9). `rounding_mode` defaults to TRUNC; "ceil", "floor", "expand", "trunc",
 // "halfCeil", "halfFloor", "halfExpand", "halfTrunc", "halfEven" are valid.
 // Returns false on a malformed option (after throwing).
-fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits, TemporalRoundMode* rm, bool read_time_zone, TVal* out_time_zone) {
+fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits, temporal::TemporalRoundMode* rm, bool read_time_zone, TVal* out_time_zone) {
     *digits = -1;  // auto when no options
-    *rm = TemporalRoundMode.TRUNC;
+    *rm = temporal::TemporalRoundMode.TRUNC;
     if (ctx.argc <= options_index) return true;
     TVal ov = ctx.regs[ctx.base_reg + options_index];
     if (ov.is_undefined()) return true;
@@ -10769,15 +10551,15 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
         if (ctx.should_throw) return false;
         if (rm_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "roundingMode must be a string"); return false; }
         char[] v = rm_s.get_cstr()[:rm_s.blen];
-        if (v == "ceil") { *rm = TemporalRoundMode.CEIL; }
-        else if (v == "floor") { *rm = TemporalRoundMode.FLOOR; }
-        else if (v == "expand") { *rm = TemporalRoundMode.EXPAND; }
-        else if (v == "trunc") { *rm = TemporalRoundMode.TRUNC; }
-        else if (v == "halfCeil") { *rm = TemporalRoundMode.HALF_CEIL; }
-        else if (v == "halfFloor") { *rm = TemporalRoundMode.HALF_FLOOR; }
-        else if (v == "halfExpand") { *rm = TemporalRoundMode.HALF_EXPAND; }
-        else if (v == "halfTrunc") { *rm = TemporalRoundMode.HALF_TRUNC; }
-        else if (v == "halfEven") { *rm = TemporalRoundMode.HALF_EVEN; }
+        if (v == "ceil") { *rm = temporal::TemporalRoundMode.CEIL; }
+        else if (v == "floor") { *rm = temporal::TemporalRoundMode.FLOOR; }
+        else if (v == "expand") { *rm = temporal::TemporalRoundMode.EXPAND; }
+        else if (v == "trunc") { *rm = temporal::TemporalRoundMode.TRUNC; }
+        else if (v == "halfCeil") { *rm = temporal::TemporalRoundMode.HALF_CEIL; }
+        else if (v == "halfFloor") { *rm = temporal::TemporalRoundMode.HALF_FLOOR; }
+        else if (v == "halfExpand") { *rm = temporal::TemporalRoundMode.HALF_EXPAND; }
+        else if (v == "halfTrunc") { *rm = temporal::TemporalRoundMode.HALF_TRUNC; }
+        else if (v == "halfEven") { *rm = temporal::TemporalRoundMode.HALF_EVEN; }
         else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode"); return false; }
     }
 
@@ -10820,7 +10602,7 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
     int digits;
-    TemporalRoundMode rm;
+    temporal::TemporalRoundMode rm;
     TVal tzv;
     tzv.set_undefined();
     // to_string_precision probes timeZone last (after fractionalSecondDigits,
@@ -10873,13 +10655,13 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     if (digits == -10) {
         // smallestUnit: "minute" -> round to a whole minute boundary.
         long total_ns = whole_secs * 1000000000 + ns_rem;
-        long rounded_total_ns = round_long_ns(total_ns, 60 * 1000000000L, rm);
+        long rounded_total_ns = temporal::round_long_ns(total_ns, 60 * 1000000000L, rm);
         whole_secs = rounded_total_ns / 1000000000;
         ns_rem = 0;
     } else if (digits >= 0 && ns_rem != 0) {
         long divisor = 1;
         for (int i = 0; i < 9 - digits; i++) divisor *= 10;
-        long v = (long)round_num_to_incr((double)ns_rem / (double)divisor, 1.0, rm);
+        long v = (long)temporal::round_num_to_incr((double)ns_rem / (double)divisor, 1.0, rm);
         long new_ns_rem = v * divisor;
         if (new_ns_rem >= 1000000000) {
             whole_secs += 1;
@@ -11095,9 +10877,9 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
 
 // Settings shared by every until/since method, resolved from the options bag.
 struct DiffSettings {
-    TemporalUnit largest;
-    TemporalUnit smallest;
-    TemporalRoundMode mode;
+    temporal::TemporalUnit largest;
+    temporal::TemporalUnit smallest;
+    temporal::TemporalRoundMode mode;
     double increment;
     bool largest_provided;
     // True when the receiver is a ZonedDateTime. The spec's
@@ -11123,12 +10905,12 @@ struct DiffSettings {
 //
 // Returns false after throwing.
 fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
-                           TemporalUnit min_unit, TemporalUnit max_unit,
-                           TemporalUnit default_largest, TemporalUnit fallback_smallest,
+                           temporal::TemporalUnit min_unit, temporal::TemporalUnit max_unit,
+                           temporal::TemporalUnit default_largest, temporal::TemporalUnit fallback_smallest,
                            bool negate_mode, DiffSettings* out) {
     out.largest = default_largest;
     out.smallest = fallback_smallest;
-    out.mode = TemporalRoundMode.TRUNC;
+    out.mode = temporal::TemporalRoundMode.TRUNC;
     out.increment = 1;
     out.is_zoned = false;
 
@@ -11155,7 +10937,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
             if (ctx.should_throw) return false;
             char[] str = s.get_cstr()[:s.blen];
             if (str != "auto") {
-                if (!parse_unit_str(str, &out.largest)) {
+                if (!temporal::parse_unit_str(str, &out.largest)) {
                     builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not a valid value");
                     return false;
                 }
@@ -11187,7 +10969,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
         if (!rm_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &rm_v);
             if (ctx.should_throw) return false;
-            if (!parse_rm_str(s.get_cstr()[:s.blen], &out.mode)) {
+            if (!temporal::parse_rm_str(s.get_cstr()[:s.blen], &out.mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return false;
             }
@@ -11200,7 +10982,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
             if (ctx.should_throw) return false;
             char[] str = s.get_cstr()[:s.blen];
             if (str != "auto") {
-                if (!parse_unit_str(str, &out.smallest)) {
+                if (!temporal::parse_unit_str(str, &out.smallest)) {
                     builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit is not a valid value");
                     return false;
                 }
@@ -11228,14 +11010,14 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
     // Per the spec, defaultLargestUnit = LargerOfTwoTemporalUnits(defaultLargest, smallestUnit).
     // When the user did not explicitly set largestUnit, recompute it.
     if (!largest_given) {
-        out.largest = larger_unit(default_largest, out.smallest);
+        out.largest = temporal::larger_unit(default_largest, out.smallest);
     }
     if (out.largest > out.smallest) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit must be coarser than largestUnit");
         return false;
     }
 
-    long max_incr = max_round_incr(out.smallest);
+    long max_incr = temporal::max_round_incr(out.smallest);
     if (max_incr > 0) {
         // The increment must divide the unit evenly, and cannot span a whole
         // unit — 60 minutes is not a legal minute increment.
@@ -11245,38 +11027,11 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
     // into, so any positive integer is accepted there and the [1, 1e9] check
     // above is the only bound.
 
-    if (negate_mode) out.mode = negate_round_mode(out.mode);
+    if (negate_mode) out.mode = temporal::negate_round_mode(out.mode);
     return true;
 }
 
-// Mirror a rounding mode about zero, so rounding a negated difference lands on
-// the same instant as rounding the difference itself.
-fn TemporalRoundMode negate_round_mode(TemporalRoundMode m) {
-    switch (m) {
-        case TemporalRoundMode.CEIL:       return TemporalRoundMode.FLOOR;
-        case TemporalRoundMode.FLOOR:      return TemporalRoundMode.CEIL;
-        case TemporalRoundMode.HALF_CEIL:  return TemporalRoundMode.HALF_FLOOR;
-        case TemporalRoundMode.HALF_FLOOR: return TemporalRoundMode.HALF_CEIL;
-        default: return m;
-    }
-}
 
-// Translate a sign-aware rounding mode into the as-if-positive mode that
-// round_bigint_ns must use to produce the same result for a NEGATIVE value.
-//
-// round_bigint_ns works on the floor-normalized scale, where "down" is toward
-// negative infinity. For a negative value, rounding toward zero is therefore
-// "up" — so trunc behaves as ceil and expand as floor. The ceil/floor pair
-// swaps for the same reason, and the half-* modes follow their tie direction.
-fn TemporalRoundMode mode_for_negative(TemporalRoundMode m) {
-    switch (m) {
-        case TemporalRoundMode.TRUNC:       return TemporalRoundMode.CEIL;
-        case TemporalRoundMode.EXPAND:      return TemporalRoundMode.FLOOR;
-        case TemporalRoundMode.HALF_TRUNC:  return TemporalRoundMode.HALF_CEIL;
-        case TemporalRoundMode.HALF_EXPAND: return TemporalRoundMode.HALF_FLOOR;
-        default: return m;
-    }
-}
 
 // Build a Duration whose time units are the difference between two Instants'
 // epoch-ns BigInts. `largest_unit_ns` is the unit ns (3600*1e9 for hours,
@@ -11369,29 +11124,29 @@ fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigi
 // The count is taken as int128 rather than long: an Instant pair can be up to
 // ~2*8.64e21 ns apart, which overflows a 64-bit nanosecond field even though
 // each individual unit field fits comfortably.
-fn bool instant_ns_split_duration(BuiltinContext* ctx, hbigint::HBigInt* ns, TemporalUnit largest, HObject** out) {
+fn bool instant_ns_split_duration(BuiltinContext* ctx, hbigint::HBigInt* ns, temporal::TemporalUnit largest, HObject** out) {
     int128 v = ns.to_int128();
     temporal::DurationParts dp = {};
 
     // Walk the ladder from `largest` down; each unit takes the whole quotient
     // at its scale and hands the remainder to the next one.
-    if (largest <= TemporalUnit.HOUR) {
+    if (largest <= temporal::TemporalUnit.HOUR) {
         dp.hours = (long)(v / 3600000000000L);
         v %= 3600000000000L;
     }
-    if (largest <= TemporalUnit.MINUTE) {
+    if (largest <= temporal::TemporalUnit.MINUTE) {
         dp.minutes = (long)(v / 60000000000L);
         v %= 60000000000L;
     }
-    if (largest <= TemporalUnit.SECOND) {
+    if (largest <= temporal::TemporalUnit.SECOND) {
         dp.seconds = (long)(v / 1000000000L);
         v %= 1000000000L;
     }
-    if (largest <= TemporalUnit.MILLISECOND) {
+    if (largest <= temporal::TemporalUnit.MILLISECOND) {
         dp.ms = (long)(v / 1000000L);
         v %= 1000000L;
     }
-    if (largest <= TemporalUnit.MICROSECOND) {
+    if (largest <= temporal::TemporalUnit.MICROSECOND) {
         dp.us = (long)(v / 1000L);
         v %= 1000L;
     }
@@ -11615,8 +11370,8 @@ fn void instant_until_since(BuiltinContext* ctx, bool until) {
     // the difference already carries the final sign and the rounding mode is
     // adjusted against that sign directly.
     DiffSettings ds;
-    if (!read_diff_settings(ctx, 1, TemporalUnit.HOUR, TemporalUnit.NANOSECOND,
-                            TemporalUnit.SECOND, TemporalUnit.NANOSECOND, false, &ds)) return;
+    if (!read_diff_settings(ctx, 1, temporal::TemporalUnit.HOUR, temporal::TemporalUnit.NANOSECOND,
+                            temporal::TemporalUnit.SECOND, temporal::TemporalUnit.NANOSECOND, false, &ds)) return;
 
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* a;
@@ -11629,14 +11384,14 @@ fn void instant_until_since(BuiltinContext* ctx, bool until) {
     hbigint::HBigInt* diff = diff_o;
 
     // Rounding to nanoseconds by 1 is the identity, so skip the BigInt work.
-    long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
+    long incr_ns = temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment;
     if (incr_ns > 1) {
         // round_bigint_ns rounds as if the value were positive, while
         // until/since round by magnitude: on a negative difference "trunc"
         // moves toward zero, which is up, and "expand" away from it. Mapping
         // the mode to its as-if-positive form avoids negating the BigInt twice.
-        TemporalRoundMode mode = ds.mode;
-        if (diff.is_negative()) mode = mode_for_negative(mode);
+        temporal::TemporalRoundMode mode = ds.mode;
+        if (diff.is_negative()) mode = temporal::mode_for_negative(mode);
         hbigint::HBigInt*? rounded_o = round_bigint_ns(ctx, diff, incr_ns, mode);
         ctx.heap.decref((types::HeapHeader*)diff);
         if (catch err = rounded_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "rounding failed"); return; }
@@ -11655,7 +11410,7 @@ fn void instant_until_since(BuiltinContext* ctx, bool until) {
 // `incr_ns` using the spec's `RoundNumberToIncrementAsIfPositive`. Returns a
 // newly-allocated BigInt on success; on failure the `catch` path yields
 // BIGINT_DIV_ZERO or an allocation fault.
-fn hbigint::HBigInt*? round_bigint_ns(BuiltinContext* ctx, hbigint::HBigInt* b, long incr_ns, TemporalRoundMode rounding_mode) {
+fn hbigint::HBigInt*? round_bigint_ns(BuiltinContext* ctx, hbigint::HBigInt* b, long incr_ns, temporal::TemporalRoundMode rounding_mode) {
     hbigint::HBigInt*? incr_o = hbigint::hbigint_alloc(ctx.heap, (int128)incr_ns);
     if (catch err = incr_o) return err~;
     hbigint::HBigInt* incr = incr_o;
@@ -11686,17 +11441,17 @@ fn hbigint::HBigInt*? round_bigint_ns(BuiltinContext* ctx, hbigint::HBigInt* b, 
     } else {
         switch (rounding_mode) {
             // floor / trunc → unsigned "zero" → always r1.
-            case TemporalRoundMode.FLOOR:
-            case TemporalRoundMode.TRUNC: chosen_q = q_f; break;
+            case temporal::TemporalRoundMode.FLOOR:
+            case temporal::TemporalRoundMode.TRUNC: chosen_q = q_f; break;
             // ceil / expand → unsigned "infinity" → always r2.
-            case TemporalRoundMode.CEIL:
-            case TemporalRoundMode.EXPAND: chosen_q = q_f + 1; break;
+            case temporal::TemporalRoundMode.CEIL:
+            case temporal::TemporalRoundMode.EXPAND: chosen_q = q_f + 1; break;
             // half-* modes pick the closer candidate, breaking ties per unsigned mode.
-            case TemporalRoundMode.HALF_FLOOR:
-            case TemporalRoundMode.HALF_TRUNC:
-            case TemporalRoundMode.HALF_CEIL:
-            case TemporalRoundMode.HALF_EXPAND:
-            case TemporalRoundMode.HALF_EVEN: {
+            case temporal::TemporalRoundMode.HALF_FLOOR:
+            case temporal::TemporalRoundMode.HALF_TRUNC:
+            case temporal::TemporalRoundMode.HALF_CEIL:
+            case temporal::TemporalRoundMode.HALF_EXPAND:
+            case temporal::TemporalRoundMode.HALF_EVEN: {
                 int128 two_r = r_f * 2;
                 if (two_r < incr_128) {
                     chosen_q = q_f;
@@ -11704,11 +11459,11 @@ fn hbigint::HBigInt*? round_bigint_ns(BuiltinContext* ctx, hbigint::HBigInt* b, 
                     chosen_q = q_f + 1;
                 } else {
                     switch (rounding_mode) {
-                        case TemporalRoundMode.HALF_FLOOR:
-                        case TemporalRoundMode.HALF_TRUNC: chosen_q = q_f; break;
-                        case TemporalRoundMode.HALF_CEIL:
-                        case TemporalRoundMode.HALF_EXPAND: chosen_q = q_f + 1; break;
-                        case TemporalRoundMode.HALF_EVEN:
+                        case temporal::TemporalRoundMode.HALF_FLOOR:
+                        case temporal::TemporalRoundMode.HALF_TRUNC: chosen_q = q_f; break;
+                        case temporal::TemporalRoundMode.HALF_CEIL:
+                        case temporal::TemporalRoundMode.HALF_EXPAND: chosen_q = q_f + 1; break;
+                        case temporal::TemporalRoundMode.HALF_EVEN:
                             chosen_q = ((q_f & 1) == 0) ? q_f : q_f + 1; break;
                         default: chosen_q = q_f; break;  // unreachable
                     }
@@ -11793,9 +11548,9 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
 
     // Algorithmic validation now that all props have been observed.
-    TemporalUnit smallest_unit;
-    if (!parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit)
-        || smallest_unit < TemporalUnit.HOUR) {
+    temporal::TemporalUnit smallest_unit;
+    if (!temporal::parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit)
+        || smallest_unit < temporal::TemporalUnit.HOUR) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for Instant.round");
         return;
     }
@@ -11812,7 +11567,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
             return;
         }
     }
-    long divisor = unit_ns_divisor(smallest_unit);
+    long divisor = temporal::unit_ns_divisor(smallest_unit);
     // Spec §ValidateTemporalRoundingIncrement: increment must satisfy
     //   (1) inc ≤ maximum (inclusive)
     //   (2) dividend mod inc == 0
@@ -11827,9 +11582,9 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
         return;
     }
 
-    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+    temporal::TemporalRoundMode rounding_mode = temporal::TemporalRoundMode.HALF_EXPAND;
     if (rm_str != null) {
-        if (!parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
+        if (!temporal::parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
             return;
         }
@@ -13023,7 +12778,7 @@ fn void format_offset_seconds(char* buf, int off) {
 // offset with fractional seconds, the ±HH:MM offset, and (unless drop_zone) the
 // [Zone] bracket. `digits` is -1 for auto or 0..9. Reads epoch nanoseconds via
 // to_int128 so sub-second precision survives beyond 2^53.
-fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, int digits, TemporalRoundMode rm, bool drop_zone,
+fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, int digits, temporal::TemporalRoundMode rm, bool drop_zone,
                       int show_offset, int show_tz, int show_cal) {
     // show_offset: 1 = show, 0 = hide; show_tz: 1 = show, 0 = hide, 2 = the
     // `!` critical flag; show_cal: 0 = auto (omits ISO), 1 = always,
@@ -13056,7 +12811,7 @@ fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, in
     // the broken-down time's seconds/ms/us/ns are all zero.
     if (digits == -10) {
         long total_ns = local_secs * 1000000000 + ns_rem;
-        long rounded_total_ns = round_long_ns(total_ns, 60 * 1000000000L, rm);
+        long rounded_total_ns = temporal::round_long_ns(total_ns, 60 * 1000000000L, rm);
         local_secs = rounded_total_ns / 1000000000;
         ns_rem = 0;
     } else if (digits >= 0 && ns_rem != 0) {
@@ -13065,7 +12820,7 @@ fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, in
         // recomputing the broken-down time.
         long divisor = 1;
         for (int i = 0; i < 9 - digits; i++) divisor *= 10;
-        long v = (long)round_num_to_incr((double)ns_rem / (double)divisor, 1.0, rm);
+        long v = (long)temporal::round_num_to_incr((double)ns_rem / (double)divisor, 1.0, rm);
         long new_ns_rem = v * divisor;
         if (new_ns_rem >= 1000000000) {
             local_secs += 1;
@@ -13128,7 +12883,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
     int digits;
-    TemporalRoundMode rm;
+    temporal::TemporalRoundMode rm;
     // Display flags for offset / timeZoneName / calendarName. Defaults match
     // the spec: offset and timeZoneName show, calendarName shows only when
     // non-ISO ("auto"). Set from the validated option strings below.
@@ -13206,7 +12961,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
 
         // smallestUnit (default: no rounding; sentinel handled below).
         digits = -1;
-        rm = TemporalRoundMode.TRUNC;
+        rm = temporal::TemporalRoundMode.TRUNC;
         {
             TVal su = prop_or_undefined_pa(ctx, opts, "smallestUnit");
             if (ctx.should_throw) return;
@@ -13275,17 +13030,17 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
-            // Map strings to TemporalRoundMode. The default before this
+            // Map strings to temporal::TemporalRoundMode. The default before this
             // block was TRUNC; any explicit value overrides.
-            if (v == "ceil") { rm = TemporalRoundMode.CEIL; }
-            else if (v == "floor") { rm = TemporalRoundMode.FLOOR; }
-            else if (v == "expand") { rm = TemporalRoundMode.EXPAND; }
-            else if (v == "trunc") { rm = TemporalRoundMode.TRUNC; }
-            else if (v == "halfCeil") { rm = TemporalRoundMode.HALF_CEIL; }
-            else if (v == "halfFloor") { rm = TemporalRoundMode.HALF_FLOOR; }
-            else if (v == "halfExpand") { rm = TemporalRoundMode.HALF_EXPAND; }
-            else if (v == "halfTrunc") { rm = TemporalRoundMode.HALF_TRUNC; }
-            else if (v == "halfEven") { rm = TemporalRoundMode.HALF_EVEN; }
+            if (v == "ceil") { rm = temporal::TemporalRoundMode.CEIL; }
+            else if (v == "floor") { rm = temporal::TemporalRoundMode.FLOOR; }
+            else if (v == "expand") { rm = temporal::TemporalRoundMode.EXPAND; }
+            else if (v == "trunc") { rm = temporal::TemporalRoundMode.TRUNC; }
+            else if (v == "halfCeil") { rm = temporal::TemporalRoundMode.HALF_CEIL; }
+            else if (v == "halfFloor") { rm = temporal::TemporalRoundMode.HALF_FLOOR; }
+            else if (v == "halfExpand") { rm = temporal::TemporalRoundMode.HALF_EXPAND; }
+            else if (v == "halfTrunc") { rm = temporal::TemporalRoundMode.HALF_TRUNC; }
+            else if (v == "halfEven") { rm = temporal::TemporalRoundMode.HALF_EVEN; }
         }
         if (su_s != null) {
             char[] v = su_s.get_cstr()[:su_s.blen];
@@ -13311,7 +13066,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
         }
     } else {
         digits = -1;
-        rm = TemporalRoundMode.TRUNC;
+        rm = temporal::TemporalRoundMode.TRUNC;
     }
     zdt_iso_string(ctx, obj.extra.temporal.big_ns, obj.extra.temporal.timezone, digits, rm, false, show_offset, show_tz, show_cal);
 }
@@ -13941,13 +13696,13 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     }
 
     DiffSettings ds;
-    if (!read_diff_settings(ctx, 1, TemporalUnit.YEAR, TemporalUnit.NANOSECOND,
-                            TemporalUnit.HOUR, TemporalUnit.NANOSECOND, !until, &ds)) return;
+    if (!read_diff_settings(ctx, 1, temporal::TemporalUnit.YEAR, temporal::TemporalUnit.NANOSECOND,
+                            temporal::TemporalUnit.HOUR, temporal::TemporalUnit.NANOSECOND, !until, &ds)) return;
     ds.is_zoned = true;
 
     // Both zones must agree for a calendar-unit difference to mean anything:
     // the wall-clock breakdown below is only defined against a single zone.
-    if (is_cal_unit(ds.largest) || ds.largest == TemporalUnit.DAY) {
+    if (temporal::is_cal_unit(ds.largest) || ds.largest == temporal::TemporalUnit.DAY) {
         String za = self.extra.temporal.timezone == null ? "" : timezone_name(self.extra.temporal.timezone);
         String zb = other.extra.temporal.timezone == null ? "" : timezone_name(other.extra.temporal.timezone);
         if (za != zb) {
@@ -13965,14 +13720,14 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     // smallest-unit increment, split by largestUnit. The difference is taken
     // in the other-minus-self direction (rounding origin = receiver) and
     // negated at the end for `since`, matching the calendar path below.
-    if (!is_cal_unit(ds.largest) && ds.largest != TemporalUnit.DAY) {
+    if (!temporal::is_cal_unit(ds.largest) && ds.largest != temporal::TemporalUnit.DAY) {
         assert(self.extra.temporal.big_ns.fits_int128() && other.extra.temporal.big_ns.fits_int128(),
                "ZonedDateTime epochNanoseconds out of int128 range");
         int128 self_ns = self.extra.temporal.big_ns.to_int128();
         int128 other_ns = other.extra.temporal.big_ns.to_int128();
         int128 total = other_ns - self_ns;
-        int128 incr_ns = (int128)(unit_ns_divisor(ds.smallest) * (long)ds.increment);
-        if (incr_ns > 1) total = round_long_ns_128(total, incr_ns, ds.mode);
+        int128 incr_ns = (int128)(temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment);
+        if (incr_ns > 1) total = temporal::round_long_ns_128(total, incr_ns, ds.mode);
         temporal::DurationParts dp;
         decompose_ns_128(total, ds.largest, &dp);
         if (!until) {
@@ -14574,14 +14329,14 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     TVal* arg = arg_at(ctx, 0);
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
 
-    TemporalUnit smallest_unit;
+    temporal::TemporalUnit smallest_unit;
     double rounding_increment = 1;
-    TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
+    temporal::TemporalRoundMode rounding_mode = temporal::TemporalRoundMode.HALF_EXPAND;
 
     if (arg.is_string()) {
         HString* s = builtin_to_string_vm(ctx, arg);
         if (ctx.should_throw) return;
-        if (!parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
+        if (!temporal::parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
             return;
         }
@@ -14609,7 +14364,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         if (!rm_v.is_undefined()) {
             HString* rm_str = builtin_to_string_vm(ctx, &rm_v);
             if (ctx.should_throw) return;
-            if (!parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
+            if (!temporal::parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -14620,7 +14375,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         if (su_v.is_undefined()) { builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option"); return; }
         HString* su_str = builtin_to_string_vm(ctx, &su_v);
         if (ctx.should_throw) return;
-        if (!parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit) || smallest_unit < TemporalUnit.DAY) {
+        if (!temporal::parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
             return;
         }
@@ -14629,7 +14384,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         return;
     }
 
-    if (smallest_unit == TemporalUnit.DAY && rounding_increment != 1) {
+    if (smallest_unit == temporal::TemporalUnit.DAY && rounding_increment != 1) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement is out of range");
         return;
     }
@@ -14655,7 +14410,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     long result_secs;
     long result_ns;
 
-    if (smallest_unit == TemporalUnit.DAY) {
+    if (smallest_unit == temporal::TemporalUnit.DAY) {
         // roundingIncrement is fixed at 1 for "day" (checked above), so this
         // rounds to the nearer local calendar-day boundary.
         long local_secs = epoch_secs + woff;
@@ -14671,11 +14426,11 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
             return;
         }
         double day_frac = (double)(local_secs - day_secs) + (double)ns_rem / 1e9;
-        double rounded_days = round_num_to_incr(day_frac / 86400.0, 1, rounding_mode);
+        double rounded_days = temporal::round_num_to_incr(day_frac / 86400.0, 1, rounding_mode);
         result_secs = day_secs + (long)rounded_days * 86400 - woff;
         result_ns = 0;
     } else {
-        long divisor = unit_ns_divisor(smallest_unit);
+        long divisor = temporal::unit_ns_divisor(smallest_unit);
         long incr_ns = divisor * (long)rounding_increment;
         // The spec rounds the nanoseconds within the local calendar day
         // (always non-negative), not the epoch nanoseconds.  Compute the
@@ -14689,21 +14444,21 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         int128 r = ns_in_day - q * incr;
         if (r != 0) {
             switch (rounding_mode) {
-                case TemporalRoundMode.TRUNC:
-                case TemporalRoundMode.FLOOR: break;
-                case TemporalRoundMode.EXPAND:
-                case TemporalRoundMode.CEIL: q += 1; break;
+                case temporal::TemporalRoundMode.TRUNC:
+                case temporal::TemporalRoundMode.FLOOR: break;
+                case temporal::TemporalRoundMode.EXPAND:
+                case temporal::TemporalRoundMode.CEIL: q += 1; break;
                 default: {
                     int128 twice = r * 2;
                     if (twice > incr) {
                         q += 1;
                     } else if (twice == incr) {
                         switch (rounding_mode) {
-                            case TemporalRoundMode.HALF_TRUNC:
-                            case TemporalRoundMode.HALF_FLOOR: break;
-                            case TemporalRoundMode.HALF_EXPAND:
-                            case TemporalRoundMode.HALF_CEIL: q += 1; break;
-                            case TemporalRoundMode.HALF_EVEN: if ((q & 1) != 0) q += 1; break;
+                            case temporal::TemporalRoundMode.HALF_TRUNC:
+                            case temporal::TemporalRoundMode.HALF_FLOOR: break;
+                            case temporal::TemporalRoundMode.HALF_EXPAND:
+                            case temporal::TemporalRoundMode.HALF_CEIL: q += 1; break;
+                            case temporal::TemporalRoundMode.HALF_EVEN: if ((q & 1) != 0) q += 1; break;
                             default: break;
                         }
                     }
