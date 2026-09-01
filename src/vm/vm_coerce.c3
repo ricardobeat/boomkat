@@ -341,7 +341,9 @@ fn bool builtin_fn_is_constructor(Vm* vm, uint fn_idx) {
     // Everything else is answered by the Builtin enum's own `constructable`
     // associated value, so adding a constructor is one field on its enum line
     // rather than a new case in a switch living in another file.
-    if (fn_idx >= builtins::Builtin.LAST.ordinal) return false;
+    if (fn_idx >= builtins::Builtin.LAST.ordinal) {
+        return builtins::temporal_is_constructor(fn_idx);
+    }
     return ((builtins::Builtin)fn_idx).constructable;
 }
 

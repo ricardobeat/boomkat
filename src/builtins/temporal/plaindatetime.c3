@@ -597,23 +597,23 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     double val = 0.0;
-    switch ((Builtin)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index) {
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_YEAR:        val = (double)(long)obj.extra.temporal.long_a; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTH:       val = (double)obj.extra.temporal.long_b; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAY:         val = (double)obj.extra.temporal.long_c; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_HOUR:        val = (double)obj.extra.temporal.long_d; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MINUTE:      val = (double)obj.extra.temporal.long_e; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_SECOND:      val = (double)obj.extra.temporal.long_f; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_g; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.long_h; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.long_i; break;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDAR:
+    switch ((TemporalBuiltin)((uint)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index - TEMPORAL_BASE)) {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_YEAR:        val = (double)(long)obj.extra.temporal.long_a; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTH:       val = (double)obj.extra.temporal.long_b; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAY:         val = (double)obj.extra.temporal.long_c; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_HOUR:        val = (double)obj.extra.temporal.long_d; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MINUTE:      val = (double)obj.extra.temporal.long_e; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_SECOND:      val = (double)obj.extra.temporal.long_f; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_g; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.long_h; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.long_i; break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDAR:
             ctx.result.set_object(obj.extra.temporal.calendar);
             return;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_CALENDARID:
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDARID:
             ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
             return;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTHCODE: {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTHCODE: {
             int m = (int)obj.extra.temporal.long_b;
             char[5] buf;
             usz len;
@@ -625,7 +625,7 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
             ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
             return;
         }
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYOFWEEK: {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFWEEK: {
             long y = (long)obj.extra.temporal.long_a;
             int m = (int)obj.extra.temporal.long_b;
             int d = (int)obj.extra.temporal.long_c;
@@ -635,14 +635,14 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
             ctx.result.set_number((double)dow);
             return;
         }
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYOFYEAR: {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFYEAR: {
             long y = (long)obj.extra.temporal.long_a;
             long jan1 = temporal::epoch_days_from_civil(y, (int)1, (int)1);
             long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) - jan1 + 1;
             ctx.result.set_number((double)doy);
             return;
         }
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_WEEKOFYEAR: {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_WEEKOFYEAR: {
             long y = (long)obj.extra.temporal.long_a;
             int m = (int)obj.extra.temporal.long_b;
             int d = (int)obj.extra.temporal.long_c;
@@ -658,7 +658,7 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
             ctx.result.set_number((double)week);
             return;
         }
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_YEAROFWEEK: {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_YEAROFWEEK: {
             long y = (long)obj.extra.temporal.long_a;
             int m = (int)obj.extra.temporal.long_b;
             int d = (int)obj.extra.temporal.long_c;
@@ -672,30 +672,30 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
             ctx.result.set_number((double)week_year);
             return;
         }
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINWEEK:
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINWEEK:
             ctx.result.set_number(7.0);
             return;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINMONTH: {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINMONTH: {
             int m = (int)obj.extra.temporal.long_b;
             long y = (long)obj.extra.temporal.long_a;
             ctx.result.set_number((double)temporal::days_in_month((int)y, m));
             return;
         }
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINYEAR: {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINYEAR: {
             long y = (long)obj.extra.temporal.long_a;
             ctx.result.set_number(temporal::is_leap_year(y) ? 366.0 : 365.0);
             return;
         }
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_MONTHSINYEAR:
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTHSINYEAR:
             ctx.result.set_number(12.0);
             return;
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_INLEAPYEAR: {
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_INLEAPYEAR: {
             long y = (long)obj.extra.temporal.long_a;
             ctx.result.set_boolean(temporal::is_leap_year(y));
             return;
         }
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_ERA:
-        case Builtin.TEMPORAL_PLAIN_DATETIME_PROTO_ERAYEAR:
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_ERA:
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_ERAYEAR:
             // The ISO calendar has no eras, so both getters return undefined.
             ctx.result.set_undefined();
             return;

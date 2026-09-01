@@ -493,42 +493,42 @@ fn HObject*? build_temporal_now(Heap* heap) {
 
     key = heap.str_intern("instant");
     if (key == null) return null;
-    fn_obj = alloc_builtin_fn(heap, Builtin.TEMPORAL_NOW_INSTANT.ordinal, "instant", 0);
+    fn_obj = alloc_builtin_fn(heap, temporal_index(TemporalBuiltin.NOW_INSTANT), "instant", 0);
     if (fn_obj == null) return null;
     fn_tv.set_object(fn_obj);
     now.put_prop(key, fn_tv, hobject::PROP_FLAGS_WC, heap);
 
     key = heap.str_intern("timeZoneId");
     if (key == null) return null;
-    fn_obj = alloc_builtin_fn(heap, Builtin.TEMPORAL_NOW_TIME_ZONE_ID.ordinal, "timeZoneId", 0);
+    fn_obj = alloc_builtin_fn(heap, temporal_index(TemporalBuiltin.NOW_TIME_ZONE_ID), "timeZoneId", 0);
     if (fn_obj == null) return null;
     fn_tv.set_object(fn_obj);
     now.put_prop(key, fn_tv, hobject::PROP_FLAGS_WC, heap);
 
     key = heap.str_intern("plainDateISO");
     if (key == null) return null;
-    fn_obj = alloc_builtin_fn(heap, Builtin.TEMPORAL_NOW_PLAIN_DATE_ISO.ordinal, "plainDateISO", 0);
+    fn_obj = alloc_builtin_fn(heap, temporal_index(TemporalBuiltin.NOW_PLAIN_DATE_ISO), "plainDateISO", 0);
     if (fn_obj == null) return null;
     fn_tv.set_object(fn_obj);
     now.put_prop(key, fn_tv, hobject::PROP_FLAGS_WC, heap);
 
     key = heap.str_intern("plainDateTimeISO");
     if (key == null) return null;
-    fn_obj = alloc_builtin_fn(heap, Builtin.TEMPORAL_NOW_PLAIN_DATE_TIME_ISO.ordinal, "plainDateTimeISO", 0);
+    fn_obj = alloc_builtin_fn(heap, temporal_index(TemporalBuiltin.NOW_PLAIN_DATE_TIME_ISO), "plainDateTimeISO", 0);
     if (fn_obj == null) return null;
     fn_tv.set_object(fn_obj);
     now.put_prop(key, fn_tv, hobject::PROP_FLAGS_WC, heap);
 
     key = heap.str_intern("plainTimeISO");
     if (key == null) return null;
-    fn_obj = alloc_builtin_fn(heap, Builtin.TEMPORAL_NOW_PLAIN_TIME_ISO.ordinal, "plainTimeISO", 0);
+    fn_obj = alloc_builtin_fn(heap, temporal_index(TemporalBuiltin.NOW_PLAIN_TIME_ISO), "plainTimeISO", 0);
     if (fn_obj == null) return null;
     fn_tv.set_object(fn_obj);
     now.put_prop(key, fn_tv, hobject::PROP_FLAGS_WC, heap);
 
     key = heap.str_intern("zonedDateTimeISO");
     if (key == null) return null;
-    fn_obj = alloc_builtin_fn(heap, Builtin.TEMPORAL_NOW_ZONED_DATE_TIME_ISO.ordinal, "zonedDateTimeISO", 0);
+    fn_obj = alloc_builtin_fn(heap, temporal_index(TemporalBuiltin.NOW_ZONED_DATE_TIME_ISO), "zonedDateTimeISO", 0);
     if (fn_obj == null) return null;
     fn_tv.set_object(fn_obj);
     now.put_prop(key, fn_tv, hobject::PROP_FLAGS_WC, heap);

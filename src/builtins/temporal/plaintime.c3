@@ -223,13 +223,13 @@ fn void builtin_temporal_plain_time_getter(BuiltinContext* ctx) {
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_TIME, "this is not a Temporal.PlainTime")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     double val = 0.0;
-    switch ((Builtin)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index) {
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_HOUR:       val = (double)obj.extra.temporal.long_a; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MINUTE:     val = (double)obj.extra.temporal.long_b; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_SECOND:     val = (double)obj.extra.temporal.long_c; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_d; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.long_e; break;
-        case Builtin.TEMPORAL_PLAIN_TIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.long_f; break;
+    switch ((TemporalBuiltin)((uint)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index - TEMPORAL_BASE)) {
+        case TemporalBuiltin.PLAIN_TIME_PROTO_HOUR:       val = (double)obj.extra.temporal.long_a; break;
+        case TemporalBuiltin.PLAIN_TIME_PROTO_MINUTE:     val = (double)obj.extra.temporal.long_b; break;
+        case TemporalBuiltin.PLAIN_TIME_PROTO_SECOND:     val = (double)obj.extra.temporal.long_c; break;
+        case TemporalBuiltin.PLAIN_TIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_d; break;
+        case TemporalBuiltin.PLAIN_TIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.long_e; break;
+        case TemporalBuiltin.PLAIN_TIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.long_f; break;
         default: break;
     }
     ctx.result.set_number(val);

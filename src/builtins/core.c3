@@ -784,284 +784,6 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     ERROR_PROTO_STACK_SET {"set stack", 1, false, &builtin_error_proto_stack_set}, // set Error.prototype.stack
     ESCAPE {"escape", 1, false, &builtin_escape}, // escape(string) (Annex B §B.2.1.1)
     UNESCAPE {"unescape", 1, false, &builtin_unescape}, // unescape(string) (Annex B §B.2.1.2)
-    // --- Temporal ---
-    TEMPORAL_CALENDAR_CTOR {"Calendar", 1, true, &builtin_temporal_calendar_ctor},
-    TEMPORAL_CALENDAR_FROM {"from", 1, false, &builtin_temporal_calendar_from},
-    TEMPORAL_CALENDAR_PROTO_ID {"id", 0, false, &builtin_temporal_calendar_proto_id},
-    TEMPORAL_CALENDAR_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_calendar_proto_toString},
-    TEMPORAL_DURATION_CTOR {"Duration", 0, true, &builtin_temporal_duration_ctor},
-    TEMPORAL_DURATION_FROM {"from", 1, false, &builtin_temporal_duration_from},
-    TEMPORAL_DURATION_COMPARE {"compare", 2, false, &builtin_temporal_duration_compare},
-    TEMPORAL_DURATION_PROTO_YEARS {"years", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_MONTHS {"months", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_WEEKS {"weeks", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_DAYS {"days", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_HOURS {"hours", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_MINUTES {"minutes", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_SECONDS {"seconds", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_MILLISECONDS {"milliseconds", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_MICROSECONDS {"microseconds", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_NANOSECONDS {"nanoseconds", 0, false, &builtin_temporal_duration_getter},
-    TEMPORAL_DURATION_PROTO_SIGN {"sign", 0, false, &builtin_temporal_duration_proto_sign},
-    TEMPORAL_DURATION_PROTO_BLANK {"blank", 0, false, &builtin_temporal_duration_proto_blank},
-    TEMPORAL_DURATION_PROTO_NEGATED {"negated", 0, false, &builtin_temporal_duration_proto_negated},
-    TEMPORAL_DURATION_PROTO_ABS {"abs", 0, false, &builtin_temporal_duration_proto_abs},
-    TEMPORAL_DURATION_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_duration_proto_toString},
-    TEMPORAL_DURATION_PROTO_TOJSON {"toJSON", 0, false, &builtin_temporal_duration_proto_toJSON},
-    TEMPORAL_DURATION_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_temporal_duration_proto_toLocaleString},
-    TEMPORAL_DURATION_PROTO_VALUEOF {"valueOf", 0, false, &builtin_temporal_duration_proto_valueOf},
-    TEMPORAL_DURATION_PROTO_ADD {"add", 1, false, &builtin_temporal_duration_proto_add},
-    TEMPORAL_DURATION_PROTO_SUBTRACT {"subtract", 1, false, &builtin_temporal_duration_proto_subtract},
-    TEMPORAL_DURATION_PROTO_WITH {"with", 1, false, &builtin_temporal_duration_proto_with},
-    TEMPORAL_DURATION_PROTO_ROUND {"round", 1, false, &builtin_temporal_duration_proto_round},
-    TEMPORAL_DURATION_PROTO_TOTAL {"total", 1, false, &builtin_temporal_duration_proto_total},
-    TEMPORAL_PLAIN_DATE_CTOR {"PlainDate", 3, true, &builtin_temporal_plain_date_ctor},
-    TEMPORAL_PLAIN_DATE_FROM {"from", 1, false, &builtin_temporal_plain_date_from},
-    TEMPORAL_PLAIN_DATE_COMPARE {"compare", 2, false, &builtin_temporal_plain_date_compare},
-    TEMPORAL_PLAIN_DATE_PROTO_YEAR {"year", 0, false, &builtin_temporal_plain_date_proto_year},
-    TEMPORAL_PLAIN_DATE_PROTO_MONTH {"month", 0, false, &builtin_temporal_plain_date_proto_month},
-    TEMPORAL_PLAIN_DATE_PROTO_DAY {"day", 0, false, &builtin_temporal_plain_date_proto_day},
-    TEMPORAL_PLAIN_DATE_PROTO_DAYOFWEEK {"dayOfWeek", 0, false, &builtin_temporal_plain_date_proto_dayOfWeek},
-    TEMPORAL_PLAIN_DATE_PROTO_DAYOFYEAR {"dayOfYear", 0, false, &builtin_temporal_plain_date_proto_dayOfYear},
-    TEMPORAL_PLAIN_DATE_PROTO_MONTHCODE {"monthCode", 0, false, &builtin_temporal_plain_date_proto_monthCode},
-    TEMPORAL_PLAIN_DATE_PROTO_INLEAPYEAR {"inLeapYear", 0, false, &builtin_temporal_plain_date_proto_inLeapYear},
-    TEMPORAL_PLAIN_DATE_PROTO_CALENDARID {"calendarId", 0, false, &builtin_temporal_plain_date_proto_calendarId},
-    TEMPORAL_PLAIN_DATE_PROTO_CALENDAR {"calendar", 0, false, &builtin_temporal_plain_date_proto_calendar},
-    TEMPORAL_PLAIN_DATE_PROTO_ERA {"era", 0, false, &builtin_temporal_plain_date_proto_era},
-    TEMPORAL_PLAIN_DATE_PROTO_ERAYEAR {"eraYear", 0, false, &builtin_temporal_plain_date_proto_eraYear},
-    TEMPORAL_PLAIN_DATE_PROTO_DAYSINMONTH {"daysInMonth", 0, false, &builtin_temporal_plain_date_proto_daysInMonth},
-    TEMPORAL_PLAIN_DATE_PROTO_DAYSINWEEK {"daysInWeek", 0, false, &builtin_temporal_plain_date_proto_daysInWeek},
-    TEMPORAL_PLAIN_DATE_PROTO_DAYSINYEAR {"daysInYear", 0, false, &builtin_temporal_plain_date_proto_daysInYear},
-    TEMPORAL_PLAIN_DATE_PROTO_MONTHSINYEAR {"monthsInYear", 0, false, &builtin_temporal_plain_date_proto_monthsInYear},
-    TEMPORAL_PLAIN_DATE_PROTO_WEEKOFYEAR {"weekOfYear", 0, false, &builtin_temporal_plain_date_proto_weekOfYear},
-    TEMPORAL_PLAIN_DATE_PROTO_YEAROFWEEK {"yearOfWeek", 0, false, &builtin_temporal_plain_date_proto_yearOfWeek},
-    TEMPORAL_PLAIN_DATE_PROTO_VALUEOF {"valueOf", 0, false, &builtin_temporal_plain_date_proto_valueOf},
-    TEMPORAL_PLAIN_DATE_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_plain_date_proto_toString},
-    TEMPORAL_PLAIN_DATE_PROTO_TOJSON {"toJSON", 0, false, &builtin_temporal_plain_date_proto_toJSON},
-    TEMPORAL_PLAIN_DATE_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_temporal_plain_date_proto_toLocaleString},
-    TEMPORAL_PLAIN_DATE_PROTO_EQUALS {"equals", 1, false, &builtin_temporal_plain_date_proto_equals},
-    TEMPORAL_PLAIN_DATE_PROTO_WITH {"with", 1, false, &builtin_temporal_plain_date_proto_with},
-    TEMPORAL_PLAIN_DATE_PROTO_ADD {"add", 1, false, &builtin_temporal_plain_date_proto_add},
-    TEMPORAL_PLAIN_DATE_PROTO_SUBTRACT {"subtract", 1, false, &builtin_temporal_plain_date_proto_subtract},
-    TEMPORAL_PLAIN_DATE_PROTO_UNTIL {"until", 1, false, &builtin_temporal_plain_date_proto_until},
-    TEMPORAL_PLAIN_DATE_PROTO_SINCE {"since", 1, false, &builtin_temporal_plain_date_proto_since},
-    TEMPORAL_PLAIN_DATE_PROTO_WITHCALENDAR {"withCalendar", 1, false, &builtin_temporal_plain_date_proto_withCalendar},
-    TEMPORAL_PLAIN_DATE_PROTO_TOPLAINDATETIME {"toPlainDateTime", 0, false, &builtin_temporal_plain_date_proto_toPlainDateTime},
-    TEMPORAL_PLAIN_DATE_PROTO_TOZONEDDATETIME {"toZonedDateTime", 1, false, &builtin_temporal_plain_date_proto_toZonedDateTime},
-    TEMPORAL_PLAIN_DATE_PROTO_TOPLAINYEARMONTH {"toPlainYearMonth", 0, false, &builtin_temporal_plain_date_proto_toPlainYearMonth},
-    TEMPORAL_PLAIN_DATE_PROTO_TOPLAINMONTHDAY {"toPlainMonthDay", 0, false, &builtin_temporal_plain_date_proto_toPlainMonthDay},
-    TEMPORAL_PLAIN_TIME_CTOR {"PlainTime", 0, true, &builtin_temporal_plain_time_ctor},
-    TEMPORAL_PLAIN_TIME_FROM {"from", 1, false, &builtin_temporal_plain_time_from},
-    TEMPORAL_PLAIN_TIME_COMPARE {"compare", 2, false, &builtin_temporal_plain_time_compare},
-    TEMPORAL_PLAIN_TIME_PROTO_HOUR {"hour", 0, false, &builtin_temporal_plain_time_getter},
-    TEMPORAL_PLAIN_TIME_PROTO_MINUTE {"minute", 0, false, &builtin_temporal_plain_time_getter},
-    TEMPORAL_PLAIN_TIME_PROTO_SECOND {"second", 0, false, &builtin_temporal_plain_time_getter},
-    TEMPORAL_PLAIN_TIME_PROTO_MILLISECOND {"millisecond", 0, false, &builtin_temporal_plain_time_getter},
-    TEMPORAL_PLAIN_TIME_PROTO_MICROSECOND {"microsecond", 0, false, &builtin_temporal_plain_time_getter},
-    TEMPORAL_PLAIN_TIME_PROTO_NANOSECOND {"nanosecond", 0, false, &builtin_temporal_plain_time_getter},
-    TEMPORAL_PLAIN_TIME_PROTO_VALUEOF {"valueOf", 0, false, &builtin_temporal_plain_time_proto_valueOf},
-    TEMPORAL_PLAIN_TIME_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_plain_time_proto_toString},
-    TEMPORAL_PLAIN_TIME_PROTO_TOJSON {"toJSON", 0, false, &builtin_temporal_plain_time_proto_toJSON},
-    TEMPORAL_PLAIN_TIME_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_temporal_plain_time_proto_toLocaleString},
-    TEMPORAL_PLAIN_TIME_PROTO_EQUALS {"equals", 1, false, &builtin_temporal_plain_time_proto_equals},
-    TEMPORAL_PLAIN_TIME_PROTO_WITH {"with", 1, false, &builtin_temporal_plain_time_proto_with},
-    TEMPORAL_PLAIN_TIME_PROTO_ADD {"add", 1, false, &builtin_temporal_plain_time_proto_add},
-    TEMPORAL_PLAIN_TIME_PROTO_SUBTRACT {"subtract", 1, false, &builtin_temporal_plain_time_proto_subtract},
-    TEMPORAL_PLAIN_TIME_PROTO_UNTIL {"until", 1, false, &builtin_temporal_plain_time_proto_until},
-    TEMPORAL_PLAIN_TIME_PROTO_SINCE {"since", 1, false, &builtin_temporal_plain_time_proto_since},
-    TEMPORAL_PLAIN_TIME_PROTO_ROUND {"round", 1, false, &builtin_temporal_plain_time_proto_round},
-    TEMPORAL_PLAIN_DATETIME_CTOR {"PlainDateTime", 3, true, &builtin_temporal_plain_datetime_ctor},
-    TEMPORAL_PLAIN_DATETIME_FROM {"from", 1, false, &builtin_temporal_plain_datetime_from},
-    TEMPORAL_PLAIN_DATETIME_COMPARE {"compare", 2, false, &builtin_temporal_plain_datetime_compare},
-    TEMPORAL_PLAIN_DATETIME_PROTO_YEAR {"year", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_MONTH {"month", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_DAY {"day", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_HOUR {"hour", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_MINUTE {"minute", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_SECOND {"second", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_MILLISECOND {"millisecond", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_MICROSECOND {"microsecond", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_NANOSECOND {"nanosecond", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_CALENDAR {"calendar", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_CALENDARID {"calendarId", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_DAYOFWEEK {"dayOfWeek", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_DAYOFYEAR {"dayOfYear", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_WEEKOFYEAR {"weekOfYear", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_YEAROFWEEK {"yearOfWeek", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINWEEK {"daysInWeek", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINMONTH {"daysInMonth", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_DAYSINYEAR {"daysInYear", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_MONTHSINYEAR {"monthsInYear", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_ERA {"era", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_ERAYEAR {"eraYear", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_INLEAPYEAR {"inLeapYear", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_MONTHCODE {"monthCode", 0, false, &builtin_temporal_plain_datetime_getter},
-    TEMPORAL_PLAIN_DATETIME_PROTO_VALUEOF {"valueOf", 0, false, &builtin_temporal_plain_datetime_proto_valueOf},
-    TEMPORAL_PLAIN_DATETIME_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_plain_datetime_proto_toString},
-    TEMPORAL_PLAIN_DATETIME_PROTO_TOJSON {"toJSON", 0, false, &builtin_temporal_plain_datetime_proto_toJSON},
-    TEMPORAL_PLAIN_DATETIME_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_temporal_plain_datetime_proto_toLocaleString},
-    TEMPORAL_PLAIN_DATETIME_PROTO_EQUALS {"equals", 1, false, &builtin_temporal_plain_datetime_proto_equals},
-    TEMPORAL_PLAIN_DATETIME_PROTO_WITH {"with", 1, false, &builtin_temporal_plain_datetime_proto_with},
-    TEMPORAL_PLAIN_DATETIME_PROTO_ADD {"add", 1, false, &builtin_temporal_plain_datetime_proto_add},
-    TEMPORAL_PLAIN_DATETIME_PROTO_SUBTRACT {"subtract", 1, false, &builtin_temporal_plain_datetime_proto_subtract},
-    TEMPORAL_PLAIN_DATETIME_PROTO_UNTIL {"until", 1, false, &builtin_temporal_plain_datetime_proto_until},
-    TEMPORAL_PLAIN_DATETIME_PROTO_SINCE {"since", 1, false, &builtin_temporal_plain_datetime_proto_since},
-    TEMPORAL_PLAIN_DATETIME_PROTO_WITHCALENDAR {"withCalendar", 1, false, &builtin_temporal_plain_datetime_proto_withCalendar},
-    TEMPORAL_PLAIN_DATETIME_PROTO_ROUND {"round", 1, false, &builtin_temporal_plain_datetime_proto_round},
-    TEMPORAL_PLAIN_DATETIME_PROTO_WITHPLAINTIME {"withPlainTime", 0, false, &builtin_temporal_plain_datetime_proto_withPlainTime},
-    TEMPORAL_PLAIN_DATETIME_PROTO_TOZONEDDATETIME {"toZonedDateTime", 1, false, &builtin_temporal_plain_datetime_proto_toZonedDateTime},
-    TEMPORAL_PLAIN_DATETIME_PROTO_TOPLAINDATE {"toPlainDate", 0, false, &builtin_temporal_plain_datetime_proto_toPlainDate},
-    TEMPORAL_PLAIN_DATETIME_PROTO_TOPLAINTIME {"toPlainTime", 0, false, &builtin_temporal_plain_datetime_proto_toPlainTime},
-    TEMPORAL_PLAIN_YEARMONTH_CTOR {"PlainYearMonth", 2, true, &builtin_temporal_plain_yearmonth_ctor},
-    TEMPORAL_PLAIN_YEARMONTH_FROM {"from", 1, false, &builtin_temporal_plain_yearmonth_from},
-    TEMPORAL_PLAIN_YEARMONTH_COMPARE {"compare", 2, false, &builtin_temporal_plain_yearmonth_compare},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAR {"year", 0, false, &builtin_temporal_plain_yearmonth_proto_year},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTH {"month", 0, false, &builtin_temporal_plain_yearmonth_proto_month},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHCODE {"monthCode", 0, false, &builtin_temporal_plain_yearmonth_proto_monthCode},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAY {"day", 0, false, &builtin_temporal_plain_yearmonth_proto_day},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINMONTH {"daysInMonth", 0, false, &builtin_temporal_plain_yearmonth_proto_daysInMonth},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINYEAR {"daysInYear", 0, false, &builtin_temporal_plain_yearmonth_proto_daysInYear},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_MONTHSINYEAR {"monthsInYear", 0, false, &builtin_temporal_plain_yearmonth_proto_monthsInYear},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_INLEAPYEAR {"inLeapYear", 0, false, &builtin_temporal_plain_yearmonth_proto_inLeapYear},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_CALENDARID {"calendarId", 0, false, &builtin_temporal_plain_yearmonth_proto_calendarId},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_CALENDAR {"calendar", 0, false, &builtin_temporal_plain_yearmonth_proto_calendar},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_ERA {"era", 0, false, &builtin_temporal_plain_yearmonth_proto_era},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_ERAYEAR {"eraYear", 0, false, &builtin_temporal_plain_yearmonth_proto_eraYear},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYOFWEEK {"dayOfWeek", 0, false, &builtin_temporal_plain_yearmonth_proto_dayOfWeek},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYOFYEAR {"dayOfYear", 0, false, &builtin_temporal_plain_yearmonth_proto_dayOfYear},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_WEEKOFYEAR {"weekOfYear", 0, false, &builtin_temporal_plain_yearmonth_proto_weekOfYear},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_YEAROFWEEK {"yearOfWeek", 0, false, &builtin_temporal_plain_yearmonth_proto_yearOfWeek},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_REFERENCEISOYEAR {"referenceISOYear", 0, false, &builtin_temporal_plain_yearmonth_proto_referenceISOYear},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_DAYSINWEEK {"daysInWeek", 0, false, &builtin_temporal_plain_yearmonth_proto_daysInWeek},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_VALUEOF {"valueOf", 0, false, &builtin_temporal_plain_yearmonth_proto_valueOf},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_plain_yearmonth_proto_toString},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_TOJSON {"toJSON", 0, false, &builtin_temporal_plain_yearmonth_proto_toJSON},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_temporal_plain_yearmonth_proto_toLocaleString},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_EQUALS {"equals", 1, false, &builtin_temporal_plain_yearmonth_proto_equals},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_WITH {"with", 1, false, &builtin_temporal_plain_yearmonth_proto_with},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_ADD {"add", 1, false, &builtin_temporal_plain_yearmonth_proto_add},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_SUBTRACT {"subtract", 1, false, &builtin_temporal_plain_yearmonth_proto_subtract},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_UNTIL {"until", 1, false, &builtin_temporal_plain_yearmonth_proto_until},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_SINCE {"since", 1, false, &builtin_temporal_plain_yearmonth_proto_since},
-    TEMPORAL_PLAIN_YEARMONTH_PROTO_TOPLAINDATE {"toPlainDate", 1, false, &builtin_temporal_plain_yearmonth_proto_toPlainDate},
-    TEMPORAL_PLAIN_MONTHDAY_CTOR {"PlainMonthDay", 2, true, &builtin_temporal_plain_monthday_ctor},
-    TEMPORAL_PLAIN_MONTHDAY_FROM {"from", 1, false, &builtin_temporal_plain_monthday_from},
-    TEMPORAL_PLAIN_MONTHDAY_COMPARE {"compare", 2, false, &builtin_temporal_plain_monthday_compare},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_YEAR {"year", 0, false, &builtin_temporal_plain_monthday_proto_year},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTH {"month", 0, false, &builtin_temporal_plain_monthday_proto_month},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTHCODE {"monthCode", 0, false, &builtin_temporal_plain_monthday_proto_monthCode},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_DAY {"day", 0, false, &builtin_temporal_plain_monthday_proto_day},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_CALENDARID {"calendarId", 0, false, &builtin_temporal_plain_monthday_proto_calendarId},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_CALENDAR {"calendar", 0, false, &builtin_temporal_plain_monthday_proto_calendar},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_ERA {"era", 0, false, &builtin_temporal_plain_monthday_proto_era},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_ERAYEAR {"eraYear", 0, false, &builtin_temporal_plain_monthday_proto_eraYear},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_INLEAPYEAR {"inLeapYear", 0, false, &builtin_temporal_plain_monthday_proto_inLeapYear},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYSINMONTH {"daysInMonth", 0, false, &builtin_temporal_plain_monthday_proto_daysInMonth},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYOFWEEK {"dayOfWeek", 0, false, &builtin_temporal_plain_monthday_proto_dayOfWeek},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYOFYEAR {"dayOfYear", 0, false, &builtin_temporal_plain_monthday_proto_dayOfYear},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYSINWEEK {"daysInWeek", 0, false, &builtin_temporal_plain_monthday_proto_daysInWeek},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_DAYSINYEAR {"daysInYear", 0, false, &builtin_temporal_plain_monthday_proto_daysInYear},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_MONTHSINYEAR {"monthsInYear", 0, false, &builtin_temporal_plain_monthday_proto_monthsInYear},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_WEEKOFYEAR {"weekOfYear", 0, false, &builtin_temporal_plain_monthday_proto_weekOfYear},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_YEAROFWEEK {"yearOfWeek", 0, false, &builtin_temporal_plain_monthday_proto_yearOfWeek},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_REFERENCEISOYEAR {"referenceISOYear", 0, false, &builtin_temporal_plain_monthday_proto_referenceISOYear},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_VALUEOF {"valueOf", 0, false, &builtin_temporal_plain_monthday_proto_valueOf},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_plain_monthday_proto_toString},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_TOJSON {"toJSON", 0, false, &builtin_temporal_plain_monthday_proto_toJSON},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_temporal_plain_monthday_proto_toLocaleString},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_EQUALS {"equals", 1, false, &builtin_temporal_plain_monthday_proto_equals},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_WITH {"with", 1, false, &builtin_temporal_plain_monthday_proto_with},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_UNTIL {"until", 1, false, &builtin_temporal_plain_monthday_proto_until},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_SINCE {"since", 1, false, &builtin_temporal_plain_monthday_proto_since},
-    TEMPORAL_PLAIN_MONTHDAY_PROTO_TOPLAINDATE {"toPlainDate", 1, false, &builtin_temporal_plain_monthday_proto_toPlainDate},
-    TEMPORAL_INSTANT_CTOR {"Instant", 1, true, &builtin_temporal_instant_ctor},
-    TEMPORAL_INSTANT_FROM {"from", 1, false, &builtin_temporal_instant_from},
-    TEMPORAL_INSTANT_FROM_EPOCH_SECONDS {"fromEpochSeconds", 1, false, &builtin_temporal_instant_fromEpochSeconds},
-    TEMPORAL_INSTANT_FROM_EPOCH_MILLISECONDS {"fromEpochMilliseconds", 1, false, &builtin_temporal_instant_fromEpochMilliseconds},
-    TEMPORAL_INSTANT_FROM_EPOCH_MICROSECONDS {"fromEpochMicroseconds", 1, false, &builtin_temporal_instant_fromEpochMicroseconds},
-    TEMPORAL_INSTANT_FROM_EPOCH_NANOSECONDS {"fromEpochNanoseconds", 1, false, &builtin_temporal_instant_fromEpochNanoseconds},
-    TEMPORAL_INSTANT_COMPARE {"compare", 2, false, &builtin_temporal_instant_compare},
-    TEMPORAL_INSTANT_PROTO_EPOCHSECONDS {"epochSeconds", 0, false, &builtin_temporal_instant_proto_epochSeconds},
-    TEMPORAL_INSTANT_PROTO_EPOCHMILLISECONDS {"epochMilliseconds", 0, false, &builtin_temporal_instant_proto_epochMilliseconds},
-    TEMPORAL_INSTANT_PROTO_EPOCHMICROSECONDS {"epochMicroseconds", 0, false, &builtin_temporal_instant_proto_epochMicroseconds},
-    TEMPORAL_INSTANT_PROTO_EPOCHNANOSECONDS {"epochNanoseconds", 0, false, &builtin_temporal_instant_proto_epochNanoseconds},
-    TEMPORAL_INSTANT_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_instant_proto_toString},
-    TEMPORAL_INSTANT_PROTO_TOJSON {"toJSON", 0, false, &builtin_temporal_instant_proto_toJSON},
-    TEMPORAL_INSTANT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_temporal_instant_proto_toLocaleString},
-    TEMPORAL_INSTANT_PROTO_VALUEOF {"valueOf", 0, false, &builtin_temporal_instant_proto_valueOf},
-    TEMPORAL_INSTANT_PROTO_EQUALS {"equals", 1, false, &builtin_temporal_instant_proto_equals},
-    TEMPORAL_INSTANT_PROTO_ADD {"add", 1, false, &builtin_temporal_instant_proto_add},
-    TEMPORAL_INSTANT_PROTO_SUBTRACT {"subtract", 1, false, &builtin_temporal_instant_proto_subtract},
-    TEMPORAL_INSTANT_PROTO_ROUND {"round", 1, false, &builtin_temporal_instant_proto_round},
-    TEMPORAL_INSTANT_PROTO_SINCE {"since", 1, false, &builtin_temporal_instant_proto_since},
-    TEMPORAL_INSTANT_PROTO_UNTIL {"until", 1, false, &builtin_temporal_instant_proto_until},
-    TEMPORAL_INSTANT_PROTO_TOZONEDDATETIMEISO {"toZonedDateTimeISO", 1, false, &builtin_temporal_instant_proto_toZonedDateTimeISO},
-    TEMPORAL_TIMEZONE_CTOR {"TimeZone", 1, true, &builtin_temporal_timezone_ctor},
-    TEMPORAL_TIMEZONE_FROM {"from", 1, false, &builtin_temporal_timezone_from},
-    TEMPORAL_TIMEZONE_PROTO_ID {"id", 0, false, &builtin_temporal_timezone_proto_id},
-    TEMPORAL_TIMEZONE_PROTO_OFFSETNANOSECONDSFOR {"getOffsetNanosecondsFor", 1, false, &builtin_temporal_timezone_proto_getOffsetNanosecondsFor},
-    TEMPORAL_TIMEZONE_PROTO_GETPOSSIBLEINSTANTSFOR {"getPossibleInstantsFor", 1, false, &builtin_temporal_timezone_proto_getPossibleInstantsFor},
-    TEMPORAL_TIMEZONE_PROTO_GETNEXTTRANSITION {"getNextTransition", 1, false, &builtin_temporal_timezone_proto_getNextTransition},
-    TEMPORAL_TIMEZONE_PROTO_GETPREVIOUSTRANSITION {"getPreviousTransition", 1, false, &builtin_temporal_timezone_proto_getPreviousTransition},
-    TEMPORAL_ZONEDDATETIME_CTOR {"ZonedDateTime", 2, true, &builtin_temporal_zoneddatetime_ctor},
-    TEMPORAL_ZONEDDATETIME_FROM {"from", 1, false, &builtin_temporal_zoneddatetime_from},
-    TEMPORAL_ZONEDDATETIME_COMPARE {"compare", 2, false, &builtin_temporal_zoneddatetime_compare},
-    TEMPORAL_ZONEDDATETIME_PROTO_EPOCHSECONDS {"epochSeconds", 0, false, &builtin_temporal_zoneddatetime_proto_epochSeconds},
-    TEMPORAL_ZONEDDATETIME_PROTO_EPOCHMILLISECONDS {"epochMilliseconds", 0, false, &builtin_temporal_zoneddatetime_proto_epochMilliseconds},
-    TEMPORAL_ZONEDDATETIME_PROTO_EPOCHMICROSECONDS {"epochMicroseconds", 0, false, &builtin_temporal_zoneddatetime_proto_epochMicroseconds},
-    TEMPORAL_ZONEDDATETIME_PROTO_EPOCHNANOSECONDS {"epochNanoseconds", 0, false, &builtin_temporal_zoneddatetime_proto_epochNanoseconds},
-    TEMPORAL_ZONEDDATETIME_PROTO_WITH {"with", 1, false, &builtin_temporal_zoneddatetime_proto_with},
-    TEMPORAL_ZONEDDATETIME_PROTO_TIMEZONEID {"timeZoneId", 0, false, &builtin_temporal_zoneddatetime_proto_timeZoneId},
-    TEMPORAL_ZONEDDATETIME_PROTO_CALENDARID {"calendarId", 0, false, &builtin_temporal_zoneddatetime_proto_calendarId},
-    TEMPORAL_ZONEDDATETIME_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_zoneddatetime_proto_toString},
-    TEMPORAL_ZONEDDATETIME_PROTO_TOJSON {"toJSON", 0, false, &builtin_temporal_zoneddatetime_proto_toJSON},
-    TEMPORAL_ZONEDDATETIME_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_temporal_zoneddatetime_proto_toLocaleString},
-    TEMPORAL_ZONEDDATETIME_PROTO_EQUALS {"equals", 1, false, &builtin_temporal_zoneddatetime_proto_equals},
-    TEMPORAL_ZONEDDATETIME_PROTO_WITHTIMEZONE {"withTimeZone", 1, false, &builtin_temporal_zoneddatetime_proto_withTimeZone},
-    TEMPORAL_ZONEDDATETIME_PROTO_WITHCALENDAR {"withCalendar", 1, false, &builtin_temporal_zoneddatetime_proto_withCalendar},
-    TEMPORAL_ZONEDDATETIME_PROTO_ADD {"add", 1, false, &builtin_temporal_zoneddatetime_proto_add},
-    TEMPORAL_ZONEDDATETIME_PROTO_SUBTRACT {"subtract", 1, false, &builtin_temporal_zoneddatetime_proto_subtract},
-    TEMPORAL_ZONEDDATETIME_PROTO_UNTIL {"until", 1, false, &builtin_temporal_zoneddatetime_proto_until},
-    TEMPORAL_ZONEDDATETIME_PROTO_SINCE {"since", 1, false, &builtin_temporal_zoneddatetime_proto_since},
-    TEMPORAL_ZONEDDATETIME_PROTO_ROUND {"round", 1, false, &builtin_temporal_zoneddatetime_proto_round},
-    TEMPORAL_ZONEDDATETIME_PROTO_WITHPLAIN_TIME {"withPlainTime", 0, false, &builtin_temporal_zoneddatetime_proto_withPlainTime},
-    TEMPORAL_ZONEDDATETIME_PROTO_TOINSTANT {"toInstant", 0, false, &builtin_temporal_zoneddatetime_proto_toInstant},
-    TEMPORAL_ZONEDDATETIME_PROTO_TOPLAINDATETIME {"toPlainDateTime", 0, false, &builtin_temporal_zoneddatetime_proto_toPlainDateTime},
-    TEMPORAL_ZONEDDATETIME_PROTO_TOPLAINTIME {"toPlainTime", 0, false, &builtin_temporal_zoneddatetime_proto_toPlainTime},
-    TEMPORAL_ZONEDDATETIME_PROTO_TOPLAINDATE {"toPlainDate", 0, false, &builtin_temporal_zoneddatetime_proto_toPlainDate},
-    TEMPORAL_ZONEDDATETIME_PROTO_STARTOFDAY {"startOfDay", 0, false, &builtin_temporal_zoneddatetime_proto_startOfDay},
-    TEMPORAL_ZONEDDATETIME_PROTO_GETTIMEZONETRANSITION {"getTimeZoneTransition", 1, false, &builtin_temporal_zoneddatetime_proto_getTimeZoneTransition},
-    TEMPORAL_ZONEDDATETIME_PROTO_YEAR {"year", 0, false, &builtin_temporal_zoneddatetime_proto_year},
-    TEMPORAL_ZONEDDATETIME_PROTO_MONTH {"month", 0, false, &builtin_temporal_zoneddatetime_proto_month},
-    TEMPORAL_ZONEDDATETIME_PROTO_MONTHCODE {"monthCode", 0, false, &builtin_temporal_zoneddatetime_proto_monthCode},
-    TEMPORAL_ZONEDDATETIME_PROTO_DAY {"day", 0, false, &builtin_temporal_zoneddatetime_proto_day},
-    TEMPORAL_ZONEDDATETIME_PROTO_HOUR {"hour", 0, false, &builtin_temporal_zoneddatetime_proto_hour},
-    TEMPORAL_ZONEDDATETIME_PROTO_MINUTE {"minute", 0, false, &builtin_temporal_zoneddatetime_proto_minute},
-    TEMPORAL_ZONEDDATETIME_PROTO_SECOND {"second", 0, false, &builtin_temporal_zoneddatetime_proto_second},
-    TEMPORAL_ZONEDDATETIME_PROTO_MILLISECOND {"millisecond", 0, false, &builtin_temporal_zoneddatetime_proto_millisecond},
-    TEMPORAL_ZONEDDATETIME_PROTO_MICROSECOND {"microsecond", 0, false, &builtin_temporal_zoneddatetime_proto_microsecond},
-    TEMPORAL_ZONEDDATETIME_PROTO_NANOSECOND {"nanosecond", 0, false, &builtin_temporal_zoneddatetime_proto_nanosecond},
-    TEMPORAL_ZONEDDATETIME_PROTO_OFFSET {"offset", 0, false, &builtin_temporal_zoneddatetime_proto_offset},
-    TEMPORAL_ZONEDDATETIME_PROTO_OFFSETNANOSECONDS {"offsetNanoseconds", 0, false, &builtin_temporal_zoneddatetime_proto_offsetNanoseconds},
-    TEMPORAL_ZONEDDATETIME_PROTO_DAYOFWEEK {"dayOfWeek", 0, false, &builtin_temporal_zoneddatetime_proto_dayOfWeek},
-    TEMPORAL_ZONEDDATETIME_PROTO_DAYOFYEAR {"dayOfYear", 0, false, &builtin_temporal_zoneddatetime_proto_dayOfYear},
-    TEMPORAL_ZONEDDATETIME_PROTO_WEEKOFYEAR {"weekOfYear", 0, false, &builtin_temporal_zoneddatetime_proto_weekOfYear},
-    TEMPORAL_ZONEDDATETIME_PROTO_YEAROFWEEK {"yearOfWeek", 0, false, &builtin_temporal_zoneddatetime_proto_yearOfWeek},
-    TEMPORAL_ZONEDDATETIME_PROTO_DAYSINWEEK {"daysInWeek", 0, false, &builtin_temporal_zoneddatetime_proto_daysInWeek},
-    TEMPORAL_ZONEDDATETIME_PROTO_DAYSINMONTH {"daysInMonth", 0, false, &builtin_temporal_zoneddatetime_proto_daysInMonth},
-    TEMPORAL_ZONEDDATETIME_PROTO_DAYSINYEAR {"daysInYear", 0, false, &builtin_temporal_zoneddatetime_proto_daysInYear},
-    TEMPORAL_ZONEDDATETIME_PROTO_MONTHSINYEAR {"monthsInYear", 0, false, &builtin_temporal_zoneddatetime_proto_monthsInYear},
-    TEMPORAL_ZONEDDATETIME_PROTO_INLEAPYEAR {"inLeapYear", 0, false, &builtin_temporal_zoneddatetime_proto_inLeapYear},
-    TEMPORAL_ZONEDDATETIME_PROTO_HOURSINDAY {"hoursInDay", 0, false, &builtin_temporal_zoneddatetime_proto_hoursInDay},
-    TEMPORAL_ZONEDDATETIME_PROTO_ERA {"era", 0, false, &builtin_temporal_zoneddatetime_proto_era},
-    TEMPORAL_ZONEDDATETIME_PROTO_ERAYEAR {"eraYear", 0, false, &builtin_temporal_zoneddatetime_proto_eraYear},
-    TEMPORAL_ZONEDDATETIME_PROTO_VALUEOF {"valueOf", 0, false, &builtin_temporal_zoneddatetime_proto_valueOf},
-    TEMPORAL_NOW_INSTANT {"instant", 0, false, &builtin_temporal_now_instant},
-    TEMPORAL_NOW_TIME_ZONE_ID {"timeZoneId", 0, false, &builtin_temporal_now_time_zone_id},
-    TEMPORAL_NOW_PLAIN_DATE_ISO {"plainDateISO", 0, false, &builtin_temporal_now_plain_date_iso},
-    TEMPORAL_NOW_PLAIN_DATE_TIME_ISO {"plainDateTimeISO", 0, false, &builtin_temporal_now_plain_date_time_iso},
-    TEMPORAL_NOW_PLAIN_TIME_ISO {"plainTimeISO", 0, false, &builtin_temporal_now_plain_time_iso},
-    TEMPORAL_NOW_ZONED_DATE_TIME_ISO {"zonedDateTimeISO", 0, false, &builtin_temporal_now_zoned_date_time_iso},
     LAST {"", -1, false, null}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -3037,9 +2759,11 @@ struct BuiltinMeta {
 }
 
 fn BuiltinMeta builtin_get_metadata(uint idx) {
-    if (idx >= Builtin.LAST.ordinal) return { "", -1 };
-    Builtin b = (Builtin)idx;
-    return { b.js_name, b.js_arity };
+    if (idx < Builtin.LAST.ordinal) {
+        Builtin b = (Builtin)idx;
+        return { b.js_name, b.js_arity };
+    }
+    return temporal_get_metadata(idx);
 }
 
 // ============================================================================
@@ -3461,7 +3185,11 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
 // `default:` arm (set_undefined on the result). Ordinals with no JS-visible
 // dispatch path (e.g. reserved/unused builtins) carry a null handler and are
 // rejected the same way a missing switch arm used to be.
-BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table;
+// Sized to span every index space that dispatches through it: the engine's
+// own Builtin range, then the Temporal range starting at TEMPORAL_BASE.
+// TEMPORAL_COUNT is 0 when Temporal is not built in.
+const uint BUILTIN_TABLE_LEN = TEMPORAL_BASE + TEMPORAL_COUNT;
+BuiltinFunc[BUILTIN_TABLE_LEN] builtin_dispatch_table;
 
 // ============================================================================
 // Host functions
@@ -3473,12 +3201,12 @@ BuiltinFunc[Builtin.LAST.ordinal] builtin_dispatch_table;
 // HOST_FN_BASE + slot, where slot indexes Heap.host_fns. Two properties make
 // this work:
 //
-//   - It is >= Builtin.LAST.ordinal, so dispatch_builtin's out-of-range
+//   - It is >= BUILTIN_TABLE_LEN, so dispatch_builtin's out-of-range
 //     branch catches it and routes to dispatch_host.
 //   - It is positive as an int, so HObject.callable_kind() reports BUILTIN_FN
 //     and every existing dispatch site handles it unchanged.
 //
-// 2^30 rather than Builtin.LAST.ordinal + 1 so a host index is obvious on
+// 2^30 rather than BUILTIN_TABLE_LEN + 1 so a host index is obvious on
 // sight in a debugger, and so adding builtins can never collide with one.
 const uint HOST_FN_BASE = 0x4000_0000;
 
@@ -3856,6 +3584,9 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
     return func_obj;
 }
 
+// Populates the dispatch table from every contributing enum. Called from
+// ensure_engine_init as well as running as an @init, because foreign
+// toolchain linkers may skip C3's startup sections.
 fn void init_builtin_dispatch_table() @init
 {
     $foreach $b : Builtin::values:
@@ -3863,6 +3594,7 @@ fn void init_builtin_dispatch_table() @init
             builtin_dispatch_table[$b.ordinal] = $b.handler;
         $endif
     $endforeach
+    init_temporal_dispatch_table();
 }
 
 fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
@@ -3872,7 +3604,10 @@ fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
     // at the single chokepoint every call already passes through; a missed
     // site would otherwise read an arbitrary scope index.
     ctx.host_scope_slot = 0;
-    if (fn_index >= Builtin.LAST.ordinal) {
+    // BUILTIN_TABLE_LEN, not Builtin.LAST.ordinal: the table spans every
+    // contributing enum, so a Temporal index is in range and dispatches
+    // normally.
+    if (fn_index >= BUILTIN_TABLE_LEN) {
         // Host functions live at HOST_FN_BASE and above, so they arrive here
         // rather than at any of the callable_kind() sites: to those a host
         // function is an ordinary BUILTIN_FN, which is what makes new, super(),
@@ -4367,15 +4102,15 @@ fn HObject* promote_builtin_fn(Heap* heap, uint fn_idx) {
     // Host functions live above the builtin range and already are real
     // FUNCTION objects, so they never reach promotion; a stray index would
     // otherwise run off the end of the cache.
-    if (fn_idx >= Builtin.LAST.ordinal) return null;
+    if (fn_idx >= BUILTIN_TABLE_LEN) return null;
 
     if (heap.promoted_builtins == null) {
-        usz bytes = (usz)Builtin.LAST.ordinal * HObject*::size;
+        usz bytes = (usz)BUILTIN_TABLE_LEN * HObject*::size;
         void* raw = heap.alloc_func(heap.heap_udata, bytes);
         if (raw == null) return null;
         mem::clear(raw, (sz)bytes);
         heap.promoted_builtins = (HObject**)raw;
-        heap.promoted_builtin_capacity = Builtin.LAST.ordinal;
+        heap.promoted_builtin_capacity = BUILTIN_TABLE_LEN;
     }
 
     HObject* cached = heap.promoted_builtins[fn_idx];

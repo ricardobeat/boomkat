@@ -628,17 +628,17 @@ fn void builtin_temporal_duration_getter(BuiltinContext* ctx) {
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     double val = 0.0;
-    switch ((Builtin)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index) {
-        case Builtin.TEMPORAL_DURATION_PROTO_YEARS:        val = (double)obj.extra.temporal.long_a; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MONTHS:       val = (double)obj.extra.temporal.long_b; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_WEEKS:        val = (double)obj.extra.temporal.long_c; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_DAYS:         val = (double)obj.extra.temporal.long_d; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_HOURS:        val = (double)obj.extra.temporal.long_e; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MINUTES:      val = (double)obj.extra.temporal.long_f; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_SECONDS:      val = (double)obj.extra.temporal.long_g; break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MILLISECONDS: val = bitcast((ulong)obj.extra.temporal.long_h, double); break;
-        case Builtin.TEMPORAL_DURATION_PROTO_MICROSECONDS: val = bitcast((ulong)obj.extra.temporal.long_i, double); break;
-        case Builtin.TEMPORAL_DURATION_PROTO_NANOSECONDS:  val = bitcast((ulong)obj.extra.temporal.long_j, double); break;
+    switch ((TemporalBuiltin)((uint)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index - TEMPORAL_BASE)) {
+        case TemporalBuiltin.DURATION_PROTO_YEARS:        val = (double)obj.extra.temporal.long_a; break;
+        case TemporalBuiltin.DURATION_PROTO_MONTHS:       val = (double)obj.extra.temporal.long_b; break;
+        case TemporalBuiltin.DURATION_PROTO_WEEKS:        val = (double)obj.extra.temporal.long_c; break;
+        case TemporalBuiltin.DURATION_PROTO_DAYS:         val = (double)obj.extra.temporal.long_d; break;
+        case TemporalBuiltin.DURATION_PROTO_HOURS:        val = (double)obj.extra.temporal.long_e; break;
+        case TemporalBuiltin.DURATION_PROTO_MINUTES:      val = (double)obj.extra.temporal.long_f; break;
+        case TemporalBuiltin.DURATION_PROTO_SECONDS:      val = (double)obj.extra.temporal.long_g; break;
+        case TemporalBuiltin.DURATION_PROTO_MILLISECONDS: val = bitcast((ulong)obj.extra.temporal.long_h, double); break;
+        case TemporalBuiltin.DURATION_PROTO_MICROSECONDS: val = bitcast((ulong)obj.extra.temporal.long_i, double); break;
+        case TemporalBuiltin.DURATION_PROTO_NANOSECONDS:  val = bitcast((ulong)obj.extra.temporal.long_j, double); break;
         default: break;
     }
     ctx.result.set_number(val);
