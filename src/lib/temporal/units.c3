@@ -13,6 +13,16 @@ module boomkat::lib::temporal;
 
 import std::math;
 
+// Nanoseconds per unit. These appear on nearly every arithmetic path in
+// Temporal; naming them keeps a mistyped zero count from silently becoming a
+// factor-of-ten bug.
+const long NS_PER_US   =             1_000L;
+const long NS_PER_MS   =         1_000_000L;
+const long NS_PER_SEC  =     1_000_000_000L;
+const long NS_PER_MIN  =    60_000_000_000L;
+const long NS_PER_HOUR = 3_600_000_000_000L;
+const long NS_PER_DAY  = 86_400_000_000_000L;
+
 enum TemporalUnit : int {
     YEAR, MONTH, WEEK, DAY,
     HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND,
@@ -32,10 +42,10 @@ fn bool is_date_unit(TemporalUnit u) { return u <= TemporalUnit.DAY; }
 
 fn long unit_ns_divisor(TemporalUnit u) {
     switch (u) {
-        case TemporalUnit.HOUR:        return 3600000000000L;
-        case TemporalUnit.MINUTE:      return   60000000000L;
-        case TemporalUnit.SECOND:      return    1000000000L;
-        case TemporalUnit.MILLISECOND: return       1000000L;
+        case TemporalUnit.HOUR:        return NS_PER_HOUR;
+        case TemporalUnit.MINUTE:      return   NS_PER_MIN;
+        case TemporalUnit.SECOND:      return    NS_PER_SEC;
+        case TemporalUnit.MILLISECOND: return       NS_PER_MS;
         case TemporalUnit.MICROSECOND: return          1000L;
         case TemporalUnit.NANOSECOND:  return             1L;
         default: return 0;

@@ -67,33 +67,42 @@ fn bool is_valid_duration(DurationParts* d) {
     // double to int128 to avoid an intermediate long overflow on values above
     // 2^63.
     int128 total_ns = (int128)0;
-    total_ns += (int128)math::abs(d.days) * 86400000000000L;
-    total_ns += (int128)math::abs(d.hours) * 3600000000000L;
-    total_ns += (int128)math::abs(d.minutes) * 60000000000L;
-    total_ns += (int128)math::abs(d.seconds) * 1000000000L;
+    total_ns += (int128)math::abs(d.days) * NS_PER_DAY;
+    total_ns += (int128)math::abs(d.hours) * NS_PER_HOUR;
+    total_ns += (int128)math::abs(d.minutes) * NS_PER_MIN;
+    total_ns += (int128)math::abs(d.seconds) * NS_PER_SEC;
     double[3] sub_abs = { math::abs(d.ms), math::abs(d.us), math::abs(d.ns) };
-    long[3] mult = { 1000000L, 1000L, 1L };
+    long[3] mult = { NS_PER_MS, 1000L, 1L };
     for (int k = 0; k < 3; k++) {
         int128 rounded = (int128)(double)sub_abs[k];
         total_ns += math::abs(rounded) * mult[k];
     }
     // 2^53 * 10^9 = 9007199254740992000000000
-    if (total_ns >= (int128)9007199254740992L * (int128)1000000000L) {
+    if (total_ns >= (int128)9007199254740992L * (int128)NS_PER_SEC) {
         return false;
     }
     return true;
 }
 
-fn int128 duration_to_time_ns(DurationParts d) {
+// The duration's time columns (hours and below) in nanoseconds, excluding
+// days. Several spec algorithms need exactly this: AddTime and
+// AddZonedDateTime treat days as a calendar quantity resolved against a zone
+// or a date, so folding them in here at a flat 24 hours would be wrong.
+// `duration_to_time_ns` is the same sum with days included, for the callers
+// that do want a uniform-day total.
+fn int128 duration_time_part_ns(DurationParts d) {
     int128 ns = (int128)0;
-    ns += (int128)d.days    * 86400000000000L;
-    ns += (int128)d.hours   * 3600000000000L;
-    ns += (int128)d.minutes *   60000000000L;
-    ns += (int128)d.seconds *    1000000000L;
-    ns += (int128)d.ms      *       1000000L;
-    ns += (int128)d.us      *          1000L;
+    ns += (int128)d.hours   * NS_PER_HOUR;
+    ns += (int128)d.minutes * NS_PER_MIN;
+    ns += (int128)d.seconds * NS_PER_SEC;
+    ns += (int128)d.ms      * NS_PER_MS;
+    ns += (int128)d.us      * NS_PER_US;
     ns += (int128)d.ns;
     return ns;
+}
+
+fn int128 duration_to_time_ns(DurationParts d) {
+    return (int128)d.days * NS_PER_DAY + duration_time_part_ns(d);
 }
 
 fn TemporalUnit default_largest_unit(DurationParts d) {
@@ -118,20 +127,20 @@ fn TemporalUnit default_largest_unit(DurationParts d) {
 fn DurationParts time_ns_split(long v, TemporalUnit largest) {
     DurationParts dp = {};
     if (largest <= TemporalUnit.HOUR) {
-        dp.hours = v / 3_600_000_000_000L;
-        v %= 3_600_000_000_000L;
+        dp.hours = v / NS_PER_HOUR;
+        v %= NS_PER_HOUR;
     }
     if (largest <= TemporalUnit.MINUTE) {
-        dp.minutes = v / 60_000_000_000L;
-        v %= 60_000_000_000L;
+        dp.minutes = v / NS_PER_MIN;
+        v %= NS_PER_MIN;
     }
     if (largest <= TemporalUnit.SECOND) {
-        dp.seconds = v / 1_000_000_000L;
-        v %= 1_000_000_000L;
+        dp.seconds = v / NS_PER_SEC;
+        v %= NS_PER_SEC;
     }
     if (largest <= TemporalUnit.MILLISECOND) {
-        dp.ms = (double)(v / 1_000_000L);
-        v %= 1_000_000L;
+        dp.ms = (double)(v / NS_PER_MS);
+        v %= NS_PER_MS;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
         dp.us = (double)(v / 1000L);
@@ -156,30 +165,30 @@ fn void decompose_ns(long ns, TemporalUnit largest, DurationParts* out) {
     out.us = 0;
     out.ns = 0;
     if (largest == TemporalUnit.DAY) {
-        out.days = sign * (long)(rem / 86400000000000L);
-        rem %= 86400000000000L;
+        out.days = sign * (long)(rem / NS_PER_DAY);
+        rem %= NS_PER_DAY;
     } else if (largest == TemporalUnit.WEEK) {
-        long total_days = (long)(rem / 86400000000000L);
-        rem %= 86400000000000L;
+        long total_days = (long)(rem / NS_PER_DAY);
+        rem %= NS_PER_DAY;
         out.weeks = sign * (total_days / 7);
         out.days = sign * (total_days % 7);
     }
     // Decompose time units only down to largest_unit.
     if (largest <= TemporalUnit.HOUR) {
-        out.hours = sign * (long)(rem / 3600000000000L);
-        rem %= 3600000000000L;
+        out.hours = sign * (long)(rem / NS_PER_HOUR);
+        rem %= NS_PER_HOUR;
     }
     if (largest <= TemporalUnit.MINUTE) {
-        out.minutes = sign * (long)(rem / 60000000000L);
-        rem %= 60000000000L;
+        out.minutes = sign * (long)(rem / NS_PER_MIN);
+        rem %= NS_PER_MIN;
     }
     if (largest <= TemporalUnit.SECOND) {
-        out.seconds = sign * (long)(rem / 1000000000L);
-        rem %= 1000000000L;
+        out.seconds = sign * (long)(rem / NS_PER_SEC);
+        rem %= NS_PER_SEC;
     }
     if (largest <= TemporalUnit.MILLISECOND) {
-        out.ms = (double)(sign * (long)(rem / 1000000L));
-        rem %= 1000000L;
+        out.ms = (double)(sign * (long)(rem / NS_PER_MS));
+        rem %= NS_PER_MS;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
         out.us = (double)(sign * (long)(rem / 1000L));
@@ -207,26 +216,26 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, DurationParts* out) {
     out.us = 0;
     out.ns = 0;
     if (largest == TemporalUnit.DAY) {
-        out.days = sign * (long)(rem / 86400000000000L);
-        rem %= 86400000000000L;
+        out.days = sign * (long)(rem / NS_PER_DAY);
+        rem %= NS_PER_DAY;
     } else if (largest == TemporalUnit.WEEK) {
-        int128 total_days = rem / 86400000000000L;
-        rem %= 86400000000000L;
+        int128 total_days = rem / NS_PER_DAY;
+        rem %= NS_PER_DAY;
         out.weeks = sign * (long)(total_days / 7);
         out.days = sign * (long)(total_days % 7);
     }
     // Decompose time units only down to largest_unit.
     if (largest <= TemporalUnit.HOUR) {
-        out.hours = sign * f64_field((long)(rem / 3600000000000L));
-        rem %= 3600000000000L;
+        out.hours = sign * f64_field((long)(rem / NS_PER_HOUR));
+        rem %= NS_PER_HOUR;
     }
     if (largest <= TemporalUnit.MINUTE) {
-        out.minutes = sign * f64_field((long)(rem / 60000000000L));
-        rem %= 60000000000L;
+        out.minutes = sign * f64_field((long)(rem / NS_PER_MIN));
+        rem %= NS_PER_MIN;
     }
     if (largest <= TemporalUnit.SECOND) {
-        out.seconds = sign * f64_field((long)(rem / 1000000000L));
-        rem %= 1000000000L;
+        out.seconds = sign * f64_field((long)(rem / NS_PER_SEC));
+        rem %= NS_PER_SEC;
     }
     // The largest field absorbs the full remaining magnitude once it's a
     // sub-second unit, which can exceed long's 63-bit range (e.g. ~8.7e21
@@ -234,8 +243,8 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, DurationParts* out) {
     // convert straight from int128 via ℝ(𝔽()) rather than routing through a
     // `long` that would silently wrap first.
     if (largest <= TemporalUnit.MILLISECOND) {
-        out.ms = sign_d * (double)(rem / 1000000L);
-        rem %= 1000000L;
+        out.ms = sign_d * (double)(rem / NS_PER_MS);
+        rem %= NS_PER_MS;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
         out.us = sign_d * (double)(rem / 1000L);
@@ -249,19 +258,13 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, DurationParts* out) {
 // from `rel_date` (midnight) to the resulting date-time. Mirrors the
 // relativeTo path of builtin_temporal_duration_proto_round.
 fn bool duration_total_ns_from(CivilDate rel_date, DurationParts dur, int128* out) {
-    int128 time_only_ns = (int128)0;
-    time_only_ns += (int128)dur.hours   * 3600000000000L;
-    time_only_ns += (int128)dur.minutes *   60000000000L;
-    time_only_ns += (int128)dur.seconds *    1000000000L;
-    time_only_ns += (int128)dur.ms      *       1000000L;
-    time_only_ns += (int128)dur.us      *          1000L;
-    time_only_ns += (int128)dur.ns;
+    int128 time_only_ns = duration_time_part_ns(dur);
 
-    long target_time_days = (long)(time_only_ns / 86400000000000L);
-    int128 target_time_rem = time_only_ns % 86400000000000L;
+    long target_time_days = (long)(time_only_ns / NS_PER_DAY);
+    int128 target_time_rem = time_only_ns % NS_PER_DAY;
     if (time_only_ns < 0 && target_time_rem != 0) {
         target_time_days -= 1;
-        target_time_rem += 86400000000000L;
+        target_time_rem += NS_PER_DAY;
     }
 
     long adj_days = dur.days + target_time_days;
@@ -275,7 +278,7 @@ fn bool duration_total_ns_from(CivilDate rel_date, DurationParts dur, int128* ou
     long rel_epoch = epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
     long tgt_epoch = epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
     if (tgt_epoch > 100000000L || tgt_epoch < -100000000L) return false;
-    *out = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
+    *out = (int128)(tgt_epoch - rel_epoch) * NS_PER_DAY + target_time_rem;
     return true;
 }
 
@@ -294,10 +297,10 @@ fn bool add_durations_no_relative(DurationParts a, DurationParts b, DurationPart
     // must widen to int128 before adding: two fields near LONG_MAX (the
     // spec allows ms/us/ns up to ~9e18 each) overflow a long sum.
     int128 total_ns = (int128)0;
-    total_ns += ((int128)a.hours + (int128)b.hours)    * 3600000000000L;
-    total_ns += ((int128)a.minutes + (int128)b.minutes) *   60000000000L;
-    total_ns += ((int128)a.seconds + (int128)b.seconds) *    1000000000L;
-    total_ns += ((int128)a.ms + (int128)b.ms)           *       1000000L;
+    total_ns += ((int128)a.hours + (int128)b.hours)    * NS_PER_HOUR;
+    total_ns += ((int128)a.minutes + (int128)b.minutes) *   NS_PER_MIN;
+    total_ns += ((int128)a.seconds + (int128)b.seconds) *    NS_PER_SEC;
+    total_ns += ((int128)a.ms + (int128)b.ms)           *       NS_PER_MS;
     total_ns += ((int128)a.us + (int128)b.us)           *          1000L;
     total_ns += (int128)a.ns + (int128)b.ns;
     // Per spec, IsValidDuration rejects any duration whose time column
@@ -306,7 +309,7 @@ fn bool add_durations_no_relative(DurationParts a, DurationParts b, DurationPart
     // remain within int64. We validate only the time column here; caller is
     // responsible for year/month range.
     int128 days_secs = (int128)d * 86400L;
-    int128 combined_secs = days_secs + total_ns / 1000000000L;
+    int128 combined_secs = days_secs + total_ns / NS_PER_SEC;
     int128 max_secs = (int128)9007199254740992L;  // 2^53
     if (combined_secs >= max_secs || combined_secs <= -max_secs) {
         // Caller decides whether to throw — signal failure.
@@ -346,24 +349,24 @@ fn bool add_durations_no_relative(DurationParts a, DurationParts b, DurationPart
     out.ms = 0; out.us = 0; out.ns = 0;
     int128 rem = total_ns;
     if (largest <= TemporalUnit.DAY) {
-        out.days += (long)(rem / 86400000000000L);
-        rem %= 86400000000000L;
+        out.days += (long)(rem / NS_PER_DAY);
+        rem %= NS_PER_DAY;
     }
     if (largest <= TemporalUnit.HOUR) {
-        out.hours = (long)(rem / 3600000000000L);
-        rem %= 3600000000000L;
+        out.hours = (long)(rem / NS_PER_HOUR);
+        rem %= NS_PER_HOUR;
     }
     if (largest <= TemporalUnit.MINUTE) {
-        out.minutes = (long)(rem / 60000000000L);
-        rem %= 60000000000L;
+        out.minutes = (long)(rem / NS_PER_MIN);
+        rem %= NS_PER_MIN;
     }
     if (largest <= TemporalUnit.SECOND) {
-        out.seconds = (long)(rem / 1000000000L);
-        rem %= 1000000000L;
+        out.seconds = (long)(rem / NS_PER_SEC);
+        rem %= NS_PER_SEC;
     }
     if (largest <= TemporalUnit.MILLISECOND) {
-        out.ms = (double)(rem / 1000000L);
-        rem %= 1000000L;
+        out.ms = (double)(rem / NS_PER_MS);
+        rem %= NS_PER_MS;
     }
     if (largest <= TemporalUnit.MICROSECOND) {
         out.us = (double)(rem / 1000L);

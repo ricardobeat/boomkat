@@ -1551,10 +1551,10 @@ fn bool duration_arg_to_ns_bigint(BuiltinContext* ctx, TVal* arg, hbigint::HBigI
         }
         long[6] part_vals;
         long[6] part_scales;
-        part_vals[0] = parts.hours;   part_scales[0] = 3600000000000L;
-        part_vals[1] = parts.minutes; part_scales[1] = 60000000000L;
-        part_vals[2] = parts.seconds; part_scales[2] = 1000000000L;
-        part_vals[3] = (long)parts.ms;      part_scales[3] = 1000000L;
+        part_vals[0] = parts.hours;   part_scales[0] = temporal::NS_PER_HOUR;
+        part_vals[1] = parts.minutes; part_scales[1] = temporal::NS_PER_MIN;
+        part_vals[2] = parts.seconds; part_scales[2] = temporal::NS_PER_SEC;
+        part_vals[3] = (long)parts.ms;      part_scales[3] = temporal::NS_PER_MS;
         part_vals[4] = (long)parts.us;      part_scales[4] = 1000L;
         part_vals[5] = (long)parts.ns;      part_scales[5] = 1L;
         for (int k = 0; k < 6; k++) {
@@ -1596,10 +1596,10 @@ fn bool duration_arg_to_ns_bigint(BuiltinContext* ctx, TVal* arg, hbigint::HBigI
         }
         long[6] part_vals;
         long[6] part_scales;
-        part_vals[0] = parts.hours;   part_scales[0] = 3600000000000L;
-        part_vals[1] = parts.minutes; part_scales[1] = 60000000000L;
-        part_vals[2] = parts.seconds; part_scales[2] = 1000000000L;
-        part_vals[3] = (long)parts.ms;      part_scales[3] = 1000000L;
+        part_vals[0] = parts.hours;   part_scales[0] = temporal::NS_PER_HOUR;
+        part_vals[1] = parts.minutes; part_scales[1] = temporal::NS_PER_MIN;
+        part_vals[2] = parts.seconds; part_scales[2] = temporal::NS_PER_SEC;
+        part_vals[3] = (long)parts.ms;      part_scales[3] = temporal::NS_PER_MS;
         part_vals[4] = (long)parts.us;      part_scales[4] = 1000L;
         part_vals[5] = (long)parts.ns;      part_scales[5] = 1L;
         for (int k = 0; k < 6; k++) {
@@ -1636,7 +1636,7 @@ fn bool duration_arg_to_ns_bigint(BuiltinContext* ctx, TVal* arg, hbigint::HBigI
     // hours(4) minutes(5) seconds(6) ms(7) us(8) ns(9) contribute; years/months/weeks/days
     // are calendar units (rejected below).
     int[6] part_slot = { 4, 5, 6, 7, 8, 9 };
-    long[6] part_scales = { 3600000000000L, 60000000000L, 1000000000L, 1000000L, 1000L, 1L };
+    long[6] part_scales = { temporal::NS_PER_HOUR, temporal::NS_PER_MIN, temporal::NS_PER_SEC, temporal::NS_PER_MS, 1000L, 1L };
     for (int i = 0; i < 10; i++) {
         int k = slot[i];
         TVal pv = prop_or_undefined_pa(ctx, o, names[i]);
@@ -1887,8 +1887,8 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
         long frac_ns = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
         // Combine in int128: double arithmetic here would drop every bit
         // below 2^53 and corrupt the sub-microsecond digits.
-        int128 epoch_ns_128 = (int128)wall_secs * (int128)1000000000L + (int128)frac_ns
-            - (int128)off_sec * (int128)1000000000L;
+        int128 epoch_ns_128 = (int128)wall_secs * (int128)temporal::NS_PER_SEC + (int128)frac_ns
+            - (int128)off_sec * (int128)temporal::NS_PER_SEC;
         hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return false; }
         hbigint::HBigInt* epoch_ns = big_o;
@@ -2250,8 +2250,8 @@ fn bool duration_to_string_precision(BuiltinContext* ctx, int* digits, temporal:
         // restricted to units <= second (minute/hour and any calendar unit
         // are a RangeError for Duration.toString per spec step "If
         // smallestUnit is either hour or minute, throw a RangeError").
-        if (v == "second" || v == "seconds")           { *digits = 0; *incr_ns = 1000000000L; }
-        else if (v == "millisecond" || v == "milliseconds") { *digits = 3; *incr_ns = 1000000L; }
+        if (v == "second" || v == "seconds")           { *digits = 0; *incr_ns = temporal::NS_PER_SEC; }
+        else if (v == "millisecond" || v == "milliseconds") { *digits = 3; *incr_ns = temporal::NS_PER_MS; }
         else if (v == "microsecond" || v == "microseconds") { *digits = 6; *incr_ns = 1000L; }
         else if (v == "nanosecond" || v == "nanoseconds")   { *digits = 9; *incr_ns = 1L; }
         else { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit"); return false; }
@@ -2289,10 +2289,10 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     // can only be second/millisecond/microsecond/nanosecond (never hour or
     // minute), so the largest unit stays within the time portion here.
     int128 total_ns = (int128)0;
-    total_ns += (int128)d.hours   * 3600000000000L;
-    total_ns += (int128)d.minutes *   60000000000L;
-    total_ns += (int128)d.seconds *    1000000000L;
-    total_ns += (int128)d.ms      *       1000000L;
+    total_ns += (int128)d.hours   * temporal::NS_PER_HOUR;
+    total_ns += (int128)d.minutes *   temporal::NS_PER_MIN;
+    total_ns += (int128)d.seconds *    temporal::NS_PER_SEC;
+    total_ns += (int128)d.ms      *       temporal::NS_PER_MS;
     total_ns += (int128)d.us      *          1000L;
     total_ns += (int128)d.ns;
 
@@ -2362,22 +2362,22 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     int128 rmag = rounded_ns < 0 ? -rounded_ns : rounded_ns;
     long rsign = rounded_ns < 0 ? -1 : 1;
     if (has_date_unit) {
-        long extra_days = rsign * (long)(rmag / 86400000000000L); rmag %= 86400000000000L;
+        long extra_days = rsign * (long)(rmag / temporal::NS_PER_DAY); rmag %= temporal::NS_PER_DAY;
         rd.days   += extra_days;
-        rd.hours   = rsign * (long)(rmag / 3600000000000L); rmag %= 3600000000000L;
-        rd.minutes = rsign * (long)(rmag /   60000000000L); rmag %=   60000000000L;
+        rd.hours   = rsign * (long)(rmag / temporal::NS_PER_HOUR); rmag %= temporal::NS_PER_HOUR;
+        rd.minutes = rsign * (long)(rmag /   temporal::NS_PER_MIN); rmag %=   temporal::NS_PER_MIN;
     } else if (has_hour) {
-        rd.hours   = rsign * (long)(rmag / 3600000000000L); rmag %= 3600000000000L;
-        rd.minutes = rsign * (long)(rmag /   60000000000L); rmag %=   60000000000L;
+        rd.hours   = rsign * (long)(rmag / temporal::NS_PER_HOUR); rmag %= temporal::NS_PER_HOUR;
+        rd.minutes = rsign * (long)(rmag /   temporal::NS_PER_MIN); rmag %=   temporal::NS_PER_MIN;
     } else if (has_minute) {
         rd.hours   = 0;
-        rd.minutes = rsign * (long)(rmag /   60000000000L); rmag %=   60000000000L;
+        rd.minutes = rsign * (long)(rmag /   temporal::NS_PER_MIN); rmag %=   temporal::NS_PER_MIN;
     } else {
         rd.hours   = 0;
         rd.minutes = 0;
     }
-    rd.seconds = rsign * (long)(rmag /    1000000000L); rmag %=    1000000000L;
-    rd.ms      = (double)(rsign * (long)(rmag /       1000000L)); rmag %=       1000000L;
+    rd.seconds = rsign * (long)(rmag /    temporal::NS_PER_SEC); rmag %=    temporal::NS_PER_SEC;
+    rd.ms      = (double)(rsign * (long)(rmag /       temporal::NS_PER_MS)); rmag %=       temporal::NS_PER_MS;
     rd.us      = (double)(rsign * (long)(rmag /          1000L)); rmag %=          1000L;
     rd.ns      = (double)(rsign * (long)(rmag));
 
@@ -2735,7 +2735,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         // duration (RoundNumberToIncrement on nanoseconds); rounding stays in
         // int128 so a duration longer than ~292 years does not overflow a
         // 64-bit count, and the ℝ(𝔽()) precision loss lands at decomposition.
-        long divisor = (smallest_unit == temporal::TemporalUnit.DAY) ? 86400000000000L : temporal::unit_ns_divisor(smallest_unit);
+        long divisor = (smallest_unit == temporal::TemporalUnit.DAY) ? temporal::NS_PER_DAY : temporal::unit_ns_divisor(smallest_unit);
         int128 incr_ns = (int128)rounding_increment * (int128)divisor;
         if (incr_ns <= 0) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement too large");
@@ -2787,7 +2787,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         int128 start_ns = start_big.to_int128();
         int128 dur_time_ns = temporal::duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
 
         if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
@@ -2845,20 +2845,14 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     }
 
     // Step 1: Compute time-only (no days) for AddTime.
-    int128 time_only_ns = (int128)0;
-    time_only_ns += (int128)dur.hours   * 3600000000000L;
-    time_only_ns += (int128)dur.minutes *   60000000000L;
-    time_only_ns += (int128)dur.seconds *    1000000000L;
-    time_only_ns += (int128)dur.ms      *       1000000L;
-    time_only_ns += (int128)dur.us      *          1000L;
-    time_only_ns += (int128)dur.ns;
+    int128 time_only_ns = temporal::duration_time_part_ns(dur);
 
     // Step 2: AddTime(Midnight, time_only) → targetTime
-    long target_time_days = (long)(time_only_ns / 86400000000000L);
-    int128 target_time_rem = time_only_ns % 86400000000000L;
+    long target_time_days = (long)(time_only_ns / temporal::NS_PER_DAY);
+    int128 target_time_rem = time_only_ns % temporal::NS_PER_DAY;
     if (time_only_ns < 0 && target_time_rem != 0) {
         target_time_days -= 1;
-        target_time_rem += 86400000000000L;
+        target_time_rem += temporal::NS_PER_DAY;
     }
 
     // Step 3: AdjustDateDurationRecord(date, date.days + targetTime.days)
@@ -2882,10 +2876,10 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     }
 
     long rem = (long)target_time_rem;
-    long h  = rem / 3600000000000L; rem = (long)(rem % 3600000000000L);
-    long mi = rem / 60000000000L;   rem = (long)(rem % 60000000000L);
-    long s  = rem / 1000000000L;    rem = (long)(rem % 1000000000L);
-    long ms = rem / 1000000L;       rem = (long)(rem % 1000000L);
+    long h  = rem / temporal::NS_PER_HOUR; rem = (long)(rem % temporal::NS_PER_HOUR);
+    long mi = rem / temporal::NS_PER_MIN;   rem = (long)(rem % temporal::NS_PER_MIN);
+    long s  = rem / temporal::NS_PER_SEC;    rem = (long)(rem % temporal::NS_PER_SEC);
+    long ms = rem / temporal::NS_PER_MS;       rem = (long)(rem % temporal::NS_PER_MS);
     long us = rem / 1000L;
     long ns = rem % 1000L;
     // is_valid_iso_datetime excludes the minimum date at exactly midnight,
@@ -3002,7 +2996,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         }
         int128 time_ns = temporal::duration_to_time_ns(dur);
         long div_ns = unit == temporal::TemporalUnit.DAY
-            ? 86400000000000L
+            ? temporal::NS_PER_DAY
             : temporal::unit_ns_divisor(unit);
         // DivideNormalizedTimeDuration divides the exact mathematical total
         // by the divisor once, rounding straight to the nearest double; see
@@ -3025,14 +3019,14 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         int128 start_ns = start_big.to_int128();
         int128 dur_time_ns = temporal::duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
 
         if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
         }
         if (unit == temporal::TemporalUnit.DAY || unit == temporal::TemporalUnit.WEEK || unit == temporal::TemporalUnit.MONTH || unit == temporal::TemporalUnit.YEAR) {
-            int128 one_day_ns = (int128)86400000000000L;
+            int128 one_day_ns = (int128)temporal::NS_PER_DAY;
             bool is_neg = dur.years < 0 || dur.months < 0 || dur.weeks < 0 || dur.days < 0 ||
                           dur.hours < 0 || dur.minutes < 0 || dur.seconds < 0 || dur.ms < 0 || dur.us < 0 || dur.ns < 0;
             if (!is_neg && start_ns + one_day_ns > ns_limit) {
@@ -3108,24 +3102,18 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         }
     }
 
-    int128 time_only_ns = (int128)0;
-    time_only_ns += (int128)dur.hours   * 3600000000000L;
-    time_only_ns += (int128)dur.minutes *   60000000000L;
-    time_only_ns += (int128)dur.seconds *    1000000000L;
-    time_only_ns += (int128)dur.ms      *       1000000L;
-    time_only_ns += (int128)dur.us      *          1000L;
-    time_only_ns += (int128)dur.ns;
-    time_only_ns += (int128)rel_time.h  * 3600000000000L +
-                    (int128)rel_time.mi *   60000000000L +
-                    (int128)rel_time.s  *    1000000000L +
-                    (int128)rel_time.ms *       1000000L +
+    int128 time_only_ns = temporal::duration_time_part_ns(dur);
+    time_only_ns += (int128)rel_time.h  * temporal::NS_PER_HOUR +
+                    (int128)rel_time.mi *   temporal::NS_PER_MIN +
+                    (int128)rel_time.s  *    temporal::NS_PER_SEC +
+                    (int128)rel_time.ms *       temporal::NS_PER_MS +
                     (int128)rel_time.us *          1000L +
                     (int128)rel_time.ns;
-    long target_time_days = (long)(time_only_ns / 86400000000000L);
-    int128 target_time_rem = time_only_ns % 86400000000000L;
+    long target_time_days = (long)(time_only_ns / temporal::NS_PER_DAY);
+    int128 target_time_rem = time_only_ns % temporal::NS_PER_DAY;
     if (time_only_ns < 0 && target_time_rem != 0) {
         target_time_days -= 1;
-        target_time_rem += 86400000000000L;
+        target_time_rem += temporal::NS_PER_DAY;
     }
     long adj_days = dur.days + target_time_days;
     CivilDate target_date = rel_date;
@@ -3135,10 +3123,10 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     if (adj_days != 0) target_date = temporal::add_days(target_date, adj_days);
 
     int128 rem_work = target_time_rem;
-    long tgt_h = (long)(rem_work / 3600000000000L); rem_work %= 3600000000000L;
-    long tgt_mi = (long)(rem_work / 60000000000L); rem_work %= 60000000000L;
-    long tgt_s = (long)(rem_work / 1000000000L); rem_work %= 1000000000L;
-    long tgt_ms = (long)(rem_work / 1000000L); rem_work %= 1000000L;
+    long tgt_h = (long)(rem_work / temporal::NS_PER_HOUR); rem_work %= temporal::NS_PER_HOUR;
+    long tgt_mi = (long)(rem_work / temporal::NS_PER_MIN); rem_work %= temporal::NS_PER_MIN;
+    long tgt_s = (long)(rem_work / temporal::NS_PER_SEC); rem_work %= temporal::NS_PER_SEC;
+    long tgt_ms = (long)(rem_work / temporal::NS_PER_MS); rem_work %= temporal::NS_PER_MS;
     long tgt_us = (long)(rem_work / 1000L); rem_work %= 1000L;
     long tgt_ns = (long)rem_work;
 
@@ -3190,7 +3178,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     if (!temporal::is_cal_unit(unit) && !has_cal) {
         int128 time_ns = temporal::duration_to_time_ns(dur);
         long div_ns = unit == temporal::TemporalUnit.DAY
-            ? 86400000000000L
+            ? temporal::NS_PER_DAY
             : temporal::unit_ns_divisor(unit);
         ctx.result.set_number(temporal::divide_time_duration(time_ns, div_ns));
         return;
@@ -3198,19 +3186,19 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
     long tgt_epoch = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
     // Calculate relativeTo time in nanoseconds
-    int128 relativeTo_time_ns = (int128)rel_time.h * 3600000000000L +
-                                (int128)rel_time.mi * 60000000000L +
-                                (int128)rel_time.s * 1000000000L +
-                                (int128)rel_time.ms * 1000000L +
+    int128 relativeTo_time_ns = (int128)rel_time.h * temporal::NS_PER_HOUR +
+                                (int128)rel_time.mi * temporal::NS_PER_MIN +
+                                (int128)rel_time.s * temporal::NS_PER_SEC +
+                                (int128)rel_time.ms * temporal::NS_PER_MS +
                                 (int128)rel_time.us * 1000L +
                                 (int128)rel_time.ns;
     // Calculate time difference: (relativeTo time + duration time) - relativeTo time
     int128 time_diff_ns = target_time_rem - relativeTo_time_ns;
-    int128 days_diff_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L;
+    int128 days_diff_ns = (int128)(tgt_epoch - rel_epoch) * temporal::NS_PER_DAY;
     // Handle negative time difference by borrowing a day
     if (time_diff_ns < 0) {
-        days_diff_ns -= 86400000000000L;
-        time_diff_ns += 86400000000000L;
+        days_diff_ns -= temporal::NS_PER_DAY;
+        time_diff_ns += temporal::NS_PER_DAY;
     }
     int128 diff_ns = days_diff_ns + time_diff_ns;
     long divisor = temporal::unit_ns_divisor(unit);
@@ -3219,7 +3207,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         return;
     }
     if (unit == temporal::TemporalUnit.DAY) {
-        ctx.result.set_number(temporal::divide_time_duration(diff_ns, 86400000000000L));
+        ctx.result.set_number(temporal::divide_time_duration(diff_ns, temporal::NS_PER_DAY));
         return;
     }
     if (unit == temporal::TemporalUnit.WEEK) {
@@ -3227,7 +3215,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // reports as 1.5 weeks, not 1.42857 (= 10/7). The plain day count
         // (tgt_epoch - rel_epoch) drops any sub-day remainder, which is
         // wrong for total().
-        long div_ns = 7L * 86400000000000L;
+        long div_ns = 7L * temporal::NS_PER_DAY;
         ctx.result.set_number(temporal::divide_time_duration(diff_ns, div_ns));
         return;
     }
@@ -3276,14 +3264,14 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     }
     long start_epoch = temporal::epoch_days_from_civil(unit_start.y, (int)unit_start.m, (int)unit_start.d);
     long end_epoch   = temporal::epoch_days_from_civil(unit_end.y, (int)unit_end.m, (int)unit_end.d);
-    int128 unit_ns = (int128)(end_epoch - start_epoch) * 86400000000000L;
+    int128 unit_ns = (int128)(end_epoch - start_epoch) * temporal::NS_PER_DAY;
     if (unit_ns < 0) unit_ns = -unit_ns;
     if (unit_ns <= 0) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "duration out of range");
         return;
     }
-    int128 dest_ns = (int128)(tgt_epoch - rel_epoch) * 86400000000000L + target_time_rem;
-    int128 start_ns_offset = (int128)(start_epoch - rel_epoch) * 86400000000000L;
+    int128 dest_ns = (int128)(tgt_epoch - rel_epoch) * temporal::NS_PER_DAY + target_time_rem;
+    int128 start_ns_offset = (int128)(start_epoch - rel_epoch) * temporal::NS_PER_DAY;
     int128 numerator = dest_ns - start_ns_offset;
     int128 total_num = unit_ns * (int128)r1 + numerator;
     // Convert the full `r1 + numerator/unit_ns` to a Number with the one
@@ -3925,7 +3913,7 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
     // GetStartOfDay resolves midnight; the resulting UTC instant must fall
     // within the representable epoch range (±8.64e21 ns). A wall date at the
     // ISO boundary with an offset can land past NS_MIN/NS_MAX.
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
     if (epoch_ns_128 > ns_limit || epoch_ns_128 < -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
         return;
@@ -4141,8 +4129,8 @@ fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
     // PT2400000023H... has dur.hours = 2.4e9, which times 3.6e12 overflows
     // long (max ~9.2e18). int128 holds the full ~8.64e21 ns comfortably.
     int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
-                    ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
-                    ((int128)dur.hours * 3_600_000_000_000L);
+                    ((int128)dur.seconds * temporal::NS_PER_SEC) + ((int128)dur.minutes * temporal::NS_PER_MIN) +
+                    ((int128)dur.hours * temporal::NS_PER_HOUR);
     // For PlainDate, the time portion must convert to a whole-day
     // contribution via MathTrunc-style truncation toward zero, not floor. The
     // spec's ToDateDurationRecord keeps the time sub-day fields normalized
@@ -4151,7 +4139,7 @@ fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
     // truncates to 0 (not -1), which is why subtracting -P273790Y8M12DT23H59M59.999...
     // from 1970-01-01 lands on the valid min date -271821-04-19, not one day
     // earlier.
-    long whole_days = (long)(extra_ns / 86_400_000_000_000L);
+    long whole_days = (long)(extra_ns / temporal::NS_PER_DAY);
     long total_months = dur.years * 12 + dur.months;
     long total_days = dur.weeks * 7 + dur.days + whole_days;
 
@@ -4198,12 +4186,12 @@ fn void builtin_temporal_plain_date_proto_subtract(BuiltinContext* ctx) {
     // PT2400000047H... has dur.hours = 2.4e9, which times 3.6e12 overflows
     // long (max ~9.2e18). int128 holds the full ~8.64e21 ns comfortably.
     int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
-                    ((int128)dur.seconds * 1_000_000_000L) + ((int128)dur.minutes * 60_000_000_000L) +
-                    ((int128)dur.hours * 3_600_000_000_000L);
+                    ((int128)dur.seconds * temporal::NS_PER_SEC) + ((int128)dur.minutes * temporal::NS_PER_MIN) +
+                    ((int128)dur.hours * temporal::NS_PER_HOUR);
     // C integer division truncates toward 0, matching the spec's MathTrunc
     // time-to-day conversion: subtracting -PT23H59M59.999... truncates to
     // adding 0 days, not 1.
-    long whole_days = (long)(extra_ns / 86_400_000_000_000L);
+    long whole_days = (long)(extra_ns / temporal::NS_PER_DAY);
     long total_months = -(dur.years * 12 + dur.months);
     long total_days = -(dur.weeks * 7 + dur.days + whole_days);
 
@@ -4570,7 +4558,7 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     // PlainTime wraps at midnight, so a rounded-up 24:00 becomes 00:00.
     long unit_ns = 0;
     if (ns_digits == -12) {
-        unit_ns = 60000000000L;
+        unit_ns = temporal::NS_PER_MIN;
     } else if (ns_digits >= 0 && ns_digits < 9) {
         unit_ns = temporal::ns_pow10(9 - ns_digits);
     } else if (ns_digits == 9) {
@@ -4578,7 +4566,7 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
     }
     if (unit_ns > 1) {
         long total = temporal::round_long_ns(temporal::civil_time_to_ns(t), unit_ns, rm);
-        if (total >= 86400000000000L) total -= 86400000000000L;
+        if (total >= temporal::NS_PER_DAY) total -= temporal::NS_PER_DAY;
         t = temporal::civil_time_from_ns(total);
     }
 
@@ -4778,26 +4766,26 @@ fn void plain_time_add_sub(BuiltinContext* ctx, bool subtract) {
     // validate a second argument (test262 options-ignored).
 
     temporal::CivilTime cur = plain_time_value(obj);
-    int128 cur_ns = (int128)cur.h * 3_600_000_000_000L + (int128)cur.mi * 60_000_000_000L +
-                    (int128)cur.s * 1_000_000_000L + (int128)cur.ms * 1_000_000L +
+    int128 cur_ns = (int128)cur.h * temporal::NS_PER_HOUR + (int128)cur.mi * temporal::NS_PER_MIN +
+                    (int128)cur.s * temporal::NS_PER_SEC + (int128)cur.ms * temporal::NS_PER_MS +
                     (int128)cur.us * 1000L + (int128)cur.ns;
-    int128 dur_ns = (int128)dur.hours * 3_600_000_000_000L + (int128)dur.minutes * 60_000_000_000L +
-                    (int128)dur.seconds * 1_000_000_000L + (int128)dur.ms * 1_000_000L +
+    int128 dur_ns = (int128)dur.hours * temporal::NS_PER_HOUR + (int128)dur.minutes * temporal::NS_PER_MIN +
+                    (int128)dur.seconds * temporal::NS_PER_SEC + (int128)dur.ms * temporal::NS_PER_MS +
                     (int128)dur.us * 1000L + (int128)dur.ns;
     int128 sum_ns = subtract ? (cur_ns - dur_ns) : (cur_ns + dur_ns);
-    int128 day_ns = (int128)86_400_000_000_000L;
+    int128 day_ns = (int128)temporal::NS_PER_DAY;
     int128 rem_ns = sum_ns % day_ns;
     if (rem_ns < 0) rem_ns += day_ns;
 
     temporal::CivilTime result;
-    result.h = (int)(rem_ns / 3_600_000_000_000L);
-    rem_ns %= 3_600_000_000_000L;
-    result.mi = (int)(rem_ns / 60_000_000_000L);
-    rem_ns %= 60_000_000_000L;
-    result.s = (int)(rem_ns / 1_000_000_000L);
-    rem_ns %= 1_000_000_000L;
-    result.ms = (int)(rem_ns / 1_000_000L);
-    rem_ns %= 1_000_000L;
+    result.h = (int)(rem_ns / temporal::NS_PER_HOUR);
+    rem_ns %= temporal::NS_PER_HOUR;
+    result.mi = (int)(rem_ns / temporal::NS_PER_MIN);
+    rem_ns %= temporal::NS_PER_MIN;
+    result.s = (int)(rem_ns / temporal::NS_PER_SEC);
+    rem_ns %= temporal::NS_PER_SEC;
+    result.ms = (int)(rem_ns / temporal::NS_PER_MS);
+    rem_ns %= temporal::NS_PER_MS;
     result.us = (int)(rem_ns / 1000L);
     result.ns = (int)(rem_ns % 1000L);
 
@@ -4836,10 +4824,10 @@ fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     temporal::CivilTime end   = flipped ? a : b;
 
     // The delta is under 24 hours, so it fits a long and needs no BigInt.
-    long start_ns = ((long)start.h * 3600 + (long)start.mi * 60 + (long)start.s) * 1_000_000_000L
-                  + (long)start.ms * 1_000_000L + (long)start.us * 1000L + (long)start.ns;
-    long end_ns   = ((long)end.h  * 3600 + (long)end.mi  * 60 + (long)end.s ) * 1_000_000_000L
-                  + (long)end.ms  * 1_000_000L + (long)end.us  * 1000L + (long)end.ns;
+    long start_ns = ((long)start.h * 3600 + (long)start.mi * 60 + (long)start.s) * temporal::NS_PER_SEC
+                  + (long)start.ms * temporal::NS_PER_MS + (long)start.us * 1000L + (long)start.ns;
+    long end_ns   = ((long)end.h  * 3600 + (long)end.mi  * 60 + (long)end.s ) * temporal::NS_PER_SEC
+                  + (long)end.ms  * temporal::NS_PER_MS + (long)end.us  * 1000L + (long)end.ns;
     long delta = end_ns - start_ns;
 
     long incr_ns = temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment;
@@ -4944,15 +4932,15 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
     long ms = self.extra.temporal.long_d;
     long us = self.extra.temporal.long_e;
     long ns = self.extra.temporal.long_f;
-    long total_ns = h * 3600000000000L + m * 60000000000L + s * 1000000000L
-                  + ms * 1000000L + us * 1000L + ns;
+    long total_ns = h * temporal::NS_PER_HOUR + m * temporal::NS_PER_MIN + s * temporal::NS_PER_SEC
+                  + ms * temporal::NS_PER_MS + us * 1000L + ns;
     long rounded = temporal::round_long_ns(total_ns, incr_ns, rounding_mode);
-    temporal::BrokenDownTime bd = temporal::civil_from_seconds(rounded / 1000000000L);
+    temporal::BrokenDownTime bd = temporal::civil_from_seconds(rounded / temporal::NS_PER_SEC);
     int rh = bd.h;
-    long rem = rounded - (rounded / 1000000000L) * 1000000000L;
+    long rem = rounded - (rounded / temporal::NS_PER_SEC) * temporal::NS_PER_SEC;
     int rmin = bd.mi;
     int rs = bd.s;
-    int rms = (int)(rem / 1000000L); rem %= 1000000L;
+    int rms = (int)(rem / temporal::NS_PER_MS); rem %= temporal::NS_PER_MS;
     int rus = (int)(rem / 1000L);
     int rns = (int)(rem % 1000L);
     // Normalize hours >= 24 (rolls over the day; PlainTime discards the day).
@@ -5815,7 +5803,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
     // up past midnight folds into the date part for PlainDateTime.
     long unit_ns = 0;
     if (ns_digits == -12) {
-        unit_ns = 60000000000L;
+        unit_ns = temporal::NS_PER_MIN;
     } else if (ns_digits >= 0 && ns_digits < 9) {
         unit_ns = temporal::ns_pow10(9 - ns_digits);
     } else if (ns_digits == 9) {
@@ -5823,8 +5811,8 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
     }
     if (unit_ns > 1) {
         long total = temporal::round_long_ns(temporal::civil_time_to_ns(dt.time), unit_ns, rm);
-        if (total >= 86400000000000L) {
-            total -= 86400000000000L;
+        if (total >= temporal::NS_PER_DAY) {
+            total -= temporal::NS_PER_DAY;
             dt.date = temporal::civil_date_from_epoch_days(
                 temporal::epoch_days_from_civil(dt.date.y, (int)dt.date.m, (int)dt.date.d) + 1);
         }
@@ -5833,8 +5821,8 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         // range, an open interval at ±8.64e21 ns (so -271821-04-19T00:00:00.000
         // and 275760-09-14T00:00:00.000 are both out of range).
         int128 epoch_ns = (int128)temporal::epoch_days_from_civil(dt.date.y, (int)dt.date.m, (int)dt.date.d)
-            * (int128)86400000000000L + (int128)total;
-        int128 ns_limit = (int128)86400000000000L * (int128)100000000L;
+            * (int128)temporal::NS_PER_DAY + (int128)total;
+        int128 ns_limit = (int128)temporal::NS_PER_DAY * (int128)100000000L;
         if (epoch_ns <= -ns_limit || epoch_ns >= ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
             return;
@@ -6288,7 +6276,7 @@ fn void builtin_temporal_plain_datetime_proto_toZonedDateTime(BuiltinContext* ct
 
     // Instant range check: ±100,000,000 days × 86400 × 1e9 ns.
     {
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
         if (epoch_ns > ns_limit || epoch_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside the representable range");
             return;
@@ -6452,8 +6440,8 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
     }
 
     temporal::CivilDateTime cur = plain_datetime_value(self);
-    long total_ns = cur.time.h * 3600000000000L + cur.time.mi * 60000000000L + cur.time.s * 1000000000L
-                  + cur.time.ms * 1000000L + cur.time.us * 1000L + cur.time.ns;
+    long total_ns = cur.time.h * temporal::NS_PER_HOUR + cur.time.mi * temporal::NS_PER_MIN + cur.time.s * temporal::NS_PER_SEC
+                  + cur.time.ms * temporal::NS_PER_MS + cur.time.us * 1000L + cur.time.ns;
 
     long day_delta;
     long rounded_ns;
@@ -6471,14 +6459,14 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
         // A whole day of nanoseconds (86400000000000) can only be reached by
         // rounding up past the last representable time-of-day value; carry
         // that into the date and keep the time-of-day in [0, 1 day).
-        day_delta = rounded / 86400000000000L;
-        rounded_ns = rounded - day_delta * 86400000000000L;
-        if (rounded_ns < 0) { rounded_ns += 86400000000000L; day_delta -= 1; }
+        day_delta = rounded / temporal::NS_PER_DAY;
+        rounded_ns = rounded - day_delta * temporal::NS_PER_DAY;
+        if (rounded_ns < 0) { rounded_ns += temporal::NS_PER_DAY; day_delta -= 1; }
     }
 
-    temporal::BrokenDownTime bd = temporal::civil_from_seconds(rounded_ns / 1000000000L);
-    long rem = rounded_ns - (rounded_ns / 1000000000L) * 1000000000L;
-    int rms = (int)(rem / 1000000L); rem %= 1000000L;
+    temporal::BrokenDownTime bd = temporal::civil_from_seconds(rounded_ns / temporal::NS_PER_SEC);
+    long rem = rounded_ns - (rounded_ns / temporal::NS_PER_SEC) * temporal::NS_PER_SEC;
+    int rms = (int)(rem / temporal::NS_PER_MS); rem %= temporal::NS_PER_MS;
     int rus = (int)(rem / 1000L);
     int rns = (int)(rem % 1000L);
 
@@ -6537,14 +6525,14 @@ fn void plain_datetime_add_sub(BuiltinContext* ctx, bool subtract) {
         after_months = temporal::add_months(cur.date, total_months, temporal::OverflowKind.CONSTRAIN);
     }
 
-    int128 cur_time_ns = (int128)cur.time.h * 3_600_000_000_000L + (int128)cur.time.mi * 60_000_000_000L +
-                         (int128)cur.time.s * 1_000_000_000L + (int128)cur.time.ms * 1_000_000L +
+    int128 cur_time_ns = (int128)cur.time.h * temporal::NS_PER_HOUR + (int128)cur.time.mi * temporal::NS_PER_MIN +
+                         (int128)cur.time.s * temporal::NS_PER_SEC + (int128)cur.time.ms * temporal::NS_PER_MS +
                          (int128)cur.time.us * 1000L + (int128)cur.time.ns;
-    int128 dur_time_ns = (int128)dur.hours * 3_600_000_000_000L + (int128)dur.minutes * 60_000_000_000L +
-                         (int128)dur.seconds * 1_000_000_000L + (int128)dur.ms * 1_000_000L +
+    int128 dur_time_ns = (int128)dur.hours * temporal::NS_PER_HOUR + (int128)dur.minutes * temporal::NS_PER_MIN +
+                         (int128)dur.seconds * temporal::NS_PER_SEC + (int128)dur.ms * temporal::NS_PER_MS +
                          (int128)dur.us * 1000L + (int128)dur.ns;
     int128 sum_time_ns = subtract ? (cur_time_ns - dur_time_ns) : (cur_time_ns + dur_time_ns);
-    int128 day_ns = (int128)86_400_000_000_000L;
+    int128 day_ns = (int128)temporal::NS_PER_DAY;
     int128 time_days = sum_time_ns / day_ns;
     int128 rem_time_ns = sum_time_ns % day_ns;
     if (rem_time_ns < 0) {
@@ -6553,14 +6541,14 @@ fn void plain_datetime_add_sub(BuiltinContext* ctx, bool subtract) {
     }
 
     temporal::CivilTime time_part;
-    time_part.h = (int)(rem_time_ns / 3_600_000_000_000L);
-    int128 rem_ns = rem_time_ns % 3_600_000_000_000L;
-    time_part.mi = (int)(rem_ns / 60_000_000_000L);
-    rem_ns %= 60_000_000_000L;
-    time_part.s = (int)(rem_ns / 1_000_000_000L);
-    rem_ns %= 1_000_000_000L;
-    time_part.ms = (int)(rem_ns / 1_000_000L);
-    rem_ns %= 1_000_000L;
+    time_part.h = (int)(rem_time_ns / temporal::NS_PER_HOUR);
+    int128 rem_ns = rem_time_ns % temporal::NS_PER_HOUR;
+    time_part.mi = (int)(rem_ns / temporal::NS_PER_MIN);
+    rem_ns %= temporal::NS_PER_MIN;
+    time_part.s = (int)(rem_ns / temporal::NS_PER_SEC);
+    rem_ns %= temporal::NS_PER_SEC;
+    time_part.ms = (int)(rem_ns / temporal::NS_PER_MS);
+    rem_ns %= temporal::NS_PER_MS;
     time_part.us = (int)(rem_ns / 1000L);
     time_part.ns = (int)(rem_ns % 1000L);
 
@@ -6618,10 +6606,10 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
     // Borrowing a day keeps the date difference at whole days and gives the
     // time remainder the same sign as the difference.
     if (sign > 0 && tod_delta < 0) {
-        tod_delta += 86_400_000_000_000L;
+        tod_delta += temporal::NS_PER_DAY;
         ed = temporal::add_days(ed, -1);
     } else if (sign < 0 && tod_delta > 0) {
-        tod_delta -= 86_400_000_000_000L;
+        tod_delta -= temporal::NS_PER_DAY;
         ed = temporal::add_days(ed, 1);
     }
 
@@ -6630,7 +6618,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
     if (ds.largest > temporal::TemporalUnit.DAY) {
         long days = temporal::epoch_days_from_civil(ed.y, (int)ed.m, (int)ed.d)
                   - temporal::epoch_days_from_civil(sd.y, (int)sd.m, (int)sd.d);
-        int128 total = (int128)days * 86_400_000_000_000L + (int128)tod_delta;
+        int128 total = (int128)days * temporal::NS_PER_DAY + (int128)tod_delta;
         int128 incr_ns = (int128)(temporal::unit_ns_divisor(ds.smallest) * (long)ds.increment);
         if (incr_ns > 1) total = temporal::round_long_ns_128(total, incr_ns, ds.mode);
         temporal::decompose_ns_128(total, ds.largest, out);
@@ -6665,7 +6653,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
             if (incr_ns > 1) {
                 long rounded = temporal::round_long_ns(tod_delta, incr_ns, ds.mode);
                 if (rounded != tod_delta) {
-                    if (rounded == 86_400_000_000_000L || rounded == -86_400_000_000_000L) {
+                    if (rounded == temporal::NS_PER_DAY || rounded == -temporal::NS_PER_DAY) {
                         // A carry of a whole day empties the time of day and adds a
                         // day to the date part, which can cascade up through
                         // months and years.
@@ -6685,16 +6673,16 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
             // before rounding, so days participate in the increment alongside
             // hours/minutes/etc rather than being held fixed. This is what
             // makes a halfEven tie resolve differently from the zoned case.
-            int128 total = (int128)dp.days * 86_400_000_000_000L + (int128)tod_delta;
+            int128 total = (int128)dp.days * temporal::NS_PER_DAY + (int128)tod_delta;
             if (incr_ns > 1) total = temporal::round_long_ns_128(total, (int128)incr_ns, ds.mode);
-            long whole_days = (long)(total / 86_400_000_000_000L);
-            long rem = (long)(total % 86_400_000_000_000L);
+            long whole_days = (long)(total / temporal::NS_PER_DAY);
+            long rem = (long)(total % temporal::NS_PER_DAY);
             if (rem != 0 && ((rem < 0) != (whole_days < 0)) && whole_days != 0) {
                 // C3's truncating int128 division can leave a remainder whose
                 // sign disagrees with the quotient; align it so time_ns_split
                 // (which expects a same-sign remainder) doesn't misdecompose.
                 whole_days += (total < 0) ? 1 : -1;
-                rem = (long)(total - (int128)whole_days * 86_400_000_000_000L);
+                rem = (long)(total - (int128)whole_days * temporal::NS_PER_DAY);
             }
             dp.days = whole_days;
             temporal::DurationParts t = temporal::time_ns_split(rem, temporal::TemporalUnit.HOUR);
@@ -6796,7 +6784,7 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     temporal::set_smallest_unit_count(&next, ds.smallest, kept + sign * incr);
     temporal::CivilDate hi = temporal::apply_date_part(start, next);
 
-    long to_end = temporal::total_days_between(lo, end) * 86_400_000_000_000L + tod_delta;
+    long to_end = temporal::total_days_between(lo, end) * temporal::NS_PER_DAY + tod_delta;
     // Compute the span in int128: (kept+incr) - kept in days at smallestUnit
     // granularity, lifted to nanoseconds. For calendar units like months and
     // years the actual `hi` date is variable, but we only need the ratio
@@ -6807,10 +6795,10 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     // gives the right span for the kept-boundary, which is what we compare.
     int128 span;
     if (ds.smallest >= temporal::TemporalUnit.DAY) {
-        long unit_ns = (ds.smallest == temporal::TemporalUnit.DAY) ? 86_400_000_000_000L : temporal::unit_ns_divisor(ds.smallest);
+        long unit_ns = (ds.smallest == temporal::TemporalUnit.DAY) ? temporal::NS_PER_DAY : temporal::unit_ns_divisor(ds.smallest);
         span = (int128)incr * (int128)unit_ns;
     } else {
-        span = (int128)temporal::total_days_between(lo, hi) * 86_400_000_000_000L;
+        span = (int128)temporal::total_days_between(lo, hi) * temporal::NS_PER_DAY;
     }
     if (span == 0) return true;
 
@@ -9516,7 +9504,7 @@ fn void builtin_date_proto_toTemporalInstant(BuiltinContext* ctx) {
     // ±8.64e15, so the nanosecond count fits int128 exactly. Scaling in
     // int128 rather than double keeps the full range representable —
     // ±8.64e21 ns is far beyond 2^53.
-    int128 ns_128 = (int128)(long)tv * (int128)1000000L;
+    int128 ns_128 = (int128)(long)tv * (int128)temporal::NS_PER_MS;
     hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, ns_128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
     hbigint::HBigInt* ns = big_o;
@@ -9563,7 +9551,7 @@ fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
         return;
     }
     int128 v = b.to_int128();
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
     if (v < -ns_limit || v > ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.Instant: epochNanoseconds is outside the representable range");
         return;
@@ -9852,7 +9840,7 @@ fn void builtin_temporal_instant_fromEpochNanoseconds(BuiltinContext* ctx) {
         return;
     }
     int128 v = b.to_int128();
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
     if (v < -ns_limit || v > ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochNanoseconds: outside the representable range");
         return;
@@ -10097,7 +10085,7 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
     if (digits == -10) {
         // smallestUnit: "minute" -> round to a whole minute boundary.
         long total_ns = whole_secs * 1000000000 + ns_rem;
-        long rounded_total_ns = temporal::round_long_ns(total_ns, 60 * 1000000000L, rm);
+        long rounded_total_ns = temporal::round_long_ns(total_ns, 60 * temporal::NS_PER_SEC, rm);
         whole_secs = rounded_total_ns / 1000000000;
         ns_rem = 0;
     } else if (digits >= 0 && ns_rem != 0) {
@@ -10501,17 +10489,17 @@ fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigi
     ctx.heap.decref((types::HeapHeader*)diff);
     if (q == null || r == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return false; }
     temporal::DurationParts dp = {};
-    long subsec_per_unit = 1000000000L / largest_unit_ns;
+    long subsec_per_unit = temporal::NS_PER_SEC / largest_unit_ns;
     int128 qv = q.to_int128();
     int128 rv = r.to_int128();
     // The quotient is in `largest_unit_ns` units, the remainder in ns. Convert
     // the quotient to the smallest sensible field. For seconds (default),
     // dp.seconds = q; for ms, dp.milliseconds = q; etc.
     switch (largest_unit_ns) {
-        case 3600000000000L: dp.hours = (long)qv; break;
-        case 60000000000L:   dp.minutes = (long)qv; break;
-        case 1000000000L:    dp.seconds = (long)qv; break;
-        case 1000000L:       dp.ms = (long)qv; break;
+        case temporal::NS_PER_HOUR: dp.hours = (long)qv; break;
+        case temporal::NS_PER_MIN:   dp.minutes = (long)qv; break;
+        case temporal::NS_PER_SEC:    dp.seconds = (long)qv; break;
+        case temporal::NS_PER_MS:       dp.ms = (long)qv; break;
         case 1000L:          dp.us = (long)qv; break;
         case 1L:             dp.ns = (long)qv; rv = 0; break;
         default:
@@ -10530,11 +10518,11 @@ fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigi
         long rem_us = rv_ns - ms * 1000000;
         long us = rem_us / 1000;
         long ns = rem_us - us * 1000;
-        if (largest_unit_ns == 1000000000L) {
+        if (largest_unit_ns == temporal::NS_PER_SEC) {
             dp.ms = ms; dp.us = us; dp.ns = ns;
-        } else if (largest_unit_ns == 60000000000L) {
+        } else if (largest_unit_ns == temporal::NS_PER_MIN) {
             dp.seconds = (long)(ms / 1000); dp.ms = ms % 1000; dp.us = us; dp.ns = ns;
-        } else if (largest_unit_ns == 3600000000000L) {
+        } else if (largest_unit_ns == temporal::NS_PER_HOUR) {
             long min_total = ms / (60 * 1000);
             long ms_in_h = ms - min_total * 60 * 1000;
             long sec_total = ms_in_h / 1000;
@@ -10542,7 +10530,7 @@ fn bool instant_ns_diff_duration(BuiltinContext* ctx, hbigint::HBigInt* a, hbigi
             dp.minutes = min_total;
             dp.seconds = sec_total;
             dp.ms = ms_rem; dp.us = us; dp.ns = ns;
-        } else if (largest_unit_ns == 1000000L) {
+        } else if (largest_unit_ns == temporal::NS_PER_MS) {
             dp.us = us; dp.ns = ns;
         } else if (largest_unit_ns == 1000L) {
             dp.ns = ns;
@@ -10573,20 +10561,20 @@ fn bool instant_ns_split_duration(BuiltinContext* ctx, hbigint::HBigInt* ns, tem
     // Walk the ladder from `largest` down; each unit takes the whole quotient
     // at its scale and hands the remainder to the next one.
     if (largest <= temporal::TemporalUnit.HOUR) {
-        dp.hours = (long)(v / 3600000000000L);
-        v %= 3600000000000L;
+        dp.hours = (long)(v / temporal::NS_PER_HOUR);
+        v %= temporal::NS_PER_HOUR;
     }
     if (largest <= temporal::TemporalUnit.MINUTE) {
-        dp.minutes = (long)(v / 60000000000L);
-        v %= 60000000000L;
+        dp.minutes = (long)(v / temporal::NS_PER_MIN);
+        v %= temporal::NS_PER_MIN;
     }
     if (largest <= temporal::TemporalUnit.SECOND) {
-        dp.seconds = (long)(v / 1000000000L);
-        v %= 1000000000L;
+        dp.seconds = (long)(v / temporal::NS_PER_SEC);
+        v %= temporal::NS_PER_SEC;
     }
     if (largest <= temporal::TemporalUnit.MILLISECOND) {
-        dp.ms = (long)(v / 1000000L);
-        v %= 1000000L;
+        dp.ms = (long)(v / temporal::NS_PER_MS);
+        v %= temporal::NS_PER_MS;
     }
     if (largest <= temporal::TemporalUnit.MICROSECOND) {
         dp.us = (long)(v / 1000L);
@@ -10610,7 +10598,7 @@ fn bool instant_ns_split_duration(BuiltinContext* ctx, hbigint::HBigInt* ns, tem
 // per type. The Instant case accepts only the six time units; calendar units
 // are rejected because Instants are point-in-time.
 fn bool read_instant_largest_unit_ns(BuiltinContext* ctx, int options_index, long* out) {
-    *out = 1000000000L;
+    *out = temporal::NS_PER_SEC;
     if (ctx.argc <= options_index) return true;
     TVal ov = ctx.regs[ctx.base_reg + options_index];
     if (ov.is_undefined()) return true;
@@ -10627,10 +10615,10 @@ fn bool read_instant_largest_unit_ns(BuiltinContext* ctx, int options_index, lon
     }
     HString* s = (HString*)val.get_heapptr();
     String str = s ? (String)s.get_cstr()[:s.blen] : "";
-    if (temporal::ci_eq(str, "hour") || temporal::ci_eq(str, "hours"))         { *out = 3600000000000L; return true; }
-    if (temporal::ci_eq(str, "minute") || temporal::ci_eq(str, "minutes"))     { *out = 60000000000L; return true; }
-    if (temporal::ci_eq(str, "second") || temporal::ci_eq(str, "seconds"))     { *out = 1000000000L; return true; }
-    if (temporal::ci_eq(str, "millisecond") || temporal::ci_eq(str, "milliseconds")) { *out = 1000000L; return true; }
+    if (temporal::ci_eq(str, "hour") || temporal::ci_eq(str, "hours"))         { *out = temporal::NS_PER_HOUR; return true; }
+    if (temporal::ci_eq(str, "minute") || temporal::ci_eq(str, "minutes"))     { *out = temporal::NS_PER_MIN; return true; }
+    if (temporal::ci_eq(str, "second") || temporal::ci_eq(str, "seconds"))     { *out = temporal::NS_PER_SEC; return true; }
+    if (temporal::ci_eq(str, "millisecond") || temporal::ci_eq(str, "milliseconds")) { *out = temporal::NS_PER_MS; return true; }
     if (temporal::ci_eq(str, "microsecond") || temporal::ci_eq(str, "microseconds")) { *out = 1000L; return true; }
     if (temporal::ci_eq(str, "nanosecond") || temporal::ci_eq(str, "nanoseconds"))   { *out = 1L; return true; }
     builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not a valid value");
@@ -10659,10 +10647,10 @@ fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigIn
     }
     long ed = temporal::epoch_days_from_civil(p.y, (int)p.m, (int)p.d);
     long sec_of_day = (long)p.hour * 3600 + (long)p.minute * 60 + (long)p.second;
-    int128 ns128 = (int128)ed * 86400L * 1000000000L;
-    ns128 += (int128)sec_of_day * 1000000000L;
+    int128 ns128 = (int128)ed * 86400L * temporal::NS_PER_SEC;
+    ns128 += (int128)sec_of_day * temporal::NS_PER_SEC;
     ns128 += (int128)p.nanos;
-    ns128 -= (int128)p.offset_seconds * 1000000000L;
+    ns128 -= (int128)p.offset_seconds * temporal::NS_PER_SEC;
     // The offset's sub-minute fraction already carries the offset's sign
     // (parsed with `negative ? -off_nanos : off_nanos`), so it subtracts
     // directly. A positive seconds value means the parsed time is east of
@@ -10672,7 +10660,7 @@ fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigIn
     // ToTemporalInstant rejects an instant outside NS_MIN..NS_MAX
     // (±100,000,000 days * 86400e9), e.g. the maximum wall date with a
     // negative offset pushes the epoch over the top.
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
     if (ns128 > ns_limit || ns128 < -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside the representable epoch-nanoseconds range");
         return false;
@@ -11003,7 +10991,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
     // where dividend is "number of this-unit-in-one-solar-day" for Instant.
     // That is dividend = 86400 seconds / (this unit in seconds). Computed as
     // nsPerDay / divisor = (86400 * 1e9) / divisor.
-    long long_solar_ns = 86400L * 1000000000L;
+    long long_solar_ns = 86400L * temporal::NS_PER_SEC;
     long dividend = divisor > 0 ? (long)(long_solar_ns / divisor) : 1;
     long long_incr = (long)rounding_increment;
     if (long_incr > dividend || dividend % long_incr != 0) {
@@ -11500,7 +11488,7 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
     {
         bool fits = b.fits_int128();
         int128 ns128 = b.to_int128();
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
         if (!fits || ns128 > ns_limit || ns128 < -ns_limit) {
             ctx.heap.decref((types::HeapHeader*)b);
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime: epochNanoseconds outside valid range");
@@ -11779,14 +11767,14 @@ fn bool zdt_check_offset_agreement(BuiltinContext* ctx, String zone_name, int128
         // Ignore the supplied offset: resolve the wall time by the zone.
         long wall_secs = (long)(wall_ns_128 / 1000000000);
         long zone_off = (long)temporal::tzdb_offset_for_zone_at(zone_name, wall_secs);
-        *epoch_ns_128 = wall_ns_128 - (int128)zone_off * (int128)1000000000L;
+        *epoch_ns_128 = wall_ns_128 - (int128)zone_off * (int128)temporal::NS_PER_SEC;
         return true;
     }
     long epoch_secs = (long)(*epoch_ns_128 / 1000000000);
     long zone_off = (long)temporal::tzdb_offset_for_zone_at(zone_name, epoch_secs);
     if (zone_off == off_sec) return true;
     if (mode == 3 /* prefer */) {
-        *epoch_ns_128 = wall_ns_128 - (int128)zone_off * (int128)1000000000L;
+        *epoch_ns_128 = wall_ns_128 - (int128)zone_off * (int128)temporal::NS_PER_SEC;
         return true;
     }
     builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
@@ -11903,12 +11891,12 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         // ±10^8 days, where double precision (2^53) can't represent every
         // integer. Wall and offset are converted via int128 then to BigInt
         // so values near NS_MAX/NS_MIN don't round.
-        int128 wall_ns_128 = (int128)wall_secs * (int128)1000000000L + (int128)p.nanos;
+        int128 wall_ns_128 = (int128)wall_secs * (int128)temporal::NS_PER_SEC + (int128)p.nanos;
         int128 eff_off_128 = (int128)effective_off;
-        int128 epoch_ns_128 = wall_ns_128 - eff_off_128 * (int128)1000000000L;
+        int128 epoch_ns_128 = wall_ns_128 - eff_off_128 * (int128)temporal::NS_PER_SEC;
         // Instant range check: NS_MIN..NS_MAX is ±100,000,000 days * 86400e9 ns.
         {
-            int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+            int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
             if (epoch_ns_128 > ns_limit || epoch_ns_128 < -ns_limit) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: instant outside the representable range");
                 return;
@@ -12033,8 +12021,8 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         long frac_ns = (long)valid_t.ms * 1000000 + (long)valid_t.us * 1000 + (long)valid_t.ns;
         // Combine in int128: double arithmetic here would drop every bit
         // below 2^53 and corrupt the sub-microsecond digits.
-        int128 epoch_ns_128 = (int128)wall_secs * (int128)1000000000L + (int128)frac_ns
-            - (int128)off_sec * (int128)1000000000L;
+        int128 epoch_ns_128 = (int128)wall_secs * (int128)temporal::NS_PER_SEC + (int128)frac_ns
+            - (int128)off_sec * (int128)temporal::NS_PER_SEC;
         // The supplied offset must agree with the time zone's actual offset
         // at the instant it produces, per the offset option semantics. When
         // the offset was synthesized from an offset-form zone id it agrees
@@ -12043,7 +12031,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         if (has_offset_prop) {
             int128 agree_epoch = epoch_ns_128;
             String zname = timezone_name(tz);
-            if (!zdt_check_offset_agreement(ctx, zname, epoch_ns_128 + (int128)off_sec * (int128)1000000000L,
+            if (!zdt_check_offset_agreement(ctx, zname, epoch_ns_128 + (int128)off_sec * (int128)temporal::NS_PER_SEC,
                                             off_sec, zdt_offset_mode, &agree_epoch)) return;
             epoch_ns_128 = agree_epoch;
         }
@@ -12223,7 +12211,7 @@ fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, in
     // the broken-down time's seconds/ms/us/ns are all zero.
     if (digits == -10) {
         long total_ns = local_secs * 1000000000 + ns_rem;
-        long rounded_total_ns = temporal::round_long_ns(total_ns, 60 * 1000000000L, rm);
+        long rounded_total_ns = temporal::round_long_ns(total_ns, 60 * temporal::NS_PER_SEC, rm);
         local_secs = rounded_total_ns / 1000000000;
         ns_rem = 0;
     } else if (digits >= 0 && ns_rem != 0) {
@@ -12695,9 +12683,9 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
         // disambiguation unambiguous: the only candidate instant is
         // `wall_time - offset`. A result that would fall outside the
         // representable epoch range is a RangeError.
-        int128 explicit_epoch = (int128)wall_secs * (int128)1000000000L + (int128)wfrac
-            - (int128)bag_offset_sec * (int128)1000000000L;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        int128 explicit_epoch = (int128)wall_secs * (int128)temporal::NS_PER_SEC + (int128)wfrac
+            - (int128)bag_offset_sec * (int128)temporal::NS_PER_SEC;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
         if (explicit_epoch > ns_limit || explicit_epoch < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
@@ -12750,14 +12738,14 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
         // relocating it to the instant whose local time is the post-gap offset.
         chosen_off = (long)temporal::tzdb_offset_for_zone_at(zone, wall_secs + 4 * 3600);
     }
-    int128 chosen_128 = (int128)wall_secs * (int128)1000000000L + (int128)wfrac
-        - (int128)chosen_off * (int128)1000000000L;
+    int128 chosen_128 = (int128)wall_secs * (int128)temporal::NS_PER_SEC + (int128)wfrac
+        - (int128)chosen_off * (int128)temporal::NS_PER_SEC;
 
     // The resolved instant must fall within the representable epoch range
     // (±8.64e21 ns). The wall date can be a lone valid ISO date while its
     // UTC instant lands just past −271821-04-19T00:00 (below NS_MIN), so this
     // is a genuine second check after date/time validation.
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
     if (chosen_128 > ns_limit || chosen_128 < -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
         return;
@@ -12779,10 +12767,10 @@ fn bool duration_to_ns_delta(BuiltinContext* ctx, temporal::DurationParts dp, hb
     hbigint::HBigInt* delta = delta_o;
     long[6] parts;
     long[6] scales;
-    parts[0] = dp.hours;   scales[0] = 3600000000000L;
-    parts[1] = dp.minutes; scales[1] = 60000000000L;
-    parts[2] = dp.seconds; scales[2] = 1000000000L;
-    parts[3] = (long)dp.ms;      scales[3] = 1000000L;
+    parts[0] = dp.hours;   scales[0] = temporal::NS_PER_HOUR;
+    parts[1] = dp.minutes; scales[1] = temporal::NS_PER_MIN;
+    parts[2] = dp.seconds; scales[2] = temporal::NS_PER_SEC;
+    parts[3] = (long)dp.ms;      scales[3] = temporal::NS_PER_MS;
     parts[4] = (long)dp.us;      scales[4] = 1000L;
     parts[5] = (long)dp.ns;      scales[5] = 1L;
     for (int k = 0; k < 6; k++) {
@@ -12918,13 +12906,7 @@ fn bool add_zoned_datetime(HObject* zdt, temporal::DurationParts dp, long sign,
     }
 
     // Time units: an exact shift on the instant axis.
-    int128 time_ns = (int128)0;
-    time_ns += (int128)dp.hours   * 3600000000000L;
-    time_ns += (int128)dp.minutes *   60000000000L;
-    time_ns += (int128)dp.seconds *    1000000000L;
-    time_ns += (int128)dp.ms      *       1000000L;
-    time_ns += (int128)dp.us      *          1000L;
-    time_ns += (int128)dp.ns;
+    int128 time_ns = temporal::duration_time_part_ns(dp);
 
     int128 result = base + (int128)sign * time_ns;
     if (!temporal::instant_in_range(result)) return false;
@@ -13434,8 +13416,8 @@ fn void builtin_temporal_zoneddatetime_proto_hoursInDay(BuiltinContext* ctx) {
             off_end = temporal::tzdb_offset_for_zone_at(zone, tomorrow_epoch);
         }
     }
-    int128 today_ns = (int128)today_secs * (int128)1000000000L - (int128)off_start * (int128)1000000000L;
-    int128 tomorrow_ns = (int128)tomorrow_secs * (int128)1000000000L - (int128)off_end * (int128)1000000000L;
+    int128 today_ns = (int128)today_secs * (int128)temporal::NS_PER_SEC - (int128)off_start * (int128)temporal::NS_PER_SEC;
+    int128 tomorrow_ns = (int128)tomorrow_secs * (int128)temporal::NS_PER_SEC - (int128)off_end * (int128)temporal::NS_PER_SEC;
     if (!temporal::instant_in_range(today_ns) || !temporal::instant_in_range(tomorrow_ns)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "hoursInDay boundary is outside the valid time range");
         return;
@@ -13519,8 +13501,8 @@ fn void builtin_temporal_zoneddatetime_proto_startOfDay(BuiltinContext* ctx) {
     long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
     zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
     long day_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400;
-    int128 epoch_ns_128 = (int128)day_secs * (int128)1000000000L
-        - (int128)off * (int128)1000000000L;
+    int128 epoch_ns_128 = (int128)day_secs * (int128)temporal::NS_PER_SEC
+        - (int128)off * (int128)temporal::NS_PER_SEC;
     // The Instant range is symmetric at the boundaries (-1e8 days). For wall
     // dates whose midnight lands outside, the spec's GetStartOfDay throws
     // (test262 startOfDay/throws-if-epoch-nanoseconds-outside-valid-limits).
@@ -13679,12 +13661,12 @@ fn void builtin_temporal_zoneddatetime_proto_withPlainTime(BuiltinContext* ctx) 
     long day_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400
         + (long)new_time.h * 3600 + (long)new_time.mi * 60 + (long)new_time.s;
     long frac_ns = (long)new_time.ms * 1000000 + (long)new_time.us * 1000 + (long)new_time.ns;
-    int128 epoch_ns_128 = (int128)day_secs * (int128)1000000000L + (int128)frac_ns
-        - (int128)off * (int128)1000000000L;
+    int128 epoch_ns_128 = (int128)day_secs * (int128)temporal::NS_PER_SEC + (int128)frac_ns
+        - (int128)off * (int128)temporal::NS_PER_SEC;
     // The combined date+time instant must sit within the representable epoch
     // range; a wall date at the upper edge combined with a later time-of-day,
     // or an early date with an offset, can push the instant past ±8.64e21.
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
     if (epoch_ns_128 > ns_limit || epoch_ns_128 < -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
         return;
@@ -13792,7 +13774,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         // and the next day's start must lie in the representable range.
         int128 start_ns = ((int128)day_secs - (int128)woff) * 1000000000;
         int128 end_ns = ((int128)day_secs + 86400 - (int128)woff) * 1000000000;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
         if (start_ns <= -ns_limit || start_ns >= ns_limit || end_ns <= -ns_limit || end_ns >= ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
             return;
@@ -13841,7 +13823,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         int128 rounded_ns_in_day = q * incr;
         int128 result_local_ns = day_start_ns + rounded_ns_in_day;
         int128 total_i128 = result_local_ns - (int128)woff * 1000000000;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
         if (total_i128 >= ns_limit || total_i128 <= -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
             return;
@@ -13857,7 +13839,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     // ceiling on double precision. `(double)result_secs * 1e9` rounds
     // values past ~1973 by 1 ns or more.
     int128 total_i128 = (int128)result_secs * 1000000000 + (int128)result_ns;
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)1000000000L;
+    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
     if (total_i128 >= ns_limit || total_i128 <= -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
         return;
