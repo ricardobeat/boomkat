@@ -3400,7 +3400,8 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     temporal::CivilDateTime target_dt = { .date = target_date,
         .time = { .h = h, .mi = mi, .s = s, .ms = ms, .us = us, .ns = ns } };
     DiffSettings rds = { .largest = largest_unit, .smallest = smallest_unit,
-                         .mode = rounding_mode, .increment = rounding_increment };
+                         .mode = rounding_mode, .increment = rounding_increment,
+                         .is_zoned = is_zdt };
     temporal::DurationParts result;
     if (!datetime_difference(ctx, iso_dt, target_dt, rds, &result)) return;
 
@@ -7178,24 +7179,52 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
     }
 
     if (ds.smallest > TemporalUnit.DAY) {
-        // The date part is whole days, so rounding stays inside the time of
-        // day and can carry at most one full day into it.
         long incr_ns = unit_ns_divisor(ds.smallest) * (long)ds.increment;
-        if (incr_ns > 1) {
-            long rounded = round_long_ns(tod_delta, incr_ns, ds.mode);
-            if (rounded != tod_delta) {
-                if (rounded == 86_400_000_000_000L || rounded == -86_400_000_000_000L) {
-                    // A carry of a whole day empties the time of day and adds a
-                    // day to the date part, which can cascade up through
-                    // months and years.
-                    dp.hours = 0; dp.minutes = 0; dp.seconds = 0;
-                    dp.ms = 0; dp.us = 0; dp.ns = 0;
-                    if (!bump_date_part(ctx, sd, ds, sign, &dp)) return false;
-                } else {
-                    temporal::DurationParts t = time_ns_split(rounded, TemporalUnit.HOUR);
-                    dp.hours = t.hours; dp.minutes = t.minutes; dp.seconds = t.seconds;
-                    dp.ms = t.ms; dp.us = t.us; dp.ns = t.ns;
+        if (ds.is_zoned) {
+            // NudgeToZonedTime: a day is a real, possibly non-24-hour calendar
+            // day resolved against the zone, so it cannot be folded into the
+            // time column. Rounding stays inside the time of day and can carry
+            // at most one full day into the date part.
+            if (incr_ns > 1) {
+                long rounded = round_long_ns(tod_delta, incr_ns, ds.mode);
+                if (rounded != tod_delta) {
+                    if (rounded == 86_400_000_000_000L || rounded == -86_400_000_000_000L) {
+                        // A carry of a whole day empties the time of day and adds a
+                        // day to the date part, which can cascade up through
+                        // months and years.
+                        dp.hours = 0; dp.minutes = 0; dp.seconds = 0;
+                        dp.ms = 0; dp.us = 0; dp.ns = 0;
+                        if (!bump_date_part(ctx, sd, ds, sign, &dp)) return false;
+                    } else {
+                        temporal::DurationParts t = time_ns_split(rounded, TemporalUnit.HOUR);
+                        dp.hours = t.hours; dp.minutes = t.minutes; dp.seconds = t.seconds;
+                        dp.ms = t.ms; dp.us = t.us; dp.ns = t.ns;
+                    }
                 }
+            }
+        } else {
+            // NudgeToDayOrTime (unzoned): Add24HourDaysToTimeDuration folds the
+            // whole-day count into the time duration as uniform 24-hour days
+            // before rounding, so days participate in the increment alongside
+            // hours/minutes/etc rather than being held fixed. This is what
+            // makes a halfEven tie resolve differently from the zoned case.
+            int128 total = (int128)dp.days * 86_400_000_000_000L + (int128)tod_delta;
+            if (incr_ns > 1) total = round_long_ns_128(total, (int128)incr_ns, ds.mode);
+            long whole_days = (long)(total / 86_400_000_000_000L);
+            long rem = (long)(total % 86_400_000_000_000L);
+            if (rem != 0 && ((rem < 0) != (whole_days < 0)) && whole_days != 0) {
+                // C3's truncating int128 division can leave a remainder whose
+                // sign disagrees with the quotient; align it so time_ns_split
+                // (which expects a same-sign remainder) doesn't misdecompose.
+                whole_days += (total < 0) ? 1 : -1;
+                rem = (long)(total - (int128)whole_days * 86_400_000_000_000L);
+            }
+            dp.days = whole_days;
+            temporal::DurationParts t = time_ns_split(rem, TemporalUnit.HOUR);
+            dp.hours = t.hours; dp.minutes = t.minutes; dp.seconds = t.seconds;
+            dp.ms = t.ms; dp.us = t.us; dp.ns = t.ns;
+            if (whole_days != 0) {
+                if (!rebalance_date_part(ctx, sd, ds, &dp)) return false;
             }
         }
         *out = dp;
