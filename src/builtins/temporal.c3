@@ -1821,8 +1821,19 @@ fn void builtin_temporal_duration_from(BuiltinContext* ctx) {
 //   * an ISO date or date-time string.
 //
 // Returns false with `ctx.should_throw` set on failure.
-fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** out_relative_to) {
+// Reads the `relativeTo` option. `out_is_zoned` reports whether the
+// argument was zoned, which the caller CANNOT recover from the returned
+// object: a `Temporal.ZonedDateTime` argument is converted to a
+// `PlainDateTime` below (the ISO-calendar difference math wants
+// wall-clock fields), so a `get_class()` check on the result would always
+// say "not zoned". The spec needs the distinction — a plain relativeTo
+// folds days as uniform 24-hour days (Add24HourDaysToTimeDuration), a
+// zoned one defers to the tz rules (NudgeToZonedTime) — and the two agree
+// only in zones without offset transitions, which is why dropping the flag
+// stayed invisible under UTC.
+fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** out_relative_to, bool* out_is_zoned) {
     *out_relative_to = null;
+    *out_is_zoned = false;
     if (opts == null) return true;
     TVal rv = prop_or_undefined_pa(ctx, opts, "relativeTo");
     if (ctx.should_throw) return false;
@@ -1836,15 +1847,14 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
             return true;
         }
         if (ro.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
-            long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
-            zdt_wall_fields(ro, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
-            temporal::CivilDateTime dt = {
-                .date = { .y = wy, .m = wm, .d = wd },
-                .time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns },
-            };
-            HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
-            if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
-            *out_relative_to = dt_o;
+            // Hand back the ZonedDateTime itself, not a PlainDateTime copy of
+            // its wall fields. The zoned callers need the instant
+            // (`extra.temporal.big_ns`) and the zone, which a PlainDateTime
+            // does not carry; the two other zoned paths below (property bag,
+            // bracketed string) already return a real ZonedDateTime, so this
+            // makes `is_zoned == true` mean the same thing everywhere.
+            *out_relative_to = ro;
+            *out_is_zoned = true;
             return true;
         }
 
@@ -1938,6 +1948,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
         if (catch err = zdt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
         HObject* zdt = zdt_o;
         *out_relative_to = zdt;
+        *out_is_zoned = true;
         return true;
     }
 
@@ -1959,6 +1970,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
                 HObject* zdt = (HObject*)ctx.result.get_heapptr();
                 *ctx.result = saved_res;
                 *out_relative_to = zdt;
+                *out_is_zoned = true;
                 return true;
             }
             *ctx.result = saved_res;
@@ -2029,7 +2041,8 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
 
     // relativeTo
     HObject* relative_to = null;
-    if (!read_relative_to_option(ctx, opts, &relative_to)) return;
+    bool rel_is_zoned = false;
+    if (!read_relative_to_option(ctx, opts, &relative_to, &rel_is_zoned)) return;
 
     if (da.years == db.years && da.months == db.months && da.weeks == db.weeks && da.days == db.days &&
         da.hours == db.hours && da.minutes == db.minutes && da.seconds == db.seconds &&
@@ -3140,6 +3153,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     double rounding_increment = 1;
     TemporalRoundMode rounding_mode = TemporalRoundMode.HALF_EXPAND;
     HObject* relative_to = null;
+    bool rel_is_zoned = false;
     bool largest_provided = false;
 
     if (string_shorthand) {
@@ -3172,7 +3186,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             }
         }
         // relativeTo
-        if (!read_relative_to_option(ctx, opts, &relative_to)) return;
+        if (!read_relative_to_option(ctx, opts, &relative_to, &rel_is_zoned)) return;
         // roundingIncrement
         TVal ri_tv = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
         if (!ri_tv.is_undefined()) {
@@ -3297,7 +3311,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     // Extract relativeTo date fields.
     CivilDate rel_date;
     temporal::CivilTime rel_time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
-    bool is_zdt = (relative_to.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
+    bool is_zdt = rel_is_zoned;
     if (is_zdt) {
         long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
         zdt_wall_fields(relative_to, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
@@ -3423,6 +3437,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     HObject* opts = null;
     TemporalUnit unit = TemporalUnit.NANOSECOND;
     HObject* relative_to = null;
+    bool rel_is_zoned = false;
 
     if (string_shorthand) {
         HString* ss = builtin_to_string_vm(ctx, total_of);
@@ -3442,7 +3457,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // in any other order surfaces unit-validation errors before the
         // caller has observed relativeTo, breaking options-read-before-
         // algorithmic-validation tests.
-        if (!read_relative_to_option(ctx, opts, &relative_to)) return;
+        if (!read_relative_to_option(ctx, opts, &relative_to, &rel_is_zoned)) return;
         TVal unit_tv = prop_or_undefined_pa(ctx, opts, "unit");
         if (ctx.should_throw) return;
         if (unit_tv.is_undefined()) {
@@ -3492,7 +3507,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     // Always compute and validate target datetime with relative_to:
     CivilDate rel_date;
     temporal::CivilTime rel_time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
-    bool is_zdt = (relative_to.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
+    bool is_zdt = rel_is_zoned;
     if (is_zdt) {
         long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, woff;
         zdt_wall_fields(relative_to, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &woff);
