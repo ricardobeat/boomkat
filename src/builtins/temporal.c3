@@ -3441,6 +3441,35 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
         }
+
+        // NudgeToZonedTime needs the length of the day the result lands in,
+        // which means resolving the next day's boundary. At the top of the
+        // representable range that boundary does not exist, and the spec
+        // throws rather than rounding -- even for a blank duration, since the
+        // boundary is computed before the nudge decides nothing moves. Only
+        // a day-or-larger largestUnit reaches that step (test262
+        // round/next-day-out-of-range).
+        // NudgeToZonedTime is reached when largestUnit is exactly "day" and
+        // smallestUnit is a time unit: that combination has to know the length
+        // of the day the result falls in, so it resolves the next day's
+        // boundary. A calendar largestUnit routes to NudgeToCalendarUnit
+        // instead, which derives its own boundary and must not be pre-empted
+        // here -- doing so throws for the blank-duration cases in
+        // round/relativeto-date-limits.
+        if (largest_unit == TemporalUnit.DAY &&
+            !is_cal_unit(smallest_unit) && smallest_unit != TemporalUnit.DAY) {
+            bool neg = dur.years < 0 || dur.months < 0 || dur.weeks < 0 || dur.days < 0 ||
+                       dur.hours < 0 || dur.minutes < 0 || dur.seconds < 0 ||
+                       dur.ms < 0 || dur.us < 0 || dur.ns < 0;
+            long dir = neg ? -1 : 1;
+            temporal::DurationParts one_day = {};
+            one_day.days = 1;
+            int128 boundary;
+            if (!add_zoned_datetime(relative_to, one_day, dir, temporal::OverflowKind.CONSTRAIN, &boundary)) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "next day boundary is outside the valid time range");
+                return;
+            }
+        }
     } else {
         rel_date = { .y = relative_to.extra.temporal.long_a,
                      .m = relative_to.extra.temporal.long_b,
