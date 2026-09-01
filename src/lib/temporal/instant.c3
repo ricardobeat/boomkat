@@ -16,10 +16,18 @@ module boomkat::lib::temporal;
 
 import std::time;
 
-// The widest epoch-nanosecond value Temporal can represent, per
-// Temporal.Instant: 100,000,000 days either side of the epoch.
-//   86400 s/day * 1e8 days * 1e9 ns/s
-const int128 INSTANT_MAX_NS = (int128)86400 * (int128)100000000 * (int128)1000000000;
+// The widest epoch offset Temporal can represent, per Temporal.Instant:
+// 100,000,000 days either side of the epoch. The nanosecond form is derived
+// from the day form so the two can never drift apart.
+const long INSTANT_MAX_DAYS = 100_000_000L;
+const int128 INSTANT_MAX_NS = (int128)INSTANT_MAX_DAYS * (int128)NS_PER_DAY;
+
+// True when an epoch-day count is inside the representable range. Callers
+// that have a date rather than an instant want
+// `is_instant_representable_date` in civil.c3, which wraps this.
+fn bool epoch_days_in_range(long days) {
+    return days >= -INSTANT_MAX_DAYS && days <= INSTANT_MAX_DAYS;
+}
 
 // Nanoseconds since the Unix epoch. The zero value is the epoch itself.
 struct Instant {

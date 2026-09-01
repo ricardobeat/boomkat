@@ -309,8 +309,7 @@ fn bool is_valid_iso_datetime(long y, long m, long d, long h, long mi, long s, l
 // -271821-04-19 is a valid ISO date but its epoch ns are below the Instant
 // minimum, so a calendar-unit nudge that lands there must throw.
 fn bool is_instant_representable_date(CivilDate d) {
-    long days = epoch_days_from_civil(d.y, (int)d.m, (int)d.d);
-    return days >= -100000000L && days <= 100000000L;
+    return epoch_days_in_range(epoch_days_from_civil(d.y, (int)d.m, (int)d.d));
 }
 
 // Add `seconds` (which may be negative) to a CivilTime, returning a fresh

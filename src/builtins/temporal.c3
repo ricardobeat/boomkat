@@ -2787,7 +2787,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         int128 start_ns = start_big.to_int128();
         int128 dur_time_ns = temporal::duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+        int128 ns_limit = temporal::INSTANT_MAX_NS;
 
         if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
@@ -2838,7 +2838,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     // limits covers the first, round/relativeto-string-limits the second.
     if (!is_blank && !temporal::is_cal_unit(smallest_unit) && smallest_unit != temporal::TemporalUnit.DAY) {
         long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
-        if (rel_days < -100000000L || rel_days > 100000000L) {
+        if (!temporal::epoch_days_in_range(rel_days)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
             return;
         }
@@ -2869,7 +2869,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     if (!is_blank) {
         long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
         long tgt_days = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-        if (rel_days < -100000000L || rel_days > 100000000L || tgt_days < -100000000L || tgt_days > 100000000L) {
+        if (!temporal::epoch_days_in_range(rel_days) || !temporal::epoch_days_in_range(tgt_days)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date outside representable range");
             return;
         }
@@ -3019,7 +3019,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         int128 start_ns = start_big.to_int128();
         int128 dur_time_ns = temporal::duration_to_time_ns(dur);
         int128 target_instant_ns = start_ns + dur_time_ns;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+        int128 ns_limit = temporal::INSTANT_MAX_NS;
 
         if (target_instant_ns > ns_limit || target_instant_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
@@ -3155,7 +3155,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     if (relative_to.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
         long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
         long tgt_days = temporal::epoch_days_from_civil(target_date.y, (int)target_date.m, (int)target_date.d);
-        if (rel_days < -100000000L || rel_days > 100000000L || tgt_days < -100000000L || tgt_days > 100000000L) {
+        if (!temporal::epoch_days_in_range(rel_days) || !temporal::epoch_days_in_range(tgt_days)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date outside representable range");
             return;
         }
@@ -3163,7 +3163,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
 
     if (!temporal::is_cal_unit(unit) && unit != temporal::TemporalUnit.DAY) {
         long rel_days = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
-        if (rel_days < -100000000L || rel_days > 100000000L) {
+        if (!temporal::epoch_days_in_range(rel_days)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo is outside representable range after conversion to DateTime");
             return;
         }
@@ -3913,7 +3913,7 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
     // GetStartOfDay resolves midnight; the resulting UTC instant must fall
     // within the representable epoch range (±8.64e21 ns). A wall date at the
     // ISO boundary with an offset can land past NS_MIN/NS_MAX.
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+    int128 ns_limit = temporal::INSTANT_MAX_NS;
     if (epoch_ns_128 > ns_limit || epoch_ns_128 < -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
         return;
@@ -5822,7 +5822,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         // and 275760-09-14T00:00:00.000 are both out of range).
         int128 epoch_ns = (int128)temporal::epoch_days_from_civil(dt.date.y, (int)dt.date.m, (int)dt.date.d)
             * (int128)temporal::NS_PER_DAY + (int128)total;
-        int128 ns_limit = (int128)temporal::NS_PER_DAY * (int128)100000000L;
+        int128 ns_limit = temporal::INSTANT_MAX_NS;
         if (epoch_ns <= -ns_limit || epoch_ns >= ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
             return;
@@ -6276,7 +6276,7 @@ fn void builtin_temporal_plain_datetime_proto_toZonedDateTime(BuiltinContext* ct
 
     // Instant range check: ±100,000,000 days × 86400 × 1e9 ns.
     {
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+        int128 ns_limit = temporal::INSTANT_MAX_NS;
         if (epoch_ns > ns_limit || epoch_ns < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside the representable range");
             return;
@@ -9551,7 +9551,7 @@ fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
         return;
     }
     int128 v = b.to_int128();
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+    int128 ns_limit = temporal::INSTANT_MAX_NS;
     if (v < -ns_limit || v > ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.Instant: epochNanoseconds is outside the representable range");
         return;
@@ -9740,7 +9740,7 @@ fn void builtin_temporal_instant_fromEpochMilliseconds(BuiltinContext* ctx) {
     // ES262 §TemporalInstant: ms must stay within the range that fits in ns
     // after multiplication. Limit is the same ±86400 * 1e9 ns / 1e3 ms =
     // ±8.64e15 ms.
-    int128 ms_limit = (int128)86400L * (int128)100000000L * (int128)1000L;
+    int128 ms_limit = temporal::INSTANT_MAX_NS / (int128)temporal::NS_PER_MS;
     if (i128 < -ms_limit || i128 > ms_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochMilliseconds: out of representable range");
         return;
@@ -9840,7 +9840,7 @@ fn void builtin_temporal_instant_fromEpochNanoseconds(BuiltinContext* ctx) {
         return;
     }
     int128 v = b.to_int128();
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+    int128 ns_limit = temporal::INSTANT_MAX_NS;
     if (v < -ns_limit || v > ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "fromEpochNanoseconds: outside the representable range");
         return;
@@ -10660,7 +10660,7 @@ fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigIn
     // ToTemporalInstant rejects an instant outside NS_MIN..NS_MAX
     // (±100,000,000 days * 86400e9), e.g. the maximum wall date with a
     // negative offset pushes the epoch over the top.
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+    int128 ns_limit = temporal::INSTANT_MAX_NS;
     if (ns128 > ns_limit || ns128 < -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside the representable epoch-nanoseconds range");
         return false;
@@ -11488,7 +11488,7 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
     {
         bool fits = b.fits_int128();
         int128 ns128 = b.to_int128();
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+        int128 ns_limit = temporal::INSTANT_MAX_NS;
         if (!fits || ns128 > ns_limit || ns128 < -ns_limit) {
             ctx.heap.decref((types::HeapHeader*)b);
             builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime: epochNanoseconds outside valid range");
@@ -11876,8 +11876,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         // not be computed, so a wall date outside the limit is allowed.
         if (offset_mode != 1 && offset_mode != 2) {
             long wall_day = temporal::epoch_days_from_civil(p.year, p.month, p.day);
-            long day_limit = 100000000L;
-            if (wall_day > day_limit || wall_day < -day_limit) {
+            if (!temporal::epoch_days_in_range(wall_day)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: ISO date outside the representable range");
                 return;
             }
@@ -11896,7 +11895,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         int128 epoch_ns_128 = wall_ns_128 - eff_off_128 * (int128)temporal::NS_PER_SEC;
         // Instant range check: NS_MIN..NS_MAX is ±100,000,000 days * 86400e9 ns.
         {
-            int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+            int128 ns_limit = temporal::INSTANT_MAX_NS;
             if (epoch_ns_128 > ns_limit || epoch_ns_128 < -ns_limit) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: instant outside the representable range");
                 return;
@@ -12685,7 +12684,7 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
         // representable epoch range is a RangeError.
         int128 explicit_epoch = (int128)wall_secs * (int128)temporal::NS_PER_SEC + (int128)wfrac
             - (int128)bag_offset_sec * (int128)temporal::NS_PER_SEC;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+        int128 ns_limit = temporal::INSTANT_MAX_NS;
         if (explicit_epoch > ns_limit || explicit_epoch < -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
             return;
@@ -12745,7 +12744,7 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     // (±8.64e21 ns). The wall date can be a lone valid ISO date while its
     // UTC instant lands just past −271821-04-19T00:00 (below NS_MIN), so this
     // is a genuine second check after date/time validation.
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+    int128 ns_limit = temporal::INSTANT_MAX_NS;
     if (chosen_128 > ns_limit || chosen_128 < -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
         return;
@@ -13666,7 +13665,7 @@ fn void builtin_temporal_zoneddatetime_proto_withPlainTime(BuiltinContext* ctx) 
     // The combined date+time instant must sit within the representable epoch
     // range; a wall date at the upper edge combined with a later time-of-day,
     // or an early date with an offset, can push the instant past ±8.64e21.
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+    int128 ns_limit = temporal::INSTANT_MAX_NS;
     if (epoch_ns_128 > ns_limit || epoch_ns_128 < -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "instant outside representable range");
         return;
@@ -13774,7 +13773,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         // and the next day's start must lie in the representable range.
         int128 start_ns = ((int128)day_secs - (int128)woff) * 1000000000;
         int128 end_ns = ((int128)day_secs + 86400 - (int128)woff) * 1000000000;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+        int128 ns_limit = temporal::INSTANT_MAX_NS;
         if (start_ns <= -ns_limit || start_ns >= ns_limit || end_ns <= -ns_limit || end_ns >= ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
             return;
@@ -13823,7 +13822,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         int128 rounded_ns_in_day = q * incr;
         int128 result_local_ns = day_start_ns + rounded_ns_in_day;
         int128 total_i128 = result_local_ns - (int128)woff * 1000000000;
-        int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+        int128 ns_limit = temporal::INSTANT_MAX_NS;
         if (total_i128 >= ns_limit || total_i128 <= -ns_limit) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
             return;
@@ -13839,7 +13838,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     // ceiling on double precision. `(double)result_secs * 1e9` rounds
     // values past ~1973 by 1 ns or more.
     int128 total_i128 = (int128)result_secs * 1000000000 + (int128)result_ns;
-    int128 ns_limit = (int128)86400L * (int128)100000000L * (int128)temporal::NS_PER_SEC;
+    int128 ns_limit = temporal::INSTANT_MAX_NS;
     if (total_i128 >= ns_limit || total_i128 <= -ns_limit) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "rounding pushed the datetime out of range");
         return;
