@@ -1977,6 +1977,68 @@ macro bool @tonum_ok(vm, Dispatch* ds) {
     return vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart);
 }
 
+// Applies the bitwise/shift operator selected by the compile-time $op to two
+// already-ToInt32'd (or, for USHR's left operand, ToUint32'd) ints. Resolved
+// entirely at compile time via $switch, so this costs nothing at runtime —
+// each call site only ever emits the one case matching its own $op.
+macro int @bitop_apply($op, int b, int c) {
+    $switch $op:
+        $case Opcode.BAND: return b & c;
+        $case Opcode.BOR:  return b | c;
+        $case Opcode.BXOR: return b ^ c;
+        $case Opcode.SHL:  return b << (c & 0x1F);
+        $case Opcode.SHR:  return b >> (c & 0x1F);
+        $default: unreachable("unsupported @bitop_apply opcode");
+    $endswitch
+}
+
+// Shared skeleton for BAND/BOR/BXOR/SHL/SHR (ES2020 §12.12.3 / §12.9.3):
+// ToPrimitive both operands if either is an object, ToNumeric-dispatch on
+// BigInt, then apply the operator via a fastint fast path or the general
+// ToInt32 slow path. Right-operand masking (`& 0x1F`) for the shift ops is
+// baked into @bitop_apply's SHL/SHR cases above, so it isn't repeated here.
+//
+// USHR is deliberately NOT expressible here: its left operand is ToUint32
+// (unsigned), not ToInt32, and it has no fastint fast path at all — folding
+// it in would either add a fast path is doesn't have or flip its signedness,
+// both behavior changes. It stays written out longhand below.
+//
+// The `@body()` here holds the repeated ToNumber-throw-check idiom
+// (`if (!@tonum_ok(...)) return ...; if (ds.needs_restart) break;`), which
+// contains `return`/`break` that must reach the CALLER's function/switch —
+// see @tonum_ok above. A regular macro statement can't do that (return/break
+// don't escape a macro's own body to the caller), but a trailing @body()
+// block is inlined at the call site's own control-flow scope, so return and
+// break inside it resolve against the call site's switch/function exactly as
+// if it had been written out longhand there. Verified empirically (not just
+// inferred from docs) that this differs from control flow written directly
+// in a macro's own statements.
+macro @bitop(TVal* ra, TVal* rb, TVal* rc, $op, vm, Dispatch* ds; @body()) {
+    TVal* eb = rb; TVal* ec = rc;
+    TVal prim_b; TVal prim_c;
+    if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
+        if (!vm_bitwise_to_primitive(vm, rb, rc, &prim_b, &prim_c)) {
+            @body();
+        }
+        eb = &prim_b; ec = &prim_c;
+    }
+    if (eb.is_bigint() || ec.is_bigint()) {
+        if (vm_bigint_binop(vm, $op, ra, eb, ec) == BigIntOpResult.THREW) {
+            @body();
+        }
+        return;
+    }
+    if (types::both_fastint(eb, ec)) {
+        ra.set_fastint((long)@bitop_apply($op, (int)eb.get_fastint(), (int)ec.get_fastint()));
+        return;
+    }
+    int b = toint32(vm_to_number(vm,eb));
+    @body();
+    int c = toint32(vm_to_number(vm,ec));
+    @body();
+    ra.set_fastint((long)@bitop_apply($op, b, c));
+}
+
 // Run the bytecode dispatch loop over an activation stack and registers the
 // caller has already set up.
 fn TVal? Vm.run(Vm* vm) {
@@ -2716,32 +2778,10 @@ fn TVal? Vm.run(Vm* vm) {
             // BigInt-typed, not fall through to the plain-numeric path.
             // Non-object operands pass through unchanged, so this is only
             // live when at least one side is actually an object.
-            TVal* eb = rb; TVal* ec = rc;
-            TVal band_prim_b; TVal band_prim_c;
-            if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-                if (!vm_bitwise_to_primitive(vm, rb, rc, &band_prim_b, &band_prim_c)) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                eb = &band_prim_b; ec = &band_prim_c;
-            }
-            if (eb.is_bigint() || ec.is_bigint()) {
-                if (vm_bigint_binop(vm, Opcode.BAND, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                continue;
-            }
-            if (types::both_fastint(eb, ec)) {
-                ra.set_fastint((long)((int)eb.get_fastint() & (int)ec.get_fastint()));
-                continue;
-            }
-            int band_b = toint32(vm_to_number(vm,eb));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            if (ds.needs_restart) break;
-            int band_c = toint32(vm_to_number(vm,ec));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            ra.set_fastint((long)(band_b & band_c));
+            @bitop(ra, rb, rc, Opcode.BAND, vm, &ds) {
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+            };
             continue;
         }
 
@@ -2750,128 +2790,40 @@ fn TVal? Vm.run(Vm* vm) {
             // See BAND above: ToNumeric both operands before the is_bigint()
             // dispatch, so an object producing a BigInt via ToPrimitive is
             // recognized correctly.
-            TVal* eb = rb; TVal* ec = rc;
-            TVal bor_prim_b; TVal bor_prim_c;
-            if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-                if (!vm_bitwise_to_primitive(vm, rb, rc, &bor_prim_b, &bor_prim_c)) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                eb = &bor_prim_b; ec = &bor_prim_c;
-            }
-            if (eb.is_bigint() || ec.is_bigint()) {
-                if (vm_bigint_binop(vm, Opcode.BOR, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                continue;
-            }
-            if (types::both_fastint(eb, ec)) {
-                ra.set_fastint((long)((int)eb.get_fastint() | (int)ec.get_fastint()));
-                continue;
-            }
-            int bor_b = toint32(vm_to_number(vm,eb));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            if (ds.needs_restart) break;
-            int bor_c = toint32(vm_to_number(vm,ec));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            ra.set_fastint((long)(bor_b | bor_c));
+            @bitop(ra, rb, rc, Opcode.BOR, vm, &ds) {
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+            };
             continue;
         }
 
         case Opcode.BXOR:
         {
             // See BAND above.
-            TVal* eb = rb; TVal* ec = rc;
-            TVal bxor_prim_b; TVal bxor_prim_c;
-            if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-                if (!vm_bitwise_to_primitive(vm, rb, rc, &bxor_prim_b, &bxor_prim_c)) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                eb = &bxor_prim_b; ec = &bxor_prim_c;
-            }
-            if (eb.is_bigint() || ec.is_bigint()) {
-                if (vm_bigint_binop(vm, Opcode.BXOR, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                continue;
-            }
-            if (types::both_fastint(eb, ec)) {
-                ra.set_fastint((long)((int)eb.get_fastint() ^ (int)ec.get_fastint()));
-                continue;
-            }
-            int bxor_b = toint32(vm_to_number(vm,eb));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            if (ds.needs_restart) break;
-            int bxor_c = toint32(vm_to_number(vm,ec));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            ra.set_fastint((long)(bxor_b ^ bxor_c));
+            @bitop(ra, rb, rc, Opcode.BXOR, vm, &ds) {
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+            };
             continue;
         }
 
         case Opcode.SHL:
         {
             // See BAND above.
-            TVal* eb = rb; TVal* ec = rc;
-            TVal shl_prim_b; TVal shl_prim_c;
-            if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-                if (!vm_bitwise_to_primitive(vm, rb, rc, &shl_prim_b, &shl_prim_c)) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                eb = &shl_prim_b; ec = &shl_prim_c;
-            }
-            if (eb.is_bigint() || ec.is_bigint()) {
-                if (vm_bigint_binop(vm, Opcode.SHL, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                continue;
-            }
-            if (types::both_fastint(eb, ec)) {
-                ra.set_fastint((long)((int)eb.get_fastint() << ((int)ec.get_fastint() & 0x1F)));
-                continue;
-            }
-            int shl_b = toint32(vm_to_number(vm,eb));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            if (ds.needs_restart) break;
-            int shl_c = toint32(vm_to_number(vm,ec));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            ra.set_fastint((long)(shl_b << (shl_c & 0x1F)));
+            @bitop(ra, rb, rc, Opcode.SHL, vm, &ds) {
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+            };
             continue;
         }
 
         case Opcode.SHR:
         {
             // See BAND above.
-            TVal* eb = rb; TVal* ec = rc;
-            TVal shr_prim_b; TVal shr_prim_c;
-            if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-                if (!vm_bitwise_to_primitive(vm, rb, rc, &shr_prim_b, &shr_prim_c)) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                eb = &shr_prim_b; ec = &shr_prim_c;
-            }
-            if (eb.is_bigint() || ec.is_bigint()) {
-                if (vm_bigint_binop(vm, Opcode.SHR, ra, eb, ec) == BigIntOpResult.THREW) {
-                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                    if (ds.needs_restart) break;
-                }
-                continue;
-            }
-            if (types::both_fastint(eb, ec)) {
-                ra.set_fastint((long)((int)eb.get_fastint() >> ((int)ec.get_fastint() & 0x1F)));
-                continue;
-            }
-            int shr_b = toint32(vm_to_number(vm,eb));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            if (ds.needs_restart) break;
-            int shr_c = toint32(vm_to_number(vm,ec));
-            if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            ra.set_fastint((long)(shr_b >> (shr_c & 0x1F)));
+            @bitop(ra, rb, rc, Opcode.SHR, vm, &ds) {
+                if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+            };
             continue;
         }
 
