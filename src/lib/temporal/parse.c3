@@ -1111,3 +1111,160 @@ fn bool parse_simple_offset(char[] text, usz* i) {
     if (m > 59) return false;
     return true;
 }
+
+// ---- Offset and IANA-annotation scanning ----
+
+// Parse an offset of the form Z, ±HH[:MM], or ±HHMM. Three-component forms
+// (±HH:MM:SS, ±HHMMSS) are explicitly NOT valid Time Zone identifiers per
+// the test262 timezone-string-datetime test, even when SS=00. Returns true
+// and writes `offset_seconds` on success.
+fn bool parse_offset_only(char[] text, usz* i, long* offset_seconds) {
+    usz len = text.len;
+    if (*i >= len) return false;
+    bool neg = false;
+    if (text[*i] == 'Z' || text[*i] == 'z') {
+        *i += 1;
+        *offset_seconds = 0;
+        return true;
+    }
+    if (text[*i] != '+' && text[*i] != '-') return false;
+    if (text[*i] == '-') neg = true;
+    *i += 1;
+    int h;
+    if (!parse_two_digits(text, i, &h)) return false;
+    int mi = 0;
+    if (*i < len) {
+        if (text[*i] == ':') {
+            *i += 1;
+            if (!parse_two_digits(text, i, &mi)) return false;
+        } else if (digit_at(text, *i) >= 0) {
+            // ±HHMM basic form. If more digits follow, this would be
+            // ±HHMMSS which we reject (three-component offsets are not
+            // valid Time Zone identifiers).
+            usz j = *i;
+            while (j < len && digit_at(text, j) >= 0) j += 1;
+            if (j - *i == 2) {
+                if (!parse_two_digits(text, i, &mi)) return false;
+            } else if (j - *i == 0) {
+                // no minutes
+            } else {
+                return false;
+            }
+        }
+    }
+    // Sub-minute precision: optional `:SS[.fffffffff]`. Trailing zeros in the
+    // fraction are forbidden (per spec), enforced by the caller when this is a
+    // time-zone identifier. Only round to whole seconds here.
+    int sec = 0;
+    if (*i < len && text[*i] == ':') {
+        *i += 1;
+        if (!parse_two_digits(text, i, &sec)) return false;
+        if (sec > 59) return false;
+        // Optional fraction (1-9 digits). The last digit must be non-zero
+        // for time-zone identifiers; we just store it rounded to the nearest
+        // second so the offset stays in whole seconds here.
+        if (*i < len && text[*i] == '.') {
+            *i += 1;
+            usz fstart = *i;
+            while (*i < len && digit_at(text, *i) >= 0 && *i - fstart < 9) *i += 1;
+            if (*i == fstart) return false;
+            // TimeZoneOffsetString allows at most 9 fraction digits.
+            if (*i < len && digit_at(text, *i) >= 0) return false;
+        }
+    }
+    long total = (long)h * 3600 + (long)mi * 60 + (long)sec;
+    *offset_seconds = neg ? -total : total;
+    return true;
+}
+
+// Skip over a leading ISO date / time prefix, leaving `i` pointing at the
+// start of the offset/Z/bracket zone annotation (or past the end of the
+// string). Used by `now_resolve_tz` to extract the zone descriptor from a
+// full ISO string like `2021-08-19T17:30-07:00[UTC]`.
+//
+// Returns false if the prefix is not a valid date-time: garbage, empty, or a
+// negative-zero year (`-000000-...`), which the spec rejects as the
+// "extended year minus zero" form.
+fn bool now_skip_iso_prefix(char[] text, usz* i) {
+    usz len = text.len;
+    if (*i >= len) return false;
+    // Optional sign for extended year.
+    bool signed_year = false;
+    long sign = 1;
+    if (text[*i] == '+' || text[*i] == '-') {
+        if (text[*i] == '-') sign = -1;
+        signed_year = true;
+        *i += 1;
+    }
+    // Year: 4 digits unsigned or 4-6 digits signed.
+    usz y_start = *i;
+    while (*i < len && digit_at(text, *i) >= 0 && (*i - y_start) < 6) *i += 1;
+    usz y_digits = *i - y_start;
+    if (y_digits < 4) return false;
+    if (signed_year && y_digits != 6) return false;
+    if (!signed_year && y_digits != 4) return false;
+    if (signed_year && sign < 0) {
+        // Reject negative zero year (`-000000`).
+        bool all_zero = true;
+        for (usz k = y_start; k < *i; k++) {
+            if (text[k] != '0') { all_zero = false; break; }
+        }
+        if (all_zero) return false;
+    }
+    // Month, day separators and digits.
+    if (*i < len && text[*i] == '-') *i += 1;
+    int mo;
+    if (!parse_two_digits(text, i, &mo)) return false;
+    if (mo < 1 || mo > 12) return false;
+    if (*i < len && text[*i] == '-') *i += 1;
+    int d;
+    if (!parse_two_digits(text, i, &d)) return false;
+    if (d < 1 || d > 31) return false;
+    // Optional T/space time.
+    if (*i < len && (text[*i] == 'T' || text[*i] == 't' || text[*i] == ' ')) {
+        *i += 1;
+        int hh, mi, ss;
+        long ns;
+        if (!parse_time(text, i, &hh, &mi, &ss, &ns)) return false;
+    }
+    return true;
+}
+
+// Find the FIRST bracketed zone annotation `[...]` in the string whose body
+// is NOT a key=value pair (i.e. the bare zone-name annotation, not `u-ca=`).
+// Returns the zone text slice in `text[start..start+len]` on success and
+// advances `*i` past the closing `]`.
+fn bool now_find_bracket_zone(char[] text, usz* i, usz* out_start, usz* out_len) {
+    usz len = text.len;
+    usz k = *i;
+    while (k < len && text[k] != '[') k += 1;
+    if (k >= len) return false;
+    usz ann_start = k + 1;
+    usz ann_end = ann_start;
+    while (ann_end < len && text[ann_end] != ']') ann_end += 1;
+    if (ann_end >= len) return false;
+    bool has_eq = false;
+    for (usz j = ann_start; j < ann_end; j++) {
+        if (text[j] == '=') { has_eq = true; break; }
+    }
+    if (has_eq) return false;
+    // C3 slices are inclusive on both ends; the body is ann_start..ann_end-1.
+    *out_start = ann_start;
+    *out_len = ann_end - ann_start;
+    *i = ann_end + 1;
+    return true;
+}
+
+// Case-insensitive slice compare. The stdlib helper expects String; here we
+// already have a `String` (char[] alias) and need an inline `==` test.
+fn bool ci_eq(String a, char[] b) {
+    if (a.len != b.len) return false;
+    for (usz k = 0; k < a.len; k++) {
+        char ca = a[k];
+        char cb = b[k];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb - 'A' + 'a');
+        if (ca != cb) return false;
+    }
+    return true;
+}

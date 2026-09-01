@@ -328,3 +328,55 @@ fn TzdbTransition[] tzdb_zone_transitions(String zone_name) {
     if (idx < 0) return {};
     return tzdb_table(TZDB_ZONES[idx].table_idx);
 }
+
+// ---- Local wall time -> epoch nanoseconds, via the zone's transitions ----
+
+// Append an offset value to the deduplicated candidate list (in place).
+fn void tz_cand_add(int[] cand, int* nc, int o) {
+    int n = *nc;
+    for (int k = 0; k < n; k++) {
+        if (cand[k] == o) return;
+    }
+    if (n < 8) { cand[n] = o; *nc = n + 1; }
+}
+
+// Resolve a wall-clock time in `zone` to an epoch-nanosecond instant, using
+// the "compatible" disambiguation: an ambiguous time in a fall-back overlap
+// takes the earlier instant, and a time skipped by a spring-forward gap moves
+// to the post-gap offset.
+// Offsets are whole seconds, so the result is computed as an int128 to keep
+// nanosecond precision: epoch-ns of a modern date exceeds what a double can
+// represent exactly.
+fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns) {
+    if (zone.len == 0 || zone.ptr == null) {
+        return (int128)wall_secs * 1000000000 + (int128)wall_frac_ns;
+    }
+
+    // Any offset in force near the wall time is a candidate; keep the ones
+    // that map back to a matching offset, which drops the phantom readings a
+    // transition creates.
+    int[8] cand;
+    int nc = 0;
+    tz_cand_add(cand[..], &nc, tzdb_offset_for_zone_at(zone, wall_secs));
+    TzdbTransition[] trans = tzdb_zone_transitions(zone);
+    long window = 2 * 86400;
+    for (usz i = 0; i < trans.len; i++) {
+        if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
+            tz_cand_add(cand[..], &nc, trans[i].offset_sec);
+        }
+    }
+    if (nc == 0) tz_cand_add(cand[..], &nc, 0);
+
+    // An overlap yields several valid offsets; "compatible" wants the earliest
+    // instant, which is the largest offset.
+    int chosen_off = 0;
+    bool found = false;
+    for (int k = 0; k < nc; k++) {
+        if (tzdb_offset_for_zone_at(zone, wall_secs - cand[k]) != cand[k]) continue;
+        if (!found || cand[k] > chosen_off) { chosen_off = cand[k]; found = true; }
+    }
+    // A gap skips the wall time entirely; shift it past the transition.
+    if (!found) chosen_off = tzdb_offset_for_zone_at(zone, wall_secs + 4 * 3600);
+
+    return (int128)(wall_secs - chosen_off) * 1000000000 + (int128)wall_frac_ns;
+}

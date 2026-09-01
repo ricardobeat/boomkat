@@ -999,7 +999,7 @@ fn bool bag_offset_prop(BuiltinContext* ctx, HObject* bag, bool* out_has, long* 
     char[] otxt = (String)off_s.get_cstr()[:off_s.blen];
     usz pi = 0;
     long off_sec = 0;
-    if (!parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
+    if (!temporal::parse_offset_only(otxt, &pi, &off_sec) || pi != otxt.len) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
         return false;
     }
@@ -1867,7 +1867,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
             String tzid_str = timezone_name(tz);
             usz k = 0;
             long tz_off = 0;
-            if (parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
+            if (temporal::parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
                 off_sec = tz_off;
                 has_offset_prop = true;
             }
@@ -1875,7 +1875,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
             String tzid_str = timezone_name(tz);
             usz k = 0;
             long tz_off = 0;
-            if (parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
+            if (temporal::parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
                 if (tz_off != off_sec) {
                     builtin_throw(ctx, ctx.heap.range_err_proto, "relativeTo: offset property does not agree with time zone");
                     return false;
@@ -2580,17 +2580,6 @@ fn bool validate_rounding_increment(BuiltinContext* ctx, temporal::TemporalUnit 
 
 
 
-// Inverse of civil_time_to_ns; the input must lie in [0, day).
-fn temporal::CivilTime civil_time_from_ns(long total) {
-    temporal::CivilTime t;
-    t.h  = total / 3600000000000L; total %= 3600000000000L;
-    t.mi = total /   60000000000L; total %=   60000000000L;
-    t.s  = total /    1000000000L; total %=    1000000000L;
-    t.ms = total /       1000000L; total %=       1000000L;
-    t.us = total /          1000L;
-    t.ns = total %          1000L;
-    return t;
-}
 
 
 
@@ -3692,14 +3681,6 @@ fn void builtin_temporal_plain_date_proto_monthsInYear(BuiltinContext* ctx) {
     ctx.result.set_number(12.0);
 }
 
-fn long iso_weeks_in_year(long year) {
-    // ISO 8601: a year has 53 weeks iff Jan 1 is a Thursday, or Jan 1 is a
-    // Wednesday in a leap year.
-    long jan1_dow = ((temporal::epoch_days_from_civil(year, (int)1, (int)1) % 7) + 4) % 7;
-    if (jan1_dow <= 0) jan1_dow += 7;
-    if (jan1_dow == 4 || (jan1_dow == 3 && temporal::is_leap_year(year))) return 53;
-    return 52;
-}
 
 fn void builtin_temporal_plain_date_proto_weekOfYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
@@ -3712,8 +3693,8 @@ fn void builtin_temporal_plain_date_proto_weekOfYear(BuiltinContext* ctx) {
     if (dow <= 0) dow += 7;
     long week = (doy - dow + 10) / 7;
     if (week < 1) {
-        week = iso_weeks_in_year(y - 1);
-    } else if (week > iso_weeks_in_year(y)) {
+        week = temporal::iso_weeks_in_year(y - 1);
+    } else if (week > temporal::iso_weeks_in_year(y)) {
         week = 1;
     }
     ctx.result.set_number((double)week);
@@ -3731,7 +3712,7 @@ fn void builtin_temporal_plain_date_proto_yearOfWeek(BuiltinContext* ctx) {
     long week = (doy - dow + 10) / 7;
     long week_year = y;
     if (week < 1) { week_year = y - 1; }
-    else if (week > iso_weeks_in_year(y)) { week_year = y + 1; }
+    else if (week > temporal::iso_weeks_in_year(y)) { week_year = y + 1; }
     ctx.result.set_number((double)week_year);
 }
 
@@ -3939,7 +3920,7 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
         + (long)t.h * 3600 + (long)t.mi * 60 + (long)t.s;
     long wall_frac = (long)t.ms * 1000000 + (long)t.us * 1000 + (long)t.ns;
     String zone = timezone_name(tz);
-    int128 epoch_ns_128 = zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+    int128 epoch_ns_128 = temporal::zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
 
     // GetStartOfDay resolves midnight; the resulting UTC instant must fall
     // within the representable epoch range (±8.64e21 ns). A wall date at the
@@ -4596,9 +4577,9 @@ fn void builtin_temporal_plain_time_proto_toString(BuiltinContext* ctx) {
         unit_ns = 1;
     }
     if (unit_ns > 1) {
-        long total = temporal::round_long_ns(civil_time_to_ns(t), unit_ns, rm);
+        long total = temporal::round_long_ns(temporal::civil_time_to_ns(t), unit_ns, rm);
         if (total >= 86400000000000L) total -= 86400000000000L;
-        t = civil_time_from_ns(total);
+        t = temporal::civil_time_from_ns(total);
     }
 
     char[32] buf;
@@ -5502,7 +5483,7 @@ fn bool compare_to_temporal_datetime(BuiltinContext* ctx, TVal* arg, temporal::C
         // ToTemporalDateTime calls RegulateTime via InterpretTemporalDateTimeFields
         // with no options argument, so the overflow defaults to ~constrain~.
         out.date = valid_d;
-        out.time = regulate_time_constrain(fields.time);
+        out.time = temporal::regulate_time_constrain(fields.time);
         if (!temporal::is_valid_iso_datetime(out.date.y, (int)out.date.m, (int)out.date.d,
                                              out.time.h, out.time.mi, out.time.s,
                                              out.time.ms, out.time.us, out.time.ns)) {
@@ -5632,8 +5613,8 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
             if (dow <= 0) dow += 7;
             long week = (doy - dow + 10) / 7;
             if (week < 1) {
-                week = iso_weeks_in_year(y - 1);
-            } else if (week > iso_weeks_in_year(y)) {
+                week = temporal::iso_weeks_in_year(y - 1);
+            } else if (week > temporal::iso_weeks_in_year(y)) {
                 week = 1;
             }
             ctx.result.set_number((double)week);
@@ -5649,7 +5630,7 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
             long week = (doy - dow + 10) / 7;
             long week_year = y;
             if (week < 1) { week_year = y - 1; }
-            else if (week > iso_weeks_in_year(y)) { week_year = y + 1; }
+            else if (week > temporal::iso_weeks_in_year(y)) { week_year = y + 1; }
             ctx.result.set_number((double)week_year);
             return;
         }
@@ -5841,13 +5822,13 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
         unit_ns = 1;
     }
     if (unit_ns > 1) {
-        long total = temporal::round_long_ns(civil_time_to_ns(dt.time), unit_ns, rm);
+        long total = temporal::round_long_ns(temporal::civil_time_to_ns(dt.time), unit_ns, rm);
         if (total >= 86400000000000L) {
             total -= 86400000000000L;
             dt.date = temporal::civil_date_from_epoch_days(
                 temporal::epoch_days_from_civil(dt.date.y, (int)dt.date.m, (int)dt.date.d) + 1);
         }
-        dt.time = civil_time_from_ns(total);
+        dt.time = temporal::civil_time_from_ns(total);
         // The balanced datetime must still lie in the representable instant
         // range, an open interval at ±8.64e21 ns (so -271821-04-19T00:00:00.000
         // and 275760-09-14T00:00:00.000 are both out of range).
@@ -6013,21 +5994,6 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
     return null;
 }
 
-// RegulateTime(..., ~constrain~): clamps each field into its valid range
-// instead of rejecting, which is the default overflow behaviour ToTemporalTime
-// applies when called without an options argument (as withPlainTime does).
-// A leap-second-shaped hour:mi:60 collapses to :59 like the reject-mode
-// fields_to_valid_time does.
-fn temporal::CivilTime regulate_time_constrain(temporal::CivilTime f) {
-    temporal::CivilTime v = f;
-    if (v.h < 0) { v.h = 0; } else if (v.h > 23) { v.h = 23; }
-    if (v.mi < 0) { v.mi = 0; } else if (v.mi > 59) { v.mi = 59; }
-    if (v.s < 0) { v.s = 0; } else if (v.s > 59) { v.s = 59; }
-    if (v.ms < 0) { v.ms = 0; } else if (v.ms > 999) { v.ms = 999; }
-    if (v.us < 0) { v.us = 0; } else if (v.us > 999) { v.us = 999; }
-    if (v.ns < 0) { v.ns = 0; } else if (v.ns > 999) { v.ns = 999; }
-    return v;
-}
 
 // ToTemporalTimeRecord: reads the six time properties in the spec's
 // lexicographic order (hour, microsecond, millisecond, minute, nanosecond,
@@ -6154,7 +6120,7 @@ fn HObject*? datetime_to_temporal_time(BuiltinContext* ctx, TVal* arg) {
         // withPlainTime calls ToTemporalTime with no options argument, so
         // GetTemporalOverflowOption defaults to ~constrain~: out-of-range
         // fields clamp rather than throw.
-        temporal::CivilTime valid = regulate_time_constrain(fields);
+        temporal::CivilTime valid = temporal::regulate_time_constrain(fields);
         HObject*? res = alloc_plain_time(ctx.heap, valid);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
@@ -6318,7 +6284,7 @@ fn void builtin_temporal_plain_datetime_proto_toZonedDateTime(BuiltinContext* ct
         + cdt.time.h * 3600 + cdt.time.mi * 60 + cdt.time.s;
     long wall_frac = cdt.time.ms * 1000000 + cdt.time.us * 1000 + cdt.time.ns;
     String zone = timezone_name(tz);
-    int128 epoch_ns = zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+    int128 epoch_ns = temporal::zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
 
     // Instant range check: ±100,000,000 days × 86400 × 1e9 ns.
     {
@@ -6635,8 +6601,8 @@ fn void builtin_temporal_plain_datetime_proto_subtract(BuiltinContext* ctx) {
 fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
                             temporal::CivilDateTime end, DiffSettings ds,
                             temporal::DurationParts* out) {
-    long start_tod = civil_time_to_ns(start.time);
-    long end_tod = civil_time_to_ns(end.time);
+    long start_tod = temporal::civil_time_to_ns(start.time);
+    long end_tod = temporal::civil_time_to_ns(end.time);
 
     temporal::CivilDate sd = start.date;
     temporal::CivilDate ed = end.date;
@@ -6941,10 +6907,6 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
 
 
 
-fn long civil_time_to_ns(temporal::CivilTime t) {
-    return ((long)t.h * 3600 + (long)t.mi * 60 + (long)t.s) * 1_000_000_000L
-         + (long)t.ms * 1_000_000L + (long)t.us * 1000L + (long)t.ns;
-}
 
 fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) {
     if (ctx.argc < 1) {
@@ -7510,8 +7472,8 @@ fn void builtin_temporal_plain_yearmonth_proto_weekOfYear(BuiltinContext* ctx) {
     if (dow <= 0) dow += 7;
     long week = (doy - dow + 10) / 7;
     if (week < 1) {
-        week = iso_weeks_in_year(y - 1);
-    } else if (week > iso_weeks_in_year(y)) {
+        week = temporal::iso_weeks_in_year(y - 1);
+    } else if (week > temporal::iso_weeks_in_year(y)) {
         week = 1;
     }
     ctx.result.set_number((double)week);
@@ -7530,7 +7492,7 @@ fn void builtin_temporal_plain_yearmonth_proto_yearOfWeek(BuiltinContext* ctx) {
     long week = (doy - dow + 10) / 7;
     long week_year = y;
     if (week < 1) { week_year = y - 1; }
-    else if (week > iso_weeks_in_year(y)) { week_year = y + 1; }
+    else if (week > temporal::iso_weeks_in_year(y)) { week_year = y + 1; }
     ctx.result.set_number((double)week_year);
 }
 
@@ -8522,8 +8484,8 @@ fn void builtin_temporal_plain_monthday_proto_weekOfYear(BuiltinContext* ctx) {
     if (dow <= 0) dow += 7;
     long week = (doy - dow + 10) / 7;
     if (week < 1) {
-        week = iso_weeks_in_year(y - 1);
-    } else if (week > iso_weeks_in_year(y)) {
+        week = temporal::iso_weeks_in_year(y - 1);
+    } else if (week > temporal::iso_weeks_in_year(y)) {
         week = 1;
     }
     ctx.result.set_number((double)week);
@@ -8543,7 +8505,7 @@ fn void builtin_temporal_plain_monthday_proto_yearOfWeek(BuiltinContext* ctx) {
     long week = (doy - dow + 10) / 7;
     long week_year = y;
     if (week < 1) { week_year = y - 1; }
-    else if (week > iso_weeks_in_year(y)) { week_year = y + 1; }
+    else if (week > temporal::iso_weeks_in_year(y)) { week_year = y + 1; }
     ctx.result.set_number((double)week_year);
 }
 
@@ -9964,64 +9926,6 @@ fn void builtin_temporal_instant_proto_epochNanoseconds(BuiltinContext* ctx) {
     ctx.result.set_bigint(b);
 }
 
-// toString / toJSON / valueOf for Instant.
-//
-// Fractional-second output. `digits` is -1 for "auto" (the minimal number of
-// digits with trailing zeros trimmed and no rounding), 0 for none, or 1..9
-// for a fixed width (lower digits truncated, the Temporal default
-// roundingMode). Appends the leading "." plus the padded fraction starting at
-// buf; returns the number of characters appended (0 if there is no fraction).
-// Render the fractional-seconds suffix (`.XYZ`) into `buf` and return the
-// number of bytes written (0 when no fractional part should be printed).
-// `digits` (-1 = auto, 0..9 = fixed) selects the precision; `mode` is the
-// rounding rule (default trunc). `*ns_rem` is read AND may be updated: when
-// rounding pushes ns_rem to 1_000_000_000 (a full second), the caller must
-// increment whole_secs — see the wrapper in this file that handles the
-// carry.
-fn int format_fractional_seconds(char* buf, long ns_rem, int digits, temporal::TemporalRoundMode mode) {
-    if (ns_rem < 0) ns_rem = -ns_rem;
-    int d = digits;
-    // Explicit fixed digits request (`fractionalSecondDigits` was given):
-    // even when ns_rem is 0 the spec requires padding the requested number
-    // of zeros, so a no-op short-circuit doesn't apply.
-    if (d < 0) {
-        // auto: write fraction only when non-zero; trailing zeros dropped.
-        if (ns_rem == 0) return 0;
-        d = 9;
-        long x = ns_rem;
-        while (x > 1 && x % 10 == 0) { x /= 10; d--; }
-        if (d <= 0) return 0;
-    } else {
-        // Fixed digits: even when ns_rem == 0 we still write ".000…00" so
-        // e.g. `toString({fractionalSecondDigits: 2})` on a whole-second
-        // instant yields ".00".
-        if (ns_rem == 0) {
-            if (d == 0) return 0;
-            buf[0] = '.';
-            for (int i = 0; i < d; i++) buf[1 + i] = '0';
-            return 1 + d;
-        }
-    }
-    if (d > 9) d = 9;
-    // Round to `d` digits using `mode`. Compute a divisor = 10^(9-d), then
-    // round ns_rem/divisor to the nearest integer, then multiply back.
-    long divisor = 1;
-    for (int i = 0; i < 9 - d; i++) divisor *= 10;
-    long v;
-    {
-        double x = (double)ns_rem / (double)divisor;
-        v = (long)temporal::round_num_to_incr(x, 1.0, mode);
-    }
-    if (v == 0) return 0;
-    buf[0] = '.';
-    char[16] tmp;
-    int k = 0;
-    long x = v;
-    while (x > 0) { tmp[k] = (char)('0' + (int)(x % 10)); k++; x /= 10; }
-    while (k < d) { tmp[k] = '0'; k++; }
-    for (int i = 0; i < k; i++) buf[1 + i] = tmp[k - 1 - i];
-    return 1 + k;
-}
 
 // Resolve the fractional-second precision and rounding mode for a Temporal
 // toString(options) bag. `digits` (-1 = auto, 0..9 = fixed) is set from
@@ -10245,13 +10149,13 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
             n = libc::snprintf(&buf, 40, "+%06ld-%02ld-%02ldT%02ld:%02ld:%02ld",
                 y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
         }
-        n += format_fractional_seconds(&buf[n], ns_rem, digits, rm);
+        n += temporal::format_fractional_seconds(&buf[n], ns_rem, digits, rm);
     }
     if (tz == null) {
         buf[n] = 'Z';
         n++;
     } else {
-        format_offset_seconds(&buf[n], off);
+        temporal::format_offset_seconds(&buf[n], off);
         n += 6;
     }
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
@@ -10723,29 +10627,16 @@ fn bool read_instant_largest_unit_ns(BuiltinContext* ctx, int options_index, lon
     }
     HString* s = (HString*)val.get_heapptr();
     String str = s ? (String)s.get_cstr()[:s.blen] : "";
-    if (ci_eq(str, "hour") || ci_eq(str, "hours"))         { *out = 3600000000000L; return true; }
-    if (ci_eq(str, "minute") || ci_eq(str, "minutes"))     { *out = 60000000000L; return true; }
-    if (ci_eq(str, "second") || ci_eq(str, "seconds"))     { *out = 1000000000L; return true; }
-    if (ci_eq(str, "millisecond") || ci_eq(str, "milliseconds")) { *out = 1000000L; return true; }
-    if (ci_eq(str, "microsecond") || ci_eq(str, "microseconds")) { *out = 1000L; return true; }
-    if (ci_eq(str, "nanosecond") || ci_eq(str, "nanoseconds"))   { *out = 1L; return true; }
+    if (temporal::ci_eq(str, "hour") || temporal::ci_eq(str, "hours"))         { *out = 3600000000000L; return true; }
+    if (temporal::ci_eq(str, "minute") || temporal::ci_eq(str, "minutes"))     { *out = 60000000000L; return true; }
+    if (temporal::ci_eq(str, "second") || temporal::ci_eq(str, "seconds"))     { *out = 1000000000L; return true; }
+    if (temporal::ci_eq(str, "millisecond") || temporal::ci_eq(str, "milliseconds")) { *out = 1000000L; return true; }
+    if (temporal::ci_eq(str, "microsecond") || temporal::ci_eq(str, "microseconds")) { *out = 1000L; return true; }
+    if (temporal::ci_eq(str, "nanosecond") || temporal::ci_eq(str, "nanoseconds"))   { *out = 1L; return true; }
     builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not a valid value");
     return false;
 }
 
-// Case-insensitive slice compare. The stdlib helper expects String; here we
-// already have a `String` (char[] alias) and need an inline `==` test.
-fn bool ci_eq(String a, char[] b) {
-    if (a.len != b.len) return false;
-    for (usz k = 0; k < a.len; k++) {
-        char ca = a[k];
-        char cb = b[k];
-        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca - 'A' + 'a');
-        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb - 'A' + 'a');
-        if (ca != cb) return false;
-    }
-    return true;
-}
 
 // Parse an ISO instant string into an HBigInt of epoch nanoseconds.
 // Throws RangeError on parse failure / invalid components. On success the
@@ -11256,14 +11147,6 @@ fn void builtin_temporal_timezone_proto_getOffsetNanosecondsFor(BuiltinContext* 
     ctx.result.set_number((double)offset_sec * 1e9);
 }
 
-// Append an offset value to the deduplicated candidate list (in place).
-fn void tz_cand_add(int[] cand, int* nc, int o) {
-    int n = *nc;
-    for (int k = 0; k < n; k++) {
-        if (cand[k] == o) return;
-    }
-    if (n < 8) { cand[n] = o; *nc = n + 1; }
-}
 
 // getPossibleInstantsFor(plainDateTime) resolves a wall-clock PlainDateTime in
 // this zone to the concrete UTC instants it can denote. The wall time in a
@@ -11299,15 +11182,15 @@ fn void builtin_temporal_timezone_proto_getPossibleInstantsFor(BuiltinContext* c
     // offsets here; each candidate is then tested for self-consistency below.
     int[8] cand;
     int nc = 0;
-    tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
+    temporal::tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
     temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
     long window = 2 * 86400;
     for (usz i = 0; i < trans.len; i++) {
         if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
-            tz_cand_add(cand[..], &nc, trans[i].offset_sec);
+            temporal::tz_cand_add(cand[..], &nc, trans[i].offset_sec);
         }
     }
-    if (nc == 0) tz_cand_add(cand[..], &nc, 0);
+    if (nc == 0) temporal::tz_cand_add(cand[..], &nc, 0);
 
     // For each candidate offset, the hypothetical instant is naive - offset;
     // keep it only if the zone's offset there really is that offset (i.e. the
@@ -11641,7 +11524,7 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
         // (extracting the offset/bracket zone) but not as a constructor
         // argument here, so reject it (test262 ZonedDateTime/timezone-iso-string).
         usz probe = 0;
-        if (now_skip_iso_prefix((char[])s, &probe)) {
+        if (temporal::now_skip_iso_prefix((char[])s, &probe)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "ISO date-time string is not a valid time zone identifier");
             return;
         }
@@ -11966,7 +11849,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             zname = tzid_str;
             usz j = 0;
             long off_check = 0;
-            if (parse_offset_only(tzid_str, &j, &off_check) && j == tzid_str.len) {
+            if (temporal::parse_offset_only(tzid_str, &j, &off_check) && j == tzid_str.len) {
                 bracket_off = off_check;
                 bracket_is_offset = true;
             }
@@ -12123,7 +12006,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             String tzid_str = timezone_name(tz);
             usz k = 0;
             long tz_off = 0;
-            if (parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
+            if (temporal::parse_offset_only((char[])tzid_str, &k, &tz_off) && k == tzid_str.len) {
                 off_sec = tz_off;
                 has_offset_prop = true;
             }
@@ -12302,15 +12185,6 @@ fn void builtin_temporal_zoneddatetime_proto_calendarId(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
 }
 
-// Format an offset in seconds from UTC as ±HH:MM into buf (len >= 8).
-fn void format_offset_seconds(char* buf, int off) {
-    int sign = off < 0 ? -1 : 1;
-    int mag = off < 0 ? -off : off;
-    int hh = mag / 3600;
-    int mm = (mag % 3600) / 60;
-    if (sign < 0) { buf[0] = '-'; } else { buf[0] = '+'; }
-    libc::snprintf(buf + 1, 6, "%02d:%02d", hh, mm);
-}
 
 // Format a ZonedDateTime as an ISO string: wall time in the zone's current
 // offset with fractional seconds, the ±HH:MM offset, and (unless drop_zone) the
@@ -12395,9 +12269,9 @@ fn void zdt_iso_string(BuiltinContext* ctx, hbigint::HBigInt* b, HObject* tz, in
             n = libc::snprintf(&buf, 64, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld",
                 y, (long)bd.m + 1, (long)bd.d, (long)bd.h, (long)bd.mi, (long)bd.s);
         }
-        n += format_fractional_seconds(&buf[n], ns_rem, digits, rm);
+        n += temporal::format_fractional_seconds(&buf[n], ns_rem, digits, rm);
     }
-    format_offset_seconds(&buf[n], off);
+    temporal::format_offset_seconds(&buf[n], off);
     if (show_offset == 1) n += 6;
     if (!drop_zone && zone.len > 0 && zone.ptr != null && show_tz > 0) {
         int zn = libc::snprintf(&buf[n], 64 - (usz)n, (show_tz == 2) ? "[!%s]" : "[%s]", (char*)zone.ptr);
@@ -12834,15 +12708,15 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
         zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
         return;
     } else {
-        tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
+        temporal::tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
         temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
         long window = 2 * 86400;
         for (usz i = 0; i < trans.len; i++) {
             if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
-                tz_cand_add(cand[..], &nc, trans[i].offset_sec);
+                temporal::tz_cand_add(cand[..], &nc, trans[i].offset_sec);
             }
         }
-        if (nc == 0) tz_cand_add(cand[..], &nc, 0);
+        if (nc == 0) temporal::tz_cand_add(cand[..], &nc, 0);
     }
     double[4] hits;
     int nh = 0;
@@ -12895,46 +12769,6 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, (HString*)self.extra.temporal.calendar);
 }
 
-// Resolve a wall-clock time in `zone` to an epoch-nanosecond instant, using
-// the "compatible" disambiguation: an ambiguous time in a fall-back overlap
-// takes the earlier instant, and a time skipped by a spring-forward gap moves
-// to the post-gap offset.
-// Offsets are whole seconds, so the result is computed as an int128 to keep
-// nanosecond precision: epoch-ns of a modern date exceeds what a double can
-// represent exactly.
-fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns) {
-    if (zone.len == 0 || zone.ptr == null) {
-        return (int128)wall_secs * 1000000000 + (int128)wall_frac_ns;
-    }
-
-    // Any offset in force near the wall time is a candidate; keep the ones
-    // that map back to a matching offset, which drops the phantom readings a
-    // transition creates.
-    int[8] cand;
-    int nc = 0;
-    tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
-    temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
-    long window = 2 * 86400;
-    for (usz i = 0; i < trans.len; i++) {
-        if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
-            tz_cand_add(cand[..], &nc, trans[i].offset_sec);
-        }
-    }
-    if (nc == 0) tz_cand_add(cand[..], &nc, 0);
-
-    // An overlap yields several valid offsets; "compatible" wants the earliest
-    // instant, which is the largest offset.
-    int chosen_off = 0;
-    bool found = false;
-    for (int k = 0; k < nc; k++) {
-        if (temporal::tzdb_offset_for_zone_at(zone, wall_secs - cand[k]) != cand[k]) continue;
-        if (!found || cand[k] > chosen_off) { chosen_off = cand[k]; found = true; }
-    }
-    // A gap skips the wall time entirely; shift it past the transition.
-    if (!found) chosen_off = temporal::tzdb_offset_for_zone_at(zone, wall_secs + 4 * 3600);
-
-    return (int128)(wall_secs - chosen_off) * 1000000000 + (int128)wall_frac_ns;
-}
 
 // Convert a Duration's time components (hours..nanoseconds) to an
 // epoch-nanosecond BigInt delta. Calendar units carry no fixed nanosecond
@@ -13080,7 +12914,7 @@ fn bool add_zoned_datetime(HObject* zdt, temporal::DurationParts dp, long sign,
             + (long)wh * 3600 + (long)wmi * 60 + (long)ws;
         long wall_frac = (long)wms * 1000000 + (long)wus * 1000 + (long)wns;
         String zone = zdt.extra.temporal.timezone == null ? "" : timezone_name(zdt.extra.temporal.timezone);
-        base = zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+        base = temporal::zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
     }
 
     // Time units: an exact shift on the instant axis.
@@ -13145,7 +12979,7 @@ fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
             + (long)wh * 3600 + (long)wmi * 60 + (long)ws;
         long wall_frac = (long)wms * 1000000 + (long)wus * 1000 + (long)wns;
         String zone = self.extra.temporal.timezone == null ? "" : timezone_name(self.extra.temporal.timezone);
-        int128 moved = zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+        int128 moved = temporal::zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
 
         hbigint::HBigInt*? moved_o = hbigint::hbigint_alloc(ctx.heap, moved);
         ctx.heap.decref((types::HeapHeader*)base);
@@ -13467,7 +13301,7 @@ fn void builtin_temporal_zoneddatetime_proto_offset(BuiltinContext* ctx) {
     long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
     zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
     char[7] buf;
-    format_offset_seconds(&buf[0], off);
+    temporal::format_offset_seconds(&buf[0], off);
     buf[6] = 0;
     ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:6]));
 }
@@ -13512,8 +13346,8 @@ fn void builtin_temporal_zoneddatetime_proto_weekOfYear(BuiltinContext* ctx) {
     if (dow <= 0) dow += 7;
     long week = (doy - dow + 10) / 7;
     if (week < 1) {
-        week = iso_weeks_in_year(wy - 1);
-    } else if (week > iso_weeks_in_year(wy)) {
+        week = temporal::iso_weeks_in_year(wy - 1);
+    } else if (week > temporal::iso_weeks_in_year(wy)) {
         week = 1;
     }
     ctx.result.set_fastint(week);
@@ -13531,7 +13365,7 @@ fn void builtin_temporal_zoneddatetime_proto_yearOfWeek(BuiltinContext* ctx) {
     long week = (doy - dow + 10) / 7;
     long week_year = wy;
     if (week < 1) { week_year = wy - 1; }
-    else if (week > iso_weeks_in_year(wy)) { week_year = wy + 1; }
+    else if (week > temporal::iso_weeks_in_year(wy)) { week_year = wy + 1; }
     ctx.result.set_fastint(week_year);
 }
 
@@ -13589,7 +13423,7 @@ fn void builtin_temporal_zoneddatetime_proto_hoursInDay(BuiltinContext* ctx) {
     if (zone.len > 0 && zone.ptr != null) {
         usz zone_j = 0;
         long zone_off = 0;
-        bool zone_is_offset = parse_offset_only((char[])zone, &zone_j, &zone_off) && zone_j == zone.len;
+        bool zone_is_offset = temporal::parse_offset_only((char[])zone, &zone_j, &zone_off) && zone_j == zone.len;
         if (!zone_is_offset) {
             // For an IANA zone the offset can change across the day boundary;
             // read each side's offset independently so a DST gap shows as
@@ -14151,29 +13985,8 @@ fn bool setUpTemporalZonedDateTime(Heap* heap) {
 // civil_from_seconds), so the result agrees with what the rest of the engine
 // would have produced for the same instant.
 
-// Current epoch in whole seconds (floored toward -infinity so negative
-// instants land on the correct second). std::time::now() reports microseconds
-// since the Unix epoch.
-fn long now_epoch_seconds() {
-    long micros = (long)std::time::now();
-    long secs = micros / 1_000_000L;
-    if (micros < 0 && micros % 1_000_000L != 0) secs -= 1;
-    return secs;
-}
 
-// Current epoch in whole milliseconds (same floor semantics).
-fn long now_epoch_milliseconds() {
-    long micros = (long)std::time::now();
-    long ms = micros / 1000L;
-    if (micros < 0 && micros % 1000L != 0) ms -= 1;
-    return ms;
-}
 
-// Current epoch in nanoseconds (precise; std::time::now is microsecond).
-fn int128 now_epoch_nanoseconds() {
-    long micros = (long)std::time::now();
-    return (int128)micros * 1000;
-}
 
 // Coerce the first argument to a string. Per ES2025 ToTemporalTimeZone, the
 // argument first goes through ToPrimitive (string hint); only the result is
@@ -14218,146 +14031,8 @@ fn bool now_coerce_tz_string(BuiltinContext* ctx, String* out, bool* is_default)
     return false;
 }
 
-// Parse an offset of the form Z, ±HH[:MM], or ±HHMM. Three-component forms
-// (±HH:MM:SS, ±HHMMSS) are explicitly NOT valid Time Zone identifiers per
-// the test262 timezone-string-datetime test, even when SS=00. Returns true
-// and writes `offset_seconds` on success.
-fn bool parse_offset_only(char[] text, usz* i, long* offset_seconds) {
-    usz len = text.len;
-    if (*i >= len) return false;
-    bool neg = false;
-    if (text[*i] == 'Z' || text[*i] == 'z') {
-        *i += 1;
-        *offset_seconds = 0;
-        return true;
-    }
-    if (text[*i] != '+' && text[*i] != '-') return false;
-    if (text[*i] == '-') neg = true;
-    *i += 1;
-    int h;
-    if (!temporal::parse_two_digits(text, i, &h)) return false;
-    int mi = 0;
-    if (*i < len) {
-        if (text[*i] == ':') {
-            *i += 1;
-            if (!temporal::parse_two_digits(text, i, &mi)) return false;
-        } else if (temporal::digit_at(text, *i) >= 0) {
-            // ±HHMM basic form. If more digits follow, this would be
-            // ±HHMMSS which we reject (three-component offsets are not
-            // valid Time Zone identifiers).
-            usz j = *i;
-            while (j < len && temporal::digit_at(text, j) >= 0) j += 1;
-            if (j - *i == 2) {
-                if (!temporal::parse_two_digits(text, i, &mi)) return false;
-            } else if (j - *i == 0) {
-                // no minutes
-            } else {
-                return false;
-            }
-        }
-    }
-    // Sub-minute precision: optional `:SS[.fffffffff]`. Trailing zeros in the
-    // fraction are forbidden (per spec), enforced by the caller when this is a
-    // time-zone identifier. Only round to whole seconds here.
-    int sec = 0;
-    if (*i < len && text[*i] == ':') {
-        *i += 1;
-        if (!temporal::parse_two_digits(text, i, &sec)) return false;
-        if (sec > 59) return false;
-        // Optional fraction (1-9 digits). The last digit must be non-zero
-        // for time-zone identifiers; we just store it rounded to the nearest
-        // second so the offset stays in whole seconds here.
-        if (*i < len && text[*i] == '.') {
-            *i += 1;
-            usz fstart = *i;
-            while (*i < len && temporal::digit_at(text, *i) >= 0 && *i - fstart < 9) *i += 1;
-            if (*i == fstart) return false;
-            // TimeZoneOffsetString allows at most 9 fraction digits.
-            if (*i < len && temporal::digit_at(text, *i) >= 0) return false;
-        }
-    }
-    long total = (long)h * 3600 + (long)mi * 60 + (long)sec;
-    *offset_seconds = neg ? -total : total;
-    return true;
-}
 
-// Skip over a leading ISO date / time prefix, leaving `i` pointing at the
-// start of the offset/Z/bracket zone annotation (or past the end of the
-// string). Used by `now_resolve_tz` to extract the zone descriptor from a
-// full ISO string like `2021-08-19T17:30-07:00[UTC]`.
-//
-// Returns false if the prefix is not a valid date-time: garbage, empty, or a
-// negative-zero year (`-000000-...`), which the spec rejects as the
-// "extended year minus zero" form.
-fn bool now_skip_iso_prefix(char[] text, usz* i) {
-    usz len = text.len;
-    if (*i >= len) return false;
-    // Optional sign for extended year.
-    bool signed_year = false;
-    long sign = 1;
-    if (text[*i] == '+' || text[*i] == '-') {
-        if (text[*i] == '-') sign = -1;
-        signed_year = true;
-        *i += 1;
-    }
-    // Year: 4 digits unsigned or 4-6 digits signed.
-    usz y_start = *i;
-    while (*i < len && temporal::digit_at(text, *i) >= 0 && (*i - y_start) < 6) *i += 1;
-    usz y_digits = *i - y_start;
-    if (y_digits < 4) return false;
-    if (signed_year && y_digits != 6) return false;
-    if (!signed_year && y_digits != 4) return false;
-    if (signed_year && sign < 0) {
-        // Reject negative zero year (`-000000`).
-        bool all_zero = true;
-        for (usz k = y_start; k < *i; k++) {
-            if (text[k] != '0') { all_zero = false; break; }
-        }
-        if (all_zero) return false;
-    }
-    // Month, day separators and digits.
-    if (*i < len && text[*i] == '-') *i += 1;
-    int mo;
-    if (!temporal::parse_two_digits(text, i, &mo)) return false;
-    if (mo < 1 || mo > 12) return false;
-    if (*i < len && text[*i] == '-') *i += 1;
-    int d;
-    if (!temporal::parse_two_digits(text, i, &d)) return false;
-    if (d < 1 || d > 31) return false;
-    // Optional T/space time.
-    if (*i < len && (text[*i] == 'T' || text[*i] == 't' || text[*i] == ' ')) {
-        *i += 1;
-        int hh, mi, ss;
-        long ns;
-        if (!temporal::parse_time(text, i, &hh, &mi, &ss, &ns)) return false;
-    }
-    return true;
-}
 
-// Find the FIRST bracketed zone annotation `[...]` in the string whose body
-// is NOT a key=value pair (i.e. the bare zone-name annotation, not `u-ca=`).
-// Returns the zone text slice in `text[start..start+len]` on success and
-// advances `*i` past the closing `]`.
-fn bool now_find_bracket_zone(char[] text, usz* i, usz* out_start, usz* out_len) {
-    usz len = text.len;
-    usz k = *i;
-    while (k < len && text[k] != '[') k += 1;
-    if (k >= len) return false;
-    usz ann_start = k + 1;
-    usz ann_end = ann_start;
-    while (ann_end < len && text[ann_end] != ']') ann_end += 1;
-    if (ann_end >= len) return false;
-    bool has_eq = false;
-    for (usz j = ann_start; j < ann_end; j++) {
-        if (text[j] == '=') { has_eq = true; break; }
-    }
-    if (has_eq) return false;
-    // C3 slices are inclusive on both ends; the body is ann_start..ann_end-1.
-    *out_start = ann_start;
-    *out_len = ann_end - ann_start;
-    *i = ann_end + 1;
-    return true;
-}
 
 // Resolve a Temporal time-zone argument (a string per the spec). On success
 // writes the offset in seconds; if the zone is an IANA name (in `*zone_name`)
@@ -14382,7 +14057,7 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
     // must throw regardless of the bracket. So scan the date prefix first
     // and reject bad inputs before any zone resolution.
     usz prefix_end = 0;
-    bool has_iso_prefix = now_skip_iso_prefix(text, &prefix_end);
+    bool has_iso_prefix = temporal::now_skip_iso_prefix(text, &prefix_end);
 
     // Look for any bracketed zone annotation `[...]` (with no `=` inside).
     // If present, that wins regardless of any other text — the offset that
@@ -14391,7 +14066,7 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
     usz i = 0;
     usz b_start = 0;
     usz b_len = 0;
-    if (now_find_bracket_zone(text, &i, &b_start, &b_len)) {
+    if (temporal::now_find_bracket_zone(text, &i, &b_start, &b_len)) {
         if (i != text.len) return false;
         if (!has_iso_prefix) return false;   // bracket requires a date-time prefix
         if (prefix_end > b_start) return false;  // bracket can't appear mid-date
@@ -14414,7 +14089,7 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
         }
         usz j = 0;
         long off_in = 0;
-        if (parse_offset_only(bracket, &j, &off_in) && j == bracket.len) {
+        if (temporal::parse_offset_only(bracket, &j, &off_in) && j == bracket.len) {
             *out_offset_sec = off_in;
             *offset_known = true;
             return true;
@@ -14430,7 +14105,7 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
     // RangeError.
     if (has_iso_prefix) {
         long off = 0;
-        if (prefix_end < text.len && parse_offset_only(text, &prefix_end, &off)) {
+        if (prefix_end < text.len && temporal::parse_offset_only(text, &prefix_end, &off)) {
             if (prefix_end != text.len) return false;
             *out_is_z = (text[prefix_end - 1] == 'Z' || text[prefix_end - 1] == 'z');
             // Reject sub-minute offsets: scan the offset tail for `.` or `,`
@@ -14474,7 +14149,7 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
     }
     usz saved = 0;
     long off2 = 0;
-    if (parse_offset_only(text, &saved, &off2)) {
+    if (temporal::parse_offset_only(text, &saved, &off2)) {
         if (saved != text.len) return false;
         *out_is_z = (text[0] == 'Z' || text[0] == 'z');
         *out_offset_sec = off2;
@@ -14549,7 +14224,7 @@ fn bool now_resolve_canonical_zone(BuiltinContext* ctx, String zone, long epoch_
 
 // Temporal.Now.instant() — current moment as an Instant.
 fn void builtin_temporal_now_instant(BuiltinContext* ctx) {
-    int128 ns = now_epoch_nanoseconds();
+    int128 ns = temporal::now_epoch_nanoseconds();
     hbigint::HBigInt*? b_o = hbigint::hbigint_alloc(ctx.heap, ns);
     if (catch err = b_o) {
         builtin_throw(ctx, ctx.heap.err_proto, "Temporal.Now.instant: alloc failed");
@@ -14606,7 +14281,7 @@ fn void builtin_temporal_now_zoned_date_time_iso(BuiltinContext* ctx) {
     String text = (String)"";
     bool is_default = false;
     if (!now_coerce_tz_string(ctx, &text, &is_default)) return;
-    long epoch_secs = now_epoch_seconds();
+    long epoch_secs = temporal::now_epoch_seconds();
     long off = 0;
     if (!now_resolve_current_offset(ctx, text, is_default, epoch_secs, &off)) return;
 
@@ -14661,7 +14336,7 @@ fn void builtin_temporal_now_zoned_date_time_iso(BuiltinContext* ctx) {
     }
     String zone_id = (String)canonical_buf[:canonical_len];
 
-    int128 ns = now_epoch_nanoseconds();
+    int128 ns = temporal::now_epoch_nanoseconds();
     hbigint::HBigInt*? b_o = hbigint::hbigint_alloc(ctx.heap, ns);
     if (catch err = b_o) {
         builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
@@ -14693,7 +14368,7 @@ fn void builtin_temporal_now_plain_date_iso(BuiltinContext* ctx) {
     String text = (String)"";
     bool is_default = false;
     if (!now_coerce_tz_string(ctx, &text, &is_default)) return;
-    long epoch_secs = now_epoch_seconds();
+    long epoch_secs = temporal::now_epoch_seconds();
     long off = 0;
     if (!now_resolve_current_offset(ctx, text, is_default, epoch_secs, &off)) return;
     temporal::BrokenDownTime bd = temporal::civil_from_seconds(epoch_secs + off);
@@ -14712,7 +14387,7 @@ fn void builtin_temporal_now_plain_date_time_iso(BuiltinContext* ctx) {
     String text = (String)"";
     bool is_default = false;
     if (!now_coerce_tz_string(ctx, &text, &is_default)) return;
-    long epoch_secs = now_epoch_seconds();
+    long epoch_secs = temporal::now_epoch_seconds();
     long off = 0;
     if (!now_resolve_current_offset(ctx, text, is_default, epoch_secs, &off)) return;
     temporal::BrokenDownTime bd = temporal::civil_from_seconds(epoch_secs + off);
@@ -14732,7 +14407,7 @@ fn void builtin_temporal_now_plain_time_iso(BuiltinContext* ctx) {
     String text = (String)"";
     bool is_default = false;
     if (!now_coerce_tz_string(ctx, &text, &is_default)) return;
-    long epoch_secs = now_epoch_seconds();
+    long epoch_secs = temporal::now_epoch_seconds();
     long off = 0;
     if (!now_resolve_current_offset(ctx, text, is_default, epoch_secs, &off)) return;
     temporal::BrokenDownTime bd = temporal::civil_from_seconds(epoch_secs + off);

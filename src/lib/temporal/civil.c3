@@ -362,3 +362,47 @@ fn int time_compare(CivilTime a, CivilTime b) {
     if (a.ns != b.ns) return a.ns < b.ns ? -1 : 1;
     return 0;
 }
+
+// ---- Time-of-day helpers used by the Temporal bindings ----
+
+// Inverse of civil_time_to_ns; the input must lie in [0, day).
+fn CivilTime civil_time_from_ns(long total) {
+    CivilTime t;
+    t.h  = total / 3600000000000L; total %= 3600000000000L;
+    t.mi = total /   60000000000L; total %=   60000000000L;
+    t.s  = total /    1000000000L; total %=    1000000000L;
+    t.ms = total /       1000000L; total %=       1000000L;
+    t.us = total /          1000L;
+    t.ns = total %          1000L;
+    return t;
+}
+
+fn long civil_time_to_ns(CivilTime t) {
+    return ((long)t.h * 3600 + (long)t.mi * 60 + (long)t.s) * 1_000_000_000L
+         + (long)t.ms * 1_000_000L + (long)t.us * 1000L + (long)t.ns;
+}
+
+// RegulateTime(..., ~constrain~): clamps each field into its valid range
+// instead of rejecting, which is the default overflow behaviour ToTemporalTime
+// applies when called without an options argument (as withPlainTime does).
+// A leap-second-shaped hour:mi:60 collapses to :59 like the reject-mode
+// fields_to_valid_time does.
+fn CivilTime regulate_time_constrain(CivilTime f) {
+    CivilTime v = f;
+    if (v.h < 0) { v.h = 0; } else if (v.h > 23) { v.h = 23; }
+    if (v.mi < 0) { v.mi = 0; } else if (v.mi > 59) { v.mi = 59; }
+    if (v.s < 0) { v.s = 0; } else if (v.s > 59) { v.s = 59; }
+    if (v.ms < 0) { v.ms = 0; } else if (v.ms > 999) { v.ms = 999; }
+    if (v.us < 0) { v.us = 0; } else if (v.us > 999) { v.us = 999; }
+    if (v.ns < 0) { v.ns = 0; } else if (v.ns > 999) { v.ns = 999; }
+    return v;
+}
+
+fn long iso_weeks_in_year(long year) {
+    // ISO 8601: a year has 53 weeks iff Jan 1 is a Thursday, or Jan 1 is a
+    // Wednesday in a leap year.
+    long jan1_dow = ((epoch_days_from_civil(year, (int)1, (int)1) % 7) + 4) % 7;
+    if (jan1_dow <= 0) jan1_dow += 7;
+    if (jan1_dow == 4 || (jan1_dow == 3 && is_leap_year(year))) return 53;
+    return 52;
+}

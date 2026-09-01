@@ -14,6 +14,8 @@
 // for the same quantity elsewhere -- see zdt_local_to_epoch_ns.
 module boomkat::lib::temporal;
 
+import std::time;
+
 // The widest epoch-nanosecond value Temporal can represent, per
 // Temporal.Instant: 100,000,000 days either side of the epoch.
 //   86400 s/day * 1e8 days * 1e9 ns/s
@@ -53,4 +55,30 @@ fn int instant_cmp(int128 a, int128 b) {
     if (a < b) return -1;
     if (a > b) return 1;
     return 0;
+}
+
+// ---- Wall-clock readings from the host ----
+
+// Current epoch in whole seconds (floored toward -infinity so negative
+// instants land on the correct second). std::time::now() reports microseconds
+// since the Unix epoch.
+fn long now_epoch_seconds() {
+    long micros = (long)std::time::now();
+    long secs = micros / 1_000_000L;
+    if (micros < 0 && micros % 1_000_000L != 0) secs -= 1;
+    return secs;
+}
+
+// Current epoch in whole milliseconds (same floor semantics).
+fn long now_epoch_milliseconds() {
+    long micros = (long)std::time::now();
+    long ms = micros / 1000L;
+    if (micros < 0 && micros % 1000L != 0) ms -= 1;
+    return ms;
+}
+
+// Current epoch in nanoseconds (precise; std::time::now is microsecond).
+fn int128 now_epoch_nanoseconds() {
+    long micros = (long)std::time::now();
+    return (int128)micros * 1000;
 }

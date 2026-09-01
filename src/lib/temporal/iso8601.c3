@@ -451,3 +451,74 @@ fn usz format_civil_datetime(CivilDateTime dt, char* buf, usz buf_size, int ns_d
     off += time_len;
     return off;
 }
+
+// ---- Fractional-second and UTC-offset formatting ----
+
+// toString / toJSON / valueOf for Instant.
+//
+// Fractional-second output. `digits` is -1 for "auto" (the minimal number of
+// digits with trailing zeros trimmed and no rounding), 0 for none, or 1..9
+// for a fixed width (lower digits truncated, the Temporal default
+// roundingMode). Appends the leading "." plus the padded fraction starting at
+// buf; returns the number of characters appended (0 if there is no fraction).
+// Render the fractional-seconds suffix (`.XYZ`) into `buf` and return the
+// number of bytes written (0 when no fractional part should be printed).
+// `digits` (-1 = auto, 0..9 = fixed) selects the precision; `mode` is the
+// rounding rule (default trunc). `*ns_rem` is read AND may be updated: when
+// rounding pushes ns_rem to 1_000_000_000 (a full second), the caller must
+// increment whole_secs — see the wrapper in this file that handles the
+// carry.
+fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRoundMode mode) {
+    if (ns_rem < 0) ns_rem = -ns_rem;
+    int d = digits;
+    // Explicit fixed digits request (`fractionalSecondDigits` was given):
+    // even when ns_rem is 0 the spec requires padding the requested number
+    // of zeros, so a no-op short-circuit doesn't apply.
+    if (d < 0) {
+        // auto: write fraction only when non-zero; trailing zeros dropped.
+        if (ns_rem == 0) return 0;
+        d = 9;
+        long x = ns_rem;
+        while (x > 1 && x % 10 == 0) { x /= 10; d--; }
+        if (d <= 0) return 0;
+    } else {
+        // Fixed digits: even when ns_rem == 0 we still write ".000…00" so
+        // e.g. `toString({fractionalSecondDigits: 2})` on a whole-second
+        // instant yields ".00".
+        if (ns_rem == 0) {
+            if (d == 0) return 0;
+            buf[0] = '.';
+            for (int i = 0; i < d; i++) buf[1 + i] = '0';
+            return 1 + d;
+        }
+    }
+    if (d > 9) d = 9;
+    // Round to `d` digits using `mode`. Compute a divisor = 10^(9-d), then
+    // round ns_rem/divisor to the nearest integer, then multiply back.
+    long divisor = 1;
+    for (int i = 0; i < 9 - d; i++) divisor *= 10;
+    long v;
+    {
+        double x = (double)ns_rem / (double)divisor;
+        v = (long)round_num_to_incr(x, 1.0, mode);
+    }
+    if (v == 0) return 0;
+    buf[0] = '.';
+    char[16] tmp;
+    int k = 0;
+    long x = v;
+    while (x > 0) { tmp[k] = (char)('0' + (int)(x % 10)); k++; x /= 10; }
+    while (k < d) { tmp[k] = '0'; k++; }
+    for (int i = 0; i < k; i++) buf[1 + i] = tmp[k - 1 - i];
+    return 1 + k;
+}
+
+// Format an offset in seconds from UTC as ±HH:MM into buf (len >= 8).
+fn void format_offset_seconds(char* buf, int off) {
+    int sign = off < 0 ? -1 : 1;
+    int mag = off < 0 ? -off : off;
+    int hh = mag / 3600;
+    int mm = (mag % 3600) / 60;
+    if (sign < 0) { buf[0] = '-'; } else { buf[0] = '+'; }
+    libc::snprintf(buf + 1, 6, "%02d:%02d", hh, mm);
+}
