@@ -92,9 +92,13 @@ fn void builtin_math_max(BuiltinContext* ctx) {
         return;
     }
     double max = math_arg(ctx, 0);
+    if (ctx.should_throw) return;
     // ES6 §20.2.2.24: if any argument is NaN, the result is NaN
     for (ushort i = 1; i < ctx.argc; i++) {
         double v = math_arg(ctx, i);
+        // Coercing an argument can throw, and each further argument coerced
+        // after that re-enters whatever raised it.
+        if (ctx.should_throw) return;
         if (math::is_nan(v)) {
             max = double::nan;
             continue;
@@ -121,9 +125,13 @@ fn void builtin_math_min(BuiltinContext* ctx) {
         return;
     }
     double min = math_arg(ctx, 0);
+    if (ctx.should_throw) return;
     // ES6 §20.2.2.25: if any argument is NaN, the result is NaN
     for (ushort i = 1; i < ctx.argc; i++) {
         double v = math_arg(ctx, i);
+        // Coercing an argument can throw, and each further argument coerced
+        // after that re-enters whatever raised it.
+        if (ctx.should_throw) return;
         if (math::is_nan(v)) {
             min = double::nan;
             continue;

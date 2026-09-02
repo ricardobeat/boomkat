@@ -328,6 +328,13 @@ fn bool vm_run_depth_exceeded(Vm* vm) {
     vm.heap.has_error = true;
     vm.heap.tval_copy_ref(&vm.heap.error_value, &err);
     vm.heap.tval_copy_ref(&vm.return_val, &err);
+    // The coercion paths (vm_to_number and the builtins reached through it)
+    // test throw_pending, not has_error, so a depth throw raised on only the
+    // has_error channel is invisible to them: they read the NaN result as a
+    // value and coerce again, and the recursion this guard exists to stop
+    // continues.
+    vm.throw_pending = true;
+    vm.heap.tval_copy_ref(&vm.throw_value, &err);
     return true;
 }
 
@@ -344,6 +351,18 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
     // state once restored below (e.g. yield* losing track of the delegating
     // generator's own suspend/resume bookkeeping).
     void* saved_resume_gen_outer = vm.heap.resume_gen;
+
+    // Every host-initiated call lands here, so this is where native re-entry
+    // is bounded. Cases 1 and 2 dispatch a builtin and return without ever
+    // reaching Case 3's check, yet a builtin is exactly what re-enters: a
+    // coercion that runs valueOf/Symbol.toPrimitive, a proxy trap handed the
+    // proxy as an argument. That recursion never re-enters Vm.run, so
+    // activation_count and MAX_CALLS never see it, and each bounce claims a
+    // TVal[16]/TVal[18] register window plus a save area on a native stack the
+    // engine cannot grow or measure. Unguarded it faults instead of throwing.
+    if (vm_run_depth_exceeded(vm)) return undef;
+    vm.run_depth++;
+    defer vm.run_depth--;
 
     // Bound function [[Call]] (ES2015 §9.4.1.1): unwrap [[BoundTargetFunction]],
     // [[BoundThis]] and [[BoundArguments]] here and recurse, rather than
@@ -541,10 +560,6 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         if (hobj != null && hobj.is_callable() && (*hobj.extra_ptr()).func.comp_func != null) {
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
             uint nregs = target.num_regs;
-
-            // Checked before any VM state is touched, so the caller sees an
-            // unmodified VM alongside the pending throw.
-            if (vm_run_depth_exceeded(vm)) return undef;
 
             // Compute the true top of the current activation's register file.
             // vm.valstack_top is NOT updated for inline JS-to-JS calls (the
