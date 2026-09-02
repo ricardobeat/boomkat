@@ -414,7 +414,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;
+    proto.prototype = heap.object_proto;
     heap.map_proto = proto;
 
     // Add .set(key, value) method

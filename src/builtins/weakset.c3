@@ -76,7 +76,7 @@ fn bool register_weakset_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;
+    proto.prototype = heap.object_proto;
     heap.weakset_proto = proto;
 
     if (!register_string_proto_method(proto, heap, "add", Builtin.WEAKSET_PROTO_ADD.ordinal)) return false;

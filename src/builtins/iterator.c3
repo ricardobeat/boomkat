@@ -544,7 +544,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // will be wired to object_proto later
+    proto.prototype = heap.object_proto;
     heap.iterator_proto = proto;
 
     HObject*? array_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);

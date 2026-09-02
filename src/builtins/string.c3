@@ -3575,6 +3575,7 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     TVal proto_len_tv;
     proto_len_tv.set_fastint(0);
     proto.put_prop(proto_len_key, proto_len_tv, hobject::PROP_FLAGS_NNC, heap);
+    proto.prototype = heap.object_proto;
     heap.string_proto = proto;
 
     // Add .toString() method

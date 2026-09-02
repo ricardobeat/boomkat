@@ -562,7 +562,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype in later phases
+    proto.prototype = heap.object_proto;
     heap.number_proto = proto;
 
     // Add .toString() method, registered as a proper function object (not

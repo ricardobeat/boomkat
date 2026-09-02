@@ -2339,7 +2339,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.DATE);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype
+    proto.prototype = heap.object_proto;
     // Initialize primitive_value to NaN so Date.prototype is not treated as
     // a valid Date instance by thisTimeValue (it has class DATE but no
     // [[DateValue]] internal slot per ES2015 §20.4.3.1).

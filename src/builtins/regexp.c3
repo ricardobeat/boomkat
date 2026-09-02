@@ -2708,7 +2708,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype
+    proto.prototype = heap.object_proto;
     heap.regexp_proto = proto;
 
     // Add RegExp.prototype.test()

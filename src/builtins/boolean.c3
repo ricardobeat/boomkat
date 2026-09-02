@@ -84,7 +84,7 @@ fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype in later phases
+    proto.prototype = heap.object_proto;
     // ES5 §15.6.4: Boolean.prototype has [[PrimitiveValue]] = false
     (*proto.extra_ptr()).prim.primitive_value.set_boolean(false);
     heap.bool_proto = proto;

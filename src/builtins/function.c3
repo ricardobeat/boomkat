@@ -1315,7 +1315,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;  // Will be Object.prototype
+    proto.prototype = heap.object_proto;
     // ES5 §15.3.4: Function.prototype accepts any arguments and returns
     // undefined when called as a function, and has no [[Construct]],
     // `new Function.prototype` must throw TypeError.

@@ -663,7 +663,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.SYMBOL);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = null;
+    proto.prototype = heap.object_proto;
     heap.symbol_proto = proto;
 
     // Register prototype methods

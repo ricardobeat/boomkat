@@ -743,6 +743,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     // --- Create Error.prototype ---
     HObject* err_proto = register_error_prototype(heap, null, "Error");
     if (err_proto == null) return false;
+    err_proto.prototype = heap.object_proto;
     heap.err_proto = err_proto;
 
     // Add .toString() method to Error.prototype

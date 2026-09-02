@@ -3996,27 +3996,17 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         if (!setUpTemporalNamespace(global_env, heap)) return false;
     $endif
 
-    // Wire all prototype chains to Object.prototype
-    if (heap.number_proto != null) heap.number_proto.prototype = heap.object_proto;
-    if (heap.bool_proto != null)   heap.bool_proto.prototype = heap.object_proto;
-    if (heap.string_proto != null) heap.string_proto.prototype = heap.object_proto;
-    if (heap.err_proto != null)    heap.err_proto.prototype = heap.object_proto;
-    if (heap.array_proto != null)  heap.array_proto.prototype = heap.object_proto;
-    if (heap.function_proto != null) heap.function_proto.prototype = heap.object_proto;
-    if (heap.date_proto != null)   heap.date_proto.prototype = heap.object_proto;
-    if (heap.regexp_proto != null) heap.regexp_proto.prototype = heap.object_proto;
-    if (heap.map_proto != null)    heap.map_proto.prototype = heap.object_proto;
-    if (heap.set_proto != null)    heap.set_proto.prototype = heap.object_proto;
-    if (heap.weakmap_proto != null) heap.weakmap_proto.prototype = heap.object_proto;
-    if (heap.weakset_proto != null) heap.weakset_proto.prototype = heap.object_proto;
-    if (heap.symbol_proto != null) heap.symbol_proto.prototype = heap.object_proto;
-    if (heap.promise_proto != null) heap.promise_proto.prototype = heap.object_proto;
-    // ES2025 §27.8.1 %GeneratorPrototype%.[[Prototype]] is %Iterator.prototype%
-    // (not Object.prototype directly) now that Iterator Helpers exist, this
-    // is what makes `function*(){}().map(...)` etc. work on generators.
+    // %GeneratorPrototype%.[[Prototype]] is %Iterator.prototype% (ES2025
+    // §27.8.1), not Object.prototype -- that is what makes
+    // `function*(){}().map(...)` work now that Iterator Helpers exist.
+    //
+    // This is the one prototype link that cannot be made where the object is
+    // created: register_generator_constructor runs before
+    // register_iterator_prototype, so iterator_proto does not exist yet. Every
+    // other prototype now sets its own parent at creation, since
+    // register_object_constructor runs first and Object.prototype is already
+    // available to all of them.
     if (heap.generator_proto != null) heap.generator_proto.prototype = heap.iterator_proto;
-    if (heap.iterator_proto != null)  heap.iterator_proto.prototype = heap.object_proto;
-    if (heap.async_from_sync_iter_proto != null) heap.async_from_sync_iter_proto.prototype = heap.object_proto;
 
     // Wire constructor functions' [[Prototype]] to Function.prototype.
     // Constructor functions (Object, Number, Function, etc.) are HObjects
