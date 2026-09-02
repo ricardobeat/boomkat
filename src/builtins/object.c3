@@ -477,11 +477,9 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
 // Object.keys(obj), ES5 §15.2.3.14
 // Returns an array of an object's own enumerable property names.
 fn void builtin_object_keys(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_undefined();
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`, which the checks below
+    // handle; returning early here would skip them.
+    TVal arg = builtin_arg(ctx, 0);
     // ES5 §15.2.3.14 / ES2015 §19.1.2.16: throw TypeError for null/undefined,
     // use ToObject wrapper for primitives
     if (arg.is_null() || arg.is_undefined()) {
@@ -565,11 +563,9 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
 // Returns an array of all own property names (both enumerable and non-enumerable)
 // of the given object. Equivalent to Object.keys but without the enumerable filter.
 fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_undefined();
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`, which the checks below
+    // handle; returning early here would skip them.
+    TVal arg = builtin_arg(ctx, 0);
     // ES5 §15.2.3.2 / ES2015: throw TypeError for null/undefined,
     // use ToObject wrapper for primitives
     if (arg.is_null() || arg.is_undefined()) {
@@ -813,11 +809,9 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
 // ============================================================================
 // Returns an array of all symbol-keyed own properties of the given object.
 fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_undefined();
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`, which the checks below
+    // handle; returning early here would skip them.
+    TVal arg = builtin_arg(ctx, 0);
     // ES6 §19.1.2.7: throw TypeError for null/undefined,
     // use ToObject wrapper for primitives
     if (arg.is_null() || arg.is_undefined()) {
@@ -3712,11 +3706,9 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
 // ============================================================================
 // Check if an object is sealed.
 fn void builtin_object_isSealed(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`, which the checks below
+    // handle; returning early here would skip them.
+    TVal arg = builtin_arg(ctx, 0);
     // A LIGHTFUNC builtin is an ordinary extensible function object, so the
     // non-object shortcut below must not claim it is sealed.
     promote_lightfunc_tval(ctx.heap, &arg);
@@ -3766,11 +3758,9 @@ fn void builtin_object_isSealed(BuiltinContext* ctx) {
 // ============================================================================
 // Check if an object is frozen.
 fn void builtin_object_isFrozen(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`, which the checks below
+    // handle; returning early here would skip them.
+    TVal arg = builtin_arg(ctx, 0);
     // A LIGHTFUNC builtin is an ordinary extensible function object, so the
     // non-object shortcut below must not claim it is frozen.
     promote_lightfunc_tval(ctx.heap, &arg);
@@ -3844,11 +3834,9 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
 // Returns an array of the given object's own enumerable string-keyed property
 // [key, value] pairs.
 fn void builtin_object_entries(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_undefined();
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`, which the checks below
+    // handle; returning early here would skip them.
+    TVal arg = builtin_arg(ctx, 0);
     // TypeError if argument is null or undefined
     if (arg.is_null() || arg.is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
@@ -3945,11 +3933,9 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
 // ============================================================================
 // Returns an array of the given object's own enumerable string-keyed property values.
 fn void builtin_object_values(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_undefined();
-        return;
-    }
-    TVal arg = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`, which the checks below
+    // handle; returning early here would skip them.
+    TVal arg = builtin_arg(ctx, 0);
     if (arg.is_null() || arg.is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
         return;
