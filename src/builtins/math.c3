@@ -34,7 +34,13 @@ fn double math_arg(BuiltinContext* ctx, ushort i) {
         }
         return d;
     }
-    // Non-object non-number: undefined / null / boolean / string / symbol.
+    // ToNumber(symbol) throws (ES2023 7.1.4); builtin_to_number below has no
+    // way to report that, so it would quietly yield NaN.
+    if (is_symbol_val(*arg)) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a Symbol value to a number");
+        return double::nan;
+    }
+    // Non-object non-number: undefined / null / boolean / string.
     TVal num;
     builtin_to_number(arg, &num);
     return num.is_fastint() ? (double)num.get_fastint() : num.get_number();
