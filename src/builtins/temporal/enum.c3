@@ -27,10 +27,6 @@
 module boomkat::builtins @feat(!NO_TEMPORAL);
 
 enum TemporalBuiltin : uint (String js_name, int js_arity, bool constructable, BuiltinFunc handler) {
-    CALENDAR_CTOR {"Calendar", 1, true, &builtin_temporal_calendar_ctor},
-    CALENDAR_FROM {"from", 1, false, &builtin_temporal_calendar_from},
-    CALENDAR_PROTO_ID {"id", 0, false, &builtin_temporal_calendar_proto_id},
-    CALENDAR_PROTO_TOSTRING {"toString", 0, false, &builtin_temporal_calendar_proto_toString},
     DURATION_CTOR {"Duration", 0, true, &builtin_temporal_duration_ctor},
     DURATION_FROM {"from", 1, false, &builtin_temporal_duration_from},
     DURATION_COMPARE {"compare", 2, false, &builtin_temporal_duration_compare},
@@ -238,13 +234,6 @@ enum TemporalBuiltin : uint (String js_name, int js_arity, bool constructable, B
     INSTANT_PROTO_SINCE {"since", 1, false, &builtin_temporal_instant_proto_since},
     INSTANT_PROTO_UNTIL {"until", 1, false, &builtin_temporal_instant_proto_until},
     INSTANT_PROTO_TOZONEDDATETIMEISO {"toZonedDateTimeISO", 1, false, &builtin_temporal_instant_proto_toZonedDateTimeISO},
-    TIMEZONE_CTOR {"TimeZone", 1, true, &builtin_temporal_timezone_ctor},
-    TIMEZONE_FROM {"from", 1, false, &builtin_temporal_timezone_from},
-    TIMEZONE_PROTO_ID {"id", 0, false, &builtin_temporal_timezone_proto_id},
-    TIMEZONE_PROTO_OFFSETNANOSECONDSFOR {"getOffsetNanosecondsFor", 1, false, &builtin_temporal_timezone_proto_getOffsetNanosecondsFor},
-    TIMEZONE_PROTO_GETPOSSIBLEINSTANTSFOR {"getPossibleInstantsFor", 1, false, &builtin_temporal_timezone_proto_getPossibleInstantsFor},
-    TIMEZONE_PROTO_GETNEXTTRANSITION {"getNextTransition", 1, false, &builtin_temporal_timezone_proto_getNextTransition},
-    TIMEZONE_PROTO_GETPREVIOUSTRANSITION {"getPreviousTransition", 1, false, &builtin_temporal_timezone_proto_getPreviousTransition},
     ZONEDDATETIME_CTOR {"ZonedDateTime", 2, true, &builtin_temporal_zoneddatetime_ctor},
     ZONEDDATETIME_FROM {"from", 1, false, &builtin_temporal_zoneddatetime_from},
     ZONEDDATETIME_COMPARE {"compare", 2, false, &builtin_temporal_zoneddatetime_compare},

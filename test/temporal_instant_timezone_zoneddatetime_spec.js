@@ -1,4 +1,4 @@
-// Temporal.Instant + Temporal.TimeZone + Temporal.ZonedDateTime spec-locked
+// Temporal.Instant + time zones + Temporal.ZonedDateTime spec-locked
 // tests. These exercise the constructors, from(), toString(), epoch getters,
 // add/subtract/equals, time zone lookup, and zone/calendar id access. They are
 // not exhaustive (test262 covers ~1600 tests); they hit the common shapes so a
@@ -23,10 +23,11 @@ function assertFalse(cond, name) { assertEq(!!cond, false, name); }
 
 assertEq(typeof Temporal.Instant, "function", "Instant is a function");
 
+// epochSeconds/epochMicroseconds and fromEpochSeconds/fromEpochMicroseconds
+// were removed from the proposal; milliseconds and nanoseconds are the two the
+// spec keeps.
 var epoch = new Temporal.Instant(0n);
-assertEq(epoch.epochSeconds, 0, "epoch.epochSeconds");
 assertEq(epoch.epochMilliseconds, 0, "epoch.epochMilliseconds");
-assertEq(epoch.epochMicroseconds, 0, "epoch.epochMicroseconds");
 assertEq(epoch.epochNanoseconds, 0n, "epoch.epochNanoseconds");
 assertEq(epoch.toString(), "1970-01-01T00:00:00Z", "epoch.toString"); // auto precision, no fraction
 
@@ -42,9 +43,7 @@ assertEq(frac500.toString(), "1970-01-01T00:16:40.5Z", "frac auto (500ms trim)")
 assertEq(frac500.toString({ smallestUnit: "nanosecond" }), "1970-01-01T00:16:40.500000000Z", "frac ns unit");
 
 var one = new Temporal.Instant(1000000000n);       // epoch + 1 s
-assertEq(one.epochSeconds, 1, "one.epochSeconds");
 assertEq(one.epochMilliseconds, 1000, "one.epochMilliseconds");
-assertEq(one.epochMicroseconds, 1000000, "one.epochMicroseconds");
 assertEq(one.epochNanoseconds, 1000000000n, "one.epochNanoseconds");
 
 // Negative instants (regression: the ctor released a borrowed BigInt, so a
@@ -52,10 +51,7 @@ assertEq(one.epochNanoseconds, 1000000000n, "one.epochNanoseconds");
 var negBig = new Temporal.Instant(-1500000000n);   // -1.5 s
 assertEq(negBig.epochNanoseconds, -1500000000n, "negBig.epochNanoseconds");
 assertEq(negBig.toString(), "1969-12-31T23:59:58.5Z", "negative instant toString (floor)");
-assertEq(negBig.epochSeconds, -2, "negative instant epochSeconds (floor)");
-assertEq(Temporal.Instant.fromEpochSeconds(1).equals(one), true, "fromEpochSeconds(1).equals(one)");
 assertEq(Temporal.Instant.fromEpochMilliseconds(1000).equals(one), true, "fromEpochMilliseconds(1000)");
-assertEq(Temporal.Instant.fromEpochMicroseconds(1000000).equals(one), true, "fromEpochMicroseconds(1000000)");
 assertEq(Temporal.Instant.fromEpochNanoseconds(1000000000n).equals(one), true, "fromEpochNanoseconds(1e9)");
 
 // Negative instants.
@@ -109,62 +105,56 @@ try { var _v = one + 1; } catch (e) { threw = true; }
 assertEq(threw, true, "Instant valueOf throws");
 
 // ============================================================================
-// Temporal.TimeZone
+// Time zones
 // ============================================================================
+//
+// Temporal.TimeZone was removed from the proposal: a zone is an IANA name
+// string, and the offset/transition queries it used to carry are observed
+// through ZonedDateTime.
 
-assertEq(typeof Temporal.TimeZone, "function", "TimeZone is a function");
+// Winter (epoch = Jan 1970) -> EST, -5h; summer 2024 -> EDT, -4h.
+function zonedAt(ns, zone) { return new Temporal.Instant(ns).toZonedDateTimeISO(zone); }
 
-var nyc = new Temporal.TimeZone("America/New_York");
-assertEq(nyc.id, "America/New_York", "nyc.id");
-
-// Winter (epoch = Jan 1970) -> EST, -5h.
-assertEq(nyc.getOffsetNanosecondsFor(epoch), -18000000000000, "nyc winter offset (EST)");
-// Summer (2024-07-14) -> EDT, -4h.
-var summer = new Temporal.Instant(1721000000000000000n);
-assertEq(nyc.getOffsetNanosecondsFor(summer), -14400000000000, "nyc summer offset (EDT)");
-
-var berlin = new Temporal.TimeZone("Europe/Berlin");
-assertEq(berlin.id, "Europe/Berlin", "berlin.id");
-// Summer 2024 -> CEST, +2h.
-assertEq(berlin.getOffsetNanosecondsFor(summer), 7200000000000, "berlin summer offset (CEST)");
-
-var utc = new Temporal.TimeZone("UTC");
-assertEq(utc.getOffsetNanosecondsFor(epoch), 0, "utc offset");
-
-var tokyo = new Temporal.TimeZone("Asia/Tokyo");
-assertEq(tokyo.getOffsetNanosecondsFor(epoch), 32400000000000, "tokyo offset (JST +9h)");
+assertEq(zonedAt(0n, "America/New_York").offsetNanoseconds, -18000000000000, "nyc winter offset (EST)");
+var summerNs = 1721000000000000000n;
+assertEq(zonedAt(summerNs, "America/New_York").offsetNanoseconds, -14400000000000, "nyc summer offset (EDT)");
+assertEq(zonedAt(summerNs, "Europe/Berlin").offsetNanoseconds, 7200000000000, "berlin summer offset (CEST)");
+assertEq(zonedAt(0n, "UTC").offsetNanoseconds, 0, "utc offset");
+assertEq(zonedAt(0n, "Asia/Tokyo").offsetNanoseconds, 32400000000000, "tokyo offset (JST +9h)");
 
 // Unknown zone throws RangeError.
 threw = false;
-try { var _bad = new Temporal.TimeZone("Not/AZone"); } catch (e) { threw = true; }
+try { zonedAt(0n, "Not/AZone"); } catch (e) { threw = true; }
 assertEq(threw, true, "unknown zone throws");
 
-// getPossibleInstantsFor resolves a wall-clock PlainDateTime to instants.
-var jan15 = new Temporal.PlainDateTime(2024, 1, 15, 12, 0, 0);
-var winterInst = nyc.getPossibleInstantsFor(jan15);
-assertEq(winterInst.length, 1, "winter unique instant count");
-assertEq(winterInst[0].toString(), "2024-01-15T17:00:00Z", "winter instant (EST)");
-var jul15 = new Temporal.PlainDateTime(2024, 7, 15, 12, 0, 0);
-var summerInst = nyc.getPossibleInstantsFor(jul15);
-assertEq(summerInst.length, 1, "summer unique instant count");
-assertEq(summerInst[0].toString(), "2024-07-15T16:00:00Z", "summer instant (EDT)");
-// Spring-forward gap 2024-03-10 02:30 does not exist in NY.
-var gap = new Temporal.PlainDateTime(2024, 3, 10, 2, 30, 0);
-assertEq(nyc.getPossibleInstantsFor(gap).length, 0, "spring-forward gap has no instants");
-// Fall-back overlap 2024-11-03 01:30 happens twice.
-var ov = new Temporal.PlainDateTime(2024, 11, 3, 1, 30, 0);
-var ovInsts = nyc.getPossibleInstantsFor(ov);
-assertEq(ovInsts.length, 2, "fall-back overlap has two instants");
-assertEq(ovInsts[0].toString(), "2024-11-03T05:30:00Z", "overlap EDT instant");
-assertEq(ovInsts[1].toString(), "2024-11-03T06:30:00Z", "overlap EST instant");
+// Resolving a wall clock to an instant: a unique time in each offset.
+assertEq(
+  Temporal.PlainDateTime.from("2024-01-15T12:00").toZonedDateTime("America/New_York").toInstant().toString(),
+  "2024-01-15T17:00:00Z", "winter instant (EST)");
+assertEq(
+  Temporal.PlainDateTime.from("2024-07-15T12:00").toZonedDateTime("America/New_York").toInstant().toString(),
+  "2024-07-15T16:00:00Z", "summer instant (EDT)");
+// The spring-forward gap (2024-03-10 02:30 does not exist in NY) resolves
+// forward; the fall-back overlap (2024-11-03 01:30 happens twice) takes the
+// earlier of the two by default.
+assertEq(
+  Temporal.PlainDateTime.from("2024-03-10T02:30").toZonedDateTime("America/New_York").toInstant().toString(),
+  "2024-03-10T07:30:00Z", "spring-forward gap shifts forward");
+assertEq(
+  Temporal.PlainDateTime.from("2024-11-03T01:30").toZonedDateTime("America/New_York").toInstant().toString(),
+  "2024-11-03T05:30:00Z", "fall-back overlap takes the earlier instant");
 
-// getNextTransition / getPreviousTransition skip abbreviation-only changes.
-var epoch = new Temporal.Instant(0n);
-assertEq(nyc.getNextTransition(epoch).toString(), "1970-04-26T07:00:00Z", "next transition after epoch");
-var in2024 = new Temporal.Instant(1721000000000000000n);
-assertEq(nyc.getPreviousTransition(in2024).toString(), "2024-03-10T07:00:00Z", "prev transition before 2024-07");
-var year2100 = new Temporal.Instant(4102444800000000000n);
-assertEq(nyc.getNextTransition(year2100), null, "no transition after 2100");
+// getTimeZoneTransition skips abbreviation-only changes: only a real offset
+// change counts.
+assertEq(zonedAt(0n, "America/New_York").getTimeZoneTransition("next").toInstant().toString(),
+         "1970-04-26T07:00:00Z", "next transition after epoch");
+assertEq(zonedAt(summerNs, "America/New_York").getTimeZoneTransition("previous").toInstant().toString(),
+         "2024-03-10T07:00:00Z", "prev transition before 2024-07");
+assertEq(zonedAt(4102444800000000000n, "America/New_York").getTimeZoneTransition("next"), null,
+         "no transition after 2100");
+// A zone that never transitions has neither neighbour.
+assertEq(zonedAt(0n, "UTC").getTimeZoneTransition("next"), null, "UTC has no next transition");
+assertEq(zonedAt(0n, "UTC").getTimeZoneTransition("previous"), null, "UTC has no previous transition");
 
 // ============================================================================
 // Temporal.ZonedDateTime
@@ -172,16 +162,14 @@ assertEq(nyc.getNextTransition(year2100), null, "no transition after 2100");
 
 assertEq(typeof Temporal.ZonedDateTime, "function", "ZonedDateTime is a function");
 
-var zsummer = new Temporal.ZonedDateTime(1721000000000000000n, nyc);
+var zsummer = new Temporal.ZonedDateTime(1721000000000000000n, "America/New_York");
 assertEq(zsummer.timeZoneId, "America/New_York", "zsummer.timeZoneId");
 assertEq(zsummer.calendarId, "iso8601", "zsummer.calendarId");
-assertEq(zsummer.epochSeconds, 1721000000, "zsummer.epochSeconds");
+assertEq(zsummer.epochMilliseconds, 1721000000000, "zsummer.epochMilliseconds");
 assertEq(zsummer.epochNanoseconds, 1721000000000000000n, "zsummer.epochNanoseconds");
 assertEq(zsummer.toString(), "2024-07-14T19:33:20-04:00[America/New_York]", "zsummer.toString");
 
-function ure_zoned(name) { return new Temporal.TimeZone(name); }
-
-var zutc = new Temporal.ZonedDateTime(1000000000n, ure_zoned("UTC"));
+var zutc = new Temporal.ZonedDateTime(1000000000n, "UTC");
 assertEq(zutc.toString(), "1970-01-01T00:00:01+00:00[UTC]", "zutc.toString");
 
 assertTrue(zsummer.equals(zsummer), "zsummer equals self");
@@ -191,23 +179,22 @@ assertFalse(zsummer.equals(zutc), "zsummer != zutc");
 assertEq(zsummer.toJSON(), "2024-07-14T19:33:20-04:00[America/New_York]", "zsummer.toJSON");
 
 // withTimeZone keeps the instant, changes the zone.
-var zutc2 = zsummer.withTimeZone(utc);
+var zutc2 = zsummer.withTimeZone("UTC");
 assertEq(zutc2.timeZoneId, "UTC", "withTimeZone id");
-assertEq(zutc2.epochSeconds, zsummer.epochSeconds, "withTimeZone preserves epoch");
+assertEq(zutc2.epochNanoseconds, zsummer.epochNanoseconds, "withTimeZone preserves epoch");
 
 // withCalendar (iso8601) keeps the instant and zone.
-var isoCal = new Temporal.Calendar("iso8601");
-var zcal = zsummer.withCalendar(isoCal);
+var zcal = zsummer.withCalendar("iso8601");
 assertEq(zcal.calendarId, "iso8601", "withCalendar id");
-assertEq(zcal.epochSeconds, zsummer.epochSeconds, "withCalendar preserves epoch");
+assertEq(zcal.epochNanoseconds, zsummer.epochNanoseconds, "withCalendar preserves epoch");
 
 // add / subtract take a Duration (time delta on the instant).
 var zdur = new Temporal.Duration(0, 0, 0, 0, 0, 0, 1, 0, 0, 0);
-assertEq(zsummer.add(zdur).epochSeconds, zsummer.epochSeconds + 1, "zdt add 1s");
-assertEq(zsummer.subtract(zdur).epochSeconds, zsummer.epochSeconds - 1, "zdt subtract 1s");
+assertEq(zsummer.add(zdur).epochNanoseconds, zsummer.epochNanoseconds + 1000000000n, "zdt add 1s");
+assertEq(zsummer.subtract(zdur).epochNanoseconds, zsummer.epochNanoseconds - 1000000000n, "zdt subtract 1s");
 
 // until / since give the elapsed difference as a Duration.
-var zlater = new Temporal.ZonedDateTime(1721000001000000000n, nyc);
+var zlater = new Temporal.ZonedDateTime(1721000001000000000n, "America/New_York");
 var zu = zsummer.until(zlater);
 assertEq(zu.seconds, 1, "zdt until seconds");
 var zs = zsummer.since(zlater);

@@ -18,7 +18,6 @@ import std::time;
 
 
 
-
 // The prototype-and-constructor pair every Temporal type needs.
 //
 // Each setUpTemporal* function opened with the same 34 lines: allocate the
@@ -122,61 +121,19 @@ fn bool setUpTemporalDuration(Heap* heap) {
     };
 }
 
+// The ISO 8601 calendar singleton.
+//
+// Temporal.Calendar was removed from the proposal -- calendars are string ids
+// -- so there is no constructor and no prototype. What remains is one shared
+// instance, which every date-like object points at through its calendar slot
+// and which is recognised by its ObjClass, never by a prototype. It is a
+// purely internal object: nothing reaches it from script.
 fn bool setUpTemporalCalendar(Heap* heap) {
-    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = proto_raw) return false;
-    HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
-
-    HString* tag_key = ensure_tostringtag_symbol(heap);
-    if (tag_key != null) {
-        TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Temporal.Calendar"));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-
-    // Calendar is a constructable class; the shared iso8601 singleton is a
-    // plain instance used as the default calendar slot for every date.
-    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = ctor_raw) return false;
-    HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
-    ctor.flags.constructable = true;
-    (*ctor.extra_ptr()).func.builtin_fn_index = (int)temporal_index(TemporalBuiltin.CALENDAR_CTOR);
-
     HObject*? cal_raw = heap.alloc_object(hobject::ObjClass.TEMPORAL_CALENDAR);
     if (catch err = cal_raw) return false;
     HObject* cal_obj = cal_raw;
-    cal_obj.prototype = proto;
-
-    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
-    TVal constructor_tv;
-    constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
-
-    TVal proto_tv;
-    proto_tv.set_object(proto);
-    PropFlags proto_pflags;
-    proto_pflags.writable = false;
-    proto_pflags.enumerable = false;
-    proto_pflags.configurable = false;
-    proto_pflags.is_accessor = false;
-    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
-
-    TVal len_tv;
-    len_tv.set_fastint(1);
-    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-    ctor.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
-
-    set_func_ctor_name(ctor, heap, "Calendar");
-
-    if (!register_proto_getter_accessor(proto, heap, "id", temporal_index(TemporalBuiltin.CALENDAR_PROTO_ID))) return false;
-    if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.CALENDAR_PROTO_TOSTRING))) return false;
-    if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.CALENDAR_FROM))) return false;
-
+    cal_obj.prototype = null;
     heap.temporal_iso_calendar = cal_obj;
-    heap.temporal_calendar_proto = proto;
     return true;
 }
 
@@ -385,7 +342,6 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
 
 fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     if (!setUpTemporalInstant(heap)) return false;
-    if (!setUpTemporalTimeZone(heap)) return false;
     if (!setUpTemporalZonedDateTime(heap)) return false;
     HObject*? ns_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ns_raw) return false;
@@ -429,16 +385,16 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     TVal undef;
     undef.set_undefined();
 
+    // Temporal.Calendar and Temporal.TimeZone are deliberately NOT exposed:
+    // the proposal removed both in favour of calendar/timeZone string IDs
+    // (staging/Temporal/removed-methods). Their prototypes and builtins remain
+    // registered because the engine still uses them internally -- ZonedDateTime
+    // reaches the timezone prototype's transition helpers directly.
+
     HString* pd_prop_key = builtin_intern_string(heap, "PlainDate");
     TVal ctor_tv = heap.temporal_plain_date_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (ctor_tv.is_object() && ctor_tv.get_heapptr() != null) {
         ns.put_prop(pd_prop_key, ctor_tv, hobject::PROP_FLAGS_WC, heap);
-    }
-
-    HString* cal_key = builtin_intern_string(heap, "Calendar");
-    TVal cal_ctor = heap.temporal_calendar_proto.get_prop((void*)ctor_key, heap) ?? undef;
-    if (cal_ctor.is_object() && cal_ctor.get_heapptr() != null) {
-        ns.put_prop(cal_key, cal_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
     HString* dur_key = builtin_intern_string(heap, "Duration");
@@ -477,12 +433,6 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
         ns.put_prop(inst_key, inst_ctor, hobject::PROP_FLAGS_WC, heap);
     }
 
-    HString* tz_key = builtin_intern_string(heap, "TimeZone");
-    TVal tz_ctor = heap.temporal_timezone_proto.get_prop((void*)ctor_key, heap) ?? undef;
-    if (tz_ctor.is_object() && tz_ctor.get_heapptr() != null) {
-        ns.put_prop(tz_key, tz_ctor, hobject::PROP_FLAGS_WC, heap);
-    }
-
     HString* zdt_key = builtin_intern_string(heap, "ZonedDateTime");
     TVal zdt_ctor = heap.temporal_zoneddatetime_proto.get_prop((void*)ctor_key, heap) ?? undef;
     if (zdt_ctor.is_object() && zdt_ctor.get_heapptr() != null) {
@@ -506,9 +456,7 @@ fn bool setUpTemporalInstant(Heap* heap) {
     return @constructor_pair(heap, "Temporal.Instant", TemporalBuiltin.INSTANT_CTOR,
                              1, "Instant", &heap.temporal_instant_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "epochSeconds", temporal_index(TemporalBuiltin.INSTANT_PROTO_EPOCHSECONDS))) return false;
         if (!register_proto_getter_accessor(proto, heap, "epochMilliseconds", temporal_index(TemporalBuiltin.INSTANT_PROTO_EPOCHMILLISECONDS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "epochMicroseconds", temporal_index(TemporalBuiltin.INSTANT_PROTO_EPOCHMICROSECONDS))) return false;
         if (!register_proto_getter_accessor(proto, heap, "epochNanoseconds", temporal_index(TemporalBuiltin.INSTANT_PROTO_EPOCHNANOSECONDS))) return false;
         if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.INSTANT_PROTO_TOSTRING))) return false;
         if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.INSTANT_PROTO_TOJSON))) return false;
@@ -522,24 +470,10 @@ fn bool setUpTemporalInstant(Heap* heap) {
         if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.INSTANT_PROTO_UNTIL))) return false;
         if (!register_string_proto_method(proto, heap, "toZonedDateTimeISO", temporal_index(TemporalBuiltin.INSTANT_PROTO_TOZONEDDATETIMEISO))) return false;
         if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.INSTANT_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "fromEpochSeconds", temporal_index(TemporalBuiltin.INSTANT_FROM_EPOCH_SECONDS))) return false;
         if (!register_string_proto_method(ctor, heap, "fromEpochMilliseconds", temporal_index(TemporalBuiltin.INSTANT_FROM_EPOCH_MILLISECONDS))) return false;
-        if (!register_string_proto_method(ctor, heap, "fromEpochMicroseconds", temporal_index(TemporalBuiltin.INSTANT_FROM_EPOCH_MICROSECONDS))) return false;
         if (!register_string_proto_method(ctor, heap, "fromEpochNanoseconds", temporal_index(TemporalBuiltin.INSTANT_FROM_EPOCH_NANOSECONDS))) return false;
         if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.INSTANT_COMPARE))) return false;
     };
 }
 
-fn bool setUpTemporalTimeZone(Heap* heap) {
-    return @constructor_pair(heap, "Temporal.TimeZone", TemporalBuiltin.TIMEZONE_CTOR,
-                             1, "TimeZone", &heap.temporal_timezone_proto;
-                             HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "id", temporal_index(TemporalBuiltin.TIMEZONE_PROTO_ID))) return false;
-        if (!register_string_proto_method(proto, heap, "getOffsetNanosecondsFor", temporal_index(TemporalBuiltin.TIMEZONE_PROTO_OFFSETNANOSECONDSFOR))) return false;
-        if (!register_string_proto_method(proto, heap, "getPossibleInstantsFor", temporal_index(TemporalBuiltin.TIMEZONE_PROTO_GETPOSSIBLEINSTANTSFOR))) return false;
-        if (!register_string_proto_method(proto, heap, "getNextTransition", temporal_index(TemporalBuiltin.TIMEZONE_PROTO_GETNEXTTRANSITION))) return false;
-        if (!register_string_proto_method(proto, heap, "getPreviousTransition", temporal_index(TemporalBuiltin.TIMEZONE_PROTO_GETPREVIOUSTRANSITION))) return false;
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.TIMEZONE_FROM))) return false;
-    };
-}
 

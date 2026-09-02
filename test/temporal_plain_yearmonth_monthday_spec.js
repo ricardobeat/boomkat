@@ -255,8 +255,11 @@ assertTrue(typeof Temporal.PlainMonthDay === "function", "Temporal.PlainMonthDay
 assertEq(typeof Temporal.Instant, "function", "Temporal.Instant is a function");
 assertEq(typeof Temporal.Instant.prototype.toJSON, "function", "Temporal.Instant.prototype.toJSON");
 assertEq(typeof Temporal.Instant.prototype.add, "function", "Temporal.Instant.prototype.add");
-assertEq(typeof Temporal.TimeZone, "function", "Temporal.TimeZone is a function");
-assertEq(typeof Temporal.TimeZone.prototype.getOffsetNanosecondsFor, "function", "getOffsetNanosecondsFor");
+// Temporal.TimeZone was removed from the proposal: time zones are string ids,
+// and the offset/transition queries it carried now live on ZonedDateTime.
+assertEq(typeof Temporal.TimeZone, "undefined", "Temporal.TimeZone is removed");
+assertEq(typeof Temporal.ZonedDateTime.prototype.getTimeZoneTransition, "function", "getTimeZoneTransition");
+assertEq(typeof Temporal.Now.timeZoneId, "function", "Temporal.Now.timeZoneId");
 assertEq(typeof Temporal.ZonedDateTime, "function", "Temporal.ZonedDateTime is a function");
 assertEq(typeof Temporal.Now, "object", "Temporal.Now is implemented (Phase 3)");
 

@@ -2146,28 +2146,26 @@ fn void builtin_temporal_zoneddatetime_proto_getTimeZoneTransition(BuiltinContex
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid direction");
         return;
     }
-    // Delegate to TimeZone method.
-    TVal saved_this = ctx.this_val;
-    TVal inst_tv;
-    inst_tv.set_object(inst);
-    ctx.this_val.set_object(tz);
-    ctx.regs[ctx.base_reg + 0] = inst_tv;
-    ctx.argc = 1;
-    if (dir == "next") {
-        builtin_temporal_timezone_proto_getNextTransition(ctx);
-    } else {
-        builtin_temporal_timezone_proto_getPreviousTransition(ctx);
+    // Search the zone's transition table directly. The epoch second of this
+    // ZonedDateTime is the start; a non-zero sub-second part places a
+    // transition landing exactly on that second behind the start.
+    double start_d;
+    if (!bigint_to_epoch_number(obj.extra.temporal.big_ns, &start_d, ctx)) return;
+    long start_sec = (long)math::floor(start_d / 1e9);
+    bool sub_second = start_d - (double)start_sec * 1e9 != 0.0;
+
+    long at_sec;
+    if (!tz_find_transition(timezone_name(tz), start_sec, sub_second, dir == "next", &at_sec)) {
+        ctx.result.set_null();
+        return;
     }
-    ctx.this_val = saved_this;
-    if (ctx.result.is_object() && ctx.result.get_heapptr() != null) {
-        HObject* res_inst = (HObject*)ctx.result.get_heapptr();
-        if (res_inst.get_class() == hobject::ObjClass.TEMPORAL_INSTANT) {
-            hbigint::HBigInt* trans_ns = res_inst.extra.temporal.big_ns;
-            ((types::HeapHeader*)trans_ns).incref();
-            ((types::HeapHeader*)tz).incref();
-            zdt_from_parts(ctx, trans_ns, tz, (HString*)obj.extra.temporal.calendar);
-        }
-    }
+
+    // The result is a ZonedDateTime at the transition, in the same zone and
+    // calendar as the receiver.
+    hbigint::HBigInt*? trans_ns = hbigint::hbigint_from_double(ctx.heap, (double)at_sec * 1e9);
+    if (catch err = trans_ns) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
+    ((types::HeapHeader*)tz).incref();
+    zdt_from_parts(ctx, trans_ns, tz, (HString*)obj.extra.temporal.calendar);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_valueOf(BuiltinContext* ctx) {
@@ -2430,9 +2428,7 @@ fn bool setUpTemporalZonedDateTime(Heap* heap) {
     return @constructor_pair(heap, "Temporal.ZonedDateTime", TemporalBuiltin.ZONEDDATETIME_CTOR,
                              2, "ZonedDateTime", &heap.temporal_zoneddatetime_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "epochSeconds", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_EPOCHSECONDS))) return false;
         if (!register_proto_getter_accessor(proto, heap, "epochMilliseconds", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_EPOCHMILLISECONDS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "epochMicroseconds", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_EPOCHMICROSECONDS))) return false;
         if (!register_proto_getter_accessor(proto, heap, "epochNanoseconds", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_EPOCHNANOSECONDS))) return false;
         if (!register_proto_getter_accessor(proto, heap, "timeZoneId", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TIMEZONEID))) return false;
         if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_CALENDARID))) return false;

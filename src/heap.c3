@@ -770,7 +770,6 @@ struct Heap {
     // Shared ISO Calendar, Calendar prototype, and PlainDate prototype,
     // cached to avoid global environment lookups in constructor calls.
     HObject* temporal_iso_calendar;
-    HObject* temporal_calendar_proto;
     HObject* temporal_duration_proto;
     HObject* temporal_plain_date_proto;
     HObject* temporal_plain_time_proto;
@@ -778,7 +777,6 @@ struct Heap {
     HObject* temporal_plain_yearmonth_proto;
     HObject* temporal_plain_monthday_proto;
     HObject* temporal_instant_proto;
-    HObject* temporal_timezone_proto;
     HObject* temporal_zoneddatetime_proto;
 
     // Generator resume state (set by .next()/.throw()/.return() builtins,
@@ -3291,7 +3289,6 @@ fn void Heap.mark_roots(&self) {
     if (self.sharedarraybuffer_proto != null) { self.mark_hobject(self.sharedarraybuffer_proto); }
     if (self.dataview_proto != null) { self.mark_hobject(self.dataview_proto); }
     if (self.temporal_iso_calendar != null) { self.mark_hobject(self.temporal_iso_calendar); }
-    if (self.temporal_calendar_proto != null) { self.mark_hobject(self.temporal_calendar_proto); }
     if (self.temporal_duration_proto != null) { self.mark_hobject(self.temporal_duration_proto); }
     if (self.temporal_plain_date_proto != null) { self.mark_hobject(self.temporal_plain_date_proto); }
     if (self.temporal_plain_time_proto != null) { self.mark_hobject(self.temporal_plain_time_proto); }
@@ -3299,7 +3296,6 @@ fn void Heap.mark_roots(&self) {
     if (self.temporal_plain_yearmonth_proto != null) { self.mark_hobject(self.temporal_plain_yearmonth_proto); }
     if (self.temporal_plain_monthday_proto != null) { self.mark_hobject(self.temporal_plain_monthday_proto); }
     if (self.temporal_instant_proto != null) { self.mark_hobject(self.temporal_instant_proto); }
-    if (self.temporal_timezone_proto != null) { self.mark_hobject(self.temporal_timezone_proto); }
     if (self.temporal_zoneddatetime_proto != null) { self.mark_hobject(self.temporal_zoneddatetime_proto); }
 
     // Every live slot on the VM value stack, from base to top, can reference a

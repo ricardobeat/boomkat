@@ -1,4 +1,4 @@
-// Spec coverage for Temporal.PlainDate and Temporal.Calendar.
+// Spec coverage for Temporal.PlainDate, including calendar identity.
 
 function assertEq(actual, expected, msg) {
     if (actual !== expected) {
@@ -32,7 +32,7 @@ assertEq(d.dayOfWeek, 1, "dow Mon=1");
 assertEq(d.dayOfYear, 197, "doy");
 assertEq(d.monthCode, "M07", "mc");
 assertEq(d.inLeapYear, true, "leap");
-assertEq(d.calendar.id, "iso8601", "cal");
+assertEq(d.calendarId, "iso8601", "cal");
 assertEq(typeof d.era, "undefined", "era undef ISO");
 assertEq(d.toString(), "2024-07-15", "toString");
 assertEq(d.toJSON(), "2024-07-15", "toJSON");
@@ -146,13 +146,21 @@ assertEq(s1.days, -10, "since neg");
 const s2 = new Temporal.PlainDate(2024, 7, 25).since(new Temporal.PlainDate(2024, 7, 15));
 assertEq(s2.days, 10, "since pos");
 
-// Calendar.surface
-assertEq(Temporal.Calendar.from("iso8601").id, "iso8601", "cal from");
-assertEq(Temporal.Calendar.from("gregory").id, "iso8601", "gregory alias");
-assertEq(Temporal.Calendar.from("gregorian").id, "iso8601", "gregorian alias");
-assertThrows(() => Temporal.Calendar.from("hebrew"), RangeError, "cal unknown");
+// Calendar identity. Temporal.Calendar was removed from the proposal in favour
+// of calendar string IDs, so the same normalization is observed through
+// calendarId on the types that carry a calendar.
+const calId = (c) =>
+  Temporal.PlainDate.from({ year: 2024, month: 1, day: 1, calendar: c }).calendarId;
+assertEq(calId("iso8601"), "iso8601", "cal from");
+assertEq(calId("gregory"), "iso8601", "gregory alias");
+assertEq(calId("gregorian"), "iso8601", "gregorian alias");
+assertThrows(() => calId("hebrew"), RangeError, "cal unknown");
 
-const cal = Temporal.Calendar.from("iso8601");
-assertEq(typeof cal.toString(), "string", "cal toString returns string");
+assertEq(new Temporal.PlainDate(2024, 7, 15).calendarId, "iso8601", "default calendarId");
+assertEq(
+  new Temporal.PlainDate(2024, 7, 15).withCalendar("iso8601").calendarId,
+  "iso8601",
+  "withCalendar round-trip"
+);
 
 print("OK");

@@ -18,62 +18,6 @@ import std::time;
 
 
 // ============================================================================
-// Temporal.Calendar
-// ============================================================================
-
-fn void builtin_temporal_calendar_ctor(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Calendar requires an identifier argument");
-        return;
-    }
-    HObject* cal;
-    if (!calendar_from_arg(ctx, arg_at(ctx, 0), &cal)) return;
-    if (!ctx.is_constructor) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Calendar must be called with new");
-        return;
-    }
-    HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.TEMPORAL_CALENDAR);
-    if (catch err = raw) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* obj = raw;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_calendar_proto);
-    ctx.result.set_object(obj);
-}
-
-fn void builtin_temporal_calendar_from(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.Calendar.from requires an argument");
-        return;
-    }
-    TVal* tv = arg_at(ctx, 0);
-    if (tv.is_object() && tv.get_heapptr() != null) {
-        HObject* o = (HObject*)tv.get_heapptr();
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_CALENDAR) {
-            ctx.result.set_object(o);
-            return;
-        }
-        builtin_throw(ctx, ctx.heap.type_err_proto, "not a Temporal.Calendar object");
-        return;
-    }
-    if (tv.is_string()) {
-        HObject* cal;
-        if (!calendar_from_arg(ctx, tv, &cal)) return;
-        ctx.result.set_object(cal);
-        return;
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "invalid calendar argument");
-}
-
-fn void builtin_temporal_calendar_proto_id(BuiltinContext* ctx) {
-    ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
-}
-
-fn void builtin_temporal_calendar_proto_toString(BuiltinContext* ctx) {
-    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
-    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_CALENDAR, "this is not a Temporal.Calendar")) return;
-    ctx.result.set_string(builtin_intern_string(ctx.heap, "Temporal.Calendar"));
-}
-
-// ============================================================================
 // Temporal.PlainDate constructor + statics
 // ============================================================================
 

@@ -32,7 +32,7 @@ function eq(actual, expected, msg) {
 (function () {
   var i = new Temporal.Instant(1000000000n);
   eq(i.epochNanoseconds.toString(), "1000000000", "Instant.epochNanoseconds.toString");
-  eq(i.epochSeconds.toString(), "1", "Instant.epochSeconds.toString");
+  eq(i.epochMilliseconds.toString(), "1000", "Instant.epochMilliseconds.toString");
 })();
 
 // --- bigint returned from a plain (non-accessor) call still chains ---

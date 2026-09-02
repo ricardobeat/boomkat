@@ -168,9 +168,10 @@ assertFalse(dt.equals(dt2), "dt equals different");
 assertEq(Temporal.PlainDateTime.compare(dt, dt), 0, "dt compare equal");
 assertTrue(Temporal.PlainDateTime.compare(dt, dt2) < 0, "dt compare less");
 
-// calendar.
-assertTrue(dt.calendar instanceof Temporal.Calendar, "dt.calendar");
+// calendar. Temporal.Calendar was removed from the proposal, so the calendar is
+// observed as a string id rather than as an object.
 assertEq(dt.calendarId, "iso8601", "dt.calendarId");
+assertEq(dt.withCalendar("iso8601").calendarId, "iso8601", "dt withCalendar");
 
 // valueOf throws.
 threw = false;
