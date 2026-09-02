@@ -3093,11 +3093,31 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     HObject* pf = builtins::promoted_lightfunc_obj(vm.heap, *rb);
                     if (pf != null) { pf.delete_prop((void*)key, ds.vm.heap); }
                 }
+            } else if (rb.is_string()) {
+                // String exotic (§10.4.3): ToObject() yields a String object
+                // whose char indices in [0, length) and whose "length" are
+                // non-configurable own properties, so [[Delete]] returns false.
+                // Strict-only engine: that throws (§13.5.1.2 step 5.b). Any
+                // other key is absent from the fresh wrapper, so it deletes.
+                HString* base_str = (HString*)rb.get_heapptr();
+                HString* key = get_prop_key(vm, rc);
+                if (key != null && base_str != null) {
+                    bool non_configurable = key.is_arridx()
+                        ? key.array_index() < base_str.char_length()
+                        : key.equals("length");
+                    if (non_configurable) {
+                        ra.set_boolean(false);
+                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                }
             }
-            // For other primitives (number, string, boolean), the spec's
-            // ToObject() would box them, but the base here is already a primitive
-            // TVal, so property deletion on it returns true (the property
-            // simply doesn't exist on the boxed wrapper).
+            // For other primitives (number, boolean), the spec's ToObject()
+            // would box them, but the base here is already a primitive TVal,
+            // so property deletion on it returns true (the property simply
+            // doesn't exist on the boxed wrapper).
             return (TVal){};
         }
 
