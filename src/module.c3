@@ -2540,6 +2540,14 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     // `import.defer(x)` resolves and links the module but does not evaluate it:
     // the promise fulfills with the deferred namespace, and the body runs on
     // the first triggering access like the static form.
+    // Same rule as the static form: only a fully synchronous subgraph can be
+    // deferred, so `import.defer()` of a module with top-level await (or one
+    // reachable from it) evaluates it before fulfilling.
+    if (deferred) {
+        module_defer_scan_epoch++;
+        if (module_subgraph_is_async(mod)) deferred = false;
+    }
+
     if (!rejected && deferred) {
         HObject*? dns_opt = build_namespace_object(heap, mod, true);
         TVal dns_val;
@@ -3131,9 +3139,38 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
     // would recurse forever. After this point the object behaves as an
     // ordinary namespace, which is exactly what a re-entrant read should see.
     ns.flags.exotic_deferred_ns = false;
-    if (mod.status == ModuleStatus.EVALUATED || mod.status == ModuleStatus.ERRORED) {
-        return mod.status != ModuleStatus.ERRORED;
+
+    if (mod.status == ModuleStatus.EVALUATED) return true;
+
+    // A module that already failed rethrows the SAME error value on every
+    // later access, so a deferred namespace and an earlier eager import of
+    // the same module report one identical object (§16.2.1.5.3, and test262
+    // import-defer/errors/module-throws).
+    if (mod.status == ModuleStatus.ERRORED) {
+        if (mod.has_eval_error) {
+            heap.tval_copy_ref(&heap.error_value, &mod.eval_error);
+            heap.has_error = true;
+        } else {
+            TVal err = module_type_error(heap, "module evaluation failed");
+            heap.error_value = err;
+            heap.has_error = true;
+        }
+        return false;
     }
+
+    // Already running: the access came from the module's own body, or from a
+    // cycle peer's, and there is no way to complete the evaluation the read
+    // is asking for. §16.2.1.10 makes that a TypeError rather than exposing a
+    // half-initialized namespace.
+    if (mod.status == ModuleStatus.EVALUATING
+        || mod.status == ModuleStatus.EVALUATING_ASYNC) {
+        TVal err = module_type_error(heap,
+            "cannot access a deferred module namespace while the module is evaluating");
+        heap.error_value = err;
+        heap.has_error = true;
+        return false;
+    }
+
     return execute_module(heap, (Vm*)vm_ptr, mod);
 }
 
