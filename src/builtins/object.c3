@@ -525,6 +525,9 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         // Module Namespace Exotic: EnumerableOwnProperties (§7.3.23) calls
         // [[GetOwnProperty]] for each string key, which reads the live binding
         // and throws ReferenceError for a TDZ export (§10.4.6.5 step 4).
+        // A deferred namespace evaluates before any of the MOP operations
+        // the spec makes triggers (ES2025 import-defer).
+        if (!ns_force_deferred(ctx, obj)) return;
         if (obj.flags.exotic_module_ns) {
             for (uint ki = 0; ki < key_count; ki++) {
                 ProxyDesc nd;
@@ -1187,6 +1190,9 @@ fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
     // an own property (or an absent string key) succeeds; an existing own key
     // (any export or Symbol.toStringTag) is non-configurable and cannot be
     // deleted (false).
+    // A deferred namespace evaluates before any of the MOP operations
+    // the spec makes triggers (ES2025 import-defer).
+    if (!ns_force_deferred(ctx, obj, key)) return;
     if (obj.flags.exotic_module_ns) {
         ctx.result.set_boolean(obj.find_prop_idx((void*)key, ctx.heap) < 0);
         return;
@@ -2580,6 +2586,9 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
     // redefinition (every present field already matches the current descriptor)
     // succeeds; any other define throws TypeError. A TDZ export read throws
     // ReferenceError (propagated via proxy_ctx_ok).
+    // A deferred namespace evaluates before any of the MOP operations
+    // the spec makes triggers (ES2025 import-defer).
+    if (!ns_force_deferred(ctx, obj, key_hstr)) return;
     if (obj.flags.exotic_module_ns) {
         ProxyDesc md = module_ns_desc_from_fields(is_accessor, &desc_flags, &desc_vals, &desc_fields);
         bool err;
@@ -3686,6 +3695,9 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
     // [[DefineOwnProperty]] with {[[Writable]]: false} on any export returns
     // false (exports are permanently writable per §10.4.6.4), so freeze throws.
     // An empty namespace (only Symbol.toStringTag, already non-writable) freezes.
+    // A deferred namespace evaluates before any of the MOP operations
+    // the spec makes triggers (ES2025 import-defer).
+    if (!ns_force_deferred(ctx, obj)) return;
     if (obj.flags.exotic_module_ns) {
         for (uint i = 0; i < obj.prop_count; i++) {
             void* pk = obj.prop_key_at(i, ctx.heap);
@@ -4999,6 +5011,9 @@ fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
     // Module Namespace Exotic: HasOwnProperty calls [[GetOwnProperty]], which
     // materialises the export's value via [[Get]] and throws ReferenceError for
     // a TDZ binding (§10.4.6.5 step 4).
+    // A deferred namespace evaluates before any of the MOP operations
+    // the spec makes triggers (ES2025 import-defer).
+    if (!ns_force_deferred(ctx, obj, key)) return;
     if (obj.flags.exotic_module_ns) {
         ProxyDesc nd;
         if (!module_ns_own_desc(ctx.vm, ctx.heap, obj, key, &nd)) { proxy_ctx_ok(ctx); return; }
@@ -5217,6 +5232,9 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     }
     // Module Namespace Exotic: propertyIsEnumerable calls [[GetOwnProperty]],
     // which reads the live binding and throws ReferenceError for a TDZ export.
+    // A deferred namespace evaluates before any of the MOP operations
+    // the spec makes triggers (ES2025 import-defer).
+    if (!ns_force_deferred(ctx, obj, key)) return;
     if (obj.flags.exotic_module_ns) {
         ProxyDesc nd;
         if (!module_ns_own_desc(ctx.vm, ctx.heap, obj, key, &nd)) { proxy_ctx_ok(ctx); return; }

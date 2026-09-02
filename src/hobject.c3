@@ -272,6 +272,14 @@ bitstruct ObjFlags : uint {
     // paths use it (on the receiver and while walking its prototype chain) to
     // skip an O(prop_count) scan of named keys.
     bool has_indexed_named_prop : 29;
+    // Deferred Module Namespace Exotic Object (ES2025 import-defer). Wraps a
+    // module whose evaluation has not been forced yet: it carries the same
+    // export accessors as a plain namespace (exotic_module_ns is set too), but
+    // any string-keyed MOP operation must first evaluate the module graph.
+    // Symbol keys and the prototype/extensibility operations never trigger it,
+    // which is what makes `ns[Symbol()]` and `Object.isExtensible(ns)`
+    // observable without evaluating.
+    bool exotic_deferred_ns : 30;
 }
 
 // Sets the temproot flag on this object.

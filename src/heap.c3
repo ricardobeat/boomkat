@@ -3420,6 +3420,10 @@ fn void Heap.mark_roots(&self) {
             // user-visible state such as added properties and a changed
             // prototype, and lives as long as the module.
             if (mod.import_meta_obj != null) { self.mark_hobject(mod.import_meta_obj); }
+            // Namespace objects are rooted by their own incref, but a
+            // deferred one (ES2025 import-defer) can be the only reference to
+            // a module never otherwise reached, so mark it here too.
+            if (mod.deferred_namespace_obj != null) { self.mark_hobject(mod.deferred_namespace_obj); }
         }
     }
 

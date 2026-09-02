@@ -7,6 +7,7 @@ import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::env;
 import boomkat::builtins;
+import boomkat::esm;
 import std::io;
 import boomkat::re_bindings;
 import std::math;
@@ -143,6 +144,20 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     vm.heap.tval_copy_ref(ra, &pout);
                     track_heap_store(ds.act, ra, (uint)insn.a);
                     return (TVal){};
+                }
+
+                // Deferred namespace (ES2025 import-defer): a string key runs
+                // the module before the read, so the export accessor below
+                // resolves a live binding instead of a TDZ one. Symbol keys
+                // never trigger it, and the flag clears once forced, so this
+                // costs one predictable branch on the ordinary path.
+                if (hobj.flags.exotic_deferred_ns) {
+                    void* dkey = get_prop_key(vm, rc);
+                    if (!esm::deferred_trigger_exempt_key((HString*)dkey)) {
+                        if (!esm::force_deferred_namespace(vm.heap, vm, hobj)) {
+                            return vm_proxy_rethrow(vm, ds);
+                        }
+                    }
                 }
 
                 // Inline Cache fast path: check shape + key + prop_values pointer
@@ -629,6 +644,18 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return (TVal){};
                     }
 
+                    // Deferred namespace (ES2025 import-defer): run the module
+                    // before the read so the export accessor resolves a live
+                    // binding rather than a TDZ one. A constant key is always
+                    // a string, so this always triggers; the flag clears once
+                    // forced, leaving one predictable branch.
+                    if (hobj.flags.exotic_deferred_ns
+                        && !esm::deferred_trigger_exempt_key(key_hstr)) {
+                        if (!esm::force_deferred_namespace(vm.heap, vm, hobj)) {
+                            return vm_proxy_rethrow(vm, ds);
+                        }
+                    }
+
                     // Inline Cache fast path: key is always non-null, skip lookup_key check.
                     if (ds.ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
@@ -998,6 +1025,15 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 uint pc1 = (uint)(ds.curr_pc - 2 - ds.code_base);  // pc of GETPROPC2
 
                 // === Hop 1: hobj1[key1] ===
+                // Deferred namespace (ES2025 import-defer): force before the
+                // hop, so both the IC probe and the full lookup below see the
+                // evaluated bindings. Constant keys are always strings.
+                if (hobj1.flags.exotic_deferred_ns
+                    && !esm::deferred_trigger_exempt_key(key1_hstr)) {
+                    if (!esm::force_deferred_namespace(vm.heap, vm, hobj1)) {
+                        return vm_proxy_rethrow(vm, ds);
+                    }
+                }
                 TVal mid_val;
                 mid_val.set_undefined();
                 bool hop1_proxy = hobj1.flags.exotic_proxyobj;
@@ -1075,6 +1111,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if (mid_val.is_object()) {                    HObject* hobj2 = (HObject*)mid_val.get_heapptr();
                     uint pc2 = (uint)(ds.curr_pc - 1 - ds.code_base);  // pc of the data slot
 
+                    // Deferred namespace (ES2025 import-defer): force before
+                    // the hop so the read below sees evaluated bindings.
+                    if (hobj2.flags.exotic_deferred_ns
+                        && !esm::deferred_trigger_exempt_key(key2_hstr)) {
+                        if (!esm::force_deferred_namespace(vm.heap, vm, hobj2)) {
+                            return vm_proxy_rethrow(vm, ds);
+                        }
+                    }
                     // Proxy exotic on the second hop: route through [[Get]].
                     if (hobj2.flags.exotic_proxyobj) {
                         TVal pout2;
@@ -1547,6 +1591,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if (mid_val.is_object()) {
                     HObject* hobj2 = (HObject*)mid_val.get_heapptr();
                     uint pc2 = (uint)(ds.curr_pc - 1 - ds.code_base);  // pc of the data slot
+                    // Deferred namespace (ES2025 import-defer): force before
+                    // the hop so the read below sees evaluated bindings.
+                    if (hobj2.flags.exotic_deferred_ns
+                        && !esm::deferred_trigger_exempt_key(key2_hstr)) {
+                        if (!esm::force_deferred_namespace(vm.heap, vm, hobj2)) {
+                            return vm_proxy_rethrow(vm, ds);
+                        }
+                    }
 
                     // IC fast path for hop 2
                     if (ds.ic_base != null && key2_hstr != null) {
@@ -2059,7 +2111,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // Module Namespace Exotic [[Set]] (§10.4.6.11): always returns
-                // false, which PutValue turns into a TypeError (strict-only engine).
+                // false, which PutValue turns into a TypeError (strict-only
+                // engine). A deferred namespace is NOT forced by it: the write
+                // cannot succeed either way, so evaluating first would be a
+                // side effect with nothing to show for it (test262
+                // import-defer/evaluation-triggers/ignore-set-string-*).
                 if (hobj.flags.exotic_module_ns) {
                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
@@ -3053,6 +3109,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // existing own key (export or Symbol.toStringTag) is
                     // non-configurable → false, which throws; an absent key → true.
                     if (hobj.flags.exotic_module_ns) {
+                        if (hobj.flags.exotic_deferred_ns
+                            && !esm::deferred_trigger_exempt_key((HString*)key)) {
+                            if (!esm::force_deferred_namespace(vm.heap, vm, hobj)) {
+                                return vm_proxy_rethrow(vm, ds);
+                            }
+                        }
                         if (hobj.find_prop_idx(key, ds.vm.heap) >= 0) {
                             ra.set_boolean(false);
                             if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {

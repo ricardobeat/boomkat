@@ -19,6 +19,9 @@ struct CompImportEntry {
     uint   req_module_idx;
     bool   is_star;
     bool   is_default;
+    // `import defer * as ns` (ES2025 import-defer). Layout must match
+    // module::ImportEntry.
+    bool   is_deferred;
 }
 
 struct CompExportEntry {
@@ -52,6 +55,9 @@ struct CompReqModuleEntry {
     // Set at link time when the statement's bindings were all type-only (see
     // module::ReqModuleEntry.type_only). Layout must match module::ReqModuleEntry.
     bool   type_only;
+    // True while every import of this specifier is `import defer`. Layout must
+    // match module::ReqModuleEntry.deferred.
+    bool   deferred;
 }
 
 // Full lexer + compiler-pushback snapshot, used to re-parse a source
@@ -151,24 +157,28 @@ fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_
 }
 
 // Register a required module specifier, returning its index (deduplicates).
-fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants_json = false) {
+fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants_json = false, bool deferred = false) {
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         // A JSON import and an ECMAScript import of the same specifier are
         // distinct module requests (different [[Attributes]]), so only reuse
         // an entry whose json-ness matches too.
         if (mod.req_modules[i].wants_json == wants_json &&
             str_eq(mod.req_modules[i].module_name, specifier)) {
+            // The request stays deferred only while EVERY import of it is:
+            // one eager import makes the module evaluate in dependency order
+            // (test262 module-imported-defer-and-eager).
+            if (!deferred) mod.req_modules[i].deferred = false;
             return i;
         }
     }
     uint idx = (uint)mod.req_modules.len();
-    mod.req_modules.push({ specifier, null, wants_json, false });
+    mod.req_modules.push({ specifier, null, wants_json, false, deferred });
     return idx;
 }
 
 // Register an import entry in the module.
-fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import_name, uint req_idx, bool is_star, bool is_default) {
-    mod.imports.push({ local_name, import_name, req_idx, is_star, is_default });
+fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import_name, uint req_idx, bool is_star, bool is_default, bool is_deferred = false) {
+    mod.imports.push({ local_name, import_name, req_idx, is_star, is_default, is_deferred });
 }
 
 // True when `export_name` is already an ExportedName of this module.
@@ -5953,11 +5963,8 @@ fn void? CompilerContext.import_declaration(&self) {
         self.expect_from()!;
         Token spec_tok = self.expect(TokenType.STRING)!;
         bool wants_json = self.parse_with_clause()!;
-        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
-        // Deferred evaluation is not implemented yet: bind the namespace
-        // eagerly, which is observationally identical for a module without
-        // side effects and keeps the declaration linkable.
-        mod_register_import(mod, ns_local, "*", req_idx, true, false);
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json, true);
+        mod_register_import(mod, ns_local, "*", req_idx, true, false, true);
         self.match(TokenType.SEMICOLON);
         return;
     }

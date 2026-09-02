@@ -21,6 +21,7 @@ import std::io;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::vm;
+import boomkat::esm;
 
 // ============================================================================
 // Storage accessors
@@ -175,11 +176,18 @@ fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out
 // must propagate that via proxy_ctx_ok / their own error channel.
 fn bool module_ns_own_desc(void* vm, Heap* heap, HObject* ns, HString* key, ProxyDesc* out) {
     *out = (ProxyDesc){};
-    // Symbol keys: OrdinaryGetOwnProperty (§10.4.6.5 step 1).
+    // Symbol keys: OrdinaryGetOwnProperty (§10.4.6.5 step 1). A deferred
+    // namespace is not forced by one, which is what keeps Symbol.toStringTag
+    // and any other symbol readable without evaluating.
     if (key.is_symbol()) {
         ordinary_own_desc(heap, ns, key, out);
         return true;
     }
+    // A string key on a deferred namespace evaluates the module first
+    // (ES2025 import-defer), so the descriptor below reads a live binding
+    // rather than a TDZ one.
+    if (!esm::deferred_trigger_exempt_key(key)
+        && !esm::force_deferred_namespace(heap, vm, ns)) return false;
     int idx = ns.find_prop_idx((void*)key, heap);
     if (idx < 0) return true;          // not an export → undefined descriptor
     TVal value;
@@ -286,6 +294,26 @@ fn bool proxy_ctx_ok(BuiltinContext* ctx) {
         return false;
     }
     return true;
+}
+
+// Force a deferred module namespace from inside a builtin (ES2025
+// import-defer), converting a failed evaluation into the builtin's own throw.
+//
+// Call this from the reflective operations that the spec makes triggers:
+// [[Get]], [[GetOwnProperty]], [[HasProperty]], [[Delete]], [[Set]],
+// [[DefineOwnProperty]] and [[OwnPropertyKeys]]. The ones it must NOT be
+// called from are [[GetPrototypeOf]], [[SetPrototypeOf]], [[IsExtensible]]
+// and [[PreventExtensions]], which stay observable without evaluating.
+//
+// Returns false when evaluation threw, with ctx already carrying the throw.
+// `key` may be null for a whole-object operation such as [[OwnPropertyKeys]],
+// which triggers unconditionally; pass the property key otherwise so the
+// symbol and "then" exemptions apply.
+fn bool ns_force_deferred(BuiltinContext* ctx, HObject* obj, HString* key = null) {
+    if (!obj.flags.exotic_deferred_ns) return true;
+    if (key != null && esm::deferred_trigger_exempt_key(key)) return true;
+    if (esm::force_deferred_namespace(ctx.heap, ctx.vm, obj)) return true;
+    return proxy_ctx_ok(ctx);
 }
 
 // ============================================================================

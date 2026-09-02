@@ -70,6 +70,10 @@ struct ImportEntry {
     uint   req_module_idx;  // index into ModuleDef.req_modules
     bool   is_star;         // true for `import * as ns`
     bool   is_default;      // true for `import foo from ...`
+    // True for `import defer * as ns` (ES2025 import-defer): the binding gets
+    // a Deferred Module Namespace Exotic Object and the edge does not force
+    // the target's evaluation. Layout must match CompImportEntry.
+    bool   is_deferred;
 }
 
 struct ExportEntry {
@@ -100,6 +104,14 @@ struct ReqModuleEntry {
     // entirely: the target must not be evaluated as part of this module's
     // dependency order, or a cycle the erased types had broken would re-form.
     bool         type_only;
+    // True when EVERY import of this specifier in the module is `import defer`
+    // (ES2025 import-defer): the edge is skipped during the importer's
+    // evaluation and the target runs on first string-keyed access to its
+    // deferred namespace. One eager import anywhere in the module clears this,
+    // per test262 module-imported-defer-and-eager: the module then evaluates
+    // at the position where it is imported non-deferred. Layout mirrors
+    // CompReqModuleEntry.
+    bool         deferred;
 }
 
 // ============================================================================
@@ -163,6 +175,13 @@ struct ModuleDef {
 
     // Module namespace object (lazily created for `import *`)
     HObject*                      namespace_obj;
+
+    // Deferred module namespace object (ES2025 import-defer), lazily created
+    // for `import defer * as ns`. Distinct from namespace_obj: a module can be
+    // imported both ways in one graph and the two objects are not the same
+    // identity, though once evaluation is forced they expose the same exports.
+    // Rooted for the ModuleDef's lifetime like namespace_obj.
+    HObject*                      deferred_namespace_obj;
 
     // import.meta object (ECMA-262 §16.2.1.10 [[ImportMeta]]). A per-module
     // ordinary null-prototype object, lazily created on first `import.meta`
@@ -1880,6 +1899,12 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.type_only || rme.resolved == null) continue;
+        // A `import defer` edge contributes no evaluation and no ordering:
+        // the target runs on first access to its deferred namespace, which
+        // may be never. Skipping it here is what keeps its side effects out
+        // of the importer's evaluation, and skipping the lowlink propagation
+        // below is what keeps it out of the importer's cycle component.
+        if (rme.deferred) continue;
         ModuleDef* dep = (ModuleDef*)rme.resolved;
 
         if (!execute_module(heap, vm, dep)) {
@@ -1978,8 +2003,10 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
 
         if (ie.is_star) {
-            // `import * as ns from '...'`, build a Module Namespace Object
-            HObject*? ns_opt = build_namespace_object(heap, source_mod);
+            // `import * as ns from '...'`, build a Module Namespace Object --
+            // or, for `import defer * as ns`, the deferred one, whose first
+            // string-keyed access evaluates the module.
+            HObject*? ns_opt = build_namespace_object(heap, source_mod, ie.is_deferred);
             if (catch err = ns_opt) continue;
             HObject* ns = ns_opt;
             TVal ns_val;
@@ -2816,12 +2843,24 @@ fn HObject*? get_import_meta(Heap* heap, ModuleDef* mod) {
 // Own string keys are inserted in sorted code-unit order so enumeration
 // (which walks the prop table in insertion order) yields the spec-required
 // sorted order; @@toStringTag is the only symbol key and is added last.
-fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
+fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool deferred = false) {
     // A module has exactly one Module Namespace Object (ECMA-262 §10.4.6.12
     // GetModuleNamespace: cached in module.[[Namespace]]). Repeated `import * as`
     // / dynamic imports of the same module must observe the SAME object
     // identity, build it once and cache it on the ModuleDef.
-    if (source_mod.namespace_obj != null) {
+    //
+    // `deferred` builds the Deferred Module Namespace Exotic Object instead
+    // (ES2025 import-defer), cached in its own slot because [[Namespace]] and
+    // [[DeferredNamespace]] are separate: a module imported both ways in one
+    // graph has two objects. The two are identical apart from
+    // exotic_deferred_ns, which makes a string-keyed MOP operation evaluate
+    // the module before answering -- so the export set, the sort order and
+    // the live-binding accessors are all built here, once, for both.
+    if (deferred) {
+        if (source_mod.deferred_namespace_obj != null) {
+            return source_mod.deferred_namespace_obj;
+        }
+    } else if (source_mod.namespace_obj != null) {
         return source_mod.namespace_obj;
     }
     HObject*? ns_opt = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -2833,6 +2872,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     // present exports as DATA descriptors and propagate TDZ ReferenceErrors
     // (see ObjFlags.exotic_module_ns).
     ns.flags.exotic_module_ns = true;
+    ns.flags.exotic_deferred_ns = deferred;
 
     // Cache for identity BEFORE populating exports: a self-referential
     // `export * as ns from './self'` (or a cyclic star-as re-export) would
@@ -2841,7 +2881,11 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     // in-progress (still-empty) object, matching the spec's single
     // GetModuleNamespace object per module. Root it for the ModuleDef's lifetime.
     ns.as_header().incref();
-    source_mod.namespace_obj = ns;
+    if (deferred) {
+        source_mod.deferred_namespace_obj = ns;
+    } else {
+        source_mod.namespace_obj = ns;
+    }
 
     // Collect the full exported-name set (§10.4.6.9 [[OwnPropertyKeys]] iterates
     // GetExportedNames): the module's own direct/indirect exports plus the names
@@ -2961,6 +3005,67 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod) {
     ns.flags.extensible = false;
 
     return ns;
+}
+
+// True when `key` is one that must NOT force a deferred namespace.
+//
+// Symbols never trigger, which keeps Symbol.toStringTag readable. "then" is
+// the other exception: a deferred namespace is thenable-probed whenever it
+// reaches Promise.resolve or an `await`, and evaluating on that probe would
+// make merely awaiting the namespace defeat the deferral (test262
+// import-defer/evaluation-triggers/ignore-*-then-*).
+fn bool deferred_trigger_exempt_key(HString* key) {
+    if (key == null) return true;
+    if (key.is_symbol()) return true;
+    return key.equals("then");
+}
+
+// Force evaluation of the module behind a Deferred Module Namespace Exotic
+// Object (ES2025 import-defer), if `ns` is one and it has not run yet.
+//
+// Every string-keyed MOP operation on a deferred namespace calls this first:
+// [[Get]], [[GetOwnProperty]], [[HasProperty]], [[Delete]], [[Set]],
+// [[DefineOwnProperty]] and [[OwnPropertyKeys]]. Symbol keys and the
+// prototype/extensibility operations deliberately do not, which is what makes
+// `ns[Symbol()]`, `Object.getPrototypeOf(ns)` and `Object.isExtensible(ns)`
+// observable without evaluating (test262 import-defer/evaluation-triggers).
+//
+// Evaluation is synchronous and transitive only through eager edges: a
+// deferred sub-dependency of the module keeps its own deferral, so touching
+// `ns` runs this module and its eager dependencies and stops there.
+//
+// Returns false when evaluation threw; the error is on the heap channel and
+// the caller propagates it like any other.
+fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
+    if (ns == null || !ns.flags.exotic_deferred_ns) return true;
+    ModuleDef* mod = deferred_namespace_owner(heap, ns);
+    if (mod == null) return true;
+    // Clear the flag before evaluating: the module body can reach its own
+    // deferred namespace (directly, or through a cycle), and re-entering here
+    // would recurse forever. After this point the object behaves as an
+    // ordinary namespace, which is exactly what a re-entrant read should see.
+    ns.flags.exotic_deferred_ns = false;
+    if (mod.status == ModuleStatus.EVALUATED || mod.status == ModuleStatus.ERRORED) {
+        return mod.status != ModuleStatus.ERRORED;
+    }
+    return execute_module(heap, (Vm*)vm_ptr, mod);
+}
+
+// Find the module a Deferred Module Namespace Exotic Object stands for.
+//
+// A plain OBJECT carries no extra-data slot to hold the ModuleDef, and giving
+// every object one to serve this case is not worth it, so the owner is
+// recovered by scanning the module cache. The scan runs at most once per
+// deferred module: the first triggering access evaluates it, and evaluation
+// clears the flag, so later reads take the ordinary namespace path.
+fn ModuleDef* deferred_namespace_owner(Heap* heap, HObject* ns) {
+    if (heap.module_cache == null) return null;
+    ModuleDef** cache = (ModuleDef**)heap.module_cache;
+    for (uint i = 0; i < heap.module_cache_count; i++) {
+        ModuleDef* mod = cache[i];
+        if (mod != null && mod.deferred_namespace_obj == ns) return mod;
+    }
+    return null;
 }
 
 fn bool char_slice_eq(char[] a, char[] b) {

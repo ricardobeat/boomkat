@@ -3349,6 +3349,22 @@ fn TVal? Vm.run(Vm* vm) {
 
             HObject* obj = (HObject*)rin.get_heapptr();
 
+            // Deferred namespace (ES2025 import-defer): [[HasProperty]] with a
+            // string key evaluates the module first.
+            if (obj.flags.exotic_deferred_ns) {
+                void* dkey = get_prop_key(vm, rb);
+                if (!esm::deferred_trigger_exempt_key((HString*)dkey)) {
+                    if (!esm::force_deferred_namespace(vm.heap, vm, obj)) {
+                        TVal derr = vm.heap.error_value;
+                        vm.heap.has_error = false;
+                        if (!vm_throw_value(vm, derr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return vm_uncaught_error(vm, &derr);
+                        }
+                        continue;
+                    }
+                }
+            }
+
             // Proxy exotic: route through [[Has]].
             if (obj.flags.exotic_proxyobj) {
                 void* pkey = get_prop_key(vm, rb);
