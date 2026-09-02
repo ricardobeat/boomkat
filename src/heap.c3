@@ -3440,6 +3440,9 @@ fn void Heap.mark_roots(&self) {
             // deferred one (ES2025 import-defer) can be the only reference to
             // a module never otherwise reached, so mark it here too.
             if (mod.deferred_namespace_obj != null) { self.mark_hobject(mod.deferred_namespace_obj); }
+            // Likewise the module source object (ES2025 source-phase-imports),
+            // which exists only for a module some `import source` names.
+            if (mod.module_source_obj != null) { self.mark_hobject(mod.module_source_obj); }
         }
     }
 

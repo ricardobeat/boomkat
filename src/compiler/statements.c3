@@ -13,6 +13,11 @@ import std::collections::list;
 // Compiler-side module metadata (must match module::ModuleDef layout)
 // ============================================================================
 
+// The import name standing for the spec's ~source~ binding, as "*" stands for
+// a namespace. Neither is a valid exported name, so neither can collide with
+// one. Must match module::SOURCE_BINDING.
+const char[] SOURCE_BINDING = "%source%";
+
 struct CompImportEntry {
     char[] local_name;
     char[] import_name;
@@ -22,6 +27,8 @@ struct CompImportEntry {
     // `import defer * as ns` (ES2025 import-defer). Layout must match
     // module::ImportEntry.
     bool   is_deferred;
+    // `import source x from` (ES2025 source-phase-imports).
+    bool   is_source;
 }
 
 struct CompExportEntry {
@@ -188,8 +195,8 @@ fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants
 }
 
 // Register an import entry in the module.
-fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import_name, uint req_idx, bool is_star, bool is_default, bool is_deferred = false) {
-    mod.imports.push({ local_name, import_name, req_idx, is_star, is_default, is_deferred });
+fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import_name, uint req_idx, bool is_star, bool is_default, bool is_deferred = false, bool is_source = false) {
+    mod.imports.push({ local_name, import_name, req_idx, is_star, is_default, is_deferred, is_source });
 }
 
 // True when `export_name` is already an ExportedName of this module.
@@ -5988,9 +5995,11 @@ fn void? CompilerContext.import_declaration(&self) {
         Token spec_tok = self.expect(TokenType.STRING)!;
         bool wants_json = self.parse_with_clause()!;
         uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
-        // A module source object is not implemented yet; bind the namespace
-        // so the declaration links and the binding exists.
-        mod_register_import(mod, src_local, "*", req_idx, true, false);
+        // The binding holds the target's Module Source object. SOURCE_BINDING
+        // is the import name, standing for the spec's ~source~ the way "*"
+        // stands for a namespace: it is not an exported name, so it can never
+        // collide with one.
+        mod_register_import(mod, src_local, SOURCE_BINDING, req_idx, false, false, false, true);
         self.match(TokenType.SEMICOLON);
         return;
     }

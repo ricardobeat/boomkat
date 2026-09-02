@@ -74,7 +74,15 @@ struct ImportEntry {
     // a Deferred Module Namespace Exotic Object and the edge does not force
     // the target's evaluation. Layout must match CompImportEntry.
     bool   is_deferred;
+    // True for `import source x from` (ES2025 source-phase-imports): the
+    // binding holds the target's Module Source object rather than any export.
+    bool   is_source;
 }
+
+// The import name standing for the spec's ~source~ binding, as "*" stands for
+// a namespace. Neither is a valid exported name, so neither can collide with
+// one.
+const char[] SOURCE_BINDING = "%source%";
 
 struct ExportEntry {
     char[] local_name;      // the local binding name
@@ -204,6 +212,15 @@ struct ModuleDef {
     // module's lifetime; marked by mark_roots since ModuleDefs live outside
     // the GC-scanned heap.
     HObject*                      import_meta_obj;
+
+    // Module Source object (ES2025 source-phase-imports [[ModuleSource]]), the
+    // value an `import source x from "m"` binding holds.
+    //
+    // Created lazily, and only for a module some source-phase import actually
+    // names: an ordinary program allocates none of these. Cached so every
+    // spelling that reaches this module -- a second import, a re-export --
+    // observes one identity. Rooted like the slots above, by mark_roots.
+    HObject*                      module_source_obj;
 
     // JSON module support (ES2025 `import x from "m" with { type: "json" }`).
     // A JSON module has no compiled body: `func` is null and its sole export is
@@ -1092,6 +1109,7 @@ fn void mark_type_only_req_modules(ModuleDef* mod) {
             if (ie.req_module_idx != ri) continue;
             total++;
             if (ie.is_star) continue;  // a namespace binding never elides
+            if (ie.is_source) continue; // nor does a module-source binding
             ResolveSetEntry[RESOLVE_SET_MAX] set;
             ResolveExportResult r = resolve_export((ModuleDef*)rme.resolved, ie.import_name, &set[0], 0);
             if (r.kind != ResolveExportKind.RESOLVED) elided++;
@@ -1109,6 +1127,9 @@ fn void mark_type_only_req_modules(ModuleDef* mod) {
 // an export named 'x'" before any top-level statement of the importer
 // executes.
 //
+// `import source x` is exempt too: it binds the target's Module Source object
+// rather than any export, so there is nothing to resolve.
+//
 // `import * as ns` is exempt: a namespace object is always constructible and
 // a missing member reads back as plain `undefined` (§10.4.6.7), which is not
 // an error. `import 'x'` for side effects declares no binding at all.
@@ -1121,6 +1142,9 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
         ImportEntry* ie = &mod.imports[i];
         if (ie.is_star) continue;
+        // `import source x` resolves no export either: the binding is the
+        // target's Module Source object, which exists as soon as it parses.
+        if (ie.is_source) continue;
         if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
         ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
         if (rme.resolved == null) continue;
@@ -2114,6 +2138,21 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
         ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
+
+        if (ie.is_source) {
+            // `import source x from '...'`: the binding holds the target's
+            // Module Source object, which stands for its compiled source. No
+            // export is resolved and nothing is evaluated or even linked --
+            // the source exists as soon as the module has been parsed.
+            HObject* src_obj = module_source_object(heap, source_mod);
+            HString* local_key = heap.str_intern(ie.local_name);
+            if (src_obj != null && local_key != null) {
+                TVal src_val;
+                src_val.set_object(src_obj);
+                env::env_declare_const(mod.env, local_key, src_val);
+            }
+            continue;
+        }
 
         if (ie.is_star) {
             // `import * as ns from '...'`, build a Module Namespace Object --
@@ -3161,6 +3200,41 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     ns.flags.extensible = false;
 
     return ns;
+}
+
+// Get (creating on first use) the Module Source object for `mod`, the value an
+// `import source x from "m"` binding holds (ES2025 source-phase-imports
+// [[ModuleSource]]).
+//
+// Created lazily: a program with no source-phase import allocates none of
+// these, and the cache makes every spelling that reaches this module -- a
+// second import, a re-export -- observe one identity, which is what the
+// binding's SameValue assertions turn on.
+//
+// The object stands for the module's compiled source, not its evaluation, so
+// obtaining one neither links nor evaluates anything. It carries no properties
+// of its own; is_module_source is what %AbstractModuleSource%'s toStringTag
+// getter recognises, and the prototype is what `instanceof` walks.
+fn HObject* module_source_object(Heap* heap, ModuleDef* mod) {
+    if (mod == null) return null;
+    if (mod.module_source_obj != null) return mod.module_source_obj;
+    // %AbstractModuleSource% is itself created on demand: it is the prototype
+    // every module source needs, and a program with no source-phase import
+    // should allocate neither it nor them.
+    if (heap.abstract_module_source_proto == null) {
+        if (!builtins::register_abstract_module_source(heap)) return null;
+    }
+
+    HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = raw) return null;
+    HObject* src = raw;
+    src.prototype = heap.abstract_module_source_proto;
+    src.flags.is_module_source = true;
+    // ModuleDefs live outside the GC-scanned heap, so the slot is a root only
+    // because mark_roots walks it; take a reference for the module's lifetime.
+    src.as_header().incref();
+    mod.module_source_obj = src;
+    return src;
 }
 
 // True when evaluating `mod` would be asynchronous: it has top-level await,
