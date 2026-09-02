@@ -1511,7 +1511,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     }
 
     // Delete the last element: named property for all classes, dense part for ARRAY/ARGUMENTS
-    arr_delete_elem_or_throw(ctx, obj, idx);
+    arr_delete_elem_strict_or_throw(ctx, obj, idx);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     // ES2022 §23.1.3.20 step 6: Set(O, "length", idx, true), throws if non-writable.
@@ -1738,13 +1738,13 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
             ctx.result.set_undefined(); return;
         } else {
             // fromPresent is false: delete target slot (k-1)
-            arr_delete_elem_or_throw(ctx, obj, k - 1);
+            arr_delete_elem_strict_or_throw(ctx, obj, k - 1);
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         }
     }
 
     // Step 7: delete last element (len - 1)
-    arr_delete_elem_or_throw(ctx, obj, len - 1);
+    arr_delete_elem_strict_or_throw(ctx, obj, len - 1);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     // Step 8: Set(O, "length", len - 1, true), throws if non-writable.
