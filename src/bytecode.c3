@@ -637,8 +637,17 @@ enum Opcode : char {
     // module body is already running) and stores a Promise in A that fulfills
     // with the module's namespace object or rejects with the module's
     // load/evaluation error.
-    // ABC format: A=result_reg, B=specifier_reg, C=0.
+    // ABC format: A=result_reg, B=specifier_reg, C=options_reg.
     DYN_IMPORT,
+
+    // `import.defer(specifier)`: dynamic import with the defer phase (ES2025
+    // import-defer). Identical to DYN_IMPORT except that the module is
+    // resolved and linked but NOT evaluated: the promise fulfills with the
+    // module's Deferred Module Namespace Object, whose first triggering
+    // access runs the body. A separate opcode rather than a flag operand
+    // because DYN_IMPORT already uses all three.
+    // ABC format: A=result_reg, B=specifier_reg, C=options_reg.
+    DYN_IMPORT_DEFER,
 
     // Marks the boundary between parameter initialization and the function
     // body in a generator function.  The compiler emits this once per
@@ -1036,6 +1045,7 @@ case PUTLEX:     return A_BC;
         case RETUNDEF_GEN: return NONE;
         case AWAIT:     return ABC;
         case DYN_IMPORT: return ABC;
+        case DYN_IMPORT_DEFER: return ABC;
         case IMPORT_META: return ABC;
         case DEBUGGER:  return NONE;
         case ENDTRY:    return NONE;

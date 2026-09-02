@@ -4542,6 +4542,9 @@ fn ushort? CompilerContext.primary_expr(&self) {
         case TokenType.IMPORT:
         {
             Token import_tok = self.advance()!;  // consume 'import'
+            // Set when the ImportCall carried the `defer` phase, which selects
+            // DYN_IMPORT_DEFER at the emit below.
+            bool import_phase_defer = false;
 
             // `import .` opens either the `import.meta` MetaProperty or a
             // phased ImportCall (`import.defer(x)` / `import.source(x)`).
@@ -4575,11 +4578,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (!self.check(TokenType.LPAREN)) {
                         return self.fail("'import.defer'/'import.source' must be followed by '(' (dynamic import)")~;
                     }
-                    // Fall out of the meta-property branch into the ImportCall
-                    // parse. The phase is not honoured at runtime yet: `defer`
-                    // evaluates eagerly and `source` yields the namespace,
-                    // which keeps the call working while the module-side
-                    // semantics land.
+                    // Fall out of the meta-property branch into the
+                    // ImportCall parse below, which emits DYN_IMPORT_DEFER
+                    // for `defer`. `source` has no module-source object yet,
+                    // so it still yields the namespace.
+                    import_phase_defer = str_eq(meta_name, "defer");
                 } else {
                     if (!(meta_name.len == 4 && meta_name[0] == 'm' && meta_name[1] == 'e'
                           && meta_name[2] == 't' && meta_name[3] == 'a')) {
@@ -4649,7 +4652,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
             self.free_reg(options_reg);
             self.free_reg(spec_reg);
             ushort result = self.alloc_reg();
-            self.emit_abc(Opcode.DYN_IMPORT, (uint)result, (uint)spec_reg, (uint)options_reg);
+            self.emit_abc(import_phase_defer ? Opcode.DYN_IMPORT_DEFER : Opcode.DYN_IMPORT,
+                          (uint)result, (uint)spec_reg, (uint)options_reg);
             // ImportCall produces a value, not a Reference (ES2024 §13.3.10):
             // it is not a SimpleAssignmentTarget. Clear the same flags a call
             // expression clears after emit_call so the assignment/update

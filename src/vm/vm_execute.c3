@@ -3681,7 +3681,8 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
 
         // === DYNAMIC IMPORT ===
-        case Opcode.DYN_IMPORT: {
+        case Opcode.DYN_IMPORT:
+        case Opcode.DYN_IMPORT_DEFER: {
             // Read the specifier before any write to A (A may reuse B's slot).
             TVal spec_tv = *rb;
             HString*? spec_opt = vm_to_string(vm, &spec_tv);
@@ -3746,7 +3747,8 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             ds.regs_base = ds.act.bottom;
-            TVal? prom_opt = esm::dynamic_import(vm.heap, vm, spec_str.get_data(), wants_json);
+            TVal? prom_opt = esm::dynamic_import(vm.heap, vm, spec_str.get_data(), wants_json,
+                                                 op == Opcode.DYN_IMPORT_DEFER);
             // The nested module evaluation may have reallocated the valstack.
             ds.regs_base = ds.act.bottom;
             if (catch err = prom_opt) {

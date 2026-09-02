@@ -2340,6 +2340,9 @@ fn TVal? dynamic_import_reject(Heap* heap, Vm* vm, TVal* reason) {
 const char[] DYN_IMPORT_SPEC_KEY  = "\xFFdi_spec";
 const char[] DYN_IMPORT_BASE_KEY  = "\xFFdi_base";
 const char[] DYN_IMPORT_JSON_KEY  = "\xFFdi_json";
+// `import.defer(x)`: the resolved module is bound to its deferred namespace
+// and is not evaluated by the import itself (ES2025 import-defer).
+const char[] DYN_IMPORT_DEFER_KEY  = "\xFFdi_defer";
 const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
 
 // `import(specifier)` (ES2020 §13.3.10, ES2015+ HostImportModuleDynamically).
@@ -2349,7 +2352,7 @@ const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
 // spec, dynamic import starts a new job rather than running inline with the
 // calling module's own (possibly still in-progress) static evaluation, and
 // running it inline let import() observably preempt that static DFS order.
-fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = false) {
+fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = false, bool deferred = false) {
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = prom_raw) return MODULE_ERROR~;
     HObject* prom = prom_raw;
@@ -2373,6 +2376,7 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     HString* spec_key  = heap.str_intern(DYN_IMPORT_SPEC_KEY);
     HString* base_key   = heap.str_intern(DYN_IMPORT_BASE_KEY);
     HString* json_key   = heap.str_intern(DYN_IMPORT_JSON_KEY);
+    HString* defer_key  = heap.str_intern(DYN_IMPORT_DEFER_KEY);
     HString* prom_key   = heap.str_intern(DYN_IMPORT_PROM_KEY);
     HString* spec_str   = heap.str_intern(specifier);
     HString* base_str   = base_name.len > 0 ? heap.str_intern(base_name) : null;
@@ -2408,6 +2412,8 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     }
     TVal json_tv; json_tv.set_boolean(wants_json);
     job.put_prop(json_key, json_tv, hobject::PROP_FLAGS_WEC, heap);
+    TVal defer_tv; defer_tv.set_boolean(deferred);
+    job.put_prop(defer_key, defer_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal prom_tv; prom_tv.set_object(prom);
     job.put_prop(prom_key, prom_tv, hobject::PROP_FLAGS_WEC, heap);
 
@@ -2438,6 +2444,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     HString* spec_key = heap.str_intern(DYN_IMPORT_SPEC_KEY);
     HString* base_key = heap.str_intern(DYN_IMPORT_BASE_KEY);
     HString* json_key = heap.str_intern(DYN_IMPORT_JSON_KEY);
+    HString* defer_key = heap.str_intern(DYN_IMPORT_DEFER_KEY);
     HString* prom_key = heap.str_intern(DYN_IMPORT_PROM_KEY);
     if (spec_key == null || base_key == null || json_key == null || prom_key == null) return;
 
@@ -2452,6 +2459,12 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     bool wants_json = false;
     if (try jv = ctx.callee_obj.get_prop(json_key, ctx.heap)) {
         if (jv.is_boolean()) wants_json = jv.get_boolean();
+    }
+    bool deferred = false;
+    if (defer_key != null) {
+        if (try dv = ctx.callee_obj.get_prop(defer_key, ctx.heap)) {
+            if (dv.is_boolean()) deferred = dv.get_boolean();
+        }
     }
     HObject* prom = null;
     if (try pv = ctx.callee_obj.get_prop(prom_key, ctx.heap)) {
@@ -2510,6 +2523,23 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
             heap.has_error = false;
             rejected = true;
         }
+    }
+
+    // `import.defer(x)` resolves and links the module but does not evaluate it:
+    // the promise fulfills with the deferred namespace, and the body runs on
+    // the first triggering access like the static form.
+    if (!rejected && deferred) {
+        HObject*? dns_opt = build_namespace_object(heap, mod, true);
+        TVal dns_val;
+        if (catch err = dns_opt) {
+            dns_val = module_type_error(heap, "cannot build deferred module namespace object");
+            builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &dns_val, heap);
+        } else {
+            dns_val.set_object(dns_opt);
+            builtins::promise_settle(prom, builtins::PROMISE_FULFILLED, &dns_val, heap);
+        }
+        builtins::promise_trigger_reactions(prom, heap, (void*)vm);
+        return;
     }
 
     if (!rejected) {
@@ -2995,7 +3025,12 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     HString* tostrtag_sym = builtins::ensure_tostringtag_symbol(heap);
     if (tostrtag_sym != null) {
         TVal tag_val;
-        tag_val.set_string(builtins::builtin_intern_string(heap, "Module"));
+        // A deferred namespace reports "Deferred Module" so it is
+        // distinguishable from an evaluated one without touching a string key
+        // (which would force evaluation). The tag is fixed at construction and
+        // does not change when the module is later forced.
+        tag_val.set_string(builtins::builtin_intern_string(heap,
+            deferred ? "Deferred Module" : "Module"));
         ns.put_prop(tostrtag_sym, tag_val, hobject::PROP_FLAGS_NNC, heap);
     }
 
