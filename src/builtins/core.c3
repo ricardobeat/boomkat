@@ -480,6 +480,8 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     DYNAMIC_IMPORT_JOB {"", -1, false, &esm::builtin_dynamic_import_job},
     MODULE_SETTLED_FULFILLED {"", -1, false, &esm::builtin_module_settled_fulfilled},
     MODULE_SETTLED_REJECTED {"", -1, false, &esm::builtin_module_settled_rejected},
+    MODULE_DEFER_READY_FULFILLED {"", -1, false, &esm::builtin_module_defer_ready_fulfilled},
+    MODULE_DEFER_READY_REJECTED {"", -1, false, &esm::builtin_module_defer_ready_rejected},
     ABSTRACT_MODULE_SOURCE_CTOR {"AbstractModuleSource", 0, true, &builtin_abstract_module_source_ctor},
     ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET {"", -1, false, &builtin_abstract_module_source_tostringtag_get},
     PROMISE_THEN_FINALLY {"", -1, false, &builtin_promise_then_finally},

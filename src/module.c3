@@ -222,6 +222,11 @@ struct ModuleDef {
     // observes one identity. Rooted like the slots above, by mark_roots.
     HObject*                      module_source_obj;
 
+    // The pending `import.defer()` promise waiting on this module's awaited
+    // subgraph, held only between starting those awaits and their settlement
+    // (see module_attach_defer_ready_reaction). Owns a reference while set.
+    HObject*                      defer_pending_promise;
+
     // True when the host can give this module a Module Source object. Only a
     // module with a real source representation -- a WebAssembly module, or the
     // test262 `<module source>` stand-in -- has one; an ordinary ECMAScript
@@ -1561,6 +1566,67 @@ fn void builtin_module_settled_rejected(BuiltinContext* ctx) {
     module_async_execution_rejected(ctx.heap, (Vm*)ctx.vm, mod, &reason);
 }
 
+// Attach a reaction to `source` that fulfills `waiter`'s pending
+// import.defer() promise with the deferred namespace once the awaited
+// subgraph has finished.
+//
+// One reaction goes on every async module the walk started, and each re-tests
+// the whole subgraph, so whichever settles last is the one that fulfills and
+// the earlier ones are no-ops. That avoids a counter that a rejection or a
+// module already settled inline would have to keep in step.
+fn void module_attach_defer_ready_reaction(Heap* heap, ModuleDef* waiter, HObject* source) {
+    if (waiter == null || waiter.defer_pending_promise == null) return;
+    module_attach_named_reaction(heap, waiter, source,
+        Builtin.MODULE_DEFER_READY_FULFILLED.ordinal,
+        Builtin.MODULE_DEFER_READY_REJECTED.ordinal);
+}
+
+// PromiseReactionJob onFulfilled for an awaited dependency of a deferred
+// dynamic import: if the whole subgraph is now evaluable, hand the deferred
+// namespace to the waiting import.defer() promise.
+fn void builtin_module_defer_ready_fulfilled(BuiltinContext* ctx) {
+    ctx.result.set_undefined();
+    Heap* heap = ctx.heap;
+    Vm* vm = (Vm*)ctx.vm;
+    ModuleDef* mod = module_of_reaction(ctx);
+    if (mod == null || mod.defer_pending_promise == null) return;
+    // Still something in flight: a later settlement runs this again.
+    module_defer_scan_epoch++;
+    if (!module_ready_for_sync_execution(mod)) return;
+
+    HObject* prom = mod.defer_pending_promise;
+    mod.defer_pending_promise = null;
+    heap.decref(prom.as_header());
+
+    HObject*? dns_opt = build_namespace_object(heap, mod, true);
+    TVal dns_val;
+    if (catch err = dns_opt) {
+        dns_val = module_type_error(heap, "cannot build deferred module namespace object");
+        builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &dns_val, heap);
+    } else {
+        dns_val.set_object(dns_opt);
+        builtins::promise_settle(prom, builtins::PROMISE_FULFILLED, &dns_val, heap);
+    }
+    builtins::promise_trigger_reactions(prom, heap, (void*)vm);
+}
+
+// PromiseReactionJob onRejected for the same: the awaited dependency threw, so
+// the import.defer() promise rejects with that reason.
+fn void builtin_module_defer_ready_rejected(BuiltinContext* ctx) {
+    ctx.result.set_undefined();
+    Heap* heap = ctx.heap;
+    Vm* vm = (Vm*)ctx.vm;
+    ModuleDef* mod = module_of_reaction(ctx);
+    if (mod == null || mod.defer_pending_promise == null) return;
+    HObject* prom = mod.defer_pending_promise;
+    mod.defer_pending_promise = null;
+    heap.decref(prom.as_header());
+    TVal reason; reason.set_undefined();
+    if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
+    builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &reason, heap);
+    builtins::promise_trigger_reactions(prom, heap, (void*)vm);
+}
+
 // ============================================================================
 // Async module evaluation (ECMA-262 §16.2.1.6.1.3.x)
 // ============================================================================
@@ -2017,7 +2083,8 @@ fn bool module_eval_async_deps_edge(Heap* heap, Vm* vm, ModuleDef* mod, ModuleDe
 // mid-evaluation and must wait for them. Here there is no importer -- the
 // awaiting modules are simply started, and the promise `import.defer()`
 // returned is what waits.
-fn bool module_eval_async_deps_standalone(Heap* heap, Vm* vm, ModuleDef* target) {
+fn bool module_eval_async_deps_standalone(Heap* heap, Vm* vm, ModuleDef* target,
+                                          ModuleDef* waiter) {
     if (target == null) return true;
     if (target.defer_eager_mark == module_defer_eager_epoch) return true;
     target.defer_eager_mark = module_defer_eager_epoch;
@@ -2031,8 +2098,15 @@ fn bool module_eval_async_deps_standalone(Heap* heap, Vm* vm, ModuleDef* target)
         if (!module_subgraph_is_async(dep)) continue;
         if (dep.func != null && dep.func.has_tla()) {
             if (!execute_module(heap, vm, dep)) return false;
+            // Wake the waiter when this one settles. Every started module gets
+            // the same reaction; the handler re-tests the whole subgraph, so
+            // whichever settles last is the one that fulfills.
+            if (dep.status != ModuleStatus.EVALUATED && dep.status != ModuleStatus.ERRORED) {
+                HObject* dp = module_ensure_eval_promise(heap, dep);
+                if (dp != null) module_attach_defer_ready_reaction(heap, waiter, dp);
+            }
         } else {
-            if (!module_eval_async_deps_standalone(heap, vm, dep)) return false;
+            if (!module_eval_async_deps_standalone(heap, vm, dep, waiter)) return false;
         }
     }
     return true;
@@ -2807,8 +2881,13 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
                 // settles, and a later `ns.x` would then find it mid-flight.
                 // Unlike a property read this promise can wait for them, and
                 // the drain below is what makes it do so.
+                // Hold the promise on the module: the reaction below settles
+                // it once the subgraph is ready, which may be several
+                // microtasks from here.
+                mod.defer_pending_promise = prom;
+                prom.as_header().incref();
                 module_defer_eager_epoch++;
-                if (!module_eval_async_deps_standalone(heap, vm, mod)) {
+                if (!module_eval_async_deps_standalone(heap, vm, mod, mod)) {
                     if (heap.has_error || heap.error_value.is_object()
                         || heap.error_value.is_string()) {
                         reason.set_undefined();
@@ -2824,6 +2903,11 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
             }
         }
     }
+
+    // A reaction owns the settlement: the awaited subgraph is still running,
+    // and whichever module settles last fulfills this promise with the
+    // deferred namespace (module_attach_defer_ready_reaction).
+    if (!rejected && deferred && mod.defer_pending_promise != null) return;
 
     if (!rejected && deferred) {
         HObject*? dns_opt = build_namespace_object(heap, mod, true);

@@ -3449,6 +3449,8 @@ fn void Heap.mark_roots(&self) {
             // Likewise the module source object (ES2025 source-phase-imports),
             // which exists only for a module some `import source` names.
             if (mod.module_source_obj != null) { self.mark_hobject(mod.module_source_obj); }
+            // The import.defer() promise awaiting this module's async subgraph.
+            if (mod.defer_pending_promise != null) { self.mark_hobject(mod.defer_pending_promise); }
         }
     }
 
