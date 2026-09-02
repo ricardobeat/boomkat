@@ -246,6 +246,25 @@ fn TokenType CompilerContext.peek_type(&self) {
     return peek_opt.type;
 }
 
+// Peek the next token WITHOUT consuming it, honouring both pushback layers.
+//
+// Token supply is a hierarchy: the compiler's 4-deep pushback stack sits in
+// front of the lexer's single-slot pushback, which sits in front of its
+// one-token lookahead, which sits in front of the scanner. advance() and
+// peek_type() walk it from the top, so they are always correct; a raw
+// `self.lexer.peek()` enters one level down and silently skips anything the
+// compiler has parked, returning a token from the wrong position.
+//
+// That is safe only in the pre_scan_*/hoist_*/skip_* passes, which run over
+// their own token range with an empty compiler stack. Every helper that peeks
+// mid-parse must come through here instead.
+fn Token? CompilerContext.peek(&self) {
+    if (self.pushback_count > 0) {
+        return self.pushback_stack[self.pushback_count - 1];
+    }
+    return self.lexer.peek();
+}
+
 // Check if the next token is the given type without consuming.
 fn bool CompilerContext.check(&self, TokenType tt) {
     return self.peek_type() == tt;
