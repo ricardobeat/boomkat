@@ -3191,32 +3191,43 @@ fn bool module_subgraph_is_async(ModuleDef* mod) {
     return false;
 }
 
-// True when `mod` or anything it would evaluate is already on the stack.
+// ECMA-262 ReadyForSyncExecution: can `mod` be evaluated to completion right
+// now, synchronously?
 //
-// Forcing a deferred namespace runs the whole eager subgraph, so a module
-// anywhere in it that is mid-evaluation makes the force impossible: the
-// evaluation the read is waiting for cannot complete. Detecting that BEFORE
-// starting is what keeps the failure side-effect free -- test262
-// import-defer/errors/get-other-while-dep-evaluating requires that a sibling
-// dependency is not evaluated on the way to discovering the cycle.
+// Forcing a deferred namespace happens inside an ordinary property read, which
+// has nowhere to await and no way to resume a module that is already part-way
+// through its body. So the force is only possible when nothing in the subgraph
+// is mid-evaluation and nothing in it awaits; otherwise the access is a
+// TypeError (16.2.1.10) rather than a window onto a half-initialized namespace.
 //
-// Shares module_defer_scan_epoch with module_subgraph_is_async; callers bump
-// it before each top-level query.
-fn bool module_subgraph_is_evaluating(ModuleDef* mod) {
-    if (mod == null) return false;
+// Three points where this differs from an "is anything evaluating" walk, each
+// load-bearing:
+//
+//   - An EVALUATED module is ready and its dependencies are not examined: they
+//     already ran, whatever state they are in now.
+//   - A module with top-level await is not ready even when merely LINKED. It
+//     has not started, but starting it could not finish it.
+//   - Deferred edges ARE followed. A nested deferred import contributes no
+//     evaluation, but forcing this namespace may still reach it, and readiness
+//     is a question about the whole subgraph.
+//
+// Revisiting a module returns true (the spec's `seen` check): a cycle back to
+// something already under consideration adds no new obstacle. The stamp both
+// terminates the walk and encodes that rule.
+fn bool module_ready_for_sync_execution(ModuleDef* mod) {
+    if (mod == null) return true;
+    if (mod.defer_scan_mark == module_defer_scan_epoch) return true;
+    if (mod.status == ModuleStatus.EVALUATED) return true;
     if (mod.status == ModuleStatus.EVALUATING
-        || mod.status == ModuleStatus.EVALUATING_ASYNC) return true;
-    if (mod.defer_scan_mark == module_defer_scan_epoch) return false;
+        || mod.status == ModuleStatus.EVALUATING_ASYNC) return false;
+    if (mod.func != null && mod.func.has_tla()) return false;
     mod.defer_scan_mark = module_defer_scan_epoch;
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.type_only || rme.resolved == null) continue;
-        // A nested deferred edge is not evaluated by this force, so a module
-        // in flight behind one does not block it.
-        if (rme.deferred) continue;
-        if (module_subgraph_is_evaluating((ModuleDef*)rme.resolved)) return true;
+        if (!module_ready_for_sync_execution((ModuleDef*)rme.resolved)) return false;
     }
-    return false;
+    return true;
 }
 
 // Epoch for module_subgraph_is_async's visit stamps, bumped per top-level
@@ -3290,13 +3301,14 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
         return false;
     }
 
-    // Already running: the access came from the module's own body, or from a
-    // cycle peer's, and there is no way to complete the evaluation the read
-    // is asking for. §16.2.1.10 makes that a TypeError rather than exposing a
+    // Not evaluable right now: something in the subgraph is mid-evaluation
+    // (the access came from the module's own body, or a cycle peer's) or
+    // awaits, and there is no way to complete the evaluation the read is
+    // asking for. §16.2.1.10 makes that a TypeError rather than exposing a
     // half-initialized namespace. The flag stays set -- the module may yet
     // finish, and a later access should see an ordinary namespace.
     module_defer_scan_epoch++;
-    if (module_subgraph_is_evaluating(mod)) {
+    if (!module_ready_for_sync_execution(mod)) {
         TVal err = module_type_error(heap,
             "cannot access a deferred module namespace while the module is evaluating");
         heap.error_value = err;
