@@ -10,6 +10,7 @@ import boomkat::builtins;
 import std::io;
 import boomkat::re_bindings;
 import std::math;
+import boomkat::esm;
 
 // ============================================================================
 // Return, variable access, closures, iterators, exceptions, and miscellany
@@ -299,6 +300,17 @@ const int INITPROP_ABRUPT = 2;       // heap.has_error / heap.error_value alread
 fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
     void* key = get_prop_key(vm, key_val);
     if (key == null) return INITPROP_OK;
+
+    // [[DefineOwnProperty]] on a deferred module namespace evaluates the
+    // module first (ES2025 import-defer), even though the define then fails:
+    // the trigger is the operation, not its outcome. Reached when a class
+    // field is defined on a namespace returned from a constructor.
+    if (hobj.flags.exotic_deferred_ns
+        && !esm::deferred_trigger_exempt_key((HString*)key)) {
+        if (!esm::force_deferred_namespace(vm.heap, vm, hobj)) {
+            return INITPROP_ABRUPT;
+        }
+    }
 
     if (hobj.flags.exotic_proxyobj) {
         builtins::ProxyDesc desc = {};
