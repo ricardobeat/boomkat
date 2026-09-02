@@ -419,6 +419,44 @@ SKIP_FILES = {
     #                              unsupported).
     "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-throws-realm.js",
     "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
+    # staging/sm/strict — SpiderMonkey's own strict-mode suite, donated to
+    # test262 in 2024 and still uncurated (its front-matter is `esid: pending`).
+    #
+    # These call testLenientAndStrict(code, lenient_pred, strict_pred) from
+    # harness/sm/non262-strict-shell.js, which evaluates `code` twice: once bare
+    # and once with "'use strict'; " prepended, requiring BOTH predicates to
+    # hold. In a strict-only engine the bare evaluation is already strict, so
+    # lenient_pred is handed strict behavior and fails wherever the two modes
+    # differ -- e.g. 11.4.1 asserts `delete x;` PARSES in sloppy mode and is a
+    # SyntaxError in strict; this engine correctly rejects both. The engine is
+    # right and the test cannot pass, exactly like the noStrict family above.
+    #
+    # Listed file by file rather than skipped by directory or by use of the
+    # helper: 14 OTHER tests in this same directory use testLenientAndStrict
+    # too, and pass, because their two predicates agree (e.g. 11.3.1). Every
+    # file below was checked to have no such agreeing pair -- each of its
+    # assertions expects sloppy and strict to differ.
+    "staging/sm/strict/10.4.2.js",
+    "staging/sm/strict/10.6.js",
+    "staging/sm/strict/11.4.1.js",
+    "staging/sm/strict/12.10.1.js",
+    "staging/sm/strict/13.1.js",
+    "staging/sm/strict/15.10.7.js",
+    "staging/sm/strict/15.3.5.1.js",
+    "staging/sm/strict/15.3.5.2.js",
+    "staging/sm/strict/15.4.4.12.js",
+    "staging/sm/strict/15.4.4.9.js",
+    "staging/sm/strict/15.5.5.1.js",
+    "staging/sm/strict/15.5.5.2.js",
+    "staging/sm/strict/8.12.5.js",
+    "staging/sm/strict/8.12.7-2.js",
+    "staging/sm/strict/8.12.7.js",
+    "staging/sm/strict/8.7.2.js",
+    "staging/sm/strict/B.1.1.js",
+    "staging/sm/strict/B.1.2.js",
+    "staging/sm/strict/eval-variable-environment.js",
+    "staging/sm/strict/regress-532254.js",
+    "staging/sm/strict/strict-function-statements.js",
 }
 
 # ---------------------------------------------------------------------------
