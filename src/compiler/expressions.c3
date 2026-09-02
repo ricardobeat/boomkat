@@ -3182,8 +3182,24 @@ fn ushort? CompilerContext.new_expr(&self) {
         if (self.check(TokenType.IMPORT)) {
             Token import_tok = self.advance()!;
             TokenType after_import = self.peek_type();
-            self.lexer.pushback(import_tok);
-            if (after_import != TokenType.DOT) {
+            bool phase_call = false;
+            if (after_import == TokenType.DOT) {
+                // `import . defer (` and `import . source (` are ImportCalls,
+                // not meta-properties, so they are rejected here like
+                // `import(`. Deciding needs the word after the dot, which
+                // costs two tokens of lookahead through the compiler's
+                // pushback stack.
+                Token dot_tok = self.advance()!;
+                Token word_tok = self.advance()!;
+                char[] word = word_tok.str_value;
+                if (word.len == 0) word = lexer::keyword_to_string(word_tok.type);
+                phase_call = !word_tok.has_escape
+                    && (str_eq(word, "defer") || str_eq(word, "source"));
+                self.pushback(word_tok);
+                self.pushback(dot_tok);
+            }
+            self.pushback(import_tok);
+            if (after_import != TokenType.DOT || phase_call) {
                 return self.fail("'import' call is not a valid constructor")~;
             }
         }
