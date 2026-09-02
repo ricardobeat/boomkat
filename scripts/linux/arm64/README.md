@@ -42,7 +42,7 @@ Phases: `build`, `tests`, `test262`, `libs`, `smoke`, `link`, `initarray`,
 
 The image is **linux/arm64**, native on Apple Silicon.
 
-amd64 was tried first, because c3c 0.8.2 ships an official x86-64 Linux binary
+amd64 was tried first, because c3c 0.8.3 ships an official x86-64 Linux binary
 and no arm64 one. It does not work. Under `container`'s amd64 emulation, c3c's
 `posix_spawn` of the C compiler fails before `exec`, so every C-source compile
 and every link dies with:
@@ -58,7 +58,7 @@ reports `errno 38` (ENOSYS) where native arm64 reports the usual value. Both the
 static and the dynamic c3c tarballs fail identically, so it is the emulation,
 not the binary.
 
-Consequently the image builds **c3c 0.8.2 from source** against the distro's
+Consequently the image builds **c3c 0.8.3 from source** against the distro's
 LLVM 19. That matches the host's c3c version and git hash
 (`9516a396c25782cd5616572c9bc3d77e13919218`); the LLVM differs (19.1.7 in the
 container, 22.1.8 on the host).

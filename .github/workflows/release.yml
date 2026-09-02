@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  C3C_VERSION: "0.8.2"
+  C3C_VERSION: "0.8.3"
 
 jobs:
   # Fail before spending three builds if the inputs cannot produce a release.

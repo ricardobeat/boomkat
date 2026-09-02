@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Prebuilt c3c, the same version and binary the GitHub workflow downloads.
-ARG C3C_VERSION=0.8.2
+ARG C3C_VERSION=0.8.3
 RUN curl -fsSL -o /tmp/c3c.tar.gz \
         "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-linux.tar.gz" \
     && mkdir -p /opt/c3c \

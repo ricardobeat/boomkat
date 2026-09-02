@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  C3C_VERSION: "0.8.2"
+  C3C_VERSION: "0.8.3"
   # quickjs-ng prebuilt binary used as out/qjs, the JS-corpus reference engine.
   # The engine's own C dependencies are vendored in-tree (vendor/dtoa/), so no
   # upstream checkout is needed to build.
