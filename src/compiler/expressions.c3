@@ -4543,17 +4543,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
         {
             Token import_tok = self.advance()!;  // consume 'import'
 
-            // `import.meta` (MetaProperty). Valid ONLY in module code; in a
-            // Script, direct/indirect eval, or a Function/Generator/Async
-            // body it is an early SyntaxError (compile_eval never sets
-            // is_module). The terminal words `import` and `meta` must appear
-            // literally, a Unicode escape in either is a SyntaxError.
+            // `import .` opens either the `import.meta` MetaProperty or a
+            // phased ImportCall (`import.defer(x)` / `import.source(x)`).
+            // The terminal words must appear literally: a Unicode escape in
+            // `import`, `meta`, or the phase is a SyntaxError (§12.6.1).
             if (self.check(TokenType.DOT)) {
-                if (!self.module_goal) {
-                    return self.fail("import.meta is only valid in a module")~;
-                }
                 if (import_tok.has_escape) {
-                    return self.fail("'import' in import.meta must not contain escape sequences")~;
+                    return self.fail("'import' in a meta-property or phased ImportCall must not contain escape sequences")~;
                 }
                 self.advance()!;  // consume '.'
                 Token meta_tok = self.advance()!;
@@ -4561,22 +4557,56 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (meta_name.len == 0) {
                     meta_name = lexer::keyword_to_string(meta_tok.type);
                 }
-                if (!(meta_name.len == 4 && meta_name[0] == 'm' && meta_name[1] == 'e'
-                      && meta_name[2] == 't' && meta_name[3] == 'a')) {
-                    return self.fail("expected 'meta' after 'import.'")~;
+                // `import.defer(x)` / `import.source(x)` are ImportCalls with
+                // a phase, not meta-properties (ES2025 import-defer and
+                // source-phase-imports):
+                //
+                //   ImportCall : import . defer  ( AssignmentExpression )
+                //              | import . source ( AssignmentExpression )
+                //
+                // They share this parse site because both start `import .`,
+                // but continue into the ImportCall path below rather than
+                // producing a meta-property. As with `meta`, an escaped
+                // spelling is never the keyword (§12.6.1).
+                if (str_eq(meta_name, "defer") || str_eq(meta_name, "source")) {
+                    if (meta_tok.has_escape) {
+                        return self.fail("import phase must not contain escape sequences")~;
+                    }
+                    if (!self.check(TokenType.LPAREN)) {
+                        return self.fail("'import.defer'/'import.source' must be followed by '(' (dynamic import)")~;
+                    }
+                    // Fall out of the meta-property branch into the ImportCall
+                    // parse. The phase is not honoured at runtime yet: `defer`
+                    // evaluates eagerly and `source` yields the namespace,
+                    // which keeps the call working while the module-side
+                    // semantics land.
+                } else {
+                    if (!(meta_name.len == 4 && meta_name[0] == 'm' && meta_name[1] == 'e'
+                          && meta_name[2] == 't' && meta_name[3] == 'a')) {
+                        return self.fail("expected 'meta' after 'import.'")~;
+                    }
+                    // Unlike a phased ImportCall, which is an expression valid
+                    // wherever `import()` is, the meta-property is legal only
+                    // in module code: in a Script, direct/indirect eval, or a
+                    // Function/Generator/Async body it is an early
+                    // SyntaxError (compile_eval never sets is_module).
+                    if (!self.module_goal) {
+                        return self.fail("import.meta is only valid in a module")~;
+                    }
+                    if (meta_tok.has_escape) {
+                        return self.fail("'meta' in import.meta must not contain escape sequences")~;
+                    }
+                    ushort meta_reg = self.alloc_reg();
+                    self.emit_abc(Opcode.IMPORT_META, (uint)meta_reg, 0, 0);
+                    // import.meta is a MemberExpression but not a
+                    // SimpleAssignmentTarget (AssignmentTargetType is
+                    // invalid): clear the flags so `import.meta = v`,
+                    // `import.meta++`, and destructuring targets are
+                    // rejected like `f()`.
+                    self.member.clear();
+                    self.last_was_getvar = false;
+                    return meta_reg;
                 }
-                if (meta_tok.has_escape) {
-                    return self.fail("'meta' in import.meta must not contain escape sequences")~;
-                }
-                ushort meta_reg = self.alloc_reg();
-                self.emit_abc(Opcode.IMPORT_META, (uint)meta_reg, 0, 0);
-                // import.meta is a MemberExpression but not a
-                // SimpleAssignmentTarget (AssignmentTargetType is invalid):
-                // clear the flags so `import.meta = v`, `import.meta++`, and
-                // destructuring targets are rejected like `f()`.
-                self.member.clear();
-                self.last_was_getvar = false;
-                return meta_reg;
             }
 
             if (!self.match(TokenType.LPAREN)) {

@@ -5713,16 +5713,18 @@ fn void? CompilerContext.expect_from(&self) {
 // current token is the identifier "from".
 fn bool CompilerContext.match_from(&self) {
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
-    // Peek at the actual token to check the string value
-    Token? tok_opt = self.lexer.next_token();
+    // Read through advance()/pushback() so the compiler's pushback stack is
+    // consulted first; a raw lexer read would skip anything parked there.
+    Token? tok_opt = self.advance();
     if (catch _err = tok_opt) return false;
     Token tok = tok_opt;
     if (!tok.has_escape && str_eq(tok.str_value, "from")) {
         return true;
     }
     // Not 'from' (or an escaped spelling, which §12.6.1 makes a plain
-    // identifier rather than the keyword), push back
-    self.lexer.pushback(tok);
+    // identifier rather than the keyword), push back. Returns to the same
+    // layer advance() took it from, so the token keeps its position.
+    self.pushback(tok);
     return false;
 }
 
@@ -5738,14 +5740,77 @@ fn void? CompilerContext.expect_as(&self) {
 // Match the contextual keyword `as`.
 fn bool CompilerContext.match_as(&self) {
     if (self.peek_type() != TokenType.IDENTIFIER) return false;
-    Token? tok_opt = self.lexer.next_token();
+    // Read through advance()/pushback(): see CompilerContext.peek().
+    Token? tok_opt = self.advance();
     if (catch _err = tok_opt) return false;
     Token tok = tok_opt;
     if (!tok.has_escape && str_eq(tok.str_value, "as")) {
         return true;
     }
-    self.lexer.pushback(tok);
+    self.pushback(tok);
     return false;
+}
+
+// Match a static ImportDeclaration phase modifier: the contextual keyword
+// `defer` or `source` in
+//
+//   ImportDeclaration : import defer  NameSpaceImport  FromClause ;
+//                     | import source ImportedBinding FromClause ;
+//
+// Both words are contextual, so `import defer from 'm'` and
+// `import source from 'm'` are ordinary default imports whose binding is
+// named `defer`/`source`, not phase modifiers. The discriminator is what
+// FOLLOWS the word: a phase modifier is followed by the start of an
+// ImportClause (`*` for defer, an ImportedBinding for source), whereas a
+// binding name is followed by the `from` keyword. `import source source
+// from 'm'` and `import source from from 'm'` are both legal source-phase
+// imports and rely on exactly this test. An escaped spelling is never the
+// keyword (ES2024 §12.6.1).
+//
+// Two tokens of lookahead decide it, which is what the pushback buffer plus
+// peek() provide: consume the word, peek past it, push the word back. The
+// input is always left untouched -- a match only reports that the caller
+// should now consume the keyword itself.
+fn bool CompilerContext.match_import_phase(&self, char[] kw) {
+    if (self.peek_type() != TokenType.IDENTIFIER) return false;
+    // Read through advance()/pushback(), never self.lexer directly: the
+    // `defer` probe runs before the `source` one and may have parked its
+    // token on the compiler's pushback stack (see CompilerContext.peek).
+    Token? tok_opt = self.advance();
+    if (catch _err = tok_opt) return false;
+    Token tok = tok_opt;
+
+    bool matched = false;
+    if (!tok.has_escape && str_eq(tok.str_value, kw)) {
+        TokenType after = self.peek_type();
+        if (str_eq(kw, "defer")) {
+            // `import defer * as ns from 'm'` is the only legal defer form.
+            // Anything else after `defer` means the word was a binding name.
+            matched = after == TokenType.STAR;
+        } else if (after == TokenType.IDENTIFIER) {
+            // Source phase takes an ImportedBinding, so an identifier must
+            // follow. When that identifier is `from` the word was usually a
+            // default binding named `source` and this is its FromClause --
+            // unless yet another identifier follows, as in
+            // `import source from from 'm'`, where the binding is `from`.
+            // Deciding that needs a third token, so consume the second and
+            // push both back onto the compiler's 4-deep pushback stack, which
+            // advance() and peek_type() both drain first, so the probe stays
+            // invisible to everything downstream.
+            Token? bind_opt = self.advance();
+            if (try bind = bind_opt) {
+                if (bind.has_escape || !str_eq(bind.str_value, "from")) {
+                    matched = true;                                  // `import source x from`
+                } else {
+                    matched = self.peek_type() == TokenType.IDENTIFIER; // `source from from`
+                }
+                self.pushback(bind);
+            }
+        }
+    }
+
+    self.pushback(tok);
+    return matched;
 }
 
 // Parse an optional WithClause (ES2025 import attributes) after a module
@@ -5861,7 +5926,56 @@ fn void? CompilerContext.import_declaration(&self) {
     if (self.current_module == null) return COMPILE_ERROR~;
     CompModuleDef* mod = self.get_module_def();
 
+    // Import phase modifiers (ES2025 import-defer / source-phase-imports).
+    // Both are contextual keywords, so match_import_phase only reports a
+    // match when the following tokens actually form the phase's ImportClause;
+    // `import defer from 'm'` stays an ordinary default import.
+    bool phase_defer = self.match_import_phase("defer");
+    bool phase_source = false;
+    if (!phase_defer) phase_source = self.match_import_phase("source");
+    if (phase_defer || phase_source) {
+        self.advance()!;  // consume the phase keyword itself
+    }
+
     TokenType tt = self.peek_type();
+
+    if (phase_defer) {
+        // ImportDeclaration : import defer NameSpaceImport FromClause ;
+        // The namespace form is the only one the grammar admits, so a named
+        // or default clause here is a SyntaxError rather than a plain import.
+        if (tt != TokenType.STAR) {
+            return self.fail("'import defer' requires a namespace import (`import defer * as ns from ...`)")~;
+        }
+        self.advance()!;  // consume '*'
+        self.expect_as()!;
+        Token ns_tok = self.expect_binding_identifier()!;
+        char[] ns_local = self.intern_slot_name(ns_tok.str_value);
+        self.expect_from()!;
+        Token spec_tok = self.expect(TokenType.STRING)!;
+        bool wants_json = self.parse_with_clause()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+        // Deferred evaluation is not implemented yet: bind the namespace
+        // eagerly, which is observationally identical for a module without
+        // side effects and keeps the declaration linkable.
+        mod_register_import(mod, ns_local, "*", req_idx, true, false);
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
+
+    if (phase_source) {
+        // ImportDeclaration : import source ImportedBinding FromClause ;
+        Token bind_tok = self.expect_binding_identifier()!;
+        char[] src_local = self.intern_slot_name(bind_tok.str_value);
+        self.expect_from()!;
+        Token spec_tok = self.expect(TokenType.STRING)!;
+        bool wants_json = self.parse_with_clause()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+        // A module source object is not implemented yet; bind the namespace
+        // so the declaration links and the binding exists.
+        mod_register_import(mod, src_local, "*", req_idx, true, false);
+        self.match(TokenType.SEMICOLON);
+        return;
+    }
 
     // Side-effect import: import 'module'
     if (tt == TokenType.STRING) {

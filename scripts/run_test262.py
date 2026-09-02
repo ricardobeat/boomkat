@@ -181,9 +181,8 @@ UNSUPPORTED_PATTERN = re.compile(
     # Stage 3 Proposals (ratified language features not yet in all implementations)
     r"ShadowRealm|decorators|explicit-resource-management|"
     r"legacy-regexp|"
-    r"source-phase-imports|source-phase-imports-module-source|"
     r"await-dictionary|canonical-tz|"
-    r"export-defer|immutable-arraybuffer|import-bytes|import-defer|import-text|"
+    r"export-defer|immutable-arraybuffer|import-bytes|import-text|"
     r"joint-iteration|nonextensible-applies-to-private|"
     # Iterator-helper proposals that landed in test262 after the ES2025 set
     # this engine implements (chunks/windows, includes, join).
