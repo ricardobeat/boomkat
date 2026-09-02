@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Boomkat — Sample Page</title>
+  <link rel="stylesheet" href="pico.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header>
+    <nav class="container">
+      <ul>
+        <li><strong>▚ boomkat</strong></li>
+      </ul>
+      <ul>
+        <li><a href="#typography">Type</a></li>
+        <li><a href="#palette">Palette</a></li>
+        <li><a href="#components">Components</a></li>
+        <li><a href="#forms">Forms</a></li>
+        <li><a href="#" role="button" class="secondary">Docs</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main class="container">
+
+    <hgroup>
+      <h1>A small, quiet interface</h1>
+      <p>Pico CSS v2, set in iA Writer Quattro at 15px, wearing a 1985 palette.</p>
+    </hgroup>
+
+    <p>
+      Everything below is stock Pico markup — no extra classes beyond the palette
+      swatches and the stripe rule. The only changes are the root font size, the
+      typeface stack, and the custom properties that carry the colors.
+    </p>
+
+    <p>
+      <a href="#components" role="button">Get started</a>
+      <a href="#palette" role="button" class="secondary outline">See the palette</a>
+    </p>
+
+    <hr class="stripe">
+
+    <section id="typography">
+      <h2>Typography</h2>
+      <p>
+        Body copy runs at <code>93.75%</code> of the browser default, which lands
+        at 15px and stays there across every breakpoint. Quattro is a
+        duospaced face: it keeps the even rhythm of a monospace while letting
+        narrow letters like <em>i</em> and <em>l</em> breathe, so long paragraphs
+        stay readable in a way true monospace rarely manages.
+      </p>
+
+      <h3>Heading level three</h3>
+      <p>
+        Inline flourishes still work — <strong>bold</strong>, <em>italic</em>,
+        <mark>highlighted</mark>, <del>struck</del>, <ins>inserted</ins>,
+        <kbd>Ctrl</kbd> + <kbd>K</kbd>, and a
+        <a href="#typography" data-tooltip="A tooltip, in plum">tooltip link</a>.
+      </p>
+
+      <blockquote>
+        The 1980s did not have subtle colors. They had confident ones.
+        <footer><cite>— Someone, probably, in a design annual</cite></footer>
+      </blockquote>
+
+      <pre><code>// Duo carries the code blocks
+fn int main() {
+    io::printn("hello, 1985");
+    return 0;
+}</code></pre>
+
+      <ul>
+        <li>Unordered list item</li>
+        <li>Another one, slightly longer, to show the wrap</li>
+        <li>And a third</li>
+      </ul>
+    </section>
+
+    <hr class="stripe">
+
+    <section id="palette">
+      <h2>Palette</h2>
+      <p>Warm gray ground, pastel accents, nothing louder than it needs to be.</p>
+      <ul class="swatches">
+        <li><span style="background:#e08fa3"></span><small>Flamingo</small></li>
+        <li><span style="background:#6fbdbb"></span><small>Miami teal</small></li>
+        <li><span style="background:#f3b98e"></span><small>Apricot</small></li>
+        <li><span style="background:#9aa3d8"></span><small>Periwinkle</small></li>
+        <li><span style="background:#a8d8c4"></span><small>Mint</small></li>
+        <li><span style="background:#f5dc8f"></span><small>Lemon</small></li>
+        <li><span style="background:#5c4a63"></span><small>Plum</small></li>
+        <li><span style="background:#f6f2ee"></span><small>Warm gray</small></li>
+      </ul>
+    </section>
+
+    <hr class="stripe">
+
+    <section id="components">
+      <h2>Components</h2>
+
+      <div class="grid">
+        <article>
+          <header><strong>Card</strong></header>
+          <p>Cards sit a shade brighter than the page, so they lift without a heavy shadow.</p>
+          <footer><small>Sectioned footer</small></footer>
+        </article>
+        <article>
+          <header><strong>Progress</strong></header>
+          <p>Determinate and indeterminate, both in teal.</p>
+          <progress value="62" max="100"></progress>
+          <progress></progress>
+        </article>
+      </div>
+
+      <h3>Buttons</h3>
+      <p>
+        <button>Primary</button>
+        <button class="secondary">Secondary</button>
+        <button class="contrast">Contrast</button>
+        <button class="outline">Outline</button>
+        <button disabled>Disabled</button>
+      </p>
+
+      <h3>Accordion</h3>
+      <details>
+        <summary>What is duospaced type?</summary>
+        <p>
+          A monospace grid with a few characters allowed to be half-width. iA
+          built Duo and Quattro around the idea; Quattro relaxes it furthest.
+        </p>
+      </details>
+      <details>
+        <summary>Why disable dark mode?</summary>
+        <p>
+          The page pins <code>data-theme="light"</code> on <code>&lt;html&gt;</code>,
+          which outranks Pico's <code>prefers-color-scheme</code> rules.
+        </p>
+      </details>
+
+      <h3>Table</h3>
+      <div class="overflow-auto">
+        <table class="striped">
+          <thead>
+            <tr><th scope="col">Token</th><th scope="col">Value</th><th scope="col">Role</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>primary</td><td><code>#e08fa3</code></td><td>Buttons, links</td></tr>
+            <tr><td>secondary</td><td><code>#6fbdbb</code></td><td>Accents, progress</td></tr>
+            <tr><td>contrast</td><td><code>#5c4a63</code></td><td>Tooltips, emphasis</td></tr>
+            <tr><td>background</td><td><code>#f6f2ee</code></td><td>Page ground</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <hr class="stripe">
+
+    <section id="forms">
+      <h2>Forms</h2>
+      <form>
+        <div class="grid">
+          <label>
+            Name
+            <input type="text" name="name" placeholder="Ada Lovelace" autocomplete="off">
+          </label>
+          <label>
+            Email
+            <input type="email" name="email" placeholder="ada@example.com" autocomplete="off">
+          </label>
+        </div>
+
+        <label>
+          Preferred decade
+          <select name="decade">
+            <option>1980s</option>
+            <option>1990s</option>
+            <option>2000s</option>
+          </select>
+        </label>
+
+        <label>
+          Notes
+          <textarea name="notes" rows="3" placeholder="Anything else?"></textarea>
+        </label>
+
+        <label>
+          Saturation
+          <input type="range" min="0" max="100" value="45">
+        </label>
+
+        <fieldset>
+          <legend>Options</legend>
+          <label><input type="checkbox" checked> Ship it</label>
+          <label><input type="checkbox"> Notify the team</label>
+          <label><input type="checkbox" role="switch" checked> Reduced motion</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Density</legend>
+          <label><input type="radio" name="density" checked> Comfortable</label>
+          <label><input type="radio" name="density"> Compact</label>
+        </fieldset>
+
+        <input type="submit" value="Submit">
+      </form>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="container"><small>Pico CSS v2.1.1 · iA Writer Quattro &amp; Duo · sample page</small></div>
+  </footer>
+
+</body>
+</html>

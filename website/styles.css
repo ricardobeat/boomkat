@@ -1,0 +1,227 @@
+/* iA Writer Quattro — variable font, served from jsDelivr */
+@font-face {
+  font-family: "iA Writer Quattro";
+  src: url("https://cdn.jsdelivr.net/gh/iaolo/iA-Fonts@master/iA%20Writer%20Quattro/Webfonts/iAWriterQuattroS-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "iA Writer Quattro";
+  src: url("https://cdn.jsdelivr.net/gh/iaolo/iA-Fonts@master/iA%20Writer%20Quattro/Webfonts/iAWriterQuattroS-Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "iA Writer Quattro";
+  src: url("https://cdn.jsdelivr.net/gh/iaolo/iA-Fonts@master/iA%20Writer%20Quattro/Webfonts/iAWriterQuattroS-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "iA Writer Duo";
+  src: url("https://cdn.jsdelivr.net/gh/iaolo/iA-Fonts@master/iA%20Writer%20Duo/Webfonts/iAWriterDuoS-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "iA Writer Duo";
+  src: url("https://cdn.jsdelivr.net/gh/iaolo/iA-Fonts@master/iA%20Writer%20Duo/Webfonts/iAWriterDuoS-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Pico scales everything off the root font size. Default is 100% (16px);
+     93.75% lands the body copy at 15px. */
+  font-size: 93.75%;
+
+  --pico-font-family-sans-serif: "iA Writer Quattro", ui-monospace, "SF Mono",
+    SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --pico-font-family-monospace: "iA Writer Duo", ui-monospace, "SF Mono",
+    SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --pico-font-family: var(--pico-font-family-sans-serif);
+
+  --pico-line-height: 1.55;
+  --pico-font-weight: 400;
+  --pico-border-radius: 0.25rem;
+}
+
+/* Pico's fluid type scale bumps the root size up at wider breakpoints;
+   pin it so the page stays at 15px everywhere. */
+@media (min-width: 576px) { :root { font-size: 93.75%; } }
+@media (min-width: 768px) { :root { font-size: 93.75%; } }
+@media (min-width: 1024px) { :root { font-size: 93.75%; } }
+@media (min-width: 1280px) { :root { font-size: 93.75%; } }
+@media (min-width: 1536px) { :root { font-size: 93.75%; } }
+
+/* Monospace headings sit better a little tighter and less bold. */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+code, kbd, pre, samp {
+  font-size: 0.9em;
+}
+
+
+/* ---------------------------------------------------------------------------
+   Light only, 80s pastel. The document sets data-theme="light", which beats
+   Pico's prefers-color-scheme block, so dark mode never engages.
+   Warm gray ground; Miami/Memphis accents — dusty pink, teal, apricot.
+   --------------------------------------------------------------------------- */
+:root,
+[data-theme="light"] {
+  --pico-background-color: #f6f2ee;
+  --pico-color: #4f4652;
+  --pico-h1-color: #3a3240;
+  --pico-h2-color: #423a48;
+  --pico-h3-color: #4a424e;
+  --pico-h4-color: #4f4652;
+  --pico-h5-color: #4f4652;
+  --pico-h6-color: #6b6270;
+  --pico-muted-color: #95898f;
+  --pico-muted-border-color: #e7dfda;
+
+  /* Dusty flamingo pink */
+  --pico-primary: #c76b83;
+  --pico-primary-background: #e08fa3;
+  --pico-primary-hover-background: #d47e93;
+  --pico-primary-border: var(--pico-primary-background);
+  --pico-primary-hover-border: var(--pico-primary-hover-background);
+  --pico-primary-underline: rgba(199, 107, 131, 0.4);
+  --pico-primary-hover: #b3576f;
+  --pico-primary-focus: rgba(224, 143, 163, 0.32);
+  --pico-primary-inverse: #fff;
+
+  /* Miami teal */
+  --pico-secondary: #4a9a99;
+  --pico-secondary-background: #6fbdbb;
+  --pico-secondary-hover-background: #5aacaa;
+  --pico-secondary-border: var(--pico-secondary-background);
+  --pico-secondary-hover-border: var(--pico-secondary-hover-background);
+  --pico-secondary-underline: rgba(74, 154, 153, 0.4);
+  --pico-secondary-hover: #3d8584;
+  --pico-secondary-focus: rgba(111, 189, 187, 0.32);
+  --pico-secondary-inverse: #fff;
+
+  /* Deep plum contrast */
+  --pico-contrast: #5c4a63;
+  --pico-contrast-background: #5c4a63;
+  --pico-contrast-hover-background: #483a4e;
+  --pico-contrast-border: var(--pico-contrast-background);
+  --pico-contrast-hover-border: var(--pico-contrast-hover-background);
+  --pico-contrast-underline: rgba(92, 74, 99, 0.4);
+  --pico-contrast-hover: #483a4e;
+  --pico-contrast-focus: rgba(92, 74, 99, 0.25);
+  --pico-contrast-inverse: #fff;
+
+  --pico-card-background-color: #fffdfa;
+  --pico-card-border-color: #ebe3dd;
+  --pico-card-sectioning-background-color: #f3ece7;
+  --pico-code-background-color: #f1ebe6;
+  --pico-code-color: #5c4a63;
+  --pico-mark-background-color: #f8dfa8;
+  --pico-mark-color: #4f4652;
+  --pico-blockquote-border-color: #bfe0de;
+  --pico-blockquote-footer-color: #95898f;
+
+  --pico-form-element-background-color: #fffdfa;
+  --pico-form-element-border-color: #e0d6cf;
+  --pico-form-element-color: #4f4652;
+  --pico-form-element-placeholder-color: #aa9fa6;
+  --pico-form-element-active-background-color: #fff;
+  --pico-form-element-active-border-color: var(--pico-primary-background);
+  --pico-form-element-focus-color: var(--pico-primary-border);
+
+  --pico-switch-background-color: #e0d6cf;
+  --pico-switch-checked-background-color: var(--pico-primary-background);
+  --pico-range-thumb-color: var(--pico-secondary-background);
+
+  --pico-table-border-color: #ebe3dd;
+  --pico-table-row-stripped-background-color: rgba(92, 74, 99, 0.03);
+
+  --pico-ins-color: #4a9a99;
+  --pico-del-color: #c76b83;
+
+  --pico-accordion-border-color: #ebe3dd;
+  --pico-accordion-active-summary-color: var(--pico-primary-hover);
+  --pico-dropdown-background-color: #fffdfa;
+  --pico-dropdown-border-color: #ebe3dd;
+  --pico-dropdown-hover-background-color: #f3ece7;
+  --pico-progress-background-color: #ebe3dd;
+  --pico-progress-color: var(--pico-secondary-background);
+  --pico-tooltip-background-color: var(--pico-contrast-background);
+  --pico-tooltip-color: #fff;
+
+  /* Extra pastels used by the page itself */
+  --accent-apricot: #f3b98e;
+  --accent-periwinkle: #9aa3d8;
+  --accent-mint: #a8d8c4;
+  --accent-lemon: #f5dc8f;
+
+  color-scheme: light;
+}
+
+/* Header and footer sit slightly recessed from the card surfaces, with a
+   thin Memphis stripe to date the thing properly. */
+body > header,
+body > footer {
+  background-color: #f1e9e3;
+}
+body > header {
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  box-shadow: inset 0 3px 0 var(--pico-primary-background),
+              inset 0 6px 0 var(--accent-apricot),
+              inset 0 9px 0 var(--pico-secondary-background);
+  padding-block-start: calc(var(--pico-block-spacing-vertical) + 0.5rem);
+}
+body > footer {
+  border-top: 1px solid var(--pico-muted-border-color);
+  margin-block-start: var(--pico-block-spacing-vertical);
+  padding-block: var(--pico-block-spacing-vertical);
+}
+
+/* Section rule with the same stripe motif. */
+.stripe {
+  border: 0;
+  height: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--pico-primary-background) 0 25%,
+    var(--accent-apricot) 25% 50%,
+    var(--accent-lemon) 50% 75%,
+    var(--pico-secondary-background) 75% 100%
+  );
+  margin-block: var(--pico-block-spacing-vertical);
+}
+
+/* Swatch grid for the palette section. */
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+.swatches li {
+  border: 1px solid var(--pico-card-border-color);
+  border-radius: var(--pico-border-radius);
+  overflow: hidden;
+  background: var(--pico-card-background-color);
+}
+.swatches span {
+  display: block;
+  height: 3.5rem;
+}
+.swatches small {
+  display: block;
+  padding: 0.4rem 0.6rem;
+  color: var(--pico-muted-color);
+}
