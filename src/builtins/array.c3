@@ -1902,8 +1902,7 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
     if (ctx.argc > 0) {
         TVal* arg0 = &ctx.regs[ctx.base_reg];
         if (!arg0.is_undefined()) {
-            if (!arg0.is_object() || arg0.get_heapptr() == null ||
-                !((HObject*)arg0.get_heapptr()).is_callable()) {
+            if (!arr_from_is_callable(*arg0)) {
                 arr_throw_type_error(ctx, "Array.prototype.sort: comparefn is not a function or undefined");
                 return;
             }
@@ -4367,7 +4366,9 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
 
 // Helper: check if callback is callable, throw TypeError if not.
 fn bool arr_check_callback(TVal val, BuiltinContext* ctx) {
-    if (val.is_object() && val.get_heapptr() != null && ((HObject*)val.get_heapptr()).is_callable()) {
+    // Builtins are LIGHTFUNC TVals rather than heap objects, so an is_object()
+    // test alone rejects `[1,2].map(Math.max)`.
+    if (arr_from_is_callable(val)) {
         return true;
     }
     arr_throw_type_error(ctx, "callback is not a function");
