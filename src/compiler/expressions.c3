@@ -4561,6 +4561,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // Set when the ImportCall carried the `defer` phase, which selects
             // DYN_IMPORT_DEFER at the emit below.
             bool import_phase_defer = false;
+            bool import_phase_source = false;
 
             // `import .` opens either the `import.meta` MetaProperty or a
             // phased ImportCall (`import.defer(x)` / `import.source(x)`).
@@ -4599,6 +4600,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // for `defer`. `source` has no module-source object yet,
                     // so it still yields the namespace.
                     import_phase_defer = str_eq(meta_name, "defer");
+                    import_phase_source = !import_phase_defer;
                 } else {
                     if (!(meta_name.len == 4 && meta_name[0] == 'm' && meta_name[1] == 'e'
                           && meta_name[2] == 't' && meta_name[3] == 'a')) {
@@ -4668,7 +4670,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
             self.free_reg(options_reg);
             self.free_reg(spec_reg);
             ushort result = self.alloc_reg();
-            self.emit_abc(import_phase_defer ? Opcode.DYN_IMPORT_DEFER : Opcode.DYN_IMPORT,
+            Opcode dyn_op = Opcode.DYN_IMPORT;
+            if (import_phase_defer) { dyn_op = Opcode.DYN_IMPORT_DEFER; }
+            else if (import_phase_source) { dyn_op = Opcode.DYN_IMPORT_SOURCE; }
+            self.emit_abc(dyn_op,
                           (uint)result, (uint)spec_reg, (uint)options_reg);
             // ImportCall produces a value, not a Reference (ES2024 §13.3.10):
             // it is not a SimpleAssignmentTarget. Clear the same flags a call

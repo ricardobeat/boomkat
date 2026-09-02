@@ -4208,6 +4208,28 @@ fn void builtin_abstract_module_source_tostringtag_get(BuiltinContext* ctx) {
     if (s != null) ctx.result.set_string(s);
 }
 
+// The concrete module-source prototype: the [[Prototype]] of every Module
+// Source object, sitting directly under %AbstractModuleSource%.prototype.
+//
+// A real host puts its source representation's prototype here
+// (WebAssembly.Module.prototype). This engine has one synthetic source kind --
+// the test262 `<module source>` stand-in -- so one prototype serves, and the
+// two-level chain it creates is what the spec requires: a module source's
+// prototype is a concrete prototype, NOT %AbstractModuleSource%.prototype
+// itself (staging/source-phase-imports/module-source-prototype-chain).
+//
+// Created on demand, so a program with no source-phase import allocates none.
+fn HObject* ensure_module_source_proto(Heap* heap) {
+    if (heap.module_source_proto != null) return heap.module_source_proto;
+    if (!register_abstract_module_source(heap)) return null;
+    HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = raw) return null;
+    HObject* proto = raw;
+    proto.prototype = heap.abstract_module_source_proto;
+    heap.module_source_proto = proto;
+    return proto;
+}
+
 // Create %AbstractModuleSource% and its prototype, storing both on the heap.
 // Called from the test262 host setup, the only place that exposes them.
 fn bool register_abstract_module_source(Heap* heap) {

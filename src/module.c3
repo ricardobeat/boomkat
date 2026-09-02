@@ -222,6 +222,13 @@ struct ModuleDef {
     // observes one identity. Rooted like the slots above, by mark_roots.
     HObject*                      module_source_obj;
 
+    // True when the host can give this module a Module Source object. Only a
+    // module with a real source representation -- a WebAssembly module, or the
+    // test262 `<module source>` stand-in -- has one; an ordinary ECMAScript
+    // module does NOT, and importing its source phase is a SyntaxError
+    // (ES2025 source-phase-imports; staging/source-phase-imports).
+    bool                          has_source_repr;
+
     // JSON module support (ES2025 `import x from "m" with { type: "json" }`).
     // A JSON module has no compiled body: `func` is null and its sole export is
     // `default`, bound to `json_value` (the JSON.parse of the file contents,
@@ -797,6 +804,21 @@ fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name) {
 // an engine diagnostic for an error the script is handling. The static path
 // leaves it false — there the diagnostic is the only report of what went wrong.
 fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bool wants_json = false, bool quiet = false) {
+    // The test262 host convention (INTERPRETING.md): `<module source>` names
+    // "a module that provides a valid Module Source". It is not a path, so it
+    // never reaches the filesystem; an empty module answers it, because every
+    // module here has a source object and this one is only ever imported for
+    // its source. Confined to the test262 host, which is the only thing that
+    // defines the specifier.
+    if (vm::test262_host_enabled && char_slice_eq(specifier, "<module source>")) {
+        ModuleDef*? synth_opt = heap_ensure_module(heap, specifier);
+        if (catch err = synth_opt) return MODULE_ERROR~;
+        ModuleDef* synth = synth_opt;
+        if (synth.status == ModuleStatus.UNLOADED) synth.status = ModuleStatus.LOADED;
+        synth.has_source_repr = true;
+        return synth;
+    }
+
     // 1. Normalize name via host hook
     char[]? normalized_opt = call_resolve_name(heap, base_name, specifier);
     if (catch err = normalized_opt) return MODULE_ERROR~;
@@ -1004,6 +1026,14 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
         if (char_slice_eq(ee.local_name, "*")) {
             return { ResolveExportKind.RESOLVED, imported, "*" };
         }
+        // Likewise a re-exported source-phase binding (`import source x from`
+        // then `export { x }`) resolves to the imported module's MODULE SOURCE
+        // object rather than to any binding inside it (ES2025
+        // source-phase-imports: ParseModule reclassifies the local re-export to
+        // an indirect entry whose [[ImportName]] is ~source~).
+        if (char_slice_eq(ee.local_name, SOURCE_BINDING)) {
+            return { ResolveExportKind.RESOLVED, imported, SOURCE_BINDING };
+        }
         // `export { x } from` re-exports the name `ee.local_name` from `imported`.
         return resolve_export(imported, ee.local_name, set, set_len);
     }
@@ -1142,9 +1172,21 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
         ImportEntry* ie = &mod.imports[i];
         if (ie.is_star) continue;
-        // `import source x` resolves no export either: the binding is the
-        // target's Module Source object, which exists as soon as it parses.
-        if (ie.is_source) continue;
+        // `import source x` resolves no export: the binding is the target's
+        // Module Source object. But only a module with a source representation
+        // has one, and importing the source phase of an ordinary ECMAScript
+        // module is an early SyntaxError (ES2025 source-phase-imports;
+        // InitializeEnvironment step 7.c.ii), raised here at link time so no
+        // body has run.
+        if (ie.is_source) {
+            if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
+            ModuleDef* starget = (ModuleDef*)mod.req_modules[ie.req_module_idx].resolved;
+            if (starget != null && !starget.has_source_repr) {
+                return module_raise_link_error(heap,
+                    "module has no source phase representation");
+            }
+            continue;
+        }
         if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
         ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
         if (rme.resolved == null) continue;
@@ -1967,6 +2009,35 @@ fn bool module_eval_async_deps_edge(Heap* heap, Vm* vm, ModuleDef* mod, ModuleDe
     return true;
 }
 
+// Evaluate the awaiting modules under `target` on their own, leaving `target`
+// and every synchronous module below it unevaluated.
+//
+// The counterpart to module_eval_async_deps_edge for the dynamic form: there
+// the gathered modules become edges of the importer, because the importer is
+// mid-evaluation and must wait for them. Here there is no importer -- the
+// awaiting modules are simply started, and the promise `import.defer()`
+// returned is what waits.
+fn bool module_eval_async_deps_standalone(Heap* heap, Vm* vm, ModuleDef* target) {
+    if (target == null) return true;
+    if (target.defer_eager_mark == module_defer_eager_epoch) return true;
+    target.defer_eager_mark = module_defer_eager_epoch;
+    for (uint i = 0; i < (uint)target.req_modules.len(); i++) {
+        ReqModuleEntry* rme = &target.req_modules[i];
+        if (rme.type_only || rme.resolved == null) continue;
+        // A nested deferred edge keeps its own deferral entirely.
+        if (rme.deferred) continue;
+        ModuleDef* dep = (ModuleDef*)rme.resolved;
+        module_defer_scan_epoch++;
+        if (!module_subgraph_is_async(dep)) continue;
+        if (dep.func != null && dep.func.has_tla()) {
+            if (!execute_module(heap, vm, dep)) return false;
+        } else {
+            if (!module_eval_async_deps_standalone(heap, vm, dep)) return false;
+        }
+    }
+    return true;
+}
+
 // ECMA-262 §16.2.1.6.1.3 InnerModuleEvaluation: evaluate `mod`, recursing
 // through its dependencies first.
 //
@@ -2184,7 +2255,16 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
         ResolveSetEntry[RESOLVE_SET_MAX] rset;
         ResolveExportResult rr = resolve_export(source_mod, ie.import_name, &rset[0], 0);
         if (rr.kind == ResolveExportKind.RESOLVED && rr.owner != null) {
-            if (char_slice_eq(rr.binding_name, "*")) {
+            if (char_slice_eq(rr.binding_name, SOURCE_BINDING)) {
+                // A re-exported source-phase binding: the import observes the
+                // owning module's Module Source object, the same one its own
+                // `import source` binding holds.
+                HObject* src_obj = module_source_object(heap, rr.owner);
+                TVal src_val;
+                if (src_obj != null) { src_val.set_object(src_obj); }
+                else { src_val.set_undefined(); }
+                env::env_declare(mod.env, local_key, src_val);
+            } else if (char_slice_eq(rr.binding_name, "*")) {
                 // `export * as ns from` resolved through a re-export chain:
                 // the import observes the target module's namespace object.
                 HObject*? ns_opt = build_namespace_object(heap, rr.owner);
@@ -2495,6 +2575,7 @@ const char[] DYN_IMPORT_JSON_KEY  = "\xFFdi_json";
 // `import.defer(x)`: the resolved module is bound to its deferred namespace
 // and is not evaluated by the import itself (ES2025 import-defer).
 const char[] DYN_IMPORT_DEFER_KEY  = "\xFFdi_defer";
+const char[] DYN_IMPORT_SOURCE_KEY = "\xFFdi_source";
 const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
 
 // `import(specifier)` (ES2020 §13.3.10, ES2015+ HostImportModuleDynamically).
@@ -2504,7 +2585,7 @@ const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
 // spec, dynamic import starts a new job rather than running inline with the
 // calling module's own (possibly still in-progress) static evaluation, and
 // running it inline let import() observably preempt that static DFS order.
-fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = false, bool deferred = false) {
+fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = false, bool deferred = false, bool source_phase = false) {
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = prom_raw) return MODULE_ERROR~;
     HObject* prom = prom_raw;
@@ -2529,6 +2610,7 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     HString* base_key   = heap.str_intern(DYN_IMPORT_BASE_KEY);
     HString* json_key   = heap.str_intern(DYN_IMPORT_JSON_KEY);
     HString* defer_key  = heap.str_intern(DYN_IMPORT_DEFER_KEY);
+    HString* srcph_key  = heap.str_intern(DYN_IMPORT_SOURCE_KEY);
     HString* prom_key   = heap.str_intern(DYN_IMPORT_PROM_KEY);
     HString* spec_str   = heap.str_intern(specifier);
     HString* base_str   = base_name.len > 0 ? heap.str_intern(base_name) : null;
@@ -2566,6 +2648,8 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
     job.put_prop(json_key, json_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal defer_tv; defer_tv.set_boolean(deferred);
     job.put_prop(defer_key, defer_tv, hobject::PROP_FLAGS_WEC, heap);
+    TVal srcph_tv; srcph_tv.set_boolean(source_phase);
+    if (srcph_key != null) job.put_prop(srcph_key, srcph_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal prom_tv; prom_tv.set_object(prom);
     job.put_prop(prom_key, prom_tv, hobject::PROP_FLAGS_WEC, heap);
 
@@ -2618,6 +2702,13 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
             if (dv.is_boolean()) deferred = dv.get_boolean();
         }
     }
+    bool source_phase = false;
+    HString* srcph_key = heap.str_intern(DYN_IMPORT_SOURCE_KEY);
+    if (srcph_key != null) {
+        if (try sv2 = ctx.callee_obj.get_prop(srcph_key, ctx.heap)) {
+            if (sv2.is_boolean()) source_phase = sv2.get_boolean();
+        }
+    }
     HObject* prom = null;
     if (try pv = ctx.callee_obj.get_prop(prom_key, ctx.heap)) {
         if (pv.is_object() && pv.get_heapptr() != null) prom = (HObject*)pv.get_heapptr();
@@ -2655,6 +2746,24 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         mod = mod_opt;
     }
 
+    // `import.source(x)` resolves the module and stops: the source stands for
+    // its compiled form, so nothing is linked or evaluated. A module with no
+    // source representation rejects with a SyntaxError, the same early error
+    // the static form raises at link time.
+    if (!rejected && source_phase) {
+        TVal src_val;
+        HObject* src_obj = module_source_object(heap, mod);
+        if (src_obj == null) {
+            src_val = module_syntax_error(heap, "module has no source phase representation");
+            builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &src_val, heap);
+        } else {
+            src_val.set_object(src_obj);
+            builtins::promise_settle(prom, builtins::PROMISE_FULFILLED, &src_val, heap);
+        }
+        builtins::promise_trigger_reactions(prom, heap, (void*)vm);
+        return;
+    }
+
     if (!rejected) {
         heap.has_error = false;
         heap.error_value.set_undefined();
@@ -2680,12 +2789,40 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     // `import.defer(x)` resolves and links the module but does not evaluate it:
     // the promise fulfills with the deferred namespace, and the body runs on
     // the first triggering access like the static form.
-    // Same rule as the static form: only a fully synchronous subgraph can be
-    // deferred, so `import.defer()` of a module with top-level await (or one
-    // reachable from it) evaluates it before fulfilling.
-    if (deferred) {
+    //
+    // Same split as the static form (see module_eval_async_deps_edge): a
+    // deferred module cannot await, so if something under it does, those
+    // awaiting modules run now while the target itself stays deferred. Only a
+    // target whose OWN body awaits can never be deferred at all, since no
+    // property read could ever finish it.
+    if (!rejected && deferred) {
         module_defer_scan_epoch++;
-        if (module_subgraph_is_async(mod)) deferred = false;
+        if (module_subgraph_is_async(mod)) {
+            if (mod.func != null && mod.func.has_tla()) {
+                deferred = false;
+            } else {
+                // Evaluate the awaiting parts standalone -- NOT as edges of
+                // `mod`, which must stay unevaluated: registering them would
+                // leave `mod` EVALUATING_ASYNC with dependencies nothing ever
+                // settles, and a later `ns.x` would then find it mid-flight.
+                // Unlike a property read this promise can wait for them, and
+                // the drain below is what makes it do so.
+                module_defer_eager_epoch++;
+                if (!module_eval_async_deps_standalone(heap, vm, mod)) {
+                    if (heap.has_error || heap.error_value.is_object()
+                        || heap.error_value.is_string()) {
+                        reason.set_undefined();
+                        heap.tval_copy_ref(&reason, &heap.error_value);
+                        heap.error_value.set_undefined();
+                        heap.has_error = false;
+                        clear_reason_ref = true;
+                    } else {
+                        reason = module_type_error(heap, "module evaluation failed");
+                    }
+                    rejected = true;
+                }
+            }
+        }
     }
 
     if (!rejected && deferred) {
@@ -3141,6 +3278,19 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
         ExportBindingSource src = { null, {} };
         ResolveSetEntry[RESOLVE_SET_MAX] ns_rset;
         ResolveExportResult ns_rr = resolve_export(it.owner_mod, it.export_name, &ns_rset[0], 0);
+        // A re-exported source-phase binding names the owner's Module Source
+        // object, which is not an env binding, so it goes on as a static data
+        // property like the namespace re-export above rather than as a live
+        // accessor.
+        if (ns_rr.kind == ResolveExportKind.RESOLVED && ns_rr.owner != null
+            && char_slice_eq(ns_rr.binding_name, SOURCE_BINDING)) {
+            HObject* src_obj = module_source_object(heap, ns_rr.owner);
+            TVal src_tv;
+            if (src_obj != null) { src_tv.set_object(src_obj); }
+            else { src_tv.set_undefined(); }
+            ns.put_prop(export_key, src_tv, hobject::PROP_FLAGS_NEC, heap);
+            continue;
+        }
         if (ns_rr.kind == ResolveExportKind.RESOLVED && ns_rr.owner != null
             && !char_slice_eq(ns_rr.binding_name, "*")) {
             src = { ns_rr.owner, ns_rr.binding_name };
@@ -3216,19 +3366,17 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
 // of its own; is_module_source is what %AbstractModuleSource%'s toStringTag
 // getter recognises, and the prototype is what `instanceof` walks.
 fn HObject* module_source_object(Heap* heap, ModuleDef* mod) {
-    if (mod == null) return null;
+    if (mod == null || !mod.has_source_repr) return null;
     if (mod.module_source_obj != null) return mod.module_source_obj;
-    // %AbstractModuleSource% is itself created on demand: it is the prototype
-    // every module source needs, and a program with no source-phase import
-    // should allocate neither it nor them.
-    if (heap.abstract_module_source_proto == null) {
-        if (!builtins::register_abstract_module_source(heap)) return null;
-    }
+    // The concrete prototype, and %AbstractModuleSource% above it, are created
+    // on demand: a program with no source-phase import allocates none of this.
+    HObject* concrete = builtins::ensure_module_source_proto(heap);
+    if (concrete == null) return null;
 
     HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) return null;
     HObject* src = raw;
-    src.prototype = heap.abstract_module_source_proto;
+    src.prototype = concrete;
     src.flags.is_module_source = true;
     // ModuleDefs live outside the GC-scanned heap, so the slot is a root only
     // because mark_roots walks it; take a reference for the module's lifetime.

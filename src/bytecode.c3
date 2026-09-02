@@ -649,6 +649,14 @@ enum Opcode : char {
     // ABC format: A=result_reg, B=specifier_reg, C=options_reg.
     DYN_IMPORT_DEFER,
 
+    // `import.source(specifier)`: dynamic import with the source phase (ES2025
+    // source-phase-imports). The module is resolved but neither linked nor
+    // evaluated: the promise fulfills with its Module Source object, or
+    // rejects with a SyntaxError when the module has no source representation.
+    // Separate opcode for the same reason as DYN_IMPORT_DEFER.
+    // ABC format: A=result_reg, B=specifier_reg, C=options_reg.
+    DYN_IMPORT_SOURCE,
+
     // Marks the boundary between parameter initialization and the function
     // body in a generator function.  The compiler emits this once per
     // generator body, immediately after all parameter default checks and
@@ -1046,6 +1054,7 @@ case PUTLEX:     return A_BC;
         case AWAIT:     return ABC;
         case DYN_IMPORT: return ABC;
         case DYN_IMPORT_DEFER: return ABC;
+        case DYN_IMPORT_SOURCE: return ABC;
         case IMPORT_META: return ABC;
         case DEBUGGER:  return NONE;
         case ENDTRY:    return NONE;
