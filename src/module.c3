@@ -3007,6 +3007,13 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     return ns;
 }
 
+// heap::ForceDeferredNsFn bridge, installed by the VM at startup so the
+// prototype-chain walk in hobject can trigger deferral without importing the
+// module subsystem.
+fn bool force_deferred_namespace_bridge(void* heap_ptr, void* vm_ptr, void* ns) {
+    return force_deferred_namespace((Heap*)heap_ptr, vm_ptr, (HObject*)ns);
+}
+
 // True when `key` is one that must NOT force a deferred namespace.
 //
 // Symbols never trigger, which keeps Symbol.toStringTag readable. "then" is

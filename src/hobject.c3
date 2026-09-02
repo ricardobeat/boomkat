@@ -2768,6 +2768,26 @@ macro bool HObject.mega_cacheable(&self) {
 // Every full Get in the engine funnels through here: the VM's GETPROP slow
 // path, builtins' spec-mandated Gets, and the coercion helpers. The megamorphic
 // cache is probed here so all call sites share one invalidation story.
+// Evaluate `cur`'s module if it is a Deferred Module Namespace Exotic Object
+// being searched with a triggering key (ES2025 import-defer). Called from
+// each prototype-chain walk, so `Object.create(ns).x`, `key in
+// Object.create(ns)` and `super.x` through a namespace all see live bindings
+// rather than TDZ ones.
+//
+// The trigger goes through a heap hook for the same reason the proxy cases in
+// those walks do: hobject cannot depend on the module subsystem. Symbol and
+// "then" keys are exempt, and the flag clears once forced, so the common path
+// is a single predictable branch per hop.
+//
+// Returns false only when evaluation threw; the error is on the heap channel.
+fn bool force_deferred_ns_on_chain(HObject* cur, void* key, heap::Heap* h) @inline {
+    if (!cur.flags.exotic_deferred_ns) return true;
+    if (h.force_deferred_ns_fn == null || h.vm_ptr == null) return true;
+    hstring::HString* ks = (hstring::HString*)key;
+    if (ks == null || ks.is_symbol() || ks.equals("then")) return true;
+    return h.force_deferred_ns_fn(h, h.vm_ptr, cur);
+}
+
 fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h) {
     HObject* cur = self;
     uint depth = 0;
@@ -2795,6 +2815,9 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
     }
 
     while (cur != null && depth < MAX_PROTO_DEPTH) {
+        if (!force_deferred_ns_on_chain(cur, key, h)) {
+            return { .kind = PropLookupKind.PROP_NOT_FOUND };
+        }
         // A proxy on the chain runs a getter search through the trap machinery
         // and reports the result as a data property with no owner, which keeps
         // inline caches from being populated. A setter search returns
@@ -2875,6 +2898,7 @@ fn bool HObject.has_prop_proto(&self, void* key, heap::Heap* h) {
     uint depth = 0;
 
     while (cur != null && depth < MAX_PROTO_DEPTH) {
+        if (!force_deferred_ns_on_chain(cur, key, h)) return false;
         // Proxy exotic on the chain: route through the [[Has]] trap.
         if (cur.flags.exotic_proxyobj) {
             if (h.proxy_has_fn != null && h.vm_ptr != null) {

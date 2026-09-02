@@ -65,6 +65,12 @@ alias VmConstructFn = fn TVal(void* vm, TVal func, TVal* args, uint nargs, TVal 
 // walkers route through Proxy traps without depending on the builtins layer.
 // On error the callee sets heap.has_error/error_value and returns false.
 alias ProxyGetFn = fn bool(void* vm, void* heap, void* proxy, void* key, TVal receiver, TVal* out);
+
+// Force a Deferred Module Namespace Exotic Object's module to evaluate
+// (ES2025 import-defer). Installed by the VM so hobject's prototype-chain
+// walk can trigger deferral without depending on the module subsystem, the
+// same arrangement as ProxyGetFn above. Returns false when evaluation threw.
+alias ForceDeferredNsFn = fn bool(void* heap, void* vm, void* ns);
 alias ProxyHasFn = fn bool(void* vm, void* heap, void* proxy, void* key, bool* out);
 
 // --- Faults ---
@@ -873,6 +879,7 @@ struct Heap {
     VmConstructFn       construct_fn;
     // Proxy trap bridges and the owning VM. See ProxyGetFn and ProxyHasFn.
     ProxyGetFn          proxy_get_fn;
+    ForceDeferredNsFn   force_deferred_ns_fn;
     ProxyHasFn          proxy_has_fn;
     void*               vm_ptr;
     // Marks activation-record env bindings during GC.

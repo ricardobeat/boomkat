@@ -7,6 +7,7 @@ import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::env;
 import boomkat::builtins;
+import boomkat::esm;
 
 // ============================================================================
 // VM creation / destruction
@@ -103,6 +104,7 @@ $endif
     heap.construct_fn = &vm_construct_fn_impl;
     heap.microtask_after_fn = &builtins::promise_microtask_after;
     heap.proxy_get_fn = &vm_proxy_get_bridge;
+    heap.force_deferred_ns_fn = &esm::force_deferred_namespace_bridge;
     heap.proxy_has_fn = &vm_proxy_has_bridge;
     heap.vm_ptr = vm;
 

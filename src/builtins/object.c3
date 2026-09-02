@@ -616,6 +616,10 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     HObject* obj;
     if (arg.is_object()) {
         obj = (HObject*)arg.get_heapptr();
+        // [[OwnPropertyKeys]] is a trigger for a deferred namespace
+        // (ES2025 import-defer): it enumerates the exports, so the module
+        // must have run. The operation names no property, so nothing is exempt.
+        if (!ns_force_deferred(ctx, obj)) return;
     } else {
         // ToObject wrapper for primitives, use proper exotic class
         if (!builtin_to_object(ctx, arg)) {
@@ -825,6 +829,10 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
     HObject* obj;
     if (arg.is_object()) {
         obj = (HObject*)arg.get_heapptr();
+        // [[OwnPropertyKeys]] is a trigger for a deferred namespace
+        // (ES2025 import-defer): it enumerates the exports, so the module
+        // must have run. The operation names no property, so nothing is exempt.
+        if (!ns_force_deferred(ctx, obj)) return;
     } else {
         // ToObject wrapper for primitives
         if (!builtin_to_object(ctx, arg)) {
@@ -896,6 +904,11 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
     if (ctx.argc > 0) target_tv = ctx.regs[ctx.base_reg];
     HObject* obj = reflect_require_object(ctx, target_tv, "Reflect.ownKeys called on non-object");
     if (obj == null) return;
+
+    // [[OwnPropertyKeys]] is a trigger for a deferred namespace (ES2025
+    // import-defer): it enumerates the exports, so the module must have run.
+    // No key to exempt here -- the operation names no property.
+    if (!ns_force_deferred(ctx, obj)) return;
 
     // Proxy exotic: [[OwnPropertyKeys]] verbatim.
     if (obj.flags.exotic_proxyobj) {
