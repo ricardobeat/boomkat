@@ -185,6 +185,11 @@ struct ModuleDef {
     // module_defer_scan_epoch so a diamond is walked once per query.
     uint                          defer_scan_mark;
 
+    // Visit stamp for module_eval_async_deps_edge. Separate from
+    // defer_scan_mark because that traversal calls module_subgraph_is_async,
+    // which would otherwise clobber the marks of the walk in progress.
+    uint                          defer_eager_mark;
+
     // Deferred module namespace object (ES2025 import-defer), lazily created
     // for `import defer * as ns`. Distinct from namespace_obj: a module can be
     // imported both ways in one graph and the two objects are not the same
@@ -1838,6 +1843,97 @@ fn bool module_run_body(Heap* heap, Vm* vm, ModuleDef* mod) {
     return true;
 }
 
+// Handle one resolved dependency edge of `mod`: evaluate the dependency, then
+// record the relationship the DFS needs -- a lowlink for a cycle peer, an async
+// dependency count for one still running.
+//
+// Split out of execute_module's dependency walk because a deferred edge into an
+// async subgraph contributes several dependencies in place of one (see
+// module_eval_async_deps_edge), and each must be wired up exactly as an ordinary
+// edge is. Returns false with the error already recorded on `mod`.
+fn bool module_eval_dep_edge(Heap* heap, Vm* vm, ModuleDef* mod, ModuleDef* dep) {
+    if (!execute_module(heap, vm, dep)) {
+        return module_record_eval_error(heap, vm, mod);
+    }
+
+    // Step 11.c.iii/iv, the two mutually exclusive shapes of an edge:
+    if (dep.on_stack && dep.status == ModuleStatus.EVALUATING) {
+        // Back-edge to an ancestor still being traversed: `mod` and `dep`
+        // are in one component. Propagating the lowlink is what leaves
+        // dfs_ancestor_index == dfs_index on the component's root alone.
+        if (dep.dfs_ancestor_index < mod.dfs_ancestor_index) {
+            mod.dfs_ancestor_index = dep.dfs_ancestor_index;
+        }
+    } else if (dep.on_stack) {
+        // A cycle peer that has already finished its own descent and become
+        // async: it is still on the stack (the component is not closed yet)
+        // but it is genuinely running, so `mod` must wait for it exactly
+        // like any other async dependency. Without this a cycle's members
+        // all start before any of them finishes.
+        if (dep.dfs_ancestor_index < mod.dfs_ancestor_index) {
+            mod.dfs_ancestor_index = dep.dfs_ancestor_index;
+        }
+        if (dep.async_eval_order == AsyncEvalOrder.ORDERED) {
+            if (module_add_async_parent(heap, dep, mod)) {
+                mod.pending_async_deps++;
+            }
+        }
+    } else {
+        // Cross-edge into a finished component. Its root owns the outcome.
+        ModuleDef* dep_root = module_cycle_root(dep);
+        if (dep_root.status == ModuleStatus.ERRORED) {
+            heap.error_value.set_undefined();
+            heap.tval_copy_ref(&heap.error_value, &dep_root.eval_error);
+            heap.has_error = true;
+            return module_record_eval_error(heap, vm, mod);
+        }
+        // Still running means `mod` cannot run yet. Count the dependency
+        // and record the reverse edge that will decrement it again.
+        if (dep_root.async_eval_order == AsyncEvalOrder.ORDERED) {
+            if (module_add_async_parent(heap, dep_root, mod)) {
+                mod.pending_async_deps++;
+            }
+        }
+    }
+
+    return true;
+}
+
+// Evaluate the awaiting modules of a deferred target's subgraph as edges of
+// `mod`, leaving the target and every synchronous module under it deferred.
+//
+// This is the spec's GatherAsynchronousTransitiveDependencies, fused with the
+// evaluation of what it gathers: a module with top-level await cannot be forced
+// from a property read, so it has to run during the importer's evaluation, and
+// it must run as an edge of the importer so the importer WAITS for it. Its
+// synchronous dependents stay deferred, since forcing them later is still
+// possible once the await has settled.
+//
+// The eager stamp terminates the walk, and is distinct from the scan stamp
+// because module_subgraph_is_async is called from inside this traversal.
+fn bool module_eval_async_deps_edge(Heap* heap, Vm* vm, ModuleDef* mod, ModuleDef* target) {
+    if (target == null) return true;
+    if (target.defer_eager_mark == module_defer_eager_epoch) return true;
+    target.defer_eager_mark = module_defer_eager_epoch;
+    for (uint i = 0; i < (uint)target.req_modules.len(); i++) {
+        ReqModuleEntry* rme = &target.req_modules[i];
+        if (rme.type_only || rme.resolved == null) continue;
+        // A nested deferred edge keeps its own deferral entirely.
+        if (rme.deferred) continue;
+        ModuleDef* dep = (ModuleDef*)rme.resolved;
+        module_defer_scan_epoch++;
+        if (!module_subgraph_is_async(dep)) continue;
+        if (dep.func != null && dep.func.has_tla()) {
+            // This dependency awaits: it runs now, as an edge of the importer.
+            if (!module_eval_dep_edge(heap, vm, mod, dep)) return false;
+        } else {
+            // Synchronous itself, but something deeper awaits: keep descending.
+            if (!module_eval_async_deps_edge(heap, vm, mod, dep)) return false;
+        }
+    }
+    return true;
+}
+
 // ECMA-262 §16.2.1.6.1.3 InnerModuleEvaluation: evaluate `mod`, recursing
 // through its dependencies first.
 //
@@ -1937,55 +2033,28 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         // await, so a target with top-level await (or one reachable from it)
         // is evaluated eagerly here at its normal place in the order.
         if (rme.deferred) {
+            ModuleDef* dtarget = (ModuleDef*)rme.resolved;
             module_defer_scan_epoch++;
-            if (!module_subgraph_is_async((ModuleDef*)rme.resolved)) continue;
+            if (!module_subgraph_is_async(dtarget)) continue;
+            // The subgraph awaits somewhere. If the target's own body does
+            // not, only the awaiting modules under it run now, each as an
+            // ordinary edge of `mod` so the importer waits for them; the
+            // target and every synchronous module below it stay deferred.
+            if (dtarget.func == null || !dtarget.func.has_tla()) {
+                module_defer_eager_epoch++;
+                if (!module_eval_async_deps_edge(heap, vm, mod, dtarget)) {
+                    return false;
+                }
+                continue;
+            }
+            // The target itself awaits: it can never be forced from a
+            // property read, so it becomes an ordinary edge below.
         }
         ModuleDef* dep = (ModuleDef*)rme.resolved;
 
-        if (!execute_module(heap, vm, dep)) {
-            return module_record_eval_error(heap, vm, mod);
-        }
-
-        // Step 11.c.iii/iv, the two mutually exclusive shapes of an edge:
-        if (dep.on_stack && dep.status == ModuleStatus.EVALUATING) {
-            // Back-edge to an ancestor still being traversed: `mod` and `dep`
-            // are in one component. Propagating the lowlink is what leaves
-            // dfs_ancestor_index == dfs_index on the component's root alone.
-            if (dep.dfs_ancestor_index < mod.dfs_ancestor_index) {
-                mod.dfs_ancestor_index = dep.dfs_ancestor_index;
-            }
-        } else if (dep.on_stack) {
-            // A cycle peer that has already finished its own descent and become
-            // async: it is still on the stack (the component is not closed yet)
-            // but it is genuinely running, so `mod` must wait for it exactly
-            // like any other async dependency. Without this a cycle's members
-            // all start before any of them finishes.
-            if (dep.dfs_ancestor_index < mod.dfs_ancestor_index) {
-                mod.dfs_ancestor_index = dep.dfs_ancestor_index;
-            }
-            if (dep.async_eval_order == AsyncEvalOrder.ORDERED) {
-                if (module_add_async_parent(heap, dep, mod)) {
-                    mod.pending_async_deps++;
-                }
-            }
-        } else {
-            // Cross-edge into a finished component. Its root owns the outcome.
-            ModuleDef* dep_root = module_cycle_root(dep);
-            if (dep_root.status == ModuleStatus.ERRORED) {
-                heap.error_value.set_undefined();
-                heap.tval_copy_ref(&heap.error_value, &dep_root.eval_error);
-                heap.has_error = true;
-                return module_record_eval_error(heap, vm, mod);
-            }
-            // Still running means `mod` cannot run yet. Count the dependency
-            // and record the reverse edge that will decrement it again.
-            if (dep_root.async_eval_order == AsyncEvalOrder.ORDERED) {
-                if (module_add_async_parent(heap, dep_root, mod)) {
-                    mod.pending_async_deps++;
-                }
-            }
-        }
+        if (!module_eval_dep_edge(heap, vm, mod, dep)) return false;
     }
+
 
     // A module with top-level await, or one waiting on async dependencies, gets
     // its place in the async ordering now -- at DFS discovery time, which is
@@ -3144,6 +3213,10 @@ fn bool module_subgraph_is_evaluating(ModuleDef* mod) {
 // Epoch for module_subgraph_is_async's visit stamps, bumped per top-level
 // query so a stamp from an earlier scan never suppresses a later one.
 uint module_defer_scan_epoch = 0;
+
+// Epoch for module_eval_async_deps_edge's visit stamps, bumped per deferred
+// edge so one edge's walk never suppresses the next one's.
+uint module_defer_eager_epoch = 0;
 
 // heap::ForceDeferredNsFn bridge, installed by the VM at startup so the
 // prototype-chain walk in hobject can trigger deferral without importing the
