@@ -754,44 +754,120 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
     ctx.result.set_object(arr);
 }
 
-// RegExp.prototype.toString(), ES5 §15.10.6.4
+// RegExp.prototype.toString(), ES5 §15.10.6.4 / ES2023 §22.2.6.13
 fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
-    HObject* obj = regexp_get_this(ctx);
-    if (obj == null) {
-        // ES2022 §21.2.3.13 step 2: If Type(R) is not Object, throw TypeError.
+    // Step 1: RequireObjectCoercible(R) - Type(R) must be Object
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "RegExp.prototype.toString called on incompatible receiver");
         return;
     }
+    HObject* obj = (HObject*)this_val.get_heapptr();
 
-    // Build "/pattern/flags" string, apply EscapeRegExpPattern to the source
-    // via the shared helper (same algorithm the `source` getter uses).
-    char* pattern = "";
-    usz plen = 0;
-    if ((*obj.extra_ptr()).prim.primitive_value.is_string() && (*obj.extra_ptr()).prim.primitive_value.get_heapptr() != null) {
+    // Check if this is RegExp.prototype itself or a REGEXP-class object
+    bool is_proto = (ctx.heap.regexp_proto != null && obj == ctx.heap.regexp_proto);
+    bool is_regexp = (obj.get_class() == hobject::ObjClass.REGEXP && (*obj.extra_ptr()).regexp.regexp_data != null);
+
+    // Get source: for regexp objects use internal slot, for prototype return "(?:)"
+    HString* source_str = null;
+    if (is_proto) {
+        // RegExp.prototype receiver: source is "(?:)"
+        source_str = builtin_intern_string(ctx.heap, "(?:)");
+    } else if (is_regexp && (*obj.extra_ptr()).prim.primitive_value.is_string() && (*obj.extra_ptr()).prim.primitive_value.get_heapptr() != null) {
+        // Regular RegExp object: apply EscapeRegExpPattern to internal source
         HString* phs = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        pattern = phs.get_cstr();
-        plen = phs.blen;
+        char* pattern = phs.get_cstr();
+        usz plen = phs.blen;
+        char[4096] esc_buf;
+        usz esc_len = escape_regexp_pattern(pattern, plen, &esc_buf, 4095);
+        if (esc_len > 4095) esc_len = 4095;
+        source_str = builtin_intern_string(ctx.heap, esc_buf[:esc_len]);
+    } else {
+        // For non-regexp objects or regexp with no source, get via property lookup
+        HString* source_key = ctx.heap.str(heap::BuiltinStr.SOURCE);
+        TVal? source_opt = builtins_generic_get(obj, source_key, ctx);
+        if (ctx.should_throw) return;
+        if (try src = source_opt) {
+            HString* src_str = builtin_to_string_vm(ctx, &src);
+            if (ctx.should_throw) return;
+            if (src_str != null) {
+                char* src_cstr = src_str.get_cstr();
+                usz src_len = src_str.blen;
+                char[4096] esc_buf;
+                usz esc_len = escape_regexp_pattern(src_cstr, src_len, &esc_buf, 4095);
+                if (esc_len > 4095) esc_len = 4095;
+                source_str = builtin_intern_string(ctx.heap, esc_buf[:esc_len]);
+            } else {
+                source_str = builtin_intern_string(ctx.heap, "(?:)");
+            }
+        } else {
+            source_str = builtin_intern_string(ctx.heap, "(?:)");
+        }
     }
 
-    int jsf = (*obj.extra_ptr()).regexp.flags;
-    char[1024] buf;
-    int pos = 0;
-    buf[pos++] = '/';
-    char[1024] esc_buf;
-    usz esc_len = escape_regexp_pattern(pattern, plen, &esc_buf, 1020);
-    if (esc_len > 1020) esc_len = 1020;
-    mem::copy(&buf[pos], &esc_buf, (sz)esc_len);
-    pos += (int)esc_len;
-    buf[pos++] = '/';
-    if ((jsf & 1) != 0 && pos < 1023) buf[pos++] = 'g';
-    if ((jsf & 2) != 0 && pos < 1023) buf[pos++] = 'i';
-    if ((jsf & 4) != 0 && pos < 1023) buf[pos++] = 'm';
-    if ((jsf & 8) != 0 && pos < 1023) buf[pos++] = 's';
-    if ((jsf & 16) != 0 && pos < 1023) buf[pos++] = 'u';
-    if ((jsf & 32) != 0 && pos < 1023) buf[pos++] = 'y';
-    buf[pos] = 0;
+    // Get flags: for regexp objects use internal slot, for others via property lookup
+    HString* flags_str;
+    if (is_proto) {
+        // RegExp.prototype receiver: flags is ""
+        flags_str = ctx.heap.str(heap::BuiltinStr.EMPTY);
+    } else if (is_regexp) {
+        // Regular RegExp object: build flags from internal slot
+        int jsf = (*obj.extra_ptr()).regexp.flags;
+        char[8] buf;
+        int pos = 0;
+        if ((jsf & 1) != 0) buf[pos++] = 'g';
+        if ((jsf & 2) != 0) buf[pos++] = 'i';
+        if ((jsf & 4) != 0) buf[pos++] = 'm';
+        if ((jsf & 8) != 0) buf[pos++] = 's';
+        if ((jsf & 16) != 0) buf[pos++] = 'u';
+        if ((jsf & 32) != 0) buf[pos++] = 'y';
+        if ((jsf & 64) != 0) buf[pos++] = 'd';
+        if ((jsf & 128) != 0) buf[pos++] = 'v';
+        flags_str = builtin_intern_string(ctx.heap, buf[:pos]);
+    } else {
+        // Non-regexp object: get flags via property lookup (ToString(R.flags))
+        HString* flags_key = ctx.heap.str(heap::BuiltinStr.FLAGS);
+        TVal? flags_opt = builtins_generic_get(obj, flags_key, ctx);
+        if (ctx.should_throw) return;
+        if (try fl = flags_opt) {
+            HString* fl_str = builtin_to_string_vm(ctx, &fl);
+            if (ctx.should_throw) return;
+            if (fl_str != null) {
+                flags_str = fl_str;
+            } else {
+                flags_str = ctx.heap.str(heap::BuiltinStr.EMPTY);
+            }
+        } else {
+            flags_str = ctx.heap.str(heap::BuiltinStr.EMPTY);
+        }
+    }
 
-    HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
+    // Build "/source/flags"
+    HString* source_hs = source_str;
+    HString* flags_hs = flags_str;
+    char* source_cstr = source_hs.get_cstr();
+    usz source_len = source_hs.blen;
+    char* flags_cstr = flags_hs.get_cstr();
+    usz flags_len = flags_hs.blen;
+
+    // Allocate result string: "/" + source + "/" + flags
+    usz result_len = 1 + source_len + 1 + flags_len;
+    char[2048] result_buf;
+    if (result_len > 2047) result_len = 2047;  // Safety cap
+    int pos = 0;
+    result_buf[pos++] = '/';
+    if (pos + (int)source_len <= 2047) {
+        mem::copy(&result_buf[pos], (void*)source_cstr, (sz)source_len);
+        pos += (int)source_len;
+    }
+    result_buf[pos++] = '/';
+    if (pos + (int)flags_len <= 2047) {
+        mem::copy(&result_buf[pos], (void*)flags_cstr, (sz)flags_len);
+        pos += (int)flags_len;
+    }
+    result_buf[pos] = 0;
+
+    HString* result = builtin_intern_string(ctx.heap, result_buf[:pos]);
     ctx.result.set_string(result);
 }
 
