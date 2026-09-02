@@ -176,6 +176,10 @@ struct ModuleDef {
     // Module namespace object (lazily created for `import *`)
     HObject*                      namespace_obj;
 
+    // Visit stamp for module_subgraph_is_async, compared against
+    // module_defer_scan_epoch so a diamond is walked once per query.
+    uint                          defer_scan_mark;
+
     // Deferred module namespace object (ES2025 import-defer), lazily created
     // for `import defer * as ns`. Distinct from namespace_obj: a module can be
     // imported both ways in one graph and the two objects are not the same
@@ -1904,7 +1908,15 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         // may be never. Skipping it here is what keeps its side effects out
         // of the importer's evaluation, and skipping the lowlink propagation
         // below is what keeps it out of the importer's cycle component.
-        if (rme.deferred) continue;
+        //
+        // Only a fully synchronous subgraph can be deferred, though: forcing
+        // happens inside an ordinary property read, which has nowhere to
+        // await, so a target with top-level await (or one reachable from it)
+        // is evaluated eagerly here at its normal place in the order.
+        if (rme.deferred) {
+            module_defer_scan_epoch++;
+            if (!module_subgraph_is_async((ModuleDef*)rme.resolved)) continue;
+        }
         ModuleDef* dep = (ModuleDef*)rme.resolved;
 
         if (!execute_module(heap, vm, dep)) {
@@ -3041,6 +3053,38 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
 
     return ns;
 }
+
+// True when evaluating `mod` would be asynchronous: it has top-level await,
+// or some module reachable from it does.
+//
+// ES2025 import-defer defers only fully synchronous subgraphs. An async
+// module cannot be forced on demand -- the triggering access is an ordinary
+// property read with nowhere to await -- so a deferred edge into one is
+// evaluated eagerly instead, at its normal place in the importer's order
+// (test262 import-defer/evaluation-top-level-await).
+//
+// The visit stamp terminates the walk: every module is entered at most once
+// per query, so a cycle or a diamond is followed only until each edge has
+// been seen, and no separate depth bound is needed.
+fn bool module_subgraph_is_async(ModuleDef* mod) {
+    if (mod == null) return false;
+    if (mod.func != null && mod.func.has_tla()) return true;
+    if (mod.defer_scan_mark == module_defer_scan_epoch) return false;
+    mod.defer_scan_mark = module_defer_scan_epoch;
+    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
+        ReqModuleEntry* rme = &mod.req_modules[i];
+        if (rme.type_only || rme.resolved == null) continue;
+        // A nested `import defer` edge keeps its own deferral, so an async
+        // module behind one does not make THIS subgraph async.
+        if (rme.deferred) continue;
+        if (module_subgraph_is_async((ModuleDef*)rme.resolved)) return true;
+    }
+    return false;
+}
+
+// Epoch for module_subgraph_is_async's visit stamps, bumped per top-level
+// query so a stamp from an earlier scan never suppresses a later one.
+uint module_defer_scan_epoch = 0;
 
 // heap::ForceDeferredNsFn bridge, installed by the VM at startup so the
 // prototype-chain walk in hobject can trigger deferral without importing the
