@@ -1708,9 +1708,20 @@ fn void builtin_ta_proto_slice(BuiltinContext* ctx) {
 // Wave B: %TypedArray%.prototype methods (plan 049 stage 5)
 // ============================================================================
 
-// Check that val is callable (object with callable flag). Throws TypeError if not.
+// Is `val` callable -- a builtin, or an object carrying the callable flag?
+fn bool ta_is_callable(TVal val) {
+    if (val.is_lightfunc()) return true;
+    if (val.is_object() && val.get_heapptr() != null) {
+        return ((HObject*)val.get_heapptr()).is_callable();
+    }
+    return false;
+}
+
+// Check that val is callable. Throws TypeError if not.
 fn bool ta_check_callback(TVal val, BuiltinContext* ctx) {
-    if (val.is_object() && val.get_heapptr() != null && ((HObject*)val.get_heapptr()).is_callable()) {
+    // Builtins are LIGHTFUNC TVals rather than heap objects, so an is_object()
+    // test alone rejects `new Uint8Array([1,2]).map(Math.max)`.
+    if (ta_is_callable(val)) {
         return true;
     }
     arraybuffer_throw_type_error(ctx, "TypedArray callback is not a function");
@@ -2754,8 +2765,7 @@ fn void builtin_ta_proto_sort(BuiltinContext* ctx) {
     if (ctx.argc >= 1) {
         TVal arg0 = ctx.regs[ctx.base_reg];
         if (!arg0.is_undefined()) {
-            if (!arg0.is_object() || arg0.get_heapptr() == null ||
-                !((HObject*)arg0.get_heapptr()).is_callable()) {
+            if (!ta_is_callable(arg0)) {
                 arraybuffer_throw_type_error(ctx, "TypedArray.sort: comparefn is not a function or undefined");
                 return;
             }
@@ -2827,8 +2837,7 @@ fn void builtin_ta_proto_toSorted(BuiltinContext* ctx) {
     if (ctx.argc >= 1) {
         TVal arg0 = ctx.regs[ctx.base_reg];
         if (!arg0.is_undefined()) {
-            if (!arg0.is_object() || arg0.get_heapptr() == null ||
-                !((HObject*)arg0.get_heapptr()).is_callable()) {
+            if (!ta_is_callable(arg0)) {
                 arraybuffer_throw_type_error(ctx, "TypedArray.toSorted: comparefn is not a function or undefined");
                 return;
             }
