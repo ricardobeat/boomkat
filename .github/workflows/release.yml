@@ -1,0 +1,140 @@
+# Build release binaries for every supported platform, and optionally publish
+# them to a GitHub release.
+#
+# Manual trigger only: producing artifacts is cheap enough to run on demand, but
+# publishing is a one-way, outward-facing action, so it happens only when the
+# `release` input says so. Without it the run just leaves the binaries as
+# workflow artifacts to download and check.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.2.0). Required when publishing.'
+        required: false
+        type: string
+      release:
+        description: 'Publish a GitHub release with these binaries'
+        required: false
+        default: false
+        type: boolean
+      draft:
+        description: 'Publish as a draft release'
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  C3C_VERSION: "0.8.2"
+
+jobs:
+  # Fail before spending three builds if the inputs cannot produce a release.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ "${{ inputs.release }}" = "true" ] && [ -z "${{ inputs.tag }}" ]; then
+            echo "::error::'tag' is required when 'release' is enabled." >&2
+            exit 1
+          fi
+
+  build:
+    needs: check
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One platform failing should not hide whether the others build.
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+          # Native arm64 runner. Emulating amd64 instead does not work: c3c's
+          # posix_spawn of the C compiler fails under it (see
+          # scripts/linux/arm64/Dockerfile for the full diagnosis).
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+          - name: darwin-arm64
+            runner: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/toolchain
+        with:
+          c3c-version: ${{ env.C3C_VERSION }}
+
+      # Two engines per platform: the full one, and the slim one that drops the
+      # rich console formatter, Temporal, and inspect (see project.json's
+      # boomkat_slim features).
+      - name: Build normal and slim
+        run: |
+          set -euo pipefail
+          c3c build boomkat
+          c3c build boomkat_slim
+
+      # A binary that cannot run is not a release artifact. This also catches a
+      # cross-arch mistake immediately, which a successful link does not.
+      # The CLI takes a script path (and an optional --module), so the smoke
+      # test runs a file rather than an inline -e expression.
+      - name: Smoke-test both binaries
+        run: |
+          set -euo pipefail
+          echo 'print(6*7);' > /tmp/smoke.js
+          for b in out/boomkat out/boomkat_slim; do
+            echo "--- $b"
+            file "$b"
+            test "$("$b" /tmp/smoke.js)" = "42"
+          done
+
+      - name: Stage artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp out/boomkat      "dist/boomkat-${{ matrix.name }}"
+          cp out/boomkat_slim "dist/boomkat-slim-${{ matrix.name }}"
+          cd dist
+          # Checksums are per-platform here and concatenated into one manifest
+          # at publish time, because each build job writes its own file.
+          shasum -a 256 boomkat-* > "SHA256SUMS-${{ matrix.name }}.txt"
+          ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boomkat-${{ matrix.name }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: inputs.release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: staged
+
+      - name: Collect binaries and merge checksums
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find staged -type f -name 'boomkat-*' ! -name 'SHA256SUMS*' -exec cp {} dist/ \;
+          cat staged/*/SHA256SUMS-*.txt > dist/SHA256SUMS.txt
+          ls -l dist
+          cat dist/SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          draft: ${{ inputs.draft }}
+          generate_release_notes: true
+          files: dist/*

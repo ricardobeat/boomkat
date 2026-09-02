@@ -1,5 +1,5 @@
 name: Toolchain
-description: Install c3c, cached by version.
+description: Install c3c for the runner's platform, cached by version and platform.
 
 # Versions come in as inputs. A composite action does not see the caller's
 # workflow-level `env` inside `with:` expressions, so the cache key below would
@@ -12,23 +12,75 @@ inputs:
 runs:
   using: composite
   steps:
-    # c3c's official x86-64 Linux binary runs natively on ubuntu-latest, with no
-    # emulation, unlike the arm64 container in scripts/linux/arm64. The version is fixed, so
-    # cache it.
+    # Which of the three install paths below applies. Upstream publishes a
+    # binary for linux-x64 and macOS (arm64) but none for linux-arm64, so that
+    # one is built from source -- see the build step for the details.
+    - name: Identify platform
+      id: plat
+      shell: bash
+      run: |
+        os=$(uname -s); arch=$(uname -m)
+        case "$os/$arch" in
+          Linux/x86_64)          kind=linux-x64  ;;
+          Linux/aarch64)         kind=linux-arm64 ;;
+          Darwin/arm64)          kind=macos-arm64 ;;
+          *) echo "unsupported build platform: $os/$arch" >&2; exit 1 ;;
+        esac
+        echo "kind=$kind" >> "$GITHUB_OUTPUT"
+
+    # The version is fixed, so cache the install. The key carries the platform:
+    # /opt/c3 holds a different binary on each, and a linux-x64 c3c restored
+    # onto an arm64 runner would fail only at the first compile.
     - name: Cache c3c
       id: cache-c3c
       uses: actions/cache@v4
       with:
         path: /opt/c3c
-        key: c3c-${{ inputs.c3c-version }}-linux-x64
-    - name: Install c3c
-      if: steps.cache-c3c.outputs.cache-hit != 'true'
+        key: c3c-${{ inputs.c3c-version }}-${{ steps.plat.outputs.kind }}
+
+    - name: Install c3c (prebuilt)
+      if: steps.cache-c3c.outputs.cache-hit != 'true' && steps.plat.outputs.kind != 'linux-arm64'
       shell: bash
       run: |
-        curl -fsSL -o /tmp/c3c.tar.gz \
-          "https://github.com/c3lang/c3c/releases/download/v${{ inputs.c3c-version }}/c3-linux.tar.gz"
+        set -euo pipefail
         mkdir -p /opt/c3c
-        tar xzf /tmp/c3c.tar.gz -C /opt/c3c --strip-components=1
+        base="https://github.com/c3lang/c3c/releases/download/v${{ inputs.c3c-version }}"
+        if [ "${{ steps.plat.outputs.kind }}" = "macos-arm64" ]; then
+          # c3-macos.zip is an arm64 Mach-O binary; it unpacks to a c3/ dir.
+          curl -fsSL -o /tmp/c3c.zip "$base/c3-macos.zip"
+          unzip -q /tmp/c3c.zip -d /tmp/c3unz
+          cp -R /tmp/c3unz/c3/. /opt/c3c/
+        else
+          curl -fsSL -o /tmp/c3c.tar.gz "$base/c3-linux.tar.gz"
+          tar xzf /tmp/c3c.tar.gz -C /opt/c3c --strip-components=1
+        fi
+        chmod +x /opt/c3c/c3c
+
+    # No linux-arm64 release asset exists upstream, so build the same tag from
+    # source against the distro LLVM. This mirrors scripts/linux/arm64/Dockerfile,
+    # which established these exact cmake flags; keep the two in step.
+    - name: Install c3c (build from source, linux-arm64)
+      if: steps.cache-c3c.outputs.cache-hit != 'true' && steps.plat.outputs.kind == 'linux-arm64'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential clang cmake ninja-build git zlib1g-dev libzstd-dev \
+          llvm-19-dev libclang-19-dev liblld-19-dev libpolly-19-dev libclang-rt-19-dev
+        git clone --depth 1 --branch "v${{ inputs.c3c-version }}" \
+          https://github.com/c3lang/c3c.git /tmp/c3c-src
+        cmake -S /tmp/c3c-src -B /tmp/c3c-src/build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH=/usr/lib/llvm-19 \
+          -DC3_LLVM_VERSION=19.1.7
+        cmake --build /tmp/c3c-src/build --parallel
+        mkdir -p /opt/c3c
+        cp /tmp/c3c-src/build/c3c /opt/c3c/c3c
+        cp -R /tmp/c3c-src/lib /opt/c3c/lib
+
     - name: Put c3c on PATH
       shell: bash
-      run: echo "/opt/c3c" >> "$GITHUB_PATH"
+      run: |
+        echo "/opt/c3c" >> "$GITHUB_PATH"
+        /opt/c3c/c3c --version
