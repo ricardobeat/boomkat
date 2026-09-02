@@ -3113,6 +3113,34 @@ fn bool module_subgraph_is_async(ModuleDef* mod) {
     return false;
 }
 
+// True when `mod` or anything it would evaluate is already on the stack.
+//
+// Forcing a deferred namespace runs the whole eager subgraph, so a module
+// anywhere in it that is mid-evaluation makes the force impossible: the
+// evaluation the read is waiting for cannot complete. Detecting that BEFORE
+// starting is what keeps the failure side-effect free -- test262
+// import-defer/errors/get-other-while-dep-evaluating requires that a sibling
+// dependency is not evaluated on the way to discovering the cycle.
+//
+// Shares module_defer_scan_epoch with module_subgraph_is_async; callers bump
+// it before each top-level query.
+fn bool module_subgraph_is_evaluating(ModuleDef* mod) {
+    if (mod == null) return false;
+    if (mod.status == ModuleStatus.EVALUATING
+        || mod.status == ModuleStatus.EVALUATING_ASYNC) return true;
+    if (mod.defer_scan_mark == module_defer_scan_epoch) return false;
+    mod.defer_scan_mark = module_defer_scan_epoch;
+    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
+        ReqModuleEntry* rme = &mod.req_modules[i];
+        if (rme.type_only || rme.resolved == null) continue;
+        // A nested deferred edge is not evaluated by this force, so a module
+        // in flight behind one does not block it.
+        if (rme.deferred) continue;
+        if (module_subgraph_is_evaluating((ModuleDef*)rme.resolved)) return true;
+    }
+    return false;
+}
+
 // Epoch for module_subgraph_is_async's visit stamps, bumped per top-level
 // query so a stamp from an earlier scan never suppresses a later one.
 uint module_defer_scan_epoch = 0;
@@ -3185,8 +3213,8 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
     // is asking for. §16.2.1.10 makes that a TypeError rather than exposing a
     // half-initialized namespace. The flag stays set -- the module may yet
     // finish, and a later access should see an ordinary namespace.
-    if (mod.status == ModuleStatus.EVALUATING
-        || mod.status == ModuleStatus.EVALUATING_ASYNC) {
+    module_defer_scan_epoch++;
+    if (module_subgraph_is_evaluating(mod)) {
         TVal err = module_type_error(heap,
             "cannot access a deferred module namespace while the module is evaluating");
         heap.error_value = err;
