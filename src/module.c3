@@ -3222,18 +3222,17 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
         return false;
     }
 
-    // Evaluating now. Clear the flag for the duration: the module body can
-    // reach its own deferred namespace, directly or around a cycle, and
-    // re-entering here would recurse forever. A read during the body then
-    // sees an ordinary namespace, whose TDZ accessors report an unfinished
-    // binding correctly on their own.
-    ns.flags.exotic_deferred_ns = false;
+    // Evaluating now. The flag stays set: a read from the module's own body
+    // (or around a cycle) must re-enter and take the in-flight branch above,
+    // which is the TypeError the spec requires -- a module cannot trigger its
+    // own evaluation. That branch runs before execute_module is reached
+    // again, so this does not recurse.
     bool ok = execute_module(heap, (Vm*)vm_ptr, mod);
-    // A failed evaluation restores the flag so every later access comes back
-    // through here and rethrows the cached error, rather than reading an
-    // ordinary namespace over a module that never ran (test262
-    // import-defer/errors/module-throws/trigger-evaluation).
-    if (!ok) ns.flags.exotic_deferred_ns = true;
+    // The flag drops only on success. A failed evaluation keeps it, so every
+    // later access comes back through here and rethrows the cached error
+    // rather than reading an ordinary namespace over a module that never ran
+    // (test262 import-defer/errors/module-throws/trigger-evaluation).
+    if (ok) ns.flags.exotic_deferred_ns = false;
     return ok;
 }
 
