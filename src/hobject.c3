@@ -280,6 +280,16 @@ bitstruct ObjFlags : uint {
     // which is what makes `ns[Symbol()]` and `Object.isExtensible(ns)`
     // observable without evaluating.
     bool exotic_deferred_ns : 30;
+    // Module Source object (ES2025 source-phase-imports), the value an
+    // `import source x from "m"` binding holds. Stands in for the spec's
+    // [[ModuleSourceClassName]] internal slot: %AbstractModuleSource%'s
+    // Symbol.toStringTag getter returns undefined for anything without it,
+    // which is how the spec distinguishes a real module source from an
+    // ordinary object that merely inherits the prototype.
+    //
+    // These objects are created lazily -- only a module actually named by a
+    // source-phase import ever gets one (see module_source_object).
+    bool is_module_source : 31;
 }
 
 // Sets the temproot flag on this object.

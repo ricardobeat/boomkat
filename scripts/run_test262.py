@@ -163,7 +163,6 @@ SKIP_DIRS = {
     "built-ins/DisposableStack",       # 93    — Stage 3
     "built-ins/AsyncDisposableStack",  # 104   — Stage 3
     "built-ins/SuppressedError",       # 22    — Stage 3
-    "built-ins/AbstractModuleSource",  # 8     — Stage 3
     # built-ins/SharedArrayBuffer + built-ins/Atomics: implemented single-agent
     # (no worker threads). Tests using the $262.agent multi-worker harness are
     # skipped per-file below (see AGENT_HARNESS_RE in skip_reason).

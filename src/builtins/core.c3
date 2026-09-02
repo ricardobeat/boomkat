@@ -480,6 +480,8 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     DYNAMIC_IMPORT_JOB {"", -1, false, &esm::builtin_dynamic_import_job},
     MODULE_SETTLED_FULFILLED {"", -1, false, &esm::builtin_module_settled_fulfilled},
     MODULE_SETTLED_REJECTED {"", -1, false, &esm::builtin_module_settled_rejected},
+    ABSTRACT_MODULE_SOURCE_CTOR {"AbstractModuleSource", 0, true, &builtin_abstract_module_source_ctor},
+    ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET {"", -1, false, &builtin_abstract_module_source_tostringtag_get},
     PROMISE_THEN_FINALLY {"", -1, false, &builtin_promise_then_finally},
     PROMISE_CATCH_FINALLY {"", -1, false, &builtin_promise_catch_finally},
     ARRAY_SPECIES_GETTER {"", -1, false, &builtin_array_species_getter},
@@ -4184,6 +4186,92 @@ fn bool promote_lightfunc_tval(Heap* heap, TVal* val) {
     return true;
 }
 
+// %AbstractModuleSource% (ES2025 source-phase-imports). Abstract: it exists to
+// be the prototype of the host's concrete module-source objects and to answer
+// `instanceof`, and is never itself constructible.
+fn void builtin_abstract_module_source_ctor(BuiltinContext* ctx) {
+    builtin_throw(ctx, ctx.heap.type_err_proto,
+        "AbstractModuleSource is not constructible");
+}
+
+// get %AbstractModuleSource%.prototype[Symbol.toStringTag].
+//
+// Returns undefined for any receiver without a [[ModuleSourceClassName]] slot
+// -- including %AbstractModuleSource%.prototype itself -- rather than throwing,
+// so `Object.prototype.toString` on an unrelated object still works.
+fn void builtin_abstract_module_source_tostringtag_get(BuiltinContext* ctx) {
+    ctx.result.set_undefined();
+    if (!ctx.this_val.is_object()) return;
+    HObject* o = (HObject*)ctx.this_val.get_heapptr();
+    if (o == null || !o.flags.is_module_source) return;
+    HString* s = builtin_intern_string(ctx.heap, "Module");
+    if (s != null) ctx.result.set_string(s);
+}
+
+// Create %AbstractModuleSource% and its prototype, storing both on the heap.
+// Called from the test262 host setup, the only place that exposes them.
+fn bool register_abstract_module_source(Heap* heap) {
+    if (heap.abstract_module_source_ctor != null) return true;
+
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return false;
+    HObject* proto = proto_raw;
+    proto.prototype = heap.object_proto;
+    // Publish before the next allocation: the heap slot is a GC root, and an
+    // allocation-triggered collection would otherwise free this.
+    heap.abstract_module_source_proto = proto;
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return false;
+    HObject* ctor = ctor_raw;
+    ctor.prototype = heap.function_proto;
+    ctor.flags.callable = true;
+    ctor.flags.constructable = true;
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.ABSTRACT_MODULE_SOURCE_CTOR.ordinal;
+    set_func_ctor_name_length(ctor, heap, "AbstractModuleSource", 0);
+    heap.abstract_module_source_ctor = ctor;
+
+    // .prototype is {writable:false, enumerable:false, configurable:false}.
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    if (prototype_key == null) return false;
+    TVal proto_tv; proto_tv.set_object(proto);
+    hobject::PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    // .prototype.constructor is {writable:true, enumerable:false, configurable:true}.
+    HString* ctor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    if (ctor_key == null) return false;
+    TVal ctor_tv; ctor_tv.set_object(ctor);
+    proto.put_prop(ctor_key, ctor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    // A getter-only Symbol.toStringTag accessor: the spec defines no setter,
+    // so the descriptor's [[Set]] must read back as undefined.
+    HString* tag_sym = ensure_tostringtag_symbol(heap);
+    if (tag_sym == null) return false;
+    HObject*? getter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = getter_raw) return false;
+    HObject* getter = getter_raw;
+    getter.prototype = heap.function_proto;
+    getter.flags.callable = true;
+    getter.flags.constructable = false;
+    (*getter.extra_ptr()).func.builtin_fn_index =
+        (int)Builtin.ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET.ordinal;
+    set_func_ctor_name_length(getter, heap, "get [Symbol.toStringTag]", 0);
+    TVal getter_tv; getter_tv.set_object(getter);
+    TVal undef_tv; undef_tv.set_undefined();
+    hobject::PropFlags acc_flags;
+    acc_flags.writable = false;
+    acc_flags.enumerable = false;
+    acc_flags.configurable = true;
+    acc_flags.is_accessor = true;
+    proto.put_prop(tag_sym, hobject::hobject_create_accessors(heap, getter_tv, undef_tv),
+                   acc_flags, heap);
+    return true;
+}
+
 // test262 host globals: __evalScript, __detachArrayBuffer, and the $262
 // object (detachArrayBuffer / evalScript / global) expected by harness
 // files. Installed only by the test harness binaries, never part of the
@@ -4197,9 +4285,12 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     HString* h262_key = builtin_intern_string(heap, "$262");
     HString* d_key = builtin_intern_string(heap, "detachArrayBuffer");
     HString* e_key = builtin_intern_string(heap, "evalScript");
+    HString* ams_key = builtin_intern_string(heap, "AbstractModuleSource");
+    HString* ams_hidden_key = builtin_intern_string(heap, "__AbstractModuleSource");
     HString* g_key = heap.str(heap::BuiltinStr.GLOBAL);
     if (es_key == null || d_hidden_key == null || h262_key == null
-        || d_key == null || e_key == null || g_key == null) return false;
+        || d_key == null || e_key == null || g_key == null || ams_key == null
+        || ams_hidden_key == null) return false;
 
     // __evalScript(src), runs src as a global script so that var/function
     // declarations become non-configurable global properties (unlike eval()
@@ -4226,6 +4317,18 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
 
     h262.put_prop(d_key, detach_tv, hobject::PROP_FLAGS_WC, heap);
     h262.put_prop(e_key, es_tv, hobject::PROP_FLAGS_WC, heap);
+
+    // %AbstractModuleSource%: the spec places it in the intrinsics and exposes
+    // it through no global, so the host publishes it. It goes on $262 here and,
+    // like __evalScript/__detachArrayBuffer, on a hidden global as well: the
+    // batch runner replaces this $262 with one built in JavaScript
+    // (HOST262_HARNESS in cli/test262_runner.c3), and reaches the intrinsic
+    // through the global.
+    if (!register_abstract_module_source(heap)) return false;
+    TVal ams_tv;
+    ams_tv.set_object(heap.abstract_module_source_ctor);
+    env::env_declare_nonenum(global_env, ams_hidden_key, ams_tv);
+    h262.put_prop(ams_key, ams_tv, hobject::PROP_FLAGS_WC, heap);
     if (global_env.bindings != null) {
         TVal g_tv;
         g_tv.set_object(global_env.bindings);

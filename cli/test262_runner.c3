@@ -142,7 +142,7 @@ const char[] NFM_HARNESS = "function validateNativeFunctionSource(source){var po
 const char[] ISCON_HARNESS = "function isConstructor(f){try{var p=new Proxy({},{getPrototypeOf:function(){return null;}});new f(p);return true;}catch(e){return false;}}";
 
 // Minimal $262 host object providing detachArrayBuffer, global, and evalScript.
-const char[] HOST262_HARNESS = "var $262={detachArrayBuffer:function(b){return __detachArrayBuffer(b);},global:this,gc:function(){},evalScript:function(s){return __evalScript(s);},createRealm:function(){throw new Error('createRealm not supported');},agent:{}};function $DETACHBUFFER(b){return __detachArrayBuffer(b);}";
+const char[] HOST262_HARNESS = "var $262={detachArrayBuffer:function(b){return __detachArrayBuffer(b);},global:this,gc:function(){},evalScript:function(s){return __evalScript(s);},createRealm:function(){throw new Error('createRealm not supported');},agent:{},AbstractModuleSource:__AbstractModuleSource};function $DETACHBUFFER(b){return __detachArrayBuffer(b);}";
 
 // Parse test262 frontmatter for `includes:` and load required harness files.
 fn void load_test_includes(Vm* v, Heap* hp, char[] src) {

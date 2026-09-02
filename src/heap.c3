@@ -739,6 +739,11 @@ struct Heap {
     HObject* generator_proto;
     HObject* generator_func_proto; // GeneratorFunction.prototype (ES6 §25.2.3)
     HObject* async_func_proto;     // AsyncFunction.prototype (ES2017 §25.7.3)
+    // %AbstractModuleSource% and its prototype (ES2025 source-phase-imports).
+    // Created only by the test262 host setup, which is the only thing that
+    // exposes them ($262.AbstractModuleSource); null in an ordinary engine.
+    HObject* abstract_module_source_ctor;
+    HObject* abstract_module_source_proto;
     HObject* iterator_proto;   // %IteratorPrototype% (ES6 §25.1.2)
     HObject* iterator_ctor;    // %Iterator% constructor (ES2025 §27.1.3.1), for Iterator.from's OrdinaryHasInstance check
     HObject* iterator_helper_proto; // %IteratorHelperPrototype% (ES2025 §27.1.2.1)
@@ -1994,6 +1999,8 @@ fn void Heap.reset(&self) {
     self.async_iterator_proto = null;
     self.async_generator_proto = null;
     self.async_generator_func_proto = null;
+    self.abstract_module_source_ctor  = null;
+    self.abstract_module_source_proto = null;
     self.iterator_proto       = null;
     self.iterator_ctor        = null;
     self.iterator_helper_proto = null;
@@ -3256,6 +3263,8 @@ fn void Heap.mark_roots(&self) {
     if (self.generator_proto != null) { self.mark_hobject(self.generator_proto); }
     if (self.generator_func_proto != null) { self.mark_hobject(self.generator_func_proto); }
     if (self.async_func_proto != null) { self.mark_hobject(self.async_func_proto); }
+    if (self.abstract_module_source_ctor != null) { self.mark_hobject(self.abstract_module_source_ctor); }
+    if (self.abstract_module_source_proto != null) { self.mark_hobject(self.abstract_module_source_proto); }
     if (self.iterator_proto != null) { self.mark_hobject(self.iterator_proto); }
     if (self.iterator_ctor != null) { self.mark_hobject(self.iterator_ctor); }
     if (self.iterator_helper_proto != null) { self.mark_hobject(self.iterator_helper_proto); }
