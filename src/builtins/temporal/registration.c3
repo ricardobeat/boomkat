@@ -149,7 +149,6 @@ fn bool setUpTemporalPlainDate(Heap* heap) {
         if (!register_proto_getter_accessor(proto, heap, "monthCode", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_MONTHCODE))) return false;
         if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_INLEAPYEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendar", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_CALENDAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_ERA))) return false;
         if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_ERAYEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "daysInMonth", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_DAYSINMONTH))) return false;
@@ -219,7 +218,6 @@ fn bool setUpTemporalPlainDateTime(Heap* heap) {
         if (!register_proto_getter_accessor(proto, heap, "millisecond", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_MILLISECOND))) return false;
         if (!register_proto_getter_accessor(proto, heap, "microsecond", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_MICROSECOND))) return false;
         if (!register_proto_getter_accessor(proto, heap, "nanosecond", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_NANOSECOND))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendar", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDARID))) return false;
         if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFWEEK))) return false;
         if (!register_proto_getter_accessor(proto, heap, "dayOfYear", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFYEAR))) return false;
@@ -268,18 +266,8 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
         if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_INLEAPYEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERA))) return false;
         if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERAYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendar", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_CALENDAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "month", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthCode", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTHCODE))) return false;
         if (!register_proto_getter_accessor(proto, heap, "day", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAY))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInMonth", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINMONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthsInYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTHSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_INLEAPYEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendar", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_CALENDAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERA))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERAYEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYOFWEEK))) return false;
         if (!register_proto_getter_accessor(proto, heap, "dayOfYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYOFYEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "weekOfYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_WEEKOFYEAR))) return false;
@@ -312,7 +300,6 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
         if (!register_proto_getter_accessor(proto, heap, "monthCode", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTHCODE))) return false;
         if (!register_proto_getter_accessor(proto, heap, "day", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAY))) return false;
         if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendar", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_CALENDAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_ERA))) return false;
         if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_ERAYEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_INLEAPYEAR))) return false;

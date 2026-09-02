@@ -607,9 +607,6 @@ fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
         case TemporalBuiltin.PLAIN_DATETIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_g; break;
         case TemporalBuiltin.PLAIN_DATETIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.long_h; break;
         case TemporalBuiltin.PLAIN_DATETIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.long_i; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDAR:
-            ctx.result.set_object(obj.extra.temporal.calendar);
-            return;
         case TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDARID:
             ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
             return;

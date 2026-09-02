@@ -438,18 +438,6 @@ fn void builtin_temporal_plain_yearmonth_proto_calendarId(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
 }
 
-fn void builtin_temporal_plain_yearmonth_proto_calendar(BuiltinContext* ctx) {
-    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
-    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    HObject* cal = obj.extra.temporal.calendar;
-    if (cal != null) {
-        ctx.result.set_object(cal);
-    } else {
-        ctx.result.set_object(ctx.heap.temporal_iso_calendar);
-    }
-}
-
 fn void builtin_temporal_plain_yearmonth_proto_era(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
