@@ -467,6 +467,12 @@ FLAG_NOSTRICT_RE = re.compile(
 # / agent.sleep / agent.monotonicNow). This single-agent engine has no worker
 # threads, so these tests can never pass — skip them by their harness usage.
 AGENT_HARNESS_RE = re.compile(r"\$262\.agent\b|\bagent\.(?:start|broadcast|receiveBroadcast|sleep|monotonicNow|getReport|report|leaving)\b")
+# $262.createRealm builds a second global. This engine is single-realm (the
+# host hook in cli/test262_runner.c3 throws), so a test that calls it cannot
+# pass. Most of the corpus declares `features: [cross-realm]` and is caught by
+# UNSUPPORTED_PATTERN, but the imported SpiderMonkey tests under staging/sm
+# call the hook without declaring the feature, so match the call itself.
+CREATE_REALM_RE = re.compile(r"\$262\.createRealm\b")
 def skip_reason(path, es5_only=False):
     """Return why a test would be skipped by the suite, or None if it runs.
 
@@ -515,6 +521,8 @@ def skip_reason(path, es5_only=False):
             full = header
         if AGENT_HARNESS_RE.search(full):
             return "multi-worker agent harness ($262.agent) — single-agent engine"
+    if CREATE_REALM_RE.search(_read_header(path)[1]):
+        return "cross-realm ($262.createRealm) — single-realm engine"
     if es5_only and ANY_FEATURES_PATTERN.search(header):
         return "ES5-only mode: post-ES5 feature flag"
     # Strict-only engine: noStrict tests are intentionally unsupported —
