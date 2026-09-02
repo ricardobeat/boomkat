@@ -92,8 +92,24 @@ check_clean "deeply nested parens" 30 \
   "var x = $(python3 -c 'print("("*2000 + "1" + ")"*2000)'); print(\"ok\");"
 
 # --- pathological runtime structures ---------------------------------------
+# A throw raised inside a native re-entry (a proxy trap, a getter) arrives on
+# vm.has_error/heap.has_error and, for the run-depth guard, vm.throw_pending.
+# vm_throw_value must retire all of them when a catch takes the throw, or the
+# frame the catcher just resumed aborts and the error escapes as uncaught.
+# These stay one-liners on purpose: which guard fires depends on the top-level
+# frame's register count, so extra locals tip the recursion into the
+# activation limit instead and stop exercising the re-entry path.
 check_catchable "recursive proxy get trap" 20 \
   'var p = new Proxy({}, { get: function(t, k) { return p[k]; } }); p.x;'
+check_catchable "recursive proxy has trap" 20 \
+  'var p = new Proxy({}, { has: function(t, k) { return k in p; } }); "x" in p;'
+check_catchable "recursive getter" 20 \
+  'var o = {}; Object.defineProperty(o, "g", { get: function() { return o.g; } }); o.g;'
+# The catch body must run normally afterwards: a leftover throw_pending
+# re-fires on the next coercion instead of letting the program continue.
+check_clean "usable after catching proxy recursion" 20 \
+  'var p = new Proxy({}, { get: function(t, k) { return p[k]; } });
+   try { p.x; } catch (e) { print("ok:" + (1 + 1) + ":" + e.constructor.name); }'
 check_clean "huge sparse array index" 20 \
   'var a = []; a[4294967294] = 1; print(a.length);'
 

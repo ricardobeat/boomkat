@@ -66,6 +66,17 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                 }
                 vm.heap.tval_copy_ref(&cat.thrown_val, &thrown_val);
                 cat.flags &= ~CATCHER_FLAG_CATCH_ENABLED;
+                // The throw is now this catcher's to handle, so retire every
+                // error channel it may have arrived on. A throw raised inside
+                // a native re-entry (a proxy trap, a getter, a comparator)
+                // sets vm.has_error / heap.has_error and, for the run-depth
+                // guard, vm.throw_pending -- and none of those unwind on their
+                // own. Leaving one set means the catch body runs with an error
+                // still pending: the next coercion re-fires the same throw, or
+                // Vm.run aborts the frame the catcher just resumed.
+                vm.has_error = false;
+                vm.heap.has_error = false;
+                vm.throw_pending = false;
                 *curr_pc = cat.catch_pc;
                 search_act.curr_pc = *curr_pc;
                 *needs_restart = true;

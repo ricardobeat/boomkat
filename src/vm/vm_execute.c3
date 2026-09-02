@@ -182,12 +182,14 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
 // stack, for the save area and for the builtin's own frame, so without this
 // the stack faults before anything throws.
 //
-// Only vm.has_error / heap.has_error / heap.error_value are set, the channel
-// every native caller of vm_call_fn_impl polls after the call returns. Setting
-// vm.throw_pending as well would survive the unwind: the native callers clear
-// heap.has_error when they convert it into their own throw, but nothing clears
-// throw_pending, so the next arithmetic coercion re-fires the same RangeError
-// after the user's catch has already handled it.
+// The throw is raised on every channel: vm.has_error / heap.has_error /
+// heap.error_value, which every native caller of vm_call_fn_impl polls after
+// the call returns, and vm.throw_pending, which the coercion paths
+// (vm_to_number and the builtins reached through it) test instead -- a depth
+// throw raised only on has_error is invisible to those, so they read the NaN
+// result as a value and coerce again, continuing the recursion this guard
+// exists to stop. vm_throw_value retires all three once a catcher takes the
+// throw, so none of them survives the unwind into the catch body.
 // Minimum result size at which an `acc = acc + chunk` concat is born as a
 // non-interned accumulator with spare capacity, and below which the in-place
 // append path refuses to engage. Deliberately lower than
