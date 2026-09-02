@@ -6451,7 +6451,17 @@ fn void? CompilerContext.export_declaration(&self) {
             }
             for (uint i = 0; i < count; i++) {
                 CompImportEntry* ie = mod_find_import_by_local(mod, local_names[i]);
-                if (ie != null) {
+                // `export { x }` where `x` is itself an import re-exports the
+                // other module's binding directly, which keeps the value live
+                // and avoids a second hop through this module's env.
+                //
+                // A DEFERRED star import is the exception: collapsing it to
+                // "*" would make the export name resolve to the target's
+                // ordinary namespace object, but the local binding holds its
+                // DEFERRED namespace, and the two are deliberately distinct
+                // objects. Re-export the local binding instead so both
+                // spellings observe the same one.
+                if (ie != null && !(ie.is_star && ie.is_deferred)) {
                     char[] indirect_local = ie.is_star ? "*" : ie.import_name;
                     self.register_export(mod, indirect_local, export_names[i], true, ie.req_module_idx)!;
                     continue;
