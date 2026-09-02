@@ -1686,9 +1686,9 @@ fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
             if (!array_set_elem_ulong_set(ctx, obj, upper, lower_val)) return;
         } else if (has_upper) {
             if (!array_set_elem_ulong_set(ctx, obj, lower, upper_val)) return;
-            arr_delete_elem_or_throw(ctx, obj, upper);
+            arr_delete_elem_strict_or_throw(ctx, obj, upper);
         } else if (has_lower) {
-            arr_delete_elem_or_throw(ctx, obj, lower);
+            arr_delete_elem_strict_or_throw(ctx, obj, lower);
             if (!array_set_elem_ulong_set(ctx, obj, upper, lower_val)) return;
         }
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -3683,6 +3683,21 @@ fn void arr_delete_elem_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
     }
     HString* del_key = ctx.heap.int_to_hstring((long)key);
     if (del_key != null) obj.delete_prop(del_key, ctx.heap);
+}
+
+// DeletePropertyOrThrow(O, P), ES2022 §7.3.9: unlike arr_delete_elem_or_throw
+// above, the ordinary (non-Proxy) path honours [[Delete]]'s return value, so a
+// non-configurable index throws a TypeError instead of silently succeeding.
+fn void arr_delete_elem_strict_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
+    if (obj.flags.exotic_proxyobj) {
+        arr_delete_elem_or_throw(ctx, obj, key);
+        return;
+    }
+    HString* del_key = ctx.heap.int_to_hstring((long)key);
+    if (del_key == null) return;
+    if (!obj.es_delete_prop(del_key, ctx.heap)) {
+        arr_throw_type_error(ctx, "Cannot delete property");
+    }
 }
 
 // Helper: invoke a getter function. Returns the getter result or undefined.
