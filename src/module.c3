@@ -3157,13 +3157,12 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
     if (ns == null || !ns.flags.exotic_deferred_ns) return true;
     ModuleDef* mod = deferred_namespace_owner(heap, ns);
     if (mod == null) return true;
-    // Clear the flag before evaluating: the module body can reach its own
-    // deferred namespace (directly, or through a cycle), and re-entering here
-    // would recurse forever. After this point the object behaves as an
-    // ordinary namespace, which is exactly what a re-entrant read should see.
-    ns.flags.exotic_deferred_ns = false;
-
-    if (mod.status == ModuleStatus.EVALUATED) return true;
+    // An evaluated module needs no further work, and the namespace can drop
+    // the flag for good: from here it behaves as an ordinary one.
+    if (mod.status == ModuleStatus.EVALUATED) {
+        ns.flags.exotic_deferred_ns = false;
+        return true;
+    }
 
     // A module that already failed rethrows the SAME error value on every
     // later access, so a deferred namespace and an earlier eager import of
@@ -3184,7 +3183,8 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
     // Already running: the access came from the module's own body, or from a
     // cycle peer's, and there is no way to complete the evaluation the read
     // is asking for. §16.2.1.10 makes that a TypeError rather than exposing a
-    // half-initialized namespace.
+    // half-initialized namespace. The flag stays set -- the module may yet
+    // finish, and a later access should see an ordinary namespace.
     if (mod.status == ModuleStatus.EVALUATING
         || mod.status == ModuleStatus.EVALUATING_ASYNC) {
         TVal err = module_type_error(heap,
@@ -3194,7 +3194,19 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
         return false;
     }
 
-    return execute_module(heap, (Vm*)vm_ptr, mod);
+    // Evaluating now. Clear the flag for the duration: the module body can
+    // reach its own deferred namespace, directly or around a cycle, and
+    // re-entering here would recurse forever. A read during the body then
+    // sees an ordinary namespace, whose TDZ accessors report an unfinished
+    // binding correctly on their own.
+    ns.flags.exotic_deferred_ns = false;
+    bool ok = execute_module(heap, (Vm*)vm_ptr, mod);
+    // A failed evaluation restores the flag so every later access comes back
+    // through here and rethrows the cached error, rather than reading an
+    // ordinary namespace over a module that never ran (test262
+    // import-defer/errors/module-throws/trigger-evaluation).
+    if (!ok) ns.flags.exotic_deferred_ns = true;
+    return ok;
 }
 
 // Find the module a Deferred Module Namespace Exotic Object stands for.
