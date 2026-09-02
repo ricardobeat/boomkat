@@ -13,8 +13,9 @@ Default worker count scales with the CPU count (cpus - 2, capped at 12). The
 per-worker ceiling keeps total memory bounded at workers × 3 GB, so on a machine
 with less RAM than that product, lower --workers.
 
-IMPORTANT: Always prefer running a single --phase relevant to your change
-instead of the full suite. A single phase is usually well under a minute.
+IMPORTANT: Always prefer narrowing to the part of the corpus your change
+touches — --dir <path> for a tight loop, --suite <name> for one top-level
+suite — instead of running everything.
 
 This is the single canonical test262 runner. For per-test results (needed
 for failure clustering), pass --log FILE — each line is RESULT<TAB>relpath
@@ -23,13 +24,14 @@ CE:expected-runtime / CE:unexpected. Cluster with e.g.:
     awk -F'\\t' '$1=="FAIL"{print $2}' results.tsv | xargs -n1 dirname | sort | uniq -c | sort -rn
 
 Usage:
-    python3 scripts/run_test262.py --phase 2    # single phase (preferred)
-    python3 scripts/run_test262.py              # all phases (full validation only)
+    python3 scripts/run_test262.py --dir language/statements/class  # tight loop (preferred)
+    python3 scripts/run_test262.py --suite language                # one suite
+    python3 scripts/run_test262.py                                 # everything (full validation only)
     python3 scripts/run_test262.py --workers 4  # override worker count
     python3 scripts/run_test262.py --es5        # ES5-only (skip tests with feature flags)
     python3 scripts/run_test262.py --log out/test262_results.tsv   # per-test log
-    python3 scripts/run_test262.py --phase 2 --shuffle --workers 1 --no-retry-fails  # contamination detect
-    python3 scripts/run_test262.py --phase 2 --fresh-process   # one worker per test (slow, clean)
+    python3 scripts/run_test262.py --suite language --shuffle --workers 1 --no-retry-fails  # contamination detect
+    python3 scripts/run_test262.py --suite language --fresh-process   # one worker per test (slow, clean)
 """
 
 import argparse
@@ -85,7 +87,7 @@ _CPUS = os.cpu_count() or 4
 MAX_WORKERS = max(1, _CPUS)
 DEFAULT_WORKERS = max(1, min(_CPUS - 2, 12))
 
-# Optional per-test result log (set from --log in main); list so run_phase can
+# Optional per-test result log (set from --log in main); list so run_suite can
 # see assignment from main without a global statement.
 LOG_FH = [None]
 
@@ -98,7 +100,7 @@ LOG_FH = [None]
 # fix. Never use it to inflate a reported pass rate.
 RETRY_FAILS = [False]
 
-# Shuffle test order within each phase (for contamination detection).
+# Shuffle test order within each suite (for contamination detection).
 # When combined with --workers 1 --no-retry-fails, running twice with and
 # without --shuffle and diffing the logs reveals order-dependent reset bugs.
 SHUFFLE = [False]
@@ -154,8 +156,8 @@ def sample_worker_rss(workers):
 # Directories to skip entirely (relative to test262/test/)
 SKIP_DIRS = {
     "annexB",                          # 1,086 — legacy browser quirks
-    "intl402",                         # 3,337 — ECMA-402 (separate spec)
-    "staging",                         # 1,493 — unstandardized proposals
+    "intl402",                         # 3,337 — ECMA-402, out of scope
+    "staging/intl402",                 # ECMA-402 staging tests, likewise
     "harness",                         # 116   — test harness self-tests
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
     "built-ins/DisposableStack",       # 93    — Stage 3
@@ -209,8 +211,8 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 #                                       including multi-byte UTF-8 subjects
 #                                       (the old byte-mode limitation is
 #                                       gone). The generated property-escapes
-#                                       tree runs in phase 5 with the 60 s
-#                                       timeout override below.
+#                                       tree gets the 60 s timeout override
+#                                       below.
 #   regexp-v-flag                    - full unicodeSets support: string
 #                                       properties (\p{RGI_Emoji} and the
 #                                       flag/ZWJ/keycap/tag sequences), &&
@@ -421,287 +423,24 @@ SKIP_FILES = {
     "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
 }
 
-PHASES = [
-    {
-        "label": "Phase 0-1: Core VM",
-        "dirs": [
-            "language/asi", "language/block-scope", "language/comments",
-            "language/directive-prologue", "language/function-code",
-            "language/global-code", "language/identifiers",
-            "language/identifier-resolution", "language/keywords",
-            "language/line-terminators", "language/literals/boolean",
-            "language/literals/null", "language/literals/numeric",
-            "language/literals/string", "language/literals/undefined",
-            "language/punctuators", "language/reserved-words",
-            "language/source-text", "language/statementList",
-            "language/types", "language/white-space",
-            "language/statements/block", "language/statements/empty",
-            "language/statements/expression", "language/statements/if",
-            "language/statements/return", "language/statements/variable",
-            "language/statements/while", "language/statements/do-while",
-            "language/future-reserved-words", "language/arguments-object",
-            "language/expressions/dynamic-import",
-            "language/expressions/import.meta",
-        ],
-    },
-    {
-        "label": "Phase 1: Calling Convention & Closures",
-        "dirs": [
-            "language/expressions/function", "language/expressions/call",
-            "language/expressions/new", "language/rest-parameters",
-        ],
-    },
-    {
-        "label": "Phase 2: Basic Operators",
-        "dirs": [
-            "language/expressions/addition", "language/expressions/subtraction",
-            "language/expressions/multiplication", "language/expressions/division",
-            "language/expressions/modulus", "language/expressions/exponentiation",
-            "language/expressions/bitwise-and", "language/expressions/bitwise-or",
-            "language/expressions/bitwise-xor", "language/expressions/bitwise-not",
-            "language/expressions/left-shift", "language/expressions/right-shift",
-            "language/expressions/unsigned-right-shift",
-            "language/expressions/unary-plus", "language/expressions/unary-minus",
-            "language/expressions/logical-not", "language/expressions/typeof",
-            "language/expressions/equals", "language/expressions/strict-equals",
-            "language/expressions/less-than", "language/expressions/greater-than",
-            "language/expressions/less-than-or-equal",
-            "language/expressions/greater-than-or-equal",
-            "language/expressions/conditional", "language/expressions/comma",
-            "language/expressions/void", "language/expressions/logical-and",
-            "language/expressions/logical-or", "language/expressions/assignment",
-            "language/expressions/compound-assignment",
-            "language/expressions/postfix-increment",
-            "language/expressions/postfix-decrement",
-            "language/expressions/prefix-increment",
-            "language/expressions/prefix-decrement",
-            "language/expressions/does-not-equals",
-            "language/expressions/strict-does-not-equals",
-            "language/expressions/coalesce",
-            "language/expressions/logical-assignment",
-            "language/expressions/assignmenttargettype",
-            "language/expressions/grouping",
-            "language/expressions/concatenation",
-            "language/expressions/relational",
-            "language/expressions/this",
-        ],
-    },
-    {
-        "label": "Phase 3: Object System",
-        "dirs": [
-            "language/expressions/object", "language/expressions/array",
-            "language/expressions/member-expression",
-            "language/expressions/property-accessors",
-            "language/computed-property-names",
-            "built-ins/Object", "built-ins/Array", "built-ins/Array/length",
-            "built-ins/Reflect",
-            # `built-ins/Array/prototype` is deliberately absent: the prototype
-            # methods are Phase 6's subject. The longest-prefix rule below hands
-            # them there while the rest of `built-ins/Array` stays here.
-        ],
-    },
-    {
-        "label": "Phase 4: Error Handling & References",
-        "dirs": [
-            "built-ins/Error", "built-ins/NativeErrors",
-            "language/statements/try", "language/statements/throw",
-        ],
-    },
-    {
-        "label": "Phase 5: Built-in Constructors",
-        "dirs": [
-            "built-ins/Boolean", "built-ins/String", "built-ins/Number",
-            "built-ins/Function",
-            "built-ins/BigInt", "language/literals/bigint",
-            # Object and Array constructors live in Phase 3 (Object System);
-            # listing them here too would only make the same files run twice.
-        ],
-    },
-    {
-        "label": "Phase 6: Built-in Prototype Methods",
-        "dirs": [
-            "built-ins/Math", "built-ins/String/prototype",
-            "built-ins/Array/prototype", "built-ins/Number/prototype",
-            "built-ins/Boolean/prototype", "built-ins/Function/prototype",
-        ],
-    },
-    {
-        "label": "Phase 7: Remaining ES5 Features",
-        "dirs": [
-            "language/statements/switch",
-            "language/statements/break", "language/statements/continue",
-            "language/expressions/instanceof",
-            "language/expressions/in", "language/expressions/delete",
-            "language/eval-code", "language/statements/for",
-            "language/statements/for-in",
-            "language/statements/function",
-            "language/statements/let",
-            "language/statements/const",
-            "language/statements/debugger",
-            "language/expressions/new.target",
-        ],
-    },
-    {
-        "label": "Phase 8: ES5 Built-in Objects",
-        "dirs": [
-            "built-ins/JSON", "built-ins/Date", "built-ins/RegExp",
-            "language/literals/regexp",
-            "built-ins/parseInt", "built-ins/parseFloat",
-            "built-ins/decodeURI", "built-ins/decodeURIComponent",
-            "built-ins/encodeURI", "built-ins/encodeURIComponent",
-            "built-ins/global",
-        ],
-    },
-    {
-        "label": "Phase 11: Arrow Functions & Templates",
-        "dirs": [
-            "language/expressions/arrow-function",
-            "language/expressions/template-literal",
-            "language/expressions/tagged-template",
-            "language/expressions/optional-chaining",
-        ],
-    },
-    {
-        "label": "Phase 12-13: Destructuring & Spread",
-        "dirs": [
-            "language/destructuring",
-            "language/expressions/spread",
-        ],
-    },
-    {
-        "label": "Phase 14: for-of",
-        "dirs": [
-            "language/statements/for-of",
-        ],
-    },
-    {
-        "label": "Phase 24: for-await-of",
-        "dirs": [
-            "language/statements/for-await-of",
-            "language/statements/async-function",
-            "language/expressions/async-function",
-            "language/expressions/async-arrow-function",
-            "language/expressions/await",
-        ],
-    },
-    {
-        "label": "Phase 15: Classes",
-        "dirs": [
-            "language/expressions/class",
-            "language/statements/class",
-            "language/expressions/super",
-        ],
-    },
-    {
-        "label": "Phase 17-20: Map/Set/Symbol/Promise/WeakMap/WeakSet/WeakRef/FinalizationRegistry",
-        "dirs": [
-            "built-ins/Map", "built-ins/Set",
-            "built-ins/Symbol",
-            "built-ins/Promise",
-            "built-ins/WeakMap", "built-ins/WeakSet",
-            "built-ins/WeakRef", "built-ins/FinalizationRegistry",
-            "built-ins/AggregateError",
-        ],
-    },
-    {
-        "label": "Phase 21: Generators",
-        "dirs": [
-            "language/expressions/yield",
-            "language/expressions/generators",
-            "language/statements/generators",
-            # Async generators (`async function*`) — plan 060.
-            "language/expressions/async-generator",
-            "language/statements/async-generator",
-            "built-ins/AsyncGeneratorFunction",
-            "built-ins/AsyncGeneratorPrototype",
-            "built-ins/AsyncFromSyncIteratorPrototype",
-            "built-ins/AsyncIteratorPrototype",
-            "built-ins/GeneratorPrototype", "built-ins/GeneratorFunction",
-            "built-ins/AsyncFunction",
-            "built-ins/ArrayIteratorPrototype",
-            "built-ins/RegExpStringIteratorPrototype",
-            "built-ins/Iterator",
-        ],
-    },
-    {
-        "label": "Phase 22: Buffers",
-        "dirs": [
-            "built-ins/ArrayBuffer",
-            "built-ins/TypedArray",
-            "built-ins/TypedArrayConstructors",
-            "built-ins/DataView",
-            "built-ins/Uint8Array",
-            "built-ins/SharedArrayBuffer",
-            "built-ins/Atomics",
-        ],
-    },
-    {
-        "label": "Phase 23: Proxy",
-        "dirs": [
-            "built-ins/Proxy",
-        ],
-    },
-    {
-        "label": "Phase 25: ESM Modules",
-        "dirs": [
-            "language/module-code",
-            "language/import",
-            "language/export",
-        ],
-    },
-    {
-        "label": "Phase 26: Temporal",
-        # See plans/080-temporal.md "Feature list" for what currently passes
-        # vs what's still failing. The longest-prefix rule below scopes
-        # subdirs: any subdir listed here takes its parent over (so listing
-        # `built-ins/Temporal/Instant` runs every test under it, and the
-        # runner skips tests with feature flags the suite can't satisfy).
-        "dirs": [
-            "built-ins/Temporal/Duration",
-            "built-ins/Temporal/Instant",
-            # Temporal.Now — Phase 3: instant / timeZoneId / plainDateISO /
-            # plainDateTimeISO / plainTimeISO / zonedDateTimeISO. The ISO-string
-            # forms these accept (offset / bracket zone / IANA name) are
-            # exercised by the test262 timezone-string-* files.
-            "built-ins/Temporal/Now",
-            "built-ins/Temporal/PlainDate",
-            "built-ins/Temporal/PlainDateTime",
-            "built-ins/Temporal/PlainMonthDay",
-            "built-ins/Temporal/PlainTime",
-            "built-ins/Temporal/PlainYearMonth",
-            "built-ins/Temporal/ZonedDateTime",
-            # `built-ins/Temporal/Calendar` — top-level (id, toString) lives
-            # here too; dateFromFields/mergeFields/dateAdd/dateUntil are not
-            # implemented yet (see plans/080-temporal.md).
-            "built-ins/Temporal/Calendar",
-            "built-ins/Temporal/getOwnPropertyNames.js",
-            "built-ins/Temporal/keys.js",
-            "built-ins/Temporal/prop-desc.js",
-            "built-ins/Temporal/toStringTag",
-        ],
-    },
-]
-
 # ---------------------------------------------------------------------------
-# Phase number → array index mapping
+# Suites
 # ---------------------------------------------------------------------------
-# Build from labels like "Phase 0-1: Core VM" → accepts 0 and 1, maps to index 0.
-# "Phase 21: Generators" → accepts 21, maps to index 14.
-_PHASE_NUM_TO_IDX = {}
-for _i, _p in enumerate(PHASES):
-    _m = re.match(r'Phase (\d+)(?:-(\d+))?', _p["label"])
-    if _m:
-        _start = int(_m.group(1))
-        _end = int(_m.group(2)) if _m.group(2) else _start
-        for _num in range(_start, _end + 1):
-            _PHASE_NUM_TO_IDX[_num] = _i
+# The suites are test262's own top-level directories, so selection is
+# exhaustive by construction: every test in the corpus belongs to exactly one
+# suite, and a directory added upstream is picked up without touching this
+# file. What the engine does not aim to pass is expressed in SKIP_DIRS /
+# UNSUPPORTED_PATTERN, never by omitting a directory here.
+SUITES = ["language", "built-ins", "staging", "annexB", "intl402", "harness"]
 
-def resolve_phase_num(n):
-    """Convert a phase label number (e.g. 15 for Classes) to array index."""
-    idx = _PHASE_NUM_TO_IDX.get(n)
-    if idx is None:
-        raise ValueError(f"Unknown phase number {n}. Valid: {sorted(_PHASE_NUM_TO_IDX.keys())}")
-    return idx
+
+def resolve_suite(name):
+    """Map a --suite argument to a canonical suite name."""
+    if name not in SUITES:
+        raise ValueError(f"Unknown suite {name!r}. Valid: {', '.join(SUITES)}")
+    return name
+
+
 # ---------------------------------------------------------------------------
 # Skip filter
 # ---------------------------------------------------------------------------
@@ -710,6 +449,19 @@ def resolve_phase_num(n):
 # Match ANY test that declares feature flags — used by --es5 mode to skip
 # all post-ES5 tests.  Tests without `features:` are baseline ES5 behavior.
 ANY_FEATURES_PATTERN = re.compile(r"^features:\s*\[", re.MULTILINE)
+
+# test262 front-matter writes `flags:` two ways: the inline `flags: [noStrict]`
+# used across most of the corpus, and the YAML block list
+#
+#     flags:
+#       - noStrict
+#
+# that the imported SpiderMonkey tests under staging/sm use. Matching only the
+# inline form silently runs 147 sloppy-mode staging tests the strict-only
+# engine rejects by design, so accept both.
+FLAG_NOSTRICT_RE = re.compile(
+    r"flags:\s*(?:\[[^]]*\bnoStrict\b|(?:\n\s*-\s*\w+)*\n\s*-\s*noStrict\b)"
+)
 # Multi-worker Atomics/SharedArrayBuffer tests drive a second agent via the
 # $262.agent host hooks (agent.start / agent.broadcast / agent.receiveBroadcast
 # / agent.sleep / agent.monotonicNow). This single-agent engine has no worker
@@ -718,7 +470,7 @@ AGENT_HARNESS_RE = re.compile(r"\$262\.agent\b|\bagent\.(?:start|broadcast|recei
 def skip_reason(path, es5_only=False):
     """Return why a test would be skipped by the suite, or None if it runs.
 
-    The single source of truth for skip decisions — both the phase runner
+    The single source of truth for skip decisions — both the suite runner
     (via should_skip) and the --single mode consult this, so a raw
     single-test verdict can flag "the suite skips this" instead of looking
     like a real failure.
@@ -770,7 +522,7 @@ def skip_reason(path, es5_only=False):
     # params, etc.) which the engine now rejects at parse time. The
     # NOSTRICT_RUN_GLOBS families assert mode-independent behavior and pass
     # under the strict-only engine, so they are exempt.
-    if re.search(r"flags:\s*\[.*\bnoStrict\b", header) and not any(
+    if FLAG_NOSTRICT_RE.search(header) and not any(
         fnmatch.fnmatch(rel, pat) for pat in NOSTRICT_RUN_GLOBS
     ):
         return "noStrict (strict-only engine)"
@@ -904,7 +656,7 @@ def _spawn_worker_proc(binary):
     Where RLIMIT_AS can be lowered (Linux), the cap is self-enforcing: a
     runaway-allocation test fails its own malloc and the worker dies at the
     exact moment it crosses the line. Where it cannot (macOS), the parent's RSS
-    sampling in run_phase is the only backstop.
+    sampling in run_suite is the only backstop.
     """
     preexec = None
     if RLIMIT_AS_OK:
@@ -1063,7 +815,7 @@ class Worker:
                 pass
 
     def close(self):
-        """Kill and reap. Only for end-of-phase teardown, where blocking is fine."""
+        """Kill and reap. Only for end-of-suite teardown, where blocking is fine."""
         self.kill()
         try:
             self._proc.wait(timeout=5)
@@ -1072,56 +824,32 @@ class Worker:
 # ---------------------------------------------------------------------------
 # Test262 runner
 # ---------------------------------------------------------------------------
-# Phase dirs nest: Phase 5 lists `built-ins/String` while Phase 6 lists
-# `built-ins/String/prototype`, so a naive recursive walk hands the prototype
-# tests to both phases and the suite runs — and counts — them twice. Ownership
-# is therefore decided by longest prefix: a file belongs to the phase whose
-# listed dir is the most specific match for its path. That keeps the phase
-# lists readable (no hand-maintained exclusions) while making the phases
-# disjoint, so `--phase N` runs a real slice and the full run's total is the
-# number of distinct test files.
-_DIR_OWNER = {}
-for _i, _p in enumerate(PHASES):
-    for _d in _p["dirs"]:
-        _DIR_OWNER[_d.strip("/")] = _i
+def build_suite_tests(suite, es5_only=False, subdir=None):
+    """Collect the test files for a suite, applying the skip filter.
 
-def build_phase_tests(phase_idx, es5_only=False):
-    """Collect test files for a phase, applying skip filter. Recurses into subdirs."""
-    phase = PHASES[phase_idx]
+    `subdir` narrows the walk to one path under test262/test for a tight debug
+    loop; it must lie inside the suite.
+    """
+    root = os.path.join(TEST262_DIR, subdir) if subdir else os.path.join(TEST262_DIR, suite)
     tests = []
-    seen = set()
     skipped = 0
-    for rel_dir in phase["dirs"]:
-        full = os.path.join(TEST262_DIR, rel_dir)
-        if not os.path.isdir(full):
-            continue
-        for dirpath, _dirnames, filenames in os.walk(full):
-            # Subtrees claimed by a more specific phase dir are that phase's
-            # to run; skipping the whole subtree here also saves the walk.
-            rel_dirpath = os.path.relpath(dirpath, TEST262_DIR)
-            if _DIR_OWNER.get(rel_dirpath.replace(os.sep, "/"), phase_idx) != phase_idx:
-                _dirnames[:] = []
+    if not os.path.isdir(root):
+        return tests, skipped
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for entry in filenames:
+            if not entry.endswith(".js"):
                 continue
-            for entry in filenames:
-                if not entry.endswith(".js"):
-                    continue
-                # `_FIXTURE.js` files are support modules imported by other
-                # tests (dynamic-import, module-code), never run standalone —
-                # they carry no test262 header, so executing them as tests is
-                # meaningless. This is the standard test262 convention.
-                if entry.endswith("_FIXTURE.js"):
-                    continue
-                path = os.path.join(dirpath, entry)
-                # A phase may list both a dir and one of its subdirs (e.g.
-                # `built-ins/Array` alongside `built-ins/Array/length`), which
-                # walks the inner tree twice; only the first visit counts.
-                if path in seen:
-                    continue
-                seen.add(path)
-                if should_skip(path, es5_only=es5_only):
-                    skipped += 1
-                    continue
-                tests.append(path)
+            # `_FIXTURE.js` files are support modules imported by other tests
+            # (dynamic-import, module-code), never run standalone — they carry
+            # no test262 header, so executing them as tests is meaningless.
+            # This is the standard test262 convention.
+            if entry.endswith("_FIXTURE.js"):
+                continue
+            path = os.path.join(dirpath, entry)
+            if should_skip(path, es5_only=es5_only):
+                skipped += 1
+                continue
+            tests.append(path)
     if SHUFFLE[0]:
         random.shuffle(tests)
     return tests, skipped
@@ -1215,10 +943,9 @@ def run_fresh_process(tests, test_timeout):
     return results
 
 
-def run_phase(phase_idx, num_workers, test_timeout, es5_only=False):
-    """Run a single phase and return (pass_count, fail_count, skip_count, total_count)."""
-    phase = PHASES[phase_idx]
-    tests, skipped = build_phase_tests(phase_idx, es5_only=es5_only)
+def run_suite(suite, num_workers, test_timeout, es5_only=False, subdir=None):
+    """Run one suite and return (pass, fail, skip, total, ce, ce_breakdown)."""
+    tests, skipped = build_suite_tests(suite, es5_only=es5_only, subdir=subdir)
     total = len(tests) + skipped
 
     if not tests:
@@ -1485,11 +1212,15 @@ def main():
         description="Run test262 tests in parallel worker mode."
     )
     parser.add_argument(
-        "--phase",
-        type=int,
+        "--suite",
         action="append",
-        choices=sorted(_PHASE_NUM_TO_IDX.keys()),
-        help="Run only this phase by number (0, 1, 2, … 15, 17, 21). Can be repeated to run multiple phases.",
+        choices=SUITES,
+        help="Run only this suite (test262's own top-level directory). Repeatable.",
+    )
+    parser.add_argument(
+        "--dir",
+        help="Run only tests under this path relative to test262/test "
+             "(e.g. language/statements/class) — the tight debug loop.",
     )
     parser.add_argument(
         "--workers",
@@ -1528,7 +1259,7 @@ def main():
     parser.add_argument(
         "--shuffle",
         action="store_true",
-        help="Shuffle test order within each phase (contamination detection)",
+        help="Shuffle test order within each suite (contamination detection)",
     )
     parser.add_argument(
         "--fresh-process",
@@ -1593,10 +1324,16 @@ def main():
         print(f"ERROR: {VM_BINARY} not found. Build it first with: c3c build test262_runner", file=sys.stderr)
         sys.exit(1)
 
-    if args.phase is not None:
-        phases = [resolve_phase_num(p) for p in args.phase]
+    if args.dir:
+        rel = args.dir.strip("/")
+        if not os.path.isdir(os.path.join(TEST262_DIR, rel)):
+            print(f"ERROR: no such directory under test262/test: {rel}", file=sys.stderr)
+            sys.exit(1)
+        run_units = [(rel.split("/")[0], rel)]
+    elif args.suite is not None:
+        run_units = [(resolve_suite(x), None) for x in args.suite]
     else:
-        phases = range(len(PHASES))
+        run_units = [(x, None) for x in SUITES]
     grand_pass = grand_fail = grand_skip = grand_total = grand_ce = 0
     grand_ce_breakdown = {"expected-parse": 0, "expected-runtime": 0, "unexpected": 0}
 
@@ -1609,13 +1346,13 @@ def main():
     # pass rate from 70.2% → ~70.3% in this run, but more importantly it makes
     # the CE column tell the truth: "real" parser bugs are counted separately
     # from "correct rejections" the test262 metadata asks for.
-    print("Phase | Total | Pass | Fail | Skip | CE:expected-parse | CE:expected-runtime | CE:unexpected(real bug)")
+    print("Suite | Total | Pass | Fail | Skip | CE:expected-parse | CE:expected-runtime | CE:unexpected(real bug)")
     print("------|-------|------|------|------|-------------------|--------------------|--------------------------")
     grand_eff_pass = 0
     grand_real_fail = 0
-    for p in phases:
-        p_pass, p_fail, p_skip, p_total, p_ce, p_ce_bd = run_phase(
-            p, args.workers, args.timeout, es5_only=args.es5
+    for suite, subdir in run_units:
+        p_pass, p_fail, p_skip, p_total, p_ce, p_ce_bd = run_suite(
+            suite, args.workers, args.timeout, es5_only=args.es5, subdir=subdir
         )
         ce_exp_parse = p_ce_bd.get("expected-parse", 0)
         ce_exp_runtime = p_ce_bd.get("expected-runtime", 0)
@@ -1623,7 +1360,7 @@ def main():
         # "Real" failure = fail + unexpected-CE + expected-runtime-CE
         p_real_fail = p_fail + ce_unexpected + ce_exp_runtime
         print(
-            f"{PHASES[p]['label']} | {p_total} | {p_pass} | {p_fail} | {p_skip} | "
+            f"{subdir or suite} | {p_total} | {p_pass} | {p_fail} | {p_skip} | "
             f"{ce_exp_parse} | {ce_exp_runtime} | {ce_unexpected}"
         )
         grand_pass += p_pass
@@ -1636,7 +1373,7 @@ def main():
         grand_eff_pass += p_pass + ce_exp_parse
         grand_real_fail += p_real_fail
 
-    if len(phases) > 1:
+    if len(run_units) > 1:
         grand_run = grand_pass + grand_fail + grand_ce
         grand_real_run = grand_eff_pass + grand_real_fail
         pct = (grand_pass / grand_run * 100) if grand_run > 0 else 0

@@ -19,7 +19,7 @@ build-batch:
 # Build plain runner CLI (out/boomkat) and the batch test262 runner.
 # Both are built together deliberately: building only out/boomkat leaves a
 # stale out/test262_runner behind, so `--single` picks up your change while a
-# full `--phase` run silently scores the old binary.
+# full `--suite` run silently scores the old binary.
 build-bench:
     @make out/boomkat out/test262_runner
 
@@ -249,9 +249,13 @@ rosetta-check:
 test262: build-batch
     python3 scripts/run_test262.py
 
-# Run a specific test262 phase (e.g. `just test262-phase 2`)
-test262-phase phase="0": build-batch
-    python3 scripts/run_test262.py --phase {{phase}}
+# Run one test262 suite (e.g. `just test262-suite language`)
+test262-suite suite="language": build-batch
+    python3 scripts/run_test262.py --suite {{suite}}
+
+# Run one test262 directory (e.g. `just test262-dir language/statements/class`)
+test262-dir dir: build-batch
+    python3 scripts/run_test262.py --dir {{dir}}
 
 # ── TypeScript conformance ───────────────────────────────────────────────────
 
@@ -271,16 +275,16 @@ ts-runtime:
     python3 scripts/verify_ts_libraries.py
 
 # Check test contamination by diffing fixed vs shuffled runs
-test262-contamination phase="0": build-batch
-    python3 scripts/run_test262.py --phase {{phase}} --workers 1 --no-retry-fails --log /tmp/t262_fixed.tsv
-    python3 scripts/run_test262.py --phase {{phase}} --workers 1 --no-retry-fails --log /tmp/t262_shuffled.tsv --shuffle
+test262-contamination suite="language": build-batch
+    python3 scripts/run_test262.py --suite {{suite}} --workers 1 --no-retry-fails --log /tmp/t262_fixed.tsv
+    python3 scripts/run_test262.py --suite {{suite}} --workers 1 --no-retry-fails --log /tmp/t262_shuffled.tsv --shuffle
     diff /tmp/t262_fixed.tsv /tmp/t262_shuffled.tsv && echo "CLEAN: no contamination detected" || echo "CONTAMINATION: diff found"
 
 # Check that all Heap fields are handled by Heap.reset()
 check-heap-drift:
     python3 scripts/check_heap_reset_drift.py
 
-# Run zero-failure gate across all test262 phases
+# Run zero-failure gate across all test262 suites
 test262-gate: build-batch
     bash scripts/test262_gate.sh
 

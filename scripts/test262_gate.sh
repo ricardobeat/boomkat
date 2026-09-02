@@ -3,7 +3,7 @@
 # test262_gate.sh: zero-fail gate for test262.
 #
 # Runs the full test262 suite once and requires it to report zero failures
-# across every phase (0 fail, 0 unexpected/expected-runtime CE). The suite is
+# across every suite (0 fail, 0 unexpected/expected-runtime CE). The suite is
 # deterministic, with no flaky tests, so a single clean run is the gate.
 #
 # Usage:
@@ -25,7 +25,7 @@ log=$(mktemp)
 python3 "$SCRIPT_DIR/run_test262.py" 2>&1 | tee "$log"
 
 # "Overall (raw): N pass / M fail / K CE (P%)" is printed once at the end of a
-# full (all-phase) run. Its fail count already folds in every non-pass verdict
+# full (all-suite) run. Its fail count already folds in every non-pass verdict
 # (FAIL, TIMEOUT, MEMKILL, unexpected/expected-runtime CE) via
 # _summarize_results, so this one number is a true zero-fail check.
 line=$(grep -m1 '^Overall (raw):' "$log")
