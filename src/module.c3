@@ -1175,6 +1175,15 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // Re-linking would replace the live mod.env under the running body and
     // downgrade the status so the body re-executes. It is already linked.
     if (mod.status == ModuleStatus.EVALUATING) return true;
+    // Same for a module suspended on a top-level await, and for one that has
+    // already failed. Linking is a one-way door: every status from LINKED on
+    // means it happened. Downgrading a failed module to LINKED in particular
+    // makes execute_module re-run its body, so a second import of it throws a
+    // NEW error object instead of re-reporting the cached one, which
+    // ECMA-262 requires to be identical (test262
+    // import-defer/errors/module-throws/defer-import-after-evaluation).
+    if (mod.status == ModuleStatus.EVALUATING_ASYNC) return true;
+    if (mod.status == ModuleStatus.ERRORED) return true;
 
     // A JSON module has no body and no dependencies; its env (holding the sole
     // `default` binding) is created and rooted at resolve time. Just validate
