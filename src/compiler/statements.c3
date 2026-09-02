@@ -58,6 +58,11 @@ struct CompReqModuleEntry {
     // True while every import of this specifier is `import defer`. Layout must
     // match module::ReqModuleEntry.deferred.
     bool   deferred;
+    // Position in the module's evaluation order. Normally the entry's own
+    // index; a request first seen as `import defer` and later imported
+    // eagerly moves to the eager import's position. Layout must match
+    // module::ReqModuleEntry.eval_order.
+    uint   eval_order;
 }
 
 // Full lexer + compiler-pushback snapshot, used to re-parse a source
@@ -166,13 +171,19 @@ fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants
             str_eq(mod.req_modules[i].module_name, specifier)) {
             // The request stays deferred only while EVERY import of it is:
             // one eager import makes the module evaluate in dependency order
-            // (test262 module-imported-defer-and-eager).
-            if (!deferred) mod.req_modules[i].deferred = false;
+            // (test262 module-imported-defer-and-eager). It also takes that
+            // eager import's POSITION -- the entry keeps its index, since
+            // ImportEntry.req_module_idx points at it, and records the order
+            // separately.
+            if (!deferred && mod.req_modules[i].deferred) {
+                mod.req_modules[i].deferred = false;
+                mod.req_modules[i].eval_order = (uint)mod.req_modules.len();
+            }
             return i;
         }
     }
     uint idx = (uint)mod.req_modules.len();
-    mod.req_modules.push({ specifier, null, wants_json, false, deferred });
+    mod.req_modules.push({ specifier, null, wants_json, false, deferred, idx });
     return idx;
 }
 

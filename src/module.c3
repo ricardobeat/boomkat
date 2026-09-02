@@ -112,6 +112,11 @@ struct ReqModuleEntry {
     // at the position where it is imported non-deferred. Layout mirrors
     // CompReqModuleEntry.
     bool         deferred;
+    // Position in this module's evaluation order, normally the entry's own
+    // index. A request first seen as `import defer` and later imported
+    // eagerly takes the eager import's position instead, so the module
+    // evaluates where it is imported non-deferred. Mirrors CompReqModuleEntry.
+    uint         eval_order;
 }
 
 // ============================================================================
@@ -1900,7 +1905,25 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     // Dependencies first, so their exports exist before the body runs. A
     // type-only import was erased wholesale (mark_type_only_req_modules) and is
     // not a dependency here.
-    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
+    // Walk in evaluation order, which is the entry order except where a
+    // request first seen as `import defer` was later imported eagerly and so
+    // took the eager import's position (see ReqModuleEntry.eval_order). Those
+    // values are unique but not contiguous, so select the smallest not yet
+    // taken rather than indexing by slot.
+    uint req_count = (uint)mod.req_modules.len();
+    uint prev_order = 0;
+    bool have_prev = false;
+    for (uint slot = 0; slot < req_count; slot++) {
+        uint i = req_count;
+        uint best = 0;
+        for (uint j = 0; j < req_count; j++) {
+            uint ord = mod.req_modules[j].eval_order;
+            if (have_prev && ord <= prev_order) continue;
+            if (i == req_count || ord < best) { i = j; best = ord; }
+        }
+        if (i == req_count) break;
+        prev_order = best;
+        have_prev = true;
         ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.type_only || rme.resolved == null) continue;
         // A `import defer` edge contributes no evaluation and no ordering:
