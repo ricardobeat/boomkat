@@ -36,10 +36,11 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ctx.init(lex, heap);
     ctx.is_global = true;
     ctx.eval_mode = want_completion;
-    // Phase 0 (plans/083): plumb is_strict. Default for top-level scripts
-    // stays strict in Phase 0; Phase 1 flips it to false. The engine is
-    // strict-only today so this matches existing behavior.
-    ctx.is_strict = true;
+    // Phase 1 (plans/083): top-level scripts now default to sloppy
+    // (ES2024 §16.2.1.1 — script bodies are non-strict code unless a
+    // Directive Prologue says otherwise). The "use strict" directive in the
+    // prologue raises it back to true via parse_directives() below.
+    ctx.is_strict = false;
     if (want_completion) {
         ctx.eval_acc_reg = ctx.alloc_reg();
         // Seed the accumulator so an empty Script, or one whose only
@@ -208,9 +209,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.in_eval_code = true;
     // Eval inherits the caller's strictness via compile_eval's caller_is_strict
     // parameter; the actual computation (caller_is_strict || saw_use_strict) is
-    // done after parse_directives() below. Default to true for Phase 0 to keep
-    // the strict-only invariant until plans/083 phase 1 flips it.
-    ctx.is_strict = true;
+    // done after parse_directives() below. Default to false so an indirect
+    // eval from non-strict code parses sloppy before the prologue runs.
+    ctx.is_strict = false;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
     // Re-intern the caller's numbered super name (e.g. "__super__0") into
@@ -321,6 +322,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // the rewind, so lowering the flag here governs the whole real parse.
     bool eval_is_strict = caller_is_strict || ctx.saw_use_strict;
     ctx.lexer.set_strict(eval_is_strict);
+    ctx.is_strict = eval_is_strict;
 
     // ES2024 §19.2.1.1: an eval's body is a Script, so its
     // LexicallyDeclaredNames must contain no duplicates. Checked here, before
@@ -391,10 +393,15 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.subst_global_this = dynamic;
-    // Phase 0 plumbing: default strict for both ordinary and dynamic function
-    // bodies. parse_directives() raises is_strict = true when "use strict" is
-    // seen; plans/083 phase 1 will flip ordinary bodies to sloppy.
-    ctx.is_strict = true;
+    // Phase 1 (plans/083): both dynamic and non-dynamic function bodies
+    // default to sloppy (ES2024 §16.2.1.1/§20.2.1.1). Dynamic bodies are
+    // sloppy by spec; non-dynamic function bodies inherit strictness from
+    // their enclosing script (caller) per ES2024, but the engine does not
+    // thread the caller's strictness here, so a fresh ordinary function
+    // defaults to sloppy — same as the script it lives in unless that script
+    // declared "use strict" and the function itself carries a directive too.
+    // A "use strict" directive in the body raises is_strict back to true.
+    ctx.is_strict = false;
     // ES2024 §20.2.1.1 CreateDynamicFunction step 22: a Function() body is
     // parsed as a NON-strict FunctionBody, so `Function('var eval;')` is legal.
     // A "use strict" in the body raises it back in parse_directives, which runs
@@ -425,8 +432,14 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.subst_global_this = dynamic;
-    // Phase 0 plumbing: see compile_function() above.
-    ctx.is_strict = true;
+    // Phase 1 (plans/083): same default as compile_function() above:
+    // both dynamic and non-dynamic function bodies default to sloppy.
+    ctx.is_strict = false;
+    // Dynamic bodies: lower the lexer's strict_mode so octal literals,
+    // legacy octal escapes, and FutureReservedWord identifiers parse as
+    // non-strict. compile_function() does the same call below; we add it
+    // here so dynamic generators/async match.
+    if (dynamic) ctx.lexer.set_strict(false);
     ctx.is_generator = is_generator;
     // Dynamic functions: `is_generator` reflects a syntactic generator here
     // (GeneratorFunction / AsyncGeneratorFunction constructors), so it also
