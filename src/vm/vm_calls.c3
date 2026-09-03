@@ -14,6 +14,30 @@ import std::math;
 // Call dispatch for functions, constructors, and generators
 // ============================================================================
 
+// Cold tail: read the runtime argument count from the register at index C.
+// The _S call variants carry nargs in a register instead of the immediate
+// operand; a non-numeric slot means zero arguments. Inlines to the same
+// two tag checks at each of the four call sites.
+fn uint call_nargs_reg(Dispatch* ds, DecodedInsn insn) @inline @local {
+    TVal* nargs_slot = ds.regs_base + insn.c;
+    if (nargs_slot.is_fastint()) {
+        return (uint)nargs_slot.get_fastint();
+    }
+    if (nargs_slot.is_number()) {
+        return (uint)nargs_slot.get_number();
+    }
+    return 0;
+}
+
+// Cold tail: TypeError for calling a non-constructor value. Builds the
+// "%s is not a constructor" message from the value's typeof string, so the
+// eleven throw sites share one body.
+fn TVal? not_constructor_throw(Vm* vm, Dispatch* ds, TVal* val) @noinline @local {
+    HString* type_str = typeof_string(vm, val);
+    vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+    return (TVal){};
+}
+
 // Finish initializing a strict `arguments` exotic object: set .length,
 // .callee, and @@iterator (ES2017+ §9.4.4.7 CreateUnmappedArgumentsObject).
 // Per spec, @@iterator must be the *same function object* as
@@ -719,15 +743,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
     uint callee_reg = is_fused_var ? insn.a : insn.b;
     uint nargs;
     if (op == Opcode.CALL_S) {
-        // Read nargs from the register at index C
-        TVal* nargs_slot = ds.regs_base + insn.c;
-        if (nargs_slot.is_fastint()) {
-            nargs = (uint)nargs_slot.get_fastint();
-        } else if (nargs_slot.is_number()) {
-            nargs = (uint)nargs_slot.get_number();
-        } else {
-            nargs = 0;
-        }
+        nargs = call_nargs_reg(ds, insn);
     } else if (is_fused_var) {
         nargs = insn.b;
     } else {
@@ -1226,14 +1242,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             uint callee_reg = is_fused_var ? insn.a : insn.b;
             uint nargs;
             if (op == Opcode.CALL_S) {
-                TVal* nargs_slot = ds.regs_base + insn.c;
-                if (nargs_slot.is_fastint()) {
-                    nargs = (uint)nargs_slot.get_fastint();
-                } else if (nargs_slot.is_number()) {
-                    nargs = (uint)nargs_slot.get_number();
-                } else {
-                    nargs = 0;
-                }
+                nargs = call_nargs_reg(ds, insn);
             } else if (is_fused_var) {
                 nargs = insn.b;
             } else {
@@ -2328,14 +2337,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             uint callee_reg = insn.b;
             uint nargs;
             if (op == Opcode.SUPER_CALL_S) {
-                TVal* nargs_slot = ds.regs_base + insn.c;
-                if (nargs_slot.is_fastint()) {
-                    nargs = (uint)nargs_slot.get_fastint();
-                } else if (nargs_slot.is_number()) {
-                    nargs = (uint)nargs_slot.get_number();
-                } else {
-                    nargs = 0;
-                }
+                nargs = call_nargs_reg(ds, insn);
             } else {
                 nargs = insn.c;
             }
@@ -2348,8 +2350,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint fn_idx = (uint)(usz)super_val.get_heapptr();
                 HObject* lf_ctor_proto = lightfunc_get_proto(vm, fn_idx);
                 if (lf_ctor_proto == null) {
-                    HString* type_str = typeof_string(vm, &super_val);
-                    vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+                    if (catch err = not_constructor_throw(vm, ds, &super_val)) { return err~; }
                     return (TVal){};
                 }
                 HObject* lf_new_target = super_walk_new_target(vm, ds.act);
@@ -2403,16 +2404,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             if (!super_val.is_object()) {
                 // TypeError: superclass is not a constructor
-                HString* type_str = typeof_string(vm, &super_val);
-                vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+                if (catch err = not_constructor_throw(vm, ds, &super_val)) { return err~; }
                 return (TVal){};
             }
 
             HObject* super_hobj = (HObject*)super_val.get_heapptr();
             if (super_hobj == null || !super_hobj.is_callable() || !super_hobj.is_constructable()) {
                 // TypeError: not a constructor
-                HString* type_str = typeof_string(vm, &super_val);
-                vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+                if (catch err = not_constructor_throw(vm, ds, &super_val)) { return err~; }
                 return (TVal){};
             }
 
@@ -2506,8 +2505,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint sc_lf_idx = (uint)(usz)super_val.get_heapptr();
                 HObject* sc_lf_proto = lightfunc_get_proto(vm, sc_lf_idx);
                 if (sc_lf_proto == null) {
-                    HString* type_str = typeof_string(vm, &super_val);
-                    vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+                    if (catch err = not_constructor_throw(vm, ds, &super_val)) { return err~; }
                     return (TVal){};
                 }
                 builtins::BuiltinContext sc_lf_ctx;
@@ -2795,14 +2793,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             uint callee_reg = insn.b;
             uint nargs;
             if (op == Opcode.NEW_OBJ_S) {
-                TVal* nargs_slot = ds.regs_base + insn.c;
-                if (nargs_slot.is_fastint()) {
-                    nargs = (uint)nargs_slot.get_fastint();
-                } else if (nargs_slot.is_number()) {
-                    nargs = (uint)nargs_slot.get_number();
-                } else {
-                    nargs = 0;
-                }
+                nargs = call_nargs_reg(ds, insn);
             } else {
                 nargs = insn.c;
             }
@@ -2819,10 +2810,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // (e.g. Object.seal, Object.freeze, Math.max, etc.)
                 HObject* ctor_proto = lightfunc_get_proto(vm, fn_idx);
                 if (ctor_proto == null) {
-                    HString* type_str = typeof_string(vm, &func_val);
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return VM_ERROR~;
-                    }
+                    if (catch err = not_constructor_throw(vm, ds, &func_val)) { return err~; }
                     return (TVal){};
                 }
 
@@ -2858,20 +2846,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             if (!func_val.is_object()) {
                 // TypeError: value is not a constructor
-                HString* type_str = typeof_string(vm, &func_val);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
-                }
+                if (catch err = not_constructor_throw(vm, ds, &func_val)) { return err~; }
                 return (TVal){};
             }
 
             HObject* hobj = (HObject*)func_val.get_heapptr();
             if (hobj == null || !hobj.is_callable() || !hobj.is_constructable()) {
                 // TypeError: object is not a constructor
-                HString* type_str = typeof_string(vm, &func_val);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
-                }
+                if (catch err = not_constructor_throw(vm, ds, &func_val)) { return err~; }
                 return (TVal){};
             }
 
@@ -2939,11 +2921,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             && (*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                             uint rfn_idx = (uint)(*hobj.extra_ptr()).func.builtin_fn_index;
                             if (!builtin_fn_is_constructor(vm, rfn_idx)) {
-                                HString* rnc_type_str = typeof_string(vm, &func_val);
-                                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", rnc_type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
-                                }
-                                return (TVal){};
+                                if (catch err = not_constructor_throw(vm, ds, &func_val)) { return err~; }
+                            return (TVal){};
                             }
                             TVal rd_result; rd_result.set_undefined();
                             builtins::BuiltinContext rd_ctx;
@@ -2992,11 +2971,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // the flags.constructable default cannot express this (see
                     // builtin_fn_is_constructor).
                     if (!builtin_fn_is_constructor(vm, fn_idx)) {
-                        HString* nc_type_str = typeof_string(vm, &func_val);
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", nc_type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
-                        }
-                        return (TVal){};
+                        if (catch err = not_constructor_throw(vm, ds, &func_val)) { return err~; }
+                            return (TVal){};
                     }
                     // Local result to avoid stale ptr if heap.call_fn triggers valstack realloc.
                     TVal ctor_result; ctor_result.set_undefined();
@@ -3038,10 +3014,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
                 // Object claims to be callable but has no compiled function
                 // and no builtin index, so treat it as a non-constructor.
-                HString* type_str = typeof_string(vm, &func_val);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
-                }
+                if (catch err = not_constructor_throw(vm, ds, &func_val)) { return err~; }
                 return (TVal){};
             }
 
@@ -3049,10 +3022,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             // Arrow functions cannot be used as constructors (ES6 §14.2.2)
             if (target.is_arrow()) {
-                HString* type_str = typeof_string(vm, &func_val);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
-                }
+                if (catch err = not_constructor_throw(vm, ds, &func_val)) { return err~; }
                 return (TVal){};
             }
 
