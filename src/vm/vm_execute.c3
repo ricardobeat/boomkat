@@ -5864,6 +5864,18 @@ fn TVal? Vm.run(Vm* vm) {
             ra.set_boolean(true);
             continue;
 
+        // === WITH STATEMENT (plans/083) ===
+        // Phase 1 stubs are unreachable: the compiler emits a THROW_SYNTAX
+        // for the body instead of WITH_START, and a NOP after, so a sloppy
+        // `with` parses cleanly but raises a SyntaxError at runtime. The
+        // opcode pair exists so phase 4 can drop the THROW_SYNTAX, replace
+        // the NOP with WITH_END, and add real semantics here with no parser
+        // change. Trip VM_ERROR for any accidental emission that bypasses
+        // the guard (defense against verifier-skipped paths).
+        case Opcode.WITH_START:
+        case Opcode.WITH_END:
+            return VM_ERROR~;
+
         // === CLOSURES ===
         case Opcode.CLOSURE:
         case Opcode.GETBOUND:

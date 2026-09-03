@@ -325,6 +325,14 @@ enum Opcode : char {
     TYPEOFIDENT,
     // `A = delete variable[constants[BC]]`: delete a variable (A-BC).
     DELVAR,
+    // Phase 1 (plans/083): `with (expr) { ... }` body entry (A-BC format).
+    // Phase 1 stubs the runtime semantics — the VM handler throws SyntaxError.
+    // Phase 4 implements: push a with-env wrapping the object produced by A,
+    // make it the active var_env for the body, then pop it on WITH_END.
+    WITH_START,
+    // Phase 1 (plans/083): end of a `with` body (ABC, no operands used).
+    // Companion to WITH_START; same Phase 1 stub / Phase 4 real semantics split.
+    WITH_END,
 
     // ---- Closures --------------------------------------------------------
 
@@ -997,6 +1005,8 @@ fn OpFormat get_op_format(Opcode op) {
         case PUTGLOBAL_PRIM: return A_BC;
         case MOVE_GG: return A_BC;
         case DELVAR:    return A_BC;
+        case WITH_START: return A_BC;
+        case WITH_END:   return ABC;
         case CLOSURE:   return A_BC;
         case GETBOUND:  return A_BC;
         case TRY:       return A_BC;
