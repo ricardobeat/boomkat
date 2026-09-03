@@ -2545,7 +2545,7 @@ fn int is_regexp_check_vm(BuiltinContext* ctx, TVal* val) {
     // Step 3-4: If @@match is not undefined, return ToBoolean(@@match).
     if (try match_val = match_opt) {
         if (!match_val.is_undefined()) {
-            return match_val.is_boolean() ? (match_val.get_boolean() ? 1 : 0) : 1;
+            return builtin_to_boolean(&match_val) ? 1 : 0;
         }
     }
 
