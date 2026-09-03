@@ -4132,6 +4132,21 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     HString* key = ctx.heap.int_to_hstring((long)idx);
     if (key == null) return true;
 
+    // STRING exotic: an in-range character index is a non-writable,
+    // non-configurable own data property (ES2022 §10.4.3.5
+    // StringGetOwnProperty), so [[Set]] must fail (Throw=true -> TypeError)
+    // exactly like any other read-only own property. Character indices are
+    // served lazily (no per-character own properties are materialised), so
+    // without this check the "own property" lookup below finds nothing and
+    // falls through to silently defining a NEW own property instead.
+    if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
+        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
+        if (prim != null && idx < (ulong)prim.char_length()) {
+            arr_throw_type_error(ctx, "Cannot assign to read-only property of String");
+            return false;
+        }
+    }
+
     // Proxy exotic: route through the [[Set]] MOP trap.
     if (obj.flags.exotic_proxyobj) {
         if (ctx == null || ctx.vm == null) return false;
@@ -4490,12 +4505,13 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     // ES2022 §23.1.3.18 step 2: get LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result.set_undefined(); return; }
-    // ArraySpeciesCreate(O, len) → ArrayCreate(len) throws RangeError if len > 2^32-1
-    // (per ES2022 §23.1.3.18 step 5 → §9.4.2.3 → §9.4.2.2 step 1).
-    if (len > 0xFFFFFFFFUL) {
-        arr_throw_range_error(ctx, "Invalid array length");
-        return;
-    }
+    // Step 5: ArraySpeciesCreate(O, len) only throws RangeError for len >
+    // 2^32-1 in its OWN ArrayCreate(len) fallback (§9.4.2.3 -> §9.4.2.2 step
+    // 1); a custom species constructor is called with len regardless (it may
+    // throw its own error, or even succeed, e.g. by ignoring the argument).
+    // array_species_create_result already applies this check only on its
+    // fallback path, so it must not be duplicated (and wrongly widened to
+    // every constructor) here.
     // Step 3: IsCallable(callbackfn) check.
     TVal cb_val;
     if (ctx.argc >= 1) { cb_val = ctx.regs[ctx.base_reg]; } else { cb_val.set_undefined(); }
