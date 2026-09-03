@@ -3768,9 +3768,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // (see is_named_func_expr doc in context.c3).
     inner_ctx.is_named_func_expr = is_named_expr && name.len > 0;
 
-    // subst_global_this is deliberately NOT propagated: a function nested
-    // inside a dynamic Function body is an ordinary function whose
-    // [[ThisMode]] is strict, so its undefined receiver stays undefined.
+    // subst_global_this is gone (plans/083 phase 2); is_strict now carries
+    // the dynamic-Function-or-not distinction implicitly through the same
+    // directive mechanism as ordinary sloppy code.
 
     // Propagate generator flag: if the caller is compiling a generator,
     // the inner context (which parses the body) needs to know it's in a generator.

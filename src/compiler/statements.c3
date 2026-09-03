@@ -825,10 +825,6 @@ fn void? CompilerContext.parse_directives(&self) {
                     // start branching on this flag.
                     self.is_strict = true;
                     if (self.current_func != null) self.current_func.flags.is_strict = true;
-                    self.subst_global_this = false;
-                    if (self.current_func != null) {
-                        self.current_func.flags.subst_global_this = false;
-                    }
                 }
             }
         } else {

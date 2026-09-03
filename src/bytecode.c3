@@ -1350,17 +1350,6 @@ bitstruct FuncFlags : uint {
     // §14.5.14 step 25, so `class.prototype = ...` must throw a TypeError.
     // Other functions get a configurable .prototype.
     bool  is_class_ctor    : 21;
-    // Substitute the global object for an undefined or null `this` receiver
-    // (ES5 §10.4.3 OrdinaryCallBindThis with [[ThisMode]] of global).
-    //
-    // This engine is strict-only, so the flag is not derived from strictness.
-    // It is set only on bodies built by the dynamic Function,
-    // GeneratorFunction, and AsyncFunction constructors, whose [[ThisMode]] the
-    // spec derives from a sloppy enclosing realm rather than from the caller's
-    // scope. That keeps the common UMD idiom `Function('return this')()`
-    // yielding globalThis. A `"use strict"` directive in the dynamic body
-    // clears it.
-    bool  subst_global_this: 22;
     // A derived class constructor. ES2015 §9.2.2 step 13.c makes returning a
     // non-object from one a TypeError unless the value is undefined. Set when
     // has_super_binding held at compile time.
@@ -1663,12 +1652,6 @@ macro bool CompiledFunction.eval_source_is_strict(&self) {
 }
 macro bool CompiledFunction.needs_lex_bridge(&self) {
     return self.flags.needs_lex_bridge;
-}
-
-// Returns `true` when an undefined/null `this` receiver must be replaced by
-// the global object. See FuncFlags.subst_global_this.
-macro bool CompiledFunction.subst_global_this(&self) {
-    return self.flags.subst_global_this;
 }
 
 // Returns `true` when the function body runs in strict mode. Set from the

@@ -750,8 +750,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     act.set_this_borrowed(gs_rb2.this_binding);
                 } else {
                     // The generator was created with an undefined or null `this`,
-                    // so apply ES5 §10.4.3.
-                    if (!target.is_arrow() && target.subst_global_this()
+                    // so apply ES5 §10.4.3 to non-arrow sloppy functions.
+                    if (!target.is_arrow() && !target.is_strict()
                         && vm.global_env != null && vm.global_env.bindings != null) {
                         this_val.set_object(vm.global_env.bindings);
                     }
@@ -775,8 +775,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 act.set_this_borrowed(arrow_this);
             } else {
                 // Not a resume, so ES5 §10.4.3 substitutes the global object for an
-                // undefined or null `this`.
-                if (target.subst_global_this()
+                // undefined or null `this` when the callee is sloppy.
+                if (!target.is_arrow() && !target.is_strict()
                     && (this_val.is_undefined() || this_val.is_null())
                     && vm.global_env != null && vm.global_env.bindings != null) {
                     this_val.set_object(vm.global_env.bindings);

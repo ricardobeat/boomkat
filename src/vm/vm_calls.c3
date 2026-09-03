@@ -1046,31 +1046,33 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // to mutate it, and a stale TDZ snapshot would never observe
                     // that later mutation.
                     // Undefined-this calls (CALL_UNDEF_THIS / CALL_VAR /
-                    // CALL_GLOBAL) into a NON-arrow, non-substituting function: the
-                    // receiver is undefined by construction and this engine
-                    // performs no this-coercion, so skip the arrow/coercion/
-                    // this-src resolution below and set it directly. Arrows use
-                    // lexical captured_this and must take the full path. Bodies
-                    // created through the Function constructor carry
-                    // subst_global_this and must take the coercion path so an
-                    // undefined receiver becomes the global object (ES5 §10.4.3),
-                    // observable as `Function('return this;')()`.
-                    if (undef_this && !target_fast.is_arrow() && !target_fast.subst_global_this()) {
+                    // CALL_GLOBAL) into a NON-arrow, strict function: the receiver is
+                    // undefined by construction and no this-coercion applies, so
+                    // skip the arrow/coercion/this-src resolution below and set
+                    // it directly. Arrows use lexical captured_this and must take
+                    // the full path. Sloppy non-arrow calls take the coercion path
+                    // so an undefined receiver becomes the global object
+                    // (ES5 §10.4.3), observable as `Function('return this;')()`
+                    // for dynamic bodies and as the script top-level `this` for
+                    // ordinary sloppy functions.
+                    if (undef_this && !target_fast.is_arrow() && target_fast.is_strict()) {
                         new_act.this_binding.set_undefined();
                     } else {
                     TVal arrow_live_this;
                     if (target_fast.is_arrow() && env::is_tdz_sentinel(&(*hobj_fast.extra_ptr()).func.captured_this)) {
                         arrow_live_this = super_walk_live_this(vm, ds.act);
                     }
-                    // ES5 §10.4.3: for subst_global_this (non-arrow) compiled
-                    // functions, coerce null/undefined thisArg → global object.
+                    // ES5 §10.4.3: for non-arrow compiled functions whose
+                    // body is sloppy, coerce null/undefined thisArg → global
+                    // object. Replaces the legacy FuncFlags.subst_global_this;
+                    // plans/083 phase 2 derives the predicate from is_strict.
                     {
                         TVal* this_src = target_fast.is_arrow()
                             ? (env::is_tdz_sentinel(&(*hobj_fast.extra_ptr()).func.captured_this) ? &arrow_live_this : &(*hobj_fast.extra_ptr()).func.captured_this)
                             : &saved_this;
                         TVal coerced_this;
                         bool used_coerced = false;
-                        if (!target_fast.is_arrow() && target_fast.subst_global_this() && (this_src.is_undefined() || this_src.is_null())) {
+                        if (!target_fast.is_arrow() && !target_fast.is_strict() && (this_src.is_undefined() || this_src.is_null())) {
                             if (vm.global_env != null && vm.global_env.bindings != null) {
                                 coerced_this.set_object(vm.global_env.bindings);
                                 this_src = &coerced_this;
@@ -1953,14 +1955,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     new_act_g.flags |= ACT_FLAG_DIRECT_EVAL;
                 }
                 {
-                    // ES5 §10.4.3: for subst_global_this (non-arrow) compiled
-                    // functions, coerce null/undefined this → global object.
-                    // Applied here, at generator CREATION: GEN_START snapshots
-                    // this activation's this_binding into gs.this_binding, and
-                    // every later resume restores that snapshot verbatim, so a
-                    // substitution missed here is missed by the whole generator.
+                    // ES5 §10.4.3: for non-arrow sloppy calls, coerce null/undefined
+                    // this → global object. Applied here at generator CREATION;
+                    // GEN_START snapshots this binding and later resumes restore it.
                     TVal raw_this_g = ds.regs_base[callee_reg + 1];
-                    if (target.subst_global_this()
+                    if (!target.is_arrow() && !target.is_strict()
                         && (raw_this_g.is_undefined() || raw_this_g.is_null())
                         && vm.global_env != null && vm.global_env.bindings != null) {
                         raw_this_g.set_object(vm.global_env.bindings);
@@ -2141,7 +2140,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // calling activation's this_binding. Exception: a still-TDZ
             // captured value (arrow defined before super() ran) must be
             // re-resolved live; see super_walk_live_this().
-            // ES5 §10.4.3: for non-arrow compiled functions, coerce null/undefined → global.
+            // ES5 §10.4.3: for non-arrow sloppy calls, coerce null/undefined
+            // this → global object.
             if (target.is_arrow()) {
                 TVal arrow_this2 = (*hobj.extra_ptr()).func.captured_this;
                 if (env::is_tdz_sentinel(&arrow_this2)) {
@@ -2150,7 +2150,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 vm.heap.tval_copy_ref(&new_act.this_binding, &arrow_this2);
             } else {
                 TVal raw_this = ds.regs_base[callee_reg + 1];
-                if (target.subst_global_this() && (raw_this.is_undefined() || raw_this.is_null()) && vm.global_env != null && vm.global_env.bindings != null) {
+                if (!target.is_arrow() && !target.is_strict() && (raw_this.is_undefined() || raw_this.is_null()) && vm.global_env != null && vm.global_env.bindings != null) {
                     raw_this.set_object(vm.global_env.bindings);
                 }
                 vm.heap.tval_copy_ref(&new_act.this_binding, &raw_this);

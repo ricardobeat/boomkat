@@ -376,9 +376,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 
 // Compile a function expression or declaration.
 // `is_expr` is true for function expressions, false for declarations.
-// `dynamic` marks a body built by the Function constructor, whose receiver
-// coerces to globalThis unless the body carries its own "use strict".
-// See FuncFlags.subst_global_this.
+// `dynamic` marks a body built by the Function constructor, which is
+// always sloppy unless the body carries its own "use strict" directive.
 fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, bool dynamic = false) {
     // Reset error state for this compilation; see `compile`'s matching
     // reset. Without it, a stale `err_msg` left by a PREVIOUS
@@ -392,7 +391,6 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
-    ctx.subst_global_this = dynamic;
     // Phase 1 (plans/083): both dynamic and non-dynamic function bodies
     // default to sloppy (ES2024 §16.2.1.1/§20.2.1.1). Dynamic bodies are
     // sloppy by spec; non-dynamic function bodies inherit strictness from
@@ -431,7 +429,6 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
-    ctx.subst_global_this = dynamic;
     // Phase 1 (plans/083): same default as compile_function() above:
     // both dynamic and non-dynamic function bodies default to sloppy.
     ctx.is_strict = false;
