@@ -3465,12 +3465,19 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
     }
 
     // === Array-like path, spec steps 10-17 ===
+    // Step 10: arrayLike = ! ToObject(items). A primitive source (a string
+    // with no @@iterator, e.g. after `delete String.prototype[Symbol.iterator]`)
+    // must still be usable array-like via its own .length/indexed characters.
+    // arr_to_object (not to_object_for_lookup, which makes a plain OBJECT
+    // wrapper good only for prototype-chain method lookup) produces a real
+    // STRING-exotic wrapper whose .length and indexed character properties
+    // are actually readable.
     HObject* src_obj = null;
-    if (source.is_object() && source.get_heapptr() != null) {
-        src_obj = (HObject*)source.get_heapptr();
-    } else if (source.is_undefined() || source.is_null()) {
+    if (source.is_undefined() || source.is_null()) {
         arraybuffer_throw_type_error(ctx, "TypedArray.from: source is null or undefined");
         return;
+    } else {
+        src_obj = arr_to_object(source, heap);
     }
 
     // Get length from source.length.
@@ -3495,14 +3502,16 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
     uint res_shift2 = ta_elem_shift(res_cls2);
 
     for (uint i = 0; i < src_len; i++) {
+        // arr_get_elem_vm (not builtins_generic_get): a STRING-exotic
+        // wrapper's character indices are served lazily and never
+        // materialised as real own properties, so a generic property lookup
+        // misses them entirely and always reports undefined.
         TVal elem; elem.set_undefined();
         if (src_obj != null) {
-            HString* idx_key = heap.int_to_hstring((long)i);
-            if (idx_key != null) {
-                TVal? ev = builtins_generic_get(src_obj, idx_key, ctx);
-                if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-                if (try etv = ev) elem = etv;
+            if (!arr_get_elem_vm(src_obj, (ulong)i, heap, ctx, &elem)) {
+                elem.set_undefined();
             }
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         }
 
         TVal final_elem = elem;

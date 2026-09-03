@@ -5230,12 +5230,22 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.prototype.propertyIsEnumerable called on null or undefined");
         return;
     }
+    // O = ToObject(this value): a primitive `this` (e.g. a string) must be
+    // boxed into its exotic wrapper, not treated as having no properties --
+    // `"s".propertyIsEnumerable(0)` is true for an in-range string index.
     HObject* obj;
     if (this_val.is_object() && this_val.get_heapptr() != null) {
         obj = (HObject*)this_val.get_heapptr();
     } else {
-        ctx.result.set_boolean(false);
-        return;
+        if (!builtin_to_object(ctx, this_val)) {
+            ctx.result.set_boolean(false);
+            return;
+        }
+        if (!ctx.result.is_object() || ctx.result.get_heapptr() == null) {
+            ctx.result.set_boolean(false);
+            return;
+        }
+        obj = (HObject*)ctx.result.get_heapptr();
     }
     if (obj.flags.exotic_proxyobj) {
         ProxyDesc pd;
