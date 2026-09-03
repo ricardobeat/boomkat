@@ -4461,9 +4461,12 @@ fn TVal? Vm.run(Vm* vm) {
             // Pairs with RESOLVEVAR (strict plain assignment, ES2022
             // §13.15.2 step 1 + §6.2.5.6 PutValue step 5): the LHS
             // Reference's resolvability was captured in register A BEFORE
-            // the RHS ran, so an RHS side effect that created the global
-            // still throws here.
-            if (!ra.is_boolean() || !ra.get_boolean()) {
+            // the RHS ran, so an RHS side effect that created the binding
+            // (sloppy implicit global) still proceeds — the value will land
+            // via PUTGLOBAL/PUTVAR_ASSIGN's resolver-fallthrough at plans/083
+            // phase 2. Strict code keeps the original §6.2.5.6 throw.
+            if (ra.is_boolean() && ra.get_boolean()) { continue; }
+            if (vm.current_func.is_strict()) {
                 uint bc = insn.get_bc();
                 char* nm = (char*)"";
                 if (bc < vm.current_func.const_count) {
@@ -5235,17 +5238,25 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         break;
                     } else if (put_result == 0) {
-                        // Not in lex env, so check var env. Assigning to an
-                        // undeclared name throws a ReferenceError, since this
-                        // engine is strict-only and has no implicit globals.
-                        if (!env::env_has(ds.act.var_env, key)) {
-                            HString* name_hstr = (HString*)key;
+                        // Not in lex or var env. ES2024 §8.1.1.4.7 PutValue step
+                        // 1: throw ReferenceError when unresolvable. Sloppy
+                        // bodies fall back to ES2015 §15.1.8 step 2.b:
+                        // create a configurable own property on the global
+                        // object (Annex B.3.2). env_put on the global env
+                        // chain that walks back to vm.global_env records the
+                        // property there, matching the spec.
+                        HString* name_hstr = (HString*)key;
+                        bool is_strict_act = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (is_strict_act) {
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
                             break;
                         }
-                        env::env_put(ds.act.var_env, key, *ra);
+                        if (vm.global_env != null) {
+                            env::env_put(vm.global_env, key, *ra);
+                        }
                     }
                     vm.heap.decref_tval(ra);
                     ra.set_undefined();
@@ -5552,17 +5563,23 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         break;
                     } else if (put_result == 0) {
-                        // Not in lex env, so check var env. Assigning to an
-                        // identifier that exists nowhere in the scope chain throws a
-                        // ReferenceError (ES5 §11.13.1, ES2015 §12.15.4).
-                        if (!env::env_has(ds.act.var_env, key)) {
-                            HString* name_hstr = (HString*)key;
+                        // Not in lex env, so check var env. ES2024 §8.1.1.4.7
+                        // step 1 throws ReferenceError for an unresolvable
+                        // reference; sloppy bodies fall back to ES2015
+                        // §15.1.8 step 2.b (implicit global on the global
+                        // object).
+                        HString* name_hstr = (HString*)key;
+                        bool is_strict_act = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (is_strict_act) {
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
                             break;
                         }
-                        env::env_put(ds.act.var_env, key, *ra);
+                        if (vm.global_env != null) {
+                            env::env_put(vm.global_env, key, *ra);
+                        }
                     }
                     vm.heap.decref_tval(ra);
                     ra.set_undefined();
