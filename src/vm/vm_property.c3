@@ -1325,6 +1325,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     getprop2_boxed_hop(vm, ds, &mid_val, key2_hstr, ra2, dst2_reg);
                     if (vm.has_error) return VM_ERROR~;
                     if (ds.needs_restart) return (TVal){};
+                } else {
+                    ra2.set_undefined();
+                }
 
                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
             } else if (rb.is_lightfunc()) {
@@ -1537,6 +1540,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     getprop2_boxed_hop(vm, ds, &mid_val, key2_hstr, ra2, dst2_reg);
                     if (vm.has_error) return VM_ERROR~;
                     if (ds.needs_restart) return (TVal){};
+                } else {
+                    ra2.set_undefined();
+                }
 
                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
             } else if (rb.is_boolean()) {
@@ -1602,6 +1608,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     getprop2_boxed_hop(vm, ds, &mid_val, key2_hstr, ra2, dst2_reg);
                     if (vm.has_error) return VM_ERROR~;
                     if (ds.needs_restart) return (TVal){};
+                } else {
+                    ra2.set_undefined();
+                }
 
                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
             } else {
