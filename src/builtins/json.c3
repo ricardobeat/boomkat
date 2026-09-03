@@ -1988,10 +1988,13 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                     return;
                 }
                 if (robj_is_array) {
-                // Build PropertyList from array elements
-                // Max 256 keys in property list
-                HString*[256] temp_keys;
+                // Build PropertyList from array elements. The list is grown on
+                // the heap: the spec sets no bound, and a replacer naming more
+                // keys than a fixed buffer holds would silently drop the rest.
+                HString** temp_keys = null;
+                uint temp_cap = 0;
                 uint count = 0;
+                defer if (temp_keys != null) ctx.heap.free_func(ctx.heap.heap_udata, temp_keys);
                 has_replacer_array_flag = true;
 
                 // Get length via full [[Get]] (Proxy "get" trap, accessors),
@@ -2019,7 +2022,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 
                 bool is_dense = robj.get_class() == ObjClass.ARRAY && robj.array_part() != null;
 
-                for (uint i = 0; i < arr_len && count < 256; i++) {
+                for (uint i = 0; i < arr_len; i++) {
                     // Read element: try dense array fast path, then full [[Get]]
                     // (Proxy "get" trap, accessors, prototype chain). A hole and
                     // an explicit `undefined` element are indistinguishable via
@@ -2139,6 +2142,18 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                     }
                     if (dup) continue;
 
+                    if (count == temp_cap) {
+                        uint new_cap = temp_cap == 0 ? 16 : temp_cap * 2;
+                        HString** grown = (HString**)ctx.heap.alloc_func(
+                            ctx.heap.heap_udata, new_cap * HString*::size);
+                        if (grown == null) break;
+                        if (temp_keys != null) {
+                            mem::copy(grown, temp_keys, (sz)(count * HString*::size));
+                            ctx.heap.free_func(ctx.heap.heap_udata, temp_keys);
+                        }
+                        temp_keys = grown;
+                        temp_cap = new_cap;
+                    }
                     temp_keys[count] = str_key;
                     count++;
                 }
@@ -2146,7 +2161,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                 if (count > 0) {
                     prop_keys = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, count * HString*::size);
                     if (prop_keys != null) {
-                        mem::copy(prop_keys, &temp_keys[0], (sz)(count * HString*::size));
+                        mem::copy(prop_keys, temp_keys, (sz)(count * HString*::size));
                         prop_key_count = count;
                     }
                 }
