@@ -24,6 +24,7 @@ import std::math;
 fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx, bool is_static) {
     target_ctx.init(self.lexer, self.heap);
     target_ctx.lexer.set_strict(true);
+    target_ctx.is_strict = self.is_strict;
     target_ctx.in_class_body = self.in_class_body;
     target_ctx.has_super_binding = self.has_super_binding;
     target_ctx.super_is_home_object = self.super_is_home_object;
@@ -587,6 +588,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     bool saved_super_is_home = self.super_is_home_object;
     uint saved_super_name_idx = self.super_name_idx;
     uint saved_static_super_name_idx = self.static_super_name_idx;
+    bool saved_is_strict = self.is_strict;
+    // ES2024 §15.4.1: a ClassBody is always strict code, regardless of the
+    // enclosing strictness. Phase 1 (plans/083): sloppy enclosing scripts now
+    // exist, so force is_strict = true for the class body and any nested
+    // method / static block that inherits it via compile_inner_function.
+    self.is_strict = true;
     self.in_class_body = true;
     self.has_super_binding = false;
 
@@ -1739,7 +1746,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // (__static_super__), not the prototype.
         bool saved_super_is_static_method = self.super_is_static_method;
         self.super_is_static_method = is_static;
-        CompiledFunction* inner = self.compile_inner_function(method_name_buf[:method_name_len], false, class_elem_src_start, true)!;
+        // ES2024 §15.4.5: class MethodDefinitions use UniqueFormalParameters,
+        // duplicate names forbidden regardless of strictness. Force the
+        // inner duplicate-name check on (compile_inner_function's
+        // force_strict_dupcheck parameter); the surrounding is_strict
+        // assignment above already made the body itself strict.
+        CompiledFunction* inner = self.compile_inner_function(method_name_buf[:method_name_len], false, class_elem_src_start, true, true)!;
         self.super_is_static_method = saved_super_is_static_method;
 
         self.is_constructable = saved_constructable;
@@ -2132,6 +2144,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     self.super_is_home_object = saved_super_is_home;
     self.super_name_idx = saved_super_name_idx;
     self.static_super_name_idx = saved_static_super_name_idx;
+    self.is_strict = saved_is_strict;
     self.pop_private_scope();
 
     return ctor_reg;
