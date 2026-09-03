@@ -2954,7 +2954,12 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
         props_val = *ctx.result;
     }
     HObject* props = (HObject*)props_val.get_heapptr();
+    object_define_properties(ctx, obj, props);
+}
 
+// ObjectDefineProperties, §20.1.2.3.1. Shared by Object.defineProperties and
+// Object.create, whose step 4 is defined as this same abstract operation.
+fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* props) {
     // Proxy exotic target: parse each descriptor and route through
     // [[DefineOwnProperty]].
     if (obj.flags.exotic_proxyobj) {
@@ -3068,8 +3073,11 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
         HString* p_key = keys_arr[k];
         // Get descObj = props.[[Get]](p_key), invokes getters with props as receiver.
         // Per ES5 §15.2.3.7 step 5, we must call [[Get]], not [[GetOwnProperty]].
+        // desc_get_enum, not desc_get: a wrapped string's char indices are served
+        // lazily, so the plain lookup reports them not-found and would skip the
+        // descriptor check that must reject the character `Object('hello')[0]`.
         TVal desc_obj_val;
-        if (!desc_get(ctx, props, p_key, &desc_obj_val)) {
+        if (!desc_get_enum(ctx, props, p_key, &desc_obj_val)) {
             if (ctx.should_throw) return;
             continue;
         }
@@ -3443,184 +3451,8 @@ fn void builtin_object_create(BuiltinContext* ctx) {
                 props = (HObject*)ctx.result.get_heapptr();
             }
 
-            // ---- ObjectDefineProperties(obj, Properties) ----
-            // Phase 1: Collect all property descriptors (calling getters, checking enumerable).
-            // We collect into parallel arrays to apply atomically after all getters are invoked.
-
-            HString*[256] desc_keys;
-            hobject::PropFlags[256] desc_flags_arr;
-            TVal[256] desc_values;
-            TVal[256] desc_acc_get;
-            TVal[256] desc_acc_set;
-            bool[256] desc_is_acc;
-            uint desc_count = 0;
-
-            // Helper: collect keys, named properties first, then array-part, then symbols
-            // Named properties
-            for (uint i = 0; i < props.prop_count && desc_count < 256; i++) {
-                void* raw_key = props.prop_key_at(i, ctx.heap);
-                if (raw_key == null) continue;
-                HString* pk_key = (HString*)raw_key;
-
-                // [[GetOwnProperty]](pk_key), check if own and enumerable
-                int pidx = props.find_prop_idx(pk_key, ctx.heap);
-                if (pidx < 0) continue;
-                hobject::PropFlags pflags = props.get_prop_flags((uint)pidx, ctx.heap);
-                if (!pflags.enumerable) continue;
-
-                // [[Get]](props, pk_key), invoke getter if accessor
-                TVal desc_obj_val;
-                if (pflags.is_accessor) {
-                    TVal gs_slot = props.prop_values()[(uint)pidx];
-                    TVal getter_fn = hobject::hobject_access_getter(gs_slot);
-                    if (getter_fn.is_undefined() || getter_fn.is_null()) {
-                        // No getter, Get returns undefined
-                        TVal undef;
-                        undef.set_undefined();
-                        desc_obj_val = undef;
-                    } else if (ctx.heap.call_fn != null && ctx.vm != null) {
-                        TVal this_tv;
-                        this_tv.set_object(props);
-                        desc_obj_val = ctx.heap.call_fn(ctx.vm, getter_fn, null, 0, this_tv);
-                        if (ctx.heap.has_error) {
-                            ctx.should_throw = true;
-                            ctx.throw_value = ctx.heap.error_value;
-                            ctx.heap.has_error = false;
-                            return;
-                        }
-                    } else {
-                        TVal undef;
-                        undef.set_undefined();
-                        desc_obj_val = undef;
-                    }
-                } else {
-                    // Data property, value is directly in PropValue
-                    desc_obj_val = props.prop_values()[(uint)pidx];
-                }
-
-                // ToPropertyDescriptor(desc_obj_val)
-                if (!desc_obj_val.is_object()) {
-                    // ToPropertyDescriptor requires an object, throw TypeError
-                    char[128] msg_buf;
-                    int msg_len = (int)(io::bprintf(&msg_buf, "Property descriptor for '%s' must be an object",
-                                                 (String)pk_key.get_data()) ?? msg_buf[:0]).len;
-                    builtin_throw(ctx, ctx.heap.type_err_proto, msg_buf[:msg_len]);
-                    return;
-                }
-                HObject* desc_obj = (HObject*)desc_obj_val.get_heapptr();
-
-                hobject::PropFlags desc_flags;
-                TVal[2] desc_vals;
-                bool is_acc;
-                if (!to_property_descriptor(ctx, desc_obj, &desc_flags, &desc_vals, &is_acc, null)) {
-                    if (ctx.should_throw) return;
-                    ctx.result.set_undefined();
-                    return;
-                }
-
-                // Store collected descriptor
-                desc_keys[desc_count] = pk_key;
-                desc_flags_arr[desc_count] = desc_flags;
-                desc_values[desc_count] = desc_vals[0];
-                desc_acc_get[desc_count] = desc_vals[0];
-                desc_acc_set[desc_count] = desc_vals[1];
-                desc_is_acc[desc_count] = is_acc;
-                desc_count++;
-            }
-
-            // Array-part properties (numeric indices)
-            for (uint i = 0; i < props.array_size && desc_count < 256; i++) {
-                if (props.array_part()[i].is_undefined()) continue;
-
-                HString* pk_key = ctx.heap.int_to_hstring((long)i);
-                if (pk_key == null) continue;
-
-                // Array-part entries are always writable/enumerable/configurable
-                // (no per-element flags in the flat array part)
-                // So always enumerable.
-
-                TVal desc_obj_val = props.array_part()[i];
-
-                if (!desc_obj_val.is_object()) {
-                    char[128] msg_buf;
-                    int msg_len = (int)(io::bprintf(&msg_buf, "Property descriptor for '%s' must be an object",
-                                                 (String)pk_key.get_data()) ?? msg_buf[:0]).len;
-                    builtin_throw(ctx, ctx.heap.type_err_proto, msg_buf[:msg_len]);
-                    return;
-                }
-                HObject* desc_obj = (HObject*)desc_obj_val.get_heapptr();
-
-                hobject::PropFlags desc_flags;
-                TVal[2] desc_vals;
-                bool is_acc;
-                if (!to_property_descriptor(ctx, desc_obj, &desc_flags, &desc_vals, &is_acc, null)) {
-                    if (ctx.should_throw) return;
-                    ctx.result.set_undefined();
-                    return;
-                }
-
-                desc_keys[desc_count] = pk_key;
-                desc_flags_arr[desc_count] = desc_flags;
-                desc_values[desc_count] = desc_vals[0];
-                desc_acc_get[desc_count] = desc_vals[0];
-                desc_acc_set[desc_count] = desc_vals[1];
-                desc_is_acc[desc_count] = is_acc;
-                desc_count++;
-            }
-
-            // Phase 1.5: String exotic character indices (e.g. new String("hi")
-            // or Object.create({}, "hi")). Per ES5 §15.5.5.1 the integer
-            // indices 0..char_length-1 are own enumerable properties served
-            // lazily from the wrapped primitive. The named-prop table and
-            // array part are both empty for these, so they must be enumerated
-            // explicitly here. ObjectDefineProperties calls [[GetOwnProperty]]
-            // on each, which yields a String-exotic char as the descriptor
-            // value, and ToPropertyDescriptor on a non-object throws.
-            if (props.flags.exotic_stringobj && (*props.extra_ptr()).prim.primitive_value.is_string()) {
-                HString* prim = (HString*)(*props.extra_ptr()).prim.primitive_value.get_heapptr();
-                if (prim != null) {
-                    uint clen = prim.char_length();
-                    char[] pdata = prim.get_data();
-                    for (uint i = 0; i < clen && desc_count < 256; i++) {
-                        HString* pk_key = ctx.heap.int_to_hstring((long)i);
-                        if (pk_key == null) continue;
-                        char[2] ch_buf;
-                        ch_buf[0] = pdata[i];
-                        ch_buf[1] = 0;
-                        HString* ch_hstr = builtin_intern_string(ctx.heap, ch_buf[:1]);
-                        if (ch_hstr == null) continue;
-                        TVal ch_val;
-                        ch_val.set_string(ch_hstr);
-                        if (!ch_val.is_object()) {
-                            char[128] msg_buf;
-                            int msg_len = (int)(io::bprintf(&msg_buf, "Property descriptor for '%s' must be an object",
-                                                         (String)pk_key.get_data()) ?? msg_buf[:0]).len;
-                            builtin_throw(ctx, ctx.heap.type_err_proto, msg_buf[:msg_len]);
-                            return;
-                        }
-                    }
-                }
-            }
-
-            // Phase 2: Apply all collected descriptors atomically
-            for (uint k = 0; k < desc_count; k++) {
-                HString* pk_key = desc_keys[k];
-                hobject::PropFlags df = desc_flags_arr[k];
-                if (desc_is_acc[k]) {
-                    obj.put_prop(pk_key, desc_acc_get[k], df, ctx.heap);
-                    int eidx = obj.find_prop_idx(pk_key, ctx.heap);
-                    if (eidx >= 0) {
-                        // put_prop above anchored desc_acc_get[k] as the (placeholder) slot
-                        // value; the GS cell holds its own incref'd copy, so release the
-                        // placeholder's reference before replacing the slot.
-                        ctx.heap.decref_tval(&obj.prop_values()[eidx]);
-                        obj.prop_values()[eidx] = hobject::hobject_create_accessors(
-                            ctx.heap, desc_acc_get[k], desc_acc_set[k]);
-                    }
-                } else {
-                    obj.put_prop(pk_key, desc_values[k], df, ctx.heap);
-                }
-            }
+            object_define_properties(ctx, obj, props);
+            if (ctx.should_throw || ctx.heap.has_error) return;
         }
     }
 
