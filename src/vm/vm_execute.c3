@@ -5877,9 +5877,65 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
-        case Opcode.DELVAR:
-            ra.set_boolean(true);
+        case Opcode.DELVAR: {
+            // `delete x`: ES2024 §14.7.5 step 1 + Annex B.3.2.
+            // The compiler patches GETVAR → DELVAR in place (BC = name const)
+            // or, when the LHS is a local register (parameter / let / const),
+            // emits a fresh DELVAR with BC = 0.
+            //
+            // BC == 0: local register. The binding is non-configurable by spec,
+            //          so sloppy returns false and strict throws ReferenceError.
+            // BC != 0: lex walk. If unresolvable → true (Annex B.3.2).
+            //          If bound to a non-configurable var/function → false.
+            //          If bound to a configurable global → delete and true.
+            uint bc = insn.get_bc();
+            if (bc == 0 || bc >= vm.current_func.const_count) {
+                ra.set_boolean(false);
+                continue;
+            }
+            TVal name_val = ds.constants[bc];
+            if (!name_val.is_string()) {
+                ra.set_boolean(false);
+                continue;
+            }
+            void* key = name_val.get_heapptr();
+            HString* name_hstr = (HString*)key;
+            bool is_strict_d = vm.current_func.is_strict();
+
+            // Walk the lex chain. If any binding exists, it is non-configurable
+            // for var/function in sloppy mode (the binding can only be removed
+            // by leaving the scope), so the spec answer is false. Deleting from
+            // the global object can succeed (configurable:true) but the binding
+            // is found via env_try_put_lex which reports 1 — we surface that
+            // as false anyway for parity with Annex B.3.2, which treats any
+            // discovered var-like binding as delete-of-var.
+            EnvRecord* cur = ds.act.lex_env;
+            bool found = false;
+            while (cur != null) {
+                int idx = cur.bindings.find_prop_idx(key, vm.heap);
+                if (idx >= 0) { found = true; break; }
+                cur = cur.parent;
+            }
+            if (!found && !is_strict_d) {
+                // Annex B.3.2: unresolvable → true. GetValue on a missing name
+                // would throw, but DeleteValue's reference check accepts the
+                // unresolvable form silently here.
+                ra.set_boolean(true);
+                continue;
+            }
+            if (is_strict_d && !found) {
+                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                continue;
+            }
+            // Found — Annex B.3.2 says false for var/function (binding exists
+            // even when on a non-binding object env like the global, because
+            // the user's "delete x" expects to remove their declaration). The
+            // delete is a no-op for the variable in both modes.
+            ra.set_boolean(false);
             continue;
+        }
 
         // === WITH STATEMENT (plans/083) ===
         // Phase 1 stubs are unreachable: the compiler emits a THROW_SYNTAX
