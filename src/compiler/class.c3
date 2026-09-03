@@ -111,6 +111,54 @@ fn char[] format_field_number_key(double val, char[] buf) {
     return buf[..n];
 }
 
+// A method's `name` is the property key, and for a NumericLiteral or
+// BigIntLiteral key that key is ToString(NumericValue) -- not the literal's
+// source text (ES2024 13.2.5.5). So `({ 0x10(){} })[16].name` is "16", and a
+// BigInt key drops its `n`. Formats those two cases into the caller's buffer
+// and returns the token's own text for every other key, which is already the
+// property name.
+fn char[]? method_name_source_name(CompilerContext* ctx, Token method_name, bool is_number,
+                                   double num_value, bool is_bigint, char[] bigint_src,
+                                   char[] numbuf, char[] bigbuf) {
+    if (is_number) {
+        char[] n = format_field_number_key(num_value, numbuf);
+        // bprintf's span inside format_field_number_key can carry its NUL
+        // terminator; a property key built from it compares fine, but a
+        // function name is copied verbatim into the name string, so trim it.
+        while (n.len > 0 && n[n.len - 1] == 0) { n = n[:n.len - 1]; }
+        return n;
+    }
+    if (is_bigint) {
+        Heap* bhp = (Heap*)ctx.heap;
+        hbigint::HBigInt*? parsed = hbigint::parse_bigint_literal(bhp, bigint_src);
+        if (catch p_err = parsed) return COMPILE_ERROR~;
+        char* bheap;
+        return hbigint::hbigint_to_decimal(bhp, parsed, bigbuf, &bheap);
+    }
+    return method_name.str_value;
+}
+
+// Seed the inferred function name from a NumericLiteral or BigIntLiteral
+// property key, so `({ 0x10(){} })[16].name` is "16" rather than "" (the
+// object-literal key branches otherwise leave the name unset) or the literal's
+// source text. Same ToString(NumericValue) rule as method_name_source_name.
+fn void? CompilerContext.set_numeric_inferred_name(&self, Token key_tok, bool is_number,
+                                                   double num_value, bool is_bigint,
+                                                   char[] bigint_src) {
+    char[64] numbuf;
+    char[48] bigbuf;
+    char[] name = method_name_source_name(self, key_tok, is_number, num_value,
+                                          is_bigint, bigint_src, numbuf[..], bigbuf[..])!;
+    if (name.len == 0 || name.len >= 128) {
+        self.has_inferred_name = false;
+        self.inferred_name_len = 0;
+        return;
+    }
+    self.has_inferred_name = true;
+    self.inferred_name_len = (ushort)name.len;
+    for (usz i = 0; i < name.len; i++) { self.inferred_name_buf[i] = name[i]; }
+}
+
 // Create a default constructor CompiledFunction without using the lexer.
 // has_super: if true, creates `constructor(...args) { super(...args); }`
 // otherwise creates `constructor() {}`.
@@ -1655,16 +1703,26 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             method_name_len = 0;
         } else if (is_getter || is_setter) {
             char[] prefix = is_getter ? "get " : "set ";
-            usz prop_len = method_name.str_value.len;
+            char[64] numbuf;
+            char[48] bigbuf;
+            char[] prop_src = method_name_source_name(self, method_name, method_name_is_number,
+                method_name_num_value, method_name_is_bigint, method_name_bigint_src,
+                numbuf[..], bigbuf[..])!;
+            usz prop_len = prop_src.len;
             if (prefix.len + prop_len < 128) {
                 for (usz i = 0; i < prefix.len; i++) method_name_buf[i] = prefix[i];
-                for (usz i = 0; i < prop_len; i++) method_name_buf[prefix.len + i] = method_name.str_value[i];
+                for (usz i = 0; i < prop_len; i++) method_name_buf[prefix.len + i] = prop_src[i];
                 method_name_len = prefix.len + prop_len;
             }
         } else {
-            usz prop_len = method_name.str_value.len;
+            char[64] numbuf;
+            char[48] bigbuf;
+            char[] prop_src = method_name_source_name(self, method_name, method_name_is_number,
+                method_name_num_value, method_name_is_bigint, method_name_bigint_src,
+                numbuf[..], bigbuf[..])!;
+            usz prop_len = prop_src.len;
             if (prop_len < 128) {
-                for (usz i = 0; i < prop_len; i++) method_name_buf[i] = method_name.str_value[i];
+                for (usz i = 0; i < prop_len; i++) method_name_buf[i] = prop_src[i];
                 method_name_len = prop_len;
             }
         }

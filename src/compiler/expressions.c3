@@ -5446,6 +5446,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 uint key_idx = self.add_number_constant(key_tok.num_value);
                 key_reg = self.alloc_reg();
                 self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
+                self.set_numeric_inferred_name(key_tok, true, key_tok.num_value, false, {})!;
             } else if (key_tt == TokenType.BIGINT) {
                 // ES2020 PropertyName: NumericLiteral (DecimalBigIntegerLiteral),
                 // the property name is ToString(NumericValue(NumericLiteral)).
@@ -5456,6 +5457,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 key_reg = self.alloc_reg();
                 self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
                 self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
+                self.set_numeric_inferred_name(key_tok, false, 0.0, true, key_tok.str_value)!;
             } else if (key_tt == TokenType.LBRACKET) {
                 // Computed property key, clear inferred name since the actual
                 // key is computed at runtime (per ES2015 §14.3 the inferred
