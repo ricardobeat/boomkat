@@ -1272,33 +1272,34 @@ fn bool uri_extra_none(char c) {
     return false;
 }
 
-// encodeURI (ES §19.2.6.5)
-fn void builtin_encode_uri(BuiltinContext* ctx) {
+// Coerce the first arg to string for the URI/escape builtins. Returns null
+// with no throw when the arg coerces to null (empty result) — the caller
+// then reports the empty string.
+fn HString* uri_first_arg(BuiltinContext* ctx, bool* empty) {
     if (ctx.argc < 1) {
         ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
-        return;
+        return null;
     }
     HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
-    if (ctx.should_throw) return;
-    if (str == null) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
-        return;
-    }
+    if (ctx.should_throw) return null;
+    *empty = (str == null);
+    if (*empty) ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
+    return str;
+}
+
+// encodeURI (ES §19.2.6.5)
+fn void builtin_encode_uri(BuiltinContext* ctx) {
+    bool empty = false;
+    HString* str = uri_first_arg(ctx, &empty);
+    if (str == null) return;
     uri_encode(ctx, str, &uri_extra_reserved);
 }
 
 // encodeURIComponent (ES §19.2.6.5)
 fn void builtin_encode_uri_component(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
-        return;
-    }
-    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
-    if (ctx.should_throw) return;
-    if (str == null) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
-        return;
-    }
+    bool empty = false;
+    HString* str = uri_first_arg(ctx, &empty);
+    if (str == null) return;
     uri_encode(ctx, str, &uri_extra_none);
 }
 
@@ -1417,31 +1418,17 @@ fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
 
 // decodeURI (ES §19.2.6.6)
 fn void builtin_decode_uri(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
-        return;
-    }
-    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
-    if (ctx.should_throw) return;
-    if (str == null) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
-        return;
-    }
+    bool empty = false;
+    HString* str = uri_first_arg(ctx, &empty);
+    if (str == null) return;
     uri_decode(ctx, str, true);
 }
 
 // decodeURIComponent (ES §19.2.6.6)
 fn void builtin_decode_uri_component(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
-        return;
-    }
-    HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
-    if (ctx.should_throw) return;
-    if (str == null) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
-        return;
-    }
+    bool empty = false;
+    HString* str = uri_first_arg(ctx, &empty);
+    if (str == null) return;
     uri_decode(ctx, str, false);
 }
 

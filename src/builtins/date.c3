@@ -713,63 +713,27 @@ fn void builtin_date_utc(BuiltinContext* ctx) {
     }
     double month = 0.0;
     if (ctx.argc > 1) {
-        month = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
+        if (!date_coerce_arg(ctx, 1, &month)) return;
     }
     double day = 1.0;
     if (ctx.argc > 2) {
-        day = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 2]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
+        if (!date_coerce_arg(ctx, 2, &day)) return;
     }
     double hour = 0.0;
     if (ctx.argc > 3) {
-        hour = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 3]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
+        if (!date_coerce_arg(ctx, 3, &hour)) return;
     }
     double min = 0.0;
     if (ctx.argc > 4) {
-        min = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 4]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
+        if (!date_coerce_arg(ctx, 4, &min)) return;
     }
     double sec = 0.0;
     if (ctx.argc > 5) {
-        sec = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 5]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
+        if (!date_coerce_arg(ctx, 5, &sec)) return;
     }
     double ms = 0.0;
     if (ctx.argc > 6) {
-        ms = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 6]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
+        if (!date_coerce_arg(ctx, 6, &ms)) return;
     }
 
     // Per ES6 §21.4.1.15 (MakeDay) and §21.4.1.14 (MakeTime): if any of the
@@ -1532,6 +1496,32 @@ fn void builtin_date_proto_getUTCSeconds(BuiltinContext* ctx) => date_get_field(
 // Date.prototype.getUTCMilliseconds(), ES5 §15.9.5.48
 fn void builtin_date_proto_getUTCMilliseconds(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MS, true);
 
+// Coerce one setter arg with ToNumber, propagating throws. Returns false on throw.
+fn bool date_coerce_arg(BuiltinContext* ctx, int idx, double* out) {
+    Vm* v = (Vm*)ctx.vm;
+    *out = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + idx]);
+    if (v.throw_pending) {
+        ctx.should_throw = true;
+        ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
+        v.throw_pending = false;
+        return false;
+    }
+    return true;
+}
+
+// Store a setter result: clip, write to the date object, report.
+fn void date_store(BuiltinContext* ctx, HObject* obj, double new_ms) {
+    double clipped = date_time_clip(new_ms);
+    date_set_ms(obj, clipped);
+    ctx.result.set_number(clipped);
+}
+
+// Store a NaN result: poison the clock and report NaN.
+fn void date_store_nan(BuiltinContext* ctx, HObject* obj) {
+    date_set_ms(obj, double::nan);
+    ctx.result.set_number(double::nan);
+}
+
 // Date.prototype.setTime(time), ES5 §15.9.5.27
 fn void builtin_date_proto_setTime(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -1539,20 +1529,9 @@ fn void builtin_date_proto_setTime(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.27: ToNumber on argument FIRST, before any NaN check
-    Vm* v = (Vm*)ctx.vm;
     double t = double::nan;
-    if (ctx.argc > 0) {
-        t = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
-    double clipped = date_time_clip(t);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &t)) return;
+    date_store(ctx, obj, t);
 }
 
 // Date.prototype.setMilliseconds(ms), ES5 §15.9.5.28
@@ -1562,25 +1541,14 @@ fn void builtin_date_proto_setMilliseconds(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.28: ToNumber on argument BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double ms = double::nan;
-    if (ctx.argc > 0) {
-        ms = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &ms)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(ms)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(ms)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_local_to_ms(year, month, day, hour, min, sec, (long)ms);
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setSeconds(sec[, ms]), ES5 §15.9.5.29
@@ -1590,39 +1558,20 @@ fn void builtin_date_proto_setSeconds(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.29: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double sec_arg = double::nan;
-    if (ctx.argc > 0) {
-        sec_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &sec_arg)) return;
     double ms_arg = double::nan;
-    if (ctx.argc > 1) {
-        ms_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &ms_arg)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current ms if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { ms_arg = (double)((long)tv % 1000); if (ms_arg < 0) ms_arg += 1000; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(sec_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_local_to_ms(year, month, day, hour, min, (long)sec_arg, (long)ms_arg);
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setMinutes(min[, sec[, ms]]), ES5 §15.9.5.30
@@ -1632,37 +1581,12 @@ fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.30: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double min_arg = double::nan;
-    if (ctx.argc > 0) {
-        min_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &min_arg)) return;
     double sec_arg = double::nan;
-    if (ctx.argc > 1) {
-        sec_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &sec_arg)) return;
     double ms_arg = double::nan;
-    if (ctx.argc > 2) {
-        ms_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 2]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &ms_arg)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     long sec_cur = date_floor_mod_field(tv, 1000, 60);
@@ -1670,15 +1594,13 @@ fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
     if (ctx.argc <= 1) { sec_arg = (double)sec_cur; }
     if (ctx.argc <= 2) { ms_arg = (double)ms_cur; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(sec_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(min_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(min_arg)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_local_to_ms(year, month, day, hour, (long)min_arg, (long)sec_arg, (long)ms_arg);
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.31
@@ -1688,47 +1610,14 @@ fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.31: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double hour_arg = double::nan;
-    if (ctx.argc > 0) {
-        hour_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &hour_arg)) return;
     double min_arg = double::nan;
-    if (ctx.argc > 1) {
-        min_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &min_arg)) return;
     double sec_arg = double::nan;
-    if (ctx.argc > 2) {
-        sec_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 2]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &sec_arg)) return;
     double ms_arg = double::nan;
-    if (ctx.argc > 3) {
-        ms_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 3]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 3 && !date_coerce_arg(ctx, 3, &ms_arg)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     long min_cur = date_floor_mod_field(tv, 60000, 60);
@@ -1738,16 +1627,14 @@ fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
     if (ctx.argc <= 2) { sec_arg = (double)sec_cur; }
     if (ctx.argc <= 3) { ms_arg = (double)ms_cur; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(sec_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(min_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(hour_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(min_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(hour_arg)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_local_to_ms(year, month, day, (long)hour_arg, (long)min_arg, (long)sec_arg, (long)ms_arg);
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setDate(date), ES5 §15.9.5.32
@@ -1757,25 +1644,14 @@ fn void builtin_date_proto_setDate(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.32: ToNumber on argument BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double date_arg = double::nan;
-    if (ctx.argc > 0) {
-        date_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &date_arg)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(date_arg)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_local_to_ms(year, month, (long)date_arg, hour, min, sec, date_floor_mod_field(tv, 1, 1000));
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setMonth(month[, date]), ES5 §15.9.5.33
@@ -1785,27 +1661,10 @@ fn void builtin_date_proto_setMonth(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.33: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double month_arg = double::nan;
-    if (ctx.argc > 0) {
-        month_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &month_arg)) return;
     double date_arg = double::nan;
-    if (ctx.argc > 1) {
-        date_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &date_arg)) return;
     long year, month, day, wday, hour, min, sec;
     if (!math::is_nan(tv)) { date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec); }
     else { year = 1970; month = 0; day = 1; hour = 0; min = 0; sec = 0; }
@@ -1813,12 +1672,10 @@ fn void builtin_date_proto_setMonth(BuiltinContext* ctx) {
     // Use current date if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { date_arg = (double)day; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(month_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(date_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(month_arg)) { date_store_nan(ctx, obj); return; }
     double new_ms = date_local_to_ms(year, (long)month_arg, (long)date_arg, hour, min, sec, date_floor_mod_field(tv, 1, 1000));
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setFullYear(year[, month[, date]]), ES5 §15.9.5.40
@@ -1828,38 +1685,13 @@ fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.40: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double year_arg = double::nan;
-    if (ctx.argc > 0) {
-        year_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &year_arg)) return;
     double month_arg = double::nan;
-    if (ctx.argc > 1) {
-        month_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &month_arg)) return;
     double date_arg = double::nan;
-    if (ctx.argc > 2) {
-        date_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 2]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
-    if (math::is_nan(year_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &date_arg)) return;
+    if (math::is_nan(year_arg)) { date_store_nan(ctx, obj); return; }
     long y, m, d, wday, h, min, s;
     if (math::is_nan(tv)) { y = 1970; m = 0; d = 1; h = 0; min = 0; s = 0; }
     else { date_break_time(tv, &y, &m, &d, &wday, &h, &min, &s); }
@@ -1867,12 +1699,10 @@ fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     if (ctx.argc <= 1) { month_arg = (double)m; }
     if (ctx.argc <= 2) { date_arg = (double)d; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(month_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(date_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(month_arg)) { date_store_nan(ctx, obj); return; }
     double new_ms = date_local_to_ms((long)year_arg, (long)month_arg, (long)date_arg, h, min, s, math::is_nan(tv) ? 0 : date_floor_mod_field(tv, 1, 1000));
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setUTCMilliseconds(ms), ES5 §15.9.5.49
@@ -1882,25 +1712,14 @@ fn void builtin_date_proto_setUTCMilliseconds(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.49: ToNumber on argument BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double ms = double::nan;
-    if (ctx.argc > 0) {
-        ms = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &ms)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(ms)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(ms)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_utc_to_ms(year, month, day, hour, min, sec, (long)ms);
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setUTCSeconds(sec[, ms]), ES5 §15.9.5.50
@@ -1910,39 +1729,20 @@ fn void builtin_date_proto_setUTCSeconds(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.50: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double sec_arg = double::nan;
-    if (ctx.argc > 0) {
-        sec_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &sec_arg)) return;
     double ms_arg = double::nan;
-    if (ctx.argc > 1) {
-        ms_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &ms_arg)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current ms if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { ms_arg = (double)((long)tv % 1000); if (ms_arg < 0) ms_arg += 1000; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(sec_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_utc_to_ms(year, month, day, hour, min, (long)sec_arg, (long)ms_arg);
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setUTCMinutes(min[, sec[, ms]]), ES5 §15.9.5.51
@@ -1952,37 +1752,12 @@ fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.51: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double min_arg = double::nan;
-    if (ctx.argc > 0) {
-        min_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &min_arg)) return;
     double sec_arg = double::nan;
-    if (ctx.argc > 1) {
-        sec_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &sec_arg)) return;
     double ms_arg = double::nan;
-    if (ctx.argc > 2) {
-        ms_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 2]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &ms_arg)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     long sec_cur = date_floor_mod_field(tv, 1000, 60);
@@ -1990,15 +1765,13 @@ fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
     if (ctx.argc <= 1) { sec_arg = (double)sec_cur; }
     if (ctx.argc <= 2) { ms_arg = (double)ms_cur; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(sec_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(min_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(min_arg)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_utc_to_ms(year, month, day, hour, (long)min_arg, (long)sec_arg, (long)ms_arg);
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setUTCHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.52
@@ -2008,47 +1781,14 @@ fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.52: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double hour_arg = double::nan;
-    if (ctx.argc > 0) {
-        hour_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &hour_arg)) return;
     double min_arg = double::nan;
-    if (ctx.argc > 1) {
-        min_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &min_arg)) return;
     double sec_arg = double::nan;
-    if (ctx.argc > 2) {
-        sec_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 2]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &sec_arg)) return;
     double ms_arg = double::nan;
-    if (ctx.argc > 3) {
-        ms_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 3]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 3 && !date_coerce_arg(ctx, 3, &ms_arg)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
     // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
     long min_cur = date_floor_mod_field(tv, 60000, 60);
@@ -2058,16 +1798,14 @@ fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
     if (ctx.argc <= 2) { sec_arg = (double)sec_cur; }
     if (ctx.argc <= 3) { ms_arg = (double)ms_cur; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(sec_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(min_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(hour_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(min_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(hour_arg)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_utc_to_ms(year, month, day, (long)hour_arg, (long)min_arg, (long)sec_arg, (long)ms_arg);
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setUTCDate(date), ES5 §15.9.5.53
@@ -2077,25 +1815,14 @@ fn void builtin_date_proto_setUTCDate(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.53: ToNumber on argument BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double date_arg = double::nan;
-    if (ctx.argc > 0) {
-        date_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &date_arg)) return;
     if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(date_arg)) { date_store_nan(ctx, obj); return; }
     long year, month, day, wday, hour, min, sec;
     date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     double new_ms = date_utc_to_ms(year, month, (long)date_arg, hour, min, sec, date_floor_mod_field(tv, 1, 1000));
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setUTCMonth(month[, date]), ES5 §15.9.5.54
@@ -2105,27 +1832,10 @@ fn void builtin_date_proto_setUTCMonth(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.54: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double month_arg = double::nan;
-    if (ctx.argc > 0) {
-        month_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &month_arg)) return;
     double date_arg = double::nan;
-    if (ctx.argc > 1) {
-        date_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &date_arg)) return;
     long year, month, day, wday, hour, min, sec;
     if (!math::is_nan(tv)) { date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec); }
     else { year = 1970; month = 0; day = 1; hour = 0; min = 0; sec = 0; }
@@ -2133,12 +1843,10 @@ fn void builtin_date_proto_setUTCMonth(BuiltinContext* ctx) {
     // Use current date if not provided (check argc, not NaN, NaN from ToNumber must be used)
     if (ctx.argc <= 1) { date_arg = (double)day; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(month_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(date_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(month_arg)) { date_store_nan(ctx, obj); return; }
     double new_ms = date_utc_to_ms(year, (long)month_arg, (long)date_arg, hour, min, sec, date_floor_mod_field(tv, 1, 1000));
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Date.prototype.setUTCFullYear(year[, month[, date]]), ES5 §15.9.5.55
@@ -2148,38 +1856,13 @@ fn void builtin_date_proto_setUTCFullYear(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     // ES5 §15.9.5.55: ToNumber on ALL present arguments BEFORE NaN check on t
-    Vm* v = (Vm*)ctx.vm;
     double year_arg = double::nan;
-    if (ctx.argc > 0) {
-        year_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &year_arg)) return;
     double month_arg = double::nan;
-    if (ctx.argc > 1) {
-        month_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 1]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
+    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &month_arg)) return;
     double date_arg = double::nan;
-    if (ctx.argc > 2) {
-        date_arg = vm::vm_to_number(v, &ctx.regs[ctx.base_reg + 2]);
-        if (v.throw_pending) {
-            ctx.should_throw = true;
-            ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value);
-            v.throw_pending = false;
-            return;
-        }
-    }
-    if (math::is_nan(year_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &date_arg)) return;
+    if (math::is_nan(year_arg)) { date_store_nan(ctx, obj); return; }
     long y, m, d, wday, h, min, s;
     if (math::is_nan(tv)) { y = 1970; m = 0; d = 1; h = 0; min = 0; s = 0; }
     else { date_break_time_utc(tv, &y, &m, &d, &wday, &h, &min, &s); }
@@ -2187,12 +1870,10 @@ fn void builtin_date_proto_setUTCFullYear(BuiltinContext* ctx) {
     if (ctx.argc <= 1) { month_arg = (double)m; }
     if (ctx.argc <= 2) { date_arg = (double)d; }
     // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(date_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
-    if (math::is_nan(month_arg)) { date_set_ms(obj, double::nan); ctx.result.set_number(double::nan); return; }
+    if (math::is_nan(date_arg)) { date_store_nan(ctx, obj); return; }
+    if (math::is_nan(month_arg)) { date_store_nan(ctx, obj); return; }
     double new_ms = date_utc_to_ms((long)year_arg, (long)month_arg, (long)date_arg, h, min, s, math::is_nan(tv) ? 0 : date_floor_mod_field(tv, 1, 1000));
-    double clipped = date_time_clip(new_ms);
-    date_set_ms(obj, clipped);
-    ctx.result.set_number(clipped);
+    date_store(ctx, obj, new_ms);
 }
 
 // Helper: pad integer to 2 digits
