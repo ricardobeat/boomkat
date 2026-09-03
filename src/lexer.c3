@@ -1031,8 +1031,26 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
 }
 
 // ============================================================================
-// Lexer, scan numeric literal
+// Lexer, scan number literal
 // ============================================================================
+
+// Phase 1 (plans/083): interpret legacy-octal spans (e.g. "0777") as base-8
+// when the lexer is in sloppy mode.  Called only for spans that contain no
+// digit ≥ 8, no fractional dot, and no exponent marker.
+fn double parse_octal_double(char[] digits, usz len) {
+    double val = 0.0;
+    for (usz k = 0; k < len; k++) {
+        char ch = digits[k];
+        if (ch >= '0' && ch <= '7') {
+            val = val * 8.0 + (double)(ch - '0');
+        } else if (ch == '_') {
+            continue;
+        } else {
+            break;
+        }
+    }
+    return val;
+}
 
 // Parse a numeric literal token.
 // Supports: decimal, hex (0x/0X), octal (0o/0O), binary (0b/0B),
@@ -1167,6 +1185,7 @@ fn Token? Lexer.scan_number(&self) {
     // Decimal: scan digits (integer + optional fraction + optional exponent)
     // to advance pos, then use strtod for precise parsing.
     bool dec_prev_was_digit = false;
+    bool is_legacy_octal_like = false;
 
     // Handle numbers starting with '.' (e.g., .5, .5e3)
     if (c == '.') {
@@ -1177,7 +1196,7 @@ fn Token? Lexer.scan_number(&self) {
         // or a NonOctalDecimalIntegerLiteral (e.g. 08, 09), neither
         // production admits NumericLiteralSeparator, so separators are
         // rejected outright rather than just checked for placement.
-        bool is_legacy_octal_like = c == '0' && self.remaining() >= 2 &&
+        is_legacy_octal_like = c == '0' && self.remaining() >= 2 &&
             (is_digit(self.peek_char_at(1)) || self.peek_char_at(1) == '_');
         while (!self.at_end()) {
             c = self.peek_char();
@@ -1258,30 +1277,50 @@ fn Token? Lexer.scan_number(&self) {
         if (!exp_prev_was_digit) return LEX_ERROR~;
     }
 
-    // Use js_atod for precise parsing (handles subnormals, avoids frac*=0.1 rounding).
-    // QuickJS' js_atod is a David-Gay-style parser that matches V8/SpiderMonkey,
-    // so "8.3 - 1 === 7.3" is true and literals round-trip consistently with
-    // parseFloat().
-    {
-        uint len = self.pos - start_pos;
-        char[64] buf;
-        if (len < 64) {
-            mem::copy(&buf, &self.source[start_pos], (sz)(len));
-            // Strip numeric separators (_) before passing to js_atod
-            uint j = 0;
-            for (uint i = 0; i < len; i++) {
-                if (buf[i] != '_') {
-                    buf[j] = buf[i];
-                    j++;
+    // Phase 1 (plans/083): sloppy-mode legacy octal — 0777 → 511 (ES2024 §B.1.1).
+    // When the span is a pure legacy octal (digits 0-7 only, no fractional dot,
+    // no exponent), compute the value as base-8 and skip js_atod.
+    bool octal_resolved = false;
+    if (is_legacy_octal_like && !self.strict_mode) {
+        bool has_non_octal = false;
+        bool has_frac_or_exp = false;
+        for (usz i = start_pos; i < self.pos; i++) {
+            char ch = self.source[i];
+            if (ch >= '8' && ch <= '9') { has_non_octal = true; break; }
+            if (ch == '.' || ch == 'e' || ch == 'E') { has_frac_or_exp = true; break; }
+        }
+        if (!has_non_octal && !has_frac_or_exp) {
+            value = parse_octal_double(self.source[start_pos..self.pos], (usz)(self.pos - start_pos));
+            octal_resolved = true;
+        }
+    }
+
+    if (!octal_resolved) {
+        // Use js_atod for precise parsing (handles subnormals, avoids frac*=0.1 rounding).
+        // QuickJS' js_atod is a David-Gay-style parser that matches V8/SpiderMonkey,
+        // so "8.3 - 1 === 7.3" is true and literals round-trip consistently with
+        // parseFloat().
+        {
+            uint len = self.pos - start_pos;
+            char[64] buf;
+            if (len < 64) {
+                mem::copy(&buf, &self.source[start_pos], (sz)(len));
+                // Strip numeric separators (_) before passing to js_atod
+                uint j = 0;
+                for (uint i = 0; i < len; i++) {
+                    if (buf[i] != '_') {
+                        buf[j] = buf[i];
+                        j++;
+                    }
                 }
+                buf[j] = 0;
+                char* endptr;
+                char[dtoa_bindings::DTOA_TMP_SIZE] tmp;
+                value = dtoa_bindings::boomkat_js_atod(&buf[0], &endptr, 0, 0, &tmp);
+            } else {
+                // Fallback: should never happen for valid JS number literals
+                value = 0.0;
             }
-            buf[j] = 0;
-            char* endptr;
-            char[dtoa_bindings::DTOA_TMP_SIZE] tmp;
-            value = dtoa_bindings::boomkat_js_atod(&buf[0], &endptr, 0, 0, &tmp);
-        } else {
-            // Fallback: should never happen for valid JS number literals
-            value = 0.0;
         }
     }
 
@@ -2605,8 +2644,11 @@ fn void Lexer.pushback(&self, Token tok) {
 // Enable or disable strict-mode keyword recognition.
 // When enabled, FutureReservedWords (implements, interface, package,
 // private, protected, public) are recognised as keywords.
-// Set identifier-reservation strictness. Deliberately does NOT touch
-// `strict_mode`: the octal rules it gates are unconditional in this engine.
+// Set identifier-reservation strictness and octal-literal strictness.
+// Phase 1 (plans/083): also flip `strict_mode` so sloppy bodies accept
+// legacy octal literals/escapes. The strict-mode lexer reads this on
+// every number/string scan, so the cost is the same boolean store.
 fn void Lexer.set_strict(&self, bool s) {
     self.reserved_words_strict = s;
+    self.strict_mode = s;
 }
