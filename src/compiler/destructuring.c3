@@ -185,14 +185,8 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
         if (binds[i].parent_idx == 0xFFFF) binds[i].arg_idx = rhs_reg;
     }
 
-    if (count == 0) {
-        // Empty pattern `var [] = rhs`: still GetIterator(rhs), so
-        // `var [] = undefined` throws TypeError per the spec.
-        self.emit_empty_array_iter(rhs_reg);
-    } else {
-        self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
-                                    DestructStoreMode.DECLARE, is_lexical, is_const);
-    }
+    self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
+                                DestructStoreMode.DECLARE, is_lexical, is_const);
 
     self.free_regs_to(saved_next);
 
@@ -670,6 +664,22 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
     uint count = *count_ptr;
     ushort elem_idx = 0;
 
+    // `[]` binds nothing but still performs GetIterator and IteratorClose, so
+    // it gets a bind of its own -- see is_empty_pattern. Without one the
+    // pattern emits no code and a non-iterable RHS is silently accepted.
+    if (self.check(TokenType.RBRACKET)) {
+        if (count < (uint)MAX_DESTRUCT_BINDS) {
+            binds[count].key_idx = 0;
+            binds[count].index = 0;
+            binds[count].is_object = false;
+            binds[count].arg_idx = 0xFFFF;          // patched to rhs_reg later
+            binds[count].parent_idx = parent_idx;
+            binds[count].is_synthetic = true;
+            binds[count].is_empty_pattern = true;
+            count++;
+        }
+    }
+
     for (;;) {
         if (self.check(TokenType.RBRACKET)) break;
 
@@ -918,14 +928,8 @@ fn ushort? CompilerContext.array_destructure_assign(&self) {
     // directly by the extraction; env-resident targets get a bare PUTVAR;
     // member-expression targets get PUTPROP (handled in emit_destruct_bindings
     // via is_member_target).
-    if (count == 0) {
-        // Empty pattern `[] = rhs`: still GetIterator(rhs) then close, so
-        // `[] = undefined` throws TypeError per the spec.
-        self.emit_empty_array_iter(rhs_reg);
-    } else {
-        self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
-                                    DestructStoreMode.ASSIGN_TARGET);
-    }
+    self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
+                                DestructStoreMode.ASSIGN_TARGET);
 
     // Release all destructuring temporaries above the RHS register (iterator
     // state + per-element scratch), keeping rhs_reg live so the destructuring

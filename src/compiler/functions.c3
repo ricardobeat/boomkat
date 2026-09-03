@@ -56,6 +56,11 @@ struct DestructBind {
     bool has_default;    // has a default value expression
     bool is_synthetic;   // true = intermediate extraction point (not a user variable)
     bool is_hole;        // true = elision placeholder (iterator must advance, no binding produced)
+    // true = the pattern was empty (`[]`). GetIterator still runs (and the
+    // iterator is closed), so `f([])` called with a non-iterable throws and a
+    // custom [Symbol.iterator] is observably invoked -- but nothing is read
+    // from it, so unlike a hole the iterator must NOT be advanced.
+    bool is_empty_pattern;
     uint   default_func_idx;  // index into inner_funcs for default thunk (0xFFFFFFFF if none)
     ushort parent_idx;     // index of the binding whose value is the source for this one (0xFFFF = direct from arg)
     // Assignment-pattern member-expression targets: [obj.x] = v, [...obj.rest] = v
@@ -445,6 +450,23 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
 
     ushort elem_idx = 0;
 
+    // An empty pattern `[]` binds nothing but still performs GetIterator and
+    // IteratorClose, so it needs a bind of its own -- without one the pattern
+    // would emit no code at all and `f([])` would silently accept a
+    // non-iterable (ES2015 §13.3.3 IteratorBindingInitialization).
+    if (self.check(TokenType.RBRACKET)) {
+        if (*count < binds.len) {
+            binds[*count].key_idx = 0;
+            binds[*count].index = 0;
+            binds[*count].is_object = false;
+            binds[*count].arg_idx = src_reg;
+            binds[*count].parent_idx = parent_idx;
+            binds[*count].is_synthetic = true;
+            binds[*count].is_empty_pattern = true;
+            (*count)++;
+        }
+    }
+
     for (;;) {
         if (self.check(TokenType.RBRACKET)) break;
 
@@ -797,15 +819,6 @@ fn void CompilerContext.emit_object_rest(&self,
     self.free_reg(excl_reg);
 }
 
-// Force GetIterator(src) + immediate IteratorClose. Used for an empty array
-// assignment pattern `[] = rhs`: per DestructuringAssignmentEvaluation the
-// pattern still performs GetIterator, so `[] = undefined` must throw TypeError.
-fn void CompilerContext.emit_empty_array_iter(&self, ushort src_reg) {
-    DestructIterState state;
-    self.emit_destruct_iter_setup(src_reg, &state);
-    self.emit_abc(Opcode.ITER_CLOSE, (uint)state.method_reg, 0, 0);
-    self.free_destruct_iter(&state);
-}
 
 // Walks binds in declaration order, resolving source registers from arg slots
 // or parent group temps, and emits GETPROP (object patterns) or iterator
@@ -920,6 +933,19 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.free_reg(hole_reg);
                 ei++;
             }
+        }
+
+        // Empty pattern: open the iterator and stop. The shared close pass
+        // below emits the ITER_CLOSE, so this is GetIterator + IteratorClose,
+        // which is exactly what an empty ArrayBindingPattern performs.
+        if (binds[di].is_empty_pattern) {
+            ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
+            if (iter_idx == 0xFFFF) {
+                iter_idx = (ushort)iter_count;
+                iter_count++;
+                self.emit_destruct_iter_setup(src_reg, &iter_states[iter_idx]);
+            }
+            continue;
         }
 
         // Hole / elision entry: advance iterator once and continue.

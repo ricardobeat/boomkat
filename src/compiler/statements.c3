@@ -4256,13 +4256,8 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
             for (uint bi = 0; bi < head.bind_count; bi++) {
                 if (head.binds[bi].parent_idx == 0xFFFF) head.binds[bi].arg_idx = val_slot;
             }
-            if (head.bind_count > 0) {
-                self.emit_destruct_bindings(head.binds, head.bind_count, head.group_regs,
-                    head.binding_regs, head.store_mode, head.is_lexical, head.is_const);
-            } else if (head.is_array_pattern) {
-                // Empty array pattern `for ([] of e)`: still GetIterator+close.
-                self.emit_empty_array_iter(val_slot);
-            }
+            self.emit_destruct_bindings(head.binds, head.bind_count, head.group_regs,
+                head.binding_regs, head.store_mode, head.is_lexical, head.is_const);
         case MEMBER:
             self.emit_member_lhs_store(head.lhs_snap, val_slot)!;
     }
