@@ -870,6 +870,8 @@ fn void builtin_eval(BuiltinContext* ctx) {
     bool caller_forbids_arguments = false;
     char[] parent_super_name = {};
     char[] parent_static_super_name = {};
+    char[] parent_home_object_name = {};
+    bool parent_super_home_is_object_literal = false;
     if (precheck_act_count > 0) {
         precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
         caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0;
@@ -925,6 +927,18 @@ fn void builtin_eval(BuiltinContext* ctx) {
                     HString* static_super_hstr = (HString*)caller_cf.static_super_binding_name;
                     parent_static_super_name = static_super_hstr.get_data();
                 }
+                if (caller_cf.home_object_binding_name != null) {
+                    HString* home_object_hstr = (HString*)caller_cf.home_object_binding_name;
+                    parent_home_object_name = home_object_hstr.get_data();
+                } else if (caller_cf.super_binding_name != null) {
+                    // A method with a __super__ binding but no
+                    // __home_object__ binding is an object-literal concise
+                    // method/accessor (object_literal unsets
+                    // home_object_name_idx for exactly this signal): its
+                    // HomeObject is bound under __super__ itself, not
+                    // __home_object__.
+                    parent_super_home_is_object_literal = true;
+                }
                 // ContainsArguments (ES2022 §15.7.10 step 14): a direct eval
                 // called from a class field/static initializer or static
                 // block, or from another eval body that itself inherited
@@ -949,6 +963,8 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     caller_forbids_arguments,
                                                     parent_super_name,
                                                     parent_static_super_name,
+                                                    parent_home_object_name,
+                                                    parent_super_home_is_object_literal,
                                                     // ES2024 §19.2.1.1 step 12:
                                                     // direct eval inherits the
                                                     // caller's strictness (every

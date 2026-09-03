@@ -1548,6 +1548,11 @@ struct CompiledFunction {
     void*           super_binding_name;
     // HString* of the enclosing class's __static_super__ binding name.
     void*           static_super_binding_name;
+    // HString* of the enclosing class's __home_object__ binding name (always
+    // bound to the class's own .prototype, the true [[HomeObject]] for an
+    // instance method). Used the same way as super_binding_name/
+    // static_super_binding_name for direct eval's super.x resolution.
+    void*           home_object_binding_name;
 }
 
 // ============================================================================

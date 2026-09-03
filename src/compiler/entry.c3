@@ -193,6 +193,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     bool  caller_forbids_arguments = false,
                                     char[] parent_super_name = {},
                                     char[] parent_static_super_name = {},
+                                    char[] parent_home_object_name = {},
+                                    bool  parent_super_home_is_object_literal = false,
                                     bool  caller_is_strict = true) {
     lex.err_msg[0] = 0;
     lex.err_line = 0;
@@ -204,6 +206,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.in_eval_code = true;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
+    // An object-literal caller's HomeObject binding is __super__ (unnumbered,
+    // see object_literal's own PUTLEX), not __home_object__ -- propagate this
+    // so the eval body's emit_super_base picks the same binding name the
+    // caller's environment chain actually has.
+    ctx.super_home_is_object_literal = parent_super_home_is_object_literal;
     // Re-intern the caller's numbered super name (e.g. "__super__0") into
     // the eval context's own constant pool so GETVAR resolves the binding
     // that actually exists in the environment chain.
@@ -212,6 +219,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     }
     if (allow_super && parent_static_super_name.len > 0) {
         ctx.static_super_name_idx = ctx.add_string_constant(parent_static_super_name);
+    }
+    if (allow_super && parent_home_object_name.len > 0) {
+        ctx.home_object_name_idx = ctx.add_string_constant(parent_home_object_name);
     }
     // A direct eval inside a derived-class constructor may contain a `super()`
     // call (ES2022 §15.7.3 PerformEval: the eval inherits the caller's

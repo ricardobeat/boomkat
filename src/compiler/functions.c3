@@ -3549,6 +3549,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     def_ctx.has_super_binding = self.has_super_binding;
     def_ctx.super_is_home_object = self.super_is_home_object;
     def_ctx.super_is_static_method = self.super_is_static_method;
+    def_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
         def_ctx.super_name_idx = def_ctx.add_string_constant(super_hstr.get_data());
@@ -3556,6 +3557,10 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
         def_ctx.static_super_name_idx = def_ctx.add_string_constant(static_super_hstr.get_data());
+    }
+    if (self.home_object_name_idx != 0xFFFFFFFF) {
+        HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
+        def_ctx.home_object_name_idx = def_ctx.add_string_constant(home_object_hstr.get_data());
     }
     def_ctx.adopt_private_names(self);
     def_ctx.private_scope_start = self.private_scope_start;
@@ -3644,6 +3649,7 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     key_ctx.has_super_binding = self.has_super_binding;
     key_ctx.super_is_home_object = self.super_is_home_object;
     key_ctx.super_is_static_method = self.super_is_static_method;
+    key_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
     // Re-intern super name into the key-expr context's own constant pool.
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
@@ -3652,6 +3658,10 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
         key_ctx.static_super_name_idx = key_ctx.add_string_constant(static_super_hstr.get_data());
+    }
+    if (self.home_object_name_idx != 0xFFFFFFFF) {
+        HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
+        key_ctx.home_object_name_idx = key_ctx.add_string_constant(home_object_hstr.get_data());
     }
     // Propagate generator/async context so yield/await resolve correctly
     // in computed property keys (e.g. [yield] inside a generator).
@@ -3715,6 +3725,10 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
         block_ctx.static_super_name_idx = block_ctx.add_string_constant(static_super_hstr.get_data());
+    }
+    if (self.home_object_name_idx != 0xFFFFFFFF) {
+        HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
+        block_ctx.home_object_name_idx = block_ctx.add_string_constant(home_object_hstr.get_data());
     }
     // super() is forbidden (HasDirectSuper early error), same mechanism
     // field/static initializers use to reject it.
@@ -3799,6 +3813,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.has_super_binding = self.has_super_binding;
     inner_ctx.super_is_home_object = self.super_is_home_object;
     inner_ctx.super_is_static_method = self.super_is_static_method;
+    inner_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
         inner_ctx.super_name_idx = inner_ctx.add_string_constant(super_hstr.get_data());
@@ -3810,6 +3825,12 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         inner_ctx.static_super_name_idx = inner_ctx.add_string_constant(static_super_hstr.get_data());
     } else {
         inner_ctx.static_super_name_idx = 0xFFFFFFFF;
+    }
+    if (self.home_object_name_idx != 0xFFFFFFFF) {
+        HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
+        inner_ctx.home_object_name_idx = inner_ctx.add_string_constant(home_object_hstr.get_data());
+    } else {
+        inner_ctx.home_object_name_idx = 0xFFFFFFFF;
     }
     // Propagate constructable flag: super() only valid in constructors
     inner_ctx.is_constructable = self.is_constructable;
@@ -4456,6 +4477,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.has_super_binding = self.has_super_binding;
     arrow_ctx.super_is_home_object = self.super_is_home_object;
     arrow_ctx.super_is_static_method = self.super_is_static_method;
+    arrow_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
         arrow_ctx.super_name_idx = arrow_ctx.add_string_constant(super_hstr.get_data());
@@ -4463,6 +4485,10 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
         arrow_ctx.static_super_name_idx = arrow_ctx.add_string_constant(static_super_hstr.get_data());
+    }
+    if (self.home_object_name_idx != 0xFFFFFFFF) {
+        HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
+        arrow_ctx.home_object_name_idx = arrow_ctx.add_string_constant(home_object_hstr.get_data());
     }
     arrow_ctx.is_constructable = self.is_constructable;
     arrow_ctx.adopt_private_names(self);
@@ -5002,6 +5028,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     arrow_ctx.has_super_binding = self.has_super_binding;
     arrow_ctx.super_is_home_object = self.super_is_home_object;
     arrow_ctx.super_is_static_method = self.super_is_static_method;
+    arrow_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
         arrow_ctx.super_name_idx = arrow_ctx.add_string_constant(super_hstr.get_data());
@@ -5009,6 +5036,10 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
         arrow_ctx.static_super_name_idx = arrow_ctx.add_string_constant(static_super_hstr.get_data());
+    }
+    if (self.home_object_name_idx != 0xFFFFFFFF) {
+        HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
+        arrow_ctx.home_object_name_idx = arrow_ctx.add_string_constant(home_object_hstr.get_data());
     }
     arrow_ctx.is_constructable = self.is_constructable;
     arrow_ctx.adopt_private_names(self);

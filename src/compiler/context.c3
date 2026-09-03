@@ -672,6 +672,14 @@ struct CompilerContext {
     // .prototype, so `super.x` there must resolve against __static_super__
     // (always via GETPROTO on the constructor) rather than __super__.
     bool super_is_static_method;
+    // True while the innermost enclosing `super`-eligible scope is an object
+    // literal's concise method/accessor, not a class body. Object literals
+    // bind their HomeObject under the literal name "__super__" (via
+    // super_name_idx), never under __home_object__/__static_super__, and
+    // that binding can be reached while lexically still `in_class_body`
+    // (an object literal nested inside a class method), so emit_super_base
+    // needs this explicit flag rather than inferring it from in_class_body.
+    bool super_home_is_object_literal;
     // Constant-pool index of the per-class `__super__` binding name (unique
     // per class definition).  Each class with `extends` gets its own binding
     // so that multiple classes in the same function scope don't share a
@@ -682,6 +690,13 @@ struct CompilerContext {
     // mirroring super_name_idx.  0xFFFFFFFF means unset (no enclosing class
     // with static super access).
     uint static_super_name_idx;
+    // Constant-pool index of the per-class `__home_object__` binding name,
+    // mirroring super_name_idx.  Always bound to the class's own .prototype
+    // (the true [[HomeObject]] for an instance method, ES2022 §13.3.7.1),
+    // so instance-method `super.x` reads GETPROTO(__home_object__) dynamically
+    // instead of a statically-bound parent-constructor reference.  0xFFFFFFFF
+    // means unset (no enclosing class).
+    uint home_object_name_idx;
     // Monotonic counter used to generate unique __super__ binding names
     // across classes within the same function scope.
     uint super_class_counter;
@@ -1224,6 +1239,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.pending_async_function_src = 0xFFFFFFFF;
     self.super_name_idx = 0xFFFFFFFF;
     self.static_super_name_idx = 0xFFFFFFFF;
+    self.home_object_name_idx = 0xFFFFFFFF;
 
     // Allocate growable buffers
     Heap* h = (Heap*)heap;
@@ -2405,6 +2421,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         func.static_super_binding_name = self.constants[self.static_super_name_idx].get_heapptr();
+    }
+    if (self.home_object_name_idx != 0xFFFFFFFF) {
+        func.home_object_binding_name = self.constants[self.home_object_name_idx].get_heapptr();
     }
 
     // Run bytecode peephole optimizations (GETPROPC2 chain fusion, etc.)

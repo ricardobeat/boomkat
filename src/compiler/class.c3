@@ -46,6 +46,10 @@ fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
         target_ctx.static_super_name_idx = target_ctx.add_string_constant(static_super_hstr.get_data());
     }
+    if (self.home_object_name_idx != 0xFFFFFFFF) {
+        HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
+        target_ctx.home_object_name_idx = target_ctx.add_string_constant(home_object_hstr.get_data());
+    }
     target_ctx.emit_simple(Opcode.PUSH_LEX);
 }
 
@@ -588,6 +592,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     bool saved_super_is_home = self.super_is_home_object;
     uint saved_super_name_idx = self.super_name_idx;
     uint saved_static_super_name_idx = self.static_super_name_idx;
+    uint saved_home_object_name_idx = self.home_object_name_idx;
     self.in_class_body = true;
     self.has_super_binding = false;
 
@@ -664,6 +669,39 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     uint static_super_name_idx = self.add_string_constant(static_super_buf[:static_super_pos]);
     self.static_super_name_idx = static_super_name_idx;
 
+    // __home_object__ = the class's own .prototype (the true [[HomeObject]]
+    // for an instance method, ES2022 §13.3.7.1), bound ONCE below after
+    // proto_reg is created -- unconditionally, extends or not, unlike the
+    // old __super__-based scheme this replaces for super.x/super[x] reads.
+    // GetSuperBase = GETPROTO(__home_object__), evaluated fresh on every
+    // read, so a runtime Object.setPrototypeOf on the class's own .prototype
+    // is observed immediately, matching the spec instead of a statically
+    // cached parent reference.
+    char[] home_object_name_src = "__home_object__";
+    char[32] home_object_buf;
+    uint home_object_pos = 0;
+    for (uint i = 0; i < home_object_name_src.len; i++) { home_object_buf[home_object_pos] = home_object_name_src[i]; home_object_pos++; }
+    if (super_counter == 0) {
+        home_object_buf[home_object_pos] = '0';
+        home_object_pos++;
+    } else {
+        char[10] num_buf3;
+        uint num_pos3 = 0;
+        uint c3 = super_counter;
+        while (c3 > 0) {
+            num_buf3[num_pos3] = (char)('0' + c3 % 10);
+            num_pos3++;
+            c3 = c3 / 10;
+        }
+        for (uint i = 0; i < num_pos3; i++) {
+            home_object_buf[home_object_pos] = num_buf3[num_pos3 - 1 - i];
+            home_object_pos++;
+        }
+    }
+    ushort home_object_reg = self.declare_var(home_object_buf[:home_object_pos], LET);
+    uint home_object_name_idx = self.add_string_constant(home_object_buf[:home_object_pos]);
+    self.home_object_name_idx = home_object_name_idx;
+
     // For default-exported anonymous classes, the constructor's visible
     // `.name` is the literal "default" (ES2024 §16.2.3.7); the binding
     // name "*default*" is a compiler-private symbol.
@@ -689,17 +727,18 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // constructor, throw TypeError BEFORE accessing .prototype.
         self.emit_abc(Opcode.CHKCTOR, (uint)base_reg, 0, 0);
         self.has_super_binding = true;
-        // __super__ = Base; GetSuperBase = __super__.prototype = Base.prototype
-        self.super_is_home_object = false;
+        // __super__ = Base, used only for super() constructor calls (which
+        // genuinely need the parent constructor itself, ES2022 §14.7.2
+        // GetSuperConstructor). super.x/super[x] property reads instead use
+        // __home_object__ (bound below), not this binding.
         self.emit_abc(Opcode.LDREG, (uint)super_reg, (uint)base_reg, 0);
         self.emit_a_bc(Opcode.PUTLEX, (uint)super_reg, super_name_idx);
-    } else {
-        // No extends: __super__ will be set to C.prototype after proto_reg is created.
-        // GetSuperBase = GETPROTO(__super__) = Object.prototype.
-        self.super_is_home_object = true;
-        // has_super_binding remains false (super() calls are not allowed),
-        // but in_class_body = true allows super.x / super[x] syntax.
     }
+    // super_is_home_object is unconditionally true: every instance method's
+    // super.x/super[x] resolves via GETPROTO(__home_object__) now, extends
+    // or not (see emit_super_base). has_super_binding stays false in the
+    // no-extends case, so super() itself is still correctly rejected there.
+    self.super_is_home_object = true;
 
     // TypeScript: `implements Foo, Bar<T>` before the class body. Must be
     // skipped BEFORE prescan_private_names below, which expects the lexer
@@ -1891,13 +1930,13 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         self.free_reg(proto_key_reg);
     }
 
-    // For classes without extends, bind __super__ = proto_reg (C.prototype).
-    // Methods use super_is_home_object=true so GetSuperBase = GETPROTO(C.prototype)
-    // = Object.prototype, matching the spec (HomeObject = C.prototype, super = Object.prototype).
-    if (base_reg == REG_NONE) {
-        self.emit_abc(Opcode.LDREG, (uint)super_reg, (uint)proto_reg, 0);
-        self.emit_a_bc(Opcode.PUTLEX, (uint)super_reg, super_name_idx);
-    }
+    // Bind __home_object__ = proto_reg (C.prototype), unconditionally --
+    // extends or not. Instance methods' super.x/super[x] resolve
+    // GETPROTO(__home_object__), matching the spec (HomeObject = C.prototype,
+    // super base = Object.getPrototypeOf(C.prototype), evaluated fresh on
+    // every read so it tracks a later Object.setPrototypeOf(C.prototype, ...)).
+    self.emit_abc(Opcode.LDREG, (uint)home_object_reg, (uint)proto_reg, 0);
+    self.emit_a_bc(Opcode.PUTLEX, (uint)home_object_reg, home_object_name_idx);
 
     // P5 static brand: allocated here (not with the instance brand / private
     // symbols above, which must exist before the member loop for computed
@@ -2112,6 +2151,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     self.super_is_home_object = saved_super_is_home;
     self.super_name_idx = saved_super_name_idx;
     self.static_super_name_idx = saved_static_super_name_idx;
+    self.home_object_name_idx = saved_home_object_name_idx;
     self.pop_private_scope();
 
     return ctor_reg;

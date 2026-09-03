@@ -3700,42 +3700,43 @@ fn ushort? CompilerContext.member_expr(&self) {
 }
 
 // Compute the super base register for `super.x` / `super[x]` (§13.3.7.1
-// GetSuperBase): loads `__super__` (or `__static_super__` for static
-// methods, whose HomeObject is the constructor itself) and derives its
-// [[Prototype]]. When the binding already holds the HomeObject
-// (super_is_home_object, or any static method) that's a direct GETPROTO;
-// otherwise `__super__` holds the superclass constructor value itself
-// (the `extends Base` case), so the base is `Base.prototype` via GETPROP.
+// GetSuperBase): loads the enclosing method's HomeObject and derives its
+// [[Prototype]] via GETPROTO, evaluated fresh on every call so a later
+// mutation of the HomeObject's own [[Prototype]] (Object.setPrototypeOf) is
+// observed immediately, matching the spec instead of a statically cached
+// reference. HomeObject is:
+//   - `__static_super__` (the constructor itself) for a static method;
+//   - `__super__` (the object literal itself) for an object-literal concise
+//     method/accessor -- see super_home_is_object_literal's doc comment;
+//   - otherwise `__home_object__` (the class's own .prototype) for an
+//     instance method, independent of whether the class has `extends` (a
+//     class without extends still needs its own .prototype as HomeObject,
+//     so super.x there resolves Object.prototype's members).
+// These bindings are set up once, in parse_class_tail_with_name / object_literal.
 // Returns the register holding the super base (caller owns/frees it).
 fn ushort CompilerContext.emit_super_base(&self) {
-    uint super_name_idx;
+    uint home_name_idx;
     if (self.super_is_static_method) {
-        super_name_idx = self.static_super_name_idx;
-        if (super_name_idx == 0xFFFFFFFF) {
-            super_name_idx = self.add_string_constant("__static_super__");
+        home_name_idx = self.static_super_name_idx;
+        if (home_name_idx == 0xFFFFFFFF) {
+            home_name_idx = self.add_string_constant("__static_super__");
+        }
+    } else if (self.super_home_is_object_literal) {
+        home_name_idx = self.super_name_idx;
+        if (home_name_idx == 0xFFFFFFFF) {
+            home_name_idx = self.add_string_constant("__super__");
         }
     } else {
-        super_name_idx = self.super_name_idx;
-        if (super_name_idx == 0xFFFFFFFF) {
-            super_name_idx = self.add_string_constant("__super__");
+        home_name_idx = self.home_object_name_idx;
+        if (home_name_idx == 0xFFFFFFFF) {
+            home_name_idx = self.add_string_constant("__home_object__");
         }
     }
-    ushort super_ctor_reg = self.alloc_reg();
-    self.emit_a_bc(Opcode.GETVAR, (uint)super_ctor_reg, super_name_idx);
-    ushort super_proto_reg;
-    if (self.super_is_static_method || self.super_is_home_object) {
-        super_proto_reg = self.alloc_reg();
-        self.emit_abc(Opcode.GETPROTO, (uint)super_proto_reg, (uint)super_ctor_reg, 0);
-        self.free_reg(super_ctor_reg);
-    } else {
-        uint proto_name_idx = self.add_string_constant("prototype");
-        ushort proto_key_reg = self.alloc_reg();
-        self.emit_a_bc(Opcode.LDCONST, (uint)proto_key_reg, proto_name_idx);
-        super_proto_reg = self.alloc_reg();
-        self.emit_abc(Opcode.GETPROP, (uint)super_proto_reg, (uint)super_ctor_reg, (uint)proto_key_reg);
-        self.free_reg(proto_key_reg);
-        self.free_reg(super_ctor_reg);
-    }
+    ushort home_reg = self.alloc_reg();
+    self.emit_a_bc(Opcode.GETVAR, (uint)home_reg, home_name_idx);
+    ushort super_proto_reg = self.alloc_reg();
+    self.emit_abc(Opcode.GETPROTO, (uint)super_proto_reg, (uint)home_reg, 0);
+    self.free_reg(home_reg);
     return super_proto_reg;
 }
 
@@ -5157,8 +5158,35 @@ fn ushort? CompilerContext.object_literal(&self) {
     // so a later Object.setPrototypeOf on the literal is observed.
     bool saved_has_super = self.has_super_binding;
     bool saved_super_is_home = self.super_is_home_object;
+    bool saved_super_home_is_object_literal = self.super_home_is_object_literal;
+    bool saved_super_is_static_method = self.super_is_static_method;
+    uint saved_super_name_idx = self.super_name_idx;
+    uint saved_home_object_name_idx = self.home_object_name_idx;
+    uint saved_static_super_name_idx = self.static_super_name_idx;
     self.has_super_binding = true;
     self.super_is_home_object = true;
+    self.super_home_is_object_literal = true;
+    // A concise method here is never "static" in the enclosing class's
+    // sense; without resetting this, an object literal nested inside a
+    // static class method would wrongly resolve its OWN super.x against
+    // the enclosing __static_super__ instead of the literal itself.
+    self.super_is_static_method = false;
+    // self.super_name_idx must NOT keep pointing at an enclosing class's
+    // numbered __super__N: this literal's own binding is unnumbered
+    // ("__super__", declared fresh below on first use), a different runtime
+    // name entirely. Left unset here (0xFFFFFFFF) until that PUTLEX runs,
+    // so a super.x reference before any method/accessor in this literal
+    // correctly falls through to emit_super_base's own "__super__" fallback.
+    // home_object_name_idx/static_super_name_idx are unset for the same
+    // reason: an enclosing class's __home_object__N/__static_super__N must
+    // not leak into this literal's methods now that
+    // super_home_is_object_literal routes them to super_name_idx instead,
+    // and unsetting home_object_name_idx also keeps a nested method's
+    // CompiledFunction.home_object_binding_name null, which builtin_eval
+    // relies on to tell an object-literal HomeObject apart from a class one.
+    self.super_name_idx = 0xFFFFFFFF;
+    self.home_object_name_idx = 0xFFFFFFFF;
+    self.static_super_name_idx = 0xFFFFFFFF;
 
     ushort obj_reg = self.alloc_reg();
     self.emit_abc(Opcode.NEWOBJ, (uint)obj_reg, 0, 0);
@@ -5391,6 +5419,12 @@ fn ushort? CompilerContext.object_literal(&self) {
                         self.emit_abc(Opcode.LDREG, (uint)sup_reg, (uint)obj_reg, 0);
                         self.emit_a_bc(Opcode.PUTLEX, (uint)sup_reg, sup_name_idx);
                         super_bound = true;
+                        // Point self.super_name_idx at THIS binding so a nested
+                        // method/accessor's emit_super_base (via
+                        // compile_inner_function's re-intern) resolves the
+                        // literal's own "__super__", not an enclosing class's
+                        // numbered one.
+                        self.super_name_idx = sup_name_idx;
                     }
                     ushort accessor_reg = self.function_expr_body(key_src_start,
                         is_obj_getter ? AccessorKind.GETTER : AccessorKind.SETTER)!;
@@ -5543,6 +5577,9 @@ fn ushort? CompilerContext.object_literal(&self) {
                     self.emit_abc(Opcode.LDREG, (uint)sup_reg, (uint)obj_reg, 0);
                     self.emit_a_bc(Opcode.PUTLEX, (uint)sup_reg, sup_name_idx);
                     super_bound = true;
+                    // See the getter/setter branch above: keep self.super_name_idx
+                    // pointing at THIS literal's own binding.
+                    self.super_name_idx = sup_name_idx;
                 }
                 ushort method_reg = self.function_expr_body(key_src_start)!;
                 // Method shorthand is always a MethodDefinition (§14.3.9): unlike
@@ -5648,6 +5685,11 @@ fn ushort? CompilerContext.object_literal(&self) {
     }
     self.has_super_binding = saved_has_super;
     self.super_is_home_object = saved_super_is_home;
+    self.super_home_is_object_literal = saved_super_home_is_object_literal;
+    self.super_is_static_method = saved_super_is_static_method;
+    self.super_name_idx = saved_super_name_idx;
+    self.home_object_name_idx = saved_home_object_name_idx;
+    self.static_super_name_idx = saved_static_super_name_idx;
     return obj_reg;
 }
 
