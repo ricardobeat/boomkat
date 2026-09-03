@@ -1456,6 +1456,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     defer json_stack_pop(jctx);
 
     jctx.indent_level++;
+    defer jctx.indent_level--;
 
     if (!jctx.out.append_char('{')) return -1;
 
@@ -1675,10 +1676,9 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         }
     }
 
-    jctx.indent_level--;
     if (jctx.gap_len > 0) {
         if (!jctx.out.append_char('\n')) return -1;
-        for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
+        for (usz g = 0; g < (jctx.indent_level - 1) * jctx.gap_len; g++) {
             if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
         }
     }
@@ -1700,6 +1700,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     defer json_stack_pop(jctx);
 
     jctx.indent_level++;
+    defer jctx.indent_level--;
 
     if (!jctx.out.append_char('[')) return -1;
 
@@ -1837,10 +1838,9 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
         }
     }
 
-    jctx.indent_level--;
     if (jctx.gap_len > 0) {
         if (!jctx.out.append_char('\n')) return -1;
-        for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
+        for (usz g = 0; g < (jctx.indent_level - 1) * jctx.gap_len; g++) {
             if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
         }
     }
