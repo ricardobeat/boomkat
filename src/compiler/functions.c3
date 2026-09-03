@@ -999,6 +999,20 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 }
                 DestructIterState* state = &iter_states[iter_idx];
 
+                // [[Done]] may already be latched by an earlier element that
+                // exhausted the iterator (`[a, ...c] = []`): §13.3.3.8 binds
+                // the rest to an empty array WITHOUT another .next() call.
+                // Same encoding the element path tests, method_reg cleared to
+                // undefined; without this the loop below would call .next()
+                // with an undefined `this`. NEWARR above already made the
+                // empty array, so the exhausted path just skips the loop.
+                ushort rest_exh_reg = self.alloc_reg();
+                self.emit_abc(Opcode.LDUNDEF, (uint)rest_exh_reg, 0, 0);
+                self.emit_abc(Opcode.SEQ, (uint)rest_exh_reg, (uint)state.method_reg,
+                              (uint)rest_exh_reg);
+                uint rest_exhausted_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)rest_exh_reg);
+                self.free_reg(rest_exh_reg);
+
                 ushort result_reg = self.alloc_reg();
                 ushort done_key_reg = self.alloc_reg();
                 ushort done_reg = self.alloc_reg();
@@ -1055,6 +1069,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 // Rest consumed the iterator to done:true, latch [[done]] so
                 // the trailing IteratorClose is skipped (§13.3.3.8 step 4.b).
                 self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
+
+                self.patch_jump(rest_exhausted_jump);
 
                 self.free_reg(done_key_reg);
                 self.free_reg(done_reg);
@@ -1182,6 +1198,16 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                         self.emit_deferred_target(&binds[di]);
                     }
 
+                    // [[Done]] may already be latched by an earlier element
+                    // that exhausted the iterator (`[a, ...c] = []`), see the
+                    // matching guard on the group-rest path above.
+                    ushort rest_exh_reg = self.alloc_reg();
+                    self.emit_abc(Opcode.LDUNDEF, (uint)rest_exh_reg, 0, 0);
+                    self.emit_abc(Opcode.SEQ, (uint)rest_exh_reg, (uint)state.method_reg,
+                                  (uint)rest_exh_reg);
+                    uint rest_exhausted_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)rest_exh_reg);
+                    self.free_reg(rest_exh_reg);
+
                     ushort result_reg = self.alloc_reg();
                     ushort done_key_reg = self.alloc_reg();
                     ushort done_reg = self.alloc_reg();
@@ -1238,6 +1264,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     // matching the synthetic-rest path. Without this, ITER_CLOSE
                     // calls .return() on an already-done iterator.
                     self.emit_abc(Opcode.LDUNDEF, (uint)iter_states[iter_idx].method_reg, 0, 0);
+
+                    self.patch_jump(rest_exhausted_jump);
 
                     self.free_reg(done_key_reg);
                     self.free_reg(done_reg);
