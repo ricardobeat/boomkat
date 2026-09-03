@@ -2277,47 +2277,66 @@ fn HObject*? promise_create_element_callback(Heap* heap, uint builtin_index, HOb
     return cb;
 }
 
+// Per-element alreadyCalled guard (spec §27.2.4.x steps 1-3). Returns true
+// when the caller should bail out (already called).
+fn bool promise_element_guard(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    HString* ac_key = builtin_intern_string(heap, "\xFFalreadyCalled");
+    if (ac_key == null) return false;
+    if (try acv = ctx.callee_obj.get_prop(ac_key, ctx.heap)) {
+        if (acv.is_boolean() && acv.get_boolean()) { ctx.result.set_undefined(); return true; }
+    }
+    TVal ac_true; ac_true.set_boolean(true);
+    ctx.callee_obj.put_prop(ac_key, ac_true, hobject::PROP_FLAGS_WEC, ctx.heap);
+    return false;
+}
+
+// Read the combinator state object and element index from a callback's hidden props.
+fn HObject* promise_element_state(BuiltinContext* ctx, usz* idx_out, bool need_idx) {
+    Heap* heap = ctx.heap;
+    HString* state_key = builtin_intern_string(heap, "\xFFstate");
+    HString* idx_key = builtin_intern_string(heap, "\xFFidx");
+    if (state_key == null) return null;
+    if (need_idx && idx_key == null) return null;
+    TVal? state_opt = ctx.callee_obj.get_prop(state_key, ctx.heap);
+    HObject* state = null;
+    if (try sv = state_opt) {
+        if (sv.is_object() && sv.get_heapptr() != null) state = (HObject*)sv.get_heapptr();
+    }
+    if (state == null) return null;
+    if (need_idx) {
+        TVal? idx_opt = ctx.callee_obj.get_prop(idx_key, ctx.heap);
+        usz idx = 0;
+        if (try iv = idx_opt) {
+            if (iv.is_fastint()) idx = (usz)iv.get_fastint();
+        }
+        *idx_out = idx;
+    }
+    return state;
+}
+
+// First arg or undefined when the element callback got none.
+fn void promise_element_arg(BuiltinContext* ctx, TVal* out) {
+    out.set_undefined();
+    if (ctx.argc >= 1) *out = ctx.regs[ctx.base_reg];
+}
 // Promise.all per-element fulfill handler (called via microtask).
 // Stores the value at result[idx] and decrements the remaining counter;
 // when it reaches zero, fulfills the outer promise with the result array.
 fn void builtin_promise_all_resolve_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
+    if (promise_element_guard(ctx)) return;
 
-    // Per spec §27.2.4.1.2 step 1-3: alreadyCalled guard.
-    HString* ac_key = builtin_intern_string(heap, "\xFFalreadyCalled");
-    if (ac_key != null) {
-        if (try acv = ctx.callee_obj.get_prop(ac_key, ctx.heap)) {
-            if (acv.is_boolean() && acv.get_boolean()) { ctx.result.set_undefined(); return; }
-        }
-        TVal ac_true; ac_true.set_boolean(true);
-        ctx.callee_obj.put_prop(ac_key, ac_true, hobject::PROP_FLAGS_WEC, ctx.heap);
-    }
-
-    // Read state and idx from hidden properties on this callback function.
-    HString* state_key = builtin_intern_string(heap, "\xFFstate");
-    HString* idx_key = builtin_intern_string(heap, "\xFFidx");
     HString* arr_key = builtin_intern_string(heap, "\xFFarr");
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
     HString* outer_key = builtin_intern_string(heap, "\xFFouter");
-    if (state_key == null || idx_key == null) return;
-
-    TVal? state_opt = ctx.callee_obj.get_prop(state_key, ctx.heap);
-    HObject* state = null;
-    if (try sv = state_opt) {
-        if (sv.is_object() && sv.get_heapptr() != null) state = (HObject*)sv.get_heapptr();
-    }
+    usz idx = 0;
+    HObject* state = promise_element_state(ctx, &idx, true);
     if (state == null) return;
 
-    TVal? idx_opt = ctx.callee_obj.get_prop(idx_key, ctx.heap);
-    usz idx = 0;
-    if (try iv = idx_opt) {
-        if (iv.is_fastint()) idx = (usz)iv.get_fastint();
-    }
-
     TVal value;
-    value.set_undefined();
-    if (ctx.argc >= 1) value = ctx.regs[ctx.base_reg];
+    promise_element_arg(ctx, &value);
 
     // Store value at result[idx] (state.arr)
     if (arr_key != null) {
@@ -2505,39 +2524,17 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
 
-    // Per spec §27.2.4.4.2 step 1-3: alreadyCalled guard.
-    HString* ac_key = builtin_intern_string(heap, "\xFFalreadyCalled");
-    if (ac_key != null) {
-        if (try acv = ctx.callee_obj.get_prop(ac_key, ctx.heap)) {
-            if (acv.is_boolean() && acv.get_boolean()) { ctx.result.set_undefined(); return; }
-        }
-        TVal ac_true; ac_true.set_boolean(true);
-        ctx.callee_obj.put_prop(ac_key, ac_true, hobject::PROP_FLAGS_WEC, ctx.heap);
-    }
+    if (promise_element_guard(ctx)) return;
 
-    HString* state_key = builtin_intern_string(heap, "\xFFstate");
-    HString* idx_key = builtin_intern_string(heap, "\xFFidx");
+    usz idx = 0;
+    HObject* state = promise_element_state(ctx, &idx, true);
+    if (state == null) return;
     HString* arr_key = builtin_intern_string(heap, "\xFFarr");
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
     HString* outer_key = builtin_intern_string(heap, "\xFFouter");
-    if (state_key == null || idx_key == null) return;
-
-    TVal? state_opt = ctx.callee_obj.get_prop(state_key, ctx.heap);
-    HObject* state = null;
-    if (try sv = state_opt) {
-        if (sv.is_object() && sv.get_heapptr() != null) state = (HObject*)sv.get_heapptr();
-    }
-    if (state == null) return;
-
-    TVal? idx_opt = ctx.callee_obj.get_prop(idx_key, ctx.heap);
-    usz idx = 0;
-    if (try iv = idx_opt) {
-        if (iv.is_fastint()) idx = (usz)iv.get_fastint();
-    }
 
     TVal value;
-    value.set_undefined();
-    if (ctx.argc >= 1) value = ctx.regs[ctx.base_reg];
+    promise_element_arg(ctx, &value);
 
     // Build {status: "fulfilled", value: x}
     HObject*? result_obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -2615,39 +2612,17 @@ fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
 
-    // Per spec §27.2.4.4.3 step 1-3: alreadyCalled guard.
-    HString* ac_key = builtin_intern_string(heap, "\xFFalreadyCalled");
-    if (ac_key != null) {
-        if (try acv = ctx.callee_obj.get_prop(ac_key, ctx.heap)) {
-            if (acv.is_boolean() && acv.get_boolean()) { ctx.result.set_undefined(); return; }
-        }
-        TVal ac_true; ac_true.set_boolean(true);
-        ctx.callee_obj.put_prop(ac_key, ac_true, hobject::PROP_FLAGS_WEC, ctx.heap);
-    }
+    if (promise_element_guard(ctx)) return;
 
-    HString* state_key = builtin_intern_string(heap, "\xFFstate");
-    HString* idx_key = builtin_intern_string(heap, "\xFFidx");
+    usz idx = 0;
+    HObject* state = promise_element_state(ctx, &idx, true);
+    if (state == null) return;
     HString* arr_key = builtin_intern_string(heap, "\xFFarr");
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
     HString* outer_key = builtin_intern_string(heap, "\xFFouter");
-    if (state_key == null || idx_key == null) return;
-
-    TVal? state_opt = ctx.callee_obj.get_prop(state_key, ctx.heap);
-    HObject* state = null;
-    if (try sv = state_opt) {
-        if (sv.is_object() && sv.get_heapptr() != null) state = (HObject*)sv.get_heapptr();
-    }
-    if (state == null) return;
-
-    TVal? idx_opt = ctx.callee_obj.get_prop(idx_key, ctx.heap);
-    usz idx = 0;
-    if (try iv = idx_opt) {
-        if (iv.is_fastint()) idx = (usz)iv.get_fastint();
-    }
 
     TVal reason;
-    reason.set_undefined();
-    if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
+    promise_element_arg(ctx, &reason);
 
     HObject*? result_obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try result_obj = result_obj_raw) {
@@ -2784,29 +2759,14 @@ fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
 
-    // Per spec §27.2.4.2.2 step 1-3: alreadyCalled guard.
-    HString* ac_key = builtin_intern_string(heap, "\xFFalreadyCalled");
-    if (ac_key != null) {
-        if (try acv = ctx.callee_obj.get_prop(ac_key, ctx.heap)) {
-            if (acv.is_boolean() && acv.get_boolean()) { ctx.result.set_undefined(); return; }
-        }
-        TVal ac_true; ac_true.set_boolean(true);
-        ctx.callee_obj.put_prop(ac_key, ac_true, hobject::PROP_FLAGS_WEC, ctx.heap);
-    }
+    if (promise_element_guard(ctx)) return;
 
-    HString* state_key = builtin_intern_string(heap, "\xFFstate");
-    HString* idx_key = builtin_intern_string(heap, "\xFFidx");
     HString* errors_key = builtin_intern_string(heap, "\xFFerrors");
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
     HString* outer_key = builtin_intern_string(heap, "\xFFouter");
     HString* rej_key = builtin_intern_string(heap, "\xFFrejected");
-    if (state_key == null || idx_key == null) return;
-
-    TVal? state_opt = ctx.callee_obj.get_prop(state_key, ctx.heap);
-    HObject* state = null;
-    if (try sv = state_opt) {
-        if (sv.is_object() && sv.get_heapptr() != null) state = (HObject*)sv.get_heapptr();
-    }
+    usz idx = 0;
+    HObject* state = promise_element_state(ctx, &idx, true);
     if (state == null) return;
 
     // If a fulfill has already settled the outer, ignore late rejections
@@ -2819,15 +2779,8 @@ fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
     }
     if (already_settled) return;
 
-    TVal? idx_opt = ctx.callee_obj.get_prop(idx_key, ctx.heap);
-    usz idx = 0;
-    if (try iv = idx_opt) {
-        if (iv.is_fastint()) idx = (usz)iv.get_fastint();
-    }
-
     TVal reason;
-    reason.set_undefined();
-    if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
+    promise_element_arg(ctx, &reason);
 
     // Store reason at errors[idx]
     if (errors_key != null) {

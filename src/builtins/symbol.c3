@@ -223,160 +223,64 @@ fn HString* symbol_registry_get_key(Heap* heap, HString* sym) {
 // Well-known symbols are NOT in the global symbol registry per ES2020 §19.4,
 // only symbols created by Symbol.for live there. Heap-level cache keeps it
 // unique across the engine.
-fn HString* ensure_tostringtag_symbol(Heap* heap) {
-    if (heap.tostringtag_symbol != null) return heap.tostringtag_symbol;
-    char[] desc = "Symbol.toStringTag";
+fn HString* ensure_cached_symbol(Heap* heap, HString** slot, char[] desc) {
+    if (*slot != null) return *slot;
     HString* sym = create_symbol_string(heap, desc);
     if (sym == null) return null;
-    heap.tostringtag_symbol = sym;
+    *slot = sym;
     ((types::HeapHeader*)sym).set_pinned();
     return sym;
 }
+
+fn HString* ensure_tostringtag_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.tostringtag_symbol, "Symbol.toStringTag");
 
 // Ensure the well-known @@iterator symbol exists.
 // Returns the symbol HString* (usable as a property key).
 // Well-known symbols are NOT added to the global symbol registry per ES2020
 // §19.4 (the registry only contains symbols created by Symbol.for); the
 // heap-level cache (heap.iterator_symbol) is sufficient to keep them unique.
-fn HString* ensure_iterator_symbol(Heap* heap) {
-    // Fast path: already cached on the heap
-    if (heap.iterator_symbol != null) return heap.iterator_symbol;
-    char[] desc = "Symbol.iterator";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.iterator_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_iterator_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.iterator_symbol, "Symbol.iterator");
 
 // Ensure the well-known @@toPrimitive symbol exists.
 // Returns the symbol HString* (usable as a property key).
-fn HString* ensure_toprimitive_symbol(Heap* heap) {
-    if (heap.toprimitive_symbol != null) return heap.toprimitive_symbol;
-    char[] desc = "Symbol.toPrimitive";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.toprimitive_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_toprimitive_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.toprimitive_symbol, "Symbol.toPrimitive");
 
 // Ensure the well-known @@isConcatSpreadable symbol exists.
 // Returns the symbol HString* (usable as a property key).
-fn HString* ensure_concatspreadable_symbol(Heap* heap) {
-    if (heap.concatspreadable_symbol != null) return heap.concatspreadable_symbol;
-    char[] desc = "Symbol.isConcatSpreadable";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.concatspreadable_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_concatspreadable_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.concatspreadable_symbol, "Symbol.isConcatSpreadable");
 
 // Ensure the well-known @@hasInstance symbol exists.
 // Returns the symbol HString* (usable as a property key).
-fn HString* ensure_hasinstance_symbol(Heap* heap) {
-    if (heap.hasinstance_symbol != null) return heap.hasinstance_symbol;
-    char[] desc = "Symbol.hasInstance";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.hasinstance_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_hasinstance_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.hasinstance_symbol, "Symbol.hasInstance");
 
 // Ensure the well-known @@match symbol exists.
 // Returns the symbol HString* (usable as a property key).
-fn HString* ensure_match_symbol(Heap* heap) {
-    if (heap.match_symbol != null) return heap.match_symbol;
-    char[] desc = "Symbol.match";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.match_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_match_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.match_symbol, "Symbol.match");
 
 // Ensure the well-known @@search symbol exists.
-fn HString* ensure_search_symbol(Heap* heap) {
-    if (heap.search_symbol != null) return heap.search_symbol;
-    char[] desc = "Symbol.search";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.search_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_search_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.search_symbol, "Symbol.search");
 
 // Ensure the well-known @@replace symbol exists.
-fn HString* ensure_replace_symbol(Heap* heap) {
-    if (heap.replace_symbol != null) return heap.replace_symbol;
-    char[] desc = "Symbol.replace";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.replace_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_replace_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.replace_symbol, "Symbol.replace");
 
 // Ensure the well-known @@split symbol exists.
-fn HString* ensure_split_symbol(Heap* heap) {
-    if (heap.split_symbol != null) return heap.split_symbol;
-    char[] desc = "Symbol.split";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.split_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_split_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.split_symbol, "Symbol.split");
 
 // Ensure the well-known @@species symbol exists.
 // Returns the symbol HString* (usable as a property key).
-fn HString* ensure_species_symbol(Heap* heap) {
-    if (heap.species_symbol != null) return heap.species_symbol;
-    char[] desc = "Symbol.species";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.species_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_species_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.species_symbol, "Symbol.species");
 
 // Ensure the well-known @@unscopables symbol exists.
 // Returns the symbol HString* (usable as a property key).
-fn HString* ensure_unscopables_symbol(Heap* heap) {
-    if (heap.unscopables_symbol != null) return heap.unscopables_symbol;
-    char[] desc = "Symbol.unscopables";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.unscopables_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_unscopables_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.unscopables_symbol, "Symbol.unscopables");
 
 // Ensure the well-known @@matchAll symbol exists.
 // Returns the symbol HString* (usable as a property key).
-fn HString* ensure_matchall_symbol(Heap* heap) {
-    if (heap.matchall_symbol != null) return heap.matchall_symbol;
-    char[] desc = "Symbol.matchAll";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.matchall_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_matchall_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.matchall_symbol, "Symbol.matchAll");
 
 // Ensure the well-known @@asyncIterator symbol exists.
 // Returns the symbol HString* (usable as a property key).
-fn HString* ensure_asynciterator_symbol(Heap* heap) {
-    if (heap.asynciterator_symbol != null) return heap.asynciterator_symbol;
-    char[] desc = "Symbol.asyncIterator";
-    HString* sym = create_symbol_string(heap, desc);
-    if (sym == null) return null;
-    heap.asynciterator_symbol = sym;
-    ((types::HeapHeader*)sym).set_pinned();
-    return sym;
-}
+fn HString* ensure_asynciterator_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.asynciterator_symbol, "Symbol.asyncIterator");
 
 // ============================================================================
 // Symbol constructor (ES6 §19.4.1)
