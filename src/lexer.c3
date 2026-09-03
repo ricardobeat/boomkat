@@ -597,20 +597,28 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
 // allocator is unavailable (should not happen in practice); this keeps the
 // lexer usable in degenerate init paths without crashing.
 fn char[] Lexer.arena_dup(&self, char* src, usz n) {
-    Heap* h = (Heap*)self.heap;
-    if (h == null || h.alloc_func == null || self.arena == null) {
+    char[] dst = self.arena_alloc(n);
+    if (dst.len == 0) {
         // No heap / holder alloc failed: last-resort borrow of the source
         // pointer. Only reachable in degenerate init paths; a decoded slice
         // here would already be transient, so this is no worse.
         return src[:n];
     }
+    mem::copy(dst.ptr, src, (sz)n);
+    return dst;
+}
+
+// Reserve `n` uninitialized bytes of arena storage, returning an empty slice
+// when the heap is unavailable or the allocation fails. `n` must be > 0.
+fn char[] Lexer.arena_alloc(&self, usz n) {
+    Heap* h = (Heap*)self.heap;
+    if (h == null || h.alloc_func == null || self.arena == null) return "";
 
     // Try to bump-allocate from an existing block with room.
     LexArenaBlock* blk = self.arena.head;
     while (blk != null) {
         if (blk.cap - blk.used >= n) {
             char* dst = blk.data() + blk.used;
-            mem::copy(dst, src, (sz)n);
             blk.used += n;
             return dst[:n];
         }
@@ -622,19 +630,13 @@ fn char[] Lexer.arena_dup(&self, char* src, usz n) {
     usz payload = n > LEX_ARENA_BLOCK_SIZE ? n : LEX_ARENA_BLOCK_SIZE;
     usz total = LexArenaBlock::size + payload;
     void* raw = h.alloc_func(h.heap_udata, total);
-    if (raw == null) {
-        // Allocation failure: borrow the source slice (transient, but avoids a
-        // crash; a genuinely OOM compile will fail elsewhere).
-        return src[:n];
-    }
+    if (raw == null) return "";
     LexArenaBlock* nb = (LexArenaBlock*)raw;
     nb.cap = payload;
     nb.used = n;
     nb.next = self.arena.head;
     self.arena.head = nb;
-    char* dst = nb.data();
-    mem::copy(dst, src, (sz)n);
-    return dst[:n];
+    return nb.data()[:n];
 }
 
 // Free the token-string arena (all blocks plus the holder). Call once at the
@@ -1276,9 +1278,26 @@ fn Token? Lexer.scan_number(&self) {
     // parseFloat().
     {
         uint len = self.pos - start_pos;
-        char[64] buf;
-        if (len < 64) {
-            mem::copy(&buf, &self.source[start_pos], (sz)(len));
+        // A numeric literal has no length limit, so anything past the stack
+        // buffer gets arena storage rather than being read as zero. Both the
+        // digits beyond the 17 a double can hold and a long run of numeric
+        // separators still change the value: they shift the exponent.
+        char[64] stack_buf;
+        char* buf = &stack_buf[0];
+        if (len >= 64) {
+            // Reserve one byte past the digits for the NUL js_atod needs; the
+            // loop below writes it. arena_dup borrows the source when the heap
+            // is unavailable, and that borrow has no spare byte to terminate.
+            char[] big = self.arena_alloc((usz)(len + 1));
+            if (big.len == 0) {
+                value = 0.0;
+                len = 0;
+            } else {
+                buf = (char*)big.ptr;
+            }
+        }
+        if (len > 0) {
+            mem::copy(buf, &self.source[start_pos], (sz)(len));
             // Strip numeric separators (_) before passing to js_atod
             uint j = 0;
             for (uint i = 0; i < len; i++) {
@@ -1290,10 +1309,7 @@ fn Token? Lexer.scan_number(&self) {
             buf[j] = 0;
             char* endptr;
             char[dtoa_bindings::DTOA_TMP_SIZE] tmp;
-            value = dtoa_bindings::boomkat_js_atod(&buf[0], &endptr, 0, 0, &tmp);
-        } else {
-            // Fallback: should never happen for valid JS number literals
-            value = 0.0;
+            value = dtoa_bindings::boomkat_js_atod(buf, &endptr, 0, 0, &tmp);
         }
     }
 
