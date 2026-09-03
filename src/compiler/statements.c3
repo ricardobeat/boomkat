@@ -1680,6 +1680,23 @@ fn void? CompilerContext.emit_block_scoped_fn_decls(&self, NameSpan* lex_spans, 
         // keyword lookahead, which only statement() performs, and the recorded
         // position is on `async` for exactly that case.
         self.statement()!;
+
+        // Annex B.3.3 sloppy-only second binding (plan 083 Phase 3.2): the
+        // block-scoped CLOSURE+PUTLEX above installed the closure in the
+        // block's lex_env. A sloppy Block also hoists the name to the
+        // enclosing var scope. DECLGLOBALFUNC writes var_env directly with
+        // no lex_env walk (unlike PUTVAR, which would hit the lex_env copy
+        // just installed and never reach var_env). The closure register is
+        // still live: function_declaration's declare_var allocated func_reg
+        // and nothing freed it, so it still holds the closure object here.
+        if (!self.is_strict) {
+            char[] fn_name = self.name_span_text(lex_spans[i]);
+            uint var_name_idx = self.add_string_constant(fn_name);
+            ushort? b33_reg = self.find_local_reg(fn_name);
+            if (try breg = b33_reg) {
+                self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)breg, var_name_idx);
+            }
+        }
     }
 
     self.seek_lexer_to(resume_pos);
