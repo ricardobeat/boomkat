@@ -4714,12 +4714,6 @@ fn void? CompilerContext.try_statement(&self) {
     // Compile try block
     self.block(false)!;
 
-    // In eval mode, save the try block's completion value (B) so the
-    // finally block cannot overwrite it.
-    if (eval_try_tracking) {
-        self.emit_abc(Opcode.LDREG, (uint)try_completion_reg, (uint)self.eval_acc_reg, 0);
-    }
-
     // Emit ENDTRY to pop the try handler (normal exit)
     self.emit_simple(Opcode.ENDTRY);
 
@@ -4814,6 +4808,13 @@ fn void? CompilerContext.try_statement(&self) {
             self.free_reg(discard);
         }
 
+        // The Catch clause's completion is its own block's, UpdateEmpty'd with
+        // undefined (§14.15.3), so the try block's value must not survive into
+        // it: `try { 'try'; throw e; } catch (e) {}` evaluates to undefined.
+        if (eval_try_tracking) {
+            self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
+        }
+
         // Compile catch block. It is the CatchParameter's body scope, so a
         // top-level `let`/`const` in it may not redeclare the parameter.
         self.block(false, false, true)!;
@@ -4829,13 +4830,6 @@ fn void? CompilerContext.try_statement(&self) {
         self.pop_scope_to(catch_scope);
         self.free_regs_to(catch_saved_reg);
 
-        // In eval mode with a finally clause, save the catch block's
-        // completion value (C).  On the exceptional path this overwrites
-        // the try block's value saved earlier; on the normal path this
-        // instruction is never reached (the JUMP skips the catch handler).
-        if (eval_try_tracking && self.check(TokenType.FINALLY)) {
-            self.emit_abc(Opcode.LDREG, (uint)try_completion_reg, (uint)self.eval_acc_reg, 0);
-        }
     }
 
     // Parse finally clause
@@ -4848,6 +4842,14 @@ fn void? CompilerContext.try_statement(&self) {
 
         // Emit FINALLY marker
         self.emit_simple(Opcode.FINALLY);
+
+        // In eval mode, save the try/catch completion value here rather than
+        // at the try block's normal exit: `break`/`continue`/`return` inside
+        // the try jumps straight to the finally, skipping that exit, and the
+        // value they carry must still survive (§14.15.3 UpdateEmpty).
+        if (eval_try_tracking) {
+            self.emit_abc(Opcode.LDREG, (uint)try_completion_reg, (uint)self.eval_acc_reg, 0);
+        }
 
         // In eval mode, reset eval_acc_reg to undefined at the start of the
         // finally block.  Per ES2015 §13.15.1, `If F.[[Type]] is normal, set
@@ -4868,9 +4870,8 @@ fn void? CompilerContext.try_statement(&self) {
         self.block(false)!;
 
         // In eval mode, restore eval_acc_reg from the saved try/catch
-        // completion value.  This runs only on the normal completion path
-        // (return/break/continue/throw are handled by ENDFINALLY which
-        // jumps away before reaching this restore).
+        // completion value: a finally that completes normally does not
+        // contribute its own value, so the try/catch value stands.
         if (eval_try_tracking) {
             self.emit_abc(Opcode.LDREG, (uint)self.eval_acc_reg, (uint)try_completion_reg, 0);
         }
