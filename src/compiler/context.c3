@@ -1266,13 +1266,12 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.slot_global_name_idxs.allocator = mem;
     self.slot_global_synced_name_idxs.allocator = mem;
 
-    // The engine is strict-only for Script and Module code, so the lexer starts
-    // strict (affects FutureReservedWord recognition, legacy octal literals and
-    // octal escapes). Dynamic code -- an INDIRECT eval or a Function() body
-    // without its own "use strict" -- is non-strict per ES2024 §19.2.1.1 and
-    // §20.2.1.1, and its entry point in entry.c3 lowers this after the
-    // directive prologue has been scanned.
-    self.lexer.set_strict(true);
+    // Phase 3 (plans/083): do NOT default the lexer to strict mode here. Each
+    // compilation entry point (compile/compile_eval/compile_function/etc.) is
+    // responsible for setting the lexer's strict_mode to match ctx.is_strict
+    // after init. init() runs before ctx.is_strict is meaningful, so trying to
+    // mirror it here would either default to the wrong value (false, since
+    // mem::clear zeros is_strict) or get clobbered anyway by every caller.
 }
 
 // Free heap-allocated compiler buffers.  Call after finish() or on error.

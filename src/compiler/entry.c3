@@ -41,6 +41,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     // Directive Prologue says otherwise). The "use strict" directive in the
     // prologue raises it back to true via parse_directives() below.
     ctx.is_strict = false;
+    ctx.lexer.set_strict(false);
     if (want_completion) {
         ctx.eval_acc_reg = ctx.alloc_reg();
         // Seed the accumulator so an empty Script, or one whose only
@@ -198,7 +199,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     bool  caller_forbids_arguments = false,
                                     char[] parent_super_name = {},
                                     char[] parent_static_super_name = {},
-                                    bool  caller_is_strict = true) {
+                                    bool caller_is_strict = false) {
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
@@ -400,12 +401,12 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     // declared "use strict" and the function itself carries a directive too.
     // A "use strict" directive in the body raises is_strict back to true.
     ctx.is_strict = false;
-    // ES2024 §20.2.1.1 CreateDynamicFunction step 22: a Function() body is
-    // parsed as a NON-strict FunctionBody, so `Function('var eval;')` is legal.
-    // A "use strict" in the body raises it back in parse_directives, which runs
-    // after the FormalParameters -- matching the spec's separate productions,
-    // where a body directive cannot retroactively reject a parameter name.
-    if (dynamic) ctx.lexer.set_strict(false);
+    // Lower the lexer's strict_mode to match ctx.is_strict so sloppy function
+    // bodies accept legacy octal literals and octal escapes (ES2024 Annex B
+    // §B.1.1 / §B.1.2). A "use strict" directive in the body raises both back
+    // via parse_directives (ctx.is_strict) and parse_function_body
+    // (lexer.set_strict(true)). Dynamic bodies are also sloppy per spec.
+    ctx.lexer.set_strict(false);
 
     // Parse function body
     ctx.parse_function_body(is_expr)!;

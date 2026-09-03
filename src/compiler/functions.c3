@@ -3760,7 +3760,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.init(self.lexer, self.heap);
     inner_ctx.module_goal = self.module_goal;
 
-    inner_ctx.lexer.set_strict(true);
+    inner_ctx.lexer.set_strict(inner_ctx.is_strict);
     inner_ctx.is_strict = self.is_strict;
 
     // Named function expression: the compiled function will be tagged
