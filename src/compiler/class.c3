@@ -1260,11 +1260,16 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                     // getter/setter named "constructor", already handled above
                     return COMPILE_ERROR~;
                 }
-                if (ctor_inner_idx != 0xFFFFFFFF) {
-                    // duplicate constructor is a SyntaxError
-                    return COMPILE_ERROR~;
-                }
+                // Only a non-static `constructor` is the class constructor
+                // (ES2024 14.6.13): `static constructor(){}` is an ordinary
+                // static method that happens to share the name, so it neither
+                // conflicts with the real constructor nor counts as a
+                // duplicate of another static one.
                 if (!is_static) {
+                    if (ctor_inner_idx != 0xFFFFFFFF) {
+                        // duplicate constructor is a SyntaxError
+                        return COMPILE_ERROR~;
+                    }
                     is_constructor = true;
                 }
             }
