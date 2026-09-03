@@ -191,6 +191,12 @@ fn bool? vm_init_private_members(Vm* vm, EnvRecord* ctor_lex_env, EnvRecord* cto
                 vm.heap.has_error = false;
                 TVal err_val = vm.heap.error_value;
                 if (!vm_throw_value(vm, err_val, act, curr_pc, needs_restart)) {
+                    // No handler: publish the thrown value so the host reports
+                    // it, rather than surfacing a bare internal VM_ERROR.
+                    vm.has_error = true;
+                    vm.heap.has_error = true;
+                    vm.heap.tval_copy_ref(&vm.heap.error_value, &err_val);
+                    vm.heap.tval_copy_ref(&vm.return_val, &err_val);
                     return VM_ERROR~;
                 }
                 return false;
