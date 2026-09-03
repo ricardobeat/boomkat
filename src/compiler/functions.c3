@@ -3774,7 +3774,7 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
 // If `is_named_expr` is true and `name` is non-empty, tag the result with
 // `is_namebinding`, so the VM binds `name` to the function object in a
 // fresh lexical environment at call time (ES2015 §14.1.20 NamedEvaluation).
-fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false) {
+fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false, bool is_method_body = false) {
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
     inner_ctx.init(self.lexer, self.heap);
@@ -3805,35 +3805,61 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.is_async = self.is_async;
     if (inner_ctx.is_async) inner_ctx.is_generator = true;
 
-    // Propagate class context (for super expressions).
+    // Propagate class/super/HomeObject context ONLY into a method body
+    // (is_method_body): a plain function expression/declaration -- even one
+    // written lexically inside a class method or constructor -- creates a
+    // fresh [[ThisMode]]/[[HomeObject]] boundary per spec (unlike an arrow
+    // function, which shares the enclosing one via arrow_ctx, a separate
+    // path). `super.x`/`super()`/`this.#x` inside such a nested plain
+    // function must be a SyntaxError; leaving these fields at their
+    // zero-init default (false / 0xFFFFFFFF) makes expressions.c3's
+    // has_super_binding/in_class_body/super_is_home_object check reject it.
     // Each CompilerContext has its own constant pool, so a super_name_idx
     // from the outer context is not valid in the inner context.  Re-intern
     // the name string into the inner context's pool to get the correct index.
-    inner_ctx.in_class_body = self.in_class_body;
-    inner_ctx.has_super_binding = self.has_super_binding;
-    inner_ctx.super_is_home_object = self.super_is_home_object;
-    inner_ctx.super_is_static_method = self.super_is_static_method;
-    inner_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
-    if (self.super_name_idx != 0xFFFFFFFF) {
-        HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
-        inner_ctx.super_name_idx = inner_ctx.add_string_constant(super_hstr.get_data());
+    //
+    // is_constructable is NOT part of this gate: it is the general "is this
+    // function usable with `new`" flag (also driving ordinary `new F()`),
+    // set independently by each call site based on the function's own shape
+    // (not generator, not async, etc.) BEFORE calling compile_inner_function
+    // -- always propagate it as-is, method body or not. super() itself is
+    // still correctly blocked by has_super_binding alone (both checks must
+    // pass, see expressions.c3's super-call parse).
+    inner_ctx.is_constructable = self.is_constructable;
+    if (is_method_body) {
+        inner_ctx.in_class_body = self.in_class_body;
+        inner_ctx.has_super_binding = self.has_super_binding;
+        inner_ctx.super_is_home_object = self.super_is_home_object;
+        inner_ctx.super_is_static_method = self.super_is_static_method;
+        inner_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
+        if (self.super_name_idx != 0xFFFFFFFF) {
+            HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
+            inner_ctx.super_name_idx = inner_ctx.add_string_constant(super_hstr.get_data());
+        } else {
+            inner_ctx.super_name_idx = 0xFFFFFFFF;
+        }
+        if (self.static_super_name_idx != 0xFFFFFFFF) {
+            HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
+            inner_ctx.static_super_name_idx = inner_ctx.add_string_constant(static_super_hstr.get_data());
+        } else {
+            inner_ctx.static_super_name_idx = 0xFFFFFFFF;
+        }
+        if (self.home_object_name_idx != 0xFFFFFFFF) {
+            HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
+            inner_ctx.home_object_name_idx = inner_ctx.add_string_constant(home_object_hstr.get_data());
+        } else {
+            inner_ctx.home_object_name_idx = 0xFFFFFFFF;
+        }
     } else {
+        inner_ctx.in_class_body = false;
+        inner_ctx.has_super_binding = false;
+        inner_ctx.super_is_home_object = false;
+        inner_ctx.super_is_static_method = false;
+        inner_ctx.super_home_is_object_literal = false;
         inner_ctx.super_name_idx = 0xFFFFFFFF;
-    }
-    if (self.static_super_name_idx != 0xFFFFFFFF) {
-        HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
-        inner_ctx.static_super_name_idx = inner_ctx.add_string_constant(static_super_hstr.get_data());
-    } else {
         inner_ctx.static_super_name_idx = 0xFFFFFFFF;
-    }
-    if (self.home_object_name_idx != 0xFFFFFFFF) {
-        HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
-        inner_ctx.home_object_name_idx = inner_ctx.add_string_constant(home_object_hstr.get_data());
-    } else {
         inner_ctx.home_object_name_idx = 0xFFFFFFFF;
     }
-    // Propagate constructable flag: super() only valid in constructors
-    inner_ctx.is_constructable = self.is_constructable;
     // Propagate private-name declarations (ES2022): a method/getter/setter
     // body compiled here must resolve `this.#x` against the enclosing class
     // body's declared names, resolve_private_name reads these fields
@@ -4383,7 +4409,7 @@ fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF
     // caller doesn't supply one, fall back to the position of the `(` that
     // opens the parameter list (which is what we have just consumed).
     uint mexpr_src_start = src_start != 0xFFFFFFFF ? src_start : self.lexer.token_start;
-    CompiledFunction* inner = self.compile_inner_function(name, false, mexpr_src_start, true)!;
+    CompiledFunction* inner = self.compile_inner_function(name, false, mexpr_src_start, true, true)!;
 
     // §14.3 accessor arity (see AccessorKind). num_args is the count of
     // declared formals; num_formals is Function.length, which a default value

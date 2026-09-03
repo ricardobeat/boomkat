@@ -1758,7 +1758,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // (__static_super__), not the prototype.
         bool saved_super_is_static_method = self.super_is_static_method;
         self.super_is_static_method = is_static;
-        CompiledFunction* inner = self.compile_inner_function(method_name_buf[:method_name_len], false, class_elem_src_start, true)!;
+        CompiledFunction* inner = self.compile_inner_function(method_name_buf[:method_name_len], false, class_elem_src_start, true, true)!;
         self.super_is_static_method = saved_super_is_static_method;
 
         self.is_constructable = saved_constructable;
