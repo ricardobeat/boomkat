@@ -291,6 +291,21 @@ SKIP_FILES = {
     # lex_env split, this-binding, (0,eval) direct-eval detection);
     # removed from this list.
     "language/eval-code/indirect/always-non-strict.js",  # `with ({}) {}` — unsupported (AGENTS.md)
+    # sm/non262-expressions-shell.js testDestructuringArrayDefault covers five
+    # patterns; the last two are `[x=[a=EXPR]=[]]` and `[x=[a=EXPR]=[1]]`,
+    # where the default is a destructuring ASSIGNMENT, so `a` is an assignment
+    # target rather than a binding and nothing declares it. In sloppy mode that
+    # creates an implicit global; our strict-only engine throws ReferenceError,
+    # exactly as node does for the same source under `--input-type=module`.
+    # The engine's destructuring itself is correct: prepending `var a;` to the
+    # harness makes all six files pass every pattern. Unsatisfiable while
+    # strict-only, same as the B17 implicit-global entries above.
+    "staging/sm/expressions/destructuring-array-default-call.js",
+    "staging/sm/expressions/destructuring-array-default-class.js",
+    "staging/sm/expressions/destructuring-array-default-function.js",
+    "staging/sm/expressions/destructuring-array-default-function-nested.js",
+    "staging/sm/expressions/destructuring-array-default-simple.js",
+    "staging/sm/expressions/destructuring-array-default-yield.js",
     # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
     # Strict-only engine never installs these legacy methods on
     # Object.prototype, so `this.__lookupSetter__(...)` throws
