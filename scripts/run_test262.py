@@ -306,6 +306,20 @@ SKIP_FILES = {
     "staging/sm/expressions/destructuring-array-default-function-nested.js",
     "staging/sm/expressions/destructuring-array-default-simple.js",
     "staging/sm/expressions/destructuring-array-default-yield.js",
+    # Sloppy-mode-only syntax that a strict-only engine must reject. Each
+    # asserts the SLOPPY half of a mode-dependent rule, verified against node:
+    #   declaration-forbidden-in-label   `Function("e: function x() {};")` must
+    #       be ACCEPTED. A labelled function declaration is a LabelledItem only
+    #       in sloppy code; strict rejects it (node agrees, both ways).
+    #   escaped-let-static-identifier    `Function("l\\u0065t: 42;")` must be
+    #       ACCEPTED -- `let`/`static` are Identifiers only in non-strict code,
+    #       which is the property the test exists to check.
+    #   delete-name-parenthesized-...    its checkFine half requires
+    #       `delete escape` (an unqualified name) to be accepted, legal only in
+    #       sloppy code; the checkSyntaxError half already passes.
+    "staging/sm/syntax/declaration-forbidden-in-label.js",
+    "staging/sm/syntax/escaped-let-static-identifier.js",
+    "staging/sm/expressions/delete-name-parenthesized-early-error-strict-mode.js",
     # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
     # Strict-only engine never installs these legacy methods on
     # Object.prototype, so `this.__lookupSetter__(...)` throws
