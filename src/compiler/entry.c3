@@ -392,6 +392,13 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     // Parse function body
     ctx.parse_function_body(is_expr)!;
 
+    // CreateDynamicFunction parses the assembled `(params\n){\nbody\n}` as a
+    // single FunctionExpression, so anything left over means the body closed
+    // the function early and the rest was never part of it: `Function("}")`
+    // built `(\n){\n}\n}`, whose stray `}` was silently dropped instead of
+    // being the SyntaxError the spec requires (step 21).
+    if (dynamic && !ctx.is_at_end()) return COMPILE_ERROR~;
+
     return ctx.finish()!;
 }
 
@@ -415,6 +422,10 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     ctx.is_constructable = false;
 
     ctx.parse_function_body(is_expr)!;
+
+    // See compile_function: trailing source after the body means the dynamic
+    // function closed early.
+    if (dynamic && !ctx.is_at_end()) return COMPILE_ERROR~;
 
     return ctx.finish()!;
 }
