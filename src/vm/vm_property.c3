@@ -153,6 +153,19 @@ fn bool lightfunc_meta_read(Vm* vm, Dispatch* ds, uint fn_idx, HString* key,
     return true;
 }
 
+// Cold tail: force a deferred namespace before a property read. Takes the
+// already-resolved key, since GETPROP coerces its dynamic key via get_prop_key
+// while GETPROPC/2 pass their constant HString directly. Returns true when the
+// read may proceed; on force failure the error is already rethrown.
+fn bool deferred_ns_force(Vm* vm, Dispatch* ds, HObject* hobj, HString* key) @inline @local {
+    if (hobj.flags.exotic_deferred_ns && !esm::deferred_trigger_exempt_key(key)) {
+        if (!esm::force_deferred_namespace(vm.heap, vm, hobj)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Cold tail: the strict-mode poison-pill throws. `is_callee` selects the
 // arguments.callee message; otherwise the function caller/arguments message.
 // Runs the throw and reports whether a catcher was found, like vm_throw_error.
@@ -348,10 +361,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // costs one predictable branch on the ordinary path.
                 if (hobj.flags.exotic_deferred_ns) {
                     void* dkey = get_prop_key(vm, rc);
-                    if (!esm::deferred_trigger_exempt_key((HString*)dkey)) {
-                        if (!esm::force_deferred_namespace(vm.heap, vm, hobj)) {
-                            return vm_proxy_rethrow(vm, ds);
-                        }
+                    if (!deferred_ns_force(vm, ds, hobj, (HString*)dkey)) {
+                        return vm_proxy_rethrow(vm, ds);
                     }
                 }
 
@@ -714,11 +725,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // binding rather than a TDZ one. A constant key is always
                     // a string, so this always triggers; the flag clears once
                     // forced, leaving one predictable branch.
-                    if (hobj.flags.exotic_deferred_ns
-                        && !esm::deferred_trigger_exempt_key(key_hstr)) {
-                        if (!esm::force_deferred_namespace(vm.heap, vm, hobj)) {
-                            return vm_proxy_rethrow(vm, ds);
-                        }
+                    if (!deferred_ns_force(vm, ds, hobj, key_hstr)) {
+                        return vm_proxy_rethrow(vm, ds);
                     }
 
                     // Inline Cache fast path: key is always non-null, skip lookup_key check.
@@ -1012,11 +1020,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // Deferred namespace (ES2025 import-defer): force before the
                 // hop, so both the IC probe and the full lookup below see the
                 // evaluated bindings. Constant keys are always strings.
-                if (hobj1.flags.exotic_deferred_ns
-                    && !esm::deferred_trigger_exempt_key(key1_hstr)) {
-                    if (!esm::force_deferred_namespace(vm.heap, vm, hobj1)) {
-                        return vm_proxy_rethrow(vm, ds);
-                    }
+                if (!deferred_ns_force(vm, ds, hobj1, key1_hstr)) {
+                    return vm_proxy_rethrow(vm, ds);
                 }
                 TVal mid_val;
                 mid_val.set_undefined();
@@ -1087,11 +1092,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                     // Deferred namespace (ES2025 import-defer): force before
                     // the hop so the read below sees evaluated bindings.
-                    if (hobj2.flags.exotic_deferred_ns
-                        && !esm::deferred_trigger_exempt_key(key2_hstr)) {
-                        if (!esm::force_deferred_namespace(vm.heap, vm, hobj2)) {
-                            return vm_proxy_rethrow(vm, ds);
-                        }
+                    if (!deferred_ns_force(vm, ds, hobj2, key2_hstr)) {
+                        return vm_proxy_rethrow(vm, ds);
                     }
                     // Proxy exotic on the second hop: route through [[Get]].
                     if (hobj2.flags.exotic_proxyobj) {
@@ -1353,11 +1355,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     uint pc2 = (uint)(ds.curr_pc - 1 - ds.code_base);  // pc of the data slot
                     // Deferred namespace (ES2025 import-defer): force before
                     // the hop so the read below sees evaluated bindings.
-                    if (hobj2.flags.exotic_deferred_ns
-                        && !esm::deferred_trigger_exempt_key(key2_hstr)) {
-                        if (!esm::force_deferred_namespace(vm.heap, vm, hobj2)) {
-                            return vm_proxy_rethrow(vm, ds);
-                        }
+                    if (!deferred_ns_force(vm, ds, hobj2, key2_hstr)) {
+                        return vm_proxy_rethrow(vm, ds);
                     }
 
                     // IC fast path for hop 2
@@ -2660,11 +2659,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // existing own key (export or Symbol.toStringTag) is
                     // non-configurable → false, which throws; an absent key → true.
                     if (hobj.flags.exotic_module_ns) {
-                        if (hobj.flags.exotic_deferred_ns
-                            && !esm::deferred_trigger_exempt_key((HString*)key)) {
-                            if (!esm::force_deferred_namespace(vm.heap, vm, hobj)) {
-                                return vm_proxy_rethrow(vm, ds);
-                            }
+                        if (!deferred_ns_force(vm, ds, hobj, (HString*)key)) {
+                            return vm_proxy_rethrow(vm, ds);
                         }
                         if (hobj.find_prop_idx(key, ds.vm.heap) >= 0) {
                             ra.set_boolean(false);
