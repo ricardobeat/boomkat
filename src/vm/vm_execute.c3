@@ -1445,6 +1445,10 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
     entry_act.curr_pc = func.code;  // Points into bytecode
     entry_act.retval = null;
     entry_act.flags = 0;
+    // sloppy `arguments.callee` reads ds.act.tv_func; the script's outermost
+    // activation never has a "callee" value (no function wraps it), so leave
+    // the field undefined. vm_reset() does the same at session start.
+    entry_act.tv_func.set_undefined();
     // activations[0] is reused across entries without zeroing; a prior async
     // module/function body at this index would otherwise leave both fields
     // pointing at its Promise/GeneratorState.
@@ -1528,6 +1532,9 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     entry_act.curr_pc = func.code;
     entry_act.retval = null;
     entry_act.flags = 0;
+    // ds.act.tv_func drives sloppy arguments.callee; the script's outermost
+    // activation has no callable wrapping it, so the field is undefined here.
+    entry_act.tv_func.set_undefined();
     // activations[0] is reused across entries without zeroing; a prior async
     // module/function body at this index would otherwise leave both fields
     // pointing at its Promise/GeneratorState.

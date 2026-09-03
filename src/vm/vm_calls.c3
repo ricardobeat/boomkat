@@ -1002,6 +1002,17 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;
                     new_act.flags = 0;
+                    // Sloppy `arguments.callee` mirrors the Function value the
+                    // call was made through; fast paths skipped the callee TV
+                    // extraction above so we re-derive it from the callable
+                    // bracket. hobj_fast is the wrapping Function HObject
+                    // (lightfuncs carry their own TV via the slow path's
+                    // gate above, so this branch handles heap functions only).
+                    if (hobj_fast != null) {
+                        TVal fast_callee_tv;
+                        fast_callee_tv.set_object(hobj_fast);
+                        new_act.tv_func = fast_callee_tv;
+                    }
                     if (callee_borrowed) {
                         new_act.flags |= ACT_FLAG_BORROWED_CALLEE;
                     }
@@ -1673,8 +1684,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         return (TVal){};
                     }
 
-                    // Push activation
-                    Activation* new_act_r = activation_begin(vm);
+                    // Push activation; gs.func_obj is the Function value the call was
+                    // made through, which sloppy `arguments.callee` mirrors.
+                    TVal gs_callee_tv;
+                    gs_callee_tv.set_object(gs.func_obj);
+                    Activation* new_act_r = activation_begin(vm, gs_callee_tv);
 
                     new_act_r.parent = ds.act;
                     new_act_r.func = target;
@@ -1930,9 +1944,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         gen_var_env = fv_g;
                     }
                 }
+                // arguments.callee in sloppy mode wants the callee HObject.
+                // hobj here is the Function value the call was made through;
+                // wrap it into a TVal and pass into the activation.
+                TVal gen_callee_tv;
+                gen_callee_tv.set_object(hobj);
 
                 // Push activation frame (same pattern as non-generator compiled calls)
-                Activation* new_act_g = activation_begin(vm);
+                Activation* new_act_g = activation_begin(vm, gen_callee_tv);
                 new_act_g.parent = ds.act;
                 new_act_g.func = target;
                 new_act_g.var_env = gen_var_env;
@@ -2075,7 +2094,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            Activation* new_act = activation_begin(vm);
+            // caller_regs[callee_reg] is the callee TVal written by the
+            // CALL/NEW_OBJ opcode (a HObject for a compiled function or a
+            // lightfunc for a built-in). activation_begin borrows it as
+            // sloppy `arguments.callee`.
+            Activation* new_act = activation_begin(vm, ds.regs_base[callee_reg]);
 
             EnvRecord* call_var_env2 = (*hobj.extra_ptr()).func.var_env;
             // Only allocate a fresh scope when the function actually uses its env
@@ -2678,7 +2701,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            Activation* new_act = activation_begin(vm);
+            // caller_regs[callee_reg] is the callee TVal written by the
+            // CALL/NEW_OBJ opcode (a HObject for a compiled function or a
+            // lightfunc for a built-in). activation_begin borrows it as
+            // sloppy `arguments.callee`.
+            Activation* new_act = activation_begin(vm, ds.regs_base[callee_reg]);
 
             EnvRecord* super_var_env = (*super_hobj.extra_ptr()).func.var_env;
             if (try fv_su = env::env_create_function_scope(vm.heap, (*super_hobj.extra_ptr()).func.var_env)) { super_var_env = fv_su; }
@@ -3087,7 +3114,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            Activation* new_act = activation_begin(vm);
+            // caller_regs[callee_reg] is the callee TVal written by the
+            // CALL/NEW_OBJ opcode (a HObject for a compiled function or a
+            // lightfunc for a built-in). activation_begin borrows it as
+            // sloppy `arguments.callee`.
+            Activation* new_act = activation_begin(vm, ds.regs_base[callee_reg]);
 
             EnvRecord* ctor_var_env = (*hobj.extra_ptr()).func.var_env;
             if (try fv_ct = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) { ctor_var_env = fv_ct; }

@@ -301,7 +301,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     // activation_begin clears the pooled pointer fields, meaning async_promise,
     // async_gen_state, and new_target, so new.target reads undefined here
     // however the property access was reached, super.prop included.
-    Activation* new_act = activation_begin(vm);
+    Activation* new_act = activation_begin(vm, getter_fn);
 
     EnvRecord* invoke_getter_var_env = (*func_obj.extra_ptr()).func.var_env;
     if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env)) { invoke_getter_var_env = fv_ig; }
@@ -379,7 +379,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 // OR in their own flags; those are written unconditionally at every site today.
 // Anything new that a non-async or non-generator frame can read must be
 // initialized HERE, not at the individual call sites.
-macro Activation* activation_begin(Vm* vm) {
+macro Activation* activation_begin(Vm* vm, TVal callee) {
     Activation* act = &vm.activations[vm.activation_count];
     vm.activation_count++;
     act.async_promise = null;
@@ -388,6 +388,12 @@ macro Activation* activation_begin(Vm* vm) {
     act.new_target = null;
     act.heap_reg_count = 0;
     act.caller_valstack_top = vm.valstack_top;
+    // Sloppy `arguments.callee` returns the running callee. Lightfuncs are
+    // already their own TV; heap functions are wrapped in an HObject by the
+    // CALL opcode and pass the same TV here. activation_begin borrows callee,
+    // not increfs, so the caller must keep it alive through the callee_reg
+    // register for as long as the activation is on the stack.
+    act.tv_func = callee;
     return act;
 }
 

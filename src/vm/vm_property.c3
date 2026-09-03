@@ -134,7 +134,15 @@ fn bool lightfunc_meta_read(Vm* vm, Dispatch* ds, uint fn_idx, HString* key,
         return true;
     }
     if (key.equals("caller") || key.equals("arguments")) {
-        if (!poison_pill_throw(vm, ds, false)) {
+        // Annex B.3.2: in sloppy mode, return null. In strict mode, throw.
+        // The function being inspected is a lightfunc — built-ins never carry
+        // user-defined strictness, so the caller's strictness (the activation
+        // running this read) drives the verdict.
+        if (poison_pill_active(vm, ds)) {
+            if (!poison_pill_throw(vm, ds, false)) {
+                dst.set_undefined();
+            }
+        } else {
             dst.set_undefined();
         }
         return true;
@@ -174,6 +182,16 @@ fn bool poison_pill_throw(Vm* vm, Dispatch* ds, bool is_callee) @noinline @local
         return vm_throw_error(vm, vm.heap.type_err_proto, "'callee', 'arguments', and 'arguments.caller' may not be accessed in strict mode", ds.act, &ds.curr_pc, &ds.needs_restart);
     }
     return vm_throw_error(vm, vm.heap.type_err_proto, "'caller' and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them", ds.act, &ds.curr_pc, &ds.needs_restart);
+}
+
+// The AddRestrictedFunctionProperties poison pill (ES2015 §15.3.5.4) and the
+// arguments.callee TypeError (ES2015 §9.4.4.6) only fire in strict code. In
+// sloppy mode the access is permitted: `arguments.callee` returns the running
+// function (this activation's callee), while `f.caller` / `f.arguments` return
+// null. Per ES2017 §9.2.6.7 callers and Annex B.3.2 / B.3.3.6, the value when
+// permitted is null regardless of who called.
+fn bool poison_pill_active(Vm* vm, Dispatch* ds) @inline {
+    return ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict();
 }
 
 // Cold tail: synchronous hop-2 read of a boxed primitive intermediate in a
@@ -499,27 +517,41 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 if (key != null) {
-                    // ES5 strict mode: arguments.callee throws TypeError.
-                    // Strict-only engine: always throws.
+                    // ES2017 §9.4.4.6: arguments.callee throws in strict and
+                    // returns the running function's TV in sloppy. Per §9.2.6.7
+                    // the sloppy callee is the function value the call was
+                    // made through, which is preserved on ds.act.tv_func.
                     if (hobj_cls == hobject::ObjClass.ARGUMENTS
                         && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
-                        if (!poison_pill_throw(vm, ds, true)) {
-                            return VM_ERROR~;
+                        if (poison_pill_active(vm, ds)) {
+                            if (!poison_pill_throw(vm, ds, true)) {
+                                return VM_ERROR~;
+                            }
+                        } else {
+                            vm.heap.tval_copy_ref(ra, &ds.act.tv_func);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
                         }
                         return (TVal){};
                     }
-                    // ES5 strict mode: function.caller and function.arguments throw TypeError
-                    // (the AddRestrictedFunctionProperties poison pill), but only when the
-                    // function has no own property of that name (e.g. a class's own
-                    // `static get arguments() {}` shadows the poison pill; ES2015
-                    // ClassDefinitionEvaluation defines own properties before the pill
-                    // would apply, and OrdinaryGet checks own properties first).
+                    // ES2017 §15.3.5.4 AddRestrictedFunctionProperties: caller
+                    // and arguments throw TypeError when the target function is
+                    // strict (or its own property shadows the poison pill).
+                    // Sloppy targets return null per Annex B.3.2.
                     if (hobj.is_callable() && hobj_cls == hobject::ObjClass.FUNCTION) {
                         HString* key_hstr = (HString*)key;
                         if (key_hstr != null && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                             && hobj.find_prop_idx(key, ds.vm.heap) < 0) {
-                            if (!poison_pill_throw(vm, ds, false)) {
-                                return VM_ERROR~;
+                            // The target function's strictness governs the
+                            // poison pill, not the caller's.
+                            CompiledFunction* target_cf = (*hobj.extra_ptr()).func.comp_func;
+                            bool target_strict = target_cf != null && target_cf.is_strict();
+                            if (target_strict) {
+                                if (!poison_pill_throw(vm, ds, false)) {
+                                    return VM_ERROR~;
+                                }
+                            } else {
+                                ra.set_null();
+                                track_heap_store(ds.act, ra, (uint)insn.a);
                             }
                             return (TVal){};
                         }
@@ -751,23 +783,35 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                     void* key = (void*)key_hstr;
                     if (key != null) {
-                        // ES5 strict mode: arguments.callee throws TypeError.
-                        // Strict-only engine: always throws.
+                        // ES2017 §9.4.4.6: arguments.callee throws in strict,
+                        // returns the running callee in sloppy.
                         if (hobj.get_class() == hobject::ObjClass.ARGUMENTS
                             && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
-                            if (!poison_pill_throw(vm, ds, true)) {
-                                return VM_ERROR~;
+                            if (poison_pill_active(vm, ds)) {
+                                if (!poison_pill_throw(vm, ds, true)) {
+                                    return VM_ERROR~;
+                                }
+                            } else {
+                                vm.heap.tval_copy_ref(ra, &ds.act.tv_func);
                             }
                             return (TVal){};
                         }
-                        // ES5 strict mode: function.caller and function.arguments throw TypeError
-                        // (the AddRestrictedFunctionProperties poison pill), skipped when the
-                        // function has its own property of that name (see GETPROP above).
+                        // ES2017 §15.3.5.4: f.caller / f.arguments throw in
+                        // strict; sloppy returns null (Annex B.3.2). The
+                        // caller/arguments own-property override (e.g. a
+                        // class static getter) already short-circuits in
+                        // OrdinaryGet above.
                         if (hobj.is_callable() && hobj.get_class() == hobject::ObjClass.FUNCTION
                             && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                             && hobj.find_prop_idx(key, ds.vm.heap) < 0) {
-                            if (!poison_pill_throw(vm, ds, false)) {
-                                return VM_ERROR~;
+                            CompiledFunction* target_cf2 = (*hobj.extra_ptr()).func.comp_func;
+                            bool target_strict2 = target_cf2 != null && target_cf2.is_strict();
+                            if (target_strict2) {
+                                if (!poison_pill_throw(vm, ds, false)) {
+                                    return VM_ERROR~;
+                                }
+                            } else {
+                                ra.set_null();
                             }
                             return (TVal){};
                         }
@@ -1125,15 +1169,21 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return (TVal){};
                     }
 
-                    // ES5 strict mode: function.caller and function.arguments throw
-                    // TypeError (the AddRestrictedFunctionProperties poison pill), unless
-                    // the function has its own property of that name (see GETPROP).
+                    // ES2017 §15.3.5.4: f.caller / f.arguments throw in strict, return null in
+                    // sloppy (Annex B.3.2). Own-property override handled in
+                    // GETPROP above.
                     if (hobj2.is_callable() && hobj2.get_class() == hobject::ObjClass.FUNCTION
                         && key2_hstr != null
                         && (key2_hstr.equals("caller") || key2_hstr.equals("arguments"))
                         && hobj2.find_prop_idx((void*)key2_hstr, ds.vm.heap) < 0) {
-                        if (!poison_pill_throw(vm, ds, false)) {
-                            return VM_ERROR~;
+                        CompiledFunction* target_cf3 = (*hobj2.extra_ptr()).func.comp_func;
+                        bool target_strict3 = target_cf3 != null && target_cf3.is_strict();
+                        if (target_strict3) {
+                            if (!poison_pill_throw(vm, ds, false)) {
+                                return VM_ERROR~;
+                            }
+                        } else {
+                            ra2.set_null();
                         }
                         return (TVal){};
                     }
@@ -1647,10 +1697,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (put_base.is_object()) {
                 HObject* hobj = (HObject*)put_base.get_heapptr();
 
-                // ES5 strict mode: function.caller = ... and function.arguments = ...
-                // throw TypeError (AddRestrictedFunctionProperties poison pill).
-                // This engine is strict-only, so it always throws, unless the function has its own
-                // property of that name (e.g. a class's own `static set arguments`).
+                // Annex B.3.5 / ES2017 §15.3.5.4: f.caller = ... and f.arguments = ... throw
+                // TypeError in both strict and sloppy modes (the Get can be
+                // permitted via Annex B.3.2, the Set cannot — otherwise
+                // restoring a poisoned value would unwedge the function).
+                // Own-property override (e.g. class static setter `arguments`)
+                // shadows the pill via OrdinarySet.
                 if (hobj.is_callable() && hobj.get_class() == hobject::ObjClass.FUNCTION && rb.is_string()) {
                     HString* key_hstr = (HString*)rb.get_heapptr();
                     if (key_hstr != null && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
@@ -2047,7 +2099,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         // Setter invocation is never async and never a construct call:
                                         // activation_begin clears async_promise, async_gen_state and
                                         // new_target, which the pooled slot would otherwise inherit.
-                                        Activation* new_act = activation_begin(vm);
+                                        Activation* new_act = activation_begin(vm, setter_fn);
 
                                         EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
                                         if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
@@ -2281,7 +2333,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     // Setter invocation is never async and never a construct call:
                                     // activation_begin clears async_promise, async_gen_state and
                                     // new_target, which the pooled slot would otherwise inherit.
-                                    Activation* new_act = activation_begin(vm);
+                                    Activation* new_act = activation_begin(vm, acc.accessor_fn);
 
                                     EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
                                     if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
