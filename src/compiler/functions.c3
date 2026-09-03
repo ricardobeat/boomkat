@@ -146,6 +146,15 @@ struct SeenParams {
     // caller that forgets is permissive rather than wrongly rejecting -- the
     // duplicate-name check below is unconditional either way.
     bool strict;
+    // True once any parameter is non-simple: default value (`a = 1`), rest
+    // (`...a`), or destructuring (`{a}` / `[a]`). Annex B.3.1 lets sloppy mode
+    // accept duplicate simple parameter names, but ES2017 §14.1.2 (and earlier
+    // §10.2.1 / §13.1) makes the same `hasDuplicates` check a SyntaxError in
+    // BOTH sloppy and strict when at least one parameter is non-simple --
+    // FunctionDeclarationInstantiation would otherwise build a parameter map
+    // that disagrees with the iterator-binding walk. Set by the prologue the
+    // way `strict` is; defaults to false.
+    bool has_complex_params;
 }
 
 // True if `name` is already a BoundName of this parameter list.
@@ -180,7 +189,13 @@ fn bool SeenParams.contains(&self, char[] name) {
 // accepts a restricted name.
 fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
     if (!allow_restricted && is_restricted_name(name, strict: self.strict)) return COMPILE_ERROR~;
-    if (self.contains(name)) return COMPILE_ERROR~;
+    // Phase 1 (plans/083): sloppy mode allows duplicate simple parameter
+    // names (Annex B.3.1). But ES2017 §14.1.2 forbids duplicates in BOTH
+    // sloppy and strict when any parameter is non-simple (default, rest,
+    // destructuring); otherwise FunctionDeclarationInstantiation's parameter
+    // map disagrees with the iterator-binding walk. The parser keeps the
+    // last binding; the VM honours it.
+    if ((self.strict || self.has_complex_params) && self.contains(name)) return COMPILE_ERROR~;
     if (self.count < MAX_PARAMS && name.len < 64) {
         for (usz k = 0; k < name.len; k++) {
             self.names[self.count][k] = name[k];
@@ -395,7 +410,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             // AWAIT/YIELD key that reached this point was already cleared as a
             // legal identifier by shorthand_key_is_identifier_ref, and the
             // context-blind is_restricted_name would wrongly reject it.
-            if (prop_key_tt == TokenType.IDENTIFIER && is_restricted_name(prop_key, strict: self.lexer.reserved_words_strict)) {
+            if (prop_key_tt == TokenType.IDENTIFIER && is_restricted_name(prop_key, strict: self.is_strict)) {
                 return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
@@ -2242,7 +2257,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // recorded as hoisted, the statement pass skips the declaration
             // outright and never reaches expect_binding_identifier's own
             // check.
-            if (is_restricted_name(name_opt.str_value, strict: self.lexer.reserved_words_strict)) {
+            if (is_restricted_name(name_opt.str_value, strict: self.is_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
 
@@ -2837,7 +2852,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             // name is recorded as hoisted, the statement pass skips the
             // declaration outright and never reaches
             // expect_binding_identifier's own check.
-            if (is_restricted_name(name_opt.str_value, strict: self.lexer.reserved_words_strict)) {
+            if (is_restricted_name(name_opt.str_value, strict: self.is_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
 
@@ -3166,7 +3181,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams seen_params;
-    seen_params.strict = self.lexer.reserved_words_strict;
+    seen_params.strict = self.is_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] destruct_binds;
@@ -3201,6 +3216,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
             }
             // Check for rest parameter
             if (self.match(TokenType.ELLIPSIS)) {
+                seen_params.has_complex_params = true;
                 Token rest_param;
 
                 // Check for destructured rest: ...[]
@@ -3243,6 +3259,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
             // Check for destructuring pattern as parameter: {a, b} or [a, b]
             if (self.check(TokenType.LBRACE)) {
+                seen_params.has_complex_params = true;
                 self.advance()!;
                 // Reserve the formal parameter register slot so the incoming
                 // argument stays live through all destructuring extractions.
@@ -3257,6 +3274,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 if (self.check(TokenType.RPAREN)) break;
                 continue;
             } else if (self.check(TokenType.LBRACKET)) {
+                seen_params.has_complex_params = true;
                 self.advance()!;
                 // Reserve the formal parameter register slot.
                 self.alloc_reg();
@@ -3288,6 +3306,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
             // Check for default value
             if (self.check(TokenType.ASSIGN)) {
+                seen_params.has_complex_params = true;
                 self.advance()!; // consume '='
 
                 // Compile the default expression as an inner function. Pass
@@ -3484,6 +3503,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
 
     // Strict-only engine: always strict
     def_ctx.lexer.set_strict(true);
+    def_ctx.is_strict = self.is_strict;
 
     // Propagate generator context so yield is accepted inside default
     // expressions of generator functions (e.g. [x = yield] = []).
@@ -3612,6 +3632,7 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     key_ctx.init(self.lexer, self.heap);
     key_ctx.module_goal = self.module_goal;
     key_ctx.lexer.set_strict(true);
+    key_ctx.is_strict = self.is_strict;
     key_ctx.in_class_body = self.in_class_body;
     key_ctx.has_super_binding = self.has_super_binding;
     key_ctx.super_is_home_object = self.super_is_home_object;
@@ -3672,6 +3693,7 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     block_ctx.init(self.lexer, self.heap);
     block_ctx.module_goal = self.module_goal;
     block_ctx.lexer.set_strict(true);
+    block_ctx.is_strict = self.is_strict;
     block_ctx.in_class_body = self.in_class_body;
     block_ctx.has_super_binding = self.has_super_binding;
     block_ctx.super_is_home_object = self.super_is_home_object;
@@ -3732,13 +3754,14 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
 // If `is_named_expr` is true and `name` is non-empty, tag the result with
 // `is_namebinding`, so the VM binds `name` to the function object in a
 // fresh lexical environment at call time (ES2015 §14.1.20 NamedEvaluation).
-fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false) {
+fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false, bool force_strict_dupcheck = false) {
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
     inner_ctx.init(self.lexer, self.heap);
     inner_ctx.module_goal = self.module_goal;
 
     inner_ctx.lexer.set_strict(true);
+    inner_ctx.is_strict = self.is_strict;
 
     // Named function expression: the compiled function will be tagged
     // is_namebinding, so it must not take the needs_env=false fast path
@@ -3814,7 +3837,14 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams inner_seen;
-    inner_seen.strict = self.lexer.reserved_words_strict;
+    // Phase 1 (plans/083): object-literal MethodDefinitions and class
+    // MethodDefinitions use the UniqueFormalParameters grammar (ES2024 §14.3 /
+    // §15.4.5), which forbids duplicate names regardless of strictness.
+    // `force_strict_dupcheck` is true when the caller is compiling one of
+    // those grammars (object method, class method, getter/setter, named-export
+    // method), so reject duplicates even in a sloppy outer context. Plain
+    // FunctionExpression bodies keep Annex B.3.1's sloppy exemption.
+    inner_seen.strict = force_strict_dupcheck || self.is_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] inner_destruct_binds;
@@ -3847,6 +3877,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             }
             // Check for rest parameter
             if (inner_ctx.match(TokenType.ELLIPSIS)) {
+                inner_seen.has_complex_params = true;
                 Token rest_param;
 
                 // Check for destructured rest: ...{a, b} or ...[a, b]
@@ -3889,6 +3920,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
             // Check for destructuring pattern as parameter: {a, b} or [a, b]
             if (inner_ctx.check(TokenType.LBRACE)) {
+                inner_seen.has_complex_params = true;
                 inner_ctx.advance()!;
                 // Reserve the formal parameter register slot so the incoming
                 // argument stays live through all destructuring extractions
@@ -3915,6 +3947,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 if (inner_ctx.check(TokenType.RPAREN)) break;
                 continue;
             } else if (inner_ctx.check(TokenType.LBRACKET)) {
+                inner_seen.has_complex_params = true;
                 inner_ctx.advance()!;
                 // Reserve the formal parameter register slot (see LBRACE above).
                 inner_ctx.alloc_reg();
@@ -3958,6 +3991,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
             // Check for default value
             if (inner_ctx.check(TokenType.ASSIGN)) {
+                inner_seen.has_complex_params = true;
                 inner_ctx.advance()!; // consume '='
 
                 // Pass param name for NamedEvaluation tagging.
@@ -4252,7 +4286,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
         // rejected. Checked here rather than via expect_binding_identifier
         // because the name is optional and the `await` branch above has
         // already made its own enclosing-grammar decision.
-        if (name_tok.type == TokenType.IDENTIFIER && is_restricted_name(name_tok.str_value, strict: self.lexer.reserved_words_strict)) {
+        if (name_tok.type == TokenType.IDENTIFIER && is_restricted_name(name_tok.str_value, strict: self.is_strict)) {
             return self.fail("reserved word cannot be used as a binding identifier")~;
         }
         // Intern now: an escaped function-expression name borrows the
@@ -4334,7 +4368,11 @@ fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF
     // caller doesn't supply one, fall back to the position of the `(` that
     // opens the parameter list (which is what we have just consumed).
     uint mexpr_src_start = src_start != 0xFFFFFFFF ? src_start : self.lexer.token_start;
-    CompiledFunction* inner = self.compile_inner_function(name, false, mexpr_src_start, true)!;
+    // ES2024 §14.3 / §15.4.5: object / class MethodDefinitions use
+    // UniqueFormalParameters, which forbids duplicate names in any mode.
+    // Force the inner duplicate-name check on so sloppy outer scripts still
+    // reject `({foo(a, a){}})` / `class C { foo(a, a){} }`.
+    CompiledFunction* inner = self.compile_inner_function(name, false, mexpr_src_start, true, true)!;
 
     // §14.3 accessor arity (see AccessorKind). num_args is the count of
     // declared formals; num_formals is Function.length, which a default value
@@ -4410,6 +4448,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
     // Strict-only engine: always strict
     arrow_ctx.lexer.set_strict(true);
+    arrow_ctx.is_strict = self.is_strict;
 
     // Arrow functions use the parent scope, no fresh env needed.
     arrow_ctx.is_arrow = true;
@@ -4512,7 +4551,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // FormalParameters (ES2015 §14.2.1): `(a, a) => a` and `(eval) => 1` are
     // SyntaxErrors here too.
     SeenParams arrow_seen;
-    arrow_seen.strict = self.lexer.reserved_words_strict;
+    // ES2015 §14.2.1: ArrowParameters have no Annex B.3.1 sloppy-duplicates
+    // exemption, so even a plain `(a, a) => 1` is a SyntaxError regardless of
+    // enclosing strictness. Set strict=true so SeenParams enforces the
+    // duplicate-name check on every arrow parameter list, in sloppy and strict
+    // alike.
+    arrow_seen.strict = true;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] arrow_destruct_binds;
@@ -4524,6 +4568,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         for (;;) {
             // Check for rest parameter
             if (arrow_ctx.match(TokenType.ELLIPSIS)) {
+                arrow_seen.has_complex_params = true;
                 Token rest_param;
 
                 // Check for destructured rest: ...{a, b} or ...[a, b]
@@ -4576,6 +4621,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
             // Check for destructuring pattern as parameter: {a, b} or [a, b]
             if (arrow_ctx.check(TokenType.LBRACE)) {
+                arrow_seen.has_complex_params = true;
                 arrow_ctx.advance()!;
                 arrow_ctx.alloc_reg();
                 arrow_ctx.collect_obj_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
@@ -4593,6 +4639,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 if (arrow_ctx.check(TokenType.RPAREN)) break;
                 continue;
             } else if (arrow_ctx.check(TokenType.LBRACKET)) {
+                arrow_seen.has_complex_params = true;
                 arrow_ctx.advance()!;
                 arrow_ctx.alloc_reg();
                 arrow_ctx.collect_arr_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
@@ -4636,6 +4683,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
             // Check for default value
             if (arrow_ctx.check(TokenType.ASSIGN)) {
+                arrow_seen.has_complex_params = true;
                 arrow_ctx.advance()!; // consume '='
 
                 // Pass param name for NamedEvaluation tagging.
@@ -4956,6 +5004,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
 
     // Strict-only engine: always strict
     arrow_ctx.lexer.set_strict(true);
+    arrow_ctx.is_strict = self.is_strict;
 
     // Arrow functions use the parent scope, no fresh env needed.
     arrow_ctx.is_arrow = true;
@@ -5036,7 +5085,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // named "await"; `async function g(){ await => 1 }` still rejects.
         // The reparse path reaches the same answer via
         // expect_binding_identifier and arrow_ctx.forbid_await.
-        if (is_restricted_name(name, self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
+        if (is_restricted_name(name, self.await_reserved_here(), strict: self.is_strict)) {
             return COMPILE_ERROR~;
         }
         for (ushort j = 0; j < i; j++) {
