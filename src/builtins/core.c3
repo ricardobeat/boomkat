@@ -1762,12 +1762,12 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     ctx.result.set_undefined();
                     return;
                 }
+                // ES2015 §7.4.1 GetIterator step 5: the result of calling
+                // @@iterator must be an Object, or TypeError. Returning
+                // normally instead made `new Map(obj)` with an @@iterator that
+                // returns a primitive silently produce an empty collection.
                 if (!iterator.is_object() || iterator.get_heapptr() == null) {
-                    if (allow_array_fallback) {
-                        coll_throw(ctx, "Iterator result is not an object");
-                        return;
-                    }
-                    ctx.result.set_undefined();
+                    coll_throw(ctx, "Result of the Symbol.iterator method is not an object");
                     return;
                 }
                 HObject* iter_obj = (HObject*)iterator.get_heapptr();

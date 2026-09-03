@@ -713,6 +713,13 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                     ctx.heap.has_error = false;
                     return;
                 }
+                // ES2015 §7.4.1 GetIterator step 5: the result of calling
+                // @@iterator must be an Object, or TypeError.
+                if (!iterator.is_object() || iterator.get_heapptr() == null) {
+                    arraybuffer_throw_type_error(ctx,
+                        "Result of the Symbol.iterator method is not an object");
+                    return;
+                }
 
                 uint cap = 4;
                 TVal* items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)cap * TVal::size);
