@@ -1647,7 +1647,21 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             HObject* async_prom = null;
             if (target.is_generator()) {
                 // Resume path: .next()/.throw()/.return() set heap.resume_gen
-                if (vm.heap.resume_gen != null && (CompiledFunction*)vm.heap.resume_gen.func == target) {
+                // just before a synthetic call to the generator's own compiled
+                // function, so the match is on function identity alone. That
+                // makes it ambiguous when a generator body CALLs its own
+                // function again to build a fresh instance (e.g. the
+                // self-recursive `yield* g(n - 1)`): the pending resume has
+                // already been consumed, gs is GEN_EXECUTING, and matching it
+                // here would resume the running generator into itself instead
+                // of constructing a new one, recursing until MAX_CALLS.
+                // A generator that is already executing can never be the
+                // target of a resume, so exclude that state. LOAD_RESUME
+                // clears resume_gen for generators that reach a yield; this
+                // also covers the initial GEN_SUSPENDED_START resume, whose
+                // body may recurse before ever yielding.
+                if (vm.heap.resume_gen != null && (CompiledFunction*)vm.heap.resume_gen.func == target
+                    && vm.heap.resume_gen.state != GEN_EXECUTING) {
                     GeneratorState* gs = vm.heap.resume_gen;
 
                     if (gs.state == GEN_COMPLETED) {

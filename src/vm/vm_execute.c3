@@ -647,8 +647,23 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             bool did_resume = false;
             if (vm.heap.resume_gen != null) {
                 GeneratorState* gs_r = vm.heap.resume_gen;
+                // No GEN_EXECUTING exclusion here (unlike dispatch_calls'
+                // CALL path): call_fn IS the legitimate re-entry point for an
+                // async generator whose body is already in flight, so
+                // rejecting GEN_EXECUTING would strand .return()/.throw().
                 if ((CompiledFunction*)gs_r.func == target) {
                     did_resume = true;
+                    // Mark the generator as running for the duration of this
+                    // re-entrant resume, mirroring dispatch_calls. Without it
+                    // the generator stays GEN_SUSPENDED_* while its body
+                    // executes, so a nested resume of the same generator is
+                    // indistinguishable from a legitimate one and the
+                    // yield* delegation chain runs an extra next() per level.
+                    // GEN_AWAITING_RETURN is preserved: an async generator
+                    // parked on the await inside AsyncGeneratorAwaitReturn is
+                    // not executing, and overwriting it loses the pending
+                    // return completion (as at the gen_suspend site).
+                    if (gs_r.state != GEN_AWAITING_RETURN) gs_r.state = GEN_EXECUTING;
                     act.async_gen_state = gs_r;
                     act.curr_pc = (Instruction*)gs_r.saved_pc;
                     act.var_env = (EnvRecord*)gs_r.var_env;
