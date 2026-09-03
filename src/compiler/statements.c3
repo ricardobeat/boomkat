@@ -372,7 +372,15 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.SWITCH:
             self.switch_statement()!;
         case TokenType.WITH:
-            return self.fail("'with' statement is not supported")~;
+            // Phase 1 (plans/083): allow `with` in sloppy mode. Runtime
+            // semantics land in phase 4 (WITH_START/WITH_END opcodes).
+            // For phase 1 the parser accepts the construct and emits a
+            // THROW_SYNTAX so any attempt to actually run a `with` body
+            // surfaces a clean SyntaxError instead of a VM_ERROR.
+            if (self.is_strict) {
+                return self.fail("'with' statement is not allowed in strict mode")~;
+            }
+            self.with_statement()!;
         case TokenType.BREAK:
             self.break_statement()!;
         case TokenType.CONTINUE:
@@ -2125,6 +2133,35 @@ fn void? CompilerContext.if_statement(&self) {
     }
 }
 
+// Parse `with` statement (sloppy mode only; plan 035 removed it, plan 083
+// phase 1 reintroduces the parser).
+//
+//   WithStatement[Yield, Await, Return]:
+//     with ( Expression ) Statement
+//
+// Phase 1 emits THROW_SYNTAX around the body because the VM's WITH_START /
+// WITH_END opcodes are stubs (they return VM_ERROR today). Tests that only
+// check that `with` parses without error now pass; tests that try to execute
+// the body reach the SyntaxError path. Phase 4 will swap the THROW_SYNTAX
+// for the WITH_START / WITH_END pair and teach the VM what those do.
+fn void? CompilerContext.with_statement(&self) {
+    self.expect(TokenType.WITH)!;
+    self.expect(TokenType.LPAREN)!;
+    self.expression()!;
+    self.expect(TokenType.RPAREN)!;
+
+    // Phase 1 placeholder: phase 4 emits WITH_START here.
+    uint msg_idx = self.add_string_constant("with statement is not yet implemented (plans/083 phase 4)");
+    self.emit_a_bc(Opcode.THROW_SYNTAX, 0, msg_idx);
+
+    // Still parse the body so a syntactic `with` is well-formed even if
+    // unreachable. The body's bytecode is dead but valid.
+    self.statement_body()!;
+
+    // Phase 1 placeholder: phase 4 emits WITH_END here.
+    self.emit_abc(Opcode.NOP, 0, 0, 0);
+}
+
 // Parse while statement.
 fn void? CompilerContext.while_statement(&self) {
     self.expect(TokenType.WHILE)!;
@@ -3330,7 +3367,10 @@ fn void? CompilerContext.for_statement(&self) {
                 // so a declarator's Initializer is `[~In]` as well —
                 // `for (var x = 1 in {};;)` is a SyntaxError, not a for-in
                 // head. Parenthesizing (`= (1 in {})`) restores `[+In]`.
-                self.forbid_in = true;
+                // Phase 1 (plans/083): sloppy allows `for (var x = 1 in y)` (Annex
+                // B.3.3). Strict keeps forbid_in = true so the `in` after the
+                // initializer is rejected as a syntax error (matches today).
+                self.forbid_in = self.is_strict;
                 ushort init_val = self.assignment_expr()!;
                 self.forbid_in = false;
                 if (init_val != var_reg) {
@@ -6706,7 +6746,12 @@ fn void? CompilerContext.compile_catch_array_pattern(&self, ushort catch_val_reg
 // this reuses it rather than growing a second duplicate-name walk.
 fn void? CompilerContext.check_pattern_bound_names_unique(&self, DestructBind[] binds, uint count) {
     SeenParams seen;
-    seen.strict = self.lexer.reserved_words_strict;
+    // ES2024 §13.7.5.11 / §14.15.1: duplicate BoundNames in a `let`/`const`
+    // ForDeclaration or a CatchParameter are a SyntaxError regardless of the
+    // enclosing strictness (no Annex B exemption). Set strict=true so
+    // SeenParams always enforces the duplicate-name check, in sloppy and
+    // strict alike.
+    seen.strict = true;
     seen.declare_destructured(binds, count)!;
 }
 
