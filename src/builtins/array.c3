@@ -3588,25 +3588,34 @@ fn void arr_throw_type_error(BuiltinContext* ctx, char[] msg) {
 // throw). Returns true on success; on failure sets ctx.should_throw and
 // returns false.
 fn bool arr_create_data_property_or_throw(BuiltinContext* ctx, HObject* obj, HString* key, TVal val) {
-    int idx = obj.find_prop_idx(key, ctx.heap);
-    if (idx >= 0) {
-        hobject::PropFlags existing = obj.get_prop_flags((uint)idx, ctx.heap);
-        // If the existing property is already {W:true, E:true, C:true} and a
-        // plain data property, CreateDataProperty may simply overwrite the
-        // value. Otherwise, since configurable is false, redefining to the
-        // desired attributes is disallowed, throw per DefineOwnProperty's
-        // "reject" path (ES2022 §10.1.6.3 step 4/5 validation).
-        if (!existing.configurable
-            && (existing.is_accessor || !existing.writable || !existing.enumerable)) {
-            arr_throw_type_error(ctx, "Cannot redefine property");
-            return false;
+    // CreateDataPropertyOrThrow (ES2024 §7.3.6) is defined in terms of
+    // O.[[DefineOwnProperty]], so it must go through object_define_own: the
+    // target can be a Proxy (whose "defineProperty" trap has to run and be
+    // observable), a module namespace, a TypedArray, or an Array whose
+    // "length" needs ArraySetLength. Writing obj.put_prop directly bypassed
+    // all of those -- Array.from over a Proxy constructor's result defined
+    // no elements through the trap at all.
+    ProxyDesc nd = {};
+    nd.found = true;
+    nd.has_value = true;        nd.value = val;
+    nd.has_writable = true;     nd.writable = true;
+    nd.has_enumerable = true;   nd.enumerable = true;
+    nd.has_configurable = true; nd.configurable = true;
+    bool res = false;
+    if (!object_define_own(ctx.vm, ctx.heap, obj, key, &nd, &res)) {
+        // An abrupt completion from the trap (or from a nested define);
+        // surface it as the pending exception rather than a fresh TypeError.
+        if (ctx.heap.has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = ctx.heap.error_value;
+            ctx.heap.has_error = false;
+        } else {
+            arr_throw_type_error(ctx, "Cannot define property");
         }
-    } else if (!obj.is_extensible()) {
-        arr_throw_type_error(ctx, "Cannot add property, object is not extensible");
         return false;
     }
-    if (!obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap)) {
-        arr_throw_type_error(ctx, "Cannot add property, no space left");
+    if (!res) {
+        arr_throw_type_error(ctx, "Cannot define property");
         return false;
     }
     return true;
