@@ -812,6 +812,11 @@ fn void? CompilerContext.parse_directives(&self) {
                     // that it makes a dynamic Function body an ordinary strict
                     // function, whose undefined receiver stays undefined.
                     self.saw_use_strict = true;
+                    // Phase 0 (plans/083): plumb is_strict end-to-end. "use strict"
+                    // directive raises the function's strictness; Phase 1 onwards will
+                    // start branching on this flag.
+                    self.is_strict = true;
+                    if (self.current_func != null) self.current_func.flags.is_strict = true;
                     self.subst_global_this = false;
                     if (self.current_func != null) {
                         self.current_func.flags.subst_global_this = false;

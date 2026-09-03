@@ -36,6 +36,10 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ctx.init(lex, heap);
     ctx.is_global = true;
     ctx.eval_mode = want_completion;
+    // Phase 0 (plans/083): plumb is_strict. Default for top-level scripts
+    // stays strict in Phase 0; Phase 1 flips it to false. The engine is
+    // strict-only today so this matches existing behavior.
+    ctx.is_strict = true;
     if (want_completion) {
         ctx.eval_acc_reg = ctx.alloc_reg();
         // Seed the accumulator so an empty Script, or one whose only
@@ -202,6 +206,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.is_global = true;
     ctx.eval_mode = true;
     ctx.in_eval_code = true;
+    // Eval inherits the caller's strictness via compile_eval's caller_is_strict
+    // parameter; the actual computation (caller_is_strict || saw_use_strict) is
+    // done after parse_directives() below. Default to true for Phase 0 to keep
+    // the strict-only invariant until plans/083 phase 1 flips it.
+    ctx.is_strict = true;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
     // Re-intern the caller's numbered super name (e.g. "__super__0") into
@@ -382,6 +391,10 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.subst_global_this = dynamic;
+    // Phase 0 plumbing: default strict for both ordinary and dynamic function
+    // bodies. parse_directives() raises is_strict = true when "use strict" is
+    // seen; plans/083 phase 1 will flip ordinary bodies to sloppy.
+    ctx.is_strict = true;
     // ES2024 §20.2.1.1 CreateDynamicFunction step 22: a Function() body is
     // parsed as a NON-strict FunctionBody, so `Function('var eval;')` is legal.
     // A "use strict" in the body raises it back in parse_directives, which runs
@@ -412,6 +425,8 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     CompilerContext ctx;
     ctx.init(lex, heap);
     ctx.subst_global_this = dynamic;
+    // Phase 0 plumbing: see compile_function() above.
+    ctx.is_strict = true;
     ctx.is_generator = is_generator;
     // Dynamic functions: `is_generator` reflects a syntactic generator here
     // (GeneratorFunction / AsyncGeneratorFunction constructors), so it also
@@ -444,6 +459,10 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     ctx.is_global = true;
     ctx.is_module = true;
     ctx.module_goal = true;
+    // Modules are always strict by spec (ES2015 §16.2.1.1). Set the flag here
+    // so plans/083 plumbing reaches the module entry even though it never
+    // gets flipped.
+    ctx.is_strict = true;
     // A module body may contain top-level `await` (ES2022). Compiling the
     // module as async lets `await` emit AWAIT/LOAD_RESUME and suspend the
     // module activation, exactly like an async function body. Modules with no

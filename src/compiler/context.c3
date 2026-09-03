@@ -784,12 +784,22 @@ struct CompilerContext {
     // the loop's lex_env before jumping.
     int  cur_lex_depth;
 
-    // Strict mode: the engine is strict-only, so there is no strictness flag.
-    // `saw_use_strict` records only that a (no-op) directive was parsed.
-    bool saw_use_strict;        // true only when an actual "use strict" directive was parsed
+    // Per-function strictness. Default true (the engine was strict-only when
+    // this field was added); plans/083 flips script bodies to sloppy at a
+    // later phase. Inner functions inherit from the enclosing context until
+    // a "use strict" directive is seen, then `parse_directives` flips it.
+    bool is_strict;
+    // True only when an actual "use strict" directive was parsed. Kept as a
+    // separate flag because some downstream checks want the directive's
+    // presence rather than the resulting strictness (e.g. forbidding
+    // directives in non-simple-parameter functions).
+    bool saw_use_strict;
     // Set by the dynamic Function/GeneratorFunction/AsyncFunction constructors
     // so an undefined receiver coerces to globalThis. See
     // FuncFlags.subst_global_this. Cleared by a "use strict" directive.
+    // Removed in plans/083 phase 2; for now it shadows is_strict's sloppy
+    // half so dynamic Function bodies keep the UMD `Function('return this')()`
+    // idiom working.
     bool subst_global_this;
 
     // arguments tracking
@@ -2254,6 +2264,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_async = self.is_async;
     func.flags.is_arrow = self.is_arrow;
     func.flags.subst_global_this = self.subst_global_this;
+    func.flags.is_strict = self.is_strict;
     // A direct eval's source is opaque at compile time, so it may reference
     // `arguments` even though the enclosing function's own parsed text never
     // does (ES2022 §15.7.10 PerformEval materializes the caller's arguments

@@ -1297,6 +1297,10 @@ bitstruct FuncFlags : uint {
 
     // ---- Function-specific flags (bits 7+) ----
 
+    // Per-function strict mode. Set from CompilerContext.is_strict at
+    // finish() time. Initial compiler default for top-level scripts is
+    // sloppy under plans/083; modules stay strict; "use strict" raises it.
+    bool  is_strict    : 7;
     // Function is a named function expression.
     bool  is_namebinding: 8;
     // Function has a `...rest` parameter.
@@ -1655,6 +1659,14 @@ macro bool CompiledFunction.needs_lex_bridge(&self) {
 // the global object. See FuncFlags.subst_global_this.
 macro bool CompiledFunction.subst_global_this(&self) {
     return self.flags.subst_global_this;
+}
+
+// Returns `true` when the function body runs in strict mode. Set from the
+// source's directive prologue (or the enclosing module/script default) by
+// CompilerContext.is_strict at finish() time. Sloppy callers can substitute
+// undefined/null `this` to globalThis; strict callers cannot.
+macro bool CompiledFunction.is_strict(&self) {
+    return self.flags.is_strict;
 }
 
 // Returns `true` when the function uses `arguments`.
