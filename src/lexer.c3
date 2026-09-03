@@ -1453,8 +1453,24 @@ fn Token? Lexer.scan_string(&self) {
                 case 'f':  buf[buf_len] = 0x0C; buf_len++;
                 case 'v':  buf[buf_len] = 0x0B; buf_len++;
                 case '0':
-                    buf[buf_len] = 0;
-                    buf_len++;
+                    // Sloppy Annex B: \0 followed by an octal digit is an
+                    // octal escape (\01 === \x01). Strict latches found_octal
+                    // for the parser to reject instead.
+                    if (!self.strict_mode && !self.at_end()
+                        && self.peek_char() >= '0' && self.peek_char() <= '7') {
+                        uint oval = 0;
+                        for (int oi = 0; oi < 2; oi++) {
+                            if (self.at_end()) break;
+                            char od = self.peek_char();
+                            if (od < '0' || od > '7') break;
+                            self.advance_char();
+                            oval = oval * 8 + (uint)(od - '0');
+                        }
+                        buf_len = encode_utf8_to_buf(&buf, buf_len, oval);
+                    } else {
+                        buf[buf_len] = 0;
+                        buf_len++;
+                    }
                     if (self.strict_mode && !self.at_end() && self.peek_char() >= '0' && self.peek_char() <= '9') {
                         found_octal = true;
                     }
@@ -1531,8 +1547,20 @@ fn Token? Lexer.scan_string(&self) {
 
                 default:
                     // Unknown escape: emit the escaped character itself.
-                    // \1-\9 are SyntaxErrors in strict mode, so latch
-                    // found_octal for the parser to reject.
+                    // \1-\7 are sloppy Annex B octal escapes (\101 === 'A').
+                    // Strict latches found_octal for the parser to reject.
+                    if (esc >= '1' && esc <= '7' && !self.strict_mode) {
+                        uint oval2 = (uint)(esc - '0');
+                        for (int oi2 = 0; oi2 < 2; oi2++) {
+                            if (self.at_end()) break;
+                            char od2 = self.peek_char();
+                            if (od2 < '0' || od2 > '7') break;
+                            self.advance_char();
+                            oval2 = oval2 * 8 + (uint)(od2 - '0');
+                        }
+                        buf_len = encode_utf8_to_buf(&buf, buf_len, oval2);
+                        break;
+                    }
                     if (self.strict_mode && esc >= '1' && esc <= '9') {
                         found_octal = true;
                     }
