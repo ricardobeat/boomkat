@@ -1068,12 +1068,16 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
         }
     }
 
-    // Step 2: Let func be Get(array, "join")
+    // Step 2: Let func be Get(array, "join"). Must go through
+    // builtins_generic_get (which invokes an inherited accessor's getter),
+    // not get_prop_proto (a raw data-property read): a throwing "join"
+    // getter has to propagate here, not be silently treated as absent.
     HString* join_key = builtin_intern_string(ctx.heap, "join");
     TVal join_fn;
     bool join_found = false;
     if (obj != null) {
-        TVal? join_val = obj.get_prop_proto(join_key, ctx.heap);
+        TVal? join_val = builtins_generic_get(obj, join_key, ctx);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         if (try jv = join_val) {
             join_fn = jv;
             join_found = true;
@@ -1375,17 +1379,16 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
         if (!present || elem.is_undefined() || elem.is_null()) continue;
 
         // Step 6.c.i: ? ToString(? Invoke(nextElement, "toLocaleString")).
-        // Invoke does GetV, which boxes a primitive element, so a number or
-        // string element resolves its own prototype's toLocaleString.
+        // Invoke does GetV, which boxes a primitive element so a number or
+        // string element resolves its own prototype's toLocaleString, but
+        // the getter's `this` must be the ORIGINAL primitive (elem), not the
+        // throwaway wrapper -- iterhelper_getv provides GetV's receiver
+        // semantics, unlike a raw get_prop_proto (which also bypasses
+        // accessor getters entirely, silently swallowing any throw).
         HObject* elem_obj = arr_to_object(elem, ctx.heap);
         if (elem_obj == null) { ctx.result.set_undefined(); return; }
-        TVal? method_raw = elem_obj.get_prop_proto(tls_key, ctx.heap);
-        if (catch method_raw) {
-            builtin_throw(ctx, ctx.heap.type_err_proto,
-                "element has no toLocaleString method");
-            ctx.result.set_undefined(); return;
-        }
-        TVal method = method_raw;
+        TVal method = iterhelper_getv(ctx, elem_obj, (void*)tls_key, elem);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         bool callable = method.is_lightfunc()
             || (method.is_object() && method.get_heapptr() != null
                 && ((HObject*)method.get_heapptr()).is_callable());
