@@ -1444,9 +1444,25 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                     }
                                     return (TVal){};
                                 }
-                                vm.heap.store_builtin_result(ds.regs_base + result_reg, &bound_inner_result);
-                                track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
-                                return (TVal){};
+                                // A re-entrant builtin reached through a bound
+                                // function (boundGeneratorThrow()) rewrites the
+                                // callee slot with the generator body and asks
+                                // for another re-dispatch. Honour it the same
+                                // way the direct BUILTIN_FN path does, rather
+                                // than storing its unfinished (undefined)
+                                // result.
+                                if (inner2.needs_re_dispatch) {
+                                    func_val = ds.regs_base[callee_reg];
+                                    nargs = inner2.re_nargs;
+                                    if (!func_val.is_object()) { return (TVal){}; }
+                                    hobj = (HObject*)func_val.get_heapptr();
+                                    if (hobj == null || (*hobj.extra_ptr()).func.comp_func == null) { return (TVal){}; }
+                                    // Fall out to the compiled function handling below.
+                                } else {
+                                    vm.heap.store_builtin_result(ds.regs_base + result_reg, &bound_inner_result);
+                                    track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
+                                    return (TVal){};
+                                }
                             }
                             // Fall through to compiled function handling below
                         } else {
@@ -1567,9 +1583,21 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                     }
                                     return (TVal){};
                                 }
-                                vm.heap.store_builtin_result(ds.regs_base + result_reg, &bfn_inner_result);
-                                track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
-                                return (TVal){};
+                                // Same re-entrant case as the bound-function
+                                // path above: a builtin that asks for another
+                                // re-dispatch has not produced a result yet.
+                                if (bfn_inner.needs_re_dispatch) {
+                                    func_val = ds.regs_base[callee_reg];
+                                    nargs = bfn_inner.re_nargs;
+                                    if (!func_val.is_object()) { return (TVal){}; }
+                                    hobj = (HObject*)func_val.get_heapptr();
+                                    if (hobj == null || (*hobj.extra_ptr()).func.comp_func == null) { return (TVal){}; }
+                                    // Fall out to the compiled function handling below.
+                                } else {
+                                    vm.heap.store_builtin_result(ds.regs_base + result_reg, &bfn_inner_result);
+                                    track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
+                                    return (TVal){};
+                                }
                             }
                             if ((*hobj.extra_ptr()).func.comp_func != null) {
                                 // Continue to compiled function handling below (skip error)

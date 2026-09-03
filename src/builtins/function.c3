@@ -342,6 +342,18 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
             ctx.regs[ctx.base_reg + i].set_undefined();
         }
         builtins::dispatch_builtin(fn_idx, &inner_ctx);
+        // A re-entrant builtin (Generator.prototype.throw/return/next) does not
+        // finish synchronously: it rewrites the callee slot and asks the VM to
+        // re-dispatch a CALL over these same registers. inner_ctx aliases
+        // ctx.regs/ctx.base_reg, so that rewrite already landed where the outer
+        // re-dispatch will look; only the two signal fields need forwarding.
+        // A re-dispatch request and a throw are mutually exclusive, so return
+        // before the should_throw check rather than reporting a stale throw.
+        if (inner_ctx.needs_re_dispatch) {
+            ctx.needs_re_dispatch = true;
+            ctx.re_nargs = inner_ctx.re_nargs;
+            return;
+        }
         if (inner_ctx.should_throw) {
             ctx.should_throw = true;
             ctx.throw_value = inner_ctx.throw_value;
@@ -379,6 +391,15 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
             // Also set the this slot in registers for builtins that read ctx.regs[ctx.base_reg - 1]
             ctx.regs[ctx.base_reg - 1] = new_this;
             builtins::dispatch_builtin((uint)(*hobj.extra_ptr()).func.builtin_fn_index, &inner_ctx);
+            // See the lightfunc branch above: forward the re-entrant builtin's
+            // re-dispatch request instead of dropping it (inner_ctx shares
+            // ctx.regs and ctx.base_reg, so the rewritten callee slot is
+            // already in the position the outer re-dispatch reads).
+            if (inner_ctx.needs_re_dispatch) {
+                ctx.needs_re_dispatch = true;
+                ctx.re_nargs = inner_ctx.re_nargs;
+                return;
+            }
             if (inner_ctx.should_throw) {
                 ctx.should_throw = true;
                 ctx.throw_value = inner_ctx.throw_value;
@@ -438,6 +459,15 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             // Stamp this_arg into that slot so the callee sees the correct receiver.
             ctx.regs[ctx.base_reg - 1] = this_arg;
             builtins::dispatch_builtin(fn_idx, &inner_ctx);
+            // Forward a re-entrant builtin's re-dispatch request (see the
+            // call_impl lightfunc branch); inner_ctx shares ctx.regs and
+            // ctx.base_reg, so the rewritten callee slot is already in place
+            // and re_nargs (0 here) stays valid for the outer re-dispatch.
+            if (inner_ctx.needs_re_dispatch) {
+                ctx.needs_re_dispatch = true;
+                ctx.re_nargs = inner_ctx.re_nargs;
+                return;
+            }
             if (inner_ctx.should_throw) {
                 ctx.should_throw = true;
                 ctx.throw_value = inner_ctx.throw_value;
@@ -616,6 +646,18 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
 
         if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
         builtins::dispatch_builtin(fn_idx, &inner_ctx);
+        // A re-entrant builtin (Generator.prototype.throw/return/next) does not
+        // finish synchronously: it rewrites the callee slot and asks the VM to
+        // re-dispatch a CALL over these same registers. inner_ctx aliases
+        // ctx.regs/ctx.base_reg, so that rewrite already landed where the outer
+        // re-dispatch will look; only the two signal fields need forwarding.
+        // A re-dispatch request and a throw are mutually exclusive, so return
+        // before the should_throw check rather than reporting a stale throw.
+        if (inner_ctx.needs_re_dispatch) {
+            ctx.needs_re_dispatch = true;
+            ctx.re_nargs = inner_ctx.re_nargs;
+            return;
+        }
         if (inner_ctx.should_throw) {
             ctx.should_throw = true;
             ctx.throw_value = inner_ctx.throw_value;
@@ -1228,6 +1270,18 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
             ctx.regs[ctx.base_reg + i] = all_args[i];
         }
         builtins::dispatch_builtin(fn_idx, &inner_ctx);
+        // A re-entrant builtin (Generator.prototype.throw/return/next) does not
+        // finish synchronously: it rewrites the callee slot and asks the VM to
+        // re-dispatch a CALL over these same registers. inner_ctx aliases
+        // ctx.regs/ctx.base_reg, so that rewrite already landed where the outer
+        // re-dispatch will look; only the two signal fields need forwarding.
+        // A re-dispatch request and a throw are mutually exclusive, so return
+        // before the should_throw check rather than reporting a stale throw.
+        if (inner_ctx.needs_re_dispatch) {
+            ctx.needs_re_dispatch = true;
+            ctx.re_nargs = inner_ctx.re_nargs;
+            return;
+        }
         if (inner_ctx.should_throw) {
             ctx.should_throw = true;
             ctx.throw_value = inner_ctx.throw_value;
