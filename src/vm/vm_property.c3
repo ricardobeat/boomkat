@@ -165,10 +165,20 @@ fn bool poison_pill_throw(Vm* vm, Dispatch* ds, bool is_callee) @noinline @local
 
 // Cold tail: synchronous hop-2 read of a boxed primitive intermediate in a
 // fused GETPROPC2 pair. Uses the reentrant call_fn path because a frame-based
-// getter would resume past the pair and skip hop 2. Reports true when the hop
-// completed (value in *dst, error pending, or restart requested).
-fn bool getprop2_boxed_hop(Vm* vm, Dispatch* ds, TVal* mid, HObject* proto, HString* key,
+// getter would resume past the pair and skip hop 2. Picks the prototype from
+// the intermediate's tag, so the number/boolean/bigint tails share one body.
+// Reports true when the hop completed (value in *dst, error pending, or
+// restart requested); the caller checks vm.has_error / ds.needs_restart.
+fn bool getprop2_boxed_hop(Vm* vm, Dispatch* ds, TVal* mid, HString* key,
                            TVal* dst, uint dst_reg) @local {
+    HObject* proto = null;
+    if (mid.is_number() || mid.is_fastint()) {
+        proto = vm.heap.number_proto;
+    } else if (mid.is_boolean()) {
+        proto = vm.heap.bool_proto;
+    } else if (mid.is_bigint()) {
+        proto = vm.heap.bigint_proto;
+    }
     if (key != null && proto != null) {
         primitive_getprop_sync(vm, ds, mid, proto, key, dst, dst_reg);
         return true;
@@ -1216,36 +1226,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     } else {
                         ra2.set_undefined();
                     }
-                } else if (mid_val.is_number() || mid_val.is_fastint()) {
-                    // NUMBER intermediate: auto-box for hop 2.
-                    if (key2_hstr != null && vm.heap.number_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else if (mid_val.is_bigint()) {
-                    // BIGINT intermediate: auto-box for hop 2 (the system
-                    // primitives cover every other boxed type; a BigInt here,
-                    // e.g. `obj.ns.toString()` where `ns` is a BigInt accessor,
-                    // fell through to the undefined else-branch below).
-                    if (key2_hstr != null && vm.heap.bigint_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bigint_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else if (mid_val.is_boolean()) {
-                    // BOOLEAN intermediate: auto-box for hop 2.
-                    if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
+                } else if (mid_val.is_number() || mid_val.is_fastint() || mid_val.is_bigint() || mid_val.is_boolean()) {
+                    // Number/BigInt/Boolean intermediate: auto-box for hop 2.
+                    // A BigInt lands here, e.g. `obj.ns.toString()` where
+                    // `ns` is a BigInt accessor, rather than answering
+                    // undefined from the else-branch below.
+                    getprop2_boxed_hop(vm, ds, &mid_val, key2_hstr, ra2, dst2_reg);
+                    if (vm.has_error) return VM_ERROR~;
+                    if (ds.needs_restart) return (TVal){};
                 } else if (mid_val.is_null() || mid_val.is_undefined()) {
                     if (catch err = getprop_null_throw(vm, ds, mid_val.is_null(), key2_hstr)) { return err~; }
                 } else {
@@ -1330,25 +1318,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     } else {
                         ra2.set_undefined();
                     }
-                } else if (mid_val.is_number() || mid_val.is_fastint()) {
-                    if (key2_hstr != null && vm.heap.number_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else if (mid_val.is_boolean()) {
-                    if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else {
-                    ra2.set_undefined();
-                }
+                } else if (mid_val.is_number() || mid_val.is_fastint() || mid_val.is_boolean()) {
+                    // Number/Boolean intermediate: auto-box for hop 2.
+                    getprop2_boxed_hop(vm, ds, &mid_val, key2_hstr, ra2, dst2_reg);
+                    if (vm.has_error) return VM_ERROR~;
+                    if (ds.needs_restart) return (TVal){};
 
                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
             } else if (rb.is_lightfunc()) {
@@ -1488,36 +1462,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     } else {
                         ra2.set_undefined();
                     }
-                } else if (mid_val.is_number() || mid_val.is_fastint()) {
-                    // NUMBER intermediate: auto-box for hop 2.
-                    if (key2_hstr != null && vm.heap.number_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else if (mid_val.is_bigint()) {
-                    // BIGINT intermediate: auto-box for hop 2 (the system
-                    // primitives cover every other boxed type; a BigInt here,
-                    // e.g. `obj.ns.toString()` where `ns` is a BigInt accessor,
-                    // fell through to the undefined else-branch below).
-                    if (key2_hstr != null && vm.heap.bigint_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bigint_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else if (mid_val.is_boolean()) {
-                    // BOOLEAN intermediate: auto-box for hop 2.
-                    if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
+                } else if (mid_val.is_number() || mid_val.is_fastint() || mid_val.is_bigint() || mid_val.is_boolean()) {
+                    // Number/BigInt/Boolean intermediate: auto-box for hop 2.
+                    // A BigInt lands here, e.g. `obj.ns.toString()` where
+                    // `ns` is a BigInt accessor, rather than answering
+                    // undefined from the else-branch below.
+                    getprop2_boxed_hop(vm, ds, &mid_val, key2_hstr, ra2, dst2_reg);
+                    if (vm.has_error) return VM_ERROR~;
+                    if (ds.needs_restart) return (TVal){};
                 } else {
                     ra2.set_undefined();
                 }
@@ -1581,25 +1533,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     } else {
                         ra2.set_undefined();
                     }
-                } else if (mid_val.is_number() || mid_val.is_fastint()) {
-                    if (key2_hstr != null && vm.heap.number_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else if (mid_val.is_boolean()) {
-                    if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else {
-                    ra2.set_undefined();
-                }
+                } else if (mid_val.is_number() || mid_val.is_fastint() || mid_val.is_boolean()) {
+                    // Number/Boolean intermediate: auto-box for hop 2.
+                    getprop2_boxed_hop(vm, ds, &mid_val, key2_hstr, ra2, dst2_reg);
+                    if (vm.has_error) return VM_ERROR~;
+                    if (ds.needs_restart) return (TVal){};
 
                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
             } else if (rb.is_boolean()) {
@@ -1660,25 +1598,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     } else {
                         ra2.set_undefined();
                     }
-                } else if (mid_val.is_number() || mid_val.is_fastint()) {
-                    if (key2_hstr != null && vm.heap.number_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.number_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else if (mid_val.is_boolean()) {
-                    if (key2_hstr != null && vm.heap.bool_proto != null) {
-                        primitive_getprop_sync(vm, ds, &mid_val, vm.heap.bool_proto, key2_hstr, ra2, dst2_reg);
-                        if (vm.has_error) return VM_ERROR~;
-                        if (ds.needs_restart) return (TVal){};
-                    } else {
-                        ra2.set_undefined();
-                    }
-                } else {
-                    ra2.set_undefined();
-                }
+                } else if (mid_val.is_number() || mid_val.is_fastint() || mid_val.is_boolean()) {
+                    // Number/Boolean intermediate: auto-box for hop 2.
+                    getprop2_boxed_hop(vm, ds, &mid_val, key2_hstr, ra2, dst2_reg);
+                    if (vm.has_error) return VM_ERROR~;
+                    if (ds.needs_restart) return (TVal){};
 
                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
             } else {
