@@ -327,10 +327,11 @@ SKIP_FILES = {
     # cannot both hold for any conformant [[Get]] / [[HasProperty]] implementation.
     # F1 — Function.prototype.apply/call ES5 §10.4.3 sloppy `this` substitution
     # (undefined/null thisArg -> global object; primitives -> ToObject wrapper).
-    # Every test below calls Function("...").apply/call(...) and asserts on the
-    # resulting global `this`; our strict-only engine compiles all code
-    # (including Function()-created code) as strict, so `this` stays
-    # undefined/null and never substitutes. Unsatisfiable while strict-only.
+    # The substitution half is in via `!target.is_strict()`; the primitive-boxing
+    # half needs ToObject wrappers around number/boolean receivers, which is
+    # Phase 3 (plans/083 §3 step 4) work. Phase 2 keeps these skipped and lets
+    # test262 surface the limit, rather than letting the runtime pass primitives
+    # straight through and write to the caller's number/boolean variable.
     "built-ins/Function/prototype/apply/S15.3.4.3_A5_T1.js",
     "built-ins/Function/prototype/apply/S15.3.4.3_A5_T2.js",
     "built-ins/Function/prototype/call/S15.3.4.4_A5_T1.js",
@@ -338,14 +339,13 @@ SKIP_FILES = {
     # BigInt64Array/BigUint64Array constructors — BigInt is out of scope
     # (see the built-ins/BigInt SKIP_DIRS entry); this test doesn't tag
     # `features: [BigInt]` so the feature filter above doesn't catch it.
-    # S287 — Function() constructor bodies and indirect-eval'd source have no
-    # "use strict" directive of their own and are non-strict per spec (they
-    # don't inherit the caller's strictness); ES5 §11.6.2.2/§12.10.1 only
-    # forbids `var eval`/`var arguments`/`eval = x`/`arguments++` etc. in
-    # *strict* code. Our engine forces every compilation unit strict, so
-    # these otherwise-legal non-strict constructs are rejected as SyntaxErrors.
-    "language/statements/variable/12.2.1-9-s.js",   # indirect eval: var eval;
-    "language/statements/variable/12.2.1-21-s.js",  # indirect eval: arguments = 42;
+    # S287 — retired at plans/083 phase 2: dynamic Function bodies default to
+    # sloppy (compile_function sets `is_strict = false`, parse_directives can
+    # raise it back), and indirect-eval inherits strictness via caller_is_strict
+    # (compile_eval) instead of being unconditionally strict. So `var eval;`
+    # and `arguments = 42;` are no longer compile-time SyntaxErrors.
+    # Indirect-eval tests re-skipped in scripts/run_test262.py point at the
+    # next blocker (with-runtime, Phase 4).
     # C7a — Function constructor strict-only failures. The engine compiles all
     # code as strict (no sloppy mode), so these ES5/Sputnik-era tests asserting
     # sloppy-mode-only behavior cannot pass by design. Unlike the noStrict-flag
@@ -368,14 +368,6 @@ SKIP_FILES = {
     # directly. The bodies do `this.y = N;` then assert `y === N` at the call
     # site; strict-only constructor bodies make `this` undefined so `this.y = N`
     # throws TypeError. Unsatisfiable while strict-only.
-    # F3 — Function() constructor `onlyStrict` tests assert the BODY is non-strict
-    # (allowed duplicate params, `eval`/`arguments` as parameter names). The engine
-    # forces every compilation unit strict, so these otherwise-legal non-strict
-    # bodies are rejected with SyntaxError. Per ES5 §15.3.2.1 step 9, a non-strict
-    # body is valid — but in this engine it's not.
-    "built-ins/Function/15.3.2.1-11-2-s.js",  # Function('a','a','return;') — duplicate param
-    "built-ins/Function/15.3.2.1-11-6-s.js",  # Function('a,a','return a;') — duplicate combined param
-    "built-ins/Function/15.3.2.1-11-8-s.js",  # Function('baz','qux','baz','return 0;') — duplicate param
     # F4 — function-code sloppy-mode tests. The engine is strict-only; these
     # ES5/Sputnik-era tests depend on `var`-shadowed-formal-parameter bindings
     # (allowed in sloppy mode, where `var x` inside `function f(x)` preserves
