@@ -1814,16 +1814,44 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
             } else if (self.last_was_getvar || self.last_was_local_var) {
-                // `delete IdentifierReference`, Annex B.3.1 (ES5 11.4.1 step 1):
-                // strict mode rejects this as a SyntaxError. Sloppy mode runs
-                // the deletion against the variable environment. Since this
-                // engine is strict-only, we always reject. Both operand shapes
-                // must be caught: a name that resolved to a register
-                // (last_was_local_var) is just as much an IdentifierReference
-                // as one that needs a runtime GETVAR/GETGLOBAL.
+                // Phase 1 (plans/083): sloppy allows `delete <id>` — emit
+                // DELVAR whose VM handler walks the env chain and returns
+                // true for the unresolvable case (Annex B.3.1). Phase 2
+                // tightens this for var/function bindings and non-configurable
+                // cases.
+                if (self.is_strict) {
+                    self.last_was_getvar = false;
+                    self.last_was_local_var = false;
+                    return self.fail("delete of an unqualified identifier in strict mode")~;
+                }
                 self.last_was_getvar = false;
                 self.last_was_local_var = false;
-                return self.fail("delete of an unqualified identifier in strict mode")~;
+                // The operand parse emitted either GETVAR (last_was_getvar)
+                // or left a local-var register live (last_was_local_var).
+                // Both are dead: DELVAR writes its boolean result directly
+                // into op_del. Patch GETVAR → DELVAR in place so the
+                // unresolved-identifier GETVAR does not throw before DELVAR
+                // runs (Annex B.3.1 mandates `true` for the unresolvable
+                // case, which would be unreachable if GETVAR raised first).
+                // DELVAR's A=result, BC=name constant matches GETVAR's
+                // A=result, BC=name layout, so the slot stays valid.
+                if (self.code_count > 0 && self.code[self.code_count - 1].a == (ushort)op_del) {
+                    Opcode prev = self.code[self.code_count - 1].op;
+                    if (prev == Opcode.GETVAR || prev == Opcode.GETGLOBAL || prev == Opcode.GETGLOBAL_PRIM) {
+                        uint name_idx = self.code[self.code_count - 1].get_bc();
+                        self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DELVAR, (uint)op_del, name_idx);
+                        return op_del;
+                    }
+                }
+                // last_was_local_var path (parameter or local binding on a
+                // register): the register already holds the current value,
+                // but DELVAR walks env chains, not registers, so emit a
+                // DELVAR with BC=0 (placeholder) and let the VM handler
+                // default to returning true (the local-var case is rare and
+                // `delete` of a parameter / `let` is spec-non-conforming
+                // anyway; phase 2 tightens this).
+                self.emit_a_bc(Opcode.DELVAR, (uint)op_del, 0);
+                return op_del;
             } else {
                 // Delete of a non-reference (literal, expression result, etc.).
                 // ES6 §12.5.3.2 step 3: If Type(ref) is not Reference, return true.
@@ -3831,8 +3859,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             Token num_tok = self.advance()!;
 
             // ES2024 §12.9.3.1: both AnnexB decimal-integer forms that start
-            // with `0` are Syntax Errors in strict-mode code, and this engine
-            // is strict-only:
+            // with `0` are Syntax Errors in strict-mode code:
             //   LegacyOctalIntegerLiteral        `0` followed by 0-7 (`01`)
             //   NonOctalDecimalIntegerLiteral    `0` followed by 8-9 (`08`),
             //                                    and any digits after either
@@ -3840,8 +3867,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // so one test covers both — the previous 0-7 range accepted `08`
             // and `09` silently. `0x`/`0o`/`0b`/`0.`/`0e` are unaffected: the
             // second character is not a decimal digit.
+            // Phase 1 (plans/083): sloppy bodies accept legacy octals; the
+            // lexer produces the correct numeric value.
             char[] nsrc = num_tok.str_value;
-            if (nsrc.len >= 2 && nsrc[0] == '0' && nsrc[1] >= '0' && nsrc[1] <= '9') {
+            if (self.is_strict && nsrc.len >= 2 && nsrc[0] == '0' && nsrc[1] >= '0' && nsrc[1] <= '9') {
                 return self.fail("a legacy octal or non-octal decimal literal is not allowed")~;
             }
 
@@ -3870,8 +3899,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
             Token str_tok = self.advance()!;
 
             // Legacy octal escape sequences in strings are SyntaxErrors
-            // per ES5 §7.8.4 + Annex B.1.2.
-            if (str_tok.has_octal_escape) {
+            // per ES5 §7.8.4 + Annex B.1.2. Phase 1 (plans/083): sloppy
+            // bodies accept them; the lexer sets has_octal_escape
+            // regardless of mode, we skip the strict-mode rejection.
+            if (self.is_strict && str_tok.has_octal_escape) {
                 return COMPILE_ERROR~;
             }
             if (str_tok.is_template && str_tok.has_invalid_escape) {
@@ -5591,8 +5622,12 @@ fn ushort? CompilerContext.object_literal(&self) {
                 if (is_generator_method || is_async_method) return COMPILE_ERROR~;
                 self.expect(TokenType.COLON)!;
                 if (is_proto_key) {
-                    // ES2015 §12.2.6.1: a second `__proto__: value` is an early
-                    // SyntaxError.
+                    // ES2024 Annex B.3.1: duplicate `__proto__` keys obtained
+                    // from `PropertyDefinition : PropertyName : AssignmentExpression`
+                    // are a SyntaxError, regardless of strictness. Computed
+                    // keys / shorthand / method shorthand / accessor don't
+                    // count toward the duplicate, so only the colon-form path
+                    // we are on right now increments seen_proto_key.
                     if (seen_proto_key) return COMPILE_ERROR~;
                     seen_proto_key = true;
                     // `__proto__: fn` is a prototype-set, not a property
