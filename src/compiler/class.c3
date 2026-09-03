@@ -103,7 +103,7 @@ fn char[] format_field_number_key(double val, char[] buf) {
     char[64] local;
     usz n = 0;
     if (val == math::trunc(val) && val > -1e21 && val < 1e21) {
-        char[] printed = io::bprintf(&local, "%.0f", val) ?? local[..0];
+        char[] printed = io::bprintf(&local, "%.0f", val) ?? local[:0];
         n = printed.len;
     } else {
         char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
@@ -111,9 +111,9 @@ fn char[] format_field_number_key(double val, char[] buf) {
             dtoa_bindings::JS_DTOA_FORMAT_FREE, &tmp);
         n = len > 0 ? (usz)len : 0;
     }
-    if (n == 0 || n > buf.len) return buf[..0];
+    if (n == 0 || n > buf.len) return buf[:0];
     for (usz i = 0; i < n; i++) buf[i] = local[i];
-    return buf[..n];
+    return buf[:n];
 }
 
 // A method's `name` is the property key, and for a NumericLiteral or
