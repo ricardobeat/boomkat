@@ -628,13 +628,16 @@ fn void builtin_set_proto_union(BuiltinContext* ctx) {
     if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
     SetRecord rec = rec_opt;
 
-    HObject* result = set_copy_live_entries(ctx, set);
-    if (result == null) { ctx.result.set_undefined(); return; }
-
     TVal iterator = set_record_get_keys_iterator(ctx, &rec);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     TVal next_fn = set_iter_get_next_fn(ctx, iterator);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+
+    // Step 5: the receiver is snapshotted only after the keys iterator and
+    // its `next` are fetched, so mutations made by a `next` getter land in
+    // the copy.
+    HObject* result = set_copy_live_entries(ctx, set);
+    if (result == null) { ctx.result.set_undefined(); return; }
 
     while (true) {
         TVal next_value;
@@ -779,13 +782,16 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
     if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
     SetRecord rec = rec_opt;
 
-    HObject* result = set_copy_live_entries(ctx, set);
-    if (result == null) { ctx.result.set_undefined(); return; }
-
     TVal iterator = set_record_get_keys_iterator(ctx, &rec);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
     TVal next_fn = set_iter_get_next_fn(ctx, iterator);
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+
+    // Step 5: the receiver is snapshotted only after the keys iterator and
+    // its `next` are fetched, so mutations made by a `next` getter land in
+    // the copy.
+    HObject* result = set_copy_live_entries(ctx, set);
+    if (result == null) { ctx.result.set_undefined(); return; }
 
     while (true) {
         TVal next_value;
