@@ -544,7 +544,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // The target function's strictness governs the
                             // poison pill, not the caller's.
                             CompiledFunction* target_cf = (*hobj.extra_ptr()).func.comp_func;
-                            bool target_strict = target_cf != null && target_cf.is_strict();
+                            bool target_strict = target_cf == null
+                                || target_cf.is_strict()
+                                || target_cf.is_arrow()
+                                || target_cf.is_user_generator();
                             if (target_strict) {
                                 if (!poison_pill_throw(vm, ds, false)) {
                                     return VM_ERROR~;
@@ -805,7 +808,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                             && hobj.find_prop_idx(key, ds.vm.heap) < 0) {
                             CompiledFunction* target_cf2 = (*hobj.extra_ptr()).func.comp_func;
-                            bool target_strict2 = target_cf2 != null && target_cf2.is_strict();
+                            bool target_strict2 = target_cf2 == null
+                                || target_cf2.is_strict()
+                                || target_cf2.is_arrow()
+                                || target_cf2.is_user_generator();
                             if (target_strict2) {
                                 if (!poison_pill_throw(vm, ds, false)) {
                                     return VM_ERROR~;
@@ -1177,7 +1183,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         && (key2_hstr.equals("caller") || key2_hstr.equals("arguments"))
                         && hobj2.find_prop_idx((void*)key2_hstr, ds.vm.heap) < 0) {
                         CompiledFunction* target_cf3 = (*hobj2.extra_ptr()).func.comp_func;
-                        bool target_strict3 = target_cf3 != null && target_cf3.is_strict();
+                        bool target_strict3 = target_cf3 == null
+                                || target_cf3.is_strict()
+                                || target_cf3.is_arrow()
+                                || target_cf3.is_user_generator();
                         if (target_strict3) {
                             if (!poison_pill_throw(vm, ds, false)) {
                                 return VM_ERROR~;

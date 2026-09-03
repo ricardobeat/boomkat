@@ -174,6 +174,13 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
     CompiledFunction* func = (CompiledFunction*)raw;
     func.flags.htype = HType.OBJECT;
     func.flags.is_constructable = true;
+    // Class constructors are strict code regardless of the enclosing
+    // script/function strictness (ES2015 §14.5.14 step 22). A default
+    // constructor produced by make_default_constructor inherits this from
+    // Phase 1's `is_strict = true` in parse_class_tail_with_name, so stamp
+    // it here too. Without it, the poison-pill read of `caller` /
+    // `arguments` on the class itself skips the throw and returns null.
+    func.flags.is_strict = true;
     // Class constructor: .prototype is non-configurable per ES2015 §14.5.14
     // step 25.  CLOSURE checks this flag and uses PROP_FLAGS_WENC (configurable=false).
     func.flags.is_class_ctor = true;
