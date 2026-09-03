@@ -74,7 +74,10 @@ fn ushort double_to_f16(double d) {
         v = 0x7c01;
     } else if (a < 0x3f10000000000000) { // 0x1p-14
         // subnormal f16 number or zero
-        if (a <= 0x3e60000000000000) { // 0x1p-25
+        if (a < 0x3e60000000000000) { // 0x1p-25
+            // Strictly less: 0x1p-25 itself is the tie between zero and the
+            // smallest subnormal, and anything above it rounds up to that
+            // subnormal, so both must reach the round-to-nearest-even path.
             v = 0x0000; // zero
         } else {
             int shift = 1051 - (int)(a >> 52);
