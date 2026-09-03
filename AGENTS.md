@@ -13,16 +13,22 @@ A C3-native JavaScript engine. **Goal**: pass 100% of the targeted test262 subse
 - **Strict vs sloppy**: scripts default to sloppy (matching ES2024); modules default to strict; per-function `is_strict` is recorded in `FuncFlags`. The legacy `subst_global_this` flag is being repurposed/removed under plans/083 — do not add new readers or writers.
 - **test262 skip list**: ~60% of test262 falls outside this engine's scope, which is ES5/ES6 core in a single execution mode (Annex B legacy, ECMA-402, Stage 3 proposals, host-specific and cross-realm behavior). Scope is documented in `docs/engine-scope.md`. The skip list (`SKIP_DIRS`/`SKIP_GLOBS`/`SKIP_FILES`/`UNSUPPORTED_PATTERN`) is embedded directly in `scripts/run_test262.py`: update it there when implementing new features. The skip list is the *only* place scope is expressed — test selection itself is exhaustive over test262's directory tree, so a feature is out of scope because a rule names it, never because nobody listed its directory. `intl402` (ECMA-402) is skipped per test262's own guidance; `staging` runs, as upstream `INTERPRETING.md` asks.
 
-## Strict-Only Mode (current source, transitioning to dual-mode)
+## Sloppy Mode (in progress)
 
-The engine is currently strict-only in its source — single execution mode, non-strict / Annex B features (`with`, legacy octal literals/escapes, duplicate params, implicit globals, unqualified `delete`, `arguments.callee`/`caller`, two-way `arguments`↔param binding) are rejected at parse time. **This branch (`sloppy-mode`) is intentionally modifying that** under `plans/083-sloppy-mode.md`; phase 0 introduces a `FuncFlags.is_strict` bit and threads it through the compiler and VM, phase 1 relaxes the parser, later phases relax the runtime. Do not write new code that assumes the bullet points below are permanent.
+This branch (`sloppy-mode`) is adding sloppy-mode execution as a peer to strict mode. Follow `plans/083-sloppy-mode.md` for the phased plan.
 
-**Guardrails as they exist in the source today:**
-- The engine is single-mode; there is no `is_strict` / `ACT_FLAG_STRICT` flag to branch on. (Phase 0 of plan 083 adds one.)
-- `"use strict"` is parsed and ignored (a no-op, accepted for source compatibility). The one exception: in a dynamic `Function`/`GeneratorFunction`/`AsyncFunction` body it clears `FuncFlags.subst_global_this` (below).
-- `this`-substitution is **not** a strictness distinction here. `FuncFlags.subst_global_this` is set only on bodies built by the dynamic function constructors, so `Function('return this')()` keeps returning the global object (a ubiquitous UMD idiom). Ordinary functions never substitute, and functions nested inside a dynamic body do not inherit the flag. (Phase 2 of plan 083 generalizes this: `!is_strict && !is_arrow` is the new predicate, and `subst_global_this` is removed.)
-- Direct vs. indirect `eval` is not a strict-mode distinction; both are fully supported. `ACT_FLAG_DIRECT_EVAL` / `has_direct_eval` / `callee_is_eval` are orthogonal to strict mode.
-- `noStrict`-flagged test262 tests currently fail to compile by design. (Plan 083 un-skips them as phases land.)
+**Current state of the source on disk** (phases 0 and 1 have landed):
+- `FuncFlags.is_strict` bit 7, plumbed through `CompilerContext.is_strict` (default `false` at compile time now), stamped in `finish()`. The legacy `Lexer.strict_mode` and `Lexer.reserved_words_strict` flags are still separate (one for octal rules, one for keyword reservation). `subst_global_this` is the only runtime knob that still encodes strictness; it stays until phase 2 generalizes the predicate to `!is_strict && !is_arrow`.
+- Top-level scripts default to sloppy (ES2024 §16.2.1.1); modules stay strict; ordinary functions and dynamic `Function` / `GeneratorFunction` / `AsyncFunction` bodies default to sloppy; class bodies stay strict (ES2024 §15.4.1).
+- `"use strict"` is parsed and raises `is_strict = true`.
+- Phase 1 parser gates: `with`, legacy octal literals and octal escapes, `delete <id>`, `for (var x = 1 in y)`, plain duplicate params (Annex B.3.1), duplicate `__proto__:` keys (Annex B.3.1) all accepted in sloppy. The VM stubs `with` to throw SyntaxError at runtime (phase 4 implements semantics); everything else works end-to-end.
+- Phase 1 still strict (unconditional): class method / object method / arrow / named-export param duplicates (UniqueFormalParameters, no Annex B exemption), catch / lexical ForDeclaration duplicate BoundNames, `eval` / `arguments` as binding identifiers.
+
+**What not to write:**
+- Do not add new strict-only parse rejections.
+- Do not assume any parser rejection is unconditional — every rejection in `src/compiler/{statements,expressions,functions,tokens,destructuring,class}.c3` that exists for sloppy-mode-only syntax is now gated on `self.is_strict`. If you find an ungated one, gate it.
+- Do not assume `subst_global_this` will remain a separate flag. Phase 2 folds its semantics into `!is_strict && !is_arrow`; treat it as legacy.
+- Do not touch the test262 skip list without reading plans/083 §5 (test262 strategy). Un-skipping the wrong tests pollutes the suite's signal.
 
 ## Running & Testing
 

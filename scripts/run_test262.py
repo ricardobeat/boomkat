@@ -269,14 +269,10 @@ SKIP_FILES = {
     "built-ins/Set/valid-values.js",
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
-    # B04 — Function constructor duplicate params / restricted names in non-strict
-    "built-ins/Function/15.3.2.1-11-1.js",     # duplicate separate param allowed
-    "built-ins/Function/15.3.2.1-11-5.js",     # duplicate combined param allowed
-    "built-ins/Function/15.3.2.1-11-9-s.js",   # three identical params allowed
-    "built-ins/Function/length/S15.3.5.1_A1_T3.js",  # duplicate params across joined arg strings
-    "built-ins/Function/length/S15.3.5.1_A2_T3.js",  # duplicate params across joined arg strings
-    "built-ins/Function/length/S15.3.5.1_A3_T3.js",  # duplicate params across joined arg strings
-    "built-ins/Function/length/S15.3.5.1_A4_T3.js",  # duplicate params across joined arg strings
+    # B04 — Function constructor duplicate params / restricted names in non-strict.
+    # Un-skipped with plans/083 phase 1: the parser now allows duplicate params and
+    # `eval`/`arguments` as parameter names in non-strict bodies (dynamic Function
+    # bodies default to sloppy per ES2024 §20.2.1.1).
     # B17/PB8 — genuinely sloppy-mode-only, or dependent on a full
     # GlobalDeclarationInstantiation/EvalDeclarationInstantiation
     # CanDeclareGlobalFunction implementation (validate-then-commit over ALL
@@ -290,13 +286,26 @@ SKIP_FILES = {
     # declaration-instantiation fixes (direct/indirect eval var_env vs
     # lex_env split, this-binding, (0,eval) direct-eval detection);
     # removed from this list.
-    "language/eval-code/indirect/always-non-strict.js",  # `with ({}) {}` — unsupported (AGENTS.md)
+    # P4 — plans/083 phase 4 still outstanding: `with` statement semantics
+    # are not implemented, only the parser gate is in place (phase 1 stub
+    # throws SyntaxError at runtime). This test exercises a `with` in indirect
+    # eval and asserts no error; it must wait for phase 4.
+    "language/eval-code/indirect/always-non-strict.js",
     # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
     # Strict-only engine never installs these legacy methods on
     # Object.prototype, so `this.__lookupSetter__(...)` throws
     # "undefined is not a function" before the test can assert
     # `sameValue(undefined)` on the return value.
-    "language/comments/hashbang/use-strict.js",  # hashbang is not a directive prologue, so the body `with ({}) {}` stays sloppy; strict-only engine rejects `with` (AGENTS.md)
+    # P5 — flags: [raw] tests (hashbang / non-bang-comment tests). The runner
+    # concatenates the harness before the test source, so a `flags: [raw]`
+    # test's leading hashbang ends up at line 215+ and is no longer at source
+    # position 0, where the lexer's skip_hashbang looks for it. The engine
+    # rejects the `#` as an unexpected character. Tracked by the runner
+    # skipping `flags: [raw]` tests entirely (P5 follow-up; plans/083 §3
+    # phase 1 lists `language/comments/hashbang/use-strict.js` as one of the
+    # eight category-A SKIP_FILES to un-skip, but doing so without runner
+    # support just produces spurious CE:unexpected failures).
+    "language/comments/hashbang/use-strict.js",
     # P7 — class-name-static-initializer-default-export.js and friends require
     # module-mode execution (`flags: [module]`). The runner doesn't currently
     # support `import`/`export`, so the test parses successfully but runs as
