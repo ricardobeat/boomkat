@@ -1950,7 +1950,7 @@ fn void? CompilerContext.var_declaration(&self) {
                 self.record_error("expected a binding identifier after the declaration keyword");
                 return COMPILE_ERROR~;
             }
-            if (!ctx_keyword_ident && is_restricted_name(name_tok.str_value, strict: self.lexer.reserved_words_strict)) {
+            if (!ctx_keyword_ident && is_restricted_name(name_tok.str_value, strict: self.is_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
             // Intern now: an escaped identifier borrows the lexer's shared
@@ -6113,7 +6113,7 @@ fn void? CompilerContext.import_declaration(&self) {
                 // Without `as` the ImportSpecifier is a bare ImportedBinding,
                 // so the one name is both the export name and a binding and
                 // has to satisfy the BindingIdentifier restrictions too.
-                if (is_restricted_name(import_name_str, strict: self.lexer.reserved_words_strict)) {
+                if (is_restricted_name(import_name_str, strict: self.is_strict)) {
                     return self.fail("reserved word cannot be used as a binding identifier")~;
                 }
                 local_names[binding_count] = import_name_str;
@@ -6619,7 +6619,7 @@ fn void? CompilerContext.export_declaration(&self) {
 
         for (;;) {
             Token name_tok = self.expect(TokenType.IDENTIFIER)!;
-            if (is_restricted_name(name_tok.str_value, strict: self.lexer.reserved_words_strict)) {
+            if (is_restricted_name(name_tok.str_value, strict: self.is_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
             // Intern now: an escaped identifier borrows the lexer's shared
