@@ -78,61 +78,31 @@ fn int main(String[] args) {
 
     // Run TypeScript files with type syntax erased at parse time. Route files
     // with top-level import or export through the ESM pipeline regardless of extension.
-    if (has_ts_extension(path)) {
-        return run_with_lexer_ts(hp, v, path);
-    }
+    bool ts_mode = has_ts_extension(path);
     if (looks_like_module(source)) {
+        if (!ts_mode) {
+            int rc = esm::run_module_file(hp, v, (char[])path);
+            if (rc != 0) io::eprintfn("module rc=%d", rc);
+            if (rc == 1 && hp.has_error) { print_uncaught(hp, &hp.error_value); }
+            if (rc == 0 && unhandled_rejection_count > 0) return 1;
+            return rc;
+        }
         int rc = esm::run_module_file(hp, v, (char[])path);
         if (rc != 0) io::eprintfn("module rc=%d", rc);
-        // When execution throws (rc 1), print the uncaught error from the heap.
-        if (rc == 1 && hp.has_error) { print_uncaught(hp, &hp.error_value); }
         if (rc == 0 && unhandled_rejection_count > 0) return 1;
         return rc;
     }
 
-    Lexer lex = lexer::lexer_init(source, hp, (char[])path);
-    defer lex.free_arena();
-    lex.skip_hashbang();
-    CompiledFunction*? func = compiler::compile(&lex, hp);
-    CompiledFunction* f;
-    if (try ff = func) {
-        f = ff;
-    } else {
-        ZString msg = (ZString)&lex.err_msg[0];
-        io::eprintfn("SyntaxError: %s (line %d, col %d)", msg, lex.err_line, lex.err_col);
-        return 1;
-    }
-
-    TVal? result = v.execute(f);
-    hp.drain_microtasks((void*)v);
-    if (catch err = result) {
-        // Print uncaught JS throws via print_uncaught. "VM error:" is reserved
-        // for internal engine faults without a JS error value attached.
-        if (v.heap.has_error) {
-            print_uncaught(v.heap, &v.heap.error_value);
-        } else {
-            io::eprintfn("VM error: %s (at execute)", err);
-        }
-        return 1;
-    }
-    // Fail if any unhandled promise rejections were logged.
-    return unhandled_rejection_count > 0 ? 1 : 0;
+    return run_script_source(hp, v, source, path, ts_mode);
 }
 
-// Parse TypeScript source in ts_mode, then execute as script or ESM module.
-fn int run_with_lexer_ts(Heap* hp, Vm* v, String path) {
-    char[]? source = file::load_temp(path);
-    if (catch err = source) { io::eprintfn("Failed to read"); return 1; }
-    if (looks_like_module(source)) {
-        int rc = esm::run_module_file(hp, v, (char[])path);
-        if (rc != 0) io::eprintfn("module rc=%d", rc);
-        if (rc == 0 && unhandled_rejection_count > 0) return 1;
-        return rc;
-    }
+// Compile a script source and run it, reporting compile errors and uncaught
+// throws. `ts_mode` selects TypeScript type-stripping at parse time.
+fn int run_script_source(Heap* hp, Vm* v, char[] source, String path, bool ts_mode) {
     Lexer lex = lexer::lexer_init(source, hp, (char[])path);
     defer lex.free_arena();
     lex.skip_hashbang();
-    lex.ts_mode = true;
+    lex.ts_mode = ts_mode;
     CompiledFunction*? func = compiler::compile(&lex, hp);
     CompiledFunction* f;
     if (try ff = func) {
