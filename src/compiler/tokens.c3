@@ -193,7 +193,11 @@ fn bool CompilerContext.await_is_identifier(&self, TokenType tt) {
 // this instead of respelling the three flags — the by-name and by-token-type
 // answers cannot then drift apart.
 fn bool CompilerContext.await_reserved_here(&self) {
-    return self.is_async || self.is_module || self.forbid_await;
+    // `module_goal`, not `is_module`: the [Await] parameter is set throughout
+    // module code, including inside a nested plain function or a class field
+    // initializer, where `is_module` (module body only) has already gone
+    // false. `function f(){ await; }` at module top level is a SyntaxError.
+    return self.is_async || self.module_goal || self.forbid_await;
 }
 
 // True when the next token can start an Identifier: a plain IDENTIFIER, or

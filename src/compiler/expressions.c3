@@ -440,7 +440,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // only engine), which is the helper's default.
     if (!self.last_was_member() && self.last_lhs_name_len > 0
         && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                              self.is_async || self.is_module || self.forbid_await, strict: self.lexer.reserved_words_strict)) {
+                              self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
         return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
     }
 
@@ -1851,7 +1851,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member() && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                      self.is_async || self.is_module || self.forbid_await, strict: self.lexer.reserved_words_strict)) {
+                                      self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // postfix_expr leaves self.last_was_getvar / self.last_was_member()
@@ -1930,7 +1930,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member() && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                      self.is_async || self.is_module || self.forbid_await, strict: self.lexer.reserved_words_strict)) {
+                                      self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // See INC case above for why member takes priority over getvar.
@@ -2114,7 +2114,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // generator contexts; see the matching check in assignment_expr.
         if (!self.last_was_member() && self.last_lhs_name_len > 0
             && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                  self.is_async || self.is_module || self.forbid_await, strict: self.lexer.reserved_words_strict)) {
+                                  self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
             return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
         }
     }
@@ -4493,7 +4493,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // A class static block's own statement list is likewise
                 // always [+Await] (ES2022 §15.7.11) regardless of whether it
                 // is lexically nested inside an async function.
-                if (self.is_module || self.forbid_await) {
+                // `module_goal`, not `is_module`: the reservation covers all
+                // module code, including a nested plain function or a field
+                // initializer, where `is_module` is already false.
+                if (self.module_goal || self.forbid_await) {
                     return COMPILE_ERROR~;
                 }
                 // IdentifierReference (or an arrow's single parameter) rather

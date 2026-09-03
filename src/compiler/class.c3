@@ -23,6 +23,7 @@ import std::math;
 // initialization order matches source order.
 fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx, bool is_static) {
     target_ctx.init(self.lexer, self.heap);
+    target_ctx.module_goal = self.module_goal;
     target_ctx.lexer.set_strict(true);
     target_ctx.in_class_body = self.in_class_body;
     target_ctx.has_super_binding = self.has_super_binding;

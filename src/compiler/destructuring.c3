@@ -483,7 +483,7 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
     if (!is_member) {
         HString* nhs = (HString*)self.constants[tgt_name].get_heapptr();
         if (is_restricted_name(nhs.get_data(),
-                               self.is_async || self.is_module || self.forbid_await,
+                               self.await_reserved_here(),
                                self.is_generator || self.forbid_yield, strict: self.lexer.reserved_words_strict)) {
             mem::free(snap);
             return COMPILE_ERROR~;
@@ -975,7 +975,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
-                                       self.is_async || self.is_module || self.forbid_await, strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
+                                       self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
                 binds[*count].name_idx         = tgt_name;
@@ -1043,7 +1043,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!self.shorthand_key_is_identifier_ref(key_tt)) return COMPILE_ERROR~;
             HString* hs = (HString*)self.constants[key_idx].get_heapptr();
             if (is_restricted_name(hs.get_data(),
-                                   self.is_async || self.is_module || self.forbid_await, strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
+                                   self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
             if (*count < binds.len) {
                 binds[*count].name_idx    = key_idx;
                 binds[*count].key_idx     = key_idx;
@@ -1112,7 +1112,7 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
-                                       self.is_async || self.is_module || self.forbid_await, strict: self.lexer.reserved_words_strict)) {
+                                       self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
                     if (deferred_key != null) mem::free(deferred_key);
                     return COMPILE_ERROR~;
                 }

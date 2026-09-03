@@ -1005,7 +1005,9 @@ struct CompilerContext {
     // `await` reservation), this stays true inside nested functions so the
     // `import.meta` meta-property (ES2024 §13.3.12) is accepted anywhere in
     // module code while remaining an early SyntaxError in Script/eval/Function
-    // code. It never affects `await`/`arguments` handling.
+    // code. It is also the [Await] grammar parameter's module half (see
+    // await_reserved_here): `await` is reserved throughout module code, not
+    // just in the module body. It never affects `arguments` handling.
     bool module_goal;
 
     // True only while parsing a statement directly in a Module's top-level

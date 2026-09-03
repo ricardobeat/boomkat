@@ -4480,7 +4480,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // OWN flags (false for a plain arrow), so fold the enclosing reservation
     // into forbid_await/forbid_yield, which expect_binding_identifier and the
     // shorthand/name checks consult.
-    arrow_ctx.forbid_await = self.forbid_await || self.is_module || self.is_async;
+    arrow_ctx.forbid_await = self.await_reserved_here();
     arrow_ctx.forbid_yield = self.forbid_yield || self.is_generator;
 
     // The arrow's own function scope. Arrows have no call-time var_env of

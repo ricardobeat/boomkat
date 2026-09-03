@@ -245,6 +245,29 @@ check ACCEPT "--> as decrement then compare"     "$(printf 'var a = 1, b = 2;\nv
 check ACCEPT "<!-- as compare then not-decrement" "$(printf 'var a = 1, b = 2;\nvar c = a < !--b;\nexport {c};')"
 check ACCEPT "--> inside a string literal"       'var s = "a-->b"; export {s};'
 
+# ---------------------------------------------------------------------------
+# `await` is reserved throughout module code (ES2024 §13.1.1): the [Await]
+# grammar parameter is set for the whole Module goal symbol, not just the
+# module body. So it stays reserved inside a nested plain (non-async)
+# function, a class field initializer, and a computed key -- all places where
+# the enclosing function context is no longer the module body itself.
+# ---------------------------------------------------------------------------
+check REJECT "await expr in nested function"     "$(printf 'function f() {\n    await;\n}')"
+check REJECT "await binding in nested function"  'function f(){ var await = 1; }'
+check REJECT "await param in nested function"    'function f(await){}'
+check REJECT "await as function name"            'function await(){}'
+check REJECT "await in class field initializer"  'async () => class { x = await };'
+check REJECT "await in nested fn in class field" 'class C { x = function(){ return await; } }'
+check REJECT "await binding at module top level" 'var await = 1;'
+check REJECT "await as catch param"              'try { } catch (await) { }'
+check REJECT "await in destructuring pattern"    'var { await } = {};'
+
+# A real AwaitExpression (top-level await) is still valid module syntax, and
+# `await` remains an ordinary identifier in Script code -- neither regresses.
+check ACCEPT "top-level await expression"        'var v = await Promise.resolve(1); export {v};'
+check ACCEPT "await as a property name"          'var o = { await: 1 }; var n = o.await; export {n};'
+check ACCEPT "await as a method name"            'var o = { await(){ return 1; } }; export {o};'
+
 echo ""
 echo "modules/syntax_positions: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then
