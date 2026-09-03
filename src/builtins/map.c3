@@ -80,8 +80,7 @@ fn void builtin_map(BuiltinContext* ctx) {
         "Constructor Map requires 'new'",
         "Map constructor argument is not an object",
         "set", "Map.prototype.set is not callable",
-        "Map: iterable argument is not iterable",
-        true, false);
+        "Map: iterable argument is not iterable", true);
 }
 
 // ============================================================================

@@ -29,8 +29,7 @@ fn void builtin_weakmap(BuiltinContext* ctx) {
         "Constructor WeakMap requires 'new'",
         "WeakMap constructor argument is not an object",
         "set", "WeakMap.prototype.set is not callable",
-        "WeakMap: iterable argument is not iterable",
-        true, false);
+        "WeakMap: iterable argument is not iterable", true);
 }
 
 // ============================================================================

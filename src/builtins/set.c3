@@ -360,8 +360,7 @@ fn void builtin_set(BuiltinContext* ctx) {
         "Constructor Set requires 'new'",
         "Set constructor argument is not an object",
         "add", "Set.prototype.add is not callable",
-        "Set: iterable argument is not iterable",
-        false, false);
+        "Set: iterable argument is not iterable", false);
 }
 
 // ============================================================================

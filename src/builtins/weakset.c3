@@ -29,8 +29,7 @@ fn void builtin_weakset(BuiltinContext* ctx) {
         "Constructor WeakSet requires 'new'",
         "WeakSet constructor argument is not an object",
         "add", "WeakSet.prototype.add is not callable",
-        "WeakSet: iterable argument is not iterable",
-        false, false);
+        "WeakSet: iterable argument is not iterable", false);
 }
 
 // ============================================================================
