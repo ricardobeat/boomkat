@@ -957,11 +957,21 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return (TVal){};
                     }
                     if (key_hstr != null) {
+                        // No `vm.has_error` check follows this call. That flag
+                        // is set only where a throw found no catcher, and it is
+                        // never cleared in this file, so once execution resumes
+                        // (a later microtask, say) it is still set. Guarding
+                        // here would read that stale state and fault on a read
+                        // that itself never failed: `builtin.call` resolves
+                        // `call` off Function.prototype, so a plain
+                        // `Object.prototype.hasOwnProperty.call(...)` after an
+                        // earlier uncaught throw aborted the whole script with
+                        // a bare VM_ERROR. lightfunc_meta_read reports a failed
+                        // read through its own return value instead.
                         (void)lightfunc_meta_read(vm, ds, fn_idx, key_hstr, ra, (uint)insn.a);
                     } else {
                         ra.set_undefined();
                     }
-                    if (vm.has_error) return VM_ERROR~;
                 } else {
                     ra.set_undefined();
                 }
