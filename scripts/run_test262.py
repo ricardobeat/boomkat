@@ -166,9 +166,10 @@ SKIP_DIRS = {
     # built-ins/SharedArrayBuffer + built-ins/Atomics: implemented single-agent
     # (no worker threads). Tests using the $262.agent multi-worker harness are
     # skipped per-file below (see AGENT_HARNESS_RE in skip_reason).
-    # built-ins/BigInt: limb-vector BigInt (BIGINT_MAX_LIMBS = 1 << 26 at
-    # src/hbigint.c3:33). Skips are out of scope: arbitrary-precision
-    # literals (>2^53), Reflect.construct as constructor, and $262 cross-realm.
+    # built-ins/BigInt: limb-vector BigInt, arbitrary precision up to
+    # BIGINT_MAX_LIMBS = 1 << 26 (~2 billion bits, src/hbigint.c3:33), so
+    # magnitude is not a limit. Remaining skips are Reflect.construct as
+    # constructor and $262 cross-realm.
     "language/statements/with",        # sloppy-mode only, not supported
 }
 
@@ -260,13 +261,6 @@ NOSTRICT_RUN_GLOBS = {
     "*/private-*-multiple-evaluations-of-class-*.js",
 }
 SKIP_FILES = {
-    # Map/Set key/value tests that use a BigInt literal far beyond 2^127
-    # (~10^80). Arbitrary-precision BigInt is out of scope (plan 056, fixed-width
-    # int128); these previously skipped via the WeakRef feature token (used here
-    # only incidentally) and surface the known precision limit now that WeakRef
-    # runs. Not a WeakRef defect.
-    "built-ins/Map/valid-keys.js",
-    "built-ins/Set/valid-values.js",
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
     # B04 — Function constructor duplicate params / restricted names in non-strict
@@ -414,32 +408,6 @@ SKIP_FILES = {
     # V8/SpiderMonkey themselves fail in the same environments. The engine's
     # underlying arithmetic matches Node.js exactly — verified — so this is
     # a tzdata-version sensitivity, not a runtime bug.
-    # Fixed-width BigInt (plan 056: int128, ~±1.7e38). These tests contain
-    # decimal/hex/binary BigInt literals whose magnitude exceeds 2**127,
-    # which this engine correctly rejects as a SyntaxError at parse time —
-    # but since that's a whole-file parse error, every other (in-range)
-    # assertion in the same file never runs either. Not bugs: arbitrary-
-    # precision BigInt would need a real bignum representation (deferred,
-    # not a small fix).
-    "built-ins/BigInt/asIntN/arithmetic.js",
-    "built-ins/BigInt/asUintN/arithmetic.js",
-    "built-ins/BigInt/constructor-from-binary-string.js",
-    "language/expressions/bitwise-and/bigint.js",
-    "language/expressions/bitwise-or/bigint.js",
-    "language/expressions/bitwise-xor/bigint.js",
-    "language/expressions/does-not-equals/bigint-and-number-extremes.js",
-    "language/expressions/equals/bigint-and-number-extremes.js",
-    "language/expressions/exponentiation/bigint-arithmetic.js",
-    "language/expressions/greater-than-or-equal/bigint-and-number-extremes.js",
-    "language/expressions/greater-than/bigint-and-number-extremes.js",
-    "language/expressions/left-shift/bigint.js",
-    "language/expressions/less-than-or-equal/bigint-and-number-extremes.js",
-    "language/expressions/less-than/bigint-and-number-extremes.js",
-    "language/expressions/multiplication/bigint-arithmetic.js",
-    "language/expressions/right-shift/bigint.js",
-    "language/expressions/strict-does-not-equals/bigint-and-number-extremes.js",
-    "language/expressions/strict-equals/bigint-and-number-extremes.js",
-    "language/expressions/unsigned-right-shift/bigint.js",
     # I2 — un-skipped with the align-detached-buffer-semantics-with-web-reality
     # feature token ($262.detachArrayBuffer now implemented). These carry that
     # token but do not exercise the detach primitive itself; they expose
