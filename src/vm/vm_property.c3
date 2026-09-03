@@ -134,7 +134,7 @@ fn bool lightfunc_meta_read(Vm* vm, Dispatch* ds, uint fn_idx, HString* key,
         return true;
     }
     if (key.equals("caller") || key.equals("arguments")) {
-        if (!vm_throw_error(vm, vm.heap.type_err_proto, "'caller' and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+        if (!poison_pill_throw(vm, ds, false)) {
             dst.set_undefined();
         }
         return true;
@@ -151,6 +151,16 @@ fn bool lightfunc_meta_read(Vm* vm, Dispatch* ds, uint fn_idx, HString* key,
         dst.set_undefined();
     }
     return true;
+}
+
+// Cold tail: the strict-mode poison-pill throws. `is_callee` selects the
+// arguments.callee message; otherwise the function caller/arguments message.
+// Runs the throw and reports whether a catcher was found, like vm_throw_error.
+fn bool poison_pill_throw(Vm* vm, Dispatch* ds, bool is_callee) @noinline @local {
+    if (is_callee) {
+        return vm_throw_error(vm, vm.heap.type_err_proto, "'callee', 'arguments', and 'arguments.caller' may not be accessed in strict mode", ds.act, &ds.curr_pc, &ds.needs_restart);
+    }
+    return vm_throw_error(vm, vm.heap.type_err_proto, "'caller' and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them", ds.act, &ds.curr_pc, &ds.needs_restart);
 }
 
 // Cold tail: synchronous hop-2 read of a boxed primitive intermediate in a
@@ -472,7 +482,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // Strict-only engine: always throws.
                     if (hobj_cls == hobject::ObjClass.ARGUMENTS
                         && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "'callee', 'arguments', and 'arguments.caller' may not be accessed in strict mode", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!poison_pill_throw(vm, ds, true)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -487,7 +497,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         HString* key_hstr = (HString*)key;
                         if (key_hstr != null && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                             && hobj.find_prop_idx(key, ds.vm.heap) < 0) {
-                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "'caller' and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (!poison_pill_throw(vm, ds, false)) {
                                 return VM_ERROR~;
                             }
                             return (TVal){};
@@ -727,7 +737,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // Strict-only engine: always throws.
                         if (hobj.get_class() == hobject::ObjClass.ARGUMENTS
                             && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
-                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "'callee', 'arguments', and 'arguments.caller' may not be accessed in strict mode", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (!poison_pill_throw(vm, ds, true)) {
                                 return VM_ERROR~;
                             }
                             return (TVal){};
@@ -738,7 +748,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (hobj.is_callable() && hobj.get_class() == hobject::ObjClass.FUNCTION
                             && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                             && hobj.find_prop_idx(key, ds.vm.heap) < 0) {
-                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "'caller' and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (!poison_pill_throw(vm, ds, false)) {
                                 return VM_ERROR~;
                             }
                             return (TVal){};
@@ -1100,7 +1110,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         && key2_hstr != null
                         && (key2_hstr.equals("caller") || key2_hstr.equals("arguments"))
                         && hobj2.find_prop_idx((void*)key2_hstr, ds.vm.heap) < 0) {
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "'caller' and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!poison_pill_throw(vm, ds, false)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -1703,7 +1713,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     HString* key_hstr = (HString*)rb.get_heapptr();
                     if (key_hstr != null && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                         && hobj.find_prop_idx((void*)key_hstr, ds.vm.heap) < 0) {
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "'caller' and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!poison_pill_throw(vm, ds, false)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
