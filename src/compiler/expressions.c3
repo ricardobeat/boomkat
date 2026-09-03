@@ -2314,6 +2314,11 @@ fn void CompilerContext.drop_paren_receiver_unless_ref(&self) {
 fn ushort? CompilerContext.call_expr(&self) {
     self.last_was_optional_chain = false;
     ushort callee = self.member_expr()!;
+    if (self.last_was_bare_arrow) {
+        // See member_expr: no call/member suffix attaches to a bare arrow.
+        self.last_was_bare_arrow = false;
+        return callee;
+    }
     // Mirrors member_expr's obj_is_base_local: true only while `callee` is
     // still the bare base operand and can therefore be a live local's home
     // register. `o!.x` (TypeScript non-null assertion) is the case that
@@ -3497,6 +3502,14 @@ fn ushort? CompilerContext.member_expr(&self) {
     // a `.prop`/`[idx]` step runs, `obj` becomes a fresh temp.
     bool obj_is_base_local = self.last_was_local_var;
 
+    // A bare arrow is an AssignmentExpression: the suffix loop must not
+    // extend it, so `= () => {}` ends the expression there. The flag stays
+    // set for call_expr, which owns the call/tagged-template suffixes and
+    // clears it.
+    if (self.last_was_bare_arrow) {
+        return obj;
+    }
+
     for (;;) {
         if (self.match(TokenType.DOT)) {
             // Member access (obj.prop), not a direct identifier reference,
@@ -3762,6 +3775,7 @@ fn ushort CompilerContext.tostr_into_temp(&self, ushort reg) {
 
 // Parse primary expressions: literals, identifiers, grouping, etc.
 fn ushort? CompilerContext.primary_expr(&self) {
+    self.last_was_bare_arrow = false;
     self.expr_depth++;
     defer self.expr_depth--;
     if (self.expr_depth > MAX_EXPR_DEPTH) {
@@ -3970,7 +3984,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // Capture byte offset of the IDENTIFIER (just consumed), the
                     // source for the arrow head runs from here to its body.
                     uint ident_arrow_src = self.lexer.token_start;
-                    return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
+                    {
+                        ushort arrow_res = self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
+                        self.last_was_bare_arrow = true;
+                        return arrow_res;
+                    }
                 }
 
                 // When the identifier is 'eval', track it for direct eval detection.
@@ -4054,7 +4072,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // will re-parse from source.
                     self.restore_lhs_snapshot(lparen_snap);
                     self.inside_parens = saved_inside_parens;
-                    return self.parse_arrow_function_reparse(lparen_pos)!;
+                    {
+                        ushort arrow_res = self.parse_arrow_function_reparse(lparen_pos)!;
+                        self.last_was_bare_arrow = true;
+                        return arrow_res;
+                    }
                 }
                 // Not an arrow: restore lexer and parse as grouping expression
                 self.restore_lhs_snapshot(lparen_snap);
@@ -4206,7 +4228,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // will re-parse params from source (handling defaults).
                     self.restore_lhs_snapshot(lparen_snap);
                     self.inside_parens = saved_inside_parens;
-                    return self.parse_arrow_function_reparse(lparen_pos)!;
+                    {
+                        ushort arrow_res = self.parse_arrow_function_reparse(lparen_pos)!;
+                        self.last_was_bare_arrow = true;
+                        return arrow_res;
+                    }
                 }
 
                 // Not an arrow: restore lexer state and parse as grouping expression
@@ -4264,7 +4290,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     self.lexer.has_pushed_back = lparen_snap.haspb;
                     self.lexer.seen_line_term  = lparen_snap.slt;
                     self.inside_parens = saved_inside_parens;
-                    return self.parse_arrow_function_reparse(lparen_pos)!;
+                    {
+                        ushort arrow_res = self.parse_arrow_function_reparse(lparen_pos)!;
+                        self.last_was_bare_arrow = true;
+                        return arrow_res;
+                    }
                 }
 
                 // Not an arrow: restore lexer and parse as grouping expression
@@ -4511,7 +4541,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     char[][1] params_arr;
                     params_arr[0] = id_tok.str_value;
                     uint ident_arrow_src = self.lexer.token_start;
-                    return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
+                    {
+                        ushort arrow_res = self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
+                        self.last_was_bare_arrow = true;
+                        return arrow_res;
+                    }
                 }
                 // Resolve via the standard identifier path: local var lookup,
                 // else runtime GETVAR. Same semantics as the IDENTIFIER branch.

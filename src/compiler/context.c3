@@ -473,6 +473,13 @@ struct CompilerContext {
     // guard-free GETGLOBAL_PRIM (name proven primitive-only). The assignment
     // write-back then emits PUTGLOBAL_PRIM instead of PUTGLOBAL.
     bool last_was_getglobal_prim;
+    // Set when the last primary_expr returned a bare (unparenthesized) arrow
+    // function. An ArrowFunction is an AssignmentExpression, not a
+    // LeftHandSideExpression, so no `.x`/`[x]`/`(...)`/tagged-template suffix
+    // may attach to it: `x = () => {}` followed by `["k"]` on the next line is
+    // two class elements, not one subscripted arrow. Parenthesizing makes it a
+    // PrimaryExpression again, and the paren path never sets this.
+    bool last_was_bare_arrow;
     // Set when the last primary_expr returned a live local variable register directly.
     bool last_was_local_var;
     ushort last_local_var_reg;
