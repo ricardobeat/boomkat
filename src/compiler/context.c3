@@ -1102,6 +1102,15 @@ macro void CompilerContext.@check_member_reg(&self, char[] site, ushort reg) {
 // target. This is the only legal guard before any member_* accessor below.
 fn bool CompilerContext.last_was_member(&self) @inline => self.member.is_member();
 
+// True when the expression just parsed is a SimpleAssignmentTarget
+// (ES §13.15.1): a member expression, or a variable reference in any of the
+// forms primary_expr can leave behind. Every `=`, `++`/`--` and destructuring
+// target check asks exactly this question.
+fn bool CompilerContext.last_was_assign_target(&self) @inline
+    => !self.last_target_invalid
+       && (self.last_was_member() || self.last_was_getvar || self.last_was_local_var);
+
+
 // Bracket the parser's inferred-name slot across a NamedEvaluation scope via
 // a save/defer-restore helper pair. Use:
 //

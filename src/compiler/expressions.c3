@@ -424,7 +424,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // implementing B.3.9; it just also applies it to genuinely strict code
     // (a `.mjs` module still yields ReferenceError), which B.3.9 does not
     // permit.
-    if (self.last_target_invalid || (!self.last_was_member() && !self.last_was_getvar && !self.last_was_local_var)) {
+    if (!self.last_was_assign_target()) {
         self.record_error("Invalid left-hand side in assignment");
         return COMPILE_ERROR~;
     }
@@ -1843,7 +1843,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             if (self.last_was_optional_chain) {
                 return COMPILE_ERROR~;
             }
-            if (self.last_target_invalid || (!self.last_was_member() && !self.last_was_getvar && !self.last_was_local_var)) {
+            if (!self.last_was_assign_target()) {
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.4 strict mode: ++eval / ++arguments is a SyntaxError.
@@ -1922,7 +1922,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             if (self.last_was_optional_chain) {
                 return COMPILE_ERROR~;
             }
-            if (self.last_target_invalid || (!self.last_was_member() && !self.last_was_getvar && !self.last_was_local_var)) {
+            if (!self.last_was_assign_target()) {
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.5 strict mode: --eval / --arguments is a SyntaxError.
@@ -5732,6 +5732,13 @@ fn ushort? CompilerContext.array_literal(&self) {
     }
 
     self.expect(TokenType.RBRACKET)!;
+    // An ArrayLiteral is never a SimpleAssignmentTarget. The last element
+    // parsed may have left a reference marker behind (`[a]` ends on an
+    // identifier read), which would make the whole literal look assignable and
+    // let `([a]) = [1]` through -- parentheses block the grammar refinement
+    // that turns `[a]` into a destructuring pattern, so it stays a literal and
+    // the assignment is an early SyntaxError (ES §13.15.1).
+    self.clear_ref_markers();
     return arr_reg;
 }
 
