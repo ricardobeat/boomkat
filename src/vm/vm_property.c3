@@ -2612,9 +2612,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                     ra.set_boolean(deleted);
                     if (!deleted) {
-                        // Strict-only engine: failed delete throws.
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "'deleteProperty' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // ES2024 §13.5.5.1 step 5: a failed [[Delete]] on a
+                        // proxy throws in strict, returns false in sloppy.
+                        bool is_strict_del = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (is_strict_del) {
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "'deleteProperty' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                     }
                     return (TVal){};
@@ -2663,9 +2668,15 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                         ra.set_boolean(!in_range);
                         if (in_range) {
-                            // Strict-only engine: failed delete throws (§13.5.1.2 step 5).
-                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of TypedArray index", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
+                            // ES2024 §13.5.5.1 step 5: a failed delete of a valid
+                            // TypedArray integer index throws in strict, returns
+                            // false in sloppy.
+                            bool is_strict_ta = ds.act.func != null
+                                && ((CompiledFunction*)ds.act.func).is_strict();
+                            if (is_strict_ta) {
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of TypedArray index", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
                             }
                         }
                         return (TVal){};
@@ -2683,8 +2694,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                         if (hobj.find_prop_idx(key, ds.vm.heap) >= 0) {
                             ra.set_boolean(false);
-                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
+                            // ES2024 §10.4.6.10: failed [[Delete]] on a module
+                            // namespace throws in strict, returns false in sloppy.
+                            bool is_strict_ns = ds.act.func != null
+                                && ((CompiledFunction*)ds.act.func).is_strict();
+                            if (is_strict_ns) {
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
                             }
                         } else {
                             ra.set_boolean(true);
@@ -2693,9 +2710,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                     if (!hobj.es_delete_prop(key, ds.vm.heap)) {
                         ra.set_boolean(false);
-                        // Strict-only engine: non-configurable delete always throws.
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Delete failed: property is non-configurable", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // ES2024 §13.5.5.1 step 5: failed delete throws in strict,
+                        // returns false in sloppy.
+                        bool is_strict_nc = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (is_strict_nc) {
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Delete failed: property is non-configurable", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                         return (TVal){};
                     } else {
@@ -2735,8 +2757,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         : key.equals("length");
                     if (non_configurable) {
                         ra.set_boolean(false);
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // ES2024 §13.5.5.1 step 5: failed delete throws in strict,
+                        // returns false in sloppy.
+                        bool is_strict_str = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (is_strict_str) {
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                         return (TVal){};
                     }
