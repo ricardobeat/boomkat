@@ -2499,7 +2499,38 @@ fn usz escape_regexp_pattern(char* src, usz slen, char* dst, usz dmax) {
     bool in_class = false;
     for (usz si = 0; si < slen && di + 1 < dmax; si++) {
         char c = src[si];
+        // A raw LineTerminator byte (LF, CR, or the first byte of the UTF-8
+        // encoding of LS/PS U+2028/U+2029) can never appear literally inside
+        // a RegularExpressionLiteral. Checked BEFORE the backslash-escape
+        // case below so a pattern with a backslash immediately followed by
+        // an actual raw LF byte (not the two-character sequence backslash-n)
+        // also gets that raw LF replaced -- this consumes and discards the
+        // now-redundant backslash instead of copying the pair verbatim,
+        // matching ES2022 21.2.3.2.4 which operates on the pattern's
+        // characters directly, with no notion of "already escaped".
+        usz lt_len = regexp_line_terminator_byte_len(src, si, slen);
+        if (lt_len > 0) {
+            usz esc_len = regexp_escape_line_terminator(src, si, dst, di, dmax);
+            if (esc_len == 0) break;
+            di += esc_len;
+            si += lt_len - 1;
+            continue;
+        }
         if (c == '\\' && si + 1 < slen) {
+            // A raw LineTerminator right after the backslash (e.g. the
+            // pattern is a backslash followed by an actual LF byte, not the
+            // two-character sequence backslash-n) still needs replacing --
+            // the leading loop check above only looks at src[si] itself, not
+            // one ahead, so it can't catch this case; check explicitly here
+            // before falling through to the verbatim-copy default.
+            usz next_lt_len = regexp_line_terminator_byte_len(src, si + 1, slen);
+            if (next_lt_len > 0) {
+                usz esc_len = regexp_escape_line_terminator(src, si + 1, dst, di, dmax);
+                if (esc_len == 0) break;
+                di += esc_len;
+                si += next_lt_len;
+                continue;
+            }
             // Copy the escape pair verbatim: keeps an existing `\/` written
             // as `\/`, and prevents an escaped `[`/`]` from being mistaken
             // for a character-class delimiter.
@@ -2522,35 +2553,46 @@ fn usz escape_regexp_pattern(char* src, usz slen, char* dst, usz dmax) {
             if (di + 2 > dmax) break;
             dst[di++] = '\\';
             dst[di++] = '/';
-        } else if (c == '\n') {
-            // ES2022 §21.2.3.2.4: LF → \n (backslash + letter n)
-            if (di + 2 > dmax) break;
-            dst[di++] = '\\';
-            dst[di++] = 'n';
-        } else if (c == '\r') {
-            // ES2022 §21.2.3.2.4: CR → \r (backslash + letter r)
-            if (di + 2 > dmax) break;
-            dst[di++] = '\\';
-            dst[di++] = 'r';
-        } else if (c == 0xE2 && si + 2 < slen && (char)src[si + 1] == 0x80
-                   && ((char)src[si + 2] == 0xA8 || (char)src[si + 2] == 0xA9)) {
-            // LS (U+2028) → \u2028, PS (U+2029) → \u2029. The pattern is
-            // held as UTF-8, so these are the three-byte sequences
-            // E2 80 A8 / E2 80 A9; comparing the single byte `c` against
-            // '\u2028' could never match and left them raw, which made
-            // `source` fail to round-trip through a RegExpLiteral.
-            if (di + 6 > dmax) break;
-            bool is_ps = (char)src[si + 2] == 0xA9;
-            si += 2;
-            dst[di++] = '\\'; dst[di++] = 'u';
-            dst[di++] = '2'; dst[di++] = '0';
-            dst[di++] = '2'; dst[di++] = is_ps ? '9' : '8';
         } else {
             dst[di++] = c;
         }
     }
     dst[di] = 0;
     return di;
+}
+
+// Byte length of the raw LineTerminator starting at src[si]: 1 for LF/CR, 3
+// for the UTF-8 encoding of LS/PS (U+2028/U+2029), 0 if src[si] doesn't
+// start one.
+fn usz regexp_line_terminator_byte_len(char* src, usz si, usz slen) {
+    char c = src[si];
+    if (c == '\n' || c == '\r') return 1;
+    if (c == (char)0xE2 && si + 2 < slen && (char)src[si + 1] == (char)0x80
+        && ((char)src[si + 2] == (char)0xA8 || (char)src[si + 2] == (char)0xA9)) {
+        return 3;
+    }
+    return 0;
+}
+
+// Write the escape for the raw LineTerminator at src[si] into dst[di..]
+// (backslash-n / backslash-r for LF/CR, or a six-character backslash-u
+// escape for LS/PS). Returns the number of bytes written, or 0 if it
+// doesn't fit in dmax (caller should stop encoding).
+fn usz regexp_escape_line_terminator(char* src, usz si, char* dst, usz di, usz dmax) {
+    char c = src[si];
+    if (c == '\n' || c == '\r') {
+        if (di + 2 > dmax) return 0;
+        dst[di] = '\\';
+        dst[di + 1] = (c == '\n') ? 'n' : 'r';
+        return 2;
+    }
+    // LS (U+2028) and PS (U+2029), disambiguated by the third UTF-8 byte.
+    if (di + 6 > dmax) return 0;
+    bool is_ps = (char)src[si + 2] == (char)0xA9;
+    dst[di] = '\\'; dst[di + 1] = 'u';
+    dst[di + 2] = '2'; dst[di + 3] = '0';
+    dst[di + 4] = '2'; dst[di + 5] = is_ps ? '9' : '8';
+    return 6;
 }
 
 // RegExp.prototype.source, ES6 §21.2.5.10
