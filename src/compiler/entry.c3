@@ -54,8 +54,16 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
 
     // Check for "use strict" directive prologue at program level.
     // Scanned strict: the directive is a plain string literal, and nothing
-    // whose lexing differs between the modes can precede it.
+    // whose lexing differs between the two modes can precede it.
     ctx.parse_directives()!;
+
+    // Sync the lexer to ctx.is_strict after the directive prologue so the
+    // statement parse below runs in the right mode. The default is sloppy
+    // (line above); a "use strict" directive raises ctx.is_strict to true
+    // and now the lexer tracks it too. Without this sync, the lexer would
+    // stay sloppy and accept non-octal decimal escapes (`\8`, `\9`) that
+    // ES2017 §12.8.4.1 says are SyntaxErrors in strict code.
+    ctx.lexer.set_strict(ctx.is_strict);
 
     // Dynamic non-strict source stays non-strict unless it opted back in with
     // its own "use strict". The statement parse runs after the rewind below,
