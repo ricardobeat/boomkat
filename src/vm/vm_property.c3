@@ -644,6 +644,24 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             ra.set_fastint((long)h_str.char_length());
                             return (TVal){};
                         }
+                        // A String exotic object's own properties include its
+                        // indices (§10.4.3.1), so a key that is a canonical
+                        // array index resolves to a character before the
+                        // prototype chain is consulted. The numeric-rc fast
+                        // path above misses this when the key arrives already
+                        // interned as a string, as `s["0"]` and destructuring
+                        // patterns do.
+                        uint sidx = key.array_index();
+                        if (sidx != hstring::ARRIDX_NONE
+                                && sidx < str_prim.char_length()) {
+                            uint cp = str_prim.char_at_unchecked(sidx);
+                            char[4] cbuf;
+                            uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
+                            HString* interned = intern_string(vm, cbuf[:cblen]);
+                            if (interned == null) return VM_ERROR~;
+                            vm.heap.set_reg_string(ra, interned);
+                            return (TVal){};
+                        }
                         // Slow path: full [[Get]] on String.prototype chain,
                         // invoking accessor getters with the primitive as this.
                         if (vm.heap.string_proto != null) {
