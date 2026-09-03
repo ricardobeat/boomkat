@@ -322,8 +322,11 @@ struct SetLiveWalk {
 }
 
 // Initializes a live-index walk (ES2025's "Let thisSize be ...; Let index be 0").
+// The bound is the slot count, not the live count: deleting an element leaves
+// a tombstone in place and re-adding it appends past the old bound, so a walk
+// bounded by live elements would stop before reaching the re-added entry.
 fn SetLiveWalk set_live_walk_start(HObject* set) {
-    SetLiveWalk w = { set, 0, set_live_count(set) };
+    SetLiveWalk w = { set, 0, set.array_part() != null ? set.array_used : 0 };
     return w;
 }
 
@@ -349,7 +352,7 @@ fn bool set_live_walk_next(SetLiveWalk* w, TVal* out_elem) {
 // "NOTE: The number of elements in O.[[SetData]] may have increased ...
 // Set thisSize to the number of elements in O.[[SetData]]" step.
 fn void set_live_walk_resample(SetLiveWalk* w) {
-    w.this_size = set_live_count(w.set);
+    w.this_size = w.set.array_part() != null ? w.set.array_used : 0;
 }
 
 // ============================================================================
