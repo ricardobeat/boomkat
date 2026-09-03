@@ -1359,7 +1359,6 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
             bool step_done;
             if (!iterhelper_step_value(ctx, ih.underlying, ih.next_method, &value, &step_done)) {
                 if (step_done) { *out_done = true; return true; }
-                iterhelper_iterator_close(ctx, ih.underlying, true);
                 return false;
             }
             TVal counter_tv; counter_tv.set_fastint((long)ih.counter);
@@ -1384,7 +1383,6 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 bool step_done;
                 if (!iterhelper_step_value(ctx, ih.underlying, ih.next_method, &value, &step_done)) {
                     if (step_done) { *out_done = true; return true; }
-                    iterhelper_iterator_close(ctx, ih.underlying, true);
                     return false;
                 }
                 TVal counter_tv; counter_tv.set_fastint((long)ih.counter);
@@ -1473,7 +1471,6 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 bool step_done;
                 if (!iterhelper_step_value(ctx, ih.underlying, ih.next_method, &value, &step_done)) {
                     if (step_done) { *out_done = true; return true; }
-                    iterhelper_iterator_close(ctx, ih.underlying, true);
                     return false;
                 }
                 TVal counter_tv; counter_tv.set_fastint((long)ih.counter);
