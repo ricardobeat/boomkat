@@ -3000,13 +3000,25 @@ fn void Heap.drain_gray(&self) {
             self.mark_hobject(obj.prototype);
         }
 
-        // Named properties.
+        // Named properties. Marking walks the shape chain leaf-first,
+        // clearing one segment per step, then marks the values by
+        // index. The chain walk is one pass and the value loop is
+        // another, so marking stays linear in the property count.
+        // Reading each key through prop_key_at instead would redo the
+        // walk from the leaf per index, which is quadratic over a deep
+        // chain such as a 70k-property object whose every transition
+        // is its own shape.
         TVal* pv = obj.prop_values();
-        for (uint i = 0; i < obj.prop_count; i++) {
-            HString* key = (HString*)obj.prop_key_at(i, self);
-            if (key != null) {
-                ((HeapHeader*)key).set_reachable();
+        for (hobject::Shape* sh = obj.get_shape(self); sh != null; sh = sh.parent_shape) {
+            hobject::ShapeProperty* sp = sh.props();
+            for (uint j = 0; j < sh.own_count; j++) {
+                HString* key = (HString*)sp[j].key;
+                if (key != null) {
+                    ((HeapHeader*)key).set_reachable();
+                }
             }
+        }
+        for (uint i = 0; i < obj.prop_count; i++) {
             self.mark_tval(&pv[i]);
         }
 
