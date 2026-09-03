@@ -1731,14 +1731,26 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
         ((types::HeapHeader*)first.get_heapptr()).incref();
     }
 
-    // Steps 5-6: loop k=1..len-1, shift elements left
+    // Steps 5-6: loop k=1..len-1, shift elements left. ES2022 §23.1.3.31
+    // step 5.b-d: fromPresent = HasProperty(O, from), THEN only if present,
+    // Get(O, from) -- a Proxy observes these as two separate trap calls
+    // ("has" before "get"), not one combined presence-check-via-Get.
     for (ulong k = 1; k < len; k++) {
-        TVal elem;
-        if (arr_get_elem_vm(obj, k, ctx.heap, ctx, &elem)) {
+        bool from_present = arr_has_prop(obj, k, ctx.heap, ctx.vm);
+        if (ctx.heap.has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = ctx.heap.error_value;
+            ctx.heap.has_error = false;
+            ctx.result.set_undefined(); return;
+        }
+        if (from_present) {
+            TVal elem;
+            if (!arr_get_elem_vm(obj, k, ctx.heap, ctx, &elem)) {
+                elem.set_undefined();
+            }
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
             array_set_elem_ulong(obj, k - 1, elem, ctx.heap, ctx.vm);
-        } else if (ctx.should_throw) {
-            ctx.result.set_undefined(); return;
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         } else {
             // fromPresent is false: delete target slot (k-1)
             arr_delete_elem_strict_or_throw(ctx, obj, k - 1);
