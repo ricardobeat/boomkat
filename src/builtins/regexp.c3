@@ -2486,18 +2486,19 @@ fn usz escape_regexp_pattern(char* src, usz slen, char* dst, usz dmax) {
             if (di + 2 > dmax) break;
             dst[di++] = '\\';
             dst[di++] = 'r';
-        } else if (c == '\u2028') {
-            // LS → \u2028
+        } else if (c == 0xE2 && si + 2 < slen && (char)src[si + 1] == 0x80
+                   && ((char)src[si + 2] == 0xA8 || (char)src[si + 2] == 0xA9)) {
+            // LS (U+2028) → \u2028, PS (U+2029) → \u2029. The pattern is
+            // held as UTF-8, so these are the three-byte sequences
+            // E2 80 A8 / E2 80 A9; comparing the single byte `c` against
+            // '\u2028' could never match and left them raw, which made
+            // `source` fail to round-trip through a RegExpLiteral.
             if (di + 6 > dmax) break;
+            bool is_ps = (char)src[si + 2] == 0xA9;
+            si += 2;
             dst[di++] = '\\'; dst[di++] = 'u';
             dst[di++] = '2'; dst[di++] = '0';
-            dst[di++] = '2'; dst[di++] = '8';
-        } else if (c == '\u2029') {
-            // PS → \u2029
-            if (di + 6 > dmax) break;
-            dst[di++] = '\\'; dst[di++] = 'u';
-            dst[di++] = '2'; dst[di++] = '0';
-            dst[di++] = '2'; dst[di++] = '9';
+            dst[di++] = '2'; dst[di++] = is_ps ? '9' : '8';
         } else {
             dst[di++] = c;
         }
