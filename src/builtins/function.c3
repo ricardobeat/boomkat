@@ -753,7 +753,23 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
 
     // Set up bound function properties
     bound_obj.flags.callable = true;
+    // ES2022 §10.4.1.3 BoundFunctionCreate step 2: proto = ?
+    // target.[[GetPrototypeOf]](), not the fixed Function.prototype --
+    // subclassing Function (`class C extends Function {}`) or setting a
+    // custom .prototype relies on a bound instance keeping the SAME chain
+    // as its target, so `bound instanceof C` still holds. downstream is a
+    // callable, so it's always an object or lightfunc here.
     bound_obj.prototype = ctx.heap.function_proto;
+    if (downstream.is_object() && downstream.get_heapptr() != null) {
+        TVal proto_tv;
+        if (!object_get_proto(ctx.vm, ctx.heap, (HObject*)downstream.get_heapptr(), &proto_tv)) {
+            if (bound_args_arr != null) ctx.heap.free_func(ctx.heap.heap_udata, bound_args_arr);
+            proxy_ctx_ok(ctx);
+            return;
+        }
+        bound_obj.prototype = (proto_tv.is_object() && proto_tv.get_heapptr() != null)
+            ? (HObject*)proto_tv.get_heapptr() : null;
+    }
     (*bound_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.BOUND_CALL.ordinal;
 
     // Also maintain constructable flag if downstream is constructable
