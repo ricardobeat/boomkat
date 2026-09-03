@@ -1255,54 +1255,37 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
         return val;
     }
 
-    // String wrapper: ToString → call toString()
-    if (cls == ObjClass.STRING) {
-        HString* to_str_key = (HString*)jctx.heap.strs[heap::BuiltinStr.TO_STRING];
-        if (to_str_key == null) return val;
-        TVal? toString_fn_opt = obj.get_prop_proto(to_str_key, jctx.heap);
-        if (try toString_fn = toString_fn_opt) {
-            bool callable = false;
-            if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
-                HObject* fn_hobj = (HObject*)toString_fn.get_heapptr();
-                callable = fn_hobj.is_callable();
-            } else if (toString_fn.is_lightfunc()) {
-                callable = true;
-            }
-            if (callable && jctx.heap.call_fn != null && jctx.vm != null) {
-                TVal result = jctx.heap.call_fn(jctx.vm, toString_fn, null, 0, val);
-                if (jctx.heap.has_error) { *had_error = true; return val; }
-                return result;
-            }
+    // §25.5.2 steps 4a/4b: a String wrapper is ToString(value), a Number
+    // wrapper ToNumber(value) — the full abstract operations, so a deleted or
+    // replaced prototype toString/valueOf sends them through the rest of
+    // OrdinaryToPrimitive rather than straight to the internal slot.
+    if (cls == ObjClass.STRING || cls == ObjClass.NUMBER) {
+        if (jctx.vm == null) return val;
+        int hint = cls == ObjClass.STRING ? 1 : 2;
+        TVal prim = vm::to_primitive_value((Vm*)jctx.vm, &val, hint);
+        Vm* vmp = (Vm*)jctx.vm;
+        if (vmp.throw_pending) {
+            // ToPrimitive reports failure via throw_pending; hand it to the
+            // heap error the serializer's callers observe.
+            jctx.heap.tval_copy_ref(&jctx.heap.error_value, &vmp.throw_value);
+            jctx.heap.has_error = true;
+            vmp.throw_pending = false;
+            *had_error = true;
+            return val;
         }
-        // No callable toString, fall back to primitive value
-        if ((*obj.extra_ptr()).prim.primitive_value.is_string()) {
-            return (*obj.extra_ptr()).prim.primitive_value;
+        if (jctx.heap.has_error) { *had_error = true; return val; }
+        if (prim.is_object()) return val;
+        if (cls == ObjClass.NUMBER) {
+            TVal num;
+            builtin_to_number(&prim, &num);
+            if (jctx.heap.has_error) { *had_error = true; return val; }
+            return num;
         }
-        return val;
-    }
-
-    // Number wrapper: ToNumber → call valueOf() first (per ES §9.3 / §15.12.3.4)
-    if (cls == ObjClass.NUMBER) {
-        HString* vo_key = (HString*)jctx.heap.strs[heap::BuiltinStr.VALUE_OF];
-        if (vo_key != null) {
-            TVal? valueOf_fn_opt = obj.get_prop_proto(vo_key, jctx.heap);
-            if (try valueOf_fn = valueOf_fn_opt) {
-                bool callable = false;
-                if (valueOf_fn.is_object() && valueOf_fn.get_heapptr() != null) {
-                    HObject* fn_hobj = (HObject*)valueOf_fn.get_heapptr();
-                    callable = fn_hobj.is_callable();
-                } else if (valueOf_fn.is_lightfunc()) {
-                    callable = true;
-                }
-                if (callable && jctx.heap.call_fn != null && jctx.vm != null) {
-                    TVal result = jctx.heap.call_fn(jctx.vm, valueOf_fn, null, 0, val);
-                    if (jctx.heap.has_error) { *had_error = true; return val; }
-                    return result;
-                }
-            }
-        }
-        // Fallback: primitive value
-        return (*obj.extra_ptr()).prim.primitive_value;
+        HString* s = builtin_to_string(jctx.heap, &prim);
+        if (jctx.heap.has_error || s == null) { *had_error = true; return val; }
+        TVal result;
+        result.set_string(s);
+        return result;
     }
 
     // BigInt wrapper: extract [[BigIntData]] primitive

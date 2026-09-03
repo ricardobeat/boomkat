@@ -733,6 +733,23 @@ fn bool vm_check_call_fn_error(Vm* vm) @inline {
     return false;
 }
 
+// True when `proto`'s own `name` is still the built-in with ordinal
+// `want_ordinal`. Unwrapping a wrapper straight to its internal slot stands in
+// for calling the prototype's valueOf/toString, so it is only equivalent while
+// those are the originals: deleting or replacing one must send ToPrimitive
+// through the rest of OrdinaryToPrimitive instead.
+fn bool wrapper_proto_method_is_original(Heap* hp, HObject* proto, HString* name, int want_ordinal) {
+    if (proto == null || name == null) return false;
+    TVal? val = proto.get_prop(name, hp);
+    if (catch val) return false;
+    TVal v = val;
+    if (v.is_lightfunc()) return (int)(usz)v.get_heapptr() == want_ordinal;
+    if (!v.is_object() || v.get_heapptr() == null) return false;
+    HObject* fn_obj = (HObject*)v.get_heapptr();
+    if (!fn_obj.is_callable()) return false;
+    return (*fn_obj.extra_ptr()).func.builtin_fn_index == want_ordinal;
+}
+
 // ES5 §9.1 ToPrimitive, with hint "string" for + and "number" for arithmetic.
 // Calls Symbol.toPrimitive first (ES6 §7.1.1), then valueOf/toString.
 // Sets vm.throw_pending if both valueOf and toString return non-primitives.
@@ -763,20 +780,37 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                 && obj.has_prop((void*)hp.toprimitive_symbol, vm.heap)) can_fast_unwrap = false;
         }
         if (can_fast_unwrap) {
+            // The prototype methods the fast path stands in for must still be
+            // the originals; OrdinaryToPrimitive tries valueOf then toString
+            // for hint "number" and the reverse for "string", so both matter.
+            HString* vo_name = (HString*)hp.strs[heap::BuiltinStr.VALUE_OF];
+            HString* ts_name = (HString*)hp.strs[heap::BuiltinStr.TO_STRING];
             if (cls == hobject::ObjClass.BOOLEAN &&
-                (*obj.extra_ptr()).prim.primitive_value.is_boolean()) {
+                (*obj.extra_ptr()).prim.primitive_value.is_boolean()
+                && wrapper_proto_method_is_original(hp, hp.bool_proto, vo_name,
+                       (int)builtins::Builtin.BOOLEAN_PROTO_VALUEOF.ordinal)
+                && wrapper_proto_method_is_original(hp, hp.bool_proto, ts_name,
+                       (int)builtins::Builtin.BOOLEAN_PROTO_TOSTRING.ordinal)) {
                 TVal result;
                 result.set_boolean((*obj.extra_ptr()).prim.primitive_value.get_boolean());
                 return result;
             }
             if (cls == hobject::ObjClass.NUMBER &&
-                ((*obj.extra_ptr()).prim.primitive_value.is_number() || (*obj.extra_ptr()).prim.primitive_value.is_fastint())) {
+                ((*obj.extra_ptr()).prim.primitive_value.is_number() || (*obj.extra_ptr()).prim.primitive_value.is_fastint())
+                && wrapper_proto_method_is_original(hp, hp.number_proto, vo_name,
+                       (int)builtins::Builtin.NUMBER_PROTO_VALUEOF.ordinal)
+                && wrapper_proto_method_is_original(hp, hp.number_proto, ts_name,
+                       (int)builtins::Builtin.NUMBER_PROTO_TOSTRING.ordinal)) {
                 TVal result;
                 result.set_number((*obj.extra_ptr()).prim.primitive_value.get_number_or_fastint());
                 return result;
             }
             if (cls == hobject::ObjClass.STRING &&
-                (*obj.extra_ptr()).prim.primitive_value.is_string()) {
+                (*obj.extra_ptr()).prim.primitive_value.is_string()
+                && wrapper_proto_method_is_original(hp, hp.string_proto, vo_name,
+                       (int)builtins::Builtin.STRING_PROTO_VALUEOF.ordinal)
+                && wrapper_proto_method_is_original(hp, hp.string_proto, ts_name,
+                       (int)builtins::Builtin.STRING_PROTO_TOSTRING.ordinal)) {
                 TVal result;
                 result.set_string((*obj.extra_ptr()).prim.primitive_value.get_heapptr());
                 return result;
