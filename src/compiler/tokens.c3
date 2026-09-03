@@ -83,6 +83,7 @@ fn Token? CompilerContext.advance(&self, bool as_ident_name = false) {
         self.pushback_count--;
         return self.pushback_stack[self.pushback_count];
     }
+    self.sync_keyword_operand_flags();
     Token? tok_opt = self.lexer.next_token();
     if (catch _err = tok_opt) {
         self.record_lex_error();
@@ -192,6 +193,24 @@ fn bool CompilerContext.await_is_identifier(&self, TokenType tt) {
 // reservation as its `in_async_or_module` argument, so those call sites pass
 // this instead of respelling the three flags — the by-name and by-token-type
 // answers cannot then drift apart.
+// Push the [Await] / [Yield] grammar parameters down to the lexer, which
+// needs them to tell an AwaitExpression / YieldExpression from an ordinary
+// identifier when deciding whether a following `/` is division or starts a
+// RegExp literal (see Lexer.await_is_operator). Called immediately before
+// every lex so the flags always describe the context doing the lexing --
+// the lexer is shared across nested CompilerContexts, so a value set once at
+// context creation would go stale.
+//
+// `await` is the operator exactly where it is reserved AND an AwaitExpression
+// is actually available: inside a class static block or an async function's
+// parameter defaults `await` is reserved (so not an identifier) but the
+// production is unavailable, and those parse paths reject it outright, so
+// treating `/` as regexp-starting there matches how the parser then fails.
+fn void CompilerContext.sync_keyword_operand_flags(&self) {
+    self.lexer.await_is_operator = self.await_reserved_here();
+    self.lexer.yield_is_operator = self.is_generator || self.forbid_yield;
+}
+
 fn bool CompilerContext.await_reserved_here(&self) {
     // `module_goal`, not `is_module`: the [Await] parameter is set throughout
     // module code, including inside a nested plain function or a class field
@@ -266,6 +285,7 @@ fn Token? CompilerContext.peek(&self) {
     if (self.pushback_count > 0) {
         return self.pushback_stack[self.pushback_count - 1];
     }
+    self.sync_keyword_operand_flags();
     return self.lexer.peek();
 }
 

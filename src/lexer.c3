@@ -479,6 +479,18 @@ struct Lexer {
     // class body in statement position; makes the next `/` a RegExp literal
     // (not division). Cleared by the next `next_token()`.
     bool force_regex_after_brace;
+    // The [Await] / [Yield] grammar parameters, kept in sync by the parser
+    // (see CompilerContext.sync_keyword_operand_flags). They decide whether
+    // AWAIT / YIELD is the start of an AwaitExpression / YieldExpression or
+    // an ordinary IdentifierName, which in turn decides whether a following
+    // `/` is division or begins a RegExp literal:
+    //     await /re/          -- [+Await], `await` is the operator, `/` starts a regexp
+    //     o.await / r / g     -- a property name, `/` is division
+    //     var await = 8; await/r/g   -- [~Await], an identifier, `/` is division
+    // Only the lexer's caller knows which, so prev_was_operand cannot decide
+    // it from the token stream alone.
+    bool await_is_operator;
+    bool yield_is_operator;
     // True when, since the start of source or the most recent real line
     // terminator, only whitespace and/or comments have been produced (i.e.
     // no real token has appeared yet on the current line). Persists across
@@ -2402,6 +2414,18 @@ fn bool Lexer.prev_was_operand(&self) {
         case TokenType.INC:
         case TokenType.DEC:
             return true;
+        // `let` and `static` are contextual keywords that never begin a
+        // unary expression, so they always end an operand for `/` purposes:
+        // `o.let / r / g` and `o.static / r / g` are division.
+        case TokenType.LET:
+        case TokenType.STATIC:
+            return true;
+        // `await` / `yield` end an operand only where they are ordinary
+        // identifiers rather than expression operators.
+        case TokenType.AWAIT:
+            return !self.await_is_operator;
+        case TokenType.YIELD:
+            return !self.yield_is_operator;
         default:
             return false;
     }
