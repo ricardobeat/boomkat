@@ -888,7 +888,9 @@ fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
     if (catch wrapped) return null;
     HObject* obj = wrapped;
     HObject* wrap_proto = heap.string_proto;
-    if (value.is_string()) {
+    if (is_symbol_val(value)) {
+        wrap_proto = heap.symbol_proto;
+    } else if (value.is_string()) {
         // Retained so String.prototype methods relying on the primitive
         // (e.g. the @@iterator returned here) see the right value.
         (*obj.extra_ptr()).prim.primitive_value = value;

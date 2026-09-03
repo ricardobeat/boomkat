@@ -2980,7 +2980,21 @@ fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
     HObject* iter_obj = (HObject*)iterator.get_heapptr();
     HString* return_key = builtin_intern_string(ctx.heap, "return");
     if (return_key == null) return;
-    TVal? return_method_opt = iter_obj.get_prop_proto(return_key, ctx.heap);
+    // The caller always enters here with ctx.should_throw already set to the
+    // original abrupt completion being propagated; save/restore it around
+    // this nested get so a throw from the "return" getter itself (below)
+    // doesn't clobber that original exception.
+    bool orig_should_throw = ctx.should_throw;
+    TVal orig_throw_value = ctx.throw_value;
+    ctx.should_throw = false;
+    // Use builtins_generic_get, not get_prop_proto (which bypasses accessor
+    // getters entirely): an accessor "return" property must have its getter
+    // invoked here too, ES2022 §7.4.8 IteratorClose calls GetMethod, and a
+    // throw from the getter itself is swallowed the same as a throw from
+    // return() (the original abrupt completion in ctx takes precedence).
+    TVal? return_method_opt = builtins_generic_get(iter_obj, return_key, ctx);
+    ctx.should_throw = orig_should_throw;
+    ctx.throw_value = orig_throw_value;
     if (try return_method = return_method_opt) {
         if (return_method.is_undefined() || return_method.is_null()) return;
         if (!arr_from_is_callable(return_method)) return;
@@ -3112,8 +3126,27 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
         return true;
     }
 
+    // find_accessor_proto reports found=false for an inherited data property
+    // too, so a non-writable "length" on a custom constructor's .prototype
+    // must be re-checked here before falling through to CreateDataProperty.
+    if (HObject* proto = obj.prototype) {
+        int pidx = proto.find_prop_idx(len_key, ctx.heap);
+        if (pidx >= 0) {
+            hobject::PropFlags pflags = proto.get_prop_flags((uint)pidx, ctx.heap);
+            if (!pflags.is_accessor && !pflags.writable) {
+                arr_throw_type_error(ctx, "Cannot assign to read-only property 'length'");
+                return false;
+            }
+        }
+    }
+
     // No accessor anywhere on the chain (no own property or inherited data
-    // property), define as a new own data property on obj.
+    // property), define as a new own data property on obj. Set()'s
+    // OrdinarySet CreateDataProperty step requires obj to be extensible.
+    if (!obj.is_extensible()) {
+        arr_throw_type_error(ctx, "Cannot add property length, object is not extensible");
+        return false;
+    }
     if (!obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap)) {
         arr_throw_type_error(ctx, "Cannot set property length, no space left");
         return false;
@@ -3169,13 +3202,16 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         HObject* items_obj = to_object_for_lookup(heap, items);
 
         if (items_obj != null) {
-            TVal? iter_method_opt = builtins_generic_get(items_obj, iter_sym, ctx);
+            // GetV(items, @@iterator): the getter's `this` must be the
+            // ORIGINAL items value, not the throwaway wrapper object built
+            // by to_object_for_lookup for a primitive (e.g. a user-defined
+            // Boolean.prototype[Symbol.iterator] getter observing
+            // `typeof this === "boolean"`).
+            TVal im = iterhelper_getv(ctx, items_obj, (void*)iter_sym, items);
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            if (try im = iter_method_opt) {
-                if (!im.is_undefined() && !im.is_null()) {
-                    iter_method = im;
-                    have_iter_method = true;
-                }
+            if (!im.is_undefined() && !im.is_null()) {
+                iter_method = im;
+                have_iter_method = true;
             }
         }
     }
@@ -3193,7 +3229,8 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         // This runs BEFORE GetIterator (6.d) per spec order, a throwing
         // constructor must propagate without ever creating the iterator.
         HObject* arr = null;
-        if (c_val.is_object() && c_val.get_heapptr() != null && arr_from_is_callable(c_val)) {
+        if (c_val.is_object() && c_val.get_heapptr() != null
+            && ((HObject*)c_val.get_heapptr()).is_callable() && ((HObject*)c_val.get_heapptr()).is_constructable()) {
             TVal ctor_result = heap.construct_fn(ctx.vm, c_val, null, 0, c_val);
             if (ctx.heap.has_error) {
                 ctx.should_throw = true;
@@ -3290,10 +3327,13 @@ fn void builtin_array_from(BuiltinContext* ctx) {
                 return;
             }
 
-            // g.v-vi: nextValue = IteratorValue(next); ReturnIfAbrupt.
+            // g.v-vi: nextValue = IteratorValue(next); ReturnIfAbrupt. Per
+            // spec this ReturnIfAbrupt does NOT go through IteratorClose (the
+            // close only starts once inside the map/CreateDataProperty steps
+            // that follow, ES2017 draft 22.1.2.1 step 5.e.v.), unlike the
+            // other abrupt completions in this loop.
             TVal? value_opt = builtins_generic_get(result_obj, value_key, ctx);
             if (ctx.should_throw) {
-                arr_iterator_close_after_throw(ctx, iterator);
                 ctx.result.set_undefined();
                 return;
             }
@@ -3377,7 +3417,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     // 12. If IsConstructor(C) is true, let A be Construct(C, «len»); else
     //     let A be ArrayCreate(len).
     HObject* arr = null;
-    if (c_val.is_object() && c_val.get_heapptr() != null && arr_from_is_callable(c_val)) {
+    if (c_val.is_object() && c_val.get_heapptr() != null && ((HObject*)c_val.get_heapptr()).is_callable() && ((HObject*)c_val.get_heapptr()).is_constructable()) {
         TVal len_arg;
         if (len <= 0x7FFFFFFF) {
             len_arg.set_fastint((long)len);
