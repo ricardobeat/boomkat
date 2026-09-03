@@ -559,12 +559,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
     if (ctx.argc > 1) {
         double r = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
         if (ctx.should_throw) return;
-        // ToInt32 modular wrap.
-        if (math::is_nan(r) || math::is_inf(r)) {
-            radix = 0;
-        } else {
-            radix = (int)(long)r;  // truncated; large values wrap harmlessly below
-        }
+        radix = (int)double_to_int32(r);
     }
 
     char* cstr = h.get_cstr();
@@ -631,8 +626,10 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
     }
     value *= (double)sign;
     // Emit a fastint only within its 48-bit payload range; larger exact
-    // integers must go through set_number to avoid truncation.
-    if (value >= (double)types::FASTINT_MIN && value <= (double)types::FASTINT_MAX
+    // integers must go through set_number to avoid truncation, and so must
+    // -0, whose sign a fastint cannot carry (step 17 returns -0 for "-0").
+    if (!(value == 0.0 && sign < 0)
+            && value >= (double)types::FASTINT_MIN && value <= (double)types::FASTINT_MAX
             && value == (double)(long)value) {
         ctx.result.set_fastint((long)value);
     } else {
