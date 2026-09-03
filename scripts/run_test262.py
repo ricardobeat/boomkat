@@ -559,15 +559,23 @@ def skip_reason(path, es5_only=False):
         return "cross-realm ($262.createRealm) — single-realm engine"
     if es5_only and ANY_FEATURES_PATTERN.search(header):
         return "ES5-only mode: post-ES5 feature flag"
-    # Strict-only engine: noStrict tests are intentionally unsupported —
-    # they exercise non-strict language features (octals, with, duplicate
-    # params, etc.) which the engine now rejects at parse time. The
-    # NOSTRICT_RUN_GLOBS families assert mode-independent behavior and pass
-    # under the strict-only engine, so they are exempt.
+    # Phase 3 (plans/083): the noStrict skip stays in place while the sloppy
+    # parser/runtime stabilises. Phase 2 turned on sloppy parsing for the
+    # shape changes (legacy octal literals, with stub, call/apply this
+    # coercion, implicit globals, etc.), and Phase 3 widened the lexer to
+    # track ctx.is_strict per compile unit, but several large surface areas
+    # are still strict-only -- notably mapped-arguments for sloppy
+    # functions (Phase 3.1 in plans/083 §3), Annex B.3.3 function-in-block
+    # sloppy-hoist (3.2), and the more delicate eval-with-parameter-
+    # collisions cases -- so flipping FLAG_NOSTRICT_RE wholesale turned a
+    # 22038/1/1687 suite into 22714/365/130 + 130 spurious parse errors.
+    # Each cluster of failures maps to one of the deferred phase-3 items;
+    # unskip step by step as those items land. NOSTRICT_RUN_GLOBS keeps
+    # running those mode-independent tests regardless.
     if FLAG_NOSTRICT_RE.search(header) and not any(
         fnmatch.fnmatch(rel, pat) for pat in NOSTRICT_RUN_GLOBS
     ):
-        return "noStrict (strict-only engine)"
+        return "noStrict (strict-only engine — re-enable per Phase 3 sub-step)"
     # CanBlockIsFalse tests assume Atomics.wait throws because the agent cannot
     # suspend. This engine's single main agent has AgentCanSuspend = true (like
     # QuickJS/V8's shell), so wait returns "timed-out"/"not-equal" instead —
