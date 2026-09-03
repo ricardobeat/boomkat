@@ -266,11 +266,26 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
         // extract time. (No destructuring on the key itself.)
         if (self.check(TokenType.LBRACKET)) {
             self.advance()!; // consume '['
-            // Evaluate the computed key expression NOW into a persistent
-            // register; the emitter reads the property via GETPROP with this
-            // register. (Matches the pre-consolidation for-of behavior of
-            // evaluating the key once at pattern-collection time.)
-            ushort ck_reg = self.assignment_expr()!;
+            // The key is evaluated in pattern order at extract time, so a key
+            // may read a binding an earlier element of the same pattern just
+            // introduced (`{[5]: x, [x]: y}`). Defer via lexer snapshot and
+            // re-parse at emission, discarding the code and registers this
+            // parse produces; emit_deferred_computed_key replays it at the
+            // point of use.
+            DeferredTarget* ck_snap = (DeferredTarget*)alloc::malloc_try(mem, (sz)(DeferredTarget::size)) ?? null;
+            ck_snap.lexer = *self.lexer;
+            ck_snap.pushback = self.pushback_stack;
+            ck_snap.pushback_count = self.pushback_count;
+            uint ck_pre_code = self.code_count;
+            ushort ck_pre_reg = self.next_reg;
+            ushort? ck_res = self.assignment_expr();
+            if (catch err = ck_res) {
+                mem::free(ck_snap);
+                return err~;
+            }
+            self.code_count = ck_pre_code;
+            self.free_regs_to(ck_pre_reg);
+            ushort ck_reg = 0xFFFF;
             self.expect(TokenType.RBRACKET)!;
             self.expect(TokenType.COLON)!;
 
@@ -280,11 +295,14 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 if (*count < binds.len) {
                     binds[*count].is_computed_key = true;
                     binds[*count].computed_key_reg = ck_reg;
+                    binds[*count].deferred_computed_key = ck_snap;
                     binds[*count].is_object = true;
                     binds[*count].arg_idx = src_reg;
                     binds[*count].parent_idx = parent_idx;
                     binds[*count].is_synthetic = true;
                     (*count)++;
+                } else {
+                    mem::free(ck_snap);
                 }
                 ushort synth_idx = (ushort)(*count - 1);
                 outer_synth_idx = synth_idx;
@@ -312,6 +330,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                     binds[*count].name_idx = self.add_string_constant(bind.str_value);
                     binds[*count].is_computed_key = true;
                     binds[*count].computed_key_reg = ck_reg;
+                    binds[*count].deferred_computed_key = ck_snap;
                     binds[*count].is_object = true;
                     binds[*count].arg_idx = src_reg;
                     binds[*count].parent_idx = parent_idx;
@@ -321,6 +340,8 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                             self.add_inner_func(self.compile_default_expr(bind.str_value)!);
                     }
                     (*count)++;
+                } else {
+                    mem::free(ck_snap);
                 }
                 last_was_synth = false;
             }
