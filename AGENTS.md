@@ -17,12 +17,24 @@ A C3-native JavaScript engine. **Goal**: pass 100% of the targeted test262 subse
 
 This branch (`sloppy-mode`) is adding sloppy-mode execution as a peer to strict mode. Follow `plans/083-sloppy-mode.md` for the phased plan.
 
-**Current state of the source on disk** (phases 0 and 1 have landed):
-- `FuncFlags.is_strict` bit 7, plumbed through `CompilerContext.is_strict` (default `false` at compile time now), stamped in `finish()`. The legacy `Lexer.strict_mode` and `Lexer.reserved_words_strict` flags are still separate (one for octal rules, one for keyword reservation). `subst_global_this` is the only runtime knob that still encodes strictness; it stays until phase 2 generalizes the predicate to `!is_strict && !is_arrow`.
+**Current state of the source on disk** (phases 0, 1, and 2 have landed):
+- `FuncFlags.is_strict` bit 7, plumbed through `CompilerContext.is_strict`. The legacy `Lexer.strict_mode` and `Lexer.reserved_words_strict` flags still exist (one for octal rules, one for keyword reservation). `subst_global_this` is gone — the predicate is `!is_strict() && !is_arrow()` at every call / construct / generator-create site.
 - Top-level scripts default to sloppy (ES2024 §16.2.1.1); modules stay strict; ordinary functions and dynamic `Function` / `GeneratorFunction` / `AsyncFunction` bodies default to sloppy; class bodies stay strict (ES2024 §15.4.1).
 - `"use strict"` is parsed and raises `is_strict = true`.
 - Phase 1 parser gates: `with`, legacy octal literals and octal escapes, `delete <id>`, `for (var x = 1 in y)`, plain duplicate params (Annex B.3.1), duplicate `__proto__:` keys (Annex B.3.1) all accepted in sloppy. The VM stubs `with` to throw SyntaxError at runtime (phase 4 implements semantics); everything else works end-to-end.
 - Phase 1 still strict (unconditional): class method / object method / arrow / named-export param duplicates (UniqueFormalParameters, no Annex B exemption), catch / lexical ForDeclaration duplicate BoundNames, `eval` / `arguments` as binding identifiers.
+- Phase 2 runtime semantics:
+  - **Implicit globals**: `PUTVAR_ASSIGN`, `PUTGLOBAL`, and the `RESOLVEVAR`/`THROW_UNRESOLVED` pair create a configurable own property on the global object in sloppy, throw ReferenceError in strict.
+  - **`this` substitution**: a non-arrow call's null / undefined `thisArg` coerces to globalThis iff the callee is sloppy. Predicate: `!target.is_strict()` with `!is_arrow()` already guaranteed by the surrounding branches.
+  - **DELPROP silent failure**: a failed `delete x[y]` (non-configurable own, proxy trap returned falsish, TypedArray integer index, module-namespace export) throws TypeError in strict, returns `false` in sloppy. Writes (`f.caller = …`) are still unconditional SyntaxErrors per Annex B.3.5.
+  - **DELVAR**: `delete x` walks the lex chain; BC == 0 (local register like a parameter) → false in sloppy, ReferenceError in strict; BC != 0 (name constant) → unresolvable is true in sloppy / ReferenceError in strict, present binding is false (Annex B.3.2).
+  - **Poison pill**: `arguments.callee` throws TypeError in strict and returns `ds.act.tv_func` in sloppy (a new field on `Activation` that every CALL/CLOSURE path populates). `f.caller` / `f.arguments` are read-throws for strict, bound, class, arrow, and generator targets (the strict-or-special-function rule per ES2017 §15.3.5.4) and return null for ordinary sloppy.
+  - **`make_default_constructor`**: the implicit class ctor now stamps `is_strict = true`, matching ES2015 §14.5.14 step 22.
+
+Phase 2 scope deferred to later phases:
+  - `with` semantics (Phase 4 — opcodes `WITH_START`/`WITH_END` exist as stubs).
+  - ToObject-wrap of primitive `thisArg` for sloppy `Function.prototype.call` / `.apply` (Phase 3 — `S15.3.4.3_A5_T1.js`-style F1 SKIP_FILES stay skipped).
+  - Two-way `arguments` ↔ parameter mapping for sloppy (Phase 3).
 
 **What not to write:**
 - Do not add new strict-only parse rejections.
