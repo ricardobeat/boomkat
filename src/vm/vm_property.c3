@@ -934,6 +934,21 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 ra.set_fastint((long)h_str.char_length());
                                 return (TVal){};
                             }
+                            // A String exotic's own properties include its indices
+                            // (§10.4.3.1), so a canonical array index resolves to a
+                            // character before the prototype chain. The constant key
+                            // arrives interned, which the numeric fast path misses:
+                            // `{0: c} = "x"` compiles to this opcode.
+                            uint cidx = key_hstr.array_index();
+                            if (cidx != hstring::ARRIDX_NONE && cidx < h_str.char_length()) {
+                                uint ccp = h_str.char_at_unchecked(cidx);
+                                char[4] cbuf;
+                                uint cblen = hstring::encode_codepoint(ccp, cbuf[:4]);
+                                HString* cinterned = intern_string(vm, cbuf[:cblen]);
+                                if (cinterned == null) return VM_ERROR~;
+                                vm.heap.set_reg_string(ra, cinterned);
+                                return (TVal){};
+                            }
                             if (vm.heap.string_proto != null) {
                                 primitive_getprop(vm, ds, rb, vm.heap.string_proto, key_hstr, ra, (uint)insn.a);
                                 if (vm.has_error) return VM_ERROR~;
