@@ -300,14 +300,33 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         return;
     }
 
-    // Strict-only engine: thisArg is passed through unchanged (ES5 §15.3.4.4
-    // entry 1 applies only to sloppy callees, no global substitution, no
-    // primitive boxing; the callee's own ToObject coercion throws as needed).
     TVal new_this;
     if (ctx.argc > 0) {
         new_this = builtin_arg(ctx, 0);
     } else {
         new_this.set_undefined();
+    }
+
+    // Phase 3 (plans/083): sloppy callees get ES5 §10.4.3 treatment — undefined/null
+    // thisArg substitutes to globalThis, primitive thisArg ToObject-wraps. Strict
+    // callees and builtins/lightfuncs pass `thisArg` through as-is.
+    if (!new_this.is_object() && downstream.is_object()) {
+        HObject* dhobj = (HObject*)downstream.get_heapptr();
+        if (dhobj != null && dhobj.callable_kind() == hobject::CallableKind.COMPILED_FN
+            && (*dhobj.extra_ptr()).func.comp_func != null
+            && !(*dhobj.extra_ptr()).func.comp_func.is_strict()) {
+            if (new_this.is_undefined() || new_this.is_null()) {
+                Vm* vm = (Vm*)ctx.vm;
+                if (vm != null && vm.global_env != null && vm.global_env.bindings != null) {
+                    new_this.set_object(vm.global_env.bindings);
+                }
+            } else if (!new_this.is_lightfunc()) {
+                if (!builtins::builtin_to_object(ctx, new_this)) {
+                    return;
+                }
+                new_this = *ctx.result;
+            }
+        }
     }
 
     // Number of remaining args after thisArg
@@ -412,6 +431,28 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
 // `target` must already be callable. `this_arg` and `arg_array` are the
 // receiver and arguments-list values respectively.
 fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_array) {
+    // Phase 3 (plans/083): sloppy callees get ES5 §10.4.3 treatment — undefined/null
+    // this_arg substitutes to globalThis, primitive this_arg ToObject-wraps. Strict
+    // callees and builtins/lightfuncs pass through unchanged.
+    if (!this_arg.is_object() && target.is_object()) {
+        HObject* tobj = (HObject*)target.get_heapptr();
+        if (tobj != null && tobj.callable_kind() == hobject::CallableKind.COMPILED_FN
+            && (*tobj.extra_ptr()).func.comp_func != null
+            && !(*tobj.extra_ptr()).func.comp_func.is_strict()) {
+            if (this_arg.is_undefined() || this_arg.is_null()) {
+                Vm* gvm = (Vm*)ctx.vm;
+                if (gvm != null && gvm.global_env != null && gvm.global_env.bindings != null) {
+                    this_arg.set_object(gvm.global_env.bindings);
+                }
+            } else if (!this_arg.is_lightfunc()) {
+                if (!builtins::builtin_to_object(ctx, this_arg)) {
+                    return;
+                }
+                this_arg = *ctx.result;
+            }
+        }
+    }
+
     // If argArray is undefined or null, call with no args.
     bool has_array = true;
     if (arg_array.is_undefined() || arg_array.is_null()) {

@@ -327,15 +327,12 @@ SKIP_FILES = {
     # cannot both hold for any conformant [[Get]] / [[HasProperty]] implementation.
     # F1 — Function.prototype.apply/call ES5 §10.4.3 sloppy `this` substitution
     # (undefined/null thisArg -> global object; primitives -> ToObject wrapper).
-    # The substitution half is in via `!target.is_strict()`; the primitive-boxing
-    # half needs ToObject wrappers around number/boolean receivers, which is
-    # Phase 3 (plans/083 §3 step 4) work. Phase 2 keeps these skipped and lets
-    # test262 surface the limit, rather than letting the runtime pass primitives
-    # straight through and write to the caller's number/boolean variable.
-    "built-ins/Function/prototype/apply/S15.3.4.3_A5_T1.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A5_T2.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A5_T1.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A5_T2.js",
+    # Implemented at the top of builtin_function_proto_call and apply_call in
+    # src/builtins/function.c3 (plans/083 phase 3): both transform thisArg via
+    # ToObject only when the target is a COMPILED_FN whose CompiledFunction is
+    # sloppy, leaving strict callees and BUILTIN_FN/LIGHTFUNC dispatch paths
+    # untouched (the strict callee path passes the primitive straight through,
+    # preserving pre-phase-3 semantics).
     # BigInt64Array/BigUint64Array constructors — BigInt is out of scope
     # (see the built-ins/BigInt SKIP_DIRS entry); this test doesn't tag
     # `features: [BigInt]` so the feature filter above doesn't catch it.
