@@ -1548,27 +1548,26 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             }
 
             // The field initializer value: assigned via `=` (or undefined).
-            // ES2022 §15.7.10 step 7: an anonymous function definition
-            // initializer gets SetFunctionName with the field name, the
-            // *literal* key for static-name fields, the *value* (always the
-            // empty string for computed keys) for computed fields. We pass
-            // the literal name for both; the only observable difference is
-            // that empty-named function names come out empty (matching §B.3.4
-            // step 1.a which says `let key = ? evaluation of PropertyName;`
-            // for computed keys, and PropertyName evaluation of `[expr]` is
-            // the empty string per §12.2.6.9). ToPropertyKey on the key in
-            // step 8.b does not feed the function name.
+            // §15.7.10 step 7 runs NamedEvaluation on an anonymous function
+            // definition initializer with the field name. For a static key
+            // that name is known now and is baked into the compiled function.
+            // A computed key is only known at runtime, so the flag is set with
+            // an *empty* name: an anonymous function/arrow/class/generator
+            // expression still consumes and clears it (compiling with an empty
+            // name, patched by INITPROPN once the key exists), while anything
+            // else leaves it set, which is the signal below for choosing
+            // INITPROPN over INITPROP. Same scheme as object literals.
             bool use_inferred = !has_computed_key;
-            if (use_inferred) {
-                target_ctx.has_inferred_name = true;
-                if (field_propname.len < 128) {
-                    for (usz i = 0; i < field_propname.len; i++) {
-                        target_ctx.inferred_name_buf[i] = field_propname[i];
-                    }
-                    target_ctx.inferred_name_len = (ushort)field_propname.len;
-                } else {
-                    target_ctx.inferred_name_len = 0;
+            target_ctx.has_inferred_name = true;
+            if (!use_inferred) {
+                target_ctx.inferred_name_len = 0;
+            } else if (field_propname.len < 128) {
+                for (usz i = 0; i < field_propname.len; i++) {
+                    target_ctx.inferred_name_buf[i] = field_propname[i];
                 }
+                target_ctx.inferred_name_len = (ushort)field_propname.len;
+            } else {
+                target_ctx.inferred_name_len = 0;
             }
 
             ushort init_reg;
@@ -1586,10 +1585,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 target_ctx.emit_abc(Opcode.LDUNDEF, (uint)init_reg, 0, 0);
             }
 
-            if (use_inferred) {
-                target_ctx.has_inferred_name = false;
-                target_ctx.inferred_name_len = 0;
-            }
+            // A cleared flag means the initializer was an anonymous function
+            // definition and consumed the name; for a computed key that name
+            // was empty, so the install must patch it from the runtime key.
+            bool computed_init_is_anon_fn = has_computed_key && !target_ctx.has_inferred_name;
+            target_ctx.has_inferred_name = false;
+            target_ctx.inferred_name_len = 0;
 
             // Field terminator: explicit `;`, the class body's `}`, or ASI at
             // a line terminator (ES2024 §12.10.1). A same-line token with no
@@ -1625,7 +1626,9 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // coercion through a later GETPROP. Symmetric with object-literal
             // emission.
             target_ctx.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
-            target_ctx.emit_abc(Opcode.INITPROP, (uint)this_reg, (uint)key_reg, (uint)init_reg);
+            target_ctx.emit_abc(
+                computed_init_is_anon_fn ? Opcode.INITPROPN : Opcode.INITPROP,
+                (uint)this_reg, (uint)key_reg, (uint)init_reg);
             target_ctx.free_reg(key_reg);
             target_ctx.free_reg(this_reg);
             target_ctx.free_reg(init_reg);
