@@ -5321,7 +5321,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                             // like a plain key, so `({ get break(){} })`
                             // names the accessor rather than being rejected.
                             prop_tok = self.advance(true)!;
-                        } else if (prop_tt == TokenType.NUMBER) {
+                        } else if (prop_tt == TokenType.NUMBER || prop_tt == TokenType.BIGINT) {
                             prop_tok = self.advance()!;
                         } else {
                             return COMPILE_ERROR~;
@@ -5331,11 +5331,19 @@ fn ushort? CompilerContext.object_literal(&self) {
                         uint prop_key_idx;
                         if (prop_tt == TokenType.NUMBER) {
                             prop_key_idx = self.add_number_constant(prop_tok.num_value);
+                        } else if (prop_tt == TokenType.BIGINT) {
+                            prop_key_idx = self.add_bigint_constant(prop_tok.str_value)!;
                         } else {
                             prop_key_idx = self.add_string_constant(prop_tok.str_value);
                         }
                         key_reg = self.alloc_reg();
                         self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, prop_key_idx);
+                        if (prop_tt == TokenType.BIGINT) {
+                            // Same as the data-property BigInt key below: the
+                            // name is ToString(NumericValue), coerced through
+                            // the shared TOPROPKEY path rather than here.
+                            self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
+                        }
 
                         // ES2015 §14.3: getter/setter names are prefixed with
                         // "get " or "set " so `o = { get foo() {} }; o.foo.name === "get foo"`.

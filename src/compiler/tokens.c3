@@ -713,6 +713,7 @@ fn bool CompilerContext.match_async_method_prefix(&self) {
     bool starts_name = next_tok.type == TokenType.IDENTIFIER
         || next_tok.type == TokenType.STRING
         || next_tok.type == TokenType.NUMBER
+        || next_tok.type == TokenType.BIGINT
         || next_tok.type == TokenType.LBRACKET
         || next_tok.type == TokenType.STAR
         || next_tok.type == TokenType.HASH_IDENT
@@ -807,6 +808,7 @@ fn bool? CompilerContext.match_static_modifier(&self) {
     bool starts_name = next_tok.type == TokenType.IDENTIFIER
         || next_tok.type == TokenType.STRING
         || next_tok.type == TokenType.NUMBER
+        || next_tok.type == TokenType.BIGINT
         || next_tok.type == TokenType.LBRACKET
         || next_tok.type == TokenType.STAR
         || next_tok.type == TokenType.HASH_IDENT
