@@ -35,7 +35,9 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 - ESM: `import`, `export`, namespace objects, dynamic `import()`, import
   attributes (`with { type: "json" }`)
 - Iterator helpers (`Iterator.prototype.map`/`filter`/`take`/`drop`/...)
-- `BigInt`, as fixed-width int128 rather than arbitrary precision
+- `BigInt`, arbitrary precision (a 32-bit limb vector; the only ceiling is
+  `BIGINT_MAX_LIMBS`, ~2 billion bits, which turns a runaway expression into a
+  RangeError instead of exhausting memory)
 
 ## Deliberately out of scope
 
@@ -66,14 +68,10 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   the whole directory being excluded. `CanBlockIsFalse` tests are skipped for the
   opposite reason: this engine's single agent can suspend.
 - **Proper tail calls.** Not implemented.
-- **Arbitrary-precision BigInt.** Limb-vector BigInt with `BIGINT_MAX_LIMBS =
-  1 << 26` at `src/hbigint.c3:33`. The few `bigint-and-number-extremes` tests
-  that need a larger literal stay skip-listed.
 
 ## Two notes for anyone editing the skip list
 
 A skip is a claim that behavior is out of scope. It is not a place to park a
 bug: an in-scope test that fails is a real bug, not a `SKIP_FILES` entry.
 
-When you implement something, remove its skip in the same change. A skip entry
-that outlives its feature makes the engine look smaller than it is.
+When you implement something, remove its skip in the same change.

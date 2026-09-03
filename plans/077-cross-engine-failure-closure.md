@@ -69,7 +69,11 @@ Symptom clustering, from the run above:
 | 3 | `VM error: vm::VM_ERROR (at execute)` | B6 |
 | 4 | `Cannot create property 'touched' on number/boolean` | B5 |
 
-### B1. Arbitrary-precision BigInt — 21 tests, out of scope
+### B1. Arbitrary-precision BigInt — 21 tests, ~~out of scope~~ **DONE**
+
+> **Superseded.** BigInt was later reimplemented as an arbitrary-precision limb
+> vector (`src/hbigint.c3`, `BIGINT_MAX_LIMBS = 1 << 26`), so the premise below
+> no longer holds. All 21 tests pass and their skip entries have been removed.
 
 Every one of these is a literal beyond 2^127, rejected at parse time. Plan 056 chose
 fixed-width int128 deliberately; closing these means a real bignum backend. **Not

@@ -117,7 +117,7 @@ const ulong NANBOX_PAYLOAD_MASK = 0x0000FFFFFFFFFFFF;  // bits 47-0
 // stored in bits 63-48, matching Duktape's encoding. All doubles must
 // have bits 63-48 <= 0xFFF0 (achieved by NaN normalization in set_number).
 const ulong TAG_FASTINT    = 0xFFF1;  // embed: 48-bit signed integer
-const ulong TAG_BIGINT     = 0xFFF2;  // embed: HBigInt* ptr (int128 box)
+const ulong TAG_BIGINT     = 0xFFF2;  // embed: HBigInt* ptr (limb-vector box)
 const ulong TAG_UNDEFINED  = 0xFFF3;  // embed: nothing
 const ulong TAG_NULL_VAL   = 0xFFF4;  // embed: nothing
 const ulong TAG_BOOLEAN    = 0xFFF5;  // embed: 0 or 1

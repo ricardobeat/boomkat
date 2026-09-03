@@ -39,6 +39,12 @@ TypedArray fails** that "fix typed arrays" bottomed out in.
 
 ## Representation decision — **fixed-width i128** (not arbitrary precision)
 
+> **Superseded.** This decision was later reversed: BigInt is now an
+> arbitrary-precision little-endian vector of 32-bit limbs (`src/hbigint.c3`),
+> bounded only by `BIGINT_MAX_LIMBS = 1 << 26`. The rationale below is kept as
+> the historical record of the Phase 1/2 design; the "Out of scope" note about
+> values > i128 no longer applies.
+
 BigInt is stored as a native **`int128`** boxed on the heap. Rationale:
 
 - C3 has full native `int128`/`uint128` arithmetic (verified: add/sub/mul/div,

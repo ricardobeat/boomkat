@@ -222,7 +222,12 @@ different bug: we pre-collect the key list, so a property deleted mid-loop is
 still yielded (ours: `aa1baundefinedca3`, expected: `aa1ca3`). Spec requires
 liveness — a key whose property was deleted before its turn is skipped.
 
-### M. BigInt precision limit (out of scope, needs a skip entry)
+### M. BigInt precision limit (~~out of scope~~ — superseded, now passing)
+
+> **Superseded.** BigInt was later reimplemented as an arbitrary-precision limb
+> vector, so these tests pass and the skip entries described below have been
+> removed.
+
 
 `does-not-equals/bigint-and-number-extremes.js` and
 `strict-does-not-equals/bigint-and-number-extremes.js` use ~256-bit BigInt

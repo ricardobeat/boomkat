@@ -71,7 +71,7 @@ excluded.
 
 | | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
 |---|---|---|---|---|
-| `BigInt` | ✅ int128 | ✅ arbitrary | ✅ arbitrary | ❌ |
+| `BigInt` | ✅ arbitrary | ✅ arbitrary | ✅ arbitrary | ❌ |
 | `Number` static methods, `toFixed`/`toPrecision`/`toExponential` | ✅ | ✅ | ✅ | ⚠️ partial |
 | `Math.sumPrecise` (ES2026) | ✅ | ✅ | ✅ | ❌ |
 | `String.raw`, `padStart`/`padEnd`, `includes`, `at` | ✅ | ✅ | ✅ | ⚠️ `includes` only |
@@ -171,7 +171,6 @@ semantics.
 | ShadowRealm | 64 | Stage 3 |
 | Decorators | 24 | Stage 3 |
 | Proper tail calls | 35 | Not implemented |
-| Arbitrary-precision `BigInt` | ~20 | int128 is the ceiling |
 
 Also excluded as still-moving proposals: `import-defer` (229),
 `source-phase-imports` (222), `joint-iteration` (82), `immutable-arraybuffer`
@@ -183,7 +182,7 @@ Also excluded as still-moving proposals: `import-defer` (229),
 |---|---|---|---|---|
 | Language | C3 | C | C | C |
 | Baseline | ES2025 + most ES2026, strict-only | ES2025 + most ES2026 | ES2025 + most ES2026 | ES5.1, partial ES6/7 |
-| `BigInt` representation | int128 | arbitrary | arbitrary | |
+| `BigInt` representation | arbitrary (32-bit limb vector) | arbitrary | arbitrary | |
 | `Proxy` | full | full | full | subset |
 | `SharedArrayBuffer` | single agent | shared | shared | |
 | Sloppy mode | rejected | supported | supported | supported |

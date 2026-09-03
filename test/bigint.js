@@ -1,5 +1,7 @@
 "use strict";
-// Plan 056 — BigInt Phase 1 + 2 acceptance tests.
+// BigInt acceptance tests (originally plan 056 Phase 1 + 2; the fixed-width
+// int128 representation that plan chose was later replaced by the
+// arbitrary-precision limb vector in src/hbigint.c3).
 
 var passed = 0;
 var failed = 0;
