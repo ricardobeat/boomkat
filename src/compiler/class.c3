@@ -1276,64 +1276,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                         return COMPILE_ERROR~;
                     }
                     // Early error: getter/setter named "constructor" (non-static only)
-                    if (!is_private_member && !is_static && method_name.str_value.len == 11
-                        && method_name.str_value[0] == 'c'
-                        && method_name.str_value[1] == 'o'
-                        && method_name.str_value[2] == 'n'
-                        && method_name.str_value[3] == 's'
-                        && method_name.str_value[4] == 't'
-                        && method_name.str_value[5] == 'r'
-                        && method_name.str_value[6] == 'u'
-                        && method_name.str_value[7] == 'c'
-                        && method_name.str_value[8] == 't'
-                        && method_name.str_value[9] == 'o'
-                        && method_name.str_value[10] == 'r') {
+                    if (!is_private_member && !is_static && str_eq(method_name.str_value, "constructor")) {
                         return COMPILE_ERROR~;
                     }
                 }
-            }
-            // Check for constructor name and related early errors
-            if (method_name.str_value.len == 11
-                && method_name.str_value[0] == 'c'
-                && method_name.str_value[1] == 'o'
-                && method_name.str_value[2] == 'n'
-                && method_name.str_value[3] == 's'
-                && method_name.str_value[4] == 't'
-                && method_name.str_value[5] == 'r'
-                && method_name.str_value[6] == 'u'
-                && method_name.str_value[7] == 'c'
-                && method_name.str_value[8] == 't'
-                && method_name.str_value[9] == 'o'
-                && method_name.str_value[10] == 'r') {
-                if (!is_static && (is_getter || is_setter)) {
-                    // getter/setter named "constructor", already handled above
-                    return COMPILE_ERROR~;
-                }
-                // Only a non-static `constructor` is the class constructor
-                // (ES2024 14.6.13): `static constructor(){}` is an ordinary
-                // static method that happens to share the name, so it neither
-                // conflicts with the real constructor nor counts as a
-                // duplicate of another static one.
-                if (!is_static) {
-                    if (ctor_inner_idx != 0xFFFFFFFF) {
-                        // duplicate constructor is a SyntaxError
-                        return COMPILE_ERROR~;
-                    }
-                    is_constructor = true;
-                }
-            }
-            // Early error: static method/getter/setter named "prototype"
-            if (is_static && method_name.str_value.len == 9
-                && method_name.str_value[0] == 'p'
-                && method_name.str_value[1] == 'r'
-                && method_name.str_value[2] == 'o'
-                && method_name.str_value[3] == 't'
-                && method_name.str_value[4] == 'o'
-                && method_name.str_value[5] == 't'
-                && method_name.str_value[6] == 'y'
-                && method_name.str_value[7] == 'p'
-                && method_name.str_value[8] == 'e') {
-                return COMPILE_ERROR~;
             }
         } else if (self.check(TokenType.STRING)) {
             method_name = self.advance()!;
@@ -1371,6 +1317,39 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 return COMPILE_ERROR~;
             }
             // Continue to the field branch below.
+        }
+
+        // Check for constructor name and related early errors. Runs once for
+        // every LiteralPropertyName form (IdentifierName, StringLiteral,
+        // NumericLiteral/BigInt can never spell "constructor" but are
+        // harmless to include here too), NOT for a ComputedPropertyName
+        // (`["constructor"]`, including the collapsed-string-literal
+        // shortcut `name_from_computed_string`): PropName of a computed key
+        // is never statically "constructor" even when the key expression
+        // evaluates to that string at runtime, so it's always an ordinary
+        // method (ES2022 §15.7.6 ConstructorMethod).
+        bool name_is_literal = !is_private_member && !has_computed_key && !name_from_computed_string;
+        if (name_is_literal && str_eq(method_name.str_value, "constructor")) {
+            if (!is_static && (is_getter || is_setter)) {
+                // getter/setter named "constructor", already handled above
+                return COMPILE_ERROR~;
+            }
+            // Only a non-static `constructor` is the class constructor
+            // (ES2024 14.6.13): `static constructor(){}` is an ordinary
+            // static method that happens to share the name, so it neither
+            // conflicts with the real constructor nor counts as a
+            // duplicate of another static one.
+            if (!is_static) {
+                if (ctor_inner_idx != 0xFFFFFFFF) {
+                    // duplicate constructor is a SyntaxError
+                    return COMPILE_ERROR~;
+                }
+                is_constructor = true;
+            }
+        }
+        // Early error: static method/getter/setter named "prototype"
+        if (is_static && name_is_literal && str_eq(method_name.str_value, "prototype")) {
+            return COMPILE_ERROR~;
         }
 
         // TypeScript optional method `f?() {}` (or signature `f?(): R;`):
