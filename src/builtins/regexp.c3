@@ -185,9 +185,14 @@ fn void builtin_regexp(BuiltinContext* ctx) {
         }
     }
 
-    // ES2015 §21.2.3.1 step 4.b: If patternIsRegExp is true and flags is undefined,
-    // check SameValue(pattern.constructor, RegExp) and return pattern if true.
-    if (is_regexp && flags_len == 0) {
+    // ES2024 §22.2.4.1 step 3.a: the "return the pattern unchanged" shortcut is
+    // reachable only when NewTarget is undefined, i.e. `RegExp(re)` called as a
+    // function. Step 1 takes it only `If NewTarget is undefined`; with `new` the
+    // constructor must always allocate a fresh object, so `new RegExp(re) !== re`.
+    // Returning the same object let a later
+    // `Object.defineProperty(copy, "lastIndex", {writable: false})` freeze the
+    // ORIGINAL regexp's lastIndex, so an unrelated `re.lastIndex = n` then threw.
+    if (!ctx.is_constructor && is_regexp && flags_len == 0) {
         // Use pattern_regexp (set for actual RegExp) or the original arg (for regexp-like)
         HObject* ctor_check_obj = pattern_regexp;
         if (ctor_check_obj == null && pattern_arg.is_object() && pattern_arg.get_heapptr() != null) {
@@ -217,6 +222,10 @@ fn void builtin_regexp(BuiltinContext* ctx) {
             js_flags = (*pattern_regexp.extra_ptr()).regexp.flags;
             flags_len = 0;  // Clear flags so we don't re-parse
         }
+    } else if (is_regexp && flags_len == 0 && pattern_regexp != null) {
+        // `new RegExp(re)`: no shortcut, but the copy still inherits the
+        // source pattern's flags (step 3.a passes them to RegExpInitialize).
+        js_flags = (*pattern_regexp.extra_ptr()).regexp.flags;
     }
 
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.REGEXP);
