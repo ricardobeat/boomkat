@@ -37,6 +37,19 @@ fn void builtin_regexp(BuiltinContext* ctx) {
     usz flags_len = 0;
     TVal pattern_arg;
     pattern_arg.set_undefined();
+    // ES2024 §22.2.4.1 step 1.c: `flags is undefined` -- whether the CALLER
+    // passed an explicit flags argument, distinct from flags_len (which also
+    // gets populated later from pattern.flags in the regexp-like-object
+    // fallback path, e.g. `RegExp(obj)` with no second arg but obj.flags ===
+    // "i" leaves flags_len == 1). The identity-return shortcut below must
+    // gate on the former, not the latter.
+    bool flags_arg_provided = ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined();
+    // ES2024 §22.2.4.1 steps 3-4: ToString(P) and ToString(F) belong to
+    // RegExpInitialize, which runs AFTER RegExpAlloc(newTarget) has read
+    // newTarget.prototype. Both coercions are observable (user toString) and
+    // so is the prototype getter, so the pattern coercion is only recorded
+    // here and performed below, once the object exists.
+    bool pattern_needs_tostring = false;
 
     if (ctx.argc > 0) {
         pattern_arg = ctx.regs[ctx.base_reg];
@@ -81,6 +94,31 @@ fn void builtin_regexp(BuiltinContext* ctx) {
             } else if (pattern_is_regexp) {
                 // ES2022 §22.2.3.1 step 6: regexp-like non-RegExp object, extract source and flags.
                 is_regexp = true;
+
+                // ES2024 §22.2.4.1 step 1.c: the "return the pattern unchanged"
+                // shortcut (`RegExp(re)` called as a function, no explicit
+                // flags, pattern's own "constructor" is the RegExp
+                // constructor) must be checked BEFORE ever reading
+                // "source"/"flags" -- those getters must not fire at all
+                // when the shortcut applies (they're irrelevant to the
+                // decision and the object is returned as-is regardless of
+                // what they'd report).
+                if (!ctx.is_constructor && flags_arg_provided == false) {
+                    HString* ctor_key_early = ctx.heap.str(heap::BuiltinStr.CONSTRUCTOR);
+                    TVal? ctor_opt_early = builtins_generic_get(obj, ctor_key_early, ctx);
+                    if (ctx.should_throw) return;
+                    if (try cv = ctor_opt_early) {
+                        if (cv.is_object() && cv.get_heapptr() != null) {
+                            HObject* ctor_obj_early = (HObject*)cv.get_heapptr();
+                            if (ctor_obj_early.get_class() == hobject::ObjClass.FUNCTION &&
+                                (*ctor_obj_early.extra_ptr()).func.builtin_fn_index == (int)Builtin.REGEXP.ordinal) {
+                                *ctx.result = pattern_arg;
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 // Step 6a: P = Get(pattern, "source")
                 HString* source_key = ctx.heap.str(heap::BuiltinStr.SOURCE);
                 TVal? src_opt = builtins_generic_get(obj, source_key, ctx);
@@ -100,7 +138,6 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                     }
                 }
                 // Step 6c: If flags argument is undefined, F = Get(pattern, "flags")
-                bool flags_arg_provided = ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined();
                 if (!flags_arg_provided) {
                     HString* flags_key = ctx.heap.str(heap::BuiltinStr.FLAGS);
                     TVal? fl_opt = builtins_generic_get(obj, flags_key, ctx);
@@ -127,21 +164,10 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                 }
                 // Skip the ToString fallthrough and flags-from-arg below.
             } else {
-                // Not a regexp-like object: convert to string for pattern, use vm variant to propagate JS throws.
-                if (ctx.vm != null) {
-                    HString* phs = builtin_to_string_vm(ctx, &pattern_arg);
-                    if (ctx.should_throw) return;
-                    if (phs != null) {
-                        pattern_str = phs.get_cstr();
-                        pattern_len = phs.blen;
-                    }
-                } else {
-                    HString* phs = builtin_to_string(ctx.heap, &pattern_arg);
-                    if (phs != null) {
-                        pattern_str = phs.get_cstr();
-                        pattern_len = phs.blen;
-                    }
-                }
+                // Not a regexp-like object: the pattern needs ToString, but
+                // RegExpInitialize (step 4) runs it only AFTER RegExpAlloc
+                // (step 3) has read newTarget.prototype. Defer it.
+                pattern_needs_tostring = true;
             }
         } else if (pattern_arg.is_string() && pattern_arg.get_heapptr() != null) {
             HString* phs = (HString*)pattern_arg.get_heapptr();
@@ -149,40 +175,11 @@ fn void builtin_regexp(BuiltinContext* ctx) {
             pattern_len = phs.blen;
         } else if (!pattern_arg.is_undefined()) {
             // ES5 §15.10.4.1: if pattern is undefined, use empty string.
-            // Only convert to string when pattern is not undefined.
-            HString* phs;
-            if (ctx.vm != null) {
-                phs = builtin_to_string_vm(ctx, &pattern_arg);
-            } else {
-                phs = builtin_to_string(ctx.heap, &pattern_arg);
-            }
-            if (phs != null) {
-                pattern_str = phs.get_cstr();
-                pattern_len = phs.blen;
-            }
+            // Only convert to string when pattern is not undefined. Deferred
+            // past RegExpAlloc for the same ordering reason as above.
+            pattern_needs_tostring = true;
         }
         // else: pattern_arg is undefined → use empty pattern (pattern_str = "", pattern_len = 0)
-    }
-
-    // Get flags from second argument
-    if (ctx.argc > 1) {
-        TVal* flags_arg = &ctx.regs[ctx.base_reg + 1];
-        if (flags_arg.is_string() && flags_arg.get_heapptr() != null) {
-            HString* fhs = (HString*)flags_arg.get_heapptr();
-            flags_str = fhs.get_cstr();
-            flags_len = fhs.blen;
-        } else if (!flags_arg.is_undefined()) {
-            HString* fhs;
-            if (ctx.vm != null) {
-                fhs = builtin_to_string_vm(ctx, flags_arg);
-            } else {
-                fhs = builtin_to_string(ctx.heap, flags_arg);
-            }
-            if (fhs != null) {
-                flags_str = fhs.get_cstr();
-                flags_len = fhs.blen;
-            }
-        }
     }
 
     // ES2024 §22.2.4.1 step 3.a: the "return the pattern unchanged" shortcut is
@@ -192,7 +189,10 @@ fn void builtin_regexp(BuiltinContext* ctx) {
     // Returning the same object let a later
     // `Object.defineProperty(copy, "lastIndex", {writable: false})` freeze the
     // ORIGINAL regexp's lastIndex, so an unrelated `re.lastIndex = n` then threw.
-    if (!ctx.is_constructor && is_regexp && flags_len == 0) {
+    // This is the actual-RegExp-instance path only now (pattern_regexp != null);
+    // the regexp-like-object shortcut above already handled (and returned for)
+    // its own case before ever reading source/flags.
+    if (!ctx.is_constructor && is_regexp && flags_arg_provided == false && pattern_regexp != null) {
         // Use pattern_regexp (set for actual RegExp) or the original arg (for regexp-like)
         HObject* ctor_check_obj = pattern_regexp;
         if (ctor_check_obj == null && pattern_arg.is_object() && pattern_arg.get_heapptr() != null) {
@@ -222,12 +222,19 @@ fn void builtin_regexp(BuiltinContext* ctx) {
             js_flags = (*pattern_regexp.extra_ptr()).regexp.flags;
             flags_len = 0;  // Clear flags so we don't re-parse
         }
-    } else if (is_regexp && flags_len == 0 && pattern_regexp != null) {
+    } else if (is_regexp && !flags_arg_provided && pattern_regexp != null) {
         // `new RegExp(re)`: no shortcut, but the copy still inherits the
         // source pattern's flags (step 3.a passes them to RegExpInitialize).
+        // Gated on flags_arg_provided, not flags_len: the flags argument is
+        // now coerced AFTER this point (see step 3/4 ordering below), so
+        // flags_len is still 0 here even for `new RegExp(re, "")`, which must
+        // NOT inherit the source's flags.
         js_flags = (*pattern_regexp.extra_ptr()).regexp.flags;
     }
 
+    // ES2024 §22.2.4.1 step 3: O = RegExpAlloc(newTarget). This reads
+    // newTarget.prototype (an observable, possibly-throwing user getter) and
+    // must happen BEFORE RegExpInitialize's ToString(P)/ToString(F) below.
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.REGEXP);
     if (catch err = obj_raw) {
         ctx.result.set_undefined();
@@ -235,11 +242,50 @@ fn void builtin_regexp(BuiltinContext* ctx) {
     }
     HObject* obj = obj_raw;
     obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.regexp_proto);
+    if (ctx.should_throw) return;
     // Pooled memory is not zeroed, clear the regexp fields before
     // regexp_initialize reads them (it re_frees any previous compiled data).
     (*obj.extra_ptr()).regexp.regexp_data = null;
     (*obj.extra_ptr()).regexp.flags = 0;
     (*obj.extra_ptr()).prim.primitive_value.set_undefined();
+
+    // ES2024 §22.2.4.1 step 4: RegExpInitialize(O, P, F) -- the deferred
+    // ToString coercions, now correctly ordered after the prototype read.
+    // `obj` is temproot-pinned by alloc_object, so it survives any GC these
+    // user-visible calls may trigger.
+    if (pattern_needs_tostring) {
+        HString* phs;
+        if (ctx.vm != null) {
+            phs = builtin_to_string_vm(ctx, &pattern_arg);
+            if (ctx.should_throw) return;
+        } else {
+            phs = builtin_to_string(ctx.heap, &pattern_arg);
+        }
+        if (phs != null) {
+            pattern_str = phs.get_cstr();
+            pattern_len = phs.blen;
+        }
+    }
+    if (ctx.argc > 1) {
+        TVal* flags_arg = &ctx.regs[ctx.base_reg + 1];
+        if (flags_arg.is_string() && flags_arg.get_heapptr() != null) {
+            HString* fhs = (HString*)flags_arg.get_heapptr();
+            flags_str = fhs.get_cstr();
+            flags_len = fhs.blen;
+        } else if (!flags_arg.is_undefined()) {
+            HString* fhs;
+            if (ctx.vm != null) {
+                fhs = builtin_to_string_vm(ctx, flags_arg);
+                if (ctx.should_throw) return;
+            } else {
+                fhs = builtin_to_string(ctx.heap, flags_arg);
+            }
+            if (fhs != null) {
+                flags_str = fhs.get_cstr();
+                flags_len = fhs.blen;
+            }
+        }
+    }
 
     if (!regexp_initialize(ctx, obj, pattern_str, pattern_len, flags_str, flags_len, js_flags)) return;
     ctx.result.set_object(obj);
