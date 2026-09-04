@@ -413,6 +413,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     long idx_long = rc.is_fastint() ? rc.get_fastint() : (long)rc.get_number();
                     bool is_int_idx = rc.is_fastint() || rc.get_number() == (double)idx_long;
                     if (is_int_idx && idx_long >= 0 && idx_long < (long)hobj.array_size) {
+                        // Sloppy mapped arguments (ES2015 §9.4.4.8): the index
+                        // aliases the owning activation's parameter register,
+                        // which always holds the current value.
+                        if (hobj_cls == hobject::ObjClass.ARGUMENTS) {
+                            TVal mapped_v;
+                            if (mapped_args_read(vm, hobj, (uint)idx_long, &mapped_v)) {
+                                getprop_store(vm, ds, ra, &mapped_v, (uint)insn.a);
+                                return (TVal){};
+                            }
+                        }
                         TVal? av = hobj.get_array_idx((uint)idx_long);
                         if (try v = av) {
                             getprop_store(vm, ds, ra, &v, (uint)insn.a);
@@ -821,6 +831,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                             return (TVal){};
                         }
+                        // Sloppy mapped arguments (ES2015 §9.4.4.8): a
+                        // canonical index aliases the owning activation's
+                        // parameter register, which holds the current value.
+                        if (hobj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
+                            TVal mapped_v;
+                            if (mapped_args_read(vm, hobj, key_hstr.array_index(), &mapped_v)) {
+                                getprop_store(vm, ds, ra, &mapped_v, (uint)insn.a);
+                                return (TVal){};
+                            }
+                        }
                         // STRING exotic: string-key indexed access (array-index string keys like "0")
                         if (hobj.flags.exotic_stringobj && (*hobj.extra_ptr()).prim.primitive_value.is_string()) {
                             if (key_hstr != null && key_hstr.is_arridx()) {
@@ -880,10 +900,26 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (catch err = getprop_read_accessor(vm, ds, &res.acc, hobj, ra, (uint)insn.a, key_hstr)) { return err~; }
                             return (TVal){};
                         } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
+                            // Sloppy mapped arguments (ES2015 §9.4.4.8): a
+                            // dense index read aliases the owning activation's
+                            // parameter register, which holds the current
+                            // value. Owner is null exactly for dense hits, so
+                            // this cannot misfire on a named property.
+                            if (res.owner == null && hobj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr != null && key_hstr.is_arridx()) {
+                                TVal mapped_v;
+                                if (mapped_args_read(vm, hobj, key_hstr.array_index(), &mapped_v)) {
+                                    getprop_store(vm, ds, ra, &mapped_v, (uint)insn.a);
+                                    return (TVal){};
+                                }
+                            }
                             getprop_store(vm, ds, ra, &res.data_val, (uint)insn.a);
                             // Populate the IC for this site, caching own
                             // properties and anything found within
-                            // IC_MAX_CHAIN prototype links.
+                            // IC_MAX_CHAIN prototype links. Sloppy mapped
+                            // arguments (owner == null dense hits, handled
+                            // above) never populate: the IC would snapshot
+                            // the parameter's CURRENT value while later
+                            // writes keep moving it.
                             if (res.owner != null && ds.ic_base != null) {
                                 bool is_own = res.owner == hobj;
                                 // Record the objects stepped onto so the hit
@@ -1343,7 +1379,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         } else {
                             hobject::PropLookupResult r2 = hobj2.get_prop_or_accessor_proto((void*)key2_hstr, true, ds.vm.heap);
                             if (r2.kind == hobject::PropLookupKind.PROP_DATA) {
-                                getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                if (r2.owner == null && hobj2.get_class() == hobject::ObjClass.ARGUMENTS && key2_hstr.is_arridx()) {
+                                    TVal mapped_v2;
+                                    if (mapped_args_read(vm, hobj2, key2_hstr.array_index(), &mapped_v2)) {
+                                        getprop_store(vm, ds, ra2, &mapped_v2, dst2_reg);
+                                    } else {
+                                        getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                    }
+                                } else {
+                                    getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                }
                             } else {
                                 ra2.set_undefined();
                             }
@@ -1566,7 +1611,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         } else {
                             hobject::PropLookupResult r2 = hobj2.get_prop_or_accessor_proto((void*)key2_hstr, true, ds.vm.heap);
                             if (r2.kind == hobject::PropLookupKind.PROP_DATA) {
-                                getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                if (r2.owner == null && hobj2.get_class() == hobject::ObjClass.ARGUMENTS && key2_hstr.is_arridx()) {
+                                    TVal mapped_v2;
+                                    if (mapped_args_read(vm, hobj2, key2_hstr.array_index(), &mapped_v2)) {
+                                        getprop_store(vm, ds, ra2, &mapped_v2, dst2_reg);
+                                    } else {
+                                        getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                    }
+                                } else {
+                                    getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                }
                             } else {
                                 ra2.set_undefined();
                             }
@@ -1634,7 +1688,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         } else {
                             hobject::PropLookupResult r2 = hobj2.get_prop_or_accessor_proto((void*)key2_hstr, true, ds.vm.heap);
                             if (r2.kind == hobject::PropLookupKind.PROP_DATA) {
-                                getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                if (r2.owner == null && hobj2.get_class() == hobject::ObjClass.ARGUMENTS && key2_hstr.is_arridx()) {
+                                    TVal mapped_v2;
+                                    if (mapped_args_read(vm, hobj2, key2_hstr.array_index(), &mapped_v2)) {
+                                        getprop_store(vm, ds, ra2, &mapped_v2, dst2_reg);
+                                    } else {
+                                        getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                    }
+                                } else {
+                                    getprop_store(vm, ds, ra2, &r2.data_val, dst2_reg);
+                                }
                             } else {
                                 ra2.set_undefined();
                             }
@@ -1820,6 +1883,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (is_int_idx && idx_long >= 0 && idx_long < 0xFFFFFFFFL && idx_long < 0x1000000L) {
                         uint idx = (uint)idx_long;
                         if (hobj.set_array_idx(idx, *rc, ds.vm.heap)) {
+                            // Sloppy mapped arguments (ES2015 §9.4.4.8): the
+                            // write also updates the owning activation's
+                            // parameter register, keeping the alias in sync.
+                            if (hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                                mapped_args_write(vm, hobj, idx, rc);
+                            }
                             // Update .length fast: use array_length field directly (ARRAY only)
                             if (hobj.get_class() == hobject::ObjClass.ARRAY && idx >= *hobj.array_len_ptr()) {
                                 *hobj.array_len_ptr() = idx + 1;
@@ -2210,6 +2279,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (hobj.dense_arridx_lookup(key, &dense_existing)) {
                             HString* dense_key = (HString*)key;
                             uint dense_ai = (uint)dense_key.array_index();
+                            // Sloppy mapped arguments (ES2015 §9.4.4.8): the
+                            // write also updates the owning activation's
+                            // parameter register, keeping the alias in sync.
+                            if (hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                                mapped_args_write(vm, hobj, dense_ai, &put_val);
+                            }
                             vm.heap.tval_copy_ref(&hobj.array_part()[dense_ai], &put_val);
                             return (TVal){};
                         }

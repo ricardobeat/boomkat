@@ -1680,7 +1680,7 @@ fn void CompilerContext.skip_expression(&self) {
 // a register slot, an `undefined` initial value, and the env declaration.
 // Shared by the plain-identifier declarator path and the binding-pattern
 // walker, which must produce byte-identical bindings for their leaf names.
-fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global) {
+fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global, bool b33_record = false) {
     // Intern now: raw_name may borrow the lexer's shared ident_buf scratch
     // (escaped identifier), which the next declarator in this statement (or a
     // later var statement in the same hoisting pass) will overwrite.
@@ -1712,11 +1712,34 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
             return;
         }
     }
+    // One binding per name: when the B.3.3 scan reaches a block FIRST a later
+    // `var f` reuses the entry made here (var_declaration's find_local_reg),
+    // but when `var f` comes first its entry is already in place. Declaring
+    // afresh then allocates a SECOND register for the same binding: the
+    // capture-marking loop marks the first entry while the block's
+    // DECLGLOBALFUNC writes the second, so env-resident reads see undefined.
+    // A formal parameter's own entry likewise doubles as the var binding
+    // (§9.2.10 step 27 leaves it alone), so reuse it instead of allocating.
+    // A BLOCK-scoped entry (the scan's own declaration, or a `let` in an
+    // enclosing/earlier block) is NOT the var binding — an exempt block must
+    // still create it; keep declaring. Only a VAR entry (or a formal/catch
+    // parameter entry) proves the var binding already exists.
+    if (try _existing_b33 = self.find_var_or_param_reg(var_name)) {
+        self.has_local_bindings = true;
+        return;
+    }
     ushort var_reg = self.declare_var(var_name, VAR);
     self.has_local_bindings = true;
     self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
     uint var_name_idx = self.add_string_constant(var_name);
-    self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
+    uint hoist_pc = self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
+    // A B.3.3 entry init may be withdrawn by block(): when the block proves
+    // exempt (same-named `let` visible, formal, arguments) it NOPs this
+    // DECLVAR_HOIST and erases the scope entry, leaving no var binding at
+    // all. Stash the instruction index keyed by name for that withdrawal.
+    if (b33_record) {
+        self.record_b33_hoist(var_name, (uint)var_reg, hoist_pc);
+    }
     // At global scope, var bindings are normally env-resident (accessed via
     // GETGLOBAL/PUTGLOBAL); the register is only a temporary DECLVAR source.
     // Free it immediately so 500+ var declarations don't exhaust the register
@@ -2169,6 +2192,17 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         // scanned. (At own_depth the handler below does the hoist-aware skip;
         // deeper functions only need to be skipped.)
         //
+        // Sloppy Annex B.3.3 (plan 083 Phase 3.2): a block-nested function
+        // declaration also creates a `var` binding in the ENCLOSING scope,
+        // initialized to undefined at function entry (ES2015 §B.3.3 step 3 /
+        // B.3.3.1 instantiatedVarNames). hoist_one_var_name applies the same
+        // skip rules as a plain var hoist (parameter names and
+        // function-declared names keep their value), and DECLVAR_HOIST skips
+        // existing globals per CanDeclareGlobalVar. Generator/async
+        // declarations share the VarDeclaredNames exemption question with
+        // plain ones; hoist them too, the textual declaration still wins at
+        // block-evaluation time via the DECLGLOBALFUNC second binding.
+        //
         // This applies to a function-body scan exactly as it does to the
         // Program's: the enclosing brace is not what makes an inner function a
         // hoisting boundary. Gating it on `is_global` left the function-local
@@ -2186,10 +2220,37 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             self.is_async = false;
             Token? nstar = self.lexer.next_token();
             if (catch _errn = nstar) continue;
-            if (nstar.type != TokenType.STAR) { self.lexer.pushback(nstar); }
+            bool b33_is_gen = nstar.type == TokenType.STAR;
+            if (!b33_is_gen) { self.lexer.pushback(nstar); }
             Token? nname = self.lexer.next_token();
             if (catch _errn2 = nname) continue;
-            if (nname.type != TokenType.IDENTIFIER) { self.lexer.pushback(nname); }
+            bool b33_named = nname.type == TokenType.IDENTIFIER;
+            if (!b33_named) { self.lexer.pushback(nname); }
+            // B.3.3 entry-time var init: a NAMED block-nested function
+            // declaration (not a function expression — those sit in
+            // non-statement position, tok_at_stmt_start false — and not an
+            // anonymous default-export shape) declares its name as a var in
+            // the enclosing scope. checks_only prologues skip bindings (they
+            // only emit CanDeclare checks for top-level names). hoist_one
+            // skips names that already have a binding: when `var f` ran first
+            // its entry doubles as this declaration's, and when the block
+            // ran first the later `var f` reuses the entry made here. The
+            // full parameterNames exemption (B.3.3.1 step ii) needs the formal
+            // list, undeclared at scan time, so the scan exempts only
+            // "arguments" itself; formals are handled at publish time (which
+            // skips) and the var path's own is_param skip. The lex-vs-var
+            // early-error half ("replacing with a var would error") cannot be
+            // tested here either: `let` bindings declare as they parse, after
+            // this scan runs. Instead the scan records every B.3.3 name it
+            // hoists in b33_hoisted_names; block() consults that list at
+            // block-entry time (when the enclosing `let`s are visible) and
+            // gates entry init + publish on it.
+            if (!checks_only && !self.is_strict && b33_named && brace_depth > own_depth
+                && tok_at_stmt_start
+                && !b33_is_gen && nname.str_value.len > 0
+                && str_eq(nname.str_value, "arguments") == false) {
+                self.hoist_one_var_name(nname.str_value, is_global, true);
+            }
             self.skip_function_body();
             continue;
         }
@@ -3614,6 +3675,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // VM creates the parent's arguments object.
     if (def_ctx.uses_arguments) {
         func.flags.uses_arguments = false;
+        func.flags.mapped_arguments = false;
         self.uses_arguments = true;
     }
 
@@ -3760,8 +3822,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.init(self.lexer, self.heap);
     inner_ctx.module_goal = self.module_goal;
 
-    inner_ctx.lexer.set_strict(inner_ctx.is_strict);
     inner_ctx.is_strict = self.is_strict;
+    inner_ctx.lexer.set_strict(self.is_strict);
 
     // Named function expression: the compiled function will be tagged
     // is_namebinding, so it must not take the needs_env=false fast path
@@ -4861,6 +4923,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // and env-declares the object the arrow's GETVAR "arguments" resolves to.
     if (arrow_ctx.uses_arguments) {
         func.flags.uses_arguments = false;
+        func.flags.mapped_arguments = false;
         self.uses_arguments = true;
     }
     // A direct eval inside the arrow body may reference `arguments` even
@@ -5186,6 +5249,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // and env-declares the object the arrow's GETVAR "arguments" resolves to.
     if (arrow_ctx.uses_arguments) {
         func.flags.uses_arguments = false;
+        func.flags.mapped_arguments = false;
         self.uses_arguments = true;
     }
     // A direct eval inside the arrow body may reference `arguments` even

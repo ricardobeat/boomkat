@@ -329,7 +329,97 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-// True when `name` is already bound as a formal or catch PARAMETER.
+// The var-or-parameter register for `name`, when the VAR binding already
+// exists: a VAR entry (hoisted `var`, including one an earlier B.3.3 scan
+// made) or a formal/catch parameter entry (which doubles as the var binding
+// per §9.2.10 step 27). A LET/CONST entry is block-scoped shadowing, never
+// the var binding, so it does not count — the caller must still declare.
+fn ushort? CompilerContext.find_var_or_param_reg(&self, char[] name) {
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            continue;
+        }
+        if (!str_eq(e.name, name)) {
+            continue;
+        }
+        if (e.kind == VAR || e.is_param) return e.reg;
+        return SCOPE_ERROR~;
+    }
+    return SCOPE_ERROR~;
+}
+
+// True when a same-named lexical binding sits anywhere in the CURRENT
+// function body OUTSIDE this block (B.3.3.1 step ii's "would produce an Early
+// Error" test, i.e. the §13.2.1 lex-vs-var conflict). A same-named `var`
+// merges (§13.2.5) and does not exempt; formal/catch parameters merge too
+// (§9.2.10 step 27), so neither vetoes. Only `let`/`const`/`class` count,
+// and classes declare as LET-kind in this engine, so testing LET and CONST
+// covers all three. Walks the whole stack: enclosing blocks, the body top
+// level, and already-declared siblings all veto. The block's OWN lex_spans
+// names are not yet on the stack (they declare as they parse below), so they
+// never self-veto; LATER siblings are invisible and do not veto (node treats
+// those as runtime shadowing, not an early error).
+fn bool CompilerContext.has_conflicting_lexical_name(&self, char[] name) {
+    // The scan runs when the block's own PUSH_LEX has NOT been emitted yet:
+    // entries for this block's OWN `let`/`const`/`class` names are absent, so
+    // every LET/CONST entry on the stack belongs to another block or the body
+    // top level. Sibling blocks included: none of this block's own names can
+    // collide with the scan's result.
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            continue;
+        }
+        if ((e.kind == LET || e.kind == CONST) && str_eq(e.name, name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when `name` is a FORMAL parameter of the enclosing function, or is
+// the implicit `arguments` binding when the function needs an arguments
+// object (B.3.3.1's parameterNames, which appends "arguments" per ES2015
+// §9.2.10 step 22.f).
+//
+// Catch parameters do not count: the exemption covers BoundNames of formals
+// (plus "arguments"), never a catch binding, so
+// `try{}catch(f){ {function f(){}} }` must still publish the closure to var
+// scope. Formals are declared before the body marker is pushed while a catch
+// parameter is declared after it, so only entries below the first body mark
+// (scanning up from the bottom) qualify. Always false at global scope, which
+// has no formals — a same-named catch parameter there must not exempt.
+fn bool CompilerContext.is_formal_param_name(&self, char[] name) {
+    if (self.is_global) return false;
+    if (str_eq(name, "arguments") && self.uses_arguments) return true;
+    uint i = 0;
+    while (i < self.scope_depth) {
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            if (e.is_body_mark) break;
+            i++;
+            continue;
+        }
+        if (e.is_param && str_eq(e.name, name)) {
+            return true;
+        }
+        i++;
+    }
+    return false;
+}
+
+// True when `name` is already bound as a formal or catch PARAMETER while
+// scanning outward from the current position, stopping at the first body
+// mark. A catch parameter declared in an ENCLOSING catch does not count:
+// is_param_name answers "the nearest binding of this name", which is what
+// the var-hoist skip and the publish skip need. B.3.3.1's parameterNames
+// nuance (formals exempt, catch bindings do not) is handled at publish
+// time by is_formal_param_name, which walks from the formal region instead.
 //
 // The hoisting pass uses this for the one case where a hoisted `var` must not
 // create a binding: ES2015 §9.2.10 step 27 initializes a var-declared name to
@@ -343,10 +433,16 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
 // bindings in scope ARE the parameters (the body has not been parsed), but the
 // narrower test keeps this correct if that ever stops holding.
 fn bool CompilerContext.is_param_name(&self, char[] name) {
+    bool crossed_body_mark = false;
     uint i = self.scope_depth;
     while (i > 0) {
         i--;
         ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            if (!e.is_body_mark || crossed_body_mark) return false;
+            crossed_body_mark = true;
+            continue;
+        }
         if (e.is_param && str_eq(e.name, name)) {
             return true;
         }

@@ -38,6 +38,61 @@ fn TVal? not_constructor_throw(Vm* vm, Dispatch* ds, TVal* val) @noinline @local
     return (TVal){};
 }
 
+// Mapped-index helpers for sloppy parameter-mapped `arguments`
+// (ES2015 §9.4.4.8, plans/083 Phase 3.1). A mapped index i aliases parameter
+// slot i of the owning activation: reads fall back to the parameter
+// registers, writes update them, so the two stay in sync in both directions.
+// The map is consulted OUTSIDE finish_arguments_object, because every lookup
+// must see the parameter's CURRENT value, not a snapshot taken when the
+// object was created or last written.
+fn Activation* mapped_args_owner(Vm* vm, HObject* args_obj) @inline {
+    for (uint i = 0; i < vm.activation_count; i++) {
+        Activation* a = &vm.activations[i];
+        if (a.func == null || a.bottom == null) continue;
+        CompiledFunction* cf = (CompiledFunction*)a.func;
+        if (!cf.mapped_arguments()) continue;
+        TVal* abase = a.bottom;
+        uint abase_off = (uint)(abase - vm.valstack);
+        if (abase_off >= (uint)(vm.valstack_end - vm.valstack)) continue;
+        TVal* atop = abase + cf.num_regs + 4;
+        if (atop > vm.valstack_end) atop = vm.valstack_end;
+        TVal* slot = abase;
+        while (slot < atop) {
+            if (slot.is_object() && slot.get_heapptr() == (void*)args_obj) return a;
+            slot++;
+        }
+    }
+    return null;
+}
+
+// Read the current value of mapped index `idx` from the owning activation's
+// parameter registers. Returns false when the read must take the ordinary
+// dense/named path instead (unmapped index, or slots that no longer identify
+// a mapped function frame).
+fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline {
+    Activation* owner = mapped_args_owner(vm, args_obj);
+    if (owner == null) return false;
+    CompiledFunction* cf = (CompiledFunction*)owner.func;
+    if (cf == null || idx >= (uint)cf.num_args) return false;
+    *out = owner.bottom[idx];
+    return true;
+}
+
+// Write `val` through a mapped index into the owning activation's parameter
+// slot as well as the object's own dense slot, keeping the two in sync.
+// Returns false when the write must take the ordinary path instead.
+fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inline {
+    Activation* owner = mapped_args_owner(vm, args_obj);
+    if (owner == null) return false;
+    CompiledFunction* cf = (CompiledFunction*)owner.func;
+    if (cf == null || idx >= (uint)cf.num_args) return false;
+    TVal* slot = &owner.bottom[idx];
+    if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
+    *slot = *val;
+    if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+    return true;
+}
+
 // Finish initializing a strict `arguments` exotic object: set .length,
 // .callee, and @@iterator (ES2017+ §9.4.4.7 CreateUnmappedArgumentsObject).
 // Per spec, @@iterator must be the *same function object* as

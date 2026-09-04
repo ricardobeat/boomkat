@@ -794,6 +794,17 @@ struct CompilerContext {
     // presence rather than the resulting strictness (e.g. forbidding
     // directives in non-simple-parameter functions).
     bool saw_use_strict;
+    // A "use strict" prologue makes the WHOLE prologue strict, including
+    // directives lexed before it while the context was still sloppy. The
+    // lexer then DECODES octal escapes instead of flagging them, so each
+    // prologue directive records its raw-vs-decoded length pair here (ring
+    // of 16; any single shrunk directive proves a violation) for block() to
+    // check once saw_use_strict confirms the prologue is strict after all.
+    // Decoding always shrinks the span (backslash+digits become fewer
+    // chars), while every non-octal escape preserves length one-to-one.
+    usz[16] prologue_raw_lens;
+    usz[16] prologue_val_lens;
+    uint prologue_dir_count;
 
     // arguments tracking
     bool uses_arguments;        // true when 'arguments' is referenced in function body
@@ -915,6 +926,20 @@ struct CompilerContext {
     // Set once emit_hoisted_fn_decls has run for this context, so a nested
     // block cannot emit the declarations a second time.
     bool    hoisted_defer_emitted;
+
+    // Block-nested function names the sloppy B.3.3 hoist scan hoisted into
+    // this scope (functions.c3 B.3.3 block). block() consults this at
+    // block-entry time — when enclosing `let`s are visible — to decide the
+    // B.3.3.1 step ii exemption (entry init + publish). The var entry itself
+    // is created unconditionally by the scan; when block() finds the name
+    // exempt it erases that entry, so no binding exists at all.
+    //
+    // Heap-grown like hoisted_fn_names; freed in cleanup().
+    char[]* b33_hoisted_names;
+    ushort* b33_hoisted_regs;
+    uint*   b33_hoisted_pcs;
+    uint    b33_hoisted_cap;
+    uint    b33_hoisted_count;
 
     // Constant-pool indices of the top-level `var` / `function` names this
     // Script unit declares as globals (the exact names for which the check-
@@ -1288,6 +1313,9 @@ fn void CompilerContext.cleanup(&self) {
     if (self.hoisted_defer_regs != null) { h.free_func(h.heap_udata, self.hoisted_defer_regs); self.hoisted_defer_regs = null; }
     if (self.hoisted_defer_inner_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_inner_idxs); self.hoisted_defer_inner_idxs = null; }
     if (self.hoisted_defer_name_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_name_idxs); self.hoisted_defer_name_idxs = null; }
+    if (self.b33_hoisted_names != null) { h.free_func(h.heap_udata, self.b33_hoisted_names); self.b33_hoisted_names = null; }
+    if (self.b33_hoisted_regs != null) { h.free_func(h.heap_udata, self.b33_hoisted_regs); self.b33_hoisted_regs = null; }
+    if (self.b33_hoisted_pcs != null) { h.free_func(h.heap_udata, self.b33_hoisted_pcs); self.b33_hoisted_pcs = null; }
     if (self.owns_private_names && self.private_name_table != null) {
         if (self.private_name_table.entries != null) {
             h.free_func(h.heap_udata, self.private_name_table.entries);
@@ -1382,10 +1410,53 @@ fn void CompilerContext.ensure_hoisted_fn_cap(&self) {
     self.hoisted_fn_cap = new_cap;
 }
 
+// Record a B.3.3 entry init the scan emitted: the hoisted name, the register
+// the LDUNDEF+DECLVAR_HOIST pair wrote, and the DECLVAR_HOIST's instruction
+// index. When block() proves the block exempt it NOPs that DECLVAR_HOIST and
+// erases the scope entry, leaving no var binding at all. Interned names: the
+// token borrows lexer scratch that later tokens overwrite.
+fn void CompilerContext.record_b33_hoist(&self, char[] var_name, uint var_reg, uint hoist_pc) {
+    for (uint i = 0; i < self.b33_hoisted_count; i++) {
+        if (str_eq(self.b33_hoisted_names[i], var_name)) return;
+    }
+    if (self.b33_hoisted_count >= self.b33_hoisted_cap) {
+        uint new_cap = self.b33_hoisted_cap == 0 ? 8 : self.b33_hoisted_cap * 2;
+        Heap* h = (Heap*)self.heap;
+        void* pn = h.realloc_func(h.heap_udata, self.b33_hoisted_names, (usz)(new_cap * char[]::size));
+        void* pr = h.realloc_func(h.heap_udata, self.b33_hoisted_regs, (usz)(new_cap * ushort::size));
+        void* pc = h.realloc_func(h.heap_udata, self.b33_hoisted_pcs, (usz)(new_cap * uint::size));
+        if (pn == null || pr == null || pc == null) {
+            if (pn != null) self.b33_hoisted_names = (char[]*)pn;
+            if (pr != null) self.b33_hoisted_regs = (ushort*)pr;
+            if (pc != null) self.b33_hoisted_pcs = (uint*)pc;
+            self.record_error("out of memory growing the B.3.3 table");
+            return;
+        }
+        self.b33_hoisted_names = (char[]*)pn;
+        self.b33_hoisted_regs = (ushort*)pr;
+        self.b33_hoisted_pcs = (uint*)pc;
+        self.b33_hoisted_cap = new_cap;
+    }
+    HString* hs = ((Heap*)self.heap).str_intern(var_name);
+    self.b33_hoisted_names[self.b33_hoisted_count] = hs.get_data();
+    self.b33_hoisted_regs[self.b33_hoisted_count] = (ushort)var_reg;
+    self.b33_hoisted_pcs[self.b33_hoisted_count] = hoist_pc;
+    self.b33_hoisted_count++;
+}
+
+// The B.3.3 record index for `name`, or -1 when the scan hoisted nothing
+// under it into this scope (nested boundary skipped it, or a `var`/param
+// entry already covered it).
+fn int CompilerContext.b33_hoisted_index(&self, char[] name) {
+    for (uint i = 0; i < self.b33_hoisted_count; i++) {
+        if (str_eq(self.b33_hoisted_names[i], name)) return (int)i;
+    }
+    return -1;
+}
+
 // Grow the deferred-declaration tables, allocating them on the first body-scope
 // function declaration. All four grow together: they are parallel arrays.
-fn void CompilerContext.ensure_hoisted_defer_cap(&self) {
-    if (self.hoisted_defer_cap != 0 && self.hoisted_defer_count < self.hoisted_defer_cap) return;
+fn void CompilerContext.ensure_hoisted_defer_cap(&self) {    if (self.hoisted_defer_cap != 0 && self.hoisted_defer_count < self.hoisted_defer_cap) return;
     uint new_cap = self.hoisted_defer_cap == 0 ? INITIAL_HOISTED_DEFERS : self.hoisted_defer_cap * 2;
     Heap* h = (Heap*)self.heap;
     void* pn = h.realloc_func(h.heap_udata, self.hoisted_defer_names, (usz)(new_cap * char[]::size));
@@ -2271,6 +2342,17 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // EMPTY arguments object that shadows the real one).
     func.flags.uses_arguments = self.uses_arguments
                              || (self.has_direct_eval && !self.is_arrow && !self.eval_mode);
+    // Mapped arguments (plans/083 Phase 3.1): sloppy + simple parameter list
+    // per ES2015 §9.4.4.8. Simplicity reads the same three signals
+    // params_are_simple() uses (rest, defaults incl. destructured defaults,
+    // destructured params). Direct-eval-forced uses_arguments is unmapped:
+    // the flag only guarantees an object exists for the eval body, and the
+    // eval body is not this function's own parameter scope.
+    func.flags.mapped_arguments = !self.is_strict && self.uses_arguments
+                             && !self.has_rest && self.default_count == 0
+                             && self.destruct_default_count == 0
+                             && !self.has_destructured_param
+                             && !self.is_arrow && !self.eval_mode;
     // Direct eval must run in the caller's lexical environment: the CALL
     // paths only set ACT_FLAG_DIRECT_EVAL (which builtin_eval checks) when
     // this flag is present on the compiled function.

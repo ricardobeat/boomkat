@@ -462,10 +462,10 @@ struct Lexer {
     bool strict_mode;
     // Identifier-reservation strictness, split out from `strict_mode`.
     //
-    // `strict_mode` also gates the lexical rules this engine rejects
-    // unconditionally (legacy octal literals and octal escapes -- see
-    // AGENTS.md "Strict-Only Mode"), so it stays pinned true. This flag
-    // governs ONLY whether the strict-mode reserved words (`eval`,
+    // `strict_mode` gates the lexical rules for legacy octal literals and
+    // octal escapes (sloppy accepts per Annex B, strict rejects). It starts
+    // true and each compilation entry lowers it to match ctx.is_strict.
+    // This flag governs ONLY whether the strict-mode reserved words (`eval`,
     // `arguments`, `implements`, `interface`, `package`, `private`,
     // `protected`, `public`) are restricted binding targets. Dynamic code
     // whose strictness the spec decides by its own directive prologue -- an
@@ -1420,6 +1420,15 @@ fn Token? Lexer.scan_string(&self) {
     char[STRING_BUF_SIZE] buf;
     uint buf_len = 0;
     bool found_octal = false;
+    // Raw source bytes consumed between the quotes (escapes unexpanded).
+    // Every branch below accounts its own consumed bytes: the `\\` prologue
+    // adds 2 up front, multi-byte escapes (extra octal digits, \xHH,
+    // \uHHHH, line continuations) add the remainder as they consume. A
+    // decoded octal escape always shrinks the span (backslash+digits become
+    // one char), so a later raw-vs-decoded length compare reveals it — the
+    // parser's prologue strictness check reads this through raw_value.len,
+    // since has_octal_escape only latches in strict mode.
+    uint raw_len = 0;
 
     while (!self.at_end()) {
         char ch = self.peek_char();
@@ -1433,6 +1442,14 @@ fn Token? Lexer.scan_string(&self) {
                 tok.str_value = {};
             }
             tok.has_octal_escape = found_octal;
+            // Raw span between the quotes: raw_len counts every source byte
+            // consumed, buf_len the decoded length. Sliced from the
+            // arena-backed source (stable for the token's lifetime); empty
+            // when the literal held no escapes at all.
+            if (raw_len > 0) {
+                usz raw_start = (usz)self.pos - raw_len - 1;
+                tok.raw_value = self.source[raw_start..raw_start + raw_len - 1];
+            }
             return tok;
         }
 
@@ -1443,6 +1460,7 @@ fn Token? Lexer.scan_string(&self) {
         if (ch == '\\') {
             self.advance_char(); // consume backslash
             if (self.at_end()) return LEX_ERROR~;
+            raw_len += 2;
 
             char esc = self.advance_char();
             switch (esc) {
@@ -1464,6 +1482,7 @@ fn Token? Lexer.scan_string(&self) {
                             char od = self.peek_char();
                             if (od < '0' || od > '7') break;
                             self.advance_char();
+                            raw_len++;
                             oval = oval * 8 + (uint)(od - '0');
                         }
                         buf_len = encode_utf8_to_buf(&buf, buf_len, oval);
@@ -1486,6 +1505,7 @@ fn Token? Lexer.scan_string(&self) {
                     if (self.remaining() < 2) return LEX_ERROR~;
                     char h1 = self.advance_char();
                     char h2 = self.advance_char();
+                    raw_len += 2;
                     if (!is_hex_digit(h1) || !is_hex_digit(h2)) return LEX_ERROR~;
                     uint hval = hex_value(h1) * 16 + hex_value(h2);
                     buf_len = encode_utf8_to_buf(&buf, buf_len, hval);
@@ -1495,17 +1515,20 @@ fn Token? Lexer.scan_string(&self) {
                     if (self.peek_char() == '{') {
                         // \u{H..H}, variable length Unicode escape
                         self.advance_char(); // consume {
+                        raw_len++;
                         uint ucp = 0;
                         uint udigits = 0;
                         while (!self.at_end() && self.peek_char() != '}') {
                             if (!is_hex_digit(self.peek_char())) return LEX_ERROR~;
                             ucp = ucp * 16 + hex_value(self.peek_char());
                             self.advance_char();
+                            raw_len++;
                             udigits++;
                             if (ucp > 0x10FFFF) return LEX_ERROR~;
                         }
                         if (self.at_end() || udigits == 0) return LEX_ERROR~;
                         self.advance_char(); // consume }
+                        raw_len++;
                         buf_len = encode_utf8_to_buf(&buf, buf_len, ucp);
                     } else {
                         // \uHHHH, exactly 4 hex digits
@@ -1513,6 +1536,7 @@ fn Token? Lexer.scan_string(&self) {
                         uint ucp4 = 0;
                         for (int i = 0; i < 4; i++) {
                             char hc = self.advance_char();
+                            raw_len++;
                             if (!is_hex_digit(hc)) return LEX_ERROR~;
                             ucp4 = ucp4 * 16 + hex_value(hc);
                         }
@@ -1521,11 +1545,14 @@ fn Token? Lexer.scan_string(&self) {
 
                 case '\n':
                     // Line continuation, just skip the newline
+                    raw_len++;
                     break;
                 case '\r':
                     // Line continuation, also skip following \n if present
+                    raw_len++;
                     if (!self.at_end() && self.peek_char() == '\n') {
                         self.advance_char();
+                        raw_len++;
                     }
 
                 case 0xE2:
@@ -1540,6 +1567,7 @@ fn Token? Lexer.scan_string(&self) {
                         && (self.peek_char_at(1) == 0xA8 || self.peek_char_at(1) == 0xA9)) {
                         self.advance_char(); // consume 0x80
                         self.advance_char(); // consume 0xA8 or 0xA9
+                        raw_len += 2;
                     } else {
                         buf[buf_len] = esc;
                         buf_len++;
@@ -1556,6 +1584,7 @@ fn Token? Lexer.scan_string(&self) {
                             char od2 = self.peek_char();
                             if (od2 < '0' || od2 > '7') break;
                             self.advance_char();
+                            raw_len++;
                             oval2 = oval2 * 8 + (uint)(od2 - '0');
                         }
                         buf_len = encode_utf8_to_buf(&buf, buf_len, oval2);
@@ -1571,6 +1600,7 @@ fn Token? Lexer.scan_string(&self) {
             // Regular character
             buf[buf_len] = ch;
             buf_len++;
+            raw_len++;
             self.advance_char();
         }
 

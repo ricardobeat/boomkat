@@ -1317,6 +1317,12 @@ bitstruct FuncFlags : uint {
     bool  has_rest      : 9;
     // Function uses `arguments` (needs Arguments exotic object).
     bool  uses_arguments: 10;
+    // Sloppy function with a simple parameter list that references
+    // `arguments`: the object is mapped (ES2015 §9.4.4.8), so index reads
+    // and writes alias the parameter registers. Set at finish() time from
+    // `!is_strict && uses_arguments && params_are_simple`; the VM consults
+    // it at every ARGUMENTS creation site instead of re-deriving simplicity.
+    bool  mapped_arguments: 22;
     // Function uses `eval` (may create dynamic bindings).
     bool  uses_eval     : 11;
     // Function is an arrow function (lexical `this`).
@@ -1665,6 +1671,13 @@ macro bool CompiledFunction.is_strict(&self) {
 // Returns `true` when the function uses `arguments`.
 macro bool CompiledFunction.uses_arguments(&self) {
     return self.flags.uses_arguments;
+}
+
+// Returns `true` when the function's `arguments` object is parameter-mapped
+// (sloppy + simple parameter list, ES2015 §9.4.4.8). Index reads fall back
+// to the parameter registers; index writes update them.
+macro bool CompiledFunction.mapped_arguments(&self) {
+    return self.flags.mapped_arguments;
 }
 
 // Returns `true` when the function contains direct `eval()` calls.
