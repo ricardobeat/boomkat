@@ -1024,6 +1024,29 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     EnvRecord* cap_lex_fast = (*hobj_fast.extra_ptr()).func.lex_env;
                     if (target_fast.is_namebinding()) {
                         new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
+                    } else if (cap_lex_fast != null && cap_lex_fast.is_with
+                            && fast_var_env != (*hobj_fast.extra_ptr()).func.var_env) {
+                        // `with`-splice (ES2024 §13.11.1): chain the closure's
+                        // own fresh scope above the captured with-env so reads
+                        // inside the closure walk own bindings, then
+                        // with-properties (prototype walk), then the enclosing
+                        // lexical chain the with-env recorded at WITH_START
+                        // time. Only safe to mutate when fast_var_env is the
+                        // freshly allocated scope (needs_env=true); needs_env=
+                        // false callees reuse the captured var_env directly and
+                        // would corrupt sibling closures if rewritten.
+                        fast_var_env.parent = cap_lex_fast;
+                        new_act.lex_env = fast_var_env;
+                    } else if (cap_lex_fast != null && cap_lex_fast.is_with) {
+                        // needs_env=false callee reused the captured var_env
+                        // directly (would corrupt siblings if rewritten), so
+                        // point lex_env straight at the with-env. The
+                        // closure's body has no own params/locals to lookup
+                        // (those would have forced needs_env=true), so the
+                        // with-env's lookup — bindings, then prototype, then
+                        // the lexical chain it captured at WITH_START time —
+                        // is exactly the chain the closure needs.
+                        new_act.lex_env = cap_lex_fast;
                     } else if (cap_lex_fast == null || cap_lex_fast == fast_var_env
                             || !cap_lex_fast.is_declarative) {
                         new_act.lex_env = fast_var_env;
