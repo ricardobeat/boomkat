@@ -152,6 +152,7 @@ struct LoopInfo {
     uint continue_patch_head; ///< chain of pending continue jumps (deferred until target resolved)
     bool is_loop;             ///< false for switch pseudo-loops (continue skips these)
     int  saved_lex_depth;     ///< cur_lex_depth at loop entry, break/continue POP_LEX back to this
+int  saved_with_depth;   ///< cur_with_depth at loop entry, break/continue WITH_END back to this
     int  iter_close_reg;      ///< >= 0: for-of iterator reg, emit ITER_CLOSE on break/return; -1 = none
     bool is_await_loop;       ///< for-await-of: break/return unwind uses ITER_CLOSE_ASYNC (plan 057)
     // try_depth at loop entry. A break/continue whose target loop was entered
@@ -778,11 +779,17 @@ struct CompilerContext {
                                 // `*`/`async *` method). Distinguishes async
                                 // generators from plain async functions.
 
-    // Lexical environment depth: incremented when block() / for-in / for-of /
-    // class body etc. push a PUSH_LEX, decremented on POP_LEX. Tracked so
-    // break/continue can emit POP_LEXes to unwind the lex_env stack back to
-    // the loop's lex_env before jumping.
-    int  cur_lex_depth;
+// Lexical environment depth: incremented when block() / for-in / for-of /
+// class body etc. push a PUSH_LEX, decremented on POP_LEX. Tracked so
+// break/continue can emit POP_LEXes to unwind the lex_env stack back to
+// the loop's lex_env before jumping.
+int  cur_lex_depth;
+
+// Number of `with` statements currently nested. Each is paired with a
+// runtime WITH_START/WITH_END; an abrupt break/continue/return must emit
+// a matching WITH_END for every enclosing with (otherwise the with-env
+// stays on act.lex_env and the jump target reads it as still active).
+int  cur_with_depth;
 
     // Per-function strictness. Default true (the engine was strict-only when
     // this field was added); plans/083 flips script bodies to sloppy at a
@@ -2376,9 +2383,17 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     bool needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
                           || self.uses_arguments
                           || self.has_direct_eval;
+    // can_skip_env: only for functions that share the parent's environment
+    // record, both for var declarations and for closures created inside.
+    // A function with `var` declarations (or `let`/`const`/params) must own
+    // a fresh env so its DECLVAR/DECLVAR_HOIST/DECLVAR writes land on its
+    // own scope rather than the captured parent (e.g. a global record or
+    // a `with` object); otherwise a body like `var x = ...` called from
+    // inside `with` would walk the chain and write through to the with-env.
     bool can_skip_env = !needs_runtime_env
                      && !has_params_needing_env
                      && !self.has_captured_local
+                     && !self.has_local_bindings
                      && !self.is_arrow
                      && !self.is_generator
                      && !self.is_async

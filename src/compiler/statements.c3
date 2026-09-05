@@ -2402,10 +2402,12 @@ fn void? CompilerContext.with_statement(&self) {
     self.expect(TokenType.RPAREN)!;
 
     self.emit_a_bc(Opcode.WITH_START, (uint)obj_reg, 0);
+    self.cur_with_depth++;
 
     self.statement_body()!;
 
     self.emit_abc(Opcode.WITH_END, 0, 0, 0);
+    self.cur_with_depth--;
     // Don't free a register that is the slot of a live local variable AND is
     // the top of the register stack. Mirrors expression_statement's guard.
     if (obj_reg + 1 != self.next_reg || !self.is_local_var_reg(obj_reg)) {
@@ -5697,6 +5699,12 @@ fn void? CompilerContext.break_statement(&self) {
     while (self.cur_lex_depth > target_lex) {
         self.emit_simple(Opcode.POP_LEX);
         self.cur_lex_depth--;
+    }
+    // Each enclosing `with` adds a with-env on top of lex_env; emit a
+    // matching WITH_END so the jump target reads the post-with lex chain.
+    while (self.cur_with_depth > self.loop_stack[loop_idx].saved_with_depth) {
+        self.emit_abc(Opcode.WITH_END, 0, 0, 0);
+        self.cur_with_depth--;
     }
     // IteratorClose: if breaking from a for-of loop, close the iterator.
     if (self.loop_stack[loop_idx].iter_close_reg >= 0) {

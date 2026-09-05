@@ -3225,8 +3225,18 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // cannot see the classScope's `__super__` binding, so the
                 // constructor's CLOSURE captures func.lex_env = classScope but
                 // NEW_OBJ was unconditionally resetting it to ctor_var_env.
+                //
+                // `with` splice (ES2024 §13.11.1): when the closure was created
+                // inside a `with`, the captured lex_env is a with-env. Read
+                // accesses inside the constructor must walk that with-env, so
+                // point lex_env straight at it (needs_env=false callees have
+                // no own params/locals to look up first; needs_env=true callees
+                // splice on the next page in resolve_call_lex_env).
                 EnvRecord* cap_lex_noname = (*hobj.extra_ptr()).func.lex_env;
-                if (cap_lex_noname != null
+                if (cap_lex_noname != null && cap_lex_noname.is_with
+                    && cap_lex_noname != ctor_var_env) {
+                    new_act.lex_env = cap_lex_noname;
+                } else if (cap_lex_noname != null
                     && cap_lex_noname != ctor_var_env
                     && cap_lex_noname.is_declarative) {
                     new_act.lex_env = cap_lex_noname;
