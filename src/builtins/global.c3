@@ -951,13 +951,13 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     parent_static_super_name,
                                                     // ES2024 §19.2.1.1 step 12:
                                                     // direct eval inherits the
-                                                    // caller's strictness (every
-                                                    // activation here is strict);
+                                                    // caller's strictness;
                                                     // an INDIRECT eval is
                                                     // non-strict unless its own
                                                     // prologue says otherwise.
                                                     caller_has_direct_eval &&
-                                                        precheck_caller != null);
+                                                        precheck_caller != null &&
+                                                        ((CompiledFunction*)precheck_caller.func).is_strict());
     CompiledFunction* func;
     if (try f = cf) {
         func = f;

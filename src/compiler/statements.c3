@@ -321,6 +321,10 @@ fn bool CompilerContext.peek2_starts_binding(&self) {
     Token cur = cur_opt;
     TokenType next_tt = self.peek_type();
     self.pushback(cur);
+    // `let` followed by a newline is an identifier reference (`with ({}) let`
+    // + ASI + `{}`), never a LexicalDeclaration: the grammar requires no
+    // LineTerminator between `let` and its binding.
+    if (self.lexer.seen_line_term) return false;
     return next_tt == TokenType.IDENTIFIER || next_tt == TokenType.LBRACKET ||
            next_tt == TokenType.LBRACE || next_tt == TokenType.LET ||
            next_tt == TokenType.YIELD || next_tt == TokenType.AWAIT;
@@ -372,11 +376,8 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.SWITCH:
             self.switch_statement()!;
         case TokenType.WITH:
-            // Phase 1 (plans/083): allow `with` in sloppy mode. Runtime
-            // semantics land in phase 4 (WITH_START/WITH_END opcodes).
-            // For phase 1 the parser accepts the construct and emits a
-            // THROW_SYNTAX so any attempt to actually run a `with` body
-            // surfaces a clean SyntaxError instead of a VM_ERROR.
+            // `with` is sloppy-only (ES2024 §13.11.1). with_statement emits
+            // WITH_START/WITH_END.
             if (self.is_strict) {
                 return self.fail("'with' statement is not allowed in strict mode")~;
             }
@@ -2053,6 +2054,15 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
         // base (a nested block's directives belong to its own body).
         if (self.saw_use_strict) {
             self.lexer.set_strict(true);
+            self.is_strict = true;
+            if (self.current_func != null) self.current_func.flags.is_strict = true;
+            // A "use strict" prologue retroactively strictens the whole body:
+            // a `with` parsed before the directive flipped is a strict-mode
+            // SyntaxError (ES2024 §13.11.1). Nested strict functions compile
+            // in their own context, so only this body's own depth counts.
+            if (self.cur_with_depth > 0) {
+                return self.fail("'with' statement is not allowed in strict mode")~;
+            }
             if (self.prologue_has_shrunk_directive(prologue_base)) {
                 return self.fail("octal escape sequences are not allowed in strict mode")~;
             }
@@ -2294,7 +2304,7 @@ fn void? CompilerContext.var_declaration(&self) {
                     // assignment, so emit the assignment as a value-only update
                     // of the existing global binding.
                     self.emit_a_bc(Opcode.PUTVAR, (uint)reg, name_idx);
-                } else if (!self.is_global && !is_lexical && has_init) {
+                } else if (!self.is_global && !is_lexical && has_init && self.cur_with_depth > 0) {
                     // Function-scoped `var x = <expr>`: the binding already exists
                     // (DECLVAR_HOIST) as undefined; the assignment side runs at the
                     // current position, so it must walk the env chain. A `with`
@@ -2395,6 +2405,7 @@ fn void? CompilerContext.if_statement(&self) {
 //     <body>                              (RESOLVEVAR/PUTVAR/PUTGLOBAL walk the
 //                                          chain; with-env intercepts)
 //     WITH_END                            (pops the with-env)
+//
 fn void? CompilerContext.with_statement(&self) {
     self.expect(TokenType.WITH)!;
     self.expect(TokenType.LPAREN)!;

@@ -6087,19 +6087,33 @@ fn TVal? Vm.run(Vm* vm) {
             HString* name_hstr = (HString*)key;
             bool is_strict_d = vm.current_func.is_strict();
 
-            // Walk the lex chain. If any binding exists, it is non-configurable
-            // for var/function in sloppy mode (the binding can only be removed
-            // by leaving the scope), so the spec answer is false. Deleting from
-            // the global object can succeed (configurable:true) but the binding
-            // is found via env_try_put_lex which reports 1 — we surface that
-            // as false anyway for parity with Annex B.3.2, which treats any
-            // discovered var-like binding as delete-of-var.
+            // Walk the lex chain. A `with`-env hit is `delete obj.x`: drop the property
+            // from the with object and report success. A non-with hit is a
+            // var/function binding (Annex B.3.2), non-configurable by spec, so
+            // the answer is false regardless of strictness.
             EnvRecord* cur = ds.act.lex_env;
             bool found = false;
             while (cur != null) {
+                if (cur.is_with) {
+                    if (cur.bindings.has_prop_proto(key, vm.heap)) {
+                        // delete obj.x inside `with`: [[Delete]] the own
+                        // property and report its boolean result. The with-env
+                        // hit is a property delete, not a var-binding delete,
+                        // so it must not fall through to the logic below.
+                        ra.set_boolean(cur.bindings.es_delete_prop(key, vm.heap));
+                        track_heap_store(ds.act, ra, (uint)insn.a);
+                        found = true;
+                        break;
+                    }
+                    cur = cur.parent;
+                    continue;
+                }
                 int idx = cur.bindings.find_prop_idx(key, vm.heap);
                 if (idx >= 0) { found = true; break; }
                 cur = cur.parent;
+            }
+            if (found && cur != null && cur.is_with) {
+                continue;
             }
             if (!found && !is_strict_d) {
                 // Annex B.3.2: unresolvable → true. GetValue on a missing name
