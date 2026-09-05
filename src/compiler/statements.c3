@@ -321,9 +321,15 @@ fn bool CompilerContext.peek2_starts_binding(&self) {
     Token cur = cur_opt;
     TokenType next_tt = self.peek_type();
     self.pushback(cur);
-    // `let` followed by a newline is an identifier reference (`with ({}) let`
-    // + ASI + `{}`), never a LexicalDeclaration: the grammar requires no
-    // LineTerminator between `let` and its binding.
+    // `let [` is a LexicalDeclaration even across a newline: the
+    // ExpressionStatement lookahead exclusion (`let [`) carries no
+    // [no LineTerminator here] qualifier (ES2024 §13.5.1), so
+    // `with ({}) let\n[a] = 0` stays a declaration (rejected as a
+    // single-statement body) while `with ({}) let\n{}` parses as an
+    // identifier reference plus a separate block.
+    if (next_tt == TokenType.LBRACKET) return true;
+    // Otherwise `let` followed by a newline is an identifier reference
+    // (`with ({}) let` + ASI + `{}`), never a LexicalDeclaration.
     if (self.lexer.seen_line_term) return false;
     return next_tt == TokenType.IDENTIFIER || next_tt == TokenType.LBRACKET ||
            next_tt == TokenType.LBRACE || next_tt == TokenType.LET ||
