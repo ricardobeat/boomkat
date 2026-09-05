@@ -4438,6 +4438,19 @@ fn TVal? Vm.run(Vm* vm) {
                     int owner_idx = -1;
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
+                        if (cur.is_with) {
+                            if (cur.bindings.has_prop_proto(key, vm.heap)) {
+                                // Mark found but do not populate IC (the
+                                // prototype-chain hit is too dynamic to cache
+                                // — a put on the with object or any prototype
+                                // can re-shape the lookup).
+                                owner = cur;
+                                owner_idx = 0;
+                                break;
+                            }
+                            cur = cur.parent;
+                            continue;
+                        }
                         int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) { owner = cur; owner_idx = idx; break; }
                         cur = cur.parent;
@@ -4445,13 +4458,25 @@ fn TVal? Vm.run(Vm* vm) {
                     if (owner == null && ds.act.lex_env != ds.act.var_env) {
                         cur = ds.act.var_env;
                         while (cur != null) {
+                            if (cur.is_with) {
+                                if (cur.bindings.has_prop_proto(key, vm.heap)) {
+                                    owner = cur;
+                                    owner_idx = 0;
+                                    break;
+                                }
+                                cur = cur.parent;
+                                continue;
+                            }
                             int idx = cur.bindings.find_prop_idx(key, vm.heap);
                             if (idx >= 0) { owner = cur; owner_idx = idx; break; }
                             cur = cur.parent;
                         }
                     }
+                    // Only populate the IC for an own-property hit, never for
+                    // a with-env prototype walk.
+                    bool owner_is_own = owner != null && !owner.is_with;
                     found = owner != null;
-                    if (found && ds.var_ic_base != null) {
+                    if (found && owner_is_own && ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
                             (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx, key,
@@ -4533,6 +4558,46 @@ fn TVal? Vm.run(Vm* vm) {
                     // Search lexical environment first (for let/const bindings)
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
+                        if (cur.is_with) {
+                            // Object environment: walk the prototype chain.
+                            hobject::PropProtoResult proto =
+                                cur.bindings.get_prop_proto_full(key, vm.heap);
+                            if (proto.found) {
+                                if (proto.is_accessor) {
+                                    TVal getter = hobject::hobject_access_getter(proto.value);
+                                    if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                                        TVal this_tv;
+                                        this_tv.set_object(proto.owner != null ? proto.owner : cur.bindings);
+                                        TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                                        if (vm.heap.has_error) {
+                                            vm.heap.has_error = false;
+                                            TVal err_val = vm.heap.error_value;
+                                            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                                vm.has_error = true;
+                                                vm.heap.has_error = true;
+                                                return VM_ERROR~;
+                                            }
+                                            found = true;
+                                        } else {
+                                            vm.heap.tval_copy_ref(ra, &getter_val);
+                                            track_heap_store(ds.act, ra, (uint)insn.a);
+                                            found = true;
+                                        }
+                                    } else {
+                                        ra.set_undefined();
+                                        track_heap_store(ds.act, ra, (uint)insn.a);
+                                        found = true;
+                                    }
+                                } else {
+                                    vm.heap.tval_copy_ref(ra, &proto.value);
+                                    track_heap_store(ds.act, ra, (uint)insn.a);
+                                    found = true;
+                                }
+                                break;
+                            }
+                            cur = cur.parent;
+                            continue;
+                        }
                         int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
                             // ENV_STRICT: GETVAR read traps are gone, since a needs_env=false
@@ -4598,6 +4663,43 @@ fn TVal? Vm.run(Vm* vm) {
                         // Not in lex_env, so search var_env, which only `with` blocks need.
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
+                            if (vcur.is_with) {
+                                hobject::PropProtoResult proto =
+                                    vcur.bindings.get_prop_proto_full(key, vm.heap);
+                                if (proto.found) {
+                                    if (proto.is_accessor) {
+                                        TVal getter = hobject::hobject_access_getter(proto.value);
+                                        if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                                            TVal this_tv;
+                                            this_tv.set_object(proto.owner != null ? proto.owner : vcur.bindings);
+                                            TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                                            if (vm.heap.has_error) {
+                                                vm.heap.has_error = false;
+                                                TVal err_val = vm.heap.error_value;
+                                                if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                                    vm.has_error = true;
+                                                    vm.heap.has_error = true;
+                                                    return VM_ERROR~;
+                                                }
+                                                found = true;
+                                                break;
+                                            }
+                                            vm.heap.tval_copy_ref(ra, &getter_val);
+                                            track_heap_store(ds.act, ra, (uint)insn.a);
+                                        } else {
+                                            ra.set_undefined();
+                                            track_heap_store(ds.act, ra, (uint)insn.a);
+                                        }
+                                    } else {
+                                        vm.heap.tval_copy_ref(ra, &proto.value);
+                                        track_heap_store(ds.act, ra, (uint)insn.a);
+                                    }
+                                    found = true;
+                                    break;
+                                }
+                                vcur = vcur.parent;
+                                continue;
+                            }
                             int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                             if (vidx >= 0) {
                                 // ENV_STRICT: no trap here. For needs_env=false
@@ -5080,6 +5182,45 @@ fn TVal? Vm.run(Vm* vm) {
 
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
+                        if (cur.is_with) {
+                            hobject::PropProtoResult proto =
+                                cur.bindings.get_prop_proto_full(key, vm.heap);
+                            if (proto.found) {
+                                if (proto.is_accessor) {
+                                    TVal getter = hobject::hobject_access_getter(proto.value);
+                                    if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                                        TVal this_tv;
+                                        this_tv.set_object(proto.owner != null ? proto.owner : cur.bindings);
+                                        TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                                        if (vm.heap.has_error) {
+                                            vm.heap.has_error = false;
+                                            TVal err_val = vm.heap.error_value;
+                                            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                                vm.has_error = true;
+                                                vm.heap.has_error = true;
+                                                return VM_ERROR~;
+                                            }
+                                            found = true;
+                                        } else {
+                                            vm.heap.tval_copy_ref(ra, &getter_val);
+                                            track_heap_store(ds.act, ra, (uint)insn.a);
+                                            found = true;
+                                        }
+                                    } else {
+                                        ra.set_undefined();
+                                        track_heap_store(ds.act, ra, (uint)insn.a);
+                                        found = true;
+                                    }
+                                } else {
+                                    vm.heap.tval_copy_ref(ra, &proto.value);
+                                    track_heap_store(ds.act, ra, (uint)insn.a);
+                                    found = true;
+                                }
+                                break;
+                            }
+                            cur = cur.parent;
+                            continue;
+                        }
                         int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
                             TVal v_raw = cur.bindings.prop_values()[idx];
@@ -5130,6 +5271,43 @@ fn TVal? Vm.run(Vm* vm) {
                     if (!found && ds.act.lex_env != ds.act.var_env) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
+                            if (vcur.is_with) {
+                                hobject::PropProtoResult proto =
+                                    vcur.bindings.get_prop_proto_full(key, vm.heap);
+                                if (proto.found) {
+                                    if (proto.is_accessor) {
+                                        TVal getter = hobject::hobject_access_getter(proto.value);
+                                        if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                                            TVal this_tv;
+                                            this_tv.set_object(proto.owner != null ? proto.owner : vcur.bindings);
+                                            TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                                            if (vm.heap.has_error) {
+                                                vm.heap.has_error = false;
+                                                TVal err_val = vm.heap.error_value;
+                                                if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                                    vm.has_error = true;
+                                                    vm.heap.has_error = true;
+                                                    return VM_ERROR~;
+                                                }
+                                                found = true;
+                                                break;
+                                            }
+                                            vm.heap.tval_copy_ref(ra, &getter_val);
+                                            track_heap_store(ds.act, ra, (uint)insn.a);
+                                        } else {
+                                            ra.set_undefined();
+                                            track_heap_store(ds.act, ra, (uint)insn.a);
+                                        }
+                                    } else {
+                                        vm.heap.tval_copy_ref(ra, &proto.value);
+                                        track_heap_store(ds.act, ra, (uint)insn.a);
+                                    }
+                                    found = true;
+                                    break;
+                                }
+                                vcur = vcur.parent;
+                                continue;
+                            }
                             int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                             if (vidx >= 0) {
                                 if (vcur.bindings.get_prop_flags((uint)vidx, vm.heap).is_accessor) {
@@ -5944,17 +6122,95 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
-        // === WITH STATEMENT (plans/083) ===
-        // Phase 1 stubs are unreachable: the compiler emits a THROW_SYNTAX
-        // for the body instead of WITH_START, and a NOP after, so a sloppy
-        // `with` parses cleanly but raises a SyntaxError at runtime. The
-        // opcode pair exists so phase 4 can drop the THROW_SYNTAX, replace
-        // the NOP with WITH_END, and add real semantics here with no parser
-        // change. Trip VM_ERROR for any accidental emission that bypasses
-        // the guard (defense against verifier-skipped paths).
-        case Opcode.WITH_START:
-        case Opcode.WITH_END:
-            return VM_ERROR~;
+        // === WITH STATEMENT (plans/083 phase 4) ===
+        // ES2024 §13.11.1: WithStatement pushes an Object Environment Record
+        // onto the running execution context's LexicalEnvironment (not
+        // VariableEnvironment). This is what makes reads inside `with`
+        // intercept lookup-time and assignments to with-object properties
+        // update them in place: GETVAR walks lex_env, PUTVAR tries lex_env
+        // via env_try_put_lex, and an is-with lex record walks the prototype
+        // chain via env_get/has/put.
+        //
+        // WITH_START: ToObject the operand (primitives wrap, null/undefined
+        // throw TypeError), then push a with-env onto act.lex_env.
+        // WITH_END: pop the with-env from act.lex_env. The env record is NOT
+        // returned to the pool: a closure created inside `with` captures
+        // act.lex_env (CLOSURE), and freeing would leave a dangling pointer.
+        case Opcode.WITH_START: {
+            TVal obj_val = *ra;
+            HObject* obj;
+
+            if (obj_val.is_object()) {
+                obj = (HObject*)obj_val.get_heapptr();
+            } else if (obj_val.is_null() || obj_val.is_undefined()) {
+                HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
+                if (try err = err_raw) {
+                    err.prototype = vm.heap.type_err_proto;
+                    HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
+                    HString* msg_val = intern_string(vm,
+                        obj_val.is_null() ? "Cannot use 'with' on null" : "Cannot use 'with' on undefined");
+                    TVal msg_tv;
+                    msg_tv.set_string(msg_val);
+                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC, vm.heap);
+                    TVal err_val;
+                    err_val.set_object(err);
+                    if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                } else {
+                    return VM_ERROR~;
+                }
+                continue;
+            } else if (obj_val.is_boolean()) {
+                HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.BOOLEAN);
+                if (catch _err = wrapped) { return VM_ERROR~; }
+                obj = wrapped;
+                obj.prototype = vm.heap.bool_proto;
+                (*obj.extra_ptr()).prim.primitive_value.set_boolean(obj_val.get_boolean());
+            } else if (obj_val.is_string()) {
+                HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.STRING);
+                if (catch _err = wrapped) { return VM_ERROR~; }
+                obj = wrapped;
+                obj.flags.exotic_stringobj = true;
+                obj.prototype = vm.heap.string_proto;
+                HString* prim_str = (HString*)obj_val.get_heapptr();
+                (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
+                HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
+                TVal len_tv;
+                len_tv.set_fastint((long)prim_str.char_length());
+                obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, vm.heap);
+            } else if (obj_val.is_number() || obj_val.is_fastint()) {
+                HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
+                if (catch _err = wrapped) { return VM_ERROR~; }
+                obj = wrapped;
+                obj.prototype = vm.heap.number_proto;
+                vm.heap.tval_copy_ref(&(*obj.extra_ptr()).prim.primitive_value, &obj_val);
+            } else {
+                // POINTER or BUFFER: spec says throw; treat as a no-op so a
+                // malformed operand does not abort the VM.
+                break;
+            }
+
+            EnvRecord*? env_raw = env::env_create_with_object(vm.heap, ds.act.lex_env, obj);
+            if (try new_env = env_raw) {
+                ds.act.lex_env = new_env;
+            } else {
+                return VM_ERROR~;
+            }
+            continue;
+        }
+
+        case Opcode.WITH_END: {
+            // Pop the current with-env from the lex chain. Do not return
+            // the record to the pool: a closure created inside the `with`
+            // block may have captured it via func.lex_env (CLOSURE captures
+            // act.lex_env directly), and freeing would leave a dangling
+            // pointer in the closure.
+            if (ds.act.lex_env != null && ds.act.lex_env.parent != null) {
+                ds.act.lex_env = ds.act.lex_env.parent;
+            }
+            continue;
+        }
 
         // === CLOSURES ===
         case Opcode.CLOSURE:

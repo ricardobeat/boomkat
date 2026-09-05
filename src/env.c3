@@ -66,6 +66,10 @@ struct EnvRecord {
     bool is_declarative;
     // Function call boundary: var-scope writes do not propagate past this link.
     bool is_function_scope;
+    // `with`-statement environment: lookups walk the bindings object's
+    // prototype chain (ES5 §10.2.1.2.1), and unresolved assignments fall
+    // through to the enclosing scope rather than landing on the with object.
+    bool is_with;
     // Owning heap for bindings and property operations.
     Heap* heap;
 }
@@ -131,6 +135,26 @@ fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
     return types::ALLOC_ERROR~;
 }
 
+// Create a `with` environment record wrapping an existing HObject.
+//
+// Does not allocate a new bindings object: `bindings` is the user's object
+// as ToObject'd by the VM. `is_with = true` tells env_get/env_has to walk
+// the prototype chain, and env_put to skip this record when creating new
+// bindings (unresolvable references inside `with` go to the enclosing
+// non-with scope).
+fn EnvRecord*? env_create_with_object(Heap* heap, EnvRecord* parent, HObject* bindings) {
+    EnvRecord*? raw = env_pool_alloc(heap);
+    if (try env = raw) {
+        env.parent = parent;
+        env.bindings = bindings;
+        env.heap = heap;
+        env.is_declarative = false;
+        env.is_with = true;
+        return env;
+    }
+    return types::ALLOC_ERROR~;
+}
+
 // Iteratively returns an environment record and its parent chain to the pool.
 fn void env_destroy(Heap* heap, EnvRecord* env) {
     EnvRecord* cur = env;
@@ -146,13 +170,25 @@ fn void env_destroy(Heap* heap, EnvRecord* env) {
 // ============================================================================
 
 // Walks outward through the scope chain to find a binding.
+//
+// For `with` environments (`is_with == true`) the lookup walks the
+// bindings object's prototype chain via [[HasProperty]] / [[Get]]
+// (ES5 §10.2.1.2.1). Declarative and other object environments only
+// match own properties.
 fn TVal? env_get(EnvRecord* env, void* key) {
     Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key, h);
-        if (idx >= 0) {
-            return cur.bindings.prop_values()[idx];
+        if (cur.is_with) {
+            TVal? result = cur.bindings.get_prop_proto(key, h);
+            if (try v = result) {
+                return v;
+            }
+        } else {
+            int idx = cur.bindings.find_prop_idx(key, h);
+            if (idx >= 0) {
+                return cur.bindings.prop_values()[idx];
+            }
         }
         cur = cur.parent;
     }
@@ -164,7 +200,10 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
     Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        if (cur.bindings.has_prop(key, h)) {
+        bool found = cur.is_with
+                     ? cur.bindings.has_prop_proto(key, h)
+                     : cur.bindings.has_prop(key, h);
+        if (found) {
             return true;
         }
         cur = cur.parent;
@@ -177,22 +216,33 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
 // ============================================================================
 
 // Assigns to an existing binding anywhere in the chain, or creates a new
-// binding in `env` if unbound.
+// binding on the first non-with record in the chain.
+//
+// An existing binding is updated in-place (even if it's in an outer scope).
+// For `with`-envs the existing-binding check walks the prototype chain
+// (matching [[HasProperty]]). A new binding never lands on a `with`-env:
+// unresolvable references inside `with` go to the enclosing non-with
+// scope, which is the spec-compliant behavior.
 fn bool env_put(EnvRecord* env, void* key, TVal val) {
     Heap* h = env.heap;
     EnvRecord* cur = env;
+    EnvRecord* first_non_with = null;
     while (cur != null) {
-        int idx = cur.bindings.find_prop_idx(key, h);
-        if (idx >= 0) {
-            TVal* pv = &cur.bindings.prop_values()[idx];
-            if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
-            *pv = val;
-            if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
-            return true;
+        bool found = cur.is_with
+                     ? cur.bindings.has_prop_proto(key, h)
+                     : cur.bindings.find_prop_idx(key, h) >= 0;
+        if (found) {
+            return cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
+        }
+        if (!cur.is_with && first_non_with == null) {
+            first_non_with = cur;
         }
         cur = cur.parent;
     }
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
+    // Not found in the entire chain — create on the first non-with scope
+    // (the function/global scope that contains the with block).
+    EnvRecord* target = (first_non_with != null) ? first_non_with : env;
+    return target.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
 }
 
 // Declares a binding in this environment alone.
@@ -305,7 +355,10 @@ fn bool env_has_lex(EnvRecord* lex_env, void* key) @inline {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
-        if (cur.bindings.has_prop(key, h)) {
+        bool found = cur.is_with
+                     ? cur.bindings.has_prop_proto(key, h)
+                     : cur.bindings.has_prop(key, h);
+        if (found) {
             return true;
         }
         cur = cur.parent;
@@ -344,10 +397,24 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
 // Stores `val` in the nearest existing lexical binding matching `key`.
 // Returns 1 on success, 0 if unbound (fall back to var environment),
 // -1 on const assignment violation, or -2 on TDZ access (when check_tdz is true).
+//
+// For `with` environments (`is_with == true`) the existing-binding check
+// walks the prototype chain; on a hit the value goes through put_prop, which
+// handles both own-property update and reference refcounting. Writable/read-
+// only/TDZ flags are not applicable to with-object lookups, so the const/TDZ
+// guards are skipped on a with record.
 fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
+        if (cur.is_with) {
+            if (cur.bindings.has_prop_proto(key, h)) {
+                cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
+                return 1;
+            }
+            cur = cur.parent;
+            continue;
+        }
         int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {
             TVal* pv = &cur.bindings.prop_values()[idx];

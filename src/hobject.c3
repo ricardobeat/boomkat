@@ -2940,6 +2940,57 @@ fn bool HObject.has_prop_proto(&self, void* key, heap::Heap* h) {
     return false;
 }
 
+// Result of a prototype-chain property lookup, returned by
+// get_prop_proto_full. The caller must check `found` before reading
+// `value` / `is_accessor` / `owner`.
+struct PropProtoResult {
+    bool found;
+    TVal value;
+    bool is_accessor;
+    HObject* owner;
+}
+
+// Walk the prototype chain looking for a named property. Returns whether
+// the property exists anywhere, the slot value (or accessor boxed pair),
+// whether the slot is an accessor, and the object that owns the slot —
+// the latter is what `with`-env reads pass as `this` to a getter.
+fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) {
+    PropProtoResult result = { .found = false, .value = {0}, .is_accessor = false, .owner = null };
+    HObject* cur = self;
+    uint depth = 0;
+
+    while (cur != null && depth < MAX_PROTO_DEPTH) {
+        if (cur.flags.exotic_proxyobj) {
+            // Proxy exotic anywhere on the chain: route [[Get]] through
+            // the trap machinery (receiver = the original object). The
+            // owner stays the with object so a getter sees it as `this`.
+            if (h.proxy_get_fn != null && h.vm_ptr != null) {
+                TVal recv = types::make_object(self);
+                TVal out;
+                if (h.proxy_get_fn(h.vm_ptr, h, cur, key, recv, &out)) {
+                    result.found = true;
+                    result.value = out;
+                    result.owner = self;
+                    return result;
+                }
+            }
+            return result;
+        }
+        int idx = cur.find_prop_idx(key, h);
+        if (idx >= 0) {
+            result.found = true;
+            result.value = cur.prop_values()[idx];
+            result.is_accessor = cur.get_prop_flags((uint)idx, h).is_accessor;
+            result.owner = cur;
+            return result;
+        }
+        cur = cur.prototype;
+        depth++;
+    }
+
+    return result;
+}
+
 // Returns true if `probe` appears anywhere in the prototype chain of `self`.
 fn bool HObject.is_prototype_of(&self, HObject* probe) {
     HObject* cur = self;

@@ -2373,32 +2373,34 @@ fn void? CompilerContext.if_statement(&self) {
 }
 
 // Parse `with` statement (sloppy mode only; plan 035 removed it, plan 083
-// phase 1 reintroduces the parser).
+// phase 1 reintroduces the parser, phase 4 wires up the VM semantics).
 //
 //   WithStatement[Yield, Await, Return]:
 //     with ( Expression ) Statement
 //
-// Phase 1 emits THROW_SYNTAX around the body because the VM's WITH_START /
-// WITH_END opcodes are stubs (they return VM_ERROR today). Tests that only
-// check that `with` parses without error now pass; tests that try to execute
-// the body reach the SyntaxError path. Phase 4 will swap the THROW_SYNTAX
-// for the WITH_START / WITH_END pair and teach the VM what those do.
+// Emits:
+//     <expr_reg> = <Expression>          (result register holds the with object)
+//     WITH_START <expr_reg>, 0            (VM ToObject-wraps primitives, then
+//                                          pushes a with-env onto act.var_env)
+//     <body>                              (RESOLVEVAR/PUTVAR/PUTGLOBAL walk the
+//                                          chain; with-env intercepts)
+//     WITH_END                            (pops the with-env)
 fn void? CompilerContext.with_statement(&self) {
     self.expect(TokenType.WITH)!;
     self.expect(TokenType.LPAREN)!;
-    self.expression()!;
+    ushort obj_reg = self.expression()!;
     self.expect(TokenType.RPAREN)!;
 
-    // Phase 1 placeholder: phase 4 emits WITH_START here.
-    uint msg_idx = self.add_string_constant("with statement is not yet implemented (plans/083 phase 4)");
-    self.emit_a_bc(Opcode.THROW_SYNTAX, 0, msg_idx);
+    self.emit_a_bc(Opcode.WITH_START, (uint)obj_reg, 0);
 
-    // Still parse the body so a syntactic `with` is well-formed even if
-    // unreachable. The body's bytecode is dead but valid.
     self.statement_body()!;
 
-    // Phase 1 placeholder: phase 4 emits WITH_END here.
-    self.emit_abc(Opcode.NOP, 0, 0, 0);
+    self.emit_abc(Opcode.WITH_END, 0, 0, 0);
+    // Don't free a register that is the slot of a live local variable AND is
+    // the top of the register stack. Mirrors expression_statement's guard.
+    if (obj_reg + 1 != self.next_reg || !self.is_local_var_reg(obj_reg)) {
+        self.free_reg(obj_reg);
+    }
 }
 
 // Parse while statement.
