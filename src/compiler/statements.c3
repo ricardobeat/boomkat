@@ -2294,6 +2294,16 @@ fn void? CompilerContext.var_declaration(&self) {
                     // assignment, so emit the assignment as a value-only update
                     // of the existing global binding.
                     self.emit_a_bc(Opcode.PUTVAR, (uint)reg, name_idx);
+                } else if (!self.is_global && !is_lexical && has_init) {
+                    // Function-scoped `var x = <expr>`: the binding already exists
+                    // (DECLVAR_HOIST) as undefined; the assignment side runs at the
+                    // current position, so it must walk the env chain. A `with`
+                    // intercepts the assignment (updates the with-object), even
+                    // though the `var` declaration still hoisted to the function
+                    // scope (ES2024 §13.11.1, §8.1.1.4.7). PUTVAR (not PUTVAR_ASSIGN)
+                    // is correct here because the binding is known to exist via
+                    // the hoist pass.
+                    self.emit_a_bc(Opcode.PUTVAR, (uint)reg, name_idx);
                 } else if (!is_lexical && !has_init) {
                     // Initializer-less `var x;` carries no value: an existing
                     // global binding must keep its current one, which plain
