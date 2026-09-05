@@ -2421,6 +2421,14 @@ fn void? CompilerContext.with_statement(&self) {
     self.emit_a_bc(Opcode.WITH_START, (uint)obj_reg, 0);
     self.cur_with_depth++;
 
+    // Eval completion: a `with` always replaces the prior value (ES2024
+    // §13.11 step 8-11: empty body → undefined). Reset now so an empty
+    // body or a body that never writes leaves undefined, mirroring
+    // if_statement's reset.
+    if (self.eval_mode) {
+        self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
+    }
+
     self.statement_body()!;
 
     self.emit_abc(Opcode.WITH_END, 0, 0, 0);
