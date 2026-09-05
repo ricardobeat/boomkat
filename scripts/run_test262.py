@@ -169,7 +169,7 @@ SKIP_DIRS = {
     # built-ins/BigInt: limb-vector BigInt (BIGINT_MAX_LIMBS = 1 << 26 at
     # src/hbigint.c3:33). Skips are out of scope: arbitrary-precision
     # literals (>2^53), Reflect.construct as constructor, and $262 cross-realm.
-    "language/statements/with",        # sloppy-mode only, not supported
+    # language/statements/with runs since plans/083 phase 4 (with-env semantics).
 }
 
 # Feature flags to skip (matched against test metadata `features: [...]`)
@@ -286,10 +286,11 @@ SKIP_FILES = {
     # declaration-instantiation fixes (direct/indirect eval var_env vs
     # lex_env split, this-binding, (0,eval) direct-eval detection);
     # removed from this list.
-    # P4 — plans/083 phase 4 still outstanding: `with` statement semantics
-    # are not implemented, only the parser gate is in place (phase 1 stub
-    # throws SyntaxError at runtime). This test exercises a `with` in indirect
-    # eval and asserts no error; it must wait for phase 4.
+    # P4 — indirect eval is always sloppy unless its own prologue says strict
+    # (ES2024 §19.2.1.1 step 12), so this onlyStrict test's `var static;`
+    # must parse. The eval compiler still inherits caller strictness for
+    # INDIRECT eval when the caller is strict; fix compile_eval's
+    # caller_is_strict computation to exclude indirect callers.
     "language/eval-code/indirect/always-non-strict.js",
     # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
     # Strict-only engine never installs these legacy methods on
