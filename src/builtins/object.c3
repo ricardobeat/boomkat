@@ -1996,7 +1996,18 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     } else {
         // Data descriptor: { value, writable, enumerable, configurable }
         HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
-        desc.put_prop(value_key, *entry, hobject::PROP_FLAGS_WEC, ctx.heap);
+        TVal desc_val = *entry;
+        // Sloppy mapped `arguments` (§9.4.4.8): index properties alias the
+        // parameter register, which is authoritative. The named slot goes
+        // stale when the define path promotes a dense element (clearing the
+        // dense slot) and later writes update only the register.
+        if (obj.get_class() == hobject::ObjClass.ARGUMENTS && ((HString*)key).is_arridx()) {
+            TVal mapped_v;
+            if (vm::mapped_args_read(ctx.vm, obj, ((HString*)key).array_index(), &mapped_v)) {
+                desc_val = mapped_v;
+            }
+        }
+        desc.put_prop(value_key, desc_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* writable_key = builtin_intern_string(ctx.heap, "writable");
         TVal w_tv;
@@ -2686,6 +2697,15 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         if (ap != null && arr_idx < obj.array_size) {
             TVal arr_val = ap[arr_idx];
             if (!arr_val.is_undefined()) {
+                // Sloppy mapped `arguments`: the define below may write
+                // through to the parameter (mapped_args_write), which reads
+                // the CURRENT value from the parameter register. Sync the
+                // dense slot into the register first, so a stale register
+                // (e.g. after `arguments[0] = 9` wrote only the dense slot)
+                // does not clobber the define's value.
+                if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                    vm::mapped_args_write(ctx.vm, obj, arr_idx, &arr_val);
+                }
                 // PROP_FLAGS_WC has enumerable=false, put_prop routes to named table.
                 obj.put_prop((void*)key, arr_val, hobject::PROP_FLAGS_WC, ctx.heap);
                 existing_idx = obj.find_prop_idx(key, ctx.heap);
@@ -2892,6 +2912,15 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 return;
             }
 
+            // Sloppy mapped `arguments` (§9.4.4.8 DefineOwnProperty): an
+            // ABSENT value field preserves the CURRENT value — which is the
+            // parameter's (via mapped_args_read), not the stale named slot.
+            if (!has_val_in_desc && obj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
+                TVal mapped_cur;
+                if (vm::mapped_args_read(ctx.vm, obj, key_hstr.array_index(), &mapped_cur)) {
+                    *current = mapped_cur;
+                }
+            }
             if (has_val_in_desc) {
                 // ES5 §8.12.9 step 9: If non-configurable and non-writable, reject only if
                 // the new value differs from the current value (SameValue check).
@@ -2902,6 +2931,13 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                     }
                 }
                 *current = desc_vals[0];
+                // Sloppy mapped `arguments` (§9.4.4.8 DefineOwnProperty step
+                // 4-5): a [[DefineOwnProperty]] with a value field writes
+                // through to the mapped parameter, so the two stay in sync
+                // in both directions.
+                if (obj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
+                    vm::mapped_args_write(ctx.vm, obj, key_hstr.array_index(), &desc_vals[0]);
+                }
             }
 
             if (has_wrt_in_desc)  cur_flags.writable     = desc_flags.writable;

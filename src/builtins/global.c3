@@ -1050,6 +1050,11 @@ fn void builtin_eval(BuiltinContext* ctx) {
             (*func_obj.extra_ptr()).func.lex_env = eval_env_raw;
         }
     } else {
+        // Sloppy eval: `var`/`function` bindings go in the enclosing variable
+        // environment (ES2015 §18.2.1.2 EvalDeclarationInstantiation), so the
+        // eval body must run with var_env = the caller's var_env (direct) or
+        // the global env (indirect). The temp lex_env above holds only the
+        // eval's own let/const/class declarations.
         (*func_obj.extra_ptr()).func.var_env = var_env_for_eval;
         EnvRecord*? lex_env_raw = env::env_create_declarative(ctx.heap, lex_env_for_eval);
         if (catch err = lex_env_raw) {

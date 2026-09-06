@@ -67,13 +67,18 @@ fn Activation* mapped_args_owner(Vm* vm, HObject* args_obj) @inline {
 
 // Read the current value of mapped index `idx` from the owning activation's
 // parameter registers. Returns false when the read must take the ordinary
-// dense/named path instead (unmapped index, or slots that no longer identify
-// a mapped function frame).
+// dense/named path instead (unmapped index, unmapped non-configurable +
+// non-writable property, or slots that no longer identify a mapped frame).
 fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline {
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
+    int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
+    if (pidx >= 0) {
+        hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
+        if (!fl.configurable && !fl.writable) return false;
+    }
     *out = owner.bottom[idx];
     return true;
 }
@@ -81,11 +86,21 @@ fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline
 // Write `val` through a mapped index into the owning activation's parameter
 // slot as well as the object's own dense slot, keeping the two in sync.
 // Returns false when the write must take the ordinary path instead.
+//
+// Unmapping (ES2015 §9.4.4.8 DefineOwnProperty steps 8-9): when the index's
+// own property is non-configurable AND non-writable, the mapping is severed
+// — the parameter and the property no longer alias. Reads and writes then
+// take the ordinary dense/named path.
 fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inline {
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
+    int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
+    if (pidx >= 0) {
+        hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
+        if (!fl.configurable && !fl.writable) return false;
+    }
     TVal* slot = &owner.bottom[idx];
     if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
     *slot = *val;
@@ -99,14 +114,40 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
 // %Array.prototype.values%, so callers must go through this helper rather
 // than re-deriving the value property-by-property at each call site.
 fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint nargs) {
-    // ES2017 §9.4.4.7 step 6: callee is a non-configurable accessor whose
-    // getter and setter are both %ThrowTypeError% (the same frozen intrinsic
-    // Function.prototype's caller/arguments poison pills use), and it is
-    // enumerable: false, configurable: false. Reads and writes through the
-    // property system both throw TypeError; the descriptor reflects the
-    // accessor shape (test262 10.6-13-c-3-s, 10.6-14-c-4-s).
     HString* callee_key = (HString*)vm.heap.strs[heap::BuiltinStr.CALLEE];
-    if (callee_key != null && vm.heap.throw_type_error != null) {
+    if (callee_key == null) return;
+    // Sloppy + simple params: mapped arguments (§9.4.4.8 CreateMapped-
+    // ArgumentsObject step 5). `callee` here is the caller HObject passed by
+    // every call site (the Function value the call was made through). A
+    // mapped callee is an ordinary writable data property ({W,E,C} =
+    // {true,false,true}); unmapped (strict or non-simple params) keeps the
+    // §9.4.4.7 poison-pill accessor.
+    bool mapped = false;
+    if (callee != null && callee.callable_kind() == hobject::CallableKind.COMPILED_FN) {
+        CompiledFunction* ccf = (*callee.extra_ptr()).func.comp_func;
+        if (ccf != null && ccf.mapped_arguments()) mapped = true;
+    }
+    if (mapped) {
+        TVal callee_tv;
+        callee_tv.set_object(callee);
+        hobject::PropFlags callee_flags;
+        callee_flags.writable = true;
+        callee_flags.enumerable = false;
+        callee_flags.configurable = true;
+        callee_flags.is_accessor = false;
+        args_obj.put_prop(callee_key, callee_tv, callee_flags, vm.heap);
+        // The put above anchored callee_tv as the slot value with its own
+        // incref; the TVal copy below would double-count without a release.
+        // (mirrors the accessor path's GS-cell handling, which owns its copy
+        // through hobject_create_accessors instead).
+        vm.heap.decref_tval(&callee_tv);
+    } else if (vm.heap.throw_type_error != null) {
+        // ES2017 §9.4.4.7 step 6: callee is a non-configurable accessor whose
+        // getter and setter are both %ThrowTypeError% (the same frozen intrinsic
+        // Function.prototype's caller/arguments poison pills use), and it is
+        // enumerable: false, configurable: false. Reads and writes through the
+        // property system both throw TypeError; the descriptor reflects the
+        // accessor shape (test262 10.6-13-c-3-s, 10.6-14-c-4-s).
         TVal thrower; thrower.set_object(vm.heap.throw_type_error);
         TVal gs_callee = hobject::hobject_create_accessors(vm.heap, thrower, thrower);
         PropFlags callee_flags;
@@ -3228,14 +3269,17 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 //
                 // `with` splice (ES2024 §13.11.1): when the closure was created
                 // inside a `with`, the captured lex_env is a with-env. Read
-                // accesses inside the constructor must walk that with-env, so
-                // point lex_env straight at it (needs_env=false callees have
-                // no own params/locals to look up first; needs_env=true callees
-                // splice on the next page in resolve_call_lex_env).
+                // accesses inside the constructor must walk that with-env
+                // ABOVE the fresh function scope: own var bindings live in
+                // ctor_var_env, then with-properties (prototype walk), then
+                // the enclosing chain the with-env recorded at WITH_START
+                // time. Chain (not replace) so `var value` declared in the
+                // constructor resolves to the own scope, not the object.
                 EnvRecord* cap_lex_noname = (*hobj.extra_ptr()).func.lex_env;
                 if (cap_lex_noname != null && cap_lex_noname.is_with
                     && cap_lex_noname != ctor_var_env) {
-                    new_act.lex_env = cap_lex_noname;
+                    ctor_var_env.parent = cap_lex_noname;
+                    new_act.lex_env = ctor_var_env;
                 } else if (cap_lex_noname != null
                     && cap_lex_noname != ctor_var_env
                     && cap_lex_noname.is_declarative) {

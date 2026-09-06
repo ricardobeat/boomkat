@@ -381,8 +381,30 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     func_obj.flags.callable = true;
     func_obj.flags.constructable = template.is_constructable();
     (*func_obj.extra_ptr()).func.comp_func = template;
-    (*func_obj.extra_ptr()).func.var_env = var_env;
-    (*func_obj.extra_ptr()).func.lex_env = lex_env;
+    // ES2024 §13.11: a closure created inside `with` captures the with-env on
+    // its PARENT chain, so calls made after WITH_END popped it still walk the
+    // object (S12.10_A1.8_T4: `var f = function(){...}; new f()` inside with
+    // must see with-properties at call time). Bindings declared OUTSIDE the
+    // with stay reachable: the with-env's parent is the enclosing chain, and
+    // entry uses lex_env = the with-env itself (with-splice in vm_calls.c3),
+    // whose walk falls through to that parent.
+    EnvRecord* cap_var_env = var_env;
+    EnvRecord* cap_lex_env = lex_env;
+    if (lex_env != null && lex_env != var_env) {
+        EnvRecord* w = lex_env;
+        uint wdepth = 0;
+        while (w != null && wdepth < 64) {
+            if (w.is_with) {
+                cap_var_env = lex_env;
+                cap_lex_env = lex_env;
+                break;
+            }
+            w = w.parent;
+            wdepth++;
+        }
+    }
+    (*func_obj.extra_ptr()).func.var_env = cap_var_env;
+    (*func_obj.extra_ptr()).func.lex_env = cap_lex_env;
     // ES2015 §9.2.1 [[ThisMode]]=lexical: capture the enclosing activation's
     // `this` once, at closure-creation time, so it survives being called from
     // any later call site (bare call, .call/.apply/.bind, builtin callback

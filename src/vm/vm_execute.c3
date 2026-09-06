@@ -5981,6 +5981,10 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.DECLVAR: {
             // Declare a `var` binding in the immediate var_env only (no chain walk).
+            // WITH_START pushes the with-env onto lex_env only (never var_env:
+            // `var` inside `with` binds the enclosing variable environment per
+            // ES2024 §13.11), so the immediate var_env is always the right
+            // target here.
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
@@ -6342,6 +6346,11 @@ fn TVal? Vm.run(Vm* vm) {
             EnvRecord*? env_raw = env::env_create_with_object(vm.heap, ds.act.lex_env, obj);
             if (try new_env = env_raw) {
                 ds.act.lex_env = new_env;
+                // `var` declarations inside `with` hoist past the with-env
+                // (ES2024 §13.11), so keep var_env BELOW it: DECLVAR walks
+                // past with-envs anyway, and reads/writes inside the body go
+                // through lex_env. Pushing here too would leave stale
+                // with-envs on var_env after WITH_END pops only lex_env.
             } else {
                 return VM_ERROR~;
             }

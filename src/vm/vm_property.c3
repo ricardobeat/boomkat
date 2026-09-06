@@ -1882,6 +1882,17 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     bool is_int_idx = rb.is_fastint() || rb.get_number() == (double)idx_long;
                     if (is_int_idx && idx_long >= 0 && idx_long < 0xFFFFFFFFL && idx_long < 0x1000000L) {
                         uint idx = (uint)idx_long;
+                        // Sloppy mapped arguments (§9.4.4.8 [[Set]] step 4):
+                        // a non-writable index does NOT write (silently, in
+                        // sloppy). The dense slot has no flags, so check the
+                        // named property first: a non-writable named entry
+                        // rejects the store outright.
+                        if (hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                            int widx = hobj.find_prop_idx(vm.heap.int_to_hstring((long)idx), ds.vm.heap);
+                            if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
+                                return (TVal){};
+                            }
+                        }
                         if (hobj.set_array_idx(idx, *rc, ds.vm.heap)) {
                             // Sloppy mapped arguments (ES2015 §9.4.4.8): the
                             // write also updates the owning activation's
@@ -2279,10 +2290,15 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (hobj.dense_arridx_lookup(key, &dense_existing)) {
                             HString* dense_key = (HString*)key;
                             uint dense_ai = (uint)dense_key.array_index();
-                            // Sloppy mapped arguments (ES2015 §9.4.4.8): the
-                            // write also updates the owning activation's
-                            // parameter register, keeping the alias in sync.
+                            // Sloppy mapped arguments (§9.4.4.8 [[Set]]): a
+                            // non-writable named entry rejects the store
+                            // (silently in sloppy); the dense slot itself
+                            // carries no flags.
                             if (hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                                int widx = hobj.find_prop_idx(key, ds.vm.heap);
+                                if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
+                                    return (TVal){};
+                                }
                                 mapped_args_write(vm, hobj, dense_ai, &put_val);
                             }
                             vm.heap.tval_copy_ref(&hobj.array_part()[dense_ai], &put_val);

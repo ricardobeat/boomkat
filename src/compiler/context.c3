@@ -994,6 +994,10 @@ int  cur_with_depth;
 
     // Direct eval tracking, when true, the CALL path must create a fresh env.
     bool has_direct_eval;
+    // Set while compiling a `with` body. Reads/writes inside dynamic scope
+    // must walk the env chain at runtime; peephole passes that assume a
+    // static binding (INC_VAR/DEC_VAR fusion) skip functions with this set.
+    bool has_with_stmt;
     // Set by primary_expr when the identifier "eval" is resolved; checked and
     // cleared by emit_call to detect direct eval calls (eval(...) by name).
     bool callee_is_eval;
@@ -1719,7 +1723,13 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Ported 1:1 from the original hand-written pass; equivalence is checked
     // by the golden-bytecode suite (test/golden_bytecode/, `just
     // test-golden-bytecode`).
-    if (!self.disable_optimize && !self.has_wide && self.code_count >= 3) {
+    //
+    // A `with` body is dynamic scope: every GETVAR/PUTVAR inside it must walk
+    // the env chain at runtime (the with-object may own the name), so the
+    // read-op-write triple cannot fuse into INC_VAR/DEC_VAR (whose fast path
+    // writes the cached env slot directly). Skip the pass for the whole
+    // function when it contains a `with` statement.
+    if (!self.disable_optimize && !self.has_wide && self.code_count >= 3 && !self.has_with_stmt) {
         fuse_inc_dec_var(self.code, self.code_count, self.const_count);
     }
 
