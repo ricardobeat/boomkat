@@ -2,6 +2,8 @@
 // records, split into a var environment and a lex environment.
 module boomkat::env;
 
+import std::math;
+
 import boomkat::types;
 import boomkat::hstring;
 import boomkat::hobject;
@@ -169,6 +171,84 @@ fn void env_destroy(Heap* heap, EnvRecord* env) {
 // Variable resolution: walking the scope chain
 // ============================================================================
 
+// ToBoolean on a TVal, mirroring ES2024 §7.1.2 (used by the @@unscopables
+// gate below; builtins::tval_to_boolean lives in builtins/set.c3 which env
+// cannot import). undefined and null are false; NaN, +0, -0 are false; ""
+// is false; everything else is true.
+fn bool env_tval_to_boolean(TVal v) {
+    if (v.is_undefined() || v.is_null()) return false;
+    if (v.is_boolean()) return v.get_boolean();
+    if (v.is_number()) {
+        double d = v.get_number();
+        return d != 0.0 && !math::is_nan(d);
+    }
+    if (v.is_fastint()) return v.get_fastint() != 0;
+    if (v.is_string()) {
+        void* p = v.get_heapptr();
+        return p != null && ((HString*)p).blen > 0;
+    }
+    return true;
+}
+
+// [[Get]] on `obj` walking the prototype chain (ES2024 §10.1.8.1 OrdinaryGet +
+// §10.5 Proxy exotic). Invokes accessor getters via heap.call_fn; routes
+// proxies through heap.proxy_get_fn. Sets heap.has_error on throw. Returns
+// false if a callback (getter or proxy trap) threw; in that case the caller
+// treats the property as not found and the engine surfaces the pending error.
+fn bool env_full_get(Heap* h, HObject* obj, void* key, TVal receiver, TVal* out) {
+    HObject* cur = obj;
+    uint depth = 0;
+    while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
+        if (cur.flags.exotic_proxyobj) {
+            if (h.proxy_get_fn != null && h.vm_ptr != null) {
+                return h.proxy_get_fn(h.vm_ptr, h, cur, key, receiver, out);
+            }
+            out.set_undefined();
+            return true;
+        }
+        int idx = cur.find_prop_idx(key, h);
+        if (idx >= 0) {
+            TVal slot = cur.prop_values()[idx];
+            if (cur.get_prop_flags((uint)idx, h).is_accessor) {
+                TVal getter = hobject::hobject_access_getter(slot);
+                if (getter.is_undefined() || getter.is_null() ||
+                    h.call_fn == null || h.vm_ptr == null) {
+                    out.set_undefined();
+                    return true;
+                }
+                *out = h.call_fn(h.vm_ptr, getter, null, 0, receiver);
+                return !h.has_error;
+            }
+            *out = slot;
+            return true;
+        }
+        cur = cur.prototype;
+        depth++;
+    }
+    out.set_undefined();
+    return true;
+}
+
+// ES2024 §9.1.1.2.1 HasBinding step 6-9: a `with` binding is hidden by an
+// @@unscopables entry whose value is true. Returns true when `name` is
+// blocked; a thrown getter (scopables-get-err style) leaves the error
+// pending in the heap so the VM can surface it.
+fn bool with_unscopables_blocks(Heap* h, EnvRecord* with_env, void* name) {
+    if (h.unscopables_symbol == null) return false;
+    HObject* b = with_env.bindings;
+    if (b == null) return false;
+    TVal receiver; receiver.set_object(b);
+    TVal usv;
+    if (!env_full_get(h, b, (void*)h.unscopables_symbol, receiver, &usv)) return false;
+    if (h.has_error) return false;
+    if (!usv.is_object() || usv.get_heapptr() == null) return false;
+    HObject* us_obj = (HObject*)usv.get_heapptr();
+    TVal blocked_v;
+    if (!env_full_get(h, us_obj, name, receiver, &blocked_v)) return false;
+    if (h.has_error) return false;
+    return env_tval_to_boolean(blocked_v);
+}
+
 // Walks outward through the scope chain to find a binding.
 //
 // For `with` environments (`is_with == true`) the lookup walks the
@@ -182,6 +262,11 @@ fn TVal? env_get(EnvRecord* env, void* key) {
         if (cur.is_with) {
             TVal? result = cur.bindings.get_prop_proto(key, h);
             if (try v = result) {
+                // HasBinding step 6-9: a true @@unscopables entry hides it.
+                if (with_unscopables_blocks(h, cur, key)) {
+                    cur = cur.parent;
+                    continue;
+                }
                 return v;
             }
         } else {
@@ -201,7 +286,8 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
     EnvRecord* cur = env;
     while (cur != null) {
         bool found = cur.is_with
-                     ? cur.bindings.has_prop_proto(key, h)
+                     ? (cur.bindings.has_prop_proto(key, h)
+                        && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.has_prop(key, h);
         if (found) {
             return true;
@@ -229,7 +315,8 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
     EnvRecord* first_non_with = null;
     while (cur != null) {
         bool found = cur.is_with
-                     ? cur.bindings.has_prop_proto(key, h)
+                     ? (cur.bindings.has_prop_proto(key, h)
+                        && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.find_prop_idx(key, h) >= 0;
         if (found) {
             return cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
@@ -356,7 +443,8 @@ fn bool env_has_lex(EnvRecord* lex_env, void* key) @inline {
     EnvRecord* cur = lex_env;
     while (cur != null) {
         bool found = cur.is_with
-                     ? cur.bindings.has_prop_proto(key, h)
+                     ? (cur.bindings.has_prop_proto(key, h)
+                        && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.has_prop(key, h);
         if (found) {
             return true;
@@ -408,7 +496,8 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
     EnvRecord* cur = lex_env;
     while (cur != null) {
         if (cur.is_with) {
-            if (cur.bindings.has_prop_proto(key, h)) {
+            if (cur.bindings.has_prop_proto(key, h)
+                && !with_unscopables_blocks(h, cur, key)) {
                 cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
                 return 1;
             }

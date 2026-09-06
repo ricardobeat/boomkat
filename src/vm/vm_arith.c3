@@ -276,12 +276,85 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             int ic_prop_idx = -1;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
+                if (cur.is_with) {
+                    // @@unscopables gate (§9.1.1.2.1 HasBinding step 6-9):
+                    // a true @@unscopables entry hides the property from this
+                    // with-scope, so it must not be updated. HasBinding already
+                    // consulted @@unscopables on the read path; here we reapply
+                    // it so an unscopables'd name falls through to the parent
+                    // env (which may resolve to the actual binding).
+                    if (cur.bindings.has_prop_proto(key, ds.vm.heap)
+                        && env::with_unscopables_blocks(ds.vm.heap, cur, key)) {
+                        cur = cur.parent;
+                        continue;
+                    }
+                    int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
+                    if (idx >= 0 && !cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
+                        TVal old_val = cur.bindings.prop_values()[idx];
+                        if (env::is_tdz_sentinel(&old_val)) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            return (TVal){};
+                        }
+                        if (!cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).writable) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            return (TVal){};
+                        }
+                        TVal new_val = old_val;
+                        if (old_val.is_fastint()) {
+                            long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
+                            if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                                new_val.set_fastint(v);
+                            } else {
+                                new_val.set_number((double)v);
+                            }
+                        } else if (old_val.is_bigint()) {
+                            hbigint::HBigInt*? nr = bigint_step(vm.heap, old_val.get_bigint(), is_inc);
+                            if (catch nr) {
+                                vm_set_range_error(vm, "BigInt is too large to allocate");
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
+                            if (!vm_set_reg_bigint(vm, &cur.bindings.prop_values()[idx], nr)) {
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
+                            vm.heap.tval_copy_ref(&new_val, &cur.bindings.prop_values()[idx]);
+                        } else {
+                            double d = vm_to_number(vm,&old_val);
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            new_val.set_number(d + (is_inc ? 1.0 : -1.0));
+                        }
+                        cur.bindings.prop_values()[idx] = new_val;
+                        *ra = new_val;
+                        track_heap_store(ds.act, ra, (uint)insn.a);
+                        found = true;
+                        ic_env = cur;
+                        ic_prop_idx = idx;
+                        return (TVal){};
+                    }
+                    // Not an own data property on the with-env (could be on its
+                    // prototype, or accessor); fall through to var_env fall-through
+                    // at the end of the slow path. Per spec, INC_VAR uses the
+                    // IDENTICAL logic to a PutValue, so the unscopables-blocked
+                    // case must skip this env entirely, which the gate at the top
+                    // of this branch already handled.
+                    cur = cur.parent;
+                    continue;
+                }
                 int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
                 if (idx >= 0) {
                     // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
                     // lex_env == parent env, so a hit here is a legitimate parent
-                    // lookup, not own-local. Own-local leaks surface as 'not defined'
-                    // throws and are caught by test/test_register_locals.js.
+                    // lookup, not an own-local. Own-local leaks instead surface as
+                    // a "not defined" throw (its DECLVAR was elided and nothing
+                    // else defines it), caught by the corpus.
+
 
                     TVal old_val = cur.bindings.prop_values()[idx];
                     if (env::is_tdz_sentinel(&old_val)) {
@@ -445,6 +518,18 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             bool ic_store_ok = false;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
+                if (cur.is_with) {
+                    // @@unscopables gate (§9.1.1.2.1 HasBinding step 6-9):
+                    // a true @@unscopables entry on the binding object hides
+                    // the property from this with-scope, so inc/dec must not
+                    // touch it. HasBinding on the read side already saw it as
+                    // blocked; keep that decision on the write side too.
+                    if (cur.bindings.has_prop_proto(key, ds.vm.heap)
+                        && env::with_unscopables_blocks(ds.vm.heap, cur, key)) {
+                        cur = cur.parent;
+                        continue;
+                    }
+                }
                 int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
                 if (idx >= 0) {
                     TVal old_val = cur.bindings.prop_values()[idx];

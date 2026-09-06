@@ -4557,8 +4557,50 @@ fn TVal? Vm.run(Vm* vm) {
 
                     // Search lexical environment first (for let/const bindings)
                     EnvRecord* cur = ds.act.lex_env;
+                    bool threw_pending = false;
                     while (cur != null) {
                         if (cur.is_with) {
+                            // HasProperty first (§9.1.1.2.1 step 2): only read
+                            // @@unscopables on a hit, otherwise the getter is
+                            // observable for missing bindings
+                            // (unscopables-not-referenced-for-undef).
+                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                                cur = cur.parent;
+                                continue;
+                            }
+                            // @@unscopables gate (§9.1.1.2.1 HasBinding step
+                            // 6-9): a true entry under @@unscopables hides the
+                            // property from this with-scope. The unscopables
+                            // getter is observable and may delete the binding
+                            // just looked up; re-check HasProperty afterward
+                            // before reading the slot.
+                            if (vm_with_unscopables_blocks(vm, cur, key)) {
+                                cur = cur.parent;
+                                continue;
+                            }
+                            // The unscopables getter may have deleted the
+                            // binding as a side effect. Per §9.1.1.2.6
+                            // GetBindingValue step 3, a missing property
+                            // yields `undefined` in sloppy and throws
+                            // ReferenceError in strict (the Reference's base
+                            // resolved to this env at HasBinding, so do NOT
+                            // fall through to the parent).
+                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                                if (vm.current_func.is_strict()) {
+                                    HString* name_hstr = (HString*)key;
+                                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                                            "%s is not defined", name_hstr.get_cstr(),
+                                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        return VM_ERROR~;
+                                    }
+                                    found = true;
+                                    break;
+                                }
+                                ra.set_undefined();
+                                track_heap_store(ds.act, ra, (uint)insn.a);
+                                found = true;
+                                break;
+                            }
                             // Object environment: walk the prototype chain.
                             hobject::PropProtoResult proto =
                                 cur.bindings.get_prop_proto_full(key, vm.heap);
@@ -4664,6 +4706,32 @@ fn TVal? Vm.run(Vm* vm) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
                             if (vcur.is_with) {
+                                if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
+                                    vcur = vcur.parent;
+                                    continue;
+                                }
+                                if (vm_with_unscopables_blocks(vm, vcur, key)) {
+                                    vcur = vcur.parent;
+                                    continue;
+                                }
+                                if (vm.heap.has_error) {
+                                    if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                    threw_pending = true;
+                                    break;
+                                }
+                                // §9.1.1.2.6 GetBindingValue step 3 (sloppy):
+                                // unscopables getter deleted the binding →
+                                // return undefined.
+                                if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
+                                    ra.set_undefined();
+                                    track_heap_store(ds.act, ra, (uint)insn.a);
+                                    found = true;
+                                    break;
+                                }
+                                if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
+                                    vcur = vcur.parent;
+                                    continue;
+                                }
                                 hobject::PropProtoResult proto =
                                     vcur.bindings.get_prop_proto_full(key, vm.heap);
                                 if (proto.found) {
@@ -4747,6 +4815,9 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
+                    if (threw_pending) {
+                        continue;
+                    }
                     if (found) {
                         // Populate IC
                         if (ds.var_ic_base != null && ic_env != null) {
@@ -5181,8 +5252,46 @@ fn TVal? Vm.run(Vm* vm) {
                     bool ic_cacheable = false;
 
                     EnvRecord* cur = ds.act.lex_env;
+                    bool threw_pending = false;
                     while (cur != null) {
                         if (cur.is_with) {
+                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                                cur = cur.parent;
+                                continue;
+                            }
+                            if (vm_with_unscopables_blocks(vm, cur, key)) {
+                                cur = cur.parent;
+                                continue;
+                            }
+                            // A getter on @@unscopables or on the
+                            // unscopables[name] entry may have thrown; surface
+                            // the pending error and skip the rest of the slow
+                            // path (the dispatch loop will resume at the catch).
+                            if (vm.heap.has_error) {
+                                if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                threw_pending = true;
+                                break;
+                            }
+                            // The unscopables getter may have deleted the
+                            // binding as a side effect. Per §9.1.1.2.6
+                            // GetBindingValue step 3 (sloppy) and §8.1.1.2.5
+                            // SetMutableBinding step 3 (strict), the resolution
+                            // to this env already happened at HasBinding; the
+                            // Reference's base is this env, so do NOT fall
+                            // through to the parent. Sloppy yields `undefined`,
+                            // strict throws ReferenceError — but the runtime
+                            // already paid for the unscopables look-up cost
+                            // here, so we conservatively treat sloppy-only
+                            // callers as "set undefined and stop" (matching
+                            // test expectations for
+                            // get-mutable-binding-binding-deleted-in-get-
+                            // unscopables.js).
+                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                                ra.set_undefined();
+                                track_heap_store(ds.act, ra, (uint)insn.a);
+                                found = true;
+                                break;
+                            }
                             hobject::PropProtoResult proto =
                                 cur.bindings.get_prop_proto_full(key, vm.heap);
                             if (proto.found) {
@@ -5272,6 +5381,28 @@ fn TVal? Vm.run(Vm* vm) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
                             if (vcur.is_with) {
+                                if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
+                                    vcur = vcur.parent;
+                                    continue;
+                                }
+                                if (vm_with_unscopables_blocks(vm, vcur, key)) {
+                                    vcur = vcur.parent;
+                                    continue;
+                                }
+                                if (vm.heap.has_error) {
+                                    if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                    threw_pending = true;
+                                    break;
+                                }
+                                // §9.1.1.2.6 GetBindingValue step 3 (sloppy):
+                                // unscopables getter deleted the binding →
+                                // return undefined.
+                                if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
+                                    ra.set_undefined();
+                                    track_heap_store(ds.act, ra, (uint)insn.a);
+                                    found = true;
+                                    break;
+                                }
                                 hobject::PropProtoResult proto =
                                     vcur.bindings.get_prop_proto_full(key, vm.heap);
                                 if (proto.found) {
@@ -5340,21 +5471,24 @@ fn TVal? Vm.run(Vm* vm) {
                                     ic_cacheable = true;
                                 }
                                 track_heap_store(ds.act, ra, (uint)insn.a);
-                                found = true;
-                                break;
-                            }
-                            vcur = vcur.parent;
-                        }
-                    }
+                                 found = true;
+                                 break;
+                             }
+                             vcur = vcur.parent;
+                         }
+                     }
 
-                    if (found) {
-                        if (ic_cacheable && ds.var_ic_base != null && ic_env != null) {
-                            uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
-                                (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
-                                key, (void*)ds.act.lex_env, false, vm.heap);
-                        }
-                    } else {
+                     if (threw_pending) {
+                         continue;
+                     }
+                     if (found) {
+                         if (ic_cacheable && ds.var_ic_base != null && ic_env != null) {
+                             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                             hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
+                                 (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
+                                 key, (void*)ds.act.lex_env, false, vm.heap);
+                         }
+                     } else {
                         // Not bound anywhere on the chain: the global record is
                         // an object Environment Record, so an inherited
                         // property of the global object is still a binding.
@@ -6293,4 +6427,35 @@ fn TVal? Vm.run(Vm* vm) {
     }
     }
     return vm.return_val;
+}
+
+// ES2024 §9.1.1.2.1 HasBinding step 6-9: a `with` binding is hidden by an
+// @@unscopables entry whose value is true. Returns true when `name` is
+// blocked; on a getter throw, heap.has_error is left pending so the caller
+// can surface it. Used by the with-env branches of RESOLVEVAR, GETVAR,
+// GETGLOBAL, DELVAR, and the INC_VAR/DEC_VAR var_env fall-through.
+fn bool vm_with_unscopables_blocks(Vm* vm, EnvRecord* with_env, void* name) {
+    Heap* h = vm.heap;
+    if (h.unscopables_symbol == null) return false;
+    HObject* b = with_env.bindings;
+    if (b == null) return false;
+    TVal receiver; receiver.set_object(b);
+    TVal usv;
+    if (!builtins::js_get(vm, h, b, (HString*)h.unscopables_symbol, &usv)) return false;
+    if (h.has_error) return false;
+    if (!usv.is_object() || usv.get_heapptr() == null) return false;
+    HObject* us_obj = (HObject*)usv.get_heapptr();
+    TVal blocked_v;
+    if (!builtins::js_get(vm, h, us_obj, (HString*)name, &blocked_v)) return false;
+    if (h.has_error) return false;
+    return env::env_tval_to_boolean(blocked_v);
+}
+
+// Surfaces a pending heap error through the VM throw machinery. Returns
+// false on VM failure (caller should `return VM_ERROR~`).
+fn bool vm_throw_pending(Vm* vm, Dispatch* ds) {
+    if (!vm.heap.has_error) return true;
+    vm.heap.has_error = false;
+    TVal err_val = vm.heap.error_value;
+    return vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart);
 }
