@@ -333,6 +333,32 @@ enum Opcode : char {
     // Phase 1 (plans/083): end of a `with` body (ABC, no operands used).
     // Companion to WITH_START; same Phase 1 stub / Phase 4 real semantics split.
     WITH_END,
+    // `with-get A = B, variable[constants[C]]`: SnapshotReference read for
+    // a read-modify-write on an identifier inside `with` (ES5 §11.13.2
+    // step 4: PutValue uses the initially-created Reference even when the
+    // getter deletes the binding). Replaces the LHS GETVAR in place (same
+    // value register), so no instruction insertion is needed. Resolves the
+    // name per HasBinding, then reads the value: on a with-env hit B holds
+    // the bindings object and A the HasProperty-checked current value (the
+    // base is captured before the getter runs, so a getter that deletes
+    // the binding still routes the store to this object). Otherwise B holds
+    // the global object and A the env-walked value, and the paired WTWR
+    // falls back to the env walk.
+    WITHGET,
+    // `with-base A = variable[constants[C]]`: SnapshotReference base for a
+    // plain assignment inside `with` (ES2024 §9.1.1.2.5 SetMutableBinding
+    // steps 1-2: the base is fixed by HasBinding before the RHS runs, so an
+    // unscopables getter that deletes the binding still routes the store to
+    // this object). Captures only the base per HasBinding: on a with-env hit
+    // A holds the bindings object, otherwise the global object (paired WTWR
+    // falls back to the env walk). Runs no value getter, unlike WITHGET.
+    WITHBASE,
+    // `with-write A = B, variable[constants[C]]`: SnapshotPutValue, the
+    // store half of a read-modify-write inside `with`. When B holds a
+    // bindings object captured by WITHGET, writes A through [[Set]] on that
+    // object (creating the property when the binding was deleted); otherwise
+    // B holds the global object and this behaves as PUTVAR_ASSIGN.
+    WTWR,
 
     // ---- Closures --------------------------------------------------------
 
@@ -1007,6 +1033,9 @@ fn OpFormat get_op_format(Opcode op) {
         case DELVAR:    return A_BC;
         case WITH_START: return A_BC;
         case WITH_END:   return ABC;
+        case WITHGET:   return ABC;
+        case WITHBASE:  return A_BC;
+        case WTWR:      return ABC;
         case CLOSURE:   return A_BC;
         case GETBOUND:  return A_BC;
         case TRY:       return A_BC;

@@ -66,7 +66,9 @@ fn uint CompilerContext.emit_a_sbx(&self, Opcode op, uint a, int sbx) {
 // GC roots). Only then is a bare identifier guaranteed to resolve in one of
 // the two global objects, making GETGLOBAL/PUTGLOBAL's slot cache sound.
 fn bool CompilerContext.at_global_slot_scope(&self) @inline {
-    return self.is_global && self.cur_lex_depth == 0;
+    // Inside `with` the name may resolve to the with-object, so identifiers
+    // must go through the env walk (GETVAR) even at top-level scope.
+    return self.is_global && self.cur_lex_depth == 0 && self.cur_with_depth == 0;
 }
 
 // Record the constant-pool index of a top-level var/function name as a

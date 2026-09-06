@@ -457,6 +457,51 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
     bool lhs_was_getglobal_prim = lhs_was_getglobal && self.last_was_getglobal_prim;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
+    // Bytecode index of the GETVAR that read the LHS identifier, or
+    // 0xFFFFFFFF when the LHS was not a bare identifier read (member,
+    // local register, GETGLOBAL, or a call-shaped LHS). The emit_ident_read
+    // position is authoritative: code_count - 1 may point past it, and
+    // last_was_local_var marks a register home rather than a GETVAR.
+    uint lhs_getvar_code_pos = 0xFFFFFFFF;
+    if (lhs_was_getvar && !lhs_was_getglobal && !self.last_was_local_var
+        && self.last_getvar_code_pos < self.code_count
+        && self.code[self.last_getvar_code_pos].op == Opcode.GETVAR
+        && (ushort)self.code[self.last_getvar_code_pos].a == left) {
+        lhs_getvar_code_pos = self.last_getvar_code_pos;
+    }
+    // Inside `with`, a read-modify-write on a bare identifier must store to
+    // the SAME object the read saw (ES5 §11.13.2 step 4: PutValue uses the
+    // initial Reference, even when the value getter deleted the binding).
+    // Reserve the base register BEFORE the RHS compiles, so the RHS cannot
+    // reuse it; the LHS GETVAR is rewritten to WITHGET (same value register,
+    // plus the captured base) once the RHS is compiled.
+    ushort lhs_with_base_reg = REG_NONE;
+    bool lhs_in_with = self.cur_with_depth > 0 && !lhs_was_getglobal
+        && lhs_getvar_name_idx <= bytecode::MAX_C
+        && lhs_getvar_code_pos != 0xFFFFFFFF
+        && (uint)left <= bytecode::MAX_A;
+    if (lhs_in_with) {
+        lhs_with_base_reg = self.alloc_reg();
+        // WITHBASE/WTWR encode the base in an 8-bit field; without WIDE
+        // support in the in-place rewrites below, fall back to the env walk.
+        if (lhs_with_base_reg > bytecode::MAX_A) {
+            lhs_in_with = false;
+        }
+    }
+    // For plain assignment, the SnapshotReference base is fixed by HasBinding
+    // before the RHS runs (ES2024 §9.1.1.2.5 steps 1-2: the store targets the
+    // bindings object even when an unscopables getter deletes the binding).
+    // WITHBASE runs before the RHS compiles while the register layout is
+    // stable; WTWR at the store reads it. Only for `=`; compound stores use
+    // WITHGET (rewritten over the LHS GETVAR after the RHS compiles).
+    // The LHS GETVAR's value is discarded on this path, so NOP it: leaving
+    // it live would run HasBinding (and its observable unscopables getter)
+    // twice, and a deleting getter would remove the binding before WITHBASE
+    // captures it.
+    if (is_assign && lhs_in_with) {
+        self.code[lhs_getvar_code_pos] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        self.emit_a_bc(Opcode.WITHBASE, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+    }
     // The opcode that writes back a bare-identifier LHS: PUTGLOBAL_PRIM for a
     // proven primitive-only global (guard-free), PUTGLOBAL at true global scope
     // (mirrors GETGLOBAL), else PUTVAR_ASSIGN.
@@ -494,14 +539,17 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // The `+= 1` optimization (INC) was removed because it bypasses ADD's
     // string-concatenation semantics: `"1" + 1` must yield `"11"`.
     // Saves a register + LDINT 1 instruction per occurrence (hot in counters).
-    if (is_compound && !lhs_was_member) {
+    // Skipped inside `with`: the fused DEC_VAR writes the cached env slot
+    // directly, bypassing the SnapshotReference the base capture provides.
+    if (is_compound && !lhs_was_member && self.cur_with_depth == 0) {
         if (self.peek_type() == TokenType.NUMBER) {
             Token num_tok2 = self.lexer.peek()!;
             double nv = num_tok2.num_value;
             if (nv == 1.0 && compound_op == Opcode.SUB) {
                 self.advance()!;
                 if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
-                    && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                    && self.code[self.code_count - 1].op == Opcode.GETVAR
+                    && self.cur_with_depth == 0) {
                     uint name_idx = self.code[self.code_count - 1].get_bc();
                     uint getvar_reg = self.code[self.code_count - 1].a;
                     self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
@@ -749,7 +797,11 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // resolved before evaluating the RHS. Per ES2022 §13.15.2 step 1,
     // evaluating the LHS IdentifierReference produces a Reference, not a
     // value. Non-strict code keeps the old value-discarding path.
-    if (is_assign && lhs_was_getvar && self.code_count > 0) {
+    // Inside `with`, the LHS GETVAR already resolves through the with-env
+    // chain at runtime, so skip the RESOLVEVAR probe entirely here: the
+    // SnapshotReference path below (WITHBASE/WTWR) captures the base
+    // instead.
+    if (is_assign && lhs_was_getvar && self.code_count > 0 && !(self.cur_with_depth > 0 && !lhs_was_getglobal)) {
         Instruction lhs_last = self.code[self.code_count - 1];
         if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL
              || lhs_last.op == Opcode.GETGLOBAL_PRIM)
@@ -883,6 +935,16 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 self.emit_a_bc(Opcode.THROW_UNRESOLVED, (uint)lhs_ref_reg, lhs_getvar_name_idx);
             }
             if (void_ctx && lhs_was_getvar) {
+                // Inside `with`, store through the WITHBASE-captured base
+                // (see the lhs_in_with note above); WTWR keeps the value
+                // register live, and the result is discarded. WTWR only
+                // scrubs the base register, so free it on the same LIFO
+                // terms the plain path frees the stored value: only when it
+                // is the top of the stack.
+                if (lhs_in_with) {
+                    self.emit_abc(Opcode.WTWR, (uint)right, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+                    return right;
+                }
                 // Result is discarded: skip both the LHS-register copy and the
                 // result-preservation copy. PUTVAR/PUTGLOBAL clears its source
                 // register, which is harmless here since nothing else reads it,
@@ -935,6 +997,24 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             }
             if (!right_is_local) { self.free_reg(right); }
             if (lhs_was_getvar) {
+                // Inside `with`, the store must hit the SAME object HasBinding
+                // saw before the RHS ran (ES2024 §9.1.1.2.5 steps 1-2: an
+                // unscopables getter that deletes the binding still routes
+                // the store to that bindings object). WITHBASE (emitted
+                // before the RHS ran) captured the base; WTWR stores through
+                // it, keeping the value register live for the result copy.
+                if (lhs_in_with) {
+                    if (left != right) {
+                        self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
+                    }
+                    if (!right_is_local) { self.free_reg(right); }
+                    ushort tmp = self.alloc_reg();
+                    self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
+                    self.emit_abc(Opcode.WTWR, (uint)left, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+                    self.free_reg(left);
+                    left = tmp;
+                    return left;
+                }
                 // PUTVAR clears the source register, so save the value
                 // in a temp before writing back to the environment.
                 ushort tmp = self.alloc_reg();
@@ -1006,7 +1086,20 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             self.free_reg(lhs_member_prop);
             self.free_reg(lhs_member_obj);
         } else if (lhs_was_getvar) {
-            if (void_ctx) {
+            // Inside `with`, the LHS GETVAR already resolved the name through
+            // the with-env chain, but the store must hit the SAME object the
+            // read saw (ES5 §11.13.2 step 4: PutValue uses the initial
+            // Reference, even when the value getter deleted the binding).
+            // Rewrite it to WITHGET (same LHS value, plus the base reserved
+            // above) and store through WTWR. Return here: the shared tail
+            // below would emit a second PUTVAR store through the env walk,
+            // double-writing. Outside `with` the plain env store applies.
+            if (lhs_in_with) {
+                self.code[lhs_getvar_code_pos] = bytecode::make_abc(
+                    Opcode.WITHGET, (uint)left, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+                self.emit_abc(Opcode.WTWR, (uint)left, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+                return left;
+            } else if (void_ctx) {
                 // Putvar clears its source register, but the value is
                 // discarded: expression_statement only signals void context
                 // outside eval bodies, so no completion value is owed. Storing
@@ -1915,11 +2008,31 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 self.free_reg(inc_member_prop);
                 self.free_reg(inc_member_obj);
             } else if (inc_was_getvar && !inc_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
-                // Replace GETVAR with INC_VAR: 1 dispatch instead of 3
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && self.cur_with_depth == 0) {
+                // Replace GETVAR with INC_VAR: 1 dispatch instead of 3.
+                // Skipped inside `with` (the fused op writes the cached env
+                // slot directly, bypassing the SnapshotReference); the
+                // WITHGET/WTWR path below handles it.
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_VAR, getvar_reg, name_idx);
+            } else if (inc_was_getvar && !inc_was_getglobal && self.cur_with_depth > 0
+                && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && inc_getvar_name_idx <= bytecode::MAX_C
+                && (ushort)self.code[self.code_count - 1].a <= bytecode::MAX_A
+                && (ushort)self.code[self.code_count - 1].a == op_inc) {
+                // Inside `with`, prefix ++ on a bare identifier stores to the
+                // SAME object the read saw (ES5 §11.13.2 step 4, via §11.4.4).
+                // Rewrite the GETVAR to WITHGET and store through WTWR,
+                // which keeps the value register live for the result.
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                ushort base_reg = self.alloc_reg();
+                self.code[self.code_count - 1] = bytecode::make_abc(
+                    Opcode.WITHGET, getvar_reg, (uint)base_reg, inc_getvar_name_idx);
+                self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
+                self.emit_abc(Opcode.WTWR, (uint)op_inc, (uint)base_reg, inc_getvar_name_idx);
             } else if (inc_was_getglobal && self.code_count > 0
                 && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
                     || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
@@ -1988,10 +2101,25 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 self.free_reg(dec_member_prop);
                 self.free_reg(dec_member_obj);
             } else if (dec_was_getvar && !dec_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && self.cur_with_depth == 0) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
+            } else if (dec_was_getvar && !dec_was_getglobal && self.cur_with_depth > 0
+                && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && dec_getvar_name_idx <= bytecode::MAX_C
+                && (ushort)self.code[self.code_count - 1].a <= bytecode::MAX_A
+                && (ushort)self.code[self.code_count - 1].a == op_dec) {
+                // Inside `with`, prefix -- on a bare identifier: same
+                // SnapshotReference shape as prefix ++ above.
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                ushort base_reg = self.alloc_reg();
+                self.code[self.code_count - 1] = bytecode::make_abc(
+                    Opcode.WITHGET, getvar_reg, (uint)base_reg, dec_getvar_name_idx);
+                self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
+                self.emit_abc(Opcode.WTWR, (uint)op_dec, (uint)base_reg, dec_getvar_name_idx);
             } else if (dec_was_getglobal && self.code_count > 0
                 && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
                     || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
@@ -2172,10 +2300,25 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 self.free_reg(prop_reg);
                 self.free_reg(obj_reg);
             } else if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && self.cur_with_depth == 0) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_VAR, getvar_reg, name_idx);
+            } else if (lhs_was_getvar && !lhs_was_getglobal && self.cur_with_depth > 0
+                && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && lhs_getvar_name_idx <= bytecode::MAX_C
+                && (ushort)self.code[self.code_count - 1].a <= bytecode::MAX_A
+                && (ushort)self.code[self.code_count - 1].a == operand) {
+                // Inside `with`, discarded-result `x++`: SnapshotReference
+                // shape (WITHGET + INC + WTWR), no old-value copy.
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                ushort base_reg = self.alloc_reg();
+                self.code[self.code_count - 1] = bytecode::make_abc(
+                    Opcode.WITHGET, getvar_reg, (uint)base_reg, lhs_getvar_name_idx);
+                self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
             } else if (lhs_was_getglobal && self.code_count > 0
                 && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
                     || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
@@ -2233,6 +2376,36 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             if (lhs_was_getglobal) {
                 self.emit_a_bc(Opcode.INC_GLOBAL, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
+            } else if (lhs_was_getvar && self.cur_with_depth > 0
+                && !lhs_was_getglobal && lhs_getvar_name_idx <= bytecode::MAX_C
+                && (uint)operand <= bytecode::MAX_A) {
+                // Inside `with`, valued `x++`: rewrite the LHS GETVAR (still
+                // the last instruction: only LDREG/TONUMERIC for `saved`
+                // were emitted since) to WITHGET, then INC + WTWR. WTWR
+                // keeps the value register live; `saved` holds the result.
+                if (self.code_count > 0) {
+                    for (uint i = self.code_count; i > 0; i--) {
+                        if (self.code[i - 1].op == Opcode.GETVAR
+                            && (ushort)self.code[i - 1].a == operand) {
+                            ushort base_reg = self.alloc_reg();
+                            if (base_reg <= bytecode::MAX_A) {
+                                self.code[i - 1] = bytecode::make_abc(
+                                    Opcode.WITHGET, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
+                                self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                                self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
+                                handled = true;
+                            }
+                            break;
+                        }
+                        if (self.code[i - 1].op != Opcode.LDREG && self.code[i - 1].op != Opcode.TONUMERIC) { break; }
+                    }
+                }
+                if (!handled) {
+                    self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
+                }
             } else if (lhs_was_getvar) {
                 self.emit_a_bc(Opcode.INC_VAR, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
@@ -2260,11 +2433,20 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
                 self.free_reg(prop_reg);
                 self.free_reg(obj_reg);
-            } else if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
-                uint name_idx = self.code[self.code_count - 1].get_bc();
+            } else if (lhs_was_getvar && !lhs_was_getglobal && self.cur_with_depth > 0
+                && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && lhs_getvar_name_idx <= bytecode::MAX_C
+                && (ushort)self.code[self.code_count - 1].a <= bytecode::MAX_A
+                && (ushort)self.code[self.code_count - 1].a == operand) {
+                // Inside `with`, discarded-result `x--`: SnapshotReference
+                // shape (WITHGET + DEC + WTWR), no old-value copy.
                 uint getvar_reg = self.code[self.code_count - 1].a;
-                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
+                ushort base_reg = self.alloc_reg();
+                self.code[self.code_count - 1] = bytecode::make_abc(
+                    Opcode.WITHGET, getvar_reg, (uint)base_reg, lhs_getvar_name_idx);
+                self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
             } else if (lhs_was_getglobal && self.code_count > 0
                 && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
                     || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
@@ -2311,6 +2493,34 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             if (lhs_was_getglobal) {
                 self.emit_a_bc(Opcode.DEC_GLOBAL, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
+            } else if (lhs_was_getvar && self.cur_with_depth > 0
+                && !lhs_was_getglobal && lhs_getvar_name_idx <= bytecode::MAX_C
+                && (uint)operand <= bytecode::MAX_A) {
+                // Inside `with`, valued `x--`: same scan-back rewrite as the
+                // INC path above (LHS GETVAR, then only LDREG/TONUMERIC).
+                if (self.code_count > 0) {
+                    for (uint i = self.code_count; i > 0; i--) {
+                        if (self.code[i - 1].op == Opcode.GETVAR
+                            && (ushort)self.code[i - 1].a == operand) {
+                            ushort base_reg = self.alloc_reg();
+                            if (base_reg <= bytecode::MAX_A) {
+                                self.code[i - 1] = bytecode::make_abc(
+                                    Opcode.WITHGET, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
+                                self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                                self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
+                                handled = true;
+                            }
+                            break;
+                        }
+                        if (self.code[i - 1].op != Opcode.LDREG && self.code[i - 1].op != Opcode.TONUMERIC) { break; }
+                    }
+                }
+                if (!handled) {
+                    self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
+                }
             } else if (lhs_was_getvar) {
                 self.emit_a_bc(Opcode.DEC_VAR, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);

@@ -6369,6 +6369,314 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.WITHGET: {
+            // SnapshotReference read for a read-modify-write on an
+            // identifier inside `with` (ES5 §11.13.2 step 4: PutValue uses
+            // the initially-created Reference even when the value getter
+            // deletes the binding). A = value register (the rewritten LHS
+            // GETVAR's register), B = base register, C = name constant.
+            // Resolves per HasBinding, then reads: on a with-env hit B holds
+            // the bindings object and A the HasProperty-checked current
+            // value (the base lands before the getter runs, so a deleting
+            // getter still routes the store here). Otherwise B holds the
+            // global object and A the env-walked value. B gains a
+            // register-external reference (increfed below), released by the
+            // WTWR scrub. Unscopables-throw, TDZ, and getter-throw surface
+            // through the standard throw paths.
+            uint c_idx = insn.c;
+            void* key = null;
+            if (c_idx < vm.current_func.const_count) {
+                TVal name_val = ds.constants[c_idx];
+                if (name_val.is_string()) { key = name_val.get_heapptr(); }
+            }
+            if (key == null) {
+                ra.set_undefined();
+                rb.set_undefined();
+                continue;
+            }
+            EnvRecord* cur = ds.act.lex_env;
+            bool threw_pending = false;
+            bool resolved = false;
+            while (cur != null) {
+                if (cur.is_with) {
+                    if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                        cur = cur.parent;
+                        continue;
+                    }
+                    if (vm_with_unscopables_blocks(vm, cur, key)) {
+                        cur = cur.parent;
+                        continue;
+                    }
+                    if (vm.heap.has_error) {
+                        if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                        threw_pending = true;
+                        break;
+                    }
+                    // Capture the base first: the value getter below may
+                    // delete the binding, and the paired WTWR must still
+                    // write to this object (ES5 §11.13.2 step 4).
+                    rb.set_object(cur.bindings);
+                    void* wbase = rb.get_heapptr();
+                    if (wbase != null) { ((types::HeapHeader*)wbase).incref(); }
+                    track_heap_store(ds.act, rb, (uint)insn.b);
+                    // HasBinding resolved to this env; when the unscopables
+                    // getter deleted the binding, GetValue yields undefined.
+                    hobject::PropProtoResult proto =
+                        cur.bindings.get_prop_proto_full(key, vm.heap);
+                    if (proto.found) {
+                        if (proto.is_accessor) {
+                            TVal getter = hobject::hobject_access_getter(proto.value);
+                            if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                                TVal this_tv;
+                                this_tv.set_object(proto.owner != null ? proto.owner : cur.bindings);
+                                TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                                if (vm.heap.has_error) {
+                                    vm.heap.has_error = false;
+                                    TVal err_val = vm.heap.error_value;
+                                    if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        vm.has_error = true;
+                                        vm.heap.has_error = true;
+                                        return VM_ERROR~;
+                                    }
+                                    threw_pending = true;
+                                    break;
+                                }
+                                vm.heap.tval_copy_ref(ra, &getter_val);
+                            } else {
+                                ra.set_undefined();
+                            }
+                        } else {
+                            vm.heap.tval_copy_ref(ra, &proto.value);
+                        }
+                    } else {
+                        ra.set_undefined();
+                    }
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    resolved = true;
+                    break;
+                }
+                int idx = cur.bindings.find_prop_idx(key, vm.heap);
+                if (idx >= 0) { resolved = true; break; }
+                cur = cur.parent;
+            }
+            if (threw_pending) { continue; }
+            if (!resolved) {
+                // Declarative hit elsewhere, unscopables-blocked, or
+                // unresolvable: the paired WTWR takes the env walk. Mark B
+                // with the global object; A still needs the current value.
+                if (vm.global_env != null) {
+                    rb.set_object(vm.global_env.bindings);
+                    void* gbase = rb.get_heapptr();
+                    if (gbase != null) { ((types::HeapHeader*)gbase).incref(); }
+                    track_heap_store(ds.act, rb, (uint)insn.b);
+                } else {
+                    rb.set_undefined();
+                }
+                // Reuse the GETVAR slow path's value semantics: walk the
+                // chain for a declarative/TDZ/accessor hit, else undefined
+                // in sloppy or a ReferenceError in strict.
+                bool done = false;
+                EnvRecord* vcur = ds.act.lex_env;
+                while (vcur != null) {
+                    if (vcur.is_with) { vcur = vcur.parent; continue; }
+                    int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
+                    if (vidx < 0) { vcur = vcur.parent; continue; }
+                    TVal v_raw = vcur.bindings.prop_values()[vidx];
+                    if (env::is_tdz_sentinel(&v_raw)) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        threw_pending = true;
+                        break;
+                    }
+                    if (vcur.bindings.get_prop_flags((uint)vidx, vm.heap).is_accessor) {
+                        TVal getter = hobject::hobject_access_getter(v_raw);
+                        if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                            TVal this_tv;
+                            this_tv.set_object(vcur.bindings);
+                            TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                            if (vm.heap.has_error) {
+                                vm.heap.has_error = false;
+                                TVal err_val = vm.heap.error_value;
+                                if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    vm.has_error = true;
+                                    vm.heap.has_error = true;
+                                    return VM_ERROR~;
+                                }
+                                threw_pending = true;
+                                break;
+                            }
+                            vm.heap.tval_copy_ref(ra, &getter_val);
+                        } else {
+                            ra.set_undefined();
+                        }
+                    } else {
+                        vm.heap.tval_copy_ref(ra, &v_raw);
+                    }
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    done = true;
+                    break;
+                }
+                if (threw_pending) { continue; }
+                if (!done) {
+                    bool is_strict_act = ds.act.func != null
+                        && ((CompiledFunction*)ds.act.func).is_strict();
+                    if (is_strict_act) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        continue;
+                    }
+                    ra.set_undefined();
+                }
+            }
+            continue;
+        }
+
+        case Opcode.WITHBASE: {
+            // SnapshotReference base for a plain assignment inside `with`
+            // (ES2024 §9.1.1.2.5 SetMutableBinding steps 1-2: the base is
+            // fixed by HasBinding before the RHS runs). Captures only the
+            // base per HasBinding, running no value getter: on a with-env
+            // hit A holds the bindings object, otherwise the global object
+            // (paired WTWR falls back to the env walk). A gains a
+            // register-external reference (increfed below), released by the
+            // WTWR scrub; the unscopables-throw path surfaces through the
+            // standard throw machinery.
+            uint bc = insn.get_bc();
+            HObject* base = null;
+            bool threw = false;
+            if (bc < vm.current_func.const_count) {
+                TVal name_val = ds.constants[bc];
+                if (name_val.is_string()) {
+                    void* key = name_val.get_heapptr();
+                    EnvRecord* cur = ds.act.lex_env;
+                    while (cur != null) {
+                        if (cur.is_with) {
+                            // HasBinding order (§9.1.1.2.1 steps 2-9): the
+                            // HasProperty check runs first, and the
+                            // @@unscopables getter is read only on a hit. A
+                            // deleting getter does not unresolve the
+                            // Reference: the base stays this bindings
+                            // object, and the paired WTWR creates the
+                            // property on it (SetMutableBinding steps 2-4:
+                            // stillExists false, then Set).
+                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                                cur = cur.parent;
+                                continue;
+                            }
+                            if (vm_with_unscopables_blocks(vm, cur, key)) {
+                                cur = cur.parent;
+                                continue;
+                            }
+                            if (vm.heap.has_error) {
+                                if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                threw = true;
+                                break;
+                            }
+                            base = cur.bindings;
+                            break;
+                        }
+                        if (cur.bindings.find_prop_idx(key, vm.heap) >= 0) { break; }
+                        cur = cur.parent;
+                    }
+                }
+            }
+            if (!threw) {
+                if (base == null && vm.global_env != null) { base = vm.global_env.bindings; }
+                if (base != null) {
+                    ra.set_object(base);
+                    ((types::HeapHeader*)base).incref();
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                } else {
+                    ra.set_undefined();
+                }
+            }
+            continue;
+        }
+
+        case Opcode.WTWR: {
+            // SnapshotPutValue: A = value register, B = base register the
+            // paired WITHGET captured, C = name constant. On a bindings
+            // object base the write goes through [[Set]] on that object
+            // (creating the property when the read-side getter deleted it,
+            // per ES5 §11.13.2 step 4). Otherwise B holds the global object
+            // and this behaves as PUTVAR_ASSIGN (TDZ/const throws, sloppy
+            // implicit global). A failed strict [[Set]] throws TypeError;
+            // sloppy ignores it (§8.7.2 step 5). B's ownership ends here:
+            // B held a non-register reference (WITHGET increfed, PUTPROP-style
+            // clears never ran on it), so scrub it back to undefined without
+            // touching A's value.
+            uint bc = insn.c;
+            void* key = null;
+            if (bc < vm.current_func.const_count) {
+                TVal name_val = ds.constants[bc];
+                if (name_val.is_string()) { key = name_val.get_heapptr(); }
+            }
+            bool threw = false;
+            if (key != null && rb.is_object() && vm.global_env != null
+                && (HObject*)rb.get_heapptr() != vm.global_env.bindings) {
+                HObject* base = (HObject*)rb.get_heapptr();
+                bool is_strict_act = ds.act.func != null
+                    && ((CompiledFunction*)ds.act.func).is_strict();
+                TVal recv; recv.set_object(base);
+                bool sres;
+                if (!builtins::js_set_with_receiver(vm, vm.heap, base, (HString*)key, *ra, recv, &sres)) {
+                    vm.heap.has_error = false;
+                    TVal err_val = vm.heap.error_value;
+                    if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        vm.has_error = true;
+                        vm.heap.has_error = true;
+                        return VM_ERROR~;
+                    }
+                    threw = true;
+                } else if (!sres && is_strict_act) {
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    threw = true;
+                }
+            } else if (key != null) {
+                int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
+                if (put_result == -1) {
+                    HString* name_hstr = (HString*)key;
+                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    threw = true;
+                } else if (put_result == -2) {
+                    HString* name_hstr = (HString*)key;
+                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    threw = true;
+                } else if (put_result == 0) {
+                    HString* name_hstr = (HString*)key;
+                    bool is_strict_act = ds.act.func != null
+                        && ((CompiledFunction*)ds.act.func).is_strict();
+                    if (is_strict_act) {
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        threw = true;
+                    } else if (vm.global_env != null) {
+                        env::env_put(vm.global_env, key, *ra);
+                    }
+                }
+                vm.heap.decref_tval(ra);
+                ra.set_undefined();
+            }
+            if (rb.is_heap_allocated()) {
+                void* ptr = rb.get_heapptr();
+                if (ptr != null) { vm.heap.decref((types::HeapHeader*)ptr); }
+                rb.set_undefined();
+            }
+            if (threw) { break; }
+            continue;
+        }
+
         // === CLOSURES ===
         case Opcode.CLOSURE:
         case Opcode.GETBOUND:

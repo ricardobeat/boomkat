@@ -2421,7 +2421,9 @@ fn void? CompilerContext.with_statement(&self) {
     self.emit_a_bc(Opcode.WITH_START, (uint)obj_reg, 0);
     self.cur_with_depth++;
     // Dynamic scope: the with-object may own any name read or written in the
-    // body, so peephole passes must not assume static bindings here.
+    // body, so identifier resolution must go through the env chain
+    // (resolve_var / resolve_slot_global yield while this is nonzero) and
+    // peephole passes must not assume static bindings here.
     self.has_with_stmt = true;
 
     // Eval completion: a `with` always replaces the prior value (ES2024
