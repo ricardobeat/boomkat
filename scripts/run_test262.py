@@ -286,12 +286,10 @@ SKIP_FILES = {
     # declaration-instantiation fixes (direct/indirect eval var_env vs
     # lex_env split, this-binding, (0,eval) direct-eval detection);
     # removed from this list.
-    # P4 — indirect eval is always sloppy unless its own prologue says strict
-    # (ES2024 §19.2.1.1 step 12), so this onlyStrict test's `var static;`
-    # must parse. The eval compiler still inherits caller strictness for
-    # INDIRECT eval when the caller is strict; fix compile_eval's
-    # caller_is_strict computation to exclude indirect callers.
-    "language/eval-code/indirect/always-non-strict.js",
+    # (P4 un-skipped: plans/083 phase 4 §3 step 12 makes indirect eval
+    # sloppy unless its own prologue says strict. The eval compiler's
+    # caller_is_strict computation now excludes indirect callers, so
+    # `(0,eval)('var static; ...')` from a strict caller parses sloppy.)
     # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
     # Strict-only engine never installs these legacy methods on
     # Object.prototype, so `this.__lookupSetter__(...)` throws

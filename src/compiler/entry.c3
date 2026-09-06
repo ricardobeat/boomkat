@@ -216,10 +216,13 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.is_global = true;
     ctx.eval_mode = true;
     ctx.in_eval_code = true;
-    // Eval inherits the caller's strictness via compile_eval's caller_is_strict
-    // parameter; the actual computation (caller_is_strict || saw_use_strict) is
-    // done after parse_directives() below. Default to false so an indirect
-    // eval from non-strict code parses sloppy before the prologue runs.
+    // Eval inherits the caller's strictness only when the call is direct
+    // (ES2024 §19.2.1.1 step 12: "Eval code is strict mode code if it
+    // begins with a Directive Prologue that contains a Use Strict Directive
+    // or if the call to eval is a direct eval that is contained in strict
+    // mode code"). An indirect eval always defaults to sloppy; its own
+    // prologue can flip strict via `saw_use_strict`. caller_is_strict is
+    // masked by is_direct_eval below to honor that.
     ctx.is_strict = false;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
@@ -329,7 +332,12 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // strict". An indirect eval from strict code is therefore NON-strict, so
     // `(0,eval)('var eval;')` is legal. The statement parse below runs after
     // the rewind, so lowering the flag here governs the whole real parse.
-    bool eval_is_strict = caller_is_strict || ctx.saw_use_strict;
+    // ES2024 §19.2.1.1 step 12: indirect eval is sloppy unless its own
+    // prologue contains a Use Strict directive; direct eval additionally
+    // inherits strictness from its (strict) caller. The OR with is_direct_eval
+    // here is what flips caller_is_strict to true for direct calls and to
+    // false for indirect ones.
+    bool eval_is_strict = (caller_is_strict && is_direct_eval) || ctx.saw_use_strict;
     ctx.lexer.set_strict(eval_is_strict);
     ctx.is_strict = eval_is_strict;
 

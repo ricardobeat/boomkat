@@ -99,6 +99,14 @@ fn ushort? CompilerContext.expression_inner(&self) {
         // operand `b` is itself a valid target. Drop the markers it set.
         self.clear_ref_markers();
     }
+    // (a, eval)(...) is an indirect eval call: the comma discards the
+    // direct-eval reference even when `eval` is the rightmost operand, so
+    // the resulting Reference Record is no longer a direct reference to
+    // the global eval. Per ES2024 §19.2.1.1 step 12, indirect eval is
+    // sloppy unless its own prologue says strict; clearing callee_is_eval
+    // here stops the call below from being treated as direct (which would
+    // inherit the caller's strictness via ACT_FLAG_DIRECT_EVAL).
+    self.callee_is_eval = false;
 
     return result;
 }
