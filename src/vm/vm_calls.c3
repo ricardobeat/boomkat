@@ -108,6 +108,33 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
     return true;
 }
 
+// Sever the mapping for index `idx` (ES2017 §9.4.4.8 step 11): clear the
+// owning activation's parameter register to undefined and clear the dense
+// slot, so subsequent reads/writes no longer alias. Returns true when the
+// index was mapped and is now severed.
+fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
+    Activation* owner = mapped_args_owner(vm, args_obj);
+    if (owner == null) return false;
+    CompiledFunction* cf = (CompiledFunction*)owner.func;
+    if (cf == null || idx >= (uint)cf.num_args) return false;
+    int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
+    if (pidx >= 0) {
+        hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
+        if (!fl.configurable) return false;
+    }
+    TVal* slot = &owner.bottom[idx];
+    if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
+    TVal undef; undef.set_undefined();
+    *slot = undef;
+    if (idx < args_obj.array_size) {
+        TVal cur = args_obj.array_part()[idx];
+        if (!cur.is_undefined()) {
+            args_obj.set_array_idx(idx, undef, vm.heap);
+        }
+    }
+    return true;
+}
+
 // Finish initializing a strict `arguments` exotic object: set .length,
 // .callee, and @@iterator (ES2017+ §9.4.4.7 CreateUnmappedArgumentsObject).
 // Per spec, @@iterator must be the *same function object* as

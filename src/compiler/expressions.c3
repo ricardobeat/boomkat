@@ -1927,32 +1927,52 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 }
                 self.last_was_getvar = false;
                 self.last_was_local_var = false;
-                // The operand parse emitted either GETVAR (last_was_getvar)
-                // or left a local-var register live (last_was_local_var).
-                // Both are dead: DELVAR writes its boolean result directly
-                // into op_del. Patch GETVAR → DELVAR in place so the
-                // unresolved-identifier GETVAR does not throw before DELVAR
-                // runs (Annex B.3.1 mandates `true` for the unresolvable
-                // case, which would be unreachable if GETVAR raised first).
-                // DELVAR's A=result, BC=name constant matches GETVAR's
-                // A=result, BC=name layout, so the slot stays valid.
+                // Allocate a fresh register for the DELVAR result. This
+                // (a) keeps the operand register live for any later `typeof x` /
+                // `x` read in the same statement, and (b) lets DELVAR's
+                // handler do its own env walk instead of relying on a GETVAR
+                // (which would throw ReferenceError on an unresolved binding
+                // before DELVAR could return its true Annex B.3.1 result).
+                ushort del_result = self.alloc_reg();
+                // Resolve the operand's name constant. Three cases:
+                //   * GETVAR/GETGLOBAL/GETGLOBAL_PRIM: read BC from that
+                //     instruction directly (and NOP it so its throw on an
+                //     unresolved binding doesn't pre-empt DELVAR).
+                //   * register-resident local (parameter / let / const / var):
+                //     walk the scope stack for the binding's name.
+                //   * otherwise: keep DELVAR's BC = 0 sentinel, which the VM
+                //     handler treats as "no name → trivially deleted".
+                uint name_idx = 0;
                 if (self.code_count > 0 && self.code[self.code_count - 1].a == (ushort)op_del) {
                     Opcode prev = self.code[self.code_count - 1].op;
                     if (prev == Opcode.GETVAR || prev == Opcode.GETGLOBAL || prev == Opcode.GETGLOBAL_PRIM) {
-                        uint name_idx = self.code[self.code_count - 1].get_bc();
-                        self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DELVAR, (uint)op_del, name_idx);
-                        return op_del;
+                        name_idx = self.code[self.code_count - 1].get_bc();
+                        self.emit_a_bc(Opcode.DELVAR, (uint)del_result, name_idx);
+                        // NOP the operand load — DELVAR does its own env walk
+                        // and the load's only effect on the unresolvable case
+                        // was to throw before DELVAR ran.
+                        self.code[self.code_count - 2] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                        return del_result;
                     }
                 }
-                // last_was_local_var path (parameter or local binding on a
-                // register): the register already holds the current value,
-                // but DELVAR walks env chains, not registers, so emit a
-                // DELVAR with BC=0 (placeholder) and let the VM handler
-                // default to returning true (the local-var case is rare and
-                // `delete` of a parameter / `let` is spec-non-conforming
-                // anyway; phase 2 tightens this).
-                self.emit_a_bc(Opcode.DELVAR, (uint)op_del, 0);
-                return op_del;
+                // Register-resident local (parameter, let, const, var): the
+                // binding's home register is op_del. Walk the scope stack for
+                // any VAR/LET/CONST entry whose reg matches op_del and reuse
+                // its name constant (add_string_constant interns idempotently).
+                if (self.scope_depth > 0) {
+                    for (uint i = self.scope_depth; i > 0; i--) {
+                        ScopeEntry* e = &self.scope_stack[i - 1];
+                        if (e.reg == (ushort)op_del
+                            && (e.kind == ScopeKind.VAR
+                                || e.kind == ScopeKind.LET
+                                || e.kind == ScopeKind.CONST)) {
+                            name_idx = self.add_string_constant(e.name);
+                            break;
+                        }
+                    }
+                }
+                self.emit_a_bc(Opcode.DELVAR, (uint)del_result, name_idx);
+                return del_result;
             } else {
                 // Delete of a non-reference (literal, expression result, etc.).
                 // ES6 §12.5.3.2 step 3: If Type(ref) is not Reference, return true.

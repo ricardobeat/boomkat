@@ -2836,6 +2836,19 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 void* key = get_prop_key(vm, rc);
+                if (key != null && hobj.get_class() == hobject::ObjClass.ARGUMENTS && rc.is_fastint()) {
+                    // Sloppy mapped arguments (ES2017 §9.4.4.8 step 11): a
+                    // delete on a mapped index must sever the parameter alias
+                    // AND clear the dense slot to undefined, so a subsequent
+                    // arguments[i] read no longer returns the parameter value.
+                    long didx_long = (long)rc.get_fastint();
+                    if (mapped_args_delete(vm, hobj, (uint)didx_long)) {
+                        ra.set_boolean(true);
+                        return (TVal){};
+                    }
+                    // non-mapped index (out of range, parameter unmapped, or
+                    // already non-configurable) falls through to ordinary delete
+                }
                 if (key != null) {
                     // Module Namespace Exotic [[Delete]] (§10.4.6.10): an
                     // existing own key (export or Symbol.toStringTag) is

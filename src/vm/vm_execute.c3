@@ -6202,18 +6202,18 @@ fn TVal? Vm.run(Vm* vm) {
 
         case Opcode.DELVAR: {
             // `delete x`: ES2024 §14.7.5 step 1 + Annex B.3.2.
-            // The compiler patches GETVAR → DELVAR in place (BC = name const)
-            // or, when the LHS is a local register (parameter / let / const),
-            // emits a fresh DELVAR with BC = 0.
+            // The compiler emits DELVAR with BC = the operand's name constant
+            // in every case (the operand GETVAR/GETGLOBAL, when present, is
+            // patched to NOP so it doesn't throw on an unresolved binding).
             //
-            // BC == 0: local register. The binding is non-configurable by spec,
-            //          so sloppy returns false and strict throws ReferenceError.
-            // BC != 0: lex walk. If unresolvable → true (Annex B.3.2).
-            //          If bound to a non-configurable var/function → false.
-            //          If bound to a configurable global → delete and true.
+            // BC out of range: sloppy returns true (no name → Annex B.3.2 says
+            //                    the deletion is trivially successful).
+            // BC in range: lex walk. If unresolvable → true.
+            //              If bound to a non-configurable var/function → false.
+            //              If bound to a configurable global → delete and true.
             uint bc = insn.get_bc();
-            if (bc == 0 || bc >= vm.current_func.const_count) {
-                ra.set_boolean(false);
+            if (bc >= vm.current_func.const_count) {
+                ra.set_boolean(true);
                 continue;
             }
             TVal name_val = ds.constants[bc];
@@ -6228,9 +6228,15 @@ fn TVal? Vm.run(Vm* vm) {
             // Walk the lex chain. A `with`-env hit is `delete obj.x`: drop the property
             // from the with object and report success. A non-with hit is a
             // var/function binding (Annex B.3.2), non-configurable by spec, so
-            // the answer is false regardless of strictness.
+            // the answer is false regardless of strictness. Functions and sloppy
+            // direct evals run with lex_env != var_env (the function's lexical
+            // scope vs its variable scope), so a var-declared parameter or
+            // local binding lives in var_env, not lex_env — the lex walk
+            // misses it, and the spec still requires the deletion to report
+            // false. Walk var_env next when the lex walk finds nothing.
             EnvRecord* cur = ds.act.lex_env;
             bool found = false;
+            int found_idx = -1;
             while (cur != null) {
                 if (cur.is_with) {
                     if (cur.bindings.has_prop_proto(key, vm.heap)) {
@@ -6247,8 +6253,40 @@ fn TVal? Vm.run(Vm* vm) {
                     continue;
                 }
                 int idx = cur.bindings.find_prop_idx(key, vm.heap);
-                if (idx >= 0) { found = true; break; }
+                if (idx >= 0) { found = true; found_idx = idx; break; }
                 cur = cur.parent;
+            }
+            // var_env walk (Annex B.3.2 + ECMA-262 §10.2.1.2): a var-declared
+            // parameter or local of an enclosing function lives in var_env.
+            // Sloppy direct evals inherit the caller's var_env for vars, so
+            // those land here as well. The deletion still answers false (var
+            // bindings are non-configurable); do not actually drop the
+            // property, which would break re-entrant calls.
+            if (!found && cur == null && ds.act.lex_env != ds.act.var_env) {
+                EnvRecord* vcur = ds.act.var_env;
+                while (vcur != null) {
+                    if (vcur.is_with) {
+                        if (vcur.bindings.has_prop_proto(key, vm.heap)) {
+                            ra.set_boolean(vcur.bindings.es_delete_prop(key, vm.heap));
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                            found = true;
+                            break;
+                        }
+                        vcur = vcur.parent;
+                        continue;
+                    }
+                    int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
+                    if (vidx >= 0) {
+                        // Non-configurable per Annex B.3.2 — drop the lookup
+                        // but report false. No config-flip path here; Phase 2
+                        // may tighten for sloppy `function f(){var x=1;}`.
+                        ra.set_boolean(false);
+                        track_heap_store(ds.act, ra, (uint)insn.a);
+                        found = true;
+                        break;
+                    }
+                    vcur = vcur.parent;
+                }
             }
             if (found && cur != null && cur.is_with) {
                 continue;
@@ -6264,6 +6302,29 @@ fn TVal? Vm.run(Vm* vm) {
                 if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
+                continue;
+            }
+            // Found. The lex walk lands on a declarative env whose record
+            // holds the binding. Annex B.3.2 says var/function bindings are
+            // non-configurable, so the answer is false. Declarative env
+            // records store var/function/let/const bindings — there is no
+            // configurability check to make, the binding simply exists.
+            //
+            // For object envs (the global), ES2024 §14.7.5 step 4 checks
+            // [[Configurable]]: a configurable global (e.g. a built-in like
+            // JSON whose declaration flags include C: true) returns true and
+            // the property is removed; a non-configurable one (built-ins like
+            // undefined, Infinity) returns false. cur.is_with is false here
+            // because the with branch above breaks first; the global env is
+            // the only object env a script activation sees in Phase 5.
+            if (cur != null && !cur.is_declarative && found_idx >= 0) {
+                hobject::PropFlags flags = cur.bindings.get_prop_flags((uint)found_idx, vm.heap);
+                if (flags.configurable) {
+                    ra.set_boolean(cur.bindings.es_delete_prop(key, vm.heap));
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    continue;
+                }
+                ra.set_boolean(false);
                 continue;
             }
             // Found — Annex B.3.2 says false for var/function (binding exists
