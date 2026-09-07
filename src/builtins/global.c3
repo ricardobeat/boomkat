@@ -1035,11 +1035,16 @@ fn void builtin_eval(BuiltinContext* ctx) {
     //     EvalDeclarationInstantiation; lex_env is a fresh declarative child
     //     of the call-site's lex_env (chaining through var_env so DECLVAR
     //     writes stay visible to same-eval reads), isolating let/const/class.
-    // A direct eval inherits the calling code's strictness (§18.2.1.1 step 12:
-    // strictCaller). Every activation in this engine runs strict, so a direct
-    // eval is always strict regardless of the eval string's own prologue; an
-    // indirect eval's strictness is decided solely by that prologue.
-    bool eval_strict = is_direct_eval || func.eval_source_is_strict();
+    // A direct eval inherits the calling code's strictness (ES2024 §19.2.1.1
+    // step 12: "Eval code is strict mode code if it begins with a Directive
+    // Prologue that contains a Use Strict Directive OR if the call to eval
+    // is a direct eval that is contained in strict mode code"). An indirect
+    // eval's strictness is decided solely by its own prologue.
+    bool caller_is_strict_eval = is_direct_eval
+        && precheck_caller != null
+        && ((CompiledFunction*)precheck_caller.func != null
+            && ((CompiledFunction*)precheck_caller.func).is_strict());
+    bool eval_strict = caller_is_strict_eval || func.eval_source_is_strict();
     if (eval_strict) {
         EnvRecord*? eval_env_raw = env::env_create_declarative(ctx.heap, lex_env_for_eval);
         if (catch err = eval_env_raw) {

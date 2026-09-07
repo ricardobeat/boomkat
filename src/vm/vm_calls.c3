@@ -1,5 +1,7 @@
 module boomkat::vm;
 
+import std::io;
+
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::heap;
@@ -1059,7 +1061,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             return (TVal){};
                         }
                         fast_var_env = arrow_lex;
-                    } else if (target_fast.needs_env()) {
+                    } else if (target_fast.needs_env() && !target_fast.is_eval_fn()) {
                         // needs_env=true → the function actually accesses its scope at
                         // runtime (closures / eval / arguments / default-or-rest params /
                         // captured locals), so allocate a fresh scope object.
@@ -1070,6 +1072,11 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // in registers and cannot clobber the parent env.
                         // They reuse func.var_env (the parent) directly,
                         // skipping the per-call scope HObject allocation.
+                        // Eval never gets a fresh scope: builtin_eval has
+                        // already attached the eval body's var_env (global
+                        // for indirect, caller's var_env for direct) to the
+                        // func object, so DECLVAR in sloppy eval must leak
+                        // straight into that env per ES2024 §19.2.1.2.
                         fast_var_env = (*hobj_fast.extra_ptr()).func.var_env;
                         if (try fv_f = env::env_create_function_scope(vm.heap, (*hobj_fast.extra_ptr()).func.var_env)) { fast_var_env = fv_f; }
                     } else {
@@ -2265,7 +2272,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             EnvRecord* call_var_env2 = (*hobj.extra_ptr()).func.var_env;
             // Only allocate a fresh scope when the function actually uses its env
             // (see the fast-call path above and the register-resident-locals pass).
-            if (target.needs_env()) {
+            // Eval functions never do: builtin_eval has already attached the
+            // eval body's var_env (global env for indirect eval, the caller's
+            // var_env for direct eval) directly to the func object — a fresh
+            // child scope would shadow that, so DECLVAR in `var x = ...` would
+            // bind a local instead of leaking to the enclosing env as
+            // ES2024 §19.2.1.2 EvalDeclarationInstantiation requires.
+            if (target.needs_env() && !target.is_eval_fn()) {
                 if (try fv_c2 = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) { call_var_env2 = fv_c2; }
             }
             new_act.parent = ds.act;
