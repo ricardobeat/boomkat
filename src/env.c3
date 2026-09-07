@@ -372,7 +372,11 @@ fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, boo
 fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
     Heap* h = env.heap;
     if (!is_global) {
-        return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
+        // Function declarations inside a function body are bound with
+        // DeletableBinding=false in BOTH strict and sloppy (Annex B.3.3
+        // Instantiation + §10.2.1.1.6 CreateMutableBinding), so a sloppy
+        // \`delete f\` returns false for an inner function declaration.
+        return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WE, h);
     }
     int idx = env.bindings.find_prop_idx(key, h);
     hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;

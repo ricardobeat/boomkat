@@ -1935,7 +1935,13 @@ fn void CompilerContext.emit_hoisted_fn_decls(&self) {
     for (ushort di = 0; di < self.hoisted_defer_count; di++) {
         self.emit_a_bc(Opcode.CLOSURE, (uint)self.hoisted_defer_regs[di],
                        self.hoisted_defer_inner_idxs[di]);
-        self.emit_a_bc(Opcode.DECLVAR, (uint)self.hoisted_defer_regs[di],
+        // Use DECLGLOBALFUNC (not DECLVAR) so the binding carries the
+        // function-declaration attributes: inside a function body the
+        // binding is non-configurable (Annex B.3.3 / §10.2.1.1.6, so
+        // sloppy `delete f` returns false), and on the global object the
+        // descriptor reflects CreateGlobalFunctionBinding's non-enumerable
+        // rule for global-script declarations.
+        self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)self.hoisted_defer_regs[di],
                        self.hoisted_defer_name_idxs[di]);
     }
 }
