@@ -4565,6 +4565,17 @@ fn TVal? Vm.run(Vm* vm) {
                             // observable for missing bindings
                             // (unscopables-not-referenced-for-undef).
                             if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                                // A proxy `has` trap throw leaves heap.has_error
+                                // set; the lookup returned false, so the
+                                // not-found walk would silently drop the
+                                // exception. Surface it (§9.1.1.2.1 step 3
+                                // "If exists is an abrupt completion, return
+                                // exists").
+                                if (vm.heap.has_error) {
+                                    if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                    threw_pending = true;
+                                    break;
+                                }
                                 cur = cur.parent;
                                 continue;
                             }
