@@ -2247,9 +2247,21 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                             }
                         } else if (!exist_flags.writable) {
-                            // Strict-only engine: non-writable property assignment always throws.
-                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
+                            // Sloppy [[Set]] silently drops writes to non-writable
+                            // own data properties (ES2024 §10.2.1.2 OrdinarySet +
+                            // §6.2.4.5 SetMutableBinding on declarative envs); only
+                            // strict mode throws. An accessor with a setter would
+                            // still call through (handled above).
+                            if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
+                                return (TVal){};
+                            }
+                            // Sloppy: silent no-op. Release the put_val reference
+                            // so the rax doesn't pin a heap object past the write.
+                            if (put_val.is_heap_allocated()) {
+                                vm.heap.decref_tval(&put_val);
                             }
                             return (TVal){};
                         } else {
@@ -2503,8 +2515,19 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 data_depth++;
                             }
                             if (proto_nonwritable) {
-                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
+                                // Sloppy [[Set]] silently drops writes to non-writable
+                                // own-or-inherited data properties (§10.2.1.2 OrdinarySet);
+                                // only strict mode throws. The silent no-op path also
+                                // drops the assigned value's reference so the rax doesn't
+                                // pin a heap object past the write.
+                                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        return VM_ERROR~;
+                                    }
+                                    return (TVal){};
+                                }
+                                if (put_val.is_heap_allocated()) {
+                                    vm.heap.decref_tval(&put_val);
                                 }
                                 return (TVal){};
                             }
@@ -2662,9 +2685,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 return vm_proxy_rethrow(vm, ds);
             }
             if (!sres) {
-                // Strict-only engine: failed [[Set]] throws.
-                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
+                // Sloppy [[Set]] silently drops failed writes (§10.2.1.2);
+                // only strict mode throws.
+                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
                 }
             }
             return (TVal){};

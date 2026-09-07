@@ -5807,12 +5807,25 @@ fn TVal? Vm.run(Vm* vm) {
                     // Combined single-walk: check lex_env, writability, and update in one pass
                     int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, false);
                     if (put_result == -1) {
-                        // A const violation throws a TypeError.
-                        HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // A const/writable-violation throws in strict mode; in
+                        // sloppy the binding is left untouched (ES2024 §6.2.4.5
+                        // SetMutableBinding, "if the property is non-writable,
+                        // the assignment is silently ignored"). The same shape
+                        // handles a write to a built-in global like Infinity
+                        // registered with env_declare_immutable: the assignment
+                        // is dropped without throwing.
+                        if (vm.current_func.is_strict()) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            break;
                         }
-                        break;
+                        // Sloppy: silent no-op. Release the ra reference so the
+                        // rax doesn't pin a string the binding never accepted.
+                        vm.heap.decref_tval(ra);
+                        ra.set_undefined();
+                        continue;
                     } else if (put_result == 0) {
                         // Not in lex_env, so fall through to var_env.
                         env::env_put(ds.act.var_env, key, *ra);
