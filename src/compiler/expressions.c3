@@ -1099,7 +1099,8 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                     Opcode.WITHGET, (uint)left, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.WTWR, (uint)left, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
                 return left;
-            } else if (void_ctx) {
+            }
+            if (void_ctx) {
                 // Putvar clears its source register, but the value is
                 // discarded: expression_statement only signals void context
                 // outside eval bodies, so no completion value is owed. Storing
