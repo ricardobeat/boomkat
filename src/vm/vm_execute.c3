@@ -5975,9 +5975,32 @@ fn TVal? Vm.run(Vm* vm) {
                     $if types::ENV_STRICT:
                     if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: DECLGLOBALFUNC"); }
                     $endif
-                    env::env_declare_global_func(ds.act.var_env, fdecl_name.get_heapptr(), *ra,
-                        ds.act.var_env == vm.global_env,
-                        ((CompiledFunction*)ds.act.func).is_eval_fn());
+                    void* fdecl_key = fdecl_name.get_heapptr();
+                    bool is_global_fn_env = ds.act.var_env == vm.global_env;
+                    bool is_eval_fn = ((CompiledFunction*)ds.act.func).is_eval_fn();
+                    // ES2024 §9.1.1.4.18 CanDeclareGlobalFunction + CreateGlobalFunctionBinding:
+                    // if the global env already holds a non-configurable property of
+                    // this name, declaring a FunctionDeclaration must throw TypeError
+                    // (eval-source semantics: a non-definable function name aborts the
+                    // eval, leaving any earlier fn-decl-from-this-eval rollbacks to be
+                    // observed by the outer test). For non-global envs the binding is
+                    // a plain put_prop with no collision concern.
+                    if (is_global_fn_env && is_eval_fn) {
+                        int existing_idx = ds.act.var_env.bindings.find_prop_idx(fdecl_key, vm.heap);
+                        if (existing_idx >= 0) {
+                            hobject::PropFlags existing = ds.act.var_env.bindings.get_prop_flags((uint)existing_idx, vm.heap);
+                            if (!existing.configurable) {
+                                HString* type_str = typeof_string(vm, (TVal*)&fdecl_name);
+                                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
+                                        "Cannot declare global function '%s'", type_str.get_cstr(),
+                                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
+                                return (TVal){};
+                            }
+                        }
+                    }
+                    env::env_declare_global_func(ds.act.var_env, fdecl_key, *ra, is_global_fn_env, is_eval_fn);
                 }
             }
             break;
