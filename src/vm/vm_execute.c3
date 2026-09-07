@@ -4564,7 +4564,22 @@ fn TVal? Vm.run(Vm* vm) {
                             // @@unscopables on a hit, otherwise the getter is
                             // observable for missing bindings
                             // (unscopables-not-referenced-for-undef).
-                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                            //
+                            // Use js_has_property rather than has_prop_proto:
+                            // the spec calls OrdinaryHasProperty, which on a
+                            // Proxy bindingObject invokes the `has` trap
+                            // (§9.1.1.2.1 step 2). has_prop_proto walks the
+                            // prototype chain instead and would silently miss
+                            // the trap.
+                            bool has_hit = false;
+                            if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &has_hit)) {
+                                // Trap threw / OOM; surface via the regular
+                                // throw-pending path.
+                                if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                threw_pending = true;
+                                break;
+                            }
+                            if (!has_hit) {
                                 // A proxy `has` trap throw leaves heap.has_error
                                 // set; the lookup returned false, so the
                                 // not-found walk would silently drop the
@@ -4595,8 +4610,11 @@ fn TVal? Vm.run(Vm* vm) {
                             // yields `undefined` in sloppy and throws
                             // ReferenceError in strict (the Reference's base
                             // resolved to this env at HasBinding, so do NOT
-                            // fall through to the parent).
-                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                            // fall through to the parent). Re-check with
+                            // js_has_property so a Proxy `has` trap fires
+                            // again on this verification.
+                            if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &has_hit)
+                                || !has_hit) {
                                 if (vm.current_func.is_strict()) {
                                     HString* name_hstr = (HString*)key;
                                     if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
