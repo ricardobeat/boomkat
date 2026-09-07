@@ -2526,6 +2526,23 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 // Maximum number of lexical declarations in a single pre-scan pass.
 const uint MAX_PRESCAN_NAMES = 64;
 
+// Subkind of a FunctionDeclaration's name span. Plain function declarations
+// get B.3.3's name-sharing exemption in sloppy; every other kind stays
+// strict-mode strict (no exemption).
+enum NameSpanFnKind : char {
+    NSP_FN_PLAIN,
+    NSP_FN_GENERATOR,
+    NSP_FN_ASYNC,
+    NSP_FN_ASYNC_GENERATOR,
+}
+
+fn NameSpanFnKind fn_kind_for(bool is_async, bool is_generator) {
+    if (is_async && is_generator) return NameSpanFnKind.NSP_FN_ASYNC_GENERATOR;
+    if (is_async) return NameSpanFnKind.NSP_FN_ASYNC;
+    if (is_generator) return NameSpanFnKind.NSP_FN_GENERATOR;
+    return NameSpanFnKind.NSP_FN_PLAIN;
+}
+
 // Stores the position and length of a variable name in the source text.
 struct NameSpan {
     uint pos;   // byte offset into the source buffer
@@ -2545,6 +2562,13 @@ struct NameSpan {
     // function name instead makes a call placed before the declaration's own
     // textual position throw "Cannot access X before initialization".
     bool is_fn;
+    // Subkind of the FunctionDeclaration, used by check_duplicate_lexical_names
+    // to decide which pairings Annex B.3.4 / B.3.3 exempt. Two plain
+    // FunctionDeclarations may share a name in sloppy mode (B.3.3); a plain
+    // paired with a generator, async, or async-generator is still a hard
+    // SyntaxError, as is any generator-async pairing. Only meaningful when
+    // `is_fn` is set.
+    NameSpanFnKind fn_kind;
     // Scan position of the `function` (or, for an async declaration, `async`)
     // keyword of that declaration, so block()/switch_statement() can re-parse
     // it through the ordinary statement path at block entry and restore the

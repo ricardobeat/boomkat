@@ -888,6 +888,7 @@ fn void CompilerContext.record_name_span(&self, NameSpan* span, Token name_tok, 
     // FunctionDeclaration (see NameSpan.is_fn); every other caller collects
     // let/const/class names, which stay TDZ-initialized at block entry.
     span.is_fn = false;
+    span.fn_kind = NameSpanFnKind.NSP_FN_PLAIN;
 }
 
 // Reconstruct a prescanned binding name from a NameSpan, either its
@@ -1558,6 +1559,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
 
         // async function [*] Name (...) { ... }, only when "async" is
         // immediately followed by "function" (contextual keyword check).
+        bool async_decl = false;
         if (tt == TokenType.IDENTIFIER &&
             tok.str_value.len == 5 &&
             tok.str_value[0] == 'a' && tok.str_value[1] == 's' &&
@@ -1576,6 +1578,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             }
             // Fall through to the FUNCTION handling below via tok=peek_tok.
             tt = TokenType.FUNCTION;
+            async_decl = true;
         } else if (tt != TokenType.FUNCTION) {
             prev_tt = tt;
             continue;
@@ -1614,6 +1617,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
                 // ordinary statement path to compile it.
                 spans[count].is_fn = true;
                 spans[count].fn_pos = pos_before;
+                spans[count].fn_kind = fn_kind_for(async_decl, fn_is_generator);
                 count++;
             }
         }
@@ -1648,11 +1652,15 @@ fn void? CompilerContext.check_duplicate_lexical_names(&self, NameSpan* spans, u
         for (uint bi = ai + 1; bi < count; bi++) {
             if (str_eq(self.name_span_text(spans[ai]),
                        self.name_span_text(spans[bi]))) {
-                // Annex B.3.4 (sloppy): two plain FunctionDeclarations may
-                // share a name in one block. A `function` paired with
-                // `function*`, `async function`, `class` or `let` stays an
-                // error, as does any other duplicate pair.
-                if (!self.is_strict && spans[ai].is_fn && spans[bi].is_fn) continue;
+                // Annex B.3.3 / B.3.4 (sloppy): two FunctionDeclarations may
+                // share a name in one block ONLY when both are plain. A plain
+                // paired with a generator, async, or async-generator stays an
+                // error, as does any generator-async pairing; class/let/const
+                // are always strict.
+                if (!self.is_strict
+                    && spans[ai].is_fn && spans[bi].is_fn
+                    && spans[ai].fn_kind == NameSpanFnKind.NSP_FN_PLAIN
+                    && spans[bi].fn_kind == NameSpanFnKind.NSP_FN_PLAIN) continue;
                 return self.fail("Identifier has already been declared")~;
             }
         }
