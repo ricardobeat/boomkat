@@ -4187,6 +4187,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     }
     // Set is_strict if any directive was "use strict" on a simple parameter
     // list. The check mirrors parse_directives().
+    bool prologue_made_strict = false;
     for (uint i = 1; i < prologue_count; i++) {
         Token t = prologue_buf[i];
         if (t.type != TokenType.STRING) continue;
@@ -4201,6 +4202,42 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             inner_ctx.lexer.set_strict(true);
             if (inner_ctx.current_func != null) inner_ctx.current_func.flags.is_strict = true;
             inner_ctx.saw_use_strict = true;
+            prologue_made_strict = true;
+        }
+    }
+    // ES2024 §15.2.1 / §15.2.2 strict early errors that the param/name parser
+    // couldn't enforce when it ran (it only knew the OUTER strictness). A
+    // 'use strict' prologue can retroactively promote the body to strict,
+    // which makes the function name 'eval'/'arguments' a SyntaxError, forbids
+    // duplicate BoundNames in a non-simple list, and forbids 'eval'/'arguments'
+    // as FormalParameterList BoundNames.
+    if (prologue_made_strict) {
+        if (name.len == 4 && name[0] == 'e' && name[1] == 'v' && name[2] == 'a' && name[3] == 'l') {
+            return self.fail("'eval' is not a valid function name in strict mode")~;
+        }
+        if (name.len == 9 && name[0] == 'a' && name[1] == 'r' && name[2] == 'g' &&
+            name[3] == 'u' && name[4] == 'm' && name[5] == 'e' && name[6] == 'n' &&
+            name[7] == 't' && name[8] == 's') {
+            return self.fail("'arguments' is not a valid function name in strict mode")~;
+        }
+        // Strict re-validation of params: forbidden names and duplicate
+        // BoundNames in a non-simple list.
+        for (ushort pi = 0; pi < inner_seen.count; pi++) {
+            char[] pname = inner_seen.names[pi][:inner_seen.lens[pi]];
+            if (pname.len == 4 && pname[0] == 'e' && pname[1] == 'v' && pname[2] == 'a' && pname[3] == 'l') {
+                return self.fail("'eval' is not a valid parameter name in strict mode")~;
+            }
+            if (pname.len == 9 && pname[0] == 'a' && pname[1] == 'r' && pname[2] == 'g' &&
+                pname[3] == 'u' && pname[4] == 'm' && pname[5] == 'e' && pname[6] == 'n' &&
+                pname[7] == 't' && pname[8] == 's') {
+                return self.fail("'arguments' is not a valid parameter name in strict mode")~;
+            }
+            for (ushort pj = pi + 1; pj < inner_seen.count; pj++) {
+                char[] other = inner_seen.names[pj][:inner_seen.lens[pj]];
+                if (inner_seen.lens[pi] == other.len && str_eq(pname, other)) {
+                    return self.fail("duplicate parameter names in strict mode")~;
+                }
+            }
         }
     }
 
