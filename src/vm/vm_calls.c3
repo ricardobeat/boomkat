@@ -78,8 +78,19 @@ fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline
     if (pidx >= 0) {
         hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
         if (!fl.configurable && !fl.writable) return false;
+        *out = owner.bottom[idx];
+        return true;
     }
-    *out = owner.bottom[idx];
+    // Named mapping is gone (delete severed it): read from the dense array
+    // index instead, matching ES2024 §9.4.4.8 step 11's post-delete shape
+    // (parameter and arguments[i] are now independent; arguments[i] is
+    // what was last written to the dense slot, which delete cleared).
+    if (idx < args_obj.array_size) {
+        *out = args_obj.array_part()[idx];
+        return true;
+    }
+    TVal undef; undef.set_undefined();
+    *out = undef;
     return true;
 }
 
@@ -122,15 +133,20 @@ fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
         hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
         if (!fl.configurable) return false;
     }
-    TVal* slot = &owner.bottom[idx];
-    if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
-    TVal undef; undef.set_undefined();
-    *slot = undef;
+    // ES2024 §9.4.4.8 step 11 / §10.2.1.3.2 (RemoveMappedBinding): delete
+    // breaks the alias between arguments[i] and the parameter local, leaving
+    // the local's value intact. We clear the dense array slot (so subsequent
+    // arguments[i] reads return undefined via the dense path) and drop the
+    // named mapping if any, but do NOT touch owner.bottom[idx].
     if (idx < args_obj.array_size) {
         TVal cur = args_obj.array_part()[idx];
         if (!cur.is_undefined()) {
+            TVal undef; undef.set_undefined();
             args_obj.set_array_idx(idx, undef, vm.heap);
         }
+    }
+    if (pidx >= 0) {
+        args_obj.delete_prop(vm.heap.int_to_hstring((long)idx), vm.heap);
     }
     return true;
 }
