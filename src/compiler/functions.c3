@@ -4151,6 +4151,59 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         inner_ctx.emit_simple(Opcode.PUSH_VAR);
     }
 
+    // The directive prologue may flip is_strict; hoist_decls compiles nested
+    // function declarations via compile_inner_function, which propagates
+    // self.is_strict. A "use strict" inside the body would otherwise flip the
+    // flag AFTER nested functions were already compiled as sloppy, and a
+    // `with` inside that nested function would be accepted (ES2024 §13.11.1).
+    //
+    // Peek the prologue here: read `{` plus the directive strings, push them
+    // all back so block() re-consumes them via its own parse_directives (which
+    // owns prologue_dir_count for the legacy-escape shrink check). Only the
+    // strictness flag is set early; block() still runs the full parse.
+    Token[8] prologue_buf;
+    uint prologue_count = 0;
+    Token lbrace = inner_ctx.advance()!;
+    if (lbrace.type != TokenType.LBRACE) {
+        return self.fail("expected '{' to start function body")~;
+    }
+    prologue_buf[0] = lbrace;
+    prologue_count = 1;
+    while (prologue_count < prologue_buf.len && inner_ctx.check(TokenType.STRING)) {
+        Token str_tok = inner_ctx.advance()!;
+        prologue_buf[prologue_count++] = str_tok;
+        if (!inner_ctx.check(TokenType.SEMICOLON)
+            && !inner_ctx.lexer.seen_line_term
+            && !inner_ctx.check(TokenType.RBRACE)) {
+            break;
+        }
+        if (inner_ctx.check(TokenType.SEMICOLON)) {
+            prologue_buf[prologue_count++] = inner_ctx.advance()!;
+        }
+    }
+    // Push tokens back in reverse so they pop in original order.
+    for (uint i = prologue_count; i > 0; i--) {
+        inner_ctx.pushback(prologue_buf[i - 1]);
+    }
+    // Set is_strict if any directive was "use strict" on a simple parameter
+    // list. The check mirrors parse_directives().
+    for (uint i = 1; i < prologue_count; i++) {
+        Token t = prologue_buf[i];
+        if (t.type != TokenType.STRING) continue;
+        if (t.str_value.len != 10) continue;
+        bool is_use_strict = true;
+        char[] expected = "use strict";
+        for (usz k = 0; k < 10; k++) {
+            if (t.str_value[k] != expected[k]) { is_use_strict = false; break; }
+        }
+        if (is_use_strict && inner_ctx.params_are_simple()) {
+            inner_ctx.is_strict = true;
+            inner_ctx.lexer.set_strict(true);
+            if (inner_ctx.current_func != null) inner_ctx.current_func.flags.is_strict = true;
+            inner_ctx.saw_use_strict = true;
+        }
+    }
+
     // Hoist var and function declarations to the top of the inner function scope.
     inner_ctx.hoist_decls(false)!;
 
