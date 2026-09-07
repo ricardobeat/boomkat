@@ -4157,10 +4157,23 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // flag AFTER nested functions were already compiled as sloppy, and a
     // `with` inside that nested function would be accepted (ES2024 §13.11.1).
     //
-    // Peek the prologue here: read `{` plus the directive strings, push them
-    // all back so block() re-consumes them via its own parse_directives (which
+    // Peek the prologue here: read `{` plus the directive strings, restore the
+    // lexer position to before the `{` so hoist_decls (which calls
+    // lexer.next_token() directly, NOT via advance()) still sees the body's
+    // opening brace and increments its brace_depth. block() then re-consumes
+    // the `{` via its own expect() and runs its own parse_directives (which
     // owns prologue_dir_count for the legacy-escape shrink check). Only the
-    // strictness flag is set early; block() still runs the full parse.
+    // strictness flag is set early here.
+    uint prologue_pos = inner_ctx.lexer.pos;
+    uint prologue_line = inner_ctx.lexer.line;
+    uint prologue_col = inner_ctx.lexer.col;
+    Token prologue_current = inner_ctx.lexer.current;
+    Token prologue_lookahead = inner_ctx.lexer.lookahead;
+    bool prologue_has_lk = inner_ctx.lexer.has_lookahead;
+    Token prologue_pb = inner_ctx.lexer.pushed_back;
+    bool prologue_has_pb = inner_ctx.lexer.has_pushed_back;
+    bool prologue_slt = inner_ctx.lexer.seen_line_term;
+
     Token[8] prologue_buf;
     uint prologue_count = 0;
     Token lbrace = inner_ctx.advance()!;
@@ -4181,10 +4194,17 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             prologue_buf[prologue_count++] = inner_ctx.advance()!;
         }
     }
-    // Push tokens back in reverse so they pop in original order.
-    for (uint i = prologue_count; i > 0; i--) {
-        inner_ctx.pushback(prologue_buf[i - 1]);
-    }
+    // Restore lexer state to before the `{` so hoist_decls's lexer.next_token()
+    // (which doesn't read CompilerContext.pushback_stack) still sees the `{`.
+    inner_ctx.lexer.pos = prologue_pos;
+    inner_ctx.lexer.line = prologue_line;
+    inner_ctx.lexer.col = prologue_col;
+    inner_ctx.lexer.current = prologue_current;
+    inner_ctx.lexer.lookahead = prologue_lookahead;
+    inner_ctx.lexer.has_lookahead = prologue_has_lk;
+    inner_ctx.lexer.pushed_back = prologue_pb;
+    inner_ctx.lexer.has_pushed_back = prologue_has_pb;
+    inner_ctx.lexer.seen_line_term = prologue_slt;
     // Set is_strict if any directive was "use strict" on a simple parameter
     // list. The check mirrors parse_directives().
     bool prologue_made_strict = false;
