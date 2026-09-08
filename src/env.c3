@@ -495,18 +495,41 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
 // handles both own-property update and reference refcounting. Writable/read-
 // only/TDZ flags are not applicable to with-object lookups, so the const/TDZ
 // guards are skipped on a with record.
+//
+// Per ES2024 §9.1.1.2.5 SetMutableBinding step 2, the spec re-checks
+// HasProperty AFTER any observable unscopables getter has run — if the
+// binding was deleted by the getter (or by RHS code that ran before this
+// call), SetMutableBinding must NOT fall through to a parent env. The
+// caller (PUTVAR_ASSIGN) distinguishes "with-env had it, now gone" from
+// "with-env never had it" by inspecting the RESOLVEVAR probe's stored env
+// pointer. PUTVAR (sloppy `var x = …`) treats -3 as fall-through because it
+// has no with-env context to protect.
 fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
         if (cur.is_with) {
-            if (cur.bindings.has_prop_proto(key, h)
-                && !with_unscopables_blocks(h, cur, key)) {
-                cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
-                return 1;
+            bool first_has = cur.bindings.has_prop_proto(key, h);
+            if (h.has_error) return 0;
+            if (!first_has) {
+                // Binding absent on this with-env. Two cases collapse here:
+                // (a) never was on the object; (b) deleted by an observable
+                // RHS effect before this assignment runs (test262
+                // set-mutable-binding-binding-deleted-with-typed-array-in-
+                // proto-chain-strict-mode.js). The caller uses the
+                // RESOLVEVAR probe to tell (a) — RESOLVEVAR found the
+                // binding on this with-env, and is now missing — from (b)
+                // — RESOLVEVAR did not find it here, fall through.
+                return -3;
             }
-            cur = cur.parent;
-            continue;
+            // Per spec, observe @@unscopables on a binding hit. The
+            // getter is observable and may delete the binding as a side
+            // effect, so re-check HasProperty before writing.
+            if (with_unscopables_blocks(h, cur, key)) return -3;
+            if (h.has_error) return 0;
+            if (!cur.bindings.has_prop_proto(key, h)) return -3;
+            cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
+            return 1;
         }
         int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {
