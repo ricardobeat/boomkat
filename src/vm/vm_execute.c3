@@ -4608,13 +4608,15 @@ fn TVal? Vm.run(Vm* vm) {
                             // @@unscopables gate (§9.1.1.2.1 HasBinding step
                             // 6-9): a true entry under @@unscopables hides the
                             // property from this with-scope. The unscopables
-                            // getter is observable and may delete the binding
-                            // just looked up; re-check HasProperty afterward
-                            // before reading the slot.
-                            if (vm_with_unscopables_blocks(vm, cur, key)) {
+                            // getter is observable (and may delete the binding
+                            // just looked up); the _dispatch variant surfaces
+                            // any throw from the getter so test262
+                            // unscopables-*-get-err.js sees it.
+                            if (vm_with_unscopables_blocks_dispatch(&ds, cur, key)) {
                                 cur = cur.parent;
                                 continue;
                             }
+                            if (ds.needs_restart) { found = true; break; }
                             // The unscopables getter may have deleted the
                             // binding as a side effect. Per §9.1.1.2.6
                             // GetBindingValue step 3, a missing property
@@ -6912,6 +6914,19 @@ fn bool vm_with_unscopables_blocks(Vm* vm, EnvRecord* with_env, void* name) {
     if (!builtins::js_get(vm, h, us_obj, (HString*)name, &blocked_v)) return false;
     if (h.has_error) return false;
     return env::env_tval_to_boolean(blocked_v);
+}
+
+// Variant that surfaces a throw from the unscopables getter (test262
+// unscopables-*-get-err.js). The plain `vm_with_unscopables_blocks` returns
+// false on the throw, which silently dropped the binding lookup; this
+// variant routes any pending throw through the dispatcher's restart path.
+fn bool vm_with_unscopables_blocks_dispatch(Dispatch* ds, EnvRecord* with_env, void* name) {
+    Vm* vm = ds.vm;
+    if (vm_with_unscopables_blocks(vm, with_env, name)) return true;
+    if (vm.heap.has_error) {
+        if (!vm_throw_pending(vm, ds)) return false;
+    }
+    return false;
 }
 
 // Surfaces a pending heap error through the VM throw machinery. Returns
