@@ -207,10 +207,8 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
             ulong to_idx   = (ulong)(downstream_i + i);
             bool from_present;
             if (is_proxy) {
-                from_present = arr_has_prop(obj, from_idx, ctx.heap, ctx.vm);
-                if (!from_present && ctx.heap.has_error) {
-                    proxy_ctx_ok(ctx); ctx.result.set_undefined(); return;
-                }
+                from_present = arr_has_prop_ctx(ctx, obj, from_idx);
+                if (ctx.should_throw) { ctx.result.set_undefined(); return; }
             } else {
                 from_present = arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem);
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -241,10 +239,8 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
             ulong to_idx   = (ulong)(downstream_i + i);
             bool from_present;
             if (is_proxy) {
-                from_present = arr_has_prop(obj, from_idx, ctx.heap, ctx.vm);
-                if (!from_present && ctx.heap.has_error) {
-                    proxy_ctx_ok(ctx); ctx.result.set_undefined(); return;
-                }
+                from_present = arr_has_prop_ctx(ctx, obj, from_idx);
+                if (ctx.should_throw) { ctx.result.set_undefined(); return; }
             } else {
                 from_present = arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem);
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -331,7 +327,7 @@ fn ulong flatten_into(HObject* downstream, HObject* source, ulong source_len, ul
     Heap* heap = ctx.heap;
     for (ulong i = 0; i < source_len; i++) {
         if (ctx.should_throw) return downstream_idx;
-        if (!arr_has_prop(source, i, heap, ctx.vm)) {
+        if (!arr_has_prop_ctx(ctx, source, i)) {
             continue;
         }
         TVal elem;
@@ -433,7 +429,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
 
     ulong n = 0;
     for (ulong k = 0; k < len; k++) {
-        if (!arr_has_prop(obj, k, ctx.heap, ctx.vm)) continue;
+        if (!arr_has_prop_ctx(ctx, obj, k)) continue;
         TVal v;
         if (!arr_get_elem_vm(obj, k, ctx.heap, ctx, &v)) continue;
 
@@ -457,7 +453,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
             ulong mapped_len;
             if (!array_to_length(mapped_arr, ctx.heap, ctx, &mapped_len)) { ctx.result.set_undefined(); return; }
             for (ulong j = 0; j < mapped_len; j++) {
-                if (arr_has_prop(mapped_arr, j, ctx.heap, ctx.vm)) {
+                if (arr_has_prop_ctx(ctx, mapped_arr, j)) {
                     TVal elem;
                     if (arr_get_elem_vm(mapped_arr, j, ctx.heap, ctx, &elem)) {
                         if (!array_set_elem_ulong_checked(ctx, result, n, elem)) {
@@ -1669,14 +1665,14 @@ fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
 
         // ES2022 §23.1.3.27 steps 5.a-5.d: HasProperty then conditional Get,
         // for lower then upper (in that order, matters for Proxy trap order).
-        bool has_lower = arr_has_prop(obj, lower, ctx.heap, ctx.vm);
+        bool has_lower = arr_has_prop_ctx(ctx, obj, lower);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         TVal lower_val;
         if (has_lower) {
             arr_get_elem_vm(obj, lower, ctx.heap, ctx, &lower_val);
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         }
-        bool has_upper = arr_has_prop(obj, upper, ctx.heap, ctx.vm);
+        bool has_upper = arr_has_prop_ctx(ctx, obj, upper);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         TVal upper_val;
         if (has_upper) {
@@ -1736,13 +1732,8 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
     // Get(O, from) -- a Proxy observes these as two separate trap calls
     // ("has" before "get"), not one combined presence-check-via-Get.
     for (ulong k = 1; k < len; k++) {
-        bool from_present = arr_has_prop(obj, k, ctx.heap, ctx.vm);
-        if (ctx.heap.has_error) {
-            ctx.should_throw = true;
-            ctx.throw_value = ctx.heap.error_value;
-            ctx.heap.has_error = false;
-            ctx.result.set_undefined(); return;
-        }
+        bool from_present = arr_has_prop_ctx(ctx, obj, k);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         if (from_present) {
             TVal elem;
             if (!arr_get_elem_vm(obj, k, ctx.heap, ctx, &elem)) {
@@ -1818,7 +1809,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     // the final length is the full count even when it ends in holes.
     ulong n = 0;
     for (ulong i = k; i < final_val; i++) {
-        if (arr_has_prop(obj, i, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, obj, i)) {
             TVal v;
             if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -1958,24 +1949,15 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         if (!array_to_length(obj, ctx.heap, ctx, &current_len)) { ctx.result.set_undefined(); return; }
         if (i >= current_len) continue;
 
-        if (arr_has_prop(obj, i, ctx.heap, ctx.vm)) {
-            if (ctx.heap.has_error) {
-                ctx.should_throw = true;
-                ctx.throw_value = ctx.heap.error_value;
-                ctx.heap.has_error = false;
-                ctx.result.set_undefined(); return;
-            }
+        bool present = arr_has_prop_ctx(ctx, obj, i);
+        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (present) {
             TVal v;
             if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                 items[present_count] = v;
                 present_count++;
             }
-        } else if (ctx.heap.has_error) {
-            ctx.should_throw = true;
-            ctx.throw_value = ctx.heap.error_value;
-            ctx.heap.has_error = false;
-            ctx.result.set_undefined(); return;
         }
     }
 
@@ -2119,7 +2101,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     for (ulong i = 0; i < actual_delete_count; i++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         TVal elem;
-        if (arr_has_prop(obj, actual_start + i, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, obj, actual_start + i)) {
             if (arr_get_elem_vm(obj, actual_start + i, ctx.heap, ctx, &elem)) {
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                 if (!array_set_elem_ulong_checked(ctx, result, i, elem)) {
@@ -2139,7 +2121,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
             TVal elem;
             ulong from_idx = actual_start + actual_delete_count + k;
             ulong to_idx = actual_start + item_count + k;
-            if (arr_has_prop(obj, from_idx, ctx.heap, ctx.vm)) {
+            if (arr_has_prop_ctx(ctx, obj, from_idx)) {
                 if (arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem)) {
                     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                     if (!array_set_elem_ulong_checked(ctx, obj, to_idx, elem)) {
@@ -2174,7 +2156,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
             ulong from = actual_start + actual_delete_count + k - 1;
             ulong to = actual_start + item_count + k - 1;
             TVal elem;
-            if (arr_has_prop(obj, from, ctx.heap, ctx.vm)) {
+            if (arr_has_prop_ctx(ctx, obj, from)) {
                 if (arr_get_elem_vm(obj, from, ctx.heap, ctx, &elem)) {
                     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                     if (!array_set_elem_ulong_checked(ctx, obj, to, elem)) {
@@ -2956,7 +2938,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
         }
         for (ulong i = 0; i < item_len; i++) {
             if (ctx.should_throw) return false;
-            if (arr_has_prop(item_obj, i, ctx.heap, ctx.vm)) {
+            if (arr_has_prop_ctx(ctx, item_obj, i)) {
                 TVal elem;
                 if (arr_get_elem_vm(item_obj, i, ctx.heap, ctx, &elem)) {
                     // ES2022 §23.1.3.1 step 5.c.iv.3.b: CreateDataPropertyOrThrow
@@ -3689,6 +3671,17 @@ fn bool arr_create_data_property_or_throw(BuiltinContext* ctx, HObject* obj, HSt
         return false;
     }
     return true;
+}
+
+// Same as arr_has_prop, but converts a pending error left by a throwing Proxy
+// [[HasProperty]] trap into the builtin's own throw. A trap that throws makes
+// proxy_mop_has return false, which is indistinguishable from "not present" at
+// the call site -- callers that only test ctx.should_throw would silently
+// swallow the exception. Use this from any builtin that loops over indices.
+fn bool arr_has_prop_ctx(BuiltinContext* ctx, HObject* obj, ulong key) {
+    bool present = arr_has_prop(obj, key, ctx.heap, ctx.vm);
+    if (!proxy_ctx_ok(ctx)) return false;
+    return present;
 }
 
 // Helper: check if numeric key exists on object (ES5 §15.4.5.1 step 4 "k in O").
@@ -4513,7 +4506,7 @@ fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_has_prop(o, k, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, o, k)) {
             TVal v;
             if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
                 arr_call_callback(ctx, callback, thisArg, v, k, o);
@@ -4564,7 +4557,7 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     array_set_length_ulong(arr, len, ctx.heap);
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_has_prop(o, k, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, o, k)) {
             TVal v;
             if (!arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
                 v.set_undefined();
@@ -4608,7 +4601,7 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     ulong aj = 0;
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_has_prop(o, k, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, o, k)) {
             TVal v;
             if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -4815,7 +4808,7 @@ fn void builtin_array_proto_every(BuiltinContext* ctx) {
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_has_prop(o, k, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, o, k)) {
             TVal v;
             if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
                 TVal test = arr_call_callback(ctx, callback, thisArg, v, k, o);
@@ -4849,7 +4842,7 @@ fn void builtin_array_proto_some(BuiltinContext* ctx) {
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_has_prop(o, k, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, o, k)) {
             TVal v;
             if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
                 TVal test = arr_call_callback(ctx, callback, thisArg, v, k, o);
@@ -4888,7 +4881,10 @@ fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
         has_acc = true;
     } else {
         has_acc = false;
-        while (k < len && !arr_has_prop(o, k, ctx.heap, ctx.vm)) { k++; }
+        while (k < len && !arr_has_prop_ctx(ctx, o, k)) {
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            k++;
+        }
         if (k >= len) {
             arr_throw_type_error(ctx, "Reduce of empty array with no initial value");
             return;
@@ -4900,7 +4896,7 @@ fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     TVal undef_this; undef_this.set_undefined();
     while (k < len) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_has_prop(o, k, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, o, k)) {
             TVal v;
             if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
                 TVal[4] args;
@@ -4953,7 +4949,10 @@ fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
         has_acc = true;
     } else {
         has_acc = false;
-        while (k >= 0 && !arr_has_prop(o, (ulong)k, ctx.heap, ctx.vm)) { k--; }
+        while (k >= 0 && !arr_has_prop_ctx(ctx, o, (ulong)k)) {
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            k--;
+        }
         if (k < 0) {
             arr_throw_type_error(ctx, "Reduce of empty array with no initial value");
             return;
@@ -4965,7 +4964,7 @@ fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     TVal undef_this; undef_this.set_undefined();
     while (k >= 0) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_has_prop(o, (ulong)k, ctx.heap, ctx.vm)) {
+        if (arr_has_prop_ctx(ctx, o, (ulong)k)) {
             TVal v;
             if (arr_get_elem_vm(o, (ulong)k, ctx.heap, ctx, &v)) {
                 TVal[4] args;
