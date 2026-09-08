@@ -258,6 +258,12 @@ NOSTRICT_RUN_GLOBS = {
     # class source via eval (direct or indirect), so a brand check on an
     # instance made by a later evaluation still holds.
     "*/private-*-multiple-evaluations-of-class-*.js",
+    # Mapped arguments (ES2024 §9.4.4.8): arguments[i] aliases parameter i in
+    # a sloppy function with a simple parameter list. Both directions of the
+    # alias, and delete's severing of it, are implemented.
+    "language/arguments-object/*.js",
+    "language/arguments-object/mapped/*.js",
+    "*/*-mapped-arguments.js",
 }
 SKIP_FILES = {
     # Map/Set key/value tests that use a BigInt literal far beyond 2^127
