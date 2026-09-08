@@ -6891,7 +6891,15 @@ fn TVal? Vm.run(Vm* vm) {
 // GETGLOBAL, DELVAR, and the INC_VAR/DEC_VAR var_env fall-through.
 fn bool vm_with_unscopables_blocks(Vm* vm, EnvRecord* with_env, void* name) {
     Heap* h = vm.heap;
-    if (h.unscopables_symbol == null) return false;
+    // Lazy-initialise the @@unscopables symbol. It's only built when needed
+    // (a with-block hits an object whose prototype carries @@unscopables),
+    // so the heap-creator doesn't have to know which well-known symbols to
+    // pre-create.
+    if (h.unscopables_symbol == null) {
+        HString* sym = builtins::ensure_unscopables_symbol(h);
+        if (sym == null) return false;
+        h.unscopables_symbol = sym;
+    }
     HObject* b = with_env.bindings;
     if (b == null) return false;
     TVal receiver; receiver.set_object(b);

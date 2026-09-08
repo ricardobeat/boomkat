@@ -541,10 +541,12 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     while (cur != null) {
         if (cur.is_with) {
             // Object env (§9.1.1.2): HasBinding first via OrdinaryHasProperty
-            // (which fires the Proxy `has` trap), then unscopables, then a
-            // re-check that the property still exists. Identical to GETVAR's
-            // with-block walk; shared through js_has_property so a Proxy trap
-            // fires exactly once per with-level hit.
+            // (which fires the Proxy `has` trap), then @@unscopables, then
+            // GetBindingValue's own HasProperty + Get. Matches GETVAR's
+            // with-block walk in vm_execute.c3 so the Proxy traps fire in
+            // the same order (HasBinding step 2, step 5; GetBindingValue
+            // step 2, step 4) — call and reference paths look identical to
+            // the proxy.
             bool with_hit = false;
             if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &with_hit)
                 || !with_hit) {
@@ -554,7 +556,41 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 cur = cur.parent;
                 continue;
             }
-            // Hit: read the value through ordinary own-desc, matching GETVAR.
+            // §9.1.1.2.1 HasBinding step 5-9: @@unscopables gate.
+            if (vm_with_unscopables_blocks(vm, cur, key)) {
+                cur = cur.parent;
+                continue;
+            }
+            // §9.1.1.2.6 GetBindingValue step 2: re-check HasProperty after
+            // the observable @@unscopables getter ran (which may have
+            // deleted the binding as a side effect). A Proxy `has` trap fires
+            // again here, matching the expected sequence.
+            bool still_hit = false;
+            if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &still_hit)) {
+                if (vm.heap.has_error) {
+                    if (!vm_throw_pending(vm, (Dispatch*)&ds)) return VM_ERROR~;
+                }
+                cur = cur.parent;
+                continue;
+            }
+            if (!still_hit) {
+                if (vm.current_func.is_strict()) {
+                    HString* name_hstr = (HString*)key;
+                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                            "%s is not defined", name_hstr.get_cstr(),
+                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    found = true;
+                    break;
+                }
+                ra.set_undefined();
+                track_heap_store(ds.act, ra, callee_reg);
+                found = true;
+                break;
+            }
+            // §9.1.1.2.6 GetBindingValue step 4: read the value through
+            // ordinary own-desc, matching GETVAR.
             hobject::PropProtoResult proto =
                 cur.bindings.get_prop_proto_full(key, ds.vm.heap);
             if (proto.found) {
@@ -587,19 +623,6 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 }
                 vm.heap.tval_copy_ref(ra, &proto.value);
                 track_heap_store(ds.act, ra, callee_reg);
-                found = true;
-                break;
-            }
-            // Unscopables getter may have deleted the binding (still HasBinding
-            // hit then immediate deletion); ES2024 §9.1.1.2.6 returns undefined
-            // in sloppy, throws ReferenceError in strict.
-            if (vm.current_func.is_strict()) {
-                HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                        "%s is not defined", name_hstr.get_cstr(),
-                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
-                }
                 found = true;
                 break;
             }
@@ -1478,16 +1501,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
         case Opcode.CALL_UNDEF_THIS:
         case Opcode.CALL_VAR:
         case Opcode.CALL_GLOBAL: {
-            bool fast_handled = false;
-            TVal? fast_result = try_fast_compiled_call(ds, op, insn, &fast_handled);
-            if (fast_handled) {
-                return fast_result;
-            }
-            // Slow path: re-derive result_reg/callee_reg/nargs/func_val (the
-            // fast-path helper already applied CALL_UNDEF_THIS's this-slot
-            // clear, which is idempotent to repeat here, and for CALL_VAR and
-            // CALL_GLOBAL, already resolved the callee-by-name into
-            // ds.regs_base[callee_reg]).
+            // vm_execute.c3 already tried try_fast_compiled_call at the
+            // opcode handler — we land here only when it returned
+            // handled=false. That call already ran CALL_VAR/CALL_GLOBAL's
+            // callee resolution, so the slow path can pick the slot up
+            // without another resolve. Going through try_fast_compiled_call
+            // again would re-fire Proxy `has`/`get` traps on with-binding
+            // lookups (test262 get-binding-value-*-with-proxy-env).
             bool is_fused_var = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
             uint result_reg = insn.a;
             uint callee_reg = is_fused_var ? insn.a : insn.b;
