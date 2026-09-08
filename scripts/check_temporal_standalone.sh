@@ -94,10 +94,22 @@ fn int main() {
 }
 EOF
 
+# A missing compiler is an environment fault, not a coupling regression. Say so
+# plainly: reporting it as "does not build without the engine" sent a previous
+# CI failure chasing an import cycle that was never there.
+if ! command -v c3c >/dev/null 2>&1; then
+    echo "FAIL: c3c not found on PATH; cannot run the temporal standalone check"
+    exit 1
+fi
+
 cd "$WORK"
 if ! out=$(c3c compile-run ./*.c3 2>&1); then
     echo "FAIL: src/lib/temporal does not build without the engine"
-    printf '%s\n' "$out" | grep -E "Error:" | head -10 | sed 's/^/      | /'
+    # Show the compiler's own diagnostics. Fall back to the whole output when
+    # nothing matches "Error:", so the reason is never silently swallowed.
+    if ! printf '%s\n' "$out" | grep -E "Error:" | head -10 | sed 's/^/      | /' | grep -q .; then
+        printf '%s\n' "$out" | tail -20 | sed 's/^/      | /'
+    fi
     exit 1
 fi
 

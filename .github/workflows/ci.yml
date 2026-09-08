@@ -98,6 +98,13 @@ jobs:
           name: engine-bin
           path: out
       - run: chmod +x out/boomkat
+      # Most of the suite runs against the prebuilt binary, but
+      # scripts/check_temporal_standalone.sh shells out to `c3c compile-run` to
+      # prove src/lib/temporal builds with no engine sources present. That needs
+      # the compiler, not just the engine, so this job installs the toolchain too.
+      - uses: ./.github/actions/toolchain
+        with:
+          c3c-version: ${{ env.C3C_VERSION }}
       # The whole checked-in engine suite, run against the prebuilt binary.
       - name: Local test suite
         run: bash test/run_local.sh
