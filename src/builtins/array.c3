@@ -3153,17 +3153,21 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     }
 
     // find_accessor_proto reports found=false for an inherited data property
-    // too, so a non-writable "length" on a custom constructor's .prototype
-    // must be re-checked here before falling through to CreateDataProperty.
-    if (HObject* proto = obj.prototype) {
+    // too, so a non-writable "length" inherited from anywhere on the chain must
+    // be re-checked here before falling through to CreateDataProperty. ES2022
+    // §10.1.9.2 OrdinarySet recurses into the whole chain, not just the parent,
+    // so walk it until a property shadows the ones above it.
+    for (HObject* proto = obj.prototype; proto != null; proto = proto.prototype) {
         int pidx = proto.find_prop_idx(len_key, ctx.heap);
-        if (pidx >= 0) {
-            hobject::PropFlags pflags = proto.get_prop_flags((uint)pidx, ctx.heap);
-            if (!pflags.is_accessor && !pflags.writable) {
-                arr_throw_type_error(ctx, "Cannot assign to read-only property 'length'");
-                return false;
-            }
+        if (pidx < 0) continue;
+        hobject::PropFlags pflags = proto.get_prop_flags((uint)pidx, ctx.heap);
+        if (!pflags.is_accessor && !pflags.writable) {
+            arr_throw_type_error(ctx, "Cannot assign to read-only property 'length'");
+            return false;
         }
+        // Shadowed by a writable data property or an accessor: anything
+        // further up the chain is unreachable from this Set.
+        break;
     }
 
     // No accessor anywhere on the chain (no own property or inherited data
