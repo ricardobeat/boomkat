@@ -6701,15 +6701,22 @@ fn TVal? Vm.run(Vm* vm) {
                             // Reference: the base stays this bindings
                             // object, and the paired WTWR creates the
                             // property on it (SetMutableBinding steps 2-4:
-                            // stillExists false, then Set).
-                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                            // stillExists false, then Set). The Proxy-aware
+                            // js_has_property fires the `has` trap so
+                            // test262 set-mutable-binding-idref-with-proxy-
+                            // env.js sees HasBinding step 2.
+                            bool has_hit = false;
+                            if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &has_hit)) {
+                                if (vm.heap.has_error && !vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                threw = true;
+                                break;
+                            }
+                            if (!has_hit) { cur = cur.parent; continue; }
+                            if (vm_with_unscopables_blocks_dispatch(&ds, cur, key)) {
                                 cur = cur.parent;
                                 continue;
                             }
-                            if (vm_with_unscopables_blocks(vm, cur, key)) {
-                                cur = cur.parent;
-                                continue;
-                            }
+                            if (ds.needs_restart) { threw = true; break; }
                             if (vm.heap.has_error) {
                                 if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
                                 threw = true;
@@ -6761,25 +6768,34 @@ fn TVal? Vm.run(Vm* vm) {
                 bool is_strict_act = ds.act.func != null
                     && ((CompiledFunction*)ds.act.func).is_strict();
                 TVal recv; recv.set_object(base);
-                bool sres;
-                if (!builtins::js_set_with_receiver(vm, vm.heap, base, (HString*)key, *ra, recv, &sres)) {
-                    vm.heap.has_error = false;
-                    TVal err_val = vm.heap.error_value;
-                    if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        vm.has_error = true;
-                        vm.heap.has_error = true;
-                        return VM_ERROR~;
-                    }
+                // §9.1.1.2.5 SetMutableBinding step 2: re-check HasProperty
+                // on the bindings object. For a Proxy with-env this fires
+                // the `has` trap again so test262 set-mutable-binding-...-
+                // with-proxy-env sees the expected sequence.
+                bool has_still = false;
+                if (!builtins::js_has_property(vm, vm.heap, base, (HString*)key, &has_still)) {
+                    if (vm.heap.has_error && !vm_throw_pending(vm, &ds)) return VM_ERROR~;
                     threw = true;
-                } else if (!sres && is_strict_act) {
-                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return VM_ERROR~;
+                } else {
+                    bool sres;
+                    if (!builtins::js_set_with_receiver(vm, vm.heap, base, (HString*)key, *ra, recv, &sres)) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        threw = true;
+                    } else if (!sres && is_strict_act) {
+                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        threw = true;
                     }
-                    threw = true;
                 }
             } else if (key != null) {
                     int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
-                    io::eprintfn("DEBUG PUTVAR_ASSIGN key=%s result=%d is_strict=%d", ((HString*)key).get_data(), put_result, vm.current_func.is_strict() ? 1 : 0);
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
