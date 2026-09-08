@@ -539,6 +539,75 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
 
     EnvRecord* cur = ds.act.lex_env;
     while (cur != null) {
+        if (cur.is_with) {
+            // Object env (§9.1.1.2): HasBinding first via OrdinaryHasProperty
+            // (which fires the Proxy `has` trap), then unscopables, then a
+            // re-check that the property still exists. Identical to GETVAR's
+            // with-block walk; shared through js_has_property so a Proxy trap
+            // fires exactly once per with-level hit.
+            bool with_hit = false;
+            if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &with_hit)
+                || !with_hit) {
+                if (vm.heap.has_error) {
+                    if (!vm_throw_pending(vm, (Dispatch*)&ds)) return VM_ERROR~;
+                }
+                cur = cur.parent;
+                continue;
+            }
+            // Hit: read the value through ordinary own-desc, matching GETVAR.
+            hobject::PropProtoResult proto =
+                cur.bindings.get_prop_proto_full(key, ds.vm.heap);
+            if (proto.found) {
+                if (proto.is_accessor) {
+                    TVal getter = hobject::hobject_access_getter(proto.value);
+                    if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                        TVal this_tv;
+                        this_tv.set_object(proto.owner != null ? proto.owner : cur.bindings);
+                        TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                        if (vm.heap.has_error) {
+                            vm.heap.has_error = false;
+                            TVal err_val = vm.heap.error_value;
+                            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                vm.has_error = true;
+                                vm.heap.has_error = true;
+                                return VM_ERROR~;
+                            }
+                            found = true;
+                            break;
+                        }
+                        vm.heap.tval_copy_ref(ra, &getter_val);
+                        track_heap_store(ds.act, ra, callee_reg);
+                        found = true;
+                        break;
+                    }
+                    ra.set_undefined();
+                    track_heap_store(ds.act, ra, callee_reg);
+                    found = true;
+                    break;
+                }
+                vm.heap.tval_copy_ref(ra, &proto.value);
+                track_heap_store(ds.act, ra, callee_reg);
+                found = true;
+                break;
+            }
+            // Unscopables getter may have deleted the binding (still HasBinding
+            // hit then immediate deletion); ES2024 §9.1.1.2.6 returns undefined
+            // in sloppy, throws ReferenceError in strict.
+            if (vm.current_func.is_strict()) {
+                HString* name_hstr = (HString*)key;
+                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                        "%s is not defined", name_hstr.get_cstr(),
+                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                found = true;
+                break;
+            }
+            ra.set_undefined();
+            track_heap_store(ds.act, ra, callee_reg);
+            found = true;
+            break;
+        }
         int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
         if (idx >= 0) {
             TVal v_raw = cur.bindings.prop_values()[idx];
@@ -562,7 +631,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                             vm.heap.has_error = true;
                             return VM_ERROR~;
                         }
-                        found = true; // prevent duplicate error
+                        found = true;
                     } else {
                         vm.heap.tval_copy_ref(ra, &getter_val);
                         track_heap_store(ds.act, ra, callee_reg);

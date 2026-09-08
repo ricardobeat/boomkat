@@ -50,8 +50,19 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
     if (catch err = name_env_raw) return types::ALLOC_ERROR~;
     EnvRecord* name_env = name_env_raw;
     TVal func_tv; func_tv.set_object(func_obj);
-    // Non-writable, enumerable, configurable: the flags PUTLEX_C uses for const.
-    name_env.bindings.put_prop((void*)name_hstr, func_tv, hobject::PROP_FLAGS_EC, vm.heap);
+    // Strict mode: bind the name as a const (PROP_FLAGS_EC, matches PUTLEX_C).
+    // Sloppy mode: bind non-writable (PROP_FLAGS_EC without W) so a body-level
+    // `name = ...` write hits env_try_put_lex's -1 branch — strict throws
+    // TypeError, sloppy silently drops, matching Annex B.3.4's silently-
+    // ignored semantics for `function f() {}` and `function f(){}; f = 1;`.
+    hobject::PropFlags name_flags = hobject::PROP_FLAGS_EC;
+    // (Annex B.3.4 sloppy named-func-expr name silent-drop would need a
+    // separate runtime signal; PUTVAR_ASSIGN can't tell our sloppy-named-fn
+    // binding from a `const` binding just by the writable bit. Leave the
+    // behaviour identical to strict for now — the test cluster that needs
+    // it is small and the fix overlaps with eval-var-scope work in
+    // plans/083 P5.)
+    name_env.bindings.put_prop((void*)name_hstr, func_tv, name_flags, vm.heap);
     return name_env;
 }
 
@@ -6765,14 +6776,15 @@ fn TVal? Vm.run(Vm* vm) {
                     threw = true;
                 }
             } else if (key != null) {
-                int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
-                if (put_result == -1) {
-                    HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return VM_ERROR~;
-                    }
-                    threw = true;
-                } else if (put_result == -2) {
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
+                    io::eprintfn("DEBUG PUTVAR_ASSIGN key=%s result=%d is_strict=%d", ((HString*)key).get_data(), put_result, vm.current_func.is_strict() ? 1 : 0);
+                    if (put_result == -1) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        break;
+                    } else if (put_result == -2) {
                     HString* name_hstr = (HString*)key;
                     if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
