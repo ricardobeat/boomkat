@@ -6538,17 +6538,41 @@ fn TVal? Vm.run(Vm* vm) {
             bool resolved = false;
             while (cur != null) {
                 if (cur.is_with) {
-                    if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                    // §9.1.1.2.1 HasBinding step 2: HasProperty through the
+                    // Proxy-aware OrdinaryHasProperty path so the proxy's
+                    // `has` trap fires. has_prop_proto walks the prototype
+                    // chain directly and silently misses the trap.
+                    bool has_hit = false;
+                    if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &has_hit)) {
+                        if (vm.heap.has_error && !vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                        threw_pending = true;
+                        break;
+                    }
+                    if (!has_hit) { cur = cur.parent; continue; }
+                    // §9.1.1.2.1 HasBinding step 5: @@unscopables gate.
+                    if (vm_with_unscopables_blocks_dispatch(&ds, cur, key)) {
                         cur = cur.parent;
                         continue;
                     }
-                    if (vm_with_unscopables_blocks(vm, cur, key)) {
-                        cur = cur.parent;
-                        continue;
-                    }
+                    if (ds.needs_restart) { threw_pending = true; break; }
                     if (vm.heap.has_error) {
                         if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
                         threw_pending = true;
+                        break;
+                    }
+                    // §9.1.1.2.6 GetBindingValue step 2: re-check HasProperty
+                    // after the observable @@unscopables getter ran. For a
+                    // Proxy bindings object the `has` trap fires again, matching
+                    // the test262 expectations (.../with/*-with-proxy-env.js).
+                    bool still_hit = false;
+                    if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &still_hit)) {
+                        if (vm.heap.has_error && !vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                        threw_pending = true; break;
+                    }
+                    if (!still_hit) {
+                        ra.set_undefined();
+                        track_heap_store(ds.act, ra, (uint)insn.a);
+                        resolved = true;
                         break;
                     }
                     // Capture the base first: the value getter below may
