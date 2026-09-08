@@ -1951,7 +1951,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         RegSet* me_live_in  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_ret_out  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_ret_in   = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
-        uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 4) * (usz)words_per_set * uint::size);
+        // (4 * n) per-instruction sets + 4 scratch sets + 1 pinned set.
+        uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 5) * (usz)words_per_set * uint::size);
         if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null
             || me_ret_out == null || me_ret_in == null || me_words == null) {
             if (me_jump_targets != null) { h.free_func(h.heap_udata, me_jump_targets); }
@@ -1979,8 +1980,31 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             me_scratch[s].word_count = words_per_set;
             me_scratch[s].words = &me_words[(4 * n + s) * words_per_set];
         }
+        // A mapped `arguments` object aliases parameter slot i (ES2024
+        // §9.4.4.8), and the VM reads those activation slots directly rather
+        // than through bytecode, so the parameter registers have a reader this
+        // pass's liveness cannot see. Pin them: without this, a store whose
+        // only observer is `arguments[i]` (`function f(a){ a = 1; return
+        // arguments[0]; }`) is removed as a dead destination. The condition
+        // mirrors the func.flags.mapped_arguments computation below.
+        RegSet me_pinned;
+        me_pinned.word_count = words_per_set;
+        me_pinned.words = &me_words[(4 * n + 4) * words_per_set];
+        me_pinned.clear();
+        bool me_has_pinned = false;
+        if (!self.is_strict && self.uses_arguments && !self.has_rest
+            && self.default_count == 0 && self.destruct_default_count == 0
+            && !self.has_destructured_param && !self.is_arrow && !self.eval_mode) {
+            // Parameters occupy r0..r(num_args-1) in declaration order (see
+            // emit_param_prologue).
+            for (ushort ai = 0; ai < self.num_args; ai++) {
+                me_pinned.set((uint)ai);
+                me_has_pinned = true;
+            }
+        }
         run_move_elimination(self.code, self.code_count, me_jump_targets, me_in_try, me_live_out, me_live_in,
-                             me_ret_out, me_ret_in, &me_scratch[0]);
+                             me_ret_out, me_ret_in, &me_scratch[0],
+                             me_has_pinned ? &me_pinned : null);
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);
         h.free_func(h.heap_udata, me_live_out);

@@ -481,8 +481,15 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 // retarget liveness (see run_move_elimination for why the two differ).
 // `scratch` supplies the three working sets (new_out, new_in, uses), whose
 // words are already wired into the function's liveness arena.
+// `pinned` (may be null) holds registers that are read by something outside
+// the bytecode and must therefore be treated as live at every point. The only
+// current source is the parameter registers of a sloppy function with a mapped
+// `arguments` object: ES2024 §9.4.4.8 aliases arguments[i] to parameter slot i,
+// and the VM reads those slots straight out of the activation
+// (vm_calls::mapped_args_read), so a store to a parameter is observable even
+// when no bytecode instruction downstream reads that register.
 fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* live_out, RegSet* live_in,
-                                  bool mark_call_windows, RegSet* scratch) {
+                                  bool mark_call_windows, RegSet* scratch, RegSet* pinned = null) {
     for (uint i = 0; i < code_count; i++) { live_out[i].clear(); live_in[i].clear(); }
 
     bool changed = true;
@@ -555,6 +562,10 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
                 default: {}
             }
 
+            // Pinned registers are live on every edge, including function
+            // exit, so a store into one is never dead.
+            if (pinned != null) { new_out.union_with(pinned); }
+
             if (!new_out.equals(&live_out[ii])) {
                 live_out[ii].copy_from(new_out);
                 changed = true;
@@ -567,6 +578,7 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
             if (moveelim_get_def(ins, &def_reg)) {
                 new_in.unset(def_reg);
             }
+            if (pinned != null) { new_in.union_with(pinned); }
             RegSet* uses = &scratch[2];
             uses.clear();
             moveelim_add_uses(ins, uses, mark_call_windows);
@@ -614,13 +626,13 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
 // argument after a spread safe (`f(1,...a,99)`).
 fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targets, bool* in_try,
                               RegSet* live_out, RegSet* live_in, RegSet* ret_out, RegSet* ret_in,
-                              RegSet* scratch) {
+                              RegSet* scratch, RegSet* pinned = null) {
     if (code_count < 2) { return; }
 
     moveelim_mark_jump_targets_and_try_regions(code, code_count, jump_targets, in_try);
 
-    moveelim_compute_liveness(code, code_count, live_out, live_in, true, scratch);
-    moveelim_compute_liveness(code, code_count, ret_out, ret_in, false, scratch);
+    moveelim_compute_liveness(code, code_count, live_out, live_in, true, scratch, pinned);
+    moveelim_compute_liveness(code, code_count, ret_out, ret_in, false, scratch, pinned);
 
     // --- Elimination pass: for every LDREG rDst=rT, find its immediately
     // preceding non-NOP instruction (the producer candidate) and retarget
