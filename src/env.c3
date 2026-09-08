@@ -512,24 +512,33 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
             bool first_has = cur.bindings.has_prop_proto(key, h);
             if (h.has_error) return 0;
             if (!first_has) {
-                // Binding absent on this with-env. Two cases collapse here:
-                // (a) never was on the object; (b) deleted by an observable
-                // RHS effect before this assignment runs (test262
-                // set-mutable-binding-binding-deleted-with-typed-array-in-
-                // proto-chain-strict-mode.js). The caller uses the
-                // RESOLVEVAR probe to tell (a) — RESOLVEVAR found the
-                // binding on this with-env, and is now missing — from (b)
-                // — RESOLVEVAR did not find it here, fall through.
-                return -3;
+                // Binding never on this with-env; the walk continues to
+                // the parent env (§9.1.1.2.5 step 4 falls through when
+                // stillExists is false, and the parent may declare it).
+                cur = cur.parent;
+                continue;
             }
-            // Per spec, observe @@unscopables on a binding hit. The
-            // getter is observable and may delete the binding as a side
-            // effect, so re-check HasProperty before writing.
-            if (with_unscopables_blocks(h, cur, key)) return -3;
+            // @@unscopables HIDES the binding from this with-env
+            // (§9.1.1.2.2 HasBinding step 5), so a block-flag from the
+            // getter is "skip this with-env" — the binding is still on
+            // the object (no deletion), just hidden from the lookup.
+            // Continue to parent.
+            if (!with_unscopables_blocks(h, cur, key)) {
+                // Getter returned a falsish flag, but it may have
+                // DELETED the binding as a side effect. Re-check
+                // HasProperty; if gone, return -3 so the caller can
+                // distinguish "deleted on this env" from "not on this
+                // env, walk past" (test262
+                // set-mutable-binding-binding-deleted-in-get-unscopables-
+                // strict-mode.js).
+                if (h.has_error) return 0;
+                if (!cur.bindings.has_prop_proto(key, h)) return -3;
+                cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
+                return 1;
+            }
             if (h.has_error) return 0;
-            if (!cur.bindings.has_prop_proto(key, h)) return -3;
-            cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
-            return 1;
+            cur = cur.parent;
+            continue;
         }
         int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {

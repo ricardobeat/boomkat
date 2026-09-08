@@ -5860,14 +5860,6 @@ fn TVal? Vm.run(Vm* vm) {
                     // Would need to introspect env_try_put_lex or rewrite walk here.
                     // Combined single-walk: check lex_env, writability, and update in one pass
                     int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, false);
-                    if (put_result == -3) {
-                        // With-env was the first lex chain entry and did not
-                        // hold the binding — treat as "not in lex env" and
-                        // let the var_env / global fallthrough below write
-                        // it. Sloppy `var x = …` inside `with` lands here
-                        // when `x` is hoisted to var_env, never to with.
-                        put_result = 0;
-                    }
                     if (put_result == -1) {
                         // A const/writable-violation throws in strict mode; in
                         // sloppy the binding is left untouched (ES2024 §6.2.4.5
@@ -5943,58 +5935,64 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
 
-                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
-                    if (put_result == -3) {
-                        // With-env was first in the lex chain and did not
-                        // hold the binding. Per ES2024 §9.1.1.2.5
-                        // SetMutableBinding, the resolved env stays fixed
-                        // (ResolveBinding already locked the base before
-                        // the RHS ran), so the missing binding is reported
-                        // as ReferenceError on this env when the resolution
-                        // came from it — not a fall-through to var_env /
-                        // global NaN.
-                        //
-                        // The probe register B holds the env RESOLVEVAR
-                        // resolved to (a non-null EnvRecord* on success,
-                        // null on failure). When B names this same
-                        // with-env, the binding was on it and is now gone
-                        // (deleted by the unscopables getter or by RHS
-                        // code); when B names something else, the binding
-                        // never was on this with-env and the walk should
-                        // have continued past it.
-                        EnvRecord* resolved_env = null;
-                        if ((uint)insn.b < ds.nregs) {
-                            TVal bv = ds.regs_base[(uint)insn.b];
-                            if (bv.is_pointer()) resolved_env = (EnvRecord*)bv.get_heapptr();
-                        }
-                        EnvRecord* with_env = null;
-                        for (EnvRecord* c = ds.act.lex_env; c != null; c = c.parent) {
-                            if (c.is_with) { with_env = c; break; }
-                        }
-                        bool on_with = with_env != null && with_env == resolved_env;
+                    // Spec check before env_try_put_lex walks past
+                    // with-envs: if the LHS resolved to a with-env (the
+                    // probe register B holds that env's pointer), and the
+                    // with-env's bindingObject no longer has the binding,
+                    // SetMutableBinding on the resolved env must throw
+                    // ReferenceError (strict) or silently drop (sloppy)
+                    // — NOT fall through to a parent env's const
+                    // (test262 set-mutable-binding-binding-deleted-with-
+                    // typed-array-in-proto-chain-strict-mode.js,
+                    // set-mutable-binding-binding-deleted-in-get-
+                    // unscopables-strict-mode.js).
+                    EnvRecord* resolved_env = null;
+                    if ((uint)insn.b < ds.nregs) {
+                        TVal bv = ds.regs_base[(uint)insn.b];
+                        if (bv.is_pointer()) resolved_env = (EnvRecord*)bv.get_heapptr();
+                    }
+                    if (resolved_env != null && resolved_env.is_with
+                        && !resolved_env.bindings.has_prop_proto(key, vm.heap)) {
                         HString* name_hstr = (HString*)key;
                         bool is_strict_act = ds.act.func != null
                             && ((CompiledFunction*)ds.act.func).is_strict();
-                        if (on_with) {
-                            if (is_strict_act) {
-                                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                                        "%s is not defined", name_hstr.get_cstr(),
-                                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
-                                }
-                                break;
+                        if (is_strict_act) {
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                                    "%s is not defined", name_hstr.get_cstr(),
+                                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
                             }
-                            // Sloppy: silently drop the assignment. Spec
-                            // §9.1.1.2.5 step 4 (stillExists false) returns
-                            // unused without falling through.
-                            vm.heap.decref_tval(ra);
-                            ra.set_undefined();
                             break;
                         }
-                        // RESOLVEVAR didn't bind to this with-env (or the
-                        // resolved env is a declarative env further down);
-                        // the binding was never here. Treat as fall-through.
-                        put_result = 0;
+                        // Sloppy: silently drop.
+                        vm.heap.decref_tval(ra);
+                        ra.set_undefined();
+                        break;
+                    }
+
+                    int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
+                    if (put_result == -3) {
+                        // Unscopables getter (or observable RHS effect on
+                        // HasProperty in the spec sense) deleted the
+                        // binding after RESOLVEVAR found it. Strict
+                        // throws ReferenceError; sloppy silently drops.
+                        // Per ES2024 §9.1.1.2.5 SetMutableBinding step 4,
+                        // never fall through to the parent env when the
+                        // resolved env had the binding and now does not.
+                        HString* name_hstr = (HString*)key;
+                        bool is_strict_act = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (is_strict_act) {
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                                    "%s is not defined", name_hstr.get_cstr(),
+                                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            break;
+                        }
+                        vm.heap.decref_tval(ra);
+                        ra.set_undefined();
+                        break;
                     }
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
@@ -6691,7 +6689,49 @@ fn TVal? Vm.run(Vm* vm) {
                     break;
                 }
                 int idx = cur.bindings.find_prop_idx(key, vm.heap);
-                if (idx >= 0) { resolved = true; break; }
+                if (idx >= 0) {
+                    // Read the value here so compound-assign callers see
+                    // the current binding value, mirroring the with-env
+                    // hit path above. Pair with WTWR: B stays unset so
+                    // WTWR walks the lex chain again and writes back to
+                    // this same declarative binding.
+                    TVal v_raw = cur.bindings.prop_values()[idx];
+                    if (env::is_tdz_sentinel(&v_raw)) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        threw_pending = true;
+                        break;
+                    }
+                    if (cur.bindings.get_prop_flags((uint)idx, vm.heap).is_accessor) {
+                        TVal getter = hobject::hobject_access_getter(v_raw);
+                        if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                            TVal this_tv;
+                            this_tv.set_object(cur.bindings);
+                            TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                            if (vm.heap.has_error) {
+                                vm.heap.has_error = false;
+                                TVal err_val = vm.heap.error_value;
+                                if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    vm.has_error = true;
+                                    vm.heap.has_error = true;
+                                    return VM_ERROR~;
+                                }
+                                threw_pending = true;
+                                break;
+                            }
+                            vm.heap.tval_copy_ref(ra, &getter_val);
+                        } else {
+                            ra.set_undefined();
+                        }
+                    } else {
+                        vm.heap.tval_copy_ref(ra, &v_raw);
+                    }
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    resolved = true;
+                    break;
+                }
                 cur = cur.parent;
             }
             if (threw_pending) { continue; }
@@ -6892,15 +6932,6 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             } else if (key != null) {
                     int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
-                    if (put_result == -3) {
-                        // WITHBASE captured global because no with-env had
-                        // the binding; env_try_put_lex still has to walk
-                        // past with-envs to reach var_env / global, so its
-                        // -3 ("with-env missing") here means the same
-                        // thing as 0 from WTWR's view: fall through to the
-                        // sloppy implicit-global path.
-                        put_result = 0;
-                    }
                     if (put_result == -1) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
