@@ -190,6 +190,117 @@ fn void? JsRuntime.drain_microtasks(&self) {
 }
 
 // ============================================================================
+// Building values
+// ============================================================================
+
+// Construct rooted values from host data, for passing to `JsRuntime.call`.
+//
+// These are the top-level counterparts to the `JsCtx` builders. They return a
+// registry handle rather than a scope value, so each one must be `release`d;
+// in a dispatch loop that is per call, not per process.
+
+// Faults: NOT_OPEN, OUT_OF_MEMORY, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.string(&self, String s) {
+    if (self.rt == null) return NOT_OPEN~;
+    HString* hs = self.rt.heap.str_intern((char[])s);
+    if (hs == null) return OUT_OF_MEMORY~;
+    TVal v; v.set_string(hs);
+    return self.root(v);
+}
+
+// Faults: NOT_OPEN, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.number(&self, double d) {
+    if (self.rt == null) return NOT_OPEN~;
+    TVal v; v.set_number(d);
+    return self.root(v);
+}
+
+// Faults: NOT_OPEN, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.boolean(&self, bool b) {
+    if (self.rt == null) return NOT_OPEN~;
+    TVal v; v.set_boolean(b);
+    return self.root(v);
+}
+
+// Faults: NOT_OPEN, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.null_value(&self) {
+    if (self.rt == null) return NOT_OPEN~;
+    TVal v; v.set_null();
+    return self.root(v);
+}
+
+// ============================================================================
+// Calling
+// ============================================================================
+
+// Call a JS function from host code, outside any callback.
+//
+// This is the top-level counterpart to `JsCtx.call`. Without it the only way
+// into JS is `eval`, which compiles its source on every invocation; holding a
+// function as a `JsValue` and calling it here compiles once and then pays only
+// the call. That matters for a host that dispatches per request rather than
+// per script.
+//
+// `args` and `this_value` are registry handles, not scope values, because
+// there is no call in progress to scope them to. A stale or empty handle in
+// `args` is passed as undefined, matching the C ABI; a stale `func` is an
+// error, since calling nothing is never what the caller meant.
+//
+// Unlike `JsCtx.call` a throw has no JS frame to propagate into, so it is
+// reported as JS_EXCEPTION with the message on `last_error()`. Microtasks
+// drain on return, as they do after a top-level script.
+//
+// Faults: NOT_OPEN, STALE_VALUE, NOT_CALLABLE, JS_EXCEPTION, INTERRUPTED,
+// VALUE_TABLE_FULL
+fn JsValue? JsRuntime.call(&self, JsValue func, JsValue[] args = {},
+                           JsValue this_value = UNDEFINED_VALUE) {
+    if (self.rt == null) return NOT_OPEN~;
+    embed::clear_err(self.rt);
+
+    TVal fv;
+    if (!self.load(func, &fv)) return STALE_VALUE~;
+    if (self.type_of(func) != JsType.FUNCTION) return NOT_CALLABLE~;
+
+    // call_fn wants a contiguous TVal array; the handles have to be resolved
+    // into one rather than cast, since a JsValue is a slot id, not a value.
+    TVal[MAX_INLINE_CALL_ARGS] inline_args;
+    TVal* argv = null;
+    TVal[] spill;
+    if (args.len > 0) {
+        if (args.len <= MAX_INLINE_CALL_ARGS) {
+            argv = &inline_args[0];
+        } else {
+            spill = mem::new_array(TVal, args.len);
+            argv = spill.ptr;
+        }
+        for (usz i = 0; i < args.len; i++) {
+            TVal a;
+            if (!self.load(args[i], &a)) a.set_undefined();
+            argv[i] = a;
+        }
+    }
+    defer if (spill.len > 0) free(spill);
+
+    TVal tv;
+    if (!self.load(this_value, &tv)) tv.set_undefined();
+
+    self.rt.heap.has_error = false;
+    TVal res = self.rt.heap.call_fn((void*)self.rt.vm, fv, argv, (uint)args.len, tv);
+    if (self.rt.heap.has_error) {
+        // An interrupt must stay distinguishable from an ordinary throw, the
+        // same way vm_fault separates them for the C ABI.
+        if (self.rt.heap.uncatchable_throw) {
+            self.rt.heap.uncatchable_throw = false;
+            embed::set_err(self.rt, embed::BK_ERR_INTERRUPT, "interrupted");
+            return INTERRUPTED~;
+        }
+        embed::describe_error(self.rt, &self.rt.heap.error_value);
+        return JS_EXCEPTION~;
+    }
+    return self.root(res);
+}
+
+// ============================================================================
 // Value access
 // ============================================================================
 
