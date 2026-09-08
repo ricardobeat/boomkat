@@ -76,24 +76,37 @@ fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
+    // A mapped index normally lives in the dense array part; it only becomes a
+    // named property when something reconfigures it (Object.defineProperty).
+    // Either shape can carry a live mapping, so both are checked below.
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
     if (pidx >= 0) {
+        // §9.4.4.8 step 11.b.ii: defining the index as non-writable AND
+        // non-configurable removes it from the map, so the property's own
+        // value is what a read must observe from then on.
         hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
         if (!fl.configurable && !fl.writable) return false;
+        // Still mapped (the descriptor only tightened enumerable/configurable):
+        // the parameter register remains the source of truth.
         *out = owner.bottom[idx];
         return true;
     }
-    // Named mapping is gone (delete severed it): read from the dense array
-    // index instead, matching ES2024 §9.4.4.8 step 11's post-delete shape
-    // (parameter and arguments[i] are now independent; arguments[i] is
-    // what was last written to the dense slot, which delete cleared).
-    if (idx < args_obj.array_size) {
-        *out = args_obj.array_part()[idx];
+    // No named property: the alias is live exactly while the dense slot is
+    // present and non-hole. mapped_args_delete severs the mapping by clearing
+    // that slot to undefined (§9.4.4.8 step 11 / §10.2.1.3.2
+    // RemoveMappedBinding), the same representation get_array_idx treats as a
+    // hole, so a cleared slot means parameter and arguments[i] are now
+    // independent.
+    if (idx < args_obj.array_size && !args_obj.array_part()[idx].is_undefined()) {
+        // Live mapping: read the parameter register, so that an assignment to
+        // the parameter (`a = 1`) is observable through `arguments[0]`.
+        *out = owner.bottom[idx];
         return true;
     }
-    TVal undef; undef.set_undefined();
-    *out = undef;
-    return true;
+    // Severed (or never populated): let the caller take the ordinary
+    // dense/named path, which reports the hole as undefined or continues up
+    // the prototype chain.
+    return false;
 }
 
 // Write `val` through a mapped index into the owning activation's parameter
