@@ -12,6 +12,18 @@ all: build-lib build-batch build-bench build-duktape
 build-lib:
     @make out/lib.a
 
+# Not the same as build-lib: this is the boomkat_static target, built with the
+# shipped executables' flags and carrying the bk_* ABI from include/boomkat.h.
+# Build the C embedding ABI static archive (out/boomkat.a)
+build-static:
+    @make lib
+
+# Restamps the install name to @rpath and leaves a lib-prefixed copy so
+# embedders can link with -lboomkat.
+# Build the C embedding ABI shared library (out/libboomkat.dylib)
+build-shared:
+    @make shared
+
 # Build batch test262 runner (out/test262_runner)
 build-batch:
     @make out/test262_runner
