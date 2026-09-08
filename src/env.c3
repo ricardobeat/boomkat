@@ -337,6 +337,13 @@ fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, env.heap);
 }
 
+// CreateMutableBinding(N, D) with D=false: the binding lives on a regular
+// declarative record but cannot be deleted or redefined. Used for `arguments`
+// (ES2024 §9.2.12 step 10) so sloppy `delete arguments` reports false.
+fn bool env_declare_nondeletable(EnvRecord* env, void* key, TVal val) @inline {
+    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WE, env.heap);
+}
+
 // Declares a non-writable, enumerable binding (CreateImmutableBinding,
 // ES2015 §8.1.1.1.3; used by namespace imports, §16.2.1.6.2).
 fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
@@ -411,7 +418,6 @@ fn bool env_declare_nonenum(EnvRecord* env, void* key, TVal val) @inline {
 fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_NNC, env.heap);
 }
-
 // Declares an accessor binding in this environment alone, used for live module
 // imports (accessor_value holds a boxed getter/setter pair).
 fn bool env_declare_accessor(EnvRecord* env, void* key, TVal accessor_value) @inline {

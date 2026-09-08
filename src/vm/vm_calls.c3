@@ -1384,7 +1384,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             if (args_name != null) {
                                 TVal args_tv;
                                 args_tv.set_object(args_obj);
-                                env::env_declare(new_act.var_env, args_name, args_tv);
+                                env::env_declare_nondeletable(new_act.var_env, args_name, args_tv);
                             }
                         }
                     }
@@ -2304,7 +2304,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         if (args_name_g != null) {
                             TVal args_tv_g;
                             args_tv_g.set_object(args_obj_g);
-                            env::env_declare(new_act_g.var_env, args_name_g, args_tv_g);
+                            env::env_declare_nondeletable(new_act_g.var_env, args_name_g, args_tv_g);
                         }
                     }
                 }
@@ -2541,7 +2541,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (args_name != null) {
                         TVal args_tv;
                         args_tv.set_object(args_obj);
-                        env::env_declare(new_act.var_env, args_name, args_tv);
+                        env::env_declare_nondeletable(new_act.var_env, args_name, args_tv);
                     }
                 }
             }
@@ -3010,7 +3010,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     HString* args_name_su = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name_su != null) {
                         TVal args_tv_su; args_tv_su.set_object(args_obj_su);
-                        env::env_declare(super_var_env, args_name_su, args_tv_su);
+                        env::env_declare_nondeletable(super_var_env, args_name_su, args_tv_su);
                     }
                 }
             }
@@ -3466,7 +3466,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     HString* args_name2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name2 != null) {
                         TVal args_tv2; args_tv2.set_object(args_obj2);
-                        env::env_declare(ctor_var_env, args_name2, args_tv2);
+                        env::env_declare_nondeletable(ctor_var_env, args_name2, args_tv2);
                     }
                 }
             }
