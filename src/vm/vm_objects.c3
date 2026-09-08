@@ -491,14 +491,18 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
         case Opcode.SETALEN: {
             // A = array register, BC = element count (high-water mark)
+            // An ARRAY exotic's "length" lives in array_len_ptr, never as a
+            // named table property (see the "ARRAY exotic" comments in
+            // hobject.c3 and object.c3). Writing it through put_prop here used
+            // to install a real "length" own property that then went stale the
+            // moment a later indexed write took the vm_property.c3 dense fast
+            // path, which patches array_len_ptr directly and never touches the
+            // named table: get_prop_proto (used by e.g. JSON.stringify) would
+            // then find the stale named entry before the live array_len_ptr
+            // value, silently truncating array length to whatever it was here.
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
-                uint count = insn.get_bc();
-                *hobj.array_len_ptr() = count;
-                HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                TVal len_val;
-                len_val.set_fastint((long)count);
-                hobj.put_prop(len_str, len_val, hobject::PROP_FLAGS_WENC, ds.vm.heap);
+                *hobj.array_len_ptr() = insn.get_bc();
             }
             return (TVal){};
         }

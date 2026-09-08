@@ -6079,26 +6079,30 @@ fn TVal? Vm.run(Vm* vm) {
                     void* fdecl_key = fdecl_name.get_heapptr();
                     bool is_global_fn_env = ds.act.var_env == vm.global_env;
                     bool is_eval_fn = ((CompiledFunction*)ds.act.func).is_eval_fn();
-                    // ES2024 §9.1.1.4.18 CanDeclareGlobalFunction + CreateGlobalFunctionBinding:
-                    // if the global env already holds a non-configurable property of
-                    // this name, declaring a FunctionDeclaration must throw TypeError
-                    // (eval-source semantics: a non-definable function name aborts the
-                    // eval, leaving any earlier fn-decl-from-this-eval rollbacks to be
-                    // observed by the outer test). For non-global envs the binding is
-                    // a plain put_prop with no collision concern.
+                    // ES2024 §18.2.1.2 EvalDeclarationInstantiation step 8 +
+                    // §9.1.1.4.17 CanDeclareGlobalFunction + §9.1.1.4.18
+                    // CreateGlobalFunctionBinding:
+                    //   step 8 — CanDeclareGlobalFunction: throws TypeError if the
+                    //     existing property is non-configurable AND not a writable
+                    //     data descriptor (catches `NaN`, `Infinity`, `undefined`,
+                    //     non-writable accessors). Without the early throw, the eval
+                    //     would proceed and partially create sibling declarations
+                    //     before failing.
+                    //   step 14 — CreateGlobalFunctionBinding: when the property IS
+                    //     definable but happens to be non-configurable (e.g., a
+                    //     writable, configurable=false data descriptor like
+                    //     `var-env-func-init-global-update-non-configurable.js`),
+                    //     just update the value and preserve existing attributes.
+                    //     env_declare_global_func carries out that step.
                     if (is_global_fn_env && is_eval_fn) {
-                        int existing_idx = ds.act.var_env.bindings.find_prop_idx(fdecl_key, vm.heap);
-                        if (existing_idx >= 0) {
-                            hobject::PropFlags existing = ds.act.var_env.bindings.get_prop_flags((uint)existing_idx, vm.heap);
-                            if (!existing.configurable) {
-                                HString* type_str = typeof_string(vm, (TVal*)&fdecl_name);
-                                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                                        "Cannot declare global function '%s'", type_str.get_cstr(),
-                                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
-                                }
-                                return (TVal){};
+                        if (!env::env_can_declare_global_func(ds.act.var_env, fdecl_key)) {
+                            HString* type_str = typeof_string(vm, (TVal*)&fdecl_name);
+                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
+                                    "Cannot declare global function '%s'", type_str.get_cstr(),
+                                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
                             }
+                            return (TVal){};
                         }
                     }
                     env::env_declare_global_func(ds.act.var_env, fdecl_key, *ra, is_global_fn_env, is_eval_fn);

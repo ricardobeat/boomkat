@@ -362,6 +362,21 @@ fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, boo
     return env.bindings.put_prop(key, val, flags, h);
 }
 
+// ES2024 §9.1.1.4.17 CanDeclareGlobalFunction: returns true iff the named
+// binding on the global object can host a FunctionDeclaration (the binding is
+// absent, configurable, or a writable data descriptor). Non-configurable
+// non-writable properties (the built-in `NaN`, `Infinity`, `undefined`) trip
+// the eval-side EvalDeclarationInstantiation §18.2.1.2 step 8 throw.
+fn bool env_can_declare_global_func(EnvRecord* env, void* key) @inline {
+    Heap* h = env.heap;
+    int idx = env.bindings.find_prop_idx(key, h);
+    if (idx < 0) { return true; }
+    hobject::PropFlags existing = env.bindings.get_prop_flags((uint)idx, h);
+    if (existing.configurable) { return true; }
+    if (!existing.is_accessor && existing.writable) { return true; }
+    return false;
+}
+
 // Instantiates a top-level FunctionDeclaration binding
 // (CreateGlobalFunctionBinding, ES2024 §9.1.1.4.18).
 //
