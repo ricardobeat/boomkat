@@ -153,10 +153,20 @@ fn Token? CompilerContext.expect(&self, TokenType tt) {
 // plain IDENTIFIER path is checked, an `await` accepted through
 // await_is_identifier has already had its enclosing-grammar decision made and
 // must not be re-rejected by the context-blind name test.
-fn Token? CompilerContext.expect_binding_identifier(&self) {
+fn Token? CompilerContext.expect_binding_identifier(&self, bool is_lexical_head = false) {
     TokenType next = self.peek_type();
     if (next == TokenType.IDENTIFIER) {
         Token tok = self.advance()!;
+        if (is_restricted_name(tok.str_value, strict: self.is_strict)) {
+            return self.fail("reserved word cannot be used as a binding identifier")~;
+        }
+        return tok;
+    }
+    // A `var` head may bind `let` in sloppy code (`var let`, `for (var let
+    // of …)`); a lexical head never may (§13.7.5.1: BoundNames of a
+    // ForDeclaration must not contain "let").
+    if (next == TokenType.LET && !is_lexical_head) {
+        Token tok = self.advance(true)!;
         if (is_restricted_name(tok.str_value, strict: self.is_strict)) {
             return self.fail("reserved word cannot be used as a binding identifier")~;
         }
