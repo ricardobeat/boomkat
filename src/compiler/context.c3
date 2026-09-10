@@ -804,13 +804,10 @@ int  cur_with_depth;
     // A "use strict" prologue makes the WHOLE prologue strict, including
     // directives lexed before it while the context was still sloppy. The
     // lexer then DECODES octal escapes instead of flagging them, so each
-    // prologue directive records its raw-vs-decoded length pair here (ring
-    // of 16; any single shrunk directive proves a violation) for block() to
-    // check once saw_use_strict confirms the prologue is strict after all.
-    // Decoding always shrinks the span (backslash+digits become fewer
-    // chars), while every non-octal escape preserves length one-to-one.
-    usz[16] prologue_raw_lens;
-    usz[16] prologue_val_lens;
+    // prologue directive records whether it decoded one here (ring of 16;
+    // any single hit proves a violation) for block() to check once
+    // saw_use_strict confirms the prologue is strict after all.
+    bool[16] prologue_octal;
     uint prologue_dir_count;
 
     // arguments tracking
@@ -907,6 +904,14 @@ int  cur_with_depth;
     char[]* hoisted_fn_names;
     uint    hoisted_fn_cap;
     uint    hoisted_fn_count;
+    // Eval code only: the eval source's var-declared names as constant-pool
+    // indices (collected by hoist_one_var_name; the global-scope var entries
+    // never reach scope_stack, so a hook there is the only collection
+    // point). builtin_eval uses the list for the ES2024 §18.2.1.2 step 3.4
+    // intermediate-binding collision check.
+    uint*   eval_var_coll_idxs;
+    uint    eval_var_coll_cap;
+    uint    eval_var_coll_count;
 
     // Every function declaration a body-scope hoist pass saw at the scope's
     // own top level, with its register, inner-function index, and name
@@ -1067,6 +1072,11 @@ int  cur_with_depth;
     // statement dispatcher has looked ahead. Consumed exactly once, into a
     // local, so it cannot leak into a nested statement.
     bool stmt_position_only;
+    // True while statement_body() parses the direct body of an if/else, a
+    // loop, or a with: §14.4.1/§14.7.1/§13.11.1 make a LabelledItem that is a
+    // FunctionDeclaration there a SyntaxError (IsLabelledFunction), while a
+    // top-level labelled function declaration stays legal in sloppy code.
+    bool labelled_fn_rejected_pos;
 
     // Inferred function name for the next anonymous function expression parsed.
     // Set by assignment_expr when LHS is a plain identifier (e.g. `var f = function() {}`)
@@ -1320,6 +1330,7 @@ fn void CompilerContext.cleanup(&self) {
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
     if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
     if (self.hoisted_fn_names != null) { h.free_func(h.heap_udata, self.hoisted_fn_names); self.hoisted_fn_names = null; }
+    if (self.eval_var_coll_idxs != null) { h.free_func(h.heap_udata, self.eval_var_coll_idxs); self.eval_var_coll_idxs = null; }
     if (self.hoisted_defer_names != null) { h.free_func(h.heap_udata, self.hoisted_defer_names); self.hoisted_defer_names = null; }
     if (self.hoisted_defer_regs != null) { h.free_func(h.heap_udata, self.hoisted_defer_regs); self.hoisted_defer_regs = null; }
     if (self.hoisted_defer_inner_idxs != null) { h.free_func(h.heap_udata, self.hoisted_defer_inner_idxs); self.hoisted_defer_inner_idxs = null; }
