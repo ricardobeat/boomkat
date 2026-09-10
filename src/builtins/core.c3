@@ -892,6 +892,11 @@ fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
         // Retained so String.prototype methods relying on the primitive
         // (e.g. the @@iterator returned here) see the right value.
         (*obj.extra_ptr()).prim.primitive_value = value;
+        // Symbols are string-tagged TVals whose HString carries the symbol
+        // flag; box them against symbol_proto, not string_proto.
+        if (((HString*)value.get_heapptr()).is_symbol()) {
+            wrap_proto = heap.symbol_proto;
+        }
     } else if (value.is_fastint() || value.is_number()) {
         wrap_proto = heap.number_proto;
     } else if (value.is_boolean()) {
