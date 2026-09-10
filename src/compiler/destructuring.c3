@@ -38,6 +38,7 @@ import std::io;
 // `destructuring_property_key` and so need this check to match it.
 fn bool CompilerContext.shorthand_key_is_identifier_ref(&self, TokenType tt) {
     if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt)) return true;
+    if ((tt == TokenType.LET || tt == TokenType.STATIC) && !self.is_strict) return true;
     return tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield;
 }
 
@@ -358,11 +359,13 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
     // We only commit to the fast path when the very next token after the
     // identifier is NOT a property/call/index accessor, ensuring that
     // `a.b`, `a[i]`, `a()` etc. fall through to the full expression path.
-    // Sloppy non-generator `yield` is an identifier here too (§13.1.1).
+    // Sloppy non-generator `yield`, and `let`/`static` in sloppy code, are
+    // Identifiers here too (§13.1.1).
     TokenType head_tt = self.peek_type();
-    bool head_is_yield_ident = head_tt == TokenType.YIELD
-        && !self.is_strict && !self.is_user_generator && !self.forbid_yield;
-    if (head_tt == TokenType.IDENTIFIER || head_is_yield_ident) {
+    bool head_is_ctx_ident = (head_tt == TokenType.YIELD
+            && !self.is_strict && !self.is_user_generator && !self.forbid_yield)
+        || ((head_tt == TokenType.LET || head_tt == TokenType.STATIC) && !self.is_strict);
+    if (head_tt == TokenType.IDENTIFIER || head_is_ctx_ident) {
         // Peek at the token after the identifier without consuming it.
         // Lexer state snapshot so we can look one token ahead.
         uint   snap_pos  = self.lexer.pos;
@@ -377,7 +380,7 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
         uint   snap_pbc  = self.pushback_count;
         Token[4] snap_pbs = self.pushback_stack;
 
-        Token ident_tok = self.advance()!;  // consume identifier
+        Token ident_tok = self.advance(true)!;  // consume identifier
 
         // Read the next token to check for member/call accessors.
         Token? next_opt = self.lexer.next_token();
@@ -976,7 +979,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
-                                       self.is_async || self.is_module || self.forbid_await, strict: self.is_strict)) return COMPILE_ERROR~;
+                                       self.is_async || self.is_module || self.forbid_await,
+                                       self.is_generator || self.forbid_yield,
+                                       strict: self.is_strict)) return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
                 binds[*count].name_idx         = tgt_name;
@@ -1044,7 +1049,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!self.shorthand_key_is_identifier_ref(key_tt)) return COMPILE_ERROR~;
             HString* hs = (HString*)self.constants[key_idx].get_heapptr();
             if (is_restricted_name(hs.get_data(),
-                                   self.is_async || self.is_module || self.forbid_await, strict: self.is_strict)) return COMPILE_ERROR~;
+                                   self.is_async || self.is_module || self.forbid_await,
+                                   self.is_generator || self.forbid_yield,
+                                   strict: self.is_strict)) return COMPILE_ERROR~;
             if (*count < binds.len) {
                 binds[*count].name_idx    = key_idx;
                 binds[*count].key_idx     = key_idx;
@@ -1113,7 +1120,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
-                                       self.is_async || self.is_module || self.forbid_await, strict: self.is_strict)) {
+                                       self.is_async || self.is_module || self.forbid_await,
+                                       self.is_generator || self.forbid_yield,
+                                       strict: self.is_strict)) {
                     if (deferred_key != null) mem::free(deferred_key);
                     return COMPILE_ERROR~;
                 }

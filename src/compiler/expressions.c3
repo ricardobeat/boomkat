@@ -4291,6 +4291,40 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 return id_reg;
             }
 
+        // `let` and `static` are IdentifierReferences in sloppy code, so they
+        // can start an expression there (strict code reserves them). The
+        // reference bookkeeping mirrors the IDENTIFIER case so the token also
+        // works as an assignment target and as an arrow head.
+        case TokenType.LET:
+        case TokenType.STATIC:
+        {
+            if (self.is_strict) return self.literal_keyword()!;
+            Token id_tok = self.advance(true)!;
+            if (!reject_arrow_head && self.check_arrow()) {
+                char[][1] params_arr;
+                params_arr[0] = id_tok.str_value;
+                uint ident_arrow_src = self.lexer.token_start;
+                return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
+            }
+            self.callee_is_eval = false;
+            if (!self.is_global) {
+                if (try var_reg = self.resolve_var(id_tok.str_value)) {
+                    self.last_was_getvar = false;
+                    self.last_was_local_var = true;
+                    self.last_local_var_reg = var_reg;
+                    self.save_lhs_ident_name(id_tok.str_value);
+                    return var_reg;
+                }
+            }
+            uint name_idx = self.add_string_constant(id_tok.str_value);
+            ushort id_reg = self.alloc_reg();
+            self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
+            self.last_was_getvar = true;
+            self.last_getvar_name_idx = name_idx;
+            self.save_lhs_ident_name(id_tok.str_value);
+            return id_reg;
+        }
+
         case TokenType.THIS:
             self.advance()!;
             ushort this_reg = self.alloc_reg();
@@ -5346,17 +5380,6 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
         default:
             // Check for literal keywords
-            if (tt == TokenType.LET) {
-                // 'let' used as identifier in non-strict mode
-                Token let_tok = self.advance()!;
-                if (try var_reg = self.resolve_var(let_tok.str_value)) {
-                    return var_reg;
-                }
-                uint name_idx = self.add_string_constant(let_tok.str_value);
-                ushort let_reg = self.alloc_reg();
-                self.emit_ident_read((uint)let_reg, name_idx);
-                return let_reg;
-            }
             return self.literal_keyword()!;
     }
 }
@@ -5556,7 +5579,8 @@ fn ushort? CompilerContext.object_literal(&self) {
                         && !str_eq(key_tok.str_value, "false")
                         && !str_eq(key_tok.str_value, "null"))
                     || (key_tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await)
-                    || (key_tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield);
+                    || (key_tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield)
+                    || ((key_tt == TokenType.LET || key_tt == TokenType.STATIC) && !self.is_strict);
 
                 // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
                 // Generator-method shorthand forbids the getter/setter shape, `*get` / `*set`

@@ -4587,29 +4587,32 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     // an async function, but `(async function await(){})` is not. `yield` is
     // reserved in all strict code and this engine is strict-only, so it is
     // never a function name.
-    // A function expression's name is a BindingIdentifier, so the contextual
-    // keyword spellings are usable names wherever the ENCLOSING context
-    // permits them: `(function* yield(){})` is legal at the top level because
-    // the name takes [Yield] from the enclosing grammar, not from the
-    // function being defined. saved_is_user_generator holds that enclosing
-    // value (self.is_user_generator already describes this expression).
-    bool name_is_yield_ident = self.check(TokenType.YIELD) && !self.is_strict
-        && !saved_is_user_generator && !self.forbid_yield;
+    // A FunctionExpression's own grammar parameters are [~Yield, ~Await]
+    // (§15.5.1), so its name is an Identifier in ANY non-strict context, even
+    // inside a generator body or an async function: `(function* yield(){})`
+    // and a nested `(function yield(){})` in a generator body are both legal.
+    // Only strict code reserves `yield` (and makes `let`/`static` names
+    // SyntaxErrors through is_restricted_name).
+    bool name_is_yield_ident = self.check(TokenType.YIELD) && !self.is_strict;
     bool name_is_sloppy_ctx_kw = (self.check(TokenType.LET) || self.check(TokenType.STATIC))
         && !self.is_strict;
     Token name_tok;
     bool have_name_tok = false;
     if (self.check(TokenType.IDENTIFIER) || name_is_yield_ident || name_is_sloppy_ctx_kw) {
-        // BindingIdentifier position. The name takes its [Yield] from the
-        // enclosing context, so the function's own generator flag must not
-        // decide the spelling.
+        // BindingIdentifier position. The name is [~Yield, ~Await], so no
+        // enclosing generator/async state may decide the spelling: clear the
+        // [Yield] flags (and a generator parameter list's blocked-yield mark)
+        // for the parse, then put the function's own back.
         bool gen_here = self.is_generator;
         bool user_gen_here = self.is_user_generator;
-        self.is_generator = saved_is_generator;
-        self.is_user_generator = saved_is_user_generator;
+        bool forbid_yield_here = self.forbid_yield;
+        self.is_generator = false;
+        self.is_user_generator = false;
+        self.forbid_yield = false;
         name_tok = self.expect_binding_identifier()!;
         self.is_generator = gen_here;
         self.is_user_generator = user_gen_here;
+        self.forbid_yield = forbid_yield_here;
         have_name_tok = true;
     } else if (self.check(TokenType.AWAIT) && !self.is_module && !is_async_expr) {
         // The name's [Await] decision is made above from the expression kind,

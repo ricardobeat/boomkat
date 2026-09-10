@@ -315,11 +315,18 @@ fn void? CompilerContext.statement_body(&self) {
 // token after `let` can begin a BindingList, which is what makes the `let` a
 // LexicalDeclaration rather than an identifier reference. Non-destructive:
 // the consumed token is pushed back before returning.
-fn bool CompilerContext.peek2_starts_binding(&self) {
+fn bool CompilerContext.peek2_starts_binding(&self, bool ignore_line_term = false) {
+    // An escaped `let` (`l\u0065t`) is a plain IdentifierName rather than the
+    // declaration keyword (§5.1.5), so it can only start an IdentifierReference.
+    // Checked before advance() so the escape rejection is not raised here.
+    Token? let_opt = self.lexer.peek();
+    if (catch _le = let_opt) return false;
+    if (let_opt.has_escape) return false;
     Token? cur_opt = self.advance();
     if (catch _e = cur_opt) return false;
     Token cur = cur_opt;
     TokenType next_tt = self.peek_type();
+    bool nl = self.lexer.seen_line_term;
     self.pushback(cur);
     // `let [` is a LexicalDeclaration even across a newline: the
     // ExpressionStatement lookahead exclusion (`let [`) carries no
@@ -328,12 +335,16 @@ fn bool CompilerContext.peek2_starts_binding(&self) {
     // single-statement body) while `with ({}) let\n{}` parses as an
     // identifier reference plus a separate block.
     if (next_tt == TokenType.LBRACKET) return true;
-    // Otherwise `let` followed by a newline is an identifier reference
-    // (`with ({}) let` + ASI + `{}`), never a LexicalDeclaration.
-    if (self.lexer.seen_line_term) return false;
+    // Otherwise, at single-statement-body position, `let` followed by a
+    // newline is an identifier reference (`with ({}) let` + ASI + `{}`),
+    // never a LexicalDeclaration. At statement position there is no ASI
+    // opportunity before a binding name, so a LexicalDeclaration is
+    // recognized regardless of line breaks and the caller clears this.
+    if (nl && !ignore_line_term) return false;
     return next_tt == TokenType.IDENTIFIER || next_tt == TokenType.LBRACKET ||
            next_tt == TokenType.LBRACE || next_tt == TokenType.LET ||
-           next_tt == TokenType.YIELD || next_tt == TokenType.AWAIT;
+           next_tt == TokenType.YIELD || next_tt == TokenType.AWAIT ||
+           next_tt == TokenType.STATIC;
 }
 
 // Parse and compile a single statement, dispatching on token type.
@@ -360,8 +371,6 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.LBRACE:
             self.block(false)!;
         case TokenType.VAR:
-            self.var_declaration()!;
-        case TokenType.LET:
             self.var_declaration()!;
         case TokenType.CONST:
             self.var_declaration()!;
@@ -490,6 +499,17 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.ENUM:
             // TypeScript `enum` is not erasable — always reject.
             return self.fail("'enum' is not supported (not erasable syntax)")~;
+        case TokenType.LET:
+            // A statement-position `let` is a LexicalDeclaration only as the
+            // literal keyword followed by a BindingList (§13.3.1). Anything
+            // else is an IdentifierReference — sloppy code may name a variable
+            // `let` — so `let;`, `let = 1;`, and `let [0];` are expression
+            // statements, handled by the identifier-led case below.
+            if (self.peek2_starts_binding(true)) {
+                self.var_declaration()!;
+            } else {
+                nextcase;
+            }
         default:
             // TypeScript contextual keyword statements:
             //   `type X = ...;`, `declare ...`, `namespace X { ... }`, `module X {...}`
@@ -553,14 +573,16 @@ fn void? CompilerContext.statement(&self) {
             // Check for labels: identifier : statement
             // We consume the identifier and check if the next token is ':'
             //
-            // A LabelIdentifier is an Identifier (§14.13), and per §13.1.1
-            // `await` IS one wherever it is not reserved, so `await: ;` is a
-            // valid labelled statement in script code — only the AWAIT token
-            // type keeps it out of the IDENTIFIER branch here. `yield` gets no
-            // such relaxation: §13.1.1 reserves it in all strict-mode code,
-            // and this engine is strict-only. break/continue gate their label
-            // REFERENCE on the same predicate.
-            if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt)) {
+            // A LabelIdentifier or IdentifierReference is an Identifier
+            // (§14.13, §13.1.1), and the contextual keyword spellings are
+            // Identifiers wherever the enclosing grammar does not reserve
+            // them: `await` outside a module/async context, `yield` outside
+            // strict code and generator bodies, and `let`/`static` in sloppy
+            // code. break/continue gate their label REFERENCE on the same
+            // predicate.
+            bool ctx_identifier = ((tt == TokenType.LET || tt == TokenType.STATIC) && !self.is_strict)
+                || (tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield);
+            if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt) || ctx_identifier) {
                 // Save token_start before consuming, in case this is an async function
                 // `token_start` may be stale here (it reflects the most
                 // recently *consumed* token, but the identifier we're about to
@@ -1133,8 +1155,11 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
         }
 
         // Only collect let/const at the top level of this block (depth 0),
-        // excluding for-head parens (see paren_depth above).
-        if (brace_depth == 0 && paren_depth == 0 && (tt == TokenType.LET || tt == TokenType.CONST)) {
+        // excluding for-head parens (see paren_depth above). An escaped
+        // spelling (`l\u0065t`) is a plain IdentifierName rather than the
+        // declaration keyword (§5.1.5), so it declares nothing.
+        if (brace_depth == 0 && paren_depth == 0 && !tok.has_escape
+            && (tt == TokenType.LET || tt == TokenType.CONST)) {
             // Collect one or more identifier names (comma-separated). The
             // token that ends the list decides what follows: a `;` (or a
             // pattern this loop cannot read) leaves us at a statement
@@ -1495,8 +1520,10 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
         // let/const: collect one or more comma-separated identifier names.
         // Excludes for-head parens (a let/const at paren_depth > 0 is a
         // for-head LexicalDeclaration, scoped to the for statement, see
-        // pre_scan_lexical_decls).
-        if (paren_depth == 0 && (tt == TokenType.LET || tt == TokenType.CONST)) {
+        // pre_scan_lexical_decls). An escaped spelling is an IdentifierName
+        // rather than the keyword (§5.1.5), so it declares nothing.
+        if (paren_depth == 0 && !tok.has_escape
+            && (tt == TokenType.LET || tt == TokenType.CONST)) {
             // Token that ended the declarator list, used as prev_tt when the
             // main loop resumes. Defaults to SEMICOLON so a list that runs to
             // a parse error still leaves the scanner at statement position.
@@ -2811,8 +2838,16 @@ fn void? CompilerContext.for_statement(&self) {
     TokenType next_tt = self.peek_type();
 
     // Check for bare for-of/for-in with a plain identifier LHS: for (x of expr) / for (x in expr)
-    if (next_tt == TokenType.IDENTIFIER) {
-        Token id_tok = self.advance()!;
+    // The contextual keyword spellings are Identifiers in sloppy code, so
+    // `for (let in o)` is a for-in whose target is the variable `let` (§14.7.1).
+    // A `let` that begins a ForDeclaration belongs to the declaration path
+    // below, which is what makes `for (let of [])` a SyntaxError rather than a
+    // for-of over a variable named `let`.
+    bool bare_ctx_ident = (next_tt == TokenType.STATIC && !self.is_strict)
+        || (next_tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield)
+        || (next_tt == TokenType.LET && !self.is_strict && !self.peek2_starts_binding(true));
+    if (next_tt == TokenType.IDENTIFIER || bare_ctx_ident) {
+        Token id_tok = self.advance(true)!;
         if (try tok2 = self.lexer.peek()) {
             if (token_is_of(tok2)) {
                 // `of` is only a for-of keyword when it is not part of an arrow-function
@@ -3087,7 +3122,12 @@ fn void? CompilerContext.for_statement(&self) {
     }
 
     // Parse init (may be var/let/const or expression or empty)
-    if (next_tt == TokenType.VAR || next_tt == TokenType.LET || next_tt == TokenType.CONST) {
+    // A `let` head is a ForDeclaration only as the literal keyword followed by
+    // a BindingList; `for (let; ;)`, `for (let = 1; ;)`, and `for (let in o)`
+    // are ordinary expressions over an identifier named `let` (§14.7.1).
+    bool let_head_decl = next_tt == TokenType.LET && self.peek2_starts_binding(true);
+    if (next_tt == TokenType.VAR || next_tt == TokenType.CONST
+        || (next_tt == TokenType.LET && let_head_decl)) {
         // Check if it's for-in: "var x in ..."
         // We parse the variable declaration keyword
         Token decl_tok = self.advance()!;
