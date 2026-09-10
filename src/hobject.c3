@@ -892,8 +892,8 @@ struct HObject {
 
 // Pool size classes, derived from the struct sizes plus the inline prop space.
 const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
-const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;                            // OBJECT, ERROR, ARGUMENTS
-const usz OBJ_SIZE_ARRAY = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // ARRAY, whose array_length is in the union
+const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;                            // OBJECT, the only class with no trailing data
+const usz OBJ_SIZE_ARRAY = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // ARRAY (array_length in the union) and ARGUMENTS (nargs in the union)
 const usz OBJ_SIZE_FUNC  = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // FUNCTION, REGEXP, etc.
 const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;               // GETTER_SETTER, which has no inline props
 
@@ -903,12 +903,13 @@ const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;       
 fn usz alloc_size_for_class(ObjClass cls) @inline {
     switch (cls) {
         case ObjClass.OBJECT:
-        case ObjClass.ARGUMENTS:
             return OBJ_SIZE_PLAIN;
-        // ERROR keeps captured_stack in the union, so it needs the trailing
-        // extra-data space that plain OBJECT and ARGUMENTS do not.
+        // ERROR keeps captured_stack in the union and ARGUMENTS stashes its
+        // argument count in array_length, so both need the trailing extra-data
+        // space that plain OBJECT does not.
         case ObjClass.ERROR:
         case ObjClass.PROXY:
+        case ObjClass.ARGUMENTS:
             return OBJ_SIZE_FUNC;
         case ObjClass.ARRAY:
             return OBJ_SIZE_ARRAY;
@@ -926,8 +927,8 @@ fn HObjectExtra* HObject.extra_ptr(&self) @inline {
     return (HObjectExtra*)((char*)self + HObjectBase::size);
 }
 
-// extra.array_length, the first 4 bytes of the union. ARRAY objects only,
-// meaning those with flags.exotic_array.
+// extra.array_length, the first 4 bytes of the union. ARRAY objects keep their
+// dense-element count here; ARGUMENTS objects stash the actual argument count.
 fn uint* HObject.array_len_ptr(&self) @inline {
     return &self.extra.array_length;
 }
@@ -941,9 +942,9 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
     heap::Heap* h = (heap::Heap*)heap_ptr;
     switch (cls) {
         case ObjClass.OBJECT:
-        case ObjClass.ARGUMENTS:
             return &h.obj_pool_plain;
         case ObjClass.ARRAY:
+        case ObjClass.ARGUMENTS:
             return &h.obj_pool_array;
         case ObjClass.ERROR:
         case ObjClass.GETTER_SETTER:

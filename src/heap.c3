@@ -1005,8 +1005,9 @@ struct Heap {
 
     // Pooled HObject headers, avoiding a malloc per object. The three size
     // classes match alloc_size_for_class():
-    //   plain: OBJECT and ARGUMENTS, which need no HObjectExtra
-    //   array: ARRAY, whose array_length lives in the union
+    //   plain: OBJECT, which needs no HObjectExtra
+    //   array: ARRAY (array_length in the union) and ARGUMENTS (nargs in the
+    //          union)
     //   func:  everything else, including ERROR and PROXY
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
