@@ -732,6 +732,18 @@ struct HObjectBufferView {
     bool     length_tracking; // auto-track backing resizable buffer length
 }
 
+// ARGUMENTS exotic extra fields. `nargs` aliases array_length at offset 0.
+// `mapped_bits` is the live [[ParameterMap]] for a sloppy mapped arguments
+// object (ES2024 §10.4.4.2): bit i set means index i still aliases formal
+// parameter i. Deletion, an accessor define, and a writable:false define each
+// clear the bit (§10.4.4.2 step 7). Only the low 64 indices can map; a formal
+// parameter list longer than that would leave the extra indices unmapped.
+struct HObjectArguments {
+    uint  nargs;
+    uint  pad;
+    ulong mapped_bits;
+}
+
 // The subtype fields, discriminated by flags.obj_class in the common header.
 union HObjectExtra {
     HObjectFunction              func;
@@ -751,6 +763,7 @@ union HObjectExtra {
     HObjectBufferView            view;
     HObjectTemporal              temporal;
     uint                         array_length;  // For ARRAY objects: dense-element count.
+    HObjectArguments             args;          // For ARGUMENTS objects (nargs aliases array_length).
 }
 
 // Temporal objects (Temporal.PlainDate, .PlainTime, .Instant, etc.). One
@@ -931,6 +944,12 @@ fn HObjectExtra* HObject.extra_ptr(&self) @inline {
 // dense-element count here; ARGUMENTS objects stash the actual argument count.
 fn uint* HObject.array_len_ptr(&self) @inline {
     return &self.extra.array_length;
+}
+
+// extra.args.mapped_bits, the live [[ParameterMap]] of a mapped ARGUMENTS
+// object (see HObjectArguments).
+fn ulong* HObject.mapped_bits_ptr(&self) @inline {
+    return &self.extra.args.mapped_bits;
 }
 
 // ============================================================================
@@ -1114,6 +1133,11 @@ fn void HObject.freeze(&self, heap::Heap* h) {
     // to become non-writable here, so that Set(O, "length", _, true) throws.
     if (self.flags.exotic_array) {
         self.flags.array_len_writable = false;
+    }
+    // A frozen ARGUMENTS object's data properties all become non-writable, and
+    // §10.4.4.2 step 7.2.2.1 drops each such index from the [[ParameterMap]].
+    if (self.get_class() == ObjClass.ARGUMENTS) {
+        *self.mapped_bits_ptr() = 0;
     }
 }
 

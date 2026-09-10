@@ -1920,6 +1920,15 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             vt.set_string(key_str);
             // Actually set the array element value as the descriptor value
             TVal array_val = obj.array_part()[arr_idx];
+            // Sloppy mapped `arguments` (§10.4.4.2 [[GetOwnProperty]] step 2):
+            // a mapped index reports the parameter's current value, not the
+            // stored copy.
+            if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                TVal mapped_v;
+                if (vm::mapped_args_read(ctx.vm, obj, arr_idx, &mapped_v)) {
+                    array_val = mapped_v;
+                }
+            }
             desc.put_prop(value_key, array_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             HString* writable_key = builtin_intern_string(ctx.heap, "writable");
@@ -2701,14 +2710,15 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         if (ap != null && arr_idx < obj.array_size) {
             TVal arr_val = ap[arr_idx];
             if (!arr_val.is_undefined()) {
-                // Sloppy mapped `arguments`: the define below may write
-                // through to the parameter (mapped_args_write), which reads
-                // the CURRENT value from the parameter register. Sync the
-                // dense slot into the register first, so a stale register
-                // (e.g. after `arguments[0] = 9` wrote only the dense slot)
-                // does not clobber the define's value.
+                // Sloppy mapped `arguments`: the parameter register is
+                // authoritative while the index is mapped, so promote its
+                // current value rather than a dense copy that a plain
+                // `a = 5` write to the formal left stale.
                 if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
-                    vm::mapped_args_write(ctx.vm, obj, arr_idx, &arr_val);
+                    TVal mapped_cur;
+                    if (vm::mapped_args_read(ctx.vm, obj, arr_idx, &mapped_cur)) {
+                        arr_val = mapped_cur;
+                    }
                 }
                 // PROP_FLAGS_WC has enumerable=false, put_prop routes to named table.
                 obj.put_prop((void*)key, arr_val, hobject::PROP_FLAGS_WC, ctx.heap);
@@ -2908,10 +2918,13 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             // Clear the dense array slot so reads fall through to the
             // named-property accessor rather than returning a stale data
             // value. Decrement array_used to match set_array_idx's
-            // bookkeeping, and sever the parameter mapping (§9.4.4.8 step
-            // 8.a): the index no longer aliases the parameter.
+            // bookkeeping, and drop the parameter mapping (§10.4.4.2 step
+            // 7.1.1): the index no longer aliases the parameter.
             if (key_hstr.is_arridx()) {
                 uint ai = key_hstr.array_index();
+                if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                    vm::mapped_args_unmap(obj, ai);
+                }
                 TVal* ap = obj.array_part();
                 if (ap != null && ai < obj.array_size && !ap[ai].is_undefined()) {
                     ctx.heap.decref_tval(&ap[ai]);
@@ -2936,10 +2949,15 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 return;
             }
 
-            // Sloppy mapped `arguments` (§9.4.4.8 DefineOwnProperty): an
-            // ABSENT value field preserves the CURRENT value — which is the
-            // parameter's (via mapped_args_read), not the stale named slot.
-            if (!has_val_in_desc && obj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
+            // Sloppy mapped `arguments` (§10.4.4.2): while the index is in the
+            // [[ParameterMap]] the stored slot is a copy and the parameter
+            // register stays authoritative.
+            bool args_mapped_idx = obj.get_class() == hobject::ObjClass.ARGUMENTS
+                && key_hstr.is_arridx();
+            // Step 4: a descriptor that omits [[Value]] preserves the CURRENT
+            // value, which for a mapped index is the parameter's, not the
+            // stale stored copy.
+            if (args_mapped_idx && !has_val_in_desc) {
                 TVal mapped_cur;
                 if (vm::mapped_args_read(ctx.vm, obj, key_hstr.array_index(), &mapped_cur)) {
                     *current = mapped_cur;
@@ -2977,14 +2995,28 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                             *current = new_v;
                         }
                         obj.set_prop_flags((uint)existing_idx, next_flags, ctx.heap);
-                        // Step 6 syncs the parameter only while the map is
-                        // still live: a non-writable result unmaps, so skip
-                        // the write-through and leave the parameter alone.
-                        if (next_flags.writable) {
+                        // Step 7.2.1.2 syncs the parameter whenever the
+                        // descriptor carries a value. Step 7.2.2.1 then drops
+                        // the index from the map when the writable result is
+                        // false, even if the property stays configurable.
+                        if (has_val_in_desc) {
                             vm::mapped_args_write(ctx.vm, obj, aidx, &new_v);
+                        }
+                        if (has_wrt_in_desc && !desc_flags.writable) {
+                            vm::mapped_args_unmap(obj, aidx);
                         }
                         arg_write_through = true;
                     } else {
+                        // Step 7.2.1.2: sync the parameter from the descriptor
+                        // value while the map is still live, before the
+                        // non-writable result removes the mapping (step
+                        // 7.2.2.1). Without this a define such as
+                        // {value: v, writable: false} leaves the formal
+                        // parameter holding its previous value.
+                        if (has_val_in_desc) {
+                            vm::mapped_args_write(ctx.vm, obj, aidx, &new_v);
+                        }
+                        vm::mapped_args_unmap(obj, aidx);
                         *current = desc_vals[0];
                     }
                 } else {
@@ -2994,6 +3026,15 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                     ctx.result.set_object(obj);
                     return;
                 }
+            }
+
+            // Step 7.2.2.1: a writable:false result drops the index from the
+            // [[ParameterMap]] even when the descriptor carries no value; the
+            // parameter keeps its current value, which step 4 copied into the
+            // stored slot above. The write-through branch already unmapped the
+            // value-present cases, so this only fires for a bare {writable:false}.
+            if (args_mapped_idx && has_wrt_in_desc && !desc_flags.writable) {
+                vm::mapped_args_unmap(obj, key_hstr.array_index());
             }
 
             if (has_wrt_in_desc)  cur_flags.writable     = desc_flags.writable;
@@ -3813,6 +3854,9 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
         }
         ctx.result.set_object(obj);
         return;
+    }
+    if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+        vm::mapped_args_sync_all(ctx.vm, obj);
     }
     obj.freeze(ctx.heap);
     ctx.result.set_object(obj);

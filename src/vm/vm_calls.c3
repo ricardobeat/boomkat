@@ -48,121 +48,122 @@ fn TVal? not_constructor_throw(Vm* vm, Dispatch* ds, TVal* val) @noinline @local
 // must see the parameter's CURRENT value, not a snapshot taken when the
 // object was created or last written.
 fn Activation* mapped_args_owner(Vm* vm, HObject* args_obj) @inline {
+    HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
+    if (args_name == null) return null;
     for (uint i = 0; i < vm.activation_count; i++) {
         Activation* a = &vm.activations[i];
-        if (a.func == null || a.bottom == null) continue;
+        if (a.func == null || a.bottom == null || a.var_env == null) continue;
         CompiledFunction* cf = (CompiledFunction*)a.func;
         if (!cf.mapped_arguments()) continue;
-        TVal* abase = a.bottom;
-        uint abase_off = (uint)(abase - vm.valstack);
-        if (abase_off >= (uint)(vm.valstack_end - vm.valstack)) continue;
-        TVal* atop = abase + cf.num_regs + 4;
-        if (atop > vm.valstack_end) atop = vm.valstack_end;
-        TVal* slot = abase;
-        while (slot < atop) {
-            if (slot.is_object() && slot.get_heapptr() == (void*)args_obj) return a;
-            slot++;
-        }
+        // The owning frame's var_env holds the `arguments` binding created at
+        // call time (see the two finish_arguments_object call sites). Matching
+        // that binding is what identifies the owner: scanning the frame's
+        // registers would also match any frame that merely received this
+        // arguments object as an argument, aliasing its reads and writes to
+        // the callee's parameter slots.
+        int bidx = a.var_env.bindings.find_prop_idx(args_name, vm.heap);
+        if (bidx < 0) continue;
+        TVal bval = a.var_env.bindings.prop_values()[bidx];
+        if (bval.is_object() && bval.get_heapptr() == (void*)args_obj) return a;
     }
     return null;
 }
 
+// Whether index `idx` is still in the arguments object's [[ParameterMap]].
+fn bool args_is_mapped(HObject* args_obj, uint idx) @inline {
+    if (idx >= 64) return false;
+    return (*args_obj.mapped_bits_ptr() & (1UL << idx)) != 0;
+}
+
+// Drop index `idx` from the [[ParameterMap]] (ES2024 §10.4.4.2 step 7.1.1 /
+// 7.2.2.1). After this the parameter and the property are independent.
+fn void mapped_args_unmap(HObject* args_obj, uint idx) @inline {
+    if (idx >= 64) return;
+    *args_obj.mapped_bits_ptr() = *args_obj.mapped_bits_ptr() & ~(1UL << idx);
+}
+
+// Copy every still-mapped parameter into its property slot. Object.freeze
+// clears the map, so without this a property would keep the stale value
+// captured at creation instead of the parameter's current value.
+fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
+    Activation* owner = mapped_args_owner(vm, args_obj);
+    if (owner == null) return;
+    ulong bits = *args_obj.mapped_bits_ptr();
+    uint i = 0;
+    while (bits != 0) {
+        if ((bits & 1UL) != 0) {
+            TVal v = owner.bottom[i];
+            int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
+            if (pidx >= 0) {
+                vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], &v);
+            } else if (i < args_obj.array_size) {
+                args_obj.set_array_idx(i, v, vm.heap);
+            }
+        }
+        bits >>= 1;
+        i++;
+    }
+}
+
 // Read the current value of mapped index `idx` from the owning activation's
 // parameter registers. Returns false when the read must take the ordinary
-// dense/named path instead (unmapped index, unmapped non-configurable +
-// non-writable property, or slots that no longer identify a mapped frame).
+// dense/named path instead (index not in the map, owning frame gone, or the
+// index beyond the formal parameter list).
 fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline {
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
-    // A mapped index normally lives in the dense array part; it only becomes a
-    // named property when something reconfigures it (Object.defineProperty).
-    // Either shape can carry a live mapping, so both are checked below.
-    int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
-    if (pidx >= 0) {
-        // §9.4.4.8 step 11.b.ii: defining the index as non-writable AND
-        // non-configurable removes it from the map, so the property's own
-        // value is what a read must observe from then on.
-        hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
-        if (!fl.configurable && !fl.writable) return false;
-        // Still mapped (the descriptor only tightened enumerable/configurable):
-        // the parameter register remains the source of truth.
-        *out = owner.bottom[idx];
-        return true;
-    }
-    // No named property: the alias is live exactly while the dense slot is
-    // present and non-hole. mapped_args_delete severs the mapping by clearing
-    // that slot to undefined (§9.4.4.8 step 11 / §10.2.1.3.2
-    // RemoveMappedBinding), the same representation get_array_idx treats as a
-    // hole, so a cleared slot means parameter and arguments[i] are now
-    // independent.
-    if (idx < args_obj.array_size && !args_obj.array_part()[idx].is_undefined()) {
-        // Live mapping: read the parameter register, so that an assignment to
-        // the parameter (`a = 1`) is observable through `arguments[0]`.
-        *out = owner.bottom[idx];
-        return true;
-    }
-    // Severed (or never populated): let the caller take the ordinary
-    // dense/named path, which reports the hole as undefined or continues up
-    // the prototype chain.
-    return false;
+    if (!args_is_mapped(args_obj, idx)) return false;
+    // The parameter register is the source of truth while the mapping is live,
+    // so an assignment to the formal parameter (`a = 1`) is observable through
+    // `arguments[0]`.
+    *out = owner.bottom[idx];
+    return true;
 }
 
 // Write `val` through a mapped index into the owning activation's parameter
-// slot as well as the object's own dense slot, keeping the two in sync.
-// Returns false when the write must take the ordinary path instead.
-//
-// Unmapping (ES2015 §9.4.4.8 DefineOwnProperty steps 8-9): when the index's
-// own property is non-configurable AND non-writable, the mapping is severed
-// — the parameter and the property no longer alias. Reads and writes then
-// take the ordinary dense/named path.
+// slot, mirroring it into the object's own slot so the alias holds. Returns
+// false when the write must take the ordinary path instead.
 fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inline {
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
+    if (!args_is_mapped(args_obj, idx)) return false;
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
-    if (pidx >= 0) {
-        hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
-        if (!fl.configurable && !fl.writable) return false;
-        if (fl.is_accessor) return false;
-        // Named data property: [[DefineOwnProperty]] with a value field
-        // writes the named slot, never the parameter. Mirror OrdinarySet's
-        // two-slot sync so the alias holds while the map is live.
-        TVal* slot = &owner.bottom[idx];
-        if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
-        *slot = *val;
-        if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
-        vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], val);
-        return true;
-    }
+    if (pidx >= 0 && args_obj.get_prop_flags((uint)pidx, vm.heap).is_accessor) return false;
     TVal* slot = &owner.bottom[idx];
     if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
     *slot = *val;
     if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+    if (pidx >= 0) {
+        vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], val);
+    } else if (idx < args_obj.array_size) {
+        // Keep the dense slot in step with the parameter: when the mapping is
+        // later dropped (freeze, delete), the property must already hold the
+        // parameter's current value.
+        args_obj.set_array_idx(idx, *val, vm.heap);
+    }
     return true;
 }
 
-// Sever the mapping for index `idx` (ES2017 §9.4.4.8 step 11): clear the
-// owning activation's parameter register to undefined and clear the dense
-// slot, so subsequent reads/writes no longer alias. Returns true when the
-// index was mapped and is now severed.
+// Sever the mapping for index `idx` (§10.4.4.2 step 7 / §10.2.1.3.2
+// RemoveMappedBinding): drop it from the [[ParameterMap]] and clear the dense
+// slot, but leave the parameter local untouched — delete breaks the alias,
+// it does not clear the local. Returns true when the index was mapped.
 fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
+    if (!args_is_mapped(args_obj, idx)) return false;
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
     if (pidx >= 0) {
         hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
         if (!fl.configurable) return false;
     }
-    // ES2024 §9.4.4.8 step 11 / §10.2.1.3.2 (RemoveMappedBinding): delete
-    // breaks the alias between arguments[i] and the parameter local, leaving
-    // the local's value intact. We clear the dense array slot (so subsequent
-    // arguments[i] reads return undefined via the dense path) and drop the
-    // named mapping if any, but do NOT touch owner.bottom[idx].
+    mapped_args_unmap(args_obj, idx);
     if (idx < args_obj.array_size) {
         TVal cur = args_obj.array_part()[idx];
         if (!cur.is_undefined()) {
@@ -198,9 +199,22 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
     // {true,false,true}); unmapped (strict or non-simple params) keeps the
     // §9.4.4.7 poison-pill accessor.
     bool mapped = false;
+    uint mapped_formals = 0;
     if (callee != null && callee.callable_kind() == hobject::CallableKind.COMPILED_FN) {
         CompiledFunction* ccf = (*callee.extra_ptr()).func.comp_func;
-        if (ccf != null && ccf.mapped_arguments()) mapped = true;
+        if (ccf != null && ccf.mapped_arguments()) {
+            mapped = true;
+            mapped_formals = (uint)ccf.num_args;
+        }
+    }
+    // Seed the [[ParameterMap]]: each provided argument that matches a formal
+    // parameter is mapped (ES2024 §10.4.4.2 step 14). Capped at 64 indices.
+    *args_obj.mapped_bits_ptr() = 0;
+    if (mapped) {
+        uint map_count = nargs < mapped_formals ? nargs : mapped_formals;
+        if (map_count > 64) map_count = 64;
+        *args_obj.mapped_bits_ptr() = map_count == 64 ? 0xFFFFFFFFFFFFFFFFUL
+                                                      : ((1UL << map_count) - 1UL);
     }
     if (mapped) {
         TVal callee_tv;
