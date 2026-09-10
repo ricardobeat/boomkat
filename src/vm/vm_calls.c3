@@ -126,6 +126,16 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
     if (pidx >= 0) {
         hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
         if (!fl.configurable && !fl.writable) return false;
+        if (fl.is_accessor) return false;
+        // Named data property: [[DefineOwnProperty]] with a value field
+        // writes the named slot, never the parameter. Mirror OrdinarySet's
+        // two-slot sync so the alias holds while the map is live.
+        TVal* slot = &owner.bottom[idx];
+        if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
+        *slot = *val;
+        if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+        vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], val);
+        return true;
     }
     TVal* slot = &owner.bottom[idx];
     if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
@@ -174,6 +184,13 @@ fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
 fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint nargs) {
     HString* callee_key = (HString*)vm.heap.strs[heap::BuiltinStr.CALLEE];
     if (callee_key == null) return;
+    // Stash `nargs` in the otherwise-unused array_len_ptr slot for ARGUMENTS:
+    // the engine's set_array_idx only increments array_used when the new
+    // value is non-undefined, so an arguments object whose actual arg count
+    // includes `undefined` slots reports array_used < nargs. The iterator
+    // and length lookup both consult this slot instead. Only safe because
+    // no ARGUMENTS codepath uses array_len_ptr.
+    *args_obj.array_len_ptr() = nargs;
     // Sloppy + simple params: mapped arguments (§9.4.4.8 CreateMapped-
     // ArgumentsObject step 5). `callee` here is the caller HObject passed by
     // every call site (the Function value the call was made through). A
@@ -1356,23 +1373,36 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             ? (env::is_tdz_sentinel(&(*hobj_fast.extra_ptr()).func.captured_this) ? &arrow_live_this : &(*hobj_fast.extra_ptr()).func.captured_this)
                             : &saved_this;
                         TVal coerced_this;
-                        bool used_coerced = false;
-                        if (!target_fast.is_arrow() && !target_fast.is_strict() && (this_src.is_undefined() || this_src.is_null())) {
-                            if (vm.global_env != null && vm.global_env.bindings != null) {
-                                coerced_this.set_object(vm.global_env.bindings);
-                                this_src = &coerced_this;
-                                used_coerced = true;
+                        bool used_boxed = false;
+                        if (!target_fast.is_arrow() && !target_fast.is_strict()) {
+                            if (this_src.is_undefined() || this_src.is_null()) {
+                                if (vm.global_env != null && vm.global_env.bindings != null) {
+                                    coerced_this.set_object(vm.global_env.bindings);
+                                    this_src = &coerced_this;
+                                }
+                            } else if (!this_src.is_object()) {
+                                // ES2024 §10.4.1.2: a sloppy callee boxes a
+                                // primitive thisArg (ToObject). The box's
+                                // alloc ref transfers to this_binding; the
+                                // generic tail below would copy_ref and leak.
+                                HObject* boxed = builtins::to_object_for_lookup(vm.heap, *this_src);
+                                if (boxed != null) {
+                                    new_act.this_binding.set_object(boxed);
+                                    new_act.flags |= ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+                                    used_boxed = true;
+                                }
                             }
                         }
-                        if (!this_src.is_heap_allocated()) {
-                            // this_binding for the previous use of this activation slot
-                            // was already decreffed by handle_return (ACT_FLAG_THIS_OWNED).
-                            // A plain overwrite takes no ownership, so handle_return will not decref.
-                            new_act.this_binding = *this_src;
-                        } else {
-                            new_act.set_this_owned(vm.heap, *this_src);
+                        if (!used_boxed) {
+                            if (!this_src.is_heap_allocated()) {
+                                // this_binding for the previous use of this activation slot
+                                // was already decreffed by handle_return (ACT_FLAG_THIS_OWNED).
+                                // A plain overwrite takes no ownership, so handle_return will not decref.
+                                new_act.this_binding = *this_src;
+                            } else {
+                                new_act.set_this_owned(vm.heap, *this_src);
+                            }
                         }
-                        (void)used_coerced;
                     }
                     }
 
@@ -2245,16 +2275,32 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     new_act_g.flags |= ACT_FLAG_DIRECT_EVAL;
                 }
                 {
-                    // ES5 §10.4.3: for non-arrow sloppy calls, coerce null/undefined
-                    // this → global object. Applied here at generator CREATION;
-                    // GEN_START snapshots this binding and later resumes restore it.
+                    // ES2024 §10.4.1.2: for non-arrow sloppy calls, coerce
+                    // null/undefined this → global object and any other
+                    // primitive → ToObject wrapper. Applied here at generator
+                    // CREATION; GEN_START snapshots this binding and later
+                    // resumes restore it.
                     TVal raw_this_g = ds.regs_base[callee_reg + 1];
-                    if (!target.is_arrow() && !target.is_strict()
-                        && (raw_this_g.is_undefined() || raw_this_g.is_null())
-                        && vm.global_env != null && vm.global_env.bindings != null) {
-                        raw_this_g.set_object(vm.global_env.bindings);
+                    bool boxed_this_g = false;
+                    if (!target.is_arrow() && !target.is_strict()) {
+                        if (raw_this_g.is_undefined() || raw_this_g.is_null()) {
+                            if (vm.global_env != null && vm.global_env.bindings != null) {
+                                raw_this_g.set_object(vm.global_env.bindings);
+                            }
+                        } else if (!raw_this_g.is_object()) {
+                            HObject* boxed_g = builtins::to_object_for_lookup(vm.heap, raw_this_g);
+                            if (boxed_g != null) {
+                                raw_this_g.set_object(boxed_g);
+                                boxed_this_g = true;
+                            }
+                        }
                     }
-                    vm.heap.tval_copy_ref(&new_act_g.this_binding, &raw_this_g);
+                    if (boxed_this_g) {
+                        // Transfer the box's alloc ref; handle_return releases it.
+                        new_act_g.this_binding = raw_this_g;
+                    } else {
+                        vm.heap.tval_copy_ref(&new_act_g.this_binding, &raw_this_g);
+                    }
                     new_act_g.flags |= ACT_FLAG_THIS_OWNED;
                 }
 
@@ -2450,10 +2496,28 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 vm.heap.tval_copy_ref(&new_act.this_binding, &arrow_this2);
             } else {
                 TVal raw_this = ds.regs_base[callee_reg + 1];
-                if (!target.is_arrow() && !target.is_strict() && (raw_this.is_undefined() || raw_this.is_null()) && vm.global_env != null && vm.global_env.bindings != null) {
-                    raw_this.set_object(vm.global_env.bindings);
+                bool boxed_this = false;
+                if (!target.is_arrow() && !target.is_strict()) {
+                    // ES2024 §10.4.1.2: sloppy callee coerces undefined/null
+                    // this → global object, any other primitive → ToObject.
+                    if (raw_this.is_undefined() || raw_this.is_null()) {
+                        if (vm.global_env != null && vm.global_env.bindings != null) {
+                            raw_this.set_object(vm.global_env.bindings);
+                        }
+                    } else if (!raw_this.is_object()) {
+                        HObject* boxed = builtins::to_object_for_lookup(vm.heap, raw_this);
+                        if (boxed != null) {
+                            raw_this.set_object(boxed);
+                            boxed_this = true;
+                        }
+                    }
                 }
-                vm.heap.tval_copy_ref(&new_act.this_binding, &raw_this);
+                if (boxed_this) {
+                    // Transfer the box's alloc ref; handle_return releases it.
+                    new_act.this_binding = raw_this;
+                } else {
+                    vm.heap.tval_copy_ref(&new_act.this_binding, &raw_this);
+                }
             }
             new_act.flags |= ACT_FLAG_THIS_OWNED;
 
