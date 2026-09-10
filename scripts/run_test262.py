@@ -275,124 +275,6 @@ SKIP_FILES = {
     "built-ins/Set/valid-values.js",
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
-    # B04 — Function constructor duplicate params / restricted names in non-strict.
-    # Un-skipped with plans/083 phase 1: the parser now allows duplicate params and
-    # `eval`/`arguments` as parameter names in non-strict bodies (dynamic Function
-    # bodies default to sloppy per ES2024 §20.2.1.1).
-    # B17/PB8 — genuinely sloppy-mode-only, or dependent on a full
-    # GlobalDeclarationInstantiation/EvalDeclarationInstantiation
-    # CanDeclareGlobalFunction implementation (validate-then-commit over ALL
-    # hoisted names before any statement runs, throwing TypeError before
-    # execution) that DECLVAR's single opcode can't distinguish var- from
-    # function-declarations for — not yet implemented (plan 054 follow-up).
-    # Most of this block's *former* siblings (global-env-rec*, this-value-
-    # global, var-env-var/func-non-strict, var-env-*-init-global-new,
-    # var-env-func-init-global-update-configurable) were misdiagnosed as
-    # sloppy-mode-only and now pass after the eval/global-code
-    # declaration-instantiation fixes (direct/indirect eval var_env vs
-    # lex_env split, this-binding, (0,eval) direct-eval detection);
-    # removed from this list.
-    # P4 — compile_eval masks caller strictness by is_direct_eval (so
-    # indirect eval from a strict caller parses sloppy), and the comma
-    # operator clears callee_is_eval so `(0,eval)(...)` is treated as
-    # indirect. But `var static;` in sloppy eval still fails because the
-    # lexer tokenizes `static` as STATIC keyword and the parser doesn't
-    # accept it as an IdentifierName in binding position (pre-existing
-    # bug; see test262/test/language/future-reserved-words/static.js
-    # which also fails). Re-skip until that parser issue is fixed.
-    "language/eval-code/indirect/always-non-strict.js",
-    # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
-    # Strict-only engine never installs these legacy methods on
-    # Object.prototype, so `this.__lookupSetter__(...)` throws
-    # "undefined is not a function" before the test can assert
-    # `sameValue(undefined)` on the return value.
-    # P5 — flags: [raw] tests (hashbang / non-bang-comment tests). The runner
-    # concatenates the harness before the test source, so a `flags: [raw]`
-    # test's leading hashbang ends up at line 215+ and is no longer at source
-    # position 0, where the lexer's skip_hashbang looks for it. The engine
-    # rejects the `#` as an unexpected character. Tracked by the runner
-    # skipping `flags: [raw]` tests entirely (P5 follow-up; plans/083 §3
-    # phase 1 lists `language/comments/hashbang/use-strict.js` as one of the
-    # eight category-A SKIP_FILES to un-skip, but doing so without runner
-    # support just produces spurious CE:unexpected failures).
-    "language/comments/hashbang/use-strict.js",
-    # P7 — class-name-static-initializer-default-export.js and friends require
-    # module-mode execution (`flags: [module]`). The runner doesn't currently
-    # support `import`/`export`, so the test parses successfully but runs as
-    # a script and triggers a SyntaxError on `export default` before the
-    # assertion runs. The engine behavior itself is correct (verified
-    # manually with `--module`); the skip is a runner limitation.
-    # B17 — for-loop tests that depend on implicit globals (Sputnik 2009
-    # era tests where `__in__deepest__loop = __in__deepest__loop` must not
-    # throw ReferenceError). Our strict engine rejects implicit globals.
-    # B17 — relies on `toString = Object.prototype.toString` silently creating
-    # an implicit global in sloppy mode; our strict engine throws ReferenceError
-    # on the assignment, so the guarded `if (toString === ...)` block that
-    # exercises String.prototype.split is never entered / the bare reference
-    # throws uncaught. Unsatisfiable while strict-only.
-    # B46 — legacy Sputnik sort tests encoding pre-ES2019 implementation-defined
-    # undefined placement; modern stable sort does not special-case undefined
-    # when a comparator is supplied, so these expectations are unsatisfiable.
-    # B46 — contradictory assertions (array[1] === 'b' plus '1' in array === false)
-    # cannot both hold for any conformant [[Get]] / [[HasProperty]] implementation.
-    # F1 — Function.prototype.apply/call ES5 §10.4.3 sloppy `this` substitution
-    # (undefined/null thisArg -> global object; primitives -> ToObject wrapper).
-    # Implemented at the top of builtin_function_proto_call and apply_call in
-    # src/builtins/function.c3 (plans/083 phase 3): both transform thisArg via
-    # ToObject only when the target is a COMPILED_FN whose CompiledFunction is
-    # sloppy, leaving strict callees and BUILTIN_FN/LIGHTFUNC dispatch paths
-    # untouched (the strict callee path passes the primitive straight through,
-    # preserving pre-phase-3 semantics).
-    # BigInt64Array/BigUint64Array constructors — BigInt is out of scope
-    # (see the built-ins/BigInt SKIP_DIRS entry); this test doesn't tag
-    # `features: [BigInt]` so the feature filter above doesn't catch it.
-    # S287 — retired at plans/083 phase 2: dynamic Function bodies default to
-    # sloppy (compile_function sets `is_strict = false`, parse_directives can
-    # raise it back), and indirect-eval inherits strictness via caller_is_strict
-    # (compile_eval) instead of being unconditionally strict. So `var eval;`
-    # and `arguments = 42;` are no longer compile-time SyntaxErrors.
-    # Indirect-eval tests re-skipped in scripts/run_test262.py point at the
-    # next blocker (with-runtime, Phase 4).
-    # C7a — Function constructor strict-only failures. The engine compiles all
-    # code as strict (no sloppy mode), so these ES5/Sputnik-era tests asserting
-    # sloppy-mode-only behavior cannot pass by design. Unlike the noStrict-flag
-    # filter above (which catches `flags: [noStrict]`), these specific tests
-    # lack the noStrict metadata but still require non-strict semantics.
-    #   T6 — `new Function(null, body)` expects SyntaxError (null param name is
-    #        a strict-mode Identifier exclusion); engine accepts "null" as
-    #        IdentifierName, so the constructor succeeds.
-    #   T8 — `f() === this` where f is `new Function(undefined, "return this;")`;
-    #        a strict-only engine produces strict bodies, so f() returns
-    #        undefined, but the test's caller is non-strict where top-level
-    #        `this` is the global object.
-    # F2 — Function.call(mars, body) ES5 §15.3.1 — thisArg must be ignored AND
-    # the resulting function's body must execute in sloppy mode so that `this`
-    # inside `f()` falls back to the global object. The engine is strict-only
-    # so every Function()-constructed body becomes strict, where `f()` leaves
-    # `this` undefined and `this.color` / `this.godname` throw TypeError.
-    # F2b — Sputnik-era Function-constructor [[Call]] tests that exercise the
-    # same sloppy-mode `this` substitution as F2 but via the constructor body
-    # directly. The bodies do `this.y = N;` then assert `y === N` at the call
-    # site; strict-only constructor bodies make `this` undefined so `this.y = N`
-    # throws TypeError. Unsatisfiable while strict-only.
-    # F4 — function-code sloppy-mode tests. The engine is strict-only; these
-    # ES5/Sputnik-era tests depend on `var`-shadowed-formal-parameter bindings
-    # (allowed in sloppy mode, where `var x` inside `function f(x)` preserves
-    # the parameter binding). Accessor-getter `this` on primitive receivers is
-    # spec-correct in the strict-only engine (the getter receives the
-    # primitive, ES5 §10.4.3), and 10.4.3-1-103's `==` assertions pass either
-    # way, so only the var-shadowing test stays here.
-    # D1 — Date constructor Sputnik month-rollover tests assert pre-epoch and
-    # near-epoch month-overflow behavior (e.g. new Date(1899, 12) === new
-    # Date(1900, 0)). The engine's date_utc_to_ms correctly handles month
-    # floor-division for ≥12, but the tests use the
-    # `actualMs - getTimezoneOffset()*60000` harness which assumes an exact
-    # whole-minute LMT offset. Modern tzdata (e.g. tzdata2024+) reports LMT
-    # for pre-1900 dates with non-zero seconds (e.g. São Paulo is -3:06:28
-    # not -3:06:00), producing a 28-second mismatch on the assertion that
-    # V8/SpiderMonkey themselves fail in the same environments. The engine's
-    # underlying arithmetic matches Node.js exactly — verified — so this is
-    # a tzdata-version sensitivity, not a runtime bug.
     # Fixed-width BigInt (plan 056: int128, ~±1.7e38). These tests contain
     # decimal/hex/binary BigInt literals whose magnitude exceeds 2**127,
     # which this engine correctly rejects as a SyntaxError at parse time —
@@ -429,42 +311,8 @@ SKIP_FILES = {
     "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
     # staging/sm/strict — SpiderMonkey's own strict-mode suite, donated to
     # test262 in 2024 and still uncurated (its front-matter is `esid: pending`).
-    #
-    # These call testLenientAndStrict(code, lenient_pred, strict_pred) from
-    # harness/sm/non262-strict-shell.js, which evaluates `code` twice: once bare
-    # and once with "'use strict'; " prepended, requiring BOTH predicates to
-    # hold. In a strict-only engine the bare evaluation is already strict, so
-    # lenient_pred is handed strict behavior and fails wherever the two modes
-    # differ -- e.g. 11.4.1 asserts `delete x;` PARSES in sloppy mode and is a
-    # SyntaxError in strict; this engine correctly rejects both. The engine is
-    # right and the test cannot pass, exactly like the noStrict family above.
-    #
-    # Listed file by file rather than skipped by directory or by use of the
-    # helper: 14 OTHER tests in this same directory use testLenientAndStrict
-    # too, and pass, because their two predicates agree (e.g. 11.3.1). Every
-    # file below was checked to have no such agreeing pair -- each of its
-    # assertions expects sloppy and strict to differ.
-    "staging/sm/strict/10.4.2.js",
-    "staging/sm/strict/10.6.js",
-    "staging/sm/strict/11.4.1.js",
-    "staging/sm/strict/12.10.1.js",
-    "staging/sm/strict/13.1.js",
-    "staging/sm/strict/15.10.7.js",
-    "staging/sm/strict/15.3.5.1.js",
-    "staging/sm/strict/15.3.5.2.js",
-    "staging/sm/strict/15.4.4.12.js",
-    "staging/sm/strict/15.4.4.9.js",
-    "staging/sm/strict/15.5.5.1.js",
-    "staging/sm/strict/15.5.5.2.js",
-    "staging/sm/strict/8.12.5.js",
-    "staging/sm/strict/8.12.7-2.js",
-    "staging/sm/strict/8.12.7.js",
-    "staging/sm/strict/8.7.2.js",
-    "staging/sm/strict/B.1.1.js",
-    "staging/sm/strict/B.1.2.js",
-    "staging/sm/strict/eval-variable-environment.js",
-    "staging/sm/strict/regress-532254.js",
-    "staging/sm/strict/strict-function-statements.js",
+    # Un-skipped with plans/083: sloppy and strict now coexist, so the
+    # testLenientAndStrict helper's dual evaluation observes both modes.
 }
 
 # ---------------------------------------------------------------------------
@@ -582,10 +430,11 @@ def skip_reason(path, es5_only=False):
     # Each cluster of failures maps to one of the deferred phase-3 items;
     # unskip step by step as those items land. NOSTRICT_RUN_GLOBS keeps
     # running those mode-independent tests regardless.
-    if FLAG_NOSTRICT_RE.search(header) and not any(
-        fnmatch.fnmatch(rel, pat) for pat in NOSTRICT_RUN_GLOBS
-    ):
-        return "noStrict (strict-only engine — re-enable per Phase 3 sub-step)"
+    # Unskipped: sloppy mode enabled.
+    # if FLAG_NOSTRICT_RE.search(header) and not any(
+    #     fnmatch.fnmatch(rel, pat) for pat in NOSTRICT_RUN_GLOBS
+    # ):
+    #     return "noStrict (strict-only engine — re-enable per Phase 3 sub-step)"
     # CanBlockIsFalse tests assume Atomics.wait throws because the agent cannot
     # suspend. This engine's single main agent has AgentCanSuspend = true (like
     # QuickJS/V8's shell), so wait returns "timed-out"/"not-equal" instead —
