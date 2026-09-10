@@ -6321,7 +6321,14 @@ fn TVal? Vm.run(Vm* vm) {
                     if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: PUTLEX_C"); }
                     $endif
 
-                    ds.act.lex_env.bindings.put_prop(key, *ra, hobject::PROP_FLAGS_EC, vm.heap);
+                    // Like env_declare_lex, but non-writable: CreateImmutable
+                    // -style const binding, non-configurable so `delete x`
+                    // reports false (§9.1.1.1.7) and immut_nonstrict stays
+                    // clear so any assignment throws.
+                    hobject::PropFlags const_flags = {
+                        .writable = false, .enumerable = true, .configurable = false
+                    };
+                    ds.act.lex_env.bindings.put_prop(key, *ra, const_flags, vm.heap);
                 }
             }
             continue;

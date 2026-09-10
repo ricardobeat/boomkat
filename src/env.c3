@@ -470,8 +470,12 @@ $endif
 // ============================================================================
 
 // Declares a lexical binding in `lex_env` without traversing parent scopes.
+// A lexical binding is created with CreateMutableBinding(N, false), so the
+// property is non-configurable: `delete x` on a let/const/catch binding must
+// report false (§9.1.1.1.7 DeleteBinding returns false for a non-deletable
+// binding), not remove it.
 fn bool env_declare_lex(EnvRecord* lex_env, void* key, TVal val) @inline {
-    return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, lex_env.heap);
+    return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WE, lex_env.heap);
 }
 
 // Checks if a binding exists in the lexical environment chain.
