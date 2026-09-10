@@ -448,7 +448,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // only engine), which is the helper's default.
     if (!self.last_was_member() && self.last_lhs_name_len > 0
         && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                              self.is_async || self.is_module || self.forbid_await, strict: self.is_strict)) {
+                              self.is_async || self.is_module || self.forbid_await, self.is_user_generator || self.forbid_yield, strict: self.is_strict)) {
         return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
     }
 
@@ -1325,11 +1325,12 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         }
         // `[~In]`: inside a C-style for head an unparenthesized `in` would be
         // ambiguous with a for-in head, so the grammar simply has no
-        // production for it (§14.7.4). Reject rather than break — unlike ASI
-        // there is no shorter parse to fall back to, the next token in the
-        // head must be `;`.
+        // production for it (§14.7.4). Break out of the binary loop and let
+        // the caller decide: a for-in head in sloppy mode consumes the `in`
+        // (Annex B.3.1), while every C-style continuation runs into the
+        // head's `expect(';')` and reports the SyntaxError that way.
         if (tt == TokenType.IN && no_in) {
-            return self.fail("'in' is not allowed in a for-statement head")~;
+            break;
         }
         // Record that at least one binary operator was consumed. The value of
         // this expression is then the operator's result — never a Reference —
@@ -1957,19 +1958,25 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                     }
                 }
                 // Register-resident local (parameter, let, const, var): the
-                // binding's home register is op_del. Walk the scope stack for
-                // any VAR/LET/CONST entry whose reg matches op_del and reuse
-                // its name constant (add_string_constant interns idempotently).
+                // binding's home register is op_del. A present binding's
+                // delete is Annex B.3.2's plain `false`, known at compile
+                // time — no env walk needed, which also covers the
+                // register-resident case the runtime walk cannot see.
                 if (self.scope_depth > 0) {
+                    bool resolved_local = false;
                     for (uint i = self.scope_depth; i > 0; i--) {
                         ScopeEntry* e = &self.scope_stack[i - 1];
                         if (e.reg == (ushort)op_del
                             && (e.kind == ScopeKind.VAR
                                 || e.kind == ScopeKind.LET
                                 || e.kind == ScopeKind.CONST)) {
-                            name_idx = self.add_string_constant(e.name);
+                            resolved_local = true;
                             break;
                         }
+                    }
+                    if (resolved_local) {
+                        self.emit_abc(Opcode.LDFALSE, (uint)del_result, 0, 0);
+                        return del_result;
                     }
                 }
                 self.emit_a_bc(Opcode.DELVAR, (uint)del_result, name_idx);
@@ -2001,7 +2008,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member() && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                      self.is_async || self.is_module || self.forbid_await, strict: self.is_strict)) {
+                                      self.is_async || self.is_module || self.forbid_await, self.is_user_generator || self.forbid_yield, strict: self.is_strict)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // postfix_expr leaves self.last_was_getvar / self.last_was_member()
@@ -2100,7 +2107,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member() && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                      self.is_async || self.is_module || self.forbid_await, strict: self.is_strict)) {
+                                      self.is_async || self.is_module || self.forbid_await, self.is_user_generator || self.forbid_yield, strict: self.is_strict)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // See INC case above for why member takes priority over getvar.
@@ -2299,7 +2306,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // generator contexts; see the matching check in assignment_expr.
         if (!self.last_was_member() && self.last_lhs_name_len > 0
             && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                  self.is_async || self.is_module || self.forbid_await, strict: self.is_strict)) {
+                                  self.is_async || self.is_module || self.forbid_await, self.is_user_generator || self.forbid_yield, strict: self.is_strict)) {
             return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
         }
     }
@@ -4618,6 +4625,34 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
         case TokenType.YIELD:
         {
+            bool yield_is_ident = !self.is_strict && !self.is_user_generator && !self.forbid_yield;
+            if (yield_is_ident) {
+                Token id_tok = self.advance(true)!;
+                if (!reject_arrow_head && self.check_arrow()) {
+                    char[][1] params_arr;
+                    params_arr[0] = id_tok.str_value;
+                    uint ident_arrow_src = self.lexer.token_start;
+                    return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
+                }
+                self.callee_is_eval = str_eq(id_tok.str_value, "eval");
+                if (!self.is_global) {
+                    if (try var_reg = self.resolve_var(id_tok.str_value)) {
+                        self.last_was_getvar = false;
+                        self.last_was_local_var = true;
+                        self.last_local_var_reg = var_reg;
+                        self.save_lhs_ident_name(id_tok.str_value);
+                        return var_reg;
+                    }
+                }
+                self.note_arguments_reference(id_tok.str_value)!;
+                uint name_idx = self.add_string_constant(id_tok.str_value);
+                ushort id_reg = self.alloc_reg();
+                self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
+                self.last_was_getvar = true;
+                self.last_getvar_name_idx = name_idx;
+                self.save_lhs_ident_name(id_tok.str_value);
+                return id_reg;
+            }
             if (!self.is_user_generator) {
                 // `yield` is reserved in all strict-mode code (ES2024
                 // §13.1.1) and this engine is strict-only, so outside a
@@ -5520,10 +5555,8 @@ fn ushort? CompilerContext.object_literal(&self) {
                         && !str_eq(key_tok.str_value, "true")
                         && !str_eq(key_tok.str_value, "false")
                         && !str_eq(key_tok.str_value, "null"))
-                    || (key_tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await);
-                // `yield` is absent: it is reserved in all strict code, so
-                // `{ yield }` shorthand is a SyntaxError. `{ yield: v }` and
-                // `{ yield(){} }` use the property-name path, not this one.
+                    || (key_tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await)
+                    || (key_tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield);
 
                 // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
                 // Generator-method shorthand forbids the getter/setter shape, `*get` / `*set`

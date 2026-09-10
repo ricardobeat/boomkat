@@ -146,6 +146,13 @@ struct SeenParams {
     // caller that forgets is permissive rather than wrongly rejecting -- the
     // duplicate-name check below is unconditional either way.
     bool strict;
+    // Strictness used for the restricted-name check (eval/arguments/let/static).
+    // Tracks the surrounding strictness, NOT the force_strict_dupcheck override
+    // that flips `strict` to true for object/class methods and named-export
+    // methods: those grammars forbid duplicate BoundNames (UniqueFormalParameters)
+    // but otherwise inherit the surrounding scope's strictness, so a sloppy
+    // object method still accepts `arguments` as a parameter name.
+    bool restricted_strict;
     // True once any parameter is non-simple: default value (`a = 1`), rest
     // (`...a`), or destructuring (`{a}` / `[a]`). Annex B.3.1 lets sloppy mode
     // accept duplicate simple parameter names, but ES2017 §14.1.2 (and earlier
@@ -188,7 +195,7 @@ fn bool SeenParams.contains(&self, char[] name) {
 // weakens duplicate detection for pathological parameter lists; it never
 // accepts a restricted name.
 fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
-    if (!allow_restricted && is_restricted_name(name, strict: self.strict)) return COMPILE_ERROR~;
+    if (!allow_restricted && is_restricted_name(name, strict: self.restricted_strict)) return COMPILE_ERROR~;
     // Phase 1 (plans/083): sloppy mode allows duplicate simple parameter
     // names (Annex B.3.1). But ES2017 §14.1.2 forbids duplicates in BOTH
     // sloppy and strict when any parameter is non-simple (default, rest,
@@ -1680,7 +1687,30 @@ fn void CompilerContext.skip_expression(&self) {
 // a register slot, an `undefined` initial value, and the env declaration.
 // Shared by the plain-identifier declarator path and the binding-pattern
 // walker, which must produce byte-identical bindings for their leaf names.
+//
+// Eval code only: record the var name in eval_var_coll_idxs so the body-side
+// var_declaration can recognise a re-declared `var x;` as already-instantiated
+// and skip the redundant DECLVAR_HOIST (which would otherwise re-create a
+// binding the body's `delete x;` just removed, see §18.2.1.2 step 16).
+fn void CompilerContext.record_eval_var_name(&self, char[] raw_name) {
+    HString* hs = ((Heap*)self.heap).str_intern(raw_name);
+    uint ni = self.add_string_constant(hs.get_data());
+    for (uint k = 0; k < self.eval_var_coll_count; k++) {
+        if (self.eval_var_coll_idxs[k] == ni) return;
+    }
+    if (self.eval_var_coll_count >= self.eval_var_coll_cap) {
+        uint new_cap = self.eval_var_coll_cap == 0 ? 16 : self.eval_var_coll_cap * 2;
+        void* pn = ((Heap*)self.heap).realloc_func(((Heap*)self.heap).heap_udata,
+            self.eval_var_coll_idxs, (usz)(new_cap * 4));
+        if (pn == null) return;
+        self.eval_var_coll_idxs = (uint*)pn;
+        self.eval_var_coll_cap = new_cap;
+    }
+    self.eval_var_coll_idxs[self.eval_var_coll_count++] = ni;
+}
+
 fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global, bool b33_record = false) {
+    if (self.eval_mode) { self.record_eval_var_name(raw_name); }
     // Intern now: raw_name may borrow the lexer's shared ident_buf scratch
     // (escaped identifier), which the next declarator in this statement (or a
     // later var statement in the same hoisting pass) will overwrite.
@@ -3257,6 +3287,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams seen_params;
     seen_params.strict = self.is_strict;
+    seen_params.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] destruct_binds;
@@ -3921,6 +3952,11 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // method), so reject duplicates even in a sloppy outer context. Plain
     // FunctionExpression bodies keep Annex B.3.1's sloppy exemption.
     inner_seen.strict = force_strict_dupcheck || self.is_strict;
+    // Object/class methods and named-export methods use UniqueFormalParameters
+    // (force_strict_dupcheck=true) for duplicate detection, but their
+    // restricted-name check tracks only the surrounding scope's strictness:
+    // a sloppy object method still accepts `arguments` as a parameter name.
+    inner_seen.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] inner_destruct_binds;
@@ -4743,6 +4779,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // duplicate-name check on every arrow parameter list, in sloppy and strict
     // alike.
     arrow_seen.strict = true;
+    // ArrowParameters also accept `arguments`/`eval` in sloppy contexts
+    // (ES2024 §13.3.1); only the duplicate-name check stays strict.
+    arrow_seen.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] arrow_destruct_binds;

@@ -776,7 +776,7 @@ fn bool CompilerContext.prologue_has_shrunk_directive(&self, uint base) {
     if (total > 16) total = 16;
     for (uint k = 0; k < total; k++) {
         uint i = (base + k) % 16;
-        if (self.prologue_val_lens[i] < self.prologue_raw_lens[i]) return true;
+        if (self.prologue_octal[i]) return true;
     }
     return false;
 }
@@ -790,12 +790,13 @@ fn void? CompilerContext.parse_directives(&self) {
         }
 
         Token str_tok = self.advance()!;
-        // Record this directive's raw vs decoded lengths for the
-        // post-"use strict" check in block().
-        usz draw = str_tok.raw_value.len > 0 ? str_tok.raw_value.len : str_tok.str_value.len;
+        // Record this directive for the post-"use strict" check in block():
+        // a directive whose str_value shrank from raw_value carried an octal
+        // escape, which would be a SyntaxError under strict.
+        bool shrunk = str_tok.raw_value.len > 0
+            && str_tok.str_value.len < str_tok.raw_value.len;
         uint pslot = self.prologue_dir_count % 16;
-        self.prologue_raw_lens[pslot] = draw;
-        self.prologue_val_lens[pslot] = str_tok.str_value.len;
+        self.prologue_octal[pslot] = shrunk;
         self.prologue_dir_count++;
 
         bool has_semicolon = self.check(TokenType.SEMICOLON);
@@ -2302,8 +2303,22 @@ fn void? CompilerContext.var_declaration(&self) {
 
             // Store in the environment so inner functions can find it
             // var → var_env (function-scoped), let/const → lex_env (block-scoped)
-            // For already-declared vars, only emit store if there's an initializer
-            if (!already_declared || has_init) {
+            // For already-declared vars, only emit store if there's an initializer.
+            //
+            // Eval body: EvalDeclarationInstantiation already declared every
+            // VarDeclaredName once before the body runs (ES2024 §18.2.1.2), so
+            // the body's own `var x;` source statement is a no-op — emitting
+            // DECLVAR_HOIST here would re-create a binding the body's `delete x`
+            // just removed, leaving `x` bound to undefined and silently turning
+            // what should be a ReferenceError into a successful read.
+            bool eval_hoisted = false;
+            if (!already_declared && !is_lexical && self.eval_mode && self.is_global) {
+                uint probe = self.add_string_constant(name_tok.str_value);
+                for (uint k = 0; k < self.eval_var_coll_count; k++) {
+                    if (self.eval_var_coll_idxs[k] == probe) { eval_hoisted = true; break; }
+                }
+            }
+            if ((!already_declared && !eval_hoisted) || has_init) {
                 uint name_idx = self.add_string_constant(name_tok.str_value);
                 bool slot_global = self.is_global && !is_lexical
                     && self.is_slot_global_name_index(name_idx);
@@ -7126,6 +7141,10 @@ fn void? CompilerContext.check_pattern_bound_names_unique(&self, DestructBind[] 
     // SeenParams always enforces the duplicate-name check, in sloppy and
     // strict alike.
     seen.strict = true;
+    // The restricted-name check (eval/arguments/let) follows the surrounding
+    // strictness; sloppy catch parameters accept `eval`/`arguments` per
+    // Annex B.3.1.
+    seen.restricted_strict = self.is_strict;
     seen.declare_destructured(binds, count)!;
 }
 

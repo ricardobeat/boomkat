@@ -361,7 +361,12 @@ fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
 // exists (CanDeclareGlobalVar steps 4-5).
 fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare) @inline {
     Heap* h = env.heap;
-    if (is_global && is_bare && env.bindings.has_prop(key, h)) {
+    // An existing binding stays untouched: CreateGlobalVarBinding steps 4-5
+    // for the global object, and an initializer-less eval-code `var` is a
+    // redundant re-stub (ES2024 §18.2.1.2). is_bare marks exactly the
+    // initializer-less stubs; DECLVAR (a per-iteration value write, e.g. a
+    // for-of head) must keep writing even when the binding exists.
+    if (is_bare && env.bindings.has_prop(key, h) && (is_global || is_eval_code)) {
         return true;
     }
     hobject::PropFlags flags = !is_global ? hobject::PROP_FLAGS_WEC
@@ -387,18 +392,21 @@ fn bool env_can_declare_global_func(EnvRecord* env, void* key) @inline {
 // Instantiates a top-level FunctionDeclaration binding
 // (CreateGlobalFunctionBinding, ES2024 §9.1.1.4.18).
 //
-// In non-global scopes this creates an ordinary WEC binding. On the global
-// object, absent or configurable properties receive { value, W, E, C: D }
-// (where D is true for eval code), while existing non-configurable properties
-// update only their value and retain existing attributes.
+// Annex B.3.3 + ES2024 §10.2.1.1.6: an ordinary FunctionDeclaration inside a
+// function body is bound with DeletableBinding=false in BOTH strict and
+// sloppy, so a sloppy `delete f` for an inner declaration returns false.
+//
+// Eval-created bindings deviate: ES2024 §18.2.1.2 step 15 issues
+// CreateMutableBinding(N, true) for each FunctionDeclaration inside an eval
+// body, so the binding is configurable and a sloppy `delete f` actually
+// removes it. The runtime distinguishes the two via the `is_eval_code`
+// flag (the CF's own FuncFlags.is_eval), which the opcode handler passes
+// through.
 fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
     Heap* h = env.heap;
     if (!is_global) {
-        // Function declarations inside a function body are bound with
-        // DeletableBinding=false in BOTH strict and sloppy (Annex B.3.3
-        // Instantiation + §10.2.1.1.6 CreateMutableBinding), so a sloppy
-        // \`delete f\` returns false for an inner function declaration.
-        return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WE, h);
+        hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
+        return env.bindings.put_prop(key, val, flags, h);
     }
     int idx = env.bindings.find_prop_idx(key, h);
     hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
@@ -415,8 +423,12 @@ fn bool env_declare_nonenum(EnvRecord* env, void* key, TVal val) @inline {
 }
 
 // Declares an immutable global constant: undefined, NaN, Infinity (ES5 §15.1).
+// The immut_nonstrict bit gives these ordinary-property semantics on
+// assignment: sloppy code silently drops the write, strict throws TypeError.
 fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
-    return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_NNC, env.heap);
+    hobject::PropFlags flags = hobject::PROP_FLAGS_NNC;
+    flags.immut_nonstrict = true;
+    return env.bindings.put_prop(key, val, flags, env.heap);
 }
 // Declares an accessor binding in this environment alone, used for live module
 // imports (accessor_value holds a boxed getter/setter pair).
@@ -509,7 +521,11 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
 
 // Stores `val` in the nearest existing lexical binding matching `key`.
 // Returns 1 on success, 0 if unbound (fall back to var environment),
-// -1 on const assignment violation, or -2 on TDZ access (when check_tdz is true).
+// -1 on a strict-immutable (const) assignment violation, -2 on TDZ access
+// (when check_tdz is true), or -4 on a non-strict-immutable binding (a named
+// function expression's own name): the caller decides by the ASSIGNING
+// code's strictness whether to throw or silently drop (ES2024 §9.1.1.1.5
+// step 5.2 via step 2's strict-binding promotion).
 //
 // For `with` environments (`is_with == true`) the existing-binding check
 // walks the prototype chain; on a hit the value goes through put_prop, which
@@ -568,7 +584,7 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
                 return -2;
             }
             if (!cur.bindings.get_prop_flags((uint)idx, h).writable) {
-                return -1;
+                return cur.bindings.get_prop_flags((uint)idx, h).immut_nonstrict ? -4 : -1;
             }
             if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
             *pv = val;
