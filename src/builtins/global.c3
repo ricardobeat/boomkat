@@ -1067,6 +1067,64 @@ fn void builtin_eval(BuiltinContext* ctx) {
         } else {
             (*func_obj.extra_ptr()).func.lex_env = lex_env_raw;
         }
+
+        // ES2024 §18.2.1.2 step 3.4: a sloppy eval's var-declared name that
+        // already has a binding in any enclosing declarative or function-
+        // scope environment between the eval's lexical environment and its
+        // variable environment is a SyntaxError. The chain holds, e.g., a
+        // non-simple parameter list's parameter scope (a following
+        // parameter named `arguments` colliding with `eval("var
+        // arguments")`) or an enclosing block's `let`. Object environment
+        // records (the global object) are exempt; the walk stops at the
+        // eval's own var env, but the var env itself is checked too: a
+        // non-simple parameter scope installs `arguments` there (§15.2.1
+        // step 19) before default params run, and a default eval that
+        // declares `arguments` collides with it.
+        if (func.eval_var_count > 0) {
+            EnvRecord* walker = lex_env_for_eval;
+            bool collision = false;
+            while (walker != null && !collision) {
+                // Skip the global object env (sloppy direct eval's var_env,
+                // which is the global object record): step 3.4 only flags
+                // declarative/function-scope bindings, not properties of
+                // the global object. Skip with envs: their bindings object
+                // is user-controlled, and a `var` colliding with one of its
+                // properties (e.g. `with (o) eval('var x')` where o.x is
+                // set) is not a SyntaxError.
+                bool is_global_obj = walker == ctx.global_env;
+                if (!walker.is_with && walker.bindings != null && !is_global_obj) {
+                    for (uint vi = 0; vi < func.eval_var_count; vi++) {
+                        TVal nv = func.constants[func.eval_var_idxs[vi]];
+                        if (nv.is_string()
+                            && walker.bindings.has_prop(nv.get_heapptr(), ctx.heap)) {
+                            collision = true;
+                            break;
+                        }
+                    }
+                }
+                if (walker == var_env_for_eval) break;
+                walker = walker.parent;
+            }
+            if (collision) {
+                HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
+                if (try err = err_raw) {
+                    err.prototype = ctx.heap.syntax_err_proto;
+                    HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
+                    HString* msg_str = builtin_intern_string(ctx.heap,
+                        "Lexical declaration conflicts with a var declaration in eval code");
+                    TVal msg_tv;
+                    msg_tv.set_string(msg_str);
+                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
+                    TVal err_tv;
+                    err_tv.set_object(err);
+                    ctx.throw_value.set_object(err_tv.get_heapptr());
+                } else {
+                    ctx.throw_value.set_undefined();
+                }
+                ctx.should_throw = true;
+                return;
+            }
+        }
     }
 
     // Replace the callee slot with the compiled function HObject
