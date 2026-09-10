@@ -1623,6 +1623,7 @@ fn void Heap.free_compiled_funcs(&self) {
         // Private-name snapshot from compiler/context.c3 finish(), tracked when
         // a function used direct eval and inherited names from a parent class.
         if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
+        if (cf.eval_var_idxs != null) { self.free_func(self.heap_udata, cf.eval_var_idxs); }
         // The function's name, source filename, and retained source text,
         // copied out of the compiler's scratch buffers so they outlive the
         // compile. All three come from `mem` rather than the heap allocator.

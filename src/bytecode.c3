@@ -1576,6 +1576,14 @@ struct CompiledFunction {
     // bytecode.c3 does not import. The compiler and builtin_eval both cast.
     void*           eval_private_names;
     uint            eval_private_name_count;
+    // Sloppy-eval var-declaration names, as constant-pool indices into this
+    // function's own pool. builtin_eval walks the eval's lexical-parent
+    // chain with them to enforce ES2024 §18.2.1.2 step 3.4: a `var` name
+    // that already has a binding in an intermediate declarative environment
+    // (a `let`, a parameter of a non-simple parameter list, ...) is a
+    // SyntaxError. Null for non-eval functions.
+    uint*           eval_var_idxs;
+    uint            eval_var_count;
     // HString* of this function's enclosing class's `__super__ binding name
     // (e.g. "__super__0"; each class in a scope gets a unique number).
     // Two readers: builtin_eval re-interns it into the eval context's

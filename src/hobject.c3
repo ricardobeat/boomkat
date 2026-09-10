@@ -313,6 +313,11 @@ bitstruct PropFlags : char {
     // When true the property is an accessor (getter/setter pair) rather
     // than a data property.
     bool is_accessor  : 3;
+    // Non-writable binding created with CreateImmutableBinding(N, false)
+    // (ES2024 §15.2.5): a named function expression's own name. Assignment
+    // from sloppy code silently no-ops; from strict code it throws. Ordinary
+    // object properties never set this.
+    bool immut_nonstrict : 4;
 }
 
 // The flags a plain assignment creates: writable, enumerable, configurable.
@@ -2955,7 +2960,11 @@ struct PropProtoResult {
 // whether the slot is an accessor, and the object that owns the slot —
 // the latter is what `with`-env reads pass as `this` to a getter.
 fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) {
-    PropProtoResult result = { .found = false, .value = {0}, .is_accessor = false, .owner = null };
+    PropProtoResult result;
+    result.found = false;
+    result.value = types::make_undefined();
+    result.is_accessor = false;
+    result.owner = null;
     HObject* cur = self;
     uint depth = 0;
 
