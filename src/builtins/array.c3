@@ -3030,20 +3030,17 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
         return false;
     }
 
-    // ES2022 §10.4.2.1 ArraySetLength step 3.a: if the exotic "length" is
-    // non-writable and the new length differs from the current length,
-    // return false (callers translate to TypeError). The prop-table branch
-    // below handles the case where "length" is a named property; this
-    // guards the ARRAY-only path where length lives in array_len_ptr and
-    // no named property exists (e.g. arrays produced by new Array(n) where
-    // the descriptor {writable:false} or freeze never materialised a
-    // prop-table entry).
+    // The exotic "length" is a non-writable own data property, so
+    // OrdinarySetWithOwnDescriptor step 2.a rejects the [[Set]] even when
+    // the new value equals the current length (callers translate the false
+    // to TypeError). The prop-table branch below handles the case where
+    // "length" is a named property; this guards the ARRAY-only path where
+    // length lives in array_len_ptr and no named property exists (e.g.
+    // arrays produced by new Array(n) where the descriptor {writable:false}
+    // or freeze never materialised a prop-table entry).
     if (obj.get_class() == hobject::ObjClass.ARRAY && !obj.flags.array_len_writable) {
-        uint cur_len = *obj.array_len_ptr();
-        if (len_val != (ulong)cur_len) {
-            arr_throw_type_error(ctx, "Cannot assign to read-only property 'length'");
-            return false;
-        }
+        arr_throw_type_error(ctx, "Cannot assign to read-only property 'length'");
+        return false;
     }
 
     TVal len_tv;
