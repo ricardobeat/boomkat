@@ -18,6 +18,45 @@ import std::math;
 // inlined directly in Vm.run (src/vm/vm_execute.c3) to avoid per-instruction
 // call overhead; only the loop-bearing unary handlers live out-of-line here.
 // ============================================================================
+
+// Computes old ± 1 into *out without writing any binding slot, for the sloppy
+// silent-drop of non-writable bindings (a named fnexpr's own name, the
+// built-in global immutables). The write is dropped but the expression still
+// evaluates to the incremented value (ES2024 §9.1.1.1.5 step 5.2).
+fn TVal? incdec_compute_no_write(Dispatch* ds, TVal old_val, bool is_inc, TVal* out) {
+    Vm* vm = ds.vm;
+    if (old_val.is_fastint()) {
+        long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
+        if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+            out.set_fastint(v);
+        } else {
+            out.set_number((double)v);
+        }
+    } else if (old_val.is_bigint()) {
+        hbigint::HBigInt*? nr = bigint_step(vm.heap, old_val.get_bigint(), is_inc);
+        if (catch nr) {
+            vm_set_range_error(vm, "BigInt is too large to allocate");
+            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return vm_uncaught_error(vm, &vm.throw_value);
+            }
+            return (TVal){};
+        }
+        if (!vm_set_reg_bigint(vm, out, nr)) {
+            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return vm_uncaught_error(vm, &vm.throw_value);
+            }
+            return (TVal){};
+        }
+    } else {
+        double d = vm_to_number(vm, &old_val);
+        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return vm_uncaught_error(vm, &vm.throw_value);
+        }
+        out.set_number(d + (is_inc ? 1.0 : -1.0));
+    }
+    return (TVal){};
+}
+
 fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) @inline {
     Vm* vm = ds.vm;
     switch (op) {
@@ -299,6 +338,15 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             return (TVal){};
                         }
                         if (!cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).writable) {
+                            hobject::PropFlags nfl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
+                            bool act_strict = ds.act.func != null
+                                && ((CompiledFunction*)ds.act.func).is_strict();
+                            if (nfl.immut_nonstrict && !act_strict) {
+                                if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
+                                    return e~;
+                                }
+                                return (TVal){};
+                            }
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
@@ -365,6 +413,15 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         return (TVal){};
                     }
                     if (!cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).writable) {
+                        hobject::PropFlags nfl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
+                        bool act_strict = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (nfl.immut_nonstrict && !act_strict) {
+                            if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
+                                return e~;
+                            }
+                            return (TVal){};
+                        }
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
@@ -542,6 +599,14 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                     hobject::PropFlags fl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
                     if (!fl.writable) {
+                        bool act_strict = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (fl.immut_nonstrict && !act_strict) {
+                            if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
+                                return e~;
+                            }
+                            return (TVal){};
+                        }
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
