@@ -2201,30 +2201,13 @@ fn void? CompilerContext.var_declaration(&self) {
             self.object_destructure(kind, is_lexical, is_const)!;
             self.try_skip_ts_type_annotation()!;
         } else {
-            // Per ES2024 §13.3.1, BindingIdentifier is an Identifier or
-            // `await` in a non-module, non-async context. We're strict-only,
-            // so `yield` is always reserved and never a binding name.
-            Token name_tok;
-            // `await` reaches here only when the context already permits it as
-            // an identifier, so the context-blind is_restricted_name check
-            // below must not re-reject it, it applies to the plain Identifier
-            // path only. `await` is an identifier only outside a module AND
-            // outside an async function/arrow (§13.1.1).
-            bool ctx_keyword_ident = false;
-            if (next == TokenType.IDENTIFIER) {
-                name_tok = self.advance()!;
-            } else if (self.await_is_identifier(next)) {
-                // BindingIdentifier position: an escaped `await` is a plain
-                // name, not the terminal, so consume it as an IdentifierName.
-                name_tok = self.advance(true)!;
-                ctx_keyword_ident = true;
-            } else {
-                self.record_error("expected a binding identifier after the declaration keyword");
-                return COMPILE_ERROR~;
-            }
-            if (!ctx_keyword_ident && is_restricted_name(name_tok.str_value, strict: self.is_strict)) {
-                return self.fail("reserved word cannot be used as a binding identifier")~;
-            }
+            // ES2024 §13.3.1: BindingIdentifier is an Identifier, or one of
+            // the contextual keyword spellings the enclosing grammar permits
+            // (`await` outside a module/async context, `yield` outside strict
+            // code and generator bodies, `let` and `static` in sloppy code).
+            // expect_binding_identifier owns that decision, including the
+            // escaped-spelling rules.
+            Token name_tok = self.expect_binding_identifier(is_lexical)!;
             // Intern now: an escaped identifier borrows the lexer's shared
             // ident_buf scratch, which the initializer or a later declarator
             // in this same statement will overwrite. declare_var stores this
@@ -5997,7 +5980,18 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         self.is_constructable = false;
     }
 
+    // The name takes [Yield]/[Await] from the ENCLOSING context, not from the
+    // function being declared, so `function* yield(){}` is legal at the top
+    // level. The flag reset above already restored the enclosing values; the
+    // star match just overwrote them with this function's own, so put them
+    // back for the name parse only.
+    bool gen_here = self.is_generator;
+    bool user_gen_here = self.is_user_generator;
+    self.is_generator = saved_is_generator;
+    self.is_user_generator = saved_is_user_generator;
     Token name_tok = self.expect_binding_identifier()!;
+    self.is_generator = gen_here;
+    self.is_user_generator = user_gen_here;
     // The name is parsed; from here on self.is_async describes the function
     // being compiled, not the enclosing one.
     self.is_async = false;

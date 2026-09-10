@@ -172,6 +172,23 @@ fn Token? CompilerContext.expect_binding_identifier(&self, bool is_lexical_head 
         }
         return tok;
     }
+    // `yield` is an ordinary identifier outside strict code, outside a
+    // generator body, and outside a generator's parameter list ([Yield]
+    // grammar parameter, §13.1.1). `static` is a FutureReservedWord only in
+    // strict code. Both lex as keyword tokens, so they need this path. The
+    // yield test already made the context decision, so it must not be
+    // re-rejected by the context-blind name test (whose yield default
+    // assumes a generator context).
+    if (next == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield) {
+        return self.advance(true)!;
+    }
+    if (next == TokenType.STATIC && !self.is_strict) {
+        Token tok = self.advance(true)!;
+        if (is_restricted_name(tok.str_value, strict: self.is_strict)) {
+            return self.fail("reserved word cannot be used as a binding identifier")~;
+        }
+        return tok;
+    }
     if (self.await_is_identifier(next)) {
         // A BindingIdentifier position wants an Identifier, not the `await`
         // terminal, so an escaped spelling is a plain name here (§5.1.5) —

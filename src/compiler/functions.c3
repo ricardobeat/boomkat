@@ -2524,7 +2524,19 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 self.is_user_generator = true;
             }
 
-            Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
+            // A function name is a BindingIdentifier, so the contextual
+            // keyword spellings (`yield`, `static`, `let`) are valid names
+            // wherever the ENCLOSING context allows them: a generator's own
+            // name takes [Yield] from the enclosing grammar, so
+            // `function* yield(){}` is legal at the top level. saved_gen /
+            // saved_user_gen hold those enclosing values.
+            bool gen_here = self.is_generator;
+            bool user_gen_here = self.is_user_generator;
+            self.is_generator = saved_gen;
+            self.is_user_generator = saved_user_gen;
+            Token name_tok2 = self.expect_binding_identifier()!;
+            self.is_generator = gen_here;
+            self.is_user_generator = user_gen_here;
             // Intern the name now: name_tok2.str_value may be a borrow into
             // the lexer's shared ident_buf scratch (escaped identifiers like
             // `a` decode through the slow path, see scan_identifier),
@@ -3121,7 +3133,19 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                 self.is_user_generator = true;
             }
 
-            Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
+            // A function name is a BindingIdentifier, so the contextual
+            // keyword spellings (`yield`, `static`, `let`) are valid names
+            // wherever the ENCLOSING context allows them: a generator's own
+            // name takes [Yield] from the enclosing grammar, so
+            // `function* yield(){}` is legal at the top level. saved_gen /
+            // saved_user_gen hold those enclosing values.
+            bool gen_here = self.is_generator;
+            bool user_gen_here = self.is_user_generator;
+            self.is_generator = saved_gen;
+            self.is_user_generator = saved_user_gen;
+            Token name_tok2 = self.expect_binding_identifier()!;
+            self.is_generator = gen_here;
+            self.is_user_generator = user_gen_here;
             // Intern the name now: name_tok2.str_value may be a borrow into
             // the lexer's shared ident_buf scratch (escaped identifiers like
             // `a` decode through the slow path, see scan_identifier),
@@ -3401,7 +3425,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                     self.collect_arr_param_binds(destruct_binds[..], &destruct_count, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else {
-                    rest_param = self.expect(TokenType.IDENTIFIER)!;
+                    rest_param = self.expect_binding_identifier()!;
                 }
                 // TypeScript: optional `: T` after rest parameter.
                 self.try_skip_ts_type_annotation()!;
@@ -4068,7 +4092,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                     inner_ctx.collect_arr_param_binds(inner_destruct_binds[..], &inner_destruct_count, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else {
-                    rest_param = inner_ctx.expect(TokenType.IDENTIFIER)!;
+                    rest_param = inner_ctx.expect_binding_identifier()!;
                 }
                 // TypeScript: optional `: T` after rest parameter.
                 inner_ctx.try_skip_ts_type_annotation()!;
@@ -4563,18 +4587,40 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     // an async function, but `(async function await(){})` is not. `yield` is
     // reserved in all strict code and this engine is strict-only, so it is
     // never a function name.
-    if (self.check(TokenType.IDENTIFIER) ||
-        (self.check(TokenType.AWAIT) && !self.is_module && !is_async_expr)) {
-        // BindingIdentifier position: an escaped `await` is a plain name, not
-        // the terminal, so it is consumed as an IdentifierName (§5.1.5).
-        Token name_tok = self.advance(true)!;
-        // The name is a BindingIdentifier, so §13.1.1's restricted names are
-        // rejected. Checked here rather than via expect_binding_identifier
-        // because the name is optional and the `await` branch above has
-        // already made its own enclosing-grammar decision.
-        if (name_tok.type == TokenType.IDENTIFIER && is_restricted_name(name_tok.str_value, strict: self.is_strict)) {
-            return self.fail("reserved word cannot be used as a binding identifier")~;
-        }
+    // A function expression's name is a BindingIdentifier, so the contextual
+    // keyword spellings are usable names wherever the ENCLOSING context
+    // permits them: `(function* yield(){})` is legal at the top level because
+    // the name takes [Yield] from the enclosing grammar, not from the
+    // function being defined. saved_is_user_generator holds that enclosing
+    // value (self.is_user_generator already describes this expression).
+    bool name_is_yield_ident = self.check(TokenType.YIELD) && !self.is_strict
+        && !saved_is_user_generator && !self.forbid_yield;
+    bool name_is_sloppy_ctx_kw = (self.check(TokenType.LET) || self.check(TokenType.STATIC))
+        && !self.is_strict;
+    Token name_tok;
+    bool have_name_tok = false;
+    if (self.check(TokenType.IDENTIFIER) || name_is_yield_ident || name_is_sloppy_ctx_kw) {
+        // BindingIdentifier position. The name takes its [Yield] from the
+        // enclosing context, so the function's own generator flag must not
+        // decide the spelling.
+        bool gen_here = self.is_generator;
+        bool user_gen_here = self.is_user_generator;
+        self.is_generator = saved_is_generator;
+        self.is_user_generator = saved_is_user_generator;
+        name_tok = self.expect_binding_identifier()!;
+        self.is_generator = gen_here;
+        self.is_user_generator = user_gen_here;
+        have_name_tok = true;
+    } else if (self.check(TokenType.AWAIT) && !self.is_module && !is_async_expr) {
+        // The name's [Await] decision is made above from the expression kind,
+        // so expect_binding_identifier must not re-apply the enclosing
+        // context's await_reserved_here (a static block reserves `await`,
+        // yet `(function await(){})` inside one is valid). An escaped `await`
+        // is consumed as an IdentifierName (§5.1.5), hence advance(true).
+        name_tok = self.advance(true)!;
+        have_name_tok = true;
+    }
+    if (have_name_tok) {
         // Intern now: an escaped function-expression name borrows the
         // lexer's shared ident_buf scratch. compile_inner_function below
         // copies `name` into the CompiledFunction only AFTER compiling the
