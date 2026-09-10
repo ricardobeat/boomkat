@@ -207,7 +207,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     bool  caller_forbids_arguments = false,
                                     char[] parent_super_name = {},
                                     char[] parent_static_super_name = {},
-                                    bool caller_is_strict = false) {
+                                    bool caller_is_strict = false,
+                                    bool var_env_is_global = false) {
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
@@ -348,11 +349,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 
     // EvalDeclarationInstantiation must validate every global function/var
     // declaration before creating any binding (ES2015 §18.2.1.2 steps 8/10).
-    // Only non-strict indirect eval uses the global Environment Record as its
-    // varEnv; direct eval and strict indirect eval get a fresh declarative env.
-    // Emit the CanDeclareGlobalFunction/Var checks as a prologue so a failure
-    // is atomic (no earlier declaration from the same eval has leaked yet).
-    if (!is_direct_eval && !ctx.saw_use_strict) {
+    // Only a sloppy eval whose variable environment is the global Environment
+    // Record runs those CanDeclare checks: indirect eval and direct eval from
+    // global code. A direct eval inside a function (or any strict eval, whose
+    // varEnv is a fresh declarative env) does not.
+    if (var_env_is_global && !eval_is_strict) {
         ctx.hoist_global_fn_decls(true)!;
         ctx.hoist_decls(true, true)!;
     }

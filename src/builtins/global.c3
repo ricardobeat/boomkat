@@ -936,6 +936,14 @@ fn void builtin_eval(BuiltinContext* ctx) {
         }
     }
 
+    // EvalDeclarationInstantiation's global CanDeclare checks run only when
+    // the eval's variable environment is the global object record: always for
+    // indirect eval, and for direct eval only when the caller is global code.
+    bool eval_var_env_is_global = true;
+    if (caller_has_direct_eval && precheck_caller != null) {
+        eval_var_env_is_global = precheck_caller.var_env == ctx.global_env;
+    }
+
     // Compile the source string as eval code
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
     defer lex.free_arena();
@@ -957,7 +965,8 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     // prologue says otherwise.
                                                     caller_has_direct_eval &&
                                                         precheck_caller != null &&
-                                                        ((CompiledFunction*)precheck_caller.func).is_strict());
+                                                        ((CompiledFunction*)precheck_caller.func).is_strict(),
+                                                    eval_var_env_is_global);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;
@@ -1068,29 +1077,28 @@ fn void builtin_eval(BuiltinContext* ctx) {
             (*func_obj.extra_ptr()).func.lex_env = lex_env_raw;
         }
 
-        // ES2024 §18.2.1.2 step 3.4: a sloppy eval's var-declared name that
+        // ES2024 §18.2.1.2 step 5.4: a sloppy eval's var-declared name that
         // already has a binding in any enclosing declarative or function-
         // scope environment between the eval's lexical environment and its
         // variable environment is a SyntaxError. The chain holds, e.g., a
         // non-simple parameter list's parameter scope (a following
         // parameter named `arguments` colliding with `eval("var
         // arguments")`) or an enclosing block's `let`. Object environment
-        // records (the global object) are exempt; the walk stops at the
-        // eval's own var env, but the var env itself is checked too: a
-        // non-simple parameter scope installs `arguments` there (§15.2.1
-        // step 19) before default params run, and a default eval that
-        // declares `arguments` collides with it.
+        // records (the global object) are exempt: step 5.4 only flags
+        // declarative/function-scope bindings, not properties of the global
+        // object. So are with envs: their bindings object is user-controlled,
+        // and a `var` colliding with one of its properties (e.g.
+        // `with (o) eval('var x')` where o.x is set) is not a SyntaxError.
+        //
+        // The walk stops BEFORE the variable environment. A var name that
+        // already exists there is re-declared by the SetMutableBinding step
+        // (step 16), not rejected (var-env-var-init-local-exstng.js,
+        // var-env-func-init-local-update.js, global-env-rec-eval.js).
         if (func.eval_var_count > 0) {
             EnvRecord* walker = lex_env_for_eval;
             bool collision = false;
-            while (walker != null && !collision) {
-                // Skip the global object env (sloppy direct eval's var_env,
-                // which is the global object record): step 3.4 only flags
-                // declarative/function-scope bindings, not properties of
-                // the global object. Skip with envs: their bindings object
-                // is user-controlled, and a `var` colliding with one of its
-                // properties (e.g. `with (o) eval('var x')` where o.x is
-                // set) is not a SyntaxError.
+            while (walker != null) {
+                if (walker == var_env_for_eval) break;
                 bool is_global_obj = walker == ctx.global_env;
                 if (!walker.is_with && walker.bindings != null && !is_global_obj) {
                     for (uint vi = 0; vi < func.eval_var_count; vi++) {
@@ -1102,8 +1110,33 @@ fn void builtin_eval(BuiltinContext* ctx) {
                         }
                     }
                 }
-                if (walker == var_env_for_eval) break;
+                if (collision) break;
                 walker = walker.parent;
+            }
+            // A direct eval in a formal parameter list runs against the
+            // enclosing function's parameter scope. A non-arrow function with
+            // a non-simple parameter list binds `arguments` there (ES2024
+            // §10.2.11 step 22.d, the unmapped arguments object), so
+            // `eval("var arguments")` collides (step 5.4). Arrow functions
+            // never bind `arguments`, so theirs does not. The engine keeps its
+            // `arguments` in the parameter thunk's own variable environment,
+            // which is off the lexical chain walked above, so the collision is
+            // detected from the thunk (needs_lex_bridge) plus the enclosing
+            // function's arrow-ness.
+            if (!collision && is_direct_eval && precheck_caller != null
+                && ((CompiledFunction*)precheck_caller.func).flags.needs_lex_bridge
+                && precheck_act_count >= 2) {
+                vm::Activation* enclosing = &precheck_vm.activations[precheck_act_count - 2];
+                if (enclosing.func != null && !((CompiledFunction*)enclosing.func).is_arrow()) {
+                    for (uint vi = 0; vi < func.eval_var_count; vi++) {
+                        TVal nv = func.constants[func.eval_var_idxs[vi]];
+                        if (nv.is_string()
+                            && ((HString*)nv.get_heapptr()).equals("arguments")) {
+                            collision = true;
+                            break;
+                        }
+                    }
+                }
             }
             if (collision) {
                 HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);

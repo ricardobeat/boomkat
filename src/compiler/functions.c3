@@ -2146,6 +2146,52 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             continue;
         }
 
+        // A lexical declaration hoists no names into this scope, and its
+        // initializer is an expression whose nested object-literal method
+        // bodies are their own VarDeclaredNames scopes. Skip the declarator
+        // list (initializers included) wholesale so a method-local `var`
+        // never leaks here (`let o = { f() { var x; } }` must not declare a
+        // global `x`). `skip_expression` stops at the comma or semicolon that
+        // separates declarators.
+        if (tt == TokenType.LET || tt == TokenType.CONST) {
+            for (;;) {
+                Token? nm_opt = self.lexer.next_token();
+                if (catch _nmerr = nm_opt) break;
+                TokenType nt = nm_opt.type;
+                if (nt == TokenType.LBRACKET || nt == TokenType.LBRACE) {
+                    // Binding pattern: consume the pattern and any default
+                    // initializers wholesale (they declare nothing here).
+                    {
+                        Token pat_tok = nm_opt;
+                        self.lexer.pushback(pat_tok);
+                    }
+                    self.skip_expression();
+                } else if (nt == TokenType.IDENTIFIER) {
+                    Token? sep_opt = self.lexer.next_token();
+                    if (catch _seperr = sep_opt) break;
+                    if (sep_opt.type == TokenType.ASSIGN) {
+                        self.skip_expression();
+                    } else if (sep_opt.type == TokenType.COMMA) {
+                        continue;
+                    } else {
+                        self.lexer.pushback(sep_opt);
+                        break;
+                    }
+                } else {
+                    self.lexer.pushback(nm_opt);
+                    break;
+                }
+                Token? after_opt = self.lexer.next_token();
+                if (catch _aftererr = after_opt) break;
+                if (after_opt.type != TokenType.COMMA) {
+                    self.lexer.pushback(after_opt);
+                    break;
+                }
+            }
+            at_stmt_start = true;
+            continue;
+        }
+
         // Detect `async function` at the scan's own top level: the pre-scan
         // sees IDENTIFIER("async") first, peeks at FUNCTION on the SAME line,
         // and if so pushes "function" back so the next iteration handles it as
