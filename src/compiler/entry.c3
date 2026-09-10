@@ -376,17 +376,63 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
         ctx.statement()!;
     }
 
+    // Collect the eval source's var-declared names (var statements via
+    // record_eval_var_name, function declarations via the hoisted-name
+    // tables) for the §18.2.1.2 step 3.4 intermediate-binding collision
+    // check in builtin_eval. Dedup against the collected list (the hoisted
+    // tables were not hooked).
+    uint eval_var_count = ctx.eval_var_coll_count;
+    for (uint i = 0; i < ctx.hoisted_fn_count; i++) {
+        uint ni = ctx.add_string_constant(ctx.hoisted_fn_names[i]);
+        bool dup = false;
+        for (uint k = 0; k < eval_var_count; k++) {
+            if (ctx.eval_var_coll_idxs[k] == ni) { dup = true; break; }
+        }
+        if (!dup) {
+            if (eval_var_count >= ctx.eval_var_coll_cap) {
+                uint new_cap = ctx.eval_var_coll_cap == 0 ? 16 : ctx.eval_var_coll_cap * 2;
+                void* pn = ((Heap*)heap).realloc_func(((Heap*)heap).heap_udata,
+                    ctx.eval_var_coll_idxs, (usz)(new_cap * 4));
+                if (pn != null) {
+                    ctx.eval_var_coll_idxs = (uint*)pn;
+                    ctx.eval_var_coll_cap = new_cap;
+                }
+            }
+            if (eval_var_count < ctx.eval_var_coll_cap) {
+                ctx.eval_var_coll_idxs[eval_var_count++] = ni;
+            }
+        }
+    }
+
     // Free any remaining scope_stack entries (top-level lexical declarations)
     ctx.pop_scope_to(0);
 
     // Return the accumulated eval result (or undefined if no expression)
     ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0);
 
+    // Snapshot the collected names before finish(): ctx.cleanup() inside
+    // finish() frees eval_var_coll_idxs, so the attach below reads the
+    // snapshot copy instead.
+    uint* eval_var_snapshot = null;
+    if (eval_var_count > 0) {
+        Heap* h = (Heap*)heap;
+        eval_var_snapshot = (uint*)h.alloc_func(h.heap_udata, (usz)eval_var_count * 4);
+        if (eval_var_snapshot != null) {
+            for (uint i = 0; i < eval_var_count; i++) {
+                eval_var_snapshot[i] = ctx.eval_var_coll_idxs[i];
+            }
+        }
+    }
+
     CompiledFunction*? result = ctx.finish()!;
     if (try func = result) {
         // Eval code must NOT get its own scope, var declarations must go
         // to the enclosing scope (global env), not a fresh function scope.
         func.flags.needs_env = false;
+        if (eval_var_snapshot != null) {
+            func.eval_var_idxs = eval_var_snapshot;
+            func.eval_var_count = eval_var_count;
+        }
     }
     return result;
 }
