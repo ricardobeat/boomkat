@@ -1558,6 +1558,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (!nm_callable) { ra[0].set_undefined(); break; }
 
                 TVal itv4; itv4.set_object(iterator);
+                // ES2024 §14.4.14 step 5.a.i: IteratorNext with exactly one
+                // argument (received value, undefined on the first iteration).
                 TVal[1] nargs; nargs[0] = received_val;
                 TVal nres = vm.heap.call_fn(vm, nm, &nargs, 1, itv4);
                 if (vm.has_error) {
@@ -1884,6 +1886,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
                 TVal itv; itv.set_object(iterator);
+                // ES2024 §14.4.14 step 5.a.i (async form): AsyncIteratorNext
+                // with exactly one argument, undefined on the first iteration.
                 TVal[1] args; args[0] = fwd_val;
                 TVal res = vm.heap.call_fn(vm, nm, &args, 1, itv);
                 if (vm.heap.has_error) {

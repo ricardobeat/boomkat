@@ -148,6 +148,14 @@ fn bool ForInSeen.push_level(&self, HObject* level) {
     return true;
 }
 
+// True iff `lvl` is an exotic whose `length` is virtual (array / TypedArray):
+// the property is an own non-enumerable member but lives outside the named
+// property table, so find_prop_idx cannot see it.
+fn bool forin_level_has_virtual_length(HObject* lvl) {
+    return lvl.get_class() == hobject::ObjClass.ARRAY
+        || builtins::is_typed_array_class(lvl.get_class());
+}
+
 // True iff `key` is an own named property of an already-walked level.
 //
 // Symbols are exempt: they are yielded by their own phase and never
@@ -159,7 +167,10 @@ fn bool ForInSeen.shadowed(&self, Heap* h, HString* key) {
     if (key.is_symbol()) return false;
     for (uint i = 0; i < self.nearer_count; i++) {
         HObject* lvl = self.nearer[i];
-        if (lvl.find_prop_idx((void*)key, h) < 0) continue;
+        if (lvl.find_prop_idx((void*)key, h) < 0) {
+            if (key.equals("length") && forin_level_has_virtual_length(lvl)) return true;
+            continue;
+        }
         return true;
     }
     return false;
@@ -183,6 +194,14 @@ fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
         if (k.is_symbol()) continue;
         if (seen.contains(k)) continue;
         if (!seen.append(h, k)) return false;
+    }
+    // An array / TypedArray level's virtual `length` shadows a prototype
+    // `length` here too, mirroring the lazy `shadowed` probe.
+    if (forin_level_has_virtual_length(level)) {
+        HString* len_k = h.str_intern("length");
+        if (len_k != null && !seen.contains(len_k)) {
+            if (!seen.append(h, len_k)) return false;
+        }
     }
     return true;
 }
