@@ -132,6 +132,11 @@ struct Token {
     char[] str_value;
     char[] raw_value;
     bool has_octal_escape;
+    // A legacy octal escape that was DECODED (sloppy Annex B semantics).
+    // Strict-lexed strings only latch has_octal_escape; this flag lets the
+    // parser reject a prologue that was scanned sloppy but later flips
+    // strict via a following "use strict" (ES2024 §12.9.4.1).
+    bool has_decoded_octal;
     bool is_template;
     bool has_invalid_escape;
     // True when this identifier/keyword token was written with at least one
@@ -152,6 +157,7 @@ fn Token make_token(TokenType tt, uint line, uint col) {
     t.str_value = {};
     t.raw_value = {};
     t.has_octal_escape = false;
+    t.has_decoded_octal = false;
     t.is_template = false;
     t.has_invalid_escape = false;
     return t;
@@ -1420,14 +1426,12 @@ fn Token? Lexer.scan_string(&self) {
     char[STRING_BUF_SIZE] buf;
     uint buf_len = 0;
     bool found_octal = false;
+    bool decoded_octal = false;
     // Raw source bytes consumed between the quotes (escapes unexpanded).
     // Every branch below accounts its own consumed bytes: the `\\` prologue
     // adds 2 up front, multi-byte escapes (extra octal digits, \xHH,
-    // \uHHHH, line continuations) add the remainder as they consume. A
-    // decoded octal escape always shrinks the span (backslash+digits become
-    // one char), so a later raw-vs-decoded length compare reveals it — the
-    // parser's prologue strictness check reads this through raw_value.len,
-    // since has_octal_escape only latches in strict mode.
+    // \uHHHH, line continuations) add the remainder as they consume.
+    // String.raw and template raw parts read this through raw_value.
     uint raw_len = 0;
 
     while (!self.at_end()) {
@@ -1442,6 +1446,7 @@ fn Token? Lexer.scan_string(&self) {
                 tok.str_value = {};
             }
             tok.has_octal_escape = found_octal;
+            tok.has_decoded_octal = decoded_octal;
             // Raw span between the quotes: raw_len counts every source byte
             // consumed, buf_len the decoded length. Sliced from the
             // arena-backed source (stable for the token's lifetime); empty
@@ -1476,6 +1481,7 @@ fn Token? Lexer.scan_string(&self) {
                     // for the parser to reject instead.
                     if (!self.strict_mode && !self.at_end()
                         && self.peek_char() >= '0' && self.peek_char() <= '7') {
+                        decoded_octal = true;
                         uint oval = 0;
                         for (int oi = 0; oi < 2; oi++) {
                             if (self.at_end()) break;
@@ -1578,6 +1584,7 @@ fn Token? Lexer.scan_string(&self) {
                     // \1-\7 are sloppy Annex B octal escapes (\101 === 'A').
                     // Strict latches found_octal for the parser to reject.
                     if (esc >= '1' && esc <= '7' && !self.strict_mode) {
+                        decoded_octal = true;
                         uint oval2 = (uint)(esc - '0');
                         for (int oi2 = 0; oi2 < 2; oi2++) {
                             if (self.at_end()) break;
