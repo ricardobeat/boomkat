@@ -180,14 +180,6 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
     long len = 0;
     if (target.get_class() == hobject::ObjClass.ARRAY) {
         len = (long)*target.array_len_ptr();
-    } else if (target.get_class() == hobject::ObjClass.ARGUMENTS) {
-        // Arguments objects store their actual argument count in
-        // array_len_ptr (see finish_arguments_object). array_used only
-        // counts non-undefined slots, so it under-reports when an actual
-        // argument is undefined (e.g. yield*'s first call passes undefined
-        // to the delegated .next, or the caller passes undefined as an
-        // argument).
-        len = (long)*target.array_len_ptr();
     } else if (is_typed_array_class(target.get_class())) {
         // %ArrayIteratorPrototype%.next re-validates the TypedArray each step
         // (spec: TypedArrayLength on the with-buffer-witness record). A view that
