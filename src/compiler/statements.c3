@@ -3442,8 +3442,11 @@ fn void? CompilerContext.for_statement(&self) {
         } else {
             // A `for (var|let|const X ...)` head binds a BindingIdentifier, so
             // the §13.1.1 restricted names are rejected here exactly as they
-            // are for a plain `var X` declaration.
-            Token name_tok = self.expect_binding_identifier()!;
+            // are for a plain `var X` declaration. A lexical head additionally
+            // rejects "let" as the bound name (§13.7.5.1, BoundNames of a
+            // ForDeclaration must not contain "let"), which sloppy `var` heads
+            // still allow.
+            Token name_tok = self.expect_binding_identifier(is_lexical)!;
             // Intern now: an escaped for-head binding name borrows the
             // lexer's shared ident_buf scratch, which the head's RHS
             // expression and the loop body parsed below will overwrite.
