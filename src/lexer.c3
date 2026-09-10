@@ -1586,7 +1586,11 @@ fn Token? Lexer.scan_string(&self) {
                     if (esc >= '1' && esc <= '7' && !self.strict_mode) {
                         decoded_octal = true;
                         uint oval2 = (uint)(esc - '0');
-                        for (int oi2 = 0; oi2 < 2; oi2++) {
+                        // ES2024 §B.1.2 LegacyOctalEscapeSequence: a leading
+                        // 4-7 admits at most ONE more octal digit (\400 is
+                        // \40 followed by "0"), a leading 0-3 admits two.
+                        int max_more = (esc <= '3') ? 2 : 1;
+                        for (int oi2 = 0; oi2 < max_more; oi2++) {
                             if (self.at_end()) break;
                             char od2 = self.peek_char();
                             if (od2 < '0' || od2 > '7') break;
