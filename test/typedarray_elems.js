@@ -115,19 +115,22 @@ check(keys.join(",") === "0,1,2", "for-in yields indices");
 check((0 in enumTA) === true, "in operator true for in-range index");
 check((5 in enumTA) === false, "in operator false for OOB index");
 // §10.4.5.4 [[Delete]] on an integer-indexed exotic returns false for a valid
-// index and true for an invalid one. This engine runs everything as strict
-// code, and the delete operator throws a TypeError when [[Delete]] returns
-// false (§13.5.1.2 step 5) — so the in-range delete is observed as a throw
-// rather than as `false`.
-var deleteThrew = false;
-try {
-    delete enumTA[0];
-} catch (e) {
-    deleteThrew = e instanceof TypeError;
+// index and true for an invalid one. In strict code the failed delete is
+// turned into a TypeError by PutValue (§13.5.1.2 step 5); sloppy code
+// observes the plain `false`.
+function strictDelete(idx) {
+    "use strict";
+    try {
+        delete enumTA[idx];
+        return false;
+    } catch (e) {
+        return e instanceof TypeError;
+    }
 }
-check(deleteThrew, "delete in-range index throws TypeError in strict code");
+check(strictDelete(0), "delete in-range index throws TypeError in strict code");
 check(enumTA[0] === 10, "delete did not remove in-range element");
-check(delete enumTA[10] === true, "delete OOB index returns true");
+check((function () { return delete enumTA[10]; })() === true, "delete OOB index returns true");
+check((function () { return delete enumTA[0]; })() === false, "sloppy delete in-range index returns false");
 var desc = Object.getOwnPropertyDescriptor(enumTA, 1);
 check(desc !== undefined && desc.value === 20 && desc.writable === true
     && desc.enumerable === true && desc.configurable === true, "getOwnPropertyDescriptor shape");

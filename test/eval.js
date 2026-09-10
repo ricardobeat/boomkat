@@ -39,12 +39,19 @@ var r5 = eval("1 < 2");
 if (r5 === true) { print("PASS: eval('1<2') === true"); pass++; }
 else { print("FAIL: eval('1<2') expected true"); fail++; }
 
-// --- Test 6: eval var does NOT leak (strict-only engine) ---
-// Strict eval installs declarations in a fresh declarative env
-// (ES2015 §18.2.1.3), so eval_x must not become a global binding.
+// --- Test 6: eval var scoping follows the eval's strictness ----------------
+// A sloppy direct eval declares vars in the caller's variable environment
+// (ES2024 §17.1.3), so eval_x becomes a global binding. A strict eval
+// installs declarations in a fresh declarative env (§18.2.1.3) and leaks
+// nothing.
 eval("var eval_x = 42");
-if (typeof eval_x === "undefined") { print("PASS: strict eval var does not leak"); pass++; }
-else { print("FAIL: strict eval var leaked, eval_x = " + eval_x); fail++; }
+if (eval_x === 42) { print("PASS: sloppy eval var declares in the caller's var env"); pass++; }
+else { print("FAIL: sloppy eval var missing, eval_x = " + eval_x); fail++; }
+(function () {
+    eval('"use strict"; var eval_xs = 43;');
+    if (typeof eval_xs === "undefined") { print("PASS: strict eval var does not leak"); pass++; }
+    else { print("FAIL: strict eval var leaked, eval_xs = " + eval_xs); fail++; }
+})();
 
 // --- Test 7: eval returns last expression value ---
 var r7 = eval("1; 2; 3");
@@ -75,10 +82,10 @@ var r11 = eval("if (true) { 99 } else { 0 }");
 // if-statement doesn't produce a value for eval return — just check no error
 
 // --- Test 12: eval with variable in expression ---
-// Strict-only engine: eval var declarations stay in the eval's own env.
+// Sloppy eval vars land in the caller's var env (see test 6).
 eval("var eval_y = 100");
-if (typeof eval_y === "undefined") { print("PASS: strict eval var isolated"); pass++; }
-else { print("FAIL: strict eval var leaked, eval_y = " + eval_y); fail++; }
+if (eval_y === 100) { print("PASS: sloppy eval var visible after eval"); pass++; }
+else { print("FAIL: sloppy eval var missing, eval_y = " + eval_y); fail++; }
 
 // --- Test 13: empty eval ---
 var r13 = eval("");

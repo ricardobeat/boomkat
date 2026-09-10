@@ -84,8 +84,13 @@ throws('class C { m() { return (eval) => 1; } }');
 throws('class C { f = (a, a) => 1; }');
 
 // --- The same checks still hold for functions and methods ---
-throws('function g(a, a) {}');
-throws('function g(eval) {}');
+// Ordinary functions in sloppy code admit duplicate plain params and
+// restricted names (Annex B.3.1); only the strict forms reject, so the
+// strict body is what the checks target here.
+throws('function g(a, a) { "use strict"; }');
+throws('function g(eval) { "use strict"; }');
+accepts('function g(a, a) {}');
+accepts('function g(eval) {}');
 throws('function g([a], {a}) {}');
 throws('var o = { m(a, a) {} };');
 throws('class C { m(a, a) {} }');

@@ -151,7 +151,10 @@ t("(o.a?.m)() keeps receiver", function () {
 });
 t("(0, o.m)() drops receiver (comma does GetValue)", function () {
   var o = { m: function () { return this; } };
-  return (0, o.m)() === undefined;
+  // Sloppy: the unbound call substitutes globalThis (ES2024 §10.4.1.2).
+  // A strict callee keeps undefined.
+  var strictM = function () { "use strict"; return this; };
+  return (0, o.m)() === globalThis && (0, strictM)() === undefined;
 });
 
 // --- array index integrality ---

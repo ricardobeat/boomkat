@@ -48,11 +48,17 @@ var recv = { tag: 'recv' };
 assert(GeneratorFunction('yield this;').call(recv).next().value === recv,
     'an explicit receiver must win over this-substitution');
 
-// --- negative: source-declared generators must NOT substitute ---------------
+// --- source-declared generators follow their body's mode --------------------
+// Sloppy (the script default): undefined receiver substitutes to globalThis.
+// A strict body keeps undefined.
 
 function* srcGen() { yield this; }
-assert(srcGen().next().value === undefined,
-    'a source-declared generator with an undefined receiver must yield undefined');
+assert(srcGen().next().value === globalThis,
+    'a sloppy source-declared generator substitutes undefined to globalThis');
+
+function* strictGen() { "use strict"; yield this; }
+assert(strictGen().next().value === undefined,
+    'a strict source-declared generator yields undefined');
 
 var srcRecv = { tag: 'src' };
 assert(srcGen.call(srcRecv).next().value === srcRecv,
@@ -80,7 +86,7 @@ var srcAgDone = false;
 var srcAgOk = false;
 srcAsyncGen().next().then(function (r) {
     srcAgDone = true;
-    srcAgOk = r.value === undefined;
+    srcAgOk = r.value === globalThis;
 });
 
 // Report from a later microtask so the two above have settled. Asserting that
@@ -89,7 +95,7 @@ Promise.resolve().then(function () {}).then(function () {}).then(function () {
     assert(agDone, 'the async-generator reaction never ran');
     assert(agOk, 'AsyncGeneratorFunction("yield this") should yield the global object');
     assert(srcAgDone, 'the source async-generator reaction never ran');
-    assert(srcAgOk, 'a source-declared async generator must yield undefined');
+    assert(srcAgOk, 'a sloppy source-declared async generator substitutes to globalThis');
 
     print('gen_subst_global_this: ' + pass + ' passed, ' + fail + ' failed');
     if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }

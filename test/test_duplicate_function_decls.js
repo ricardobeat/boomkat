@@ -93,16 +93,23 @@ function e1() {
 }
 ck("escaped-name-duplicate", e1(), 2);
 
-// Duplicate declarations inside a BLOCK are lexical (§14.2.1), so unlike the
-// function-top-level cases above they are a SyntaxError in strict mode rather
-// than a last-one-wins rebinding. Checked via eval so the error is catchable.
+// Duplicate declarations inside a BLOCK are lexical (§14.2.1): a SyntaxError
+// in strict mode, but Annex B.3.3 lets sloppy code rebind last-one-wins.
+// Both are checked via eval so the errors are catchable.
 var block_dup_threw = false;
 try {
-    eval("{ function q(){ return 1; } function q(){ return 2; } }");
+    eval('"use strict"; { function q(){ return 1; } function q(){ return 2; } }');
 } catch (e) {
     block_dup_threw = e instanceof SyntaxError;
 }
-ck("dup-in-block-is-error", block_dup_threw, true);
+ck("dup-in-block-is-error-strict", block_dup_threw, true);
+var sloppy_dup_value = null;
+try {
+    eval("{ function q(){ return 1; } function q(){ return 2; } } sloppy_dup_value = q();");
+} catch (e) {
+    sloppy_dup_value = "threw " + e.constructor.name;
+}
+ck("dup-in-block-sloppy-last-wins", sloppy_dup_value, 2);
 
 // A SINGLE declaration is instantiated once too. The binding a statement
 // captures before the declaration's textual position must be the same object

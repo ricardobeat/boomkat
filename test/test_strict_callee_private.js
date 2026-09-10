@@ -5,9 +5,10 @@ function assert(cond, msg) { if (cond) pass++; else { fail++; print("FAIL: " + m
 // accessor whose get and set are both %ThrowTypeError%, so reads, writes and
 // deletes all throw TypeError, and the descriptor reflects the accessor shape.
 // test262 10.6-13-c-3-s / 10.6-14-c-4-s pin the descriptor and the write.
-// (This engine is strict-only, so every arguments object is unmapped.)
+// A sloppy function's mapped arguments object instead exposes `callee` as a
+// plain data property holding the callee (checked at the bottom).
 
-function args() { return arguments; }
+function args() { "use strict"; return arguments; }
 var a = args();
 
 // --- 1. Descriptor shape ---
@@ -26,9 +27,13 @@ assert.throws = function (fn, msg) {
     try { fn(); fail++; print("FAIL: " + msg + " (no throw)"); }
     catch (e) { if (e instanceof TypeError) pass++; else { fail++; print("FAIL: " + msg + " (wrong type " + e + ")"); } }
 };
-assert.throws(function () { return a.callee; }, "callee read throws");
-assert.throws(function () { a.callee = {}; }, "callee write throws");
-assert.throws(function () { delete a.callee; }, "callee delete throws");
+assert.throws(function () { "use strict"; return a.callee; }, "callee read throws");
+assert.throws(function () { "use strict"; a.callee = {}; }, "callee write throws");
+assert.throws(function () { "use strict"; delete a.callee; }, "callee delete throws");
+// Sloppy code: the read still throws (the pill fires on every invocation),
+// while the delete observes plain [[Configurable]]: false and returns false.
+assert.throws(function () { return a.callee; }, "sloppy callee read throws");
+assert((function () { return delete a.callee; })() === false, "sloppy callee delete returns false");
 
 // --- 3. The thrower is the shared %ThrowTypeError% intrinsic ---
 var fp_caller_get = Object.getOwnPropertyDescriptor(Function.prototype, "caller").get;

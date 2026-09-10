@@ -25,12 +25,18 @@ assert(o5.a === undefined && o5.b === undefined, "delete to empty");
 o5.x = 9;
 assert(o5.x === 9, "reuse after empty");
 
-// 4. Non-configurable delete throws (strict), configurable succeeds.
+// 4. Non-configurable delete: strict throws TypeError, sloppy returns false.
+// Configurable deletes succeed in both modes.
 var o6 = {};
 Object.defineProperty(o6, "k", { value: 1, configurable: false });
 var threw = false;
-try { delete o6.k; } catch (e) { threw = (e instanceof TypeError); }
+(function () {
+    "use strict";
+    try { delete o6.k; } catch (e) { threw = (e instanceof TypeError); }
+})();
 assert(threw, "non-configurable delete throws TypeError");
+assert((function () { return delete o6.k; })() === false, "sloppy non-configurable delete returns false");
+assert(o6.k === 1, "sloppy non-configurable delete left the property");
 assert(o6.k === 1, "non-configurable survives");
 Object.defineProperty(o6, "j", { value: 2, configurable: true, enumerable: true, writable: true });
 assert(delete o6.j === true && o6.j === undefined, "configurable deletes");
