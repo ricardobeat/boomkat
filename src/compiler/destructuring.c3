@@ -29,19 +29,16 @@ import std::io;
 // `await` is reserved only inside a module / async function ([Await] scope);
 // outside those it is a plain identifier and the shorthand is legal.
 //
-// `yield`, by contrast, is *always* rejected here: this engine is strict-only
-// (the lexer pins `strict_mode = true`), and in strict code `yield` is a
-// reserved word regardless of generator context, so `{ yield } = v` is an
-// early SyntaxError everywhere. The `!is_generator && !forbid_yield` idiom
-// used elsewhere in the compiler encodes the *sloppy*-mode allowance, which
-// this engine can never reach.
-//
+// A shorthand key doubles as a BindingIdentifier, so it must be usable
+// as an IdentifierReference in this context: a plain Identifier, `await`
+// where it is not reserved, or sloppy non-generator `yield` (§13.1.1).
 // This mirrors the object-*literal* shorthand gate in `object_literal`
 // (expressions.c3), which already rejects the reserved-word forms; the
 // pattern collectors below route reserved words through
 // `destructuring_property_key` and so need this check to match it.
 fn bool CompilerContext.shorthand_key_is_identifier_ref(&self, TokenType tt) {
-    return tt == TokenType.IDENTIFIER || self.await_is_identifier(tt);
+    if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt)) return true;
+    return tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield;
 }
 
 // Parse a property key in a destructuring binding pattern.
@@ -361,7 +358,11 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
     // We only commit to the fast path when the very next token after the
     // identifier is NOT a property/call/index accessor, ensuring that
     // `a.b`, `a[i]`, `a()` etc. fall through to the full expression path.
-    if (self.peek_type() == TokenType.IDENTIFIER) {
+    // Sloppy non-generator `yield` is an identifier here too (§13.1.1).
+    TokenType head_tt = self.peek_type();
+    bool head_is_yield_ident = head_tt == TokenType.YIELD
+        && !self.is_strict && !self.is_user_generator && !self.forbid_yield;
+    if (head_tt == TokenType.IDENTIFIER || head_is_yield_ident) {
         // Peek at the token after the identifier without consuming it.
         // Lexer state snapshot so we can look one token ahead.
         uint   snap_pos  = self.lexer.pos;
