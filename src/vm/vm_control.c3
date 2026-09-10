@@ -610,10 +610,19 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 ds.curr_pc += 1;   // -> the done JUMP
                 break;
             }
-            if (target.flags.obj_class != hobject::ObjClass.ARRAY) break;
+            if (target.flags.obj_class != hobject::ObjClass.ARRAY
+                && target.flags.obj_class != hobject::ObjClass.ARGUMENTS) break;
 
             uint idx = (*it.extra_ptr()).iter.index;
-            ulong len = (ulong)*target.array_len_ptr();
+            ulong len;
+            if (target.flags.obj_class == hobject::ObjClass.ARGUMENTS) {
+                // See finish_arguments_object: arguments objects store the
+                // actual argument count in array_len_ptr, since array_used
+                // only counts non-undefined slots.
+                len = (ulong)*target.array_len_ptr();
+            } else {
+                len = (ulong)*target.array_len_ptr();
+            }
             if ((ulong)idx >= len) {
                 // Done: release the target exactly as the built-in next does,
                 // so a later step sees an exhausted iterator either way.
@@ -626,6 +635,19 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // get_array_idx fails for a hole or anything outside the dense
             // part, and an accessor never lives there, so a success here is a
             // plain data element whose read has no observable side effect.
+            // A mapped ARGUMENTS object aliases its indices to parameter
+            // registers: route through mapped_args_read so param writes made
+            // since the last step are observed (ES2015 §9.4.4.4).
+            if (target.flags.obj_class == hobject::ObjClass.ARGUMENTS) {
+                TVal mapped_v;
+                if (mapped_args_read(vm, target, idx, &mapped_v)) {
+                    (*it.extra_ptr()).iter.index = idx + 1;
+                    vm.heap.tval_copy_ref(ra, &mapped_v);
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    ds.curr_pc += 2;
+                    break;
+                }
+            }
             TVal? elem = target.get_array_idx(idx);
             if (catch elem) break;
             (*it.extra_ptr()).iter.index = idx + 1;
