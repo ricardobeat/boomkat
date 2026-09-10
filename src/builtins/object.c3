@@ -1896,7 +1896,9 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             }
             arr_idx = arr_idx * 10 + (uint)(kd[i] - '0');
         }
-        if (is_numeric && kd.len > 0 && kd.len <= 10 && arr_idx < obj.array_size) {
+        if (is_numeric && kd.len > 0 && kd.len <= 10 && arr_idx < obj.array_size
+            && !(obj.get_class() == hobject::ObjClass.ARGUMENTS
+                 && obj.find_prop_idx(key, ctx.heap) >= 0)) {
             TVal av = obj.array_part()[arr_idx];
             if (av.is_undefined()) {
                 ctx.result.set_undefined();
@@ -2781,7 +2783,23 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 }
             }
         } else {
-            obj.put_prop(key, desc_vals[0], desc_flags, ctx.heap);
+            // A mapped `arguments` index lives in the dense part as a plain
+            // {W,E,C} element until this define promotes it; absent
+            // descriptor fields keep the element's attributes
+            // (OrdinaryDefineOwnProperty via §10.4.4.2 step 5), so a
+            // `{configurable: false}` define must stay writable:true,
+            // enumerable:true.
+            hobject::PropFlags create_flags = desc_flags;
+            if (obj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
+                uint ai2 = key_hstr.array_index();
+                TVal* ap2 = obj.array_part();
+                if (ap2 != null && ai2 < obj.array_size && !ap2[ai2].is_undefined()) {
+                    if (!desc_fields.has_writable) create_flags.writable = true;
+                    if (!desc_fields.has_enumerable) create_flags.enumerable = true;
+                    if (!desc_fields.has_configurable) create_flags.configurable = false;
+                }
+            }
+            obj.put_prop(key, desc_vals[0], create_flags, ctx.heap);
         }
     } else {
         // Property exists, validate changes per ES5 §8.12.9
@@ -2885,14 +2903,18 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             if (has_enum_in_desc) cur_flags.enumerable   = desc_flags.enumerable;
             if (has_conf_in_desc) cur_flags.configurable = desc_flags.configurable;
             obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
-            // Clear the dense array slot so arr_get_elem_vm falls through to the
-            // named-property accessor rather than returning a stale data value.
+            // Clear the dense array slot so reads fall through to the
+            // named-property accessor rather than returning a stale data
+            // value. Decrement array_used to match set_array_idx's
+            // bookkeeping, and sever the parameter mapping (§9.4.4.8 step
+            // 8.a): the index no longer aliases the parameter.
             if (key_hstr.is_arridx()) {
                 uint ai = key_hstr.array_index();
                 TVal* ap = obj.array_part();
-                if (ap != null && ai < obj.array_size) {
-                    TVal undef; undef.set_undefined();
-                    ap[ai] = undef;
+                if (ap != null && ai < obj.array_size && !ap[ai].is_undefined()) {
+                    ctx.heap.decref_tval(&ap[ai]);
+                    ap[ai].set_undefined();
+                    if (obj.array_used > 0) { obj.array_used--; }
                 }
             }
         } else {
@@ -2930,13 +2952,45 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                         return;
                     }
                 }
-                *current = desc_vals[0];
-                // Sloppy mapped `arguments` (§9.4.4.8 DefineOwnProperty step
-                // 4-5): a [[DefineOwnProperty]] with a value field writes
-                // through to the mapped parameter, so the two stay in sync
-                // in both directions.
+                // Sloppy mapped `arguments` (§9.4.4.8 steps 4-6): with a
+                // value field OrdinaryDefineOwnProperty writes the named
+                // slot; step 6 syncs the mapped parameter only while the map
+                // is still live (configurable, or still writable). A
+                // non-writable define unmaps first, so the parameter keeps
+                // its old value while the slot takes the new one.
+                bool arg_write_through = false;
                 if (obj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
-                    vm::mapped_args_write(ctx.vm, obj, key_hstr.array_index(), &desc_vals[0]);
+                    uint aidx = key_hstr.array_index();
+                    TVal new_v = desc_vals[0];
+                    hobject::PropFlags next_flags = cur_flags;
+                    if (has_wrt_in_desc)  next_flags.writable     = desc_flags.writable;
+                    if (has_enum_in_desc) next_flags.enumerable   = desc_flags.enumerable;
+                    if (has_conf_in_desc) next_flags.configurable = desc_flags.configurable;
+                    next_flags.is_accessor = false;
+                    if (next_flags.configurable || next_flags.writable) {
+                        int pidx_w = obj.find_prop_idx(key, ctx.heap);
+                        if (pidx_w >= 0) {
+                            ctx.heap.tval_copy_ref(&obj.prop_values()[pidx_w], &new_v);
+                        } else {
+                            *current = new_v;
+                        }
+                        obj.set_prop_flags((uint)existing_idx, next_flags, ctx.heap);
+                        // Step 6 syncs the parameter only while the map is
+                        // still live: a non-writable result unmaps, so skip
+                        // the write-through and leave the parameter alone.
+                        if (next_flags.writable) {
+                            vm::mapped_args_write(ctx.vm, obj, aidx, &new_v);
+                        }
+                        arg_write_through = true;
+                    } else {
+                        *current = desc_vals[0];
+                    }
+                } else {
+                    *current = desc_vals[0];
+                }
+                if (arg_write_through) {
+                    ctx.result.set_object(obj);
+                    return;
                 }
             }
 
