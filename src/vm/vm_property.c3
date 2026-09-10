@@ -407,28 +407,43 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // Fast path: dense array indexed access (a[i] where i is a non-negative integer)
-                // Also handles ARGUMENTS exotic objects for arguments[i] access
+                // Also handles ARGUMENTS exotic objects for arguments[i] access.
+                // A named accessor entry shadows the dense slot: check it
+                // first so a redefined index invokes the getter path below
+                // instead of returning the stale dense value.
                 hobject::ObjClass hobj_cls = hobj.get_class();
                 if ((hobj_cls == hobject::ObjClass.ARRAY || hobj_cls == hobject::ObjClass.ARGUMENTS) && hobj.array_part() != null && (rc.is_fastint() || rc.is_number())) {
                     long idx_long = rc.is_fastint() ? rc.get_fastint() : (long)rc.get_number();
                     bool is_int_idx = rc.is_fastint() || rc.get_number() == (double)idx_long;
                     if (is_int_idx && idx_long >= 0 && idx_long < (long)hobj.array_size) {
-                        // Sloppy mapped arguments (ES2015 §9.4.4.8): the index
-                        // aliases the owning activation's parameter register,
-                        // which always holds the current value.
                         if (hobj_cls == hobject::ObjClass.ARGUMENTS) {
+                            int nidx = hobj.find_prop_idx(vm.heap.int_to_hstring(idx_long), vm.heap);
+                            if (nidx >= 0 && hobj.get_prop_flags((uint)nidx, vm.heap).is_accessor) {
+                                // Fall through to the named accessor path.
+                            } else {
+                            // Sloppy mapped arguments (ES2015 §9.4.4.8): the index
+                            // aliases the owning activation's parameter register,
+                            // which always holds the current value.
                             TVal mapped_v;
                             if (mapped_args_read(vm, hobj, (uint)idx_long, &mapped_v)) {
                                 getprop_store(vm, ds, ra, &mapped_v, (uint)insn.a);
                                 return (TVal){};
                             }
+                            TVal? av = hobj.get_array_idx((uint)idx_long);
+                            if (try v = av) {
+                                getprop_store(vm, ds, ra, &v, (uint)insn.a);
+                                return (TVal){};
+                            }
+                            // An array hole falls through to the prototype chain.
+                            }
+                        } else {
+                            TVal? av = hobj.get_array_idx((uint)idx_long);
+                            if (try v = av) {
+                                getprop_store(vm, ds, ra, &v, (uint)insn.a);
+                                return (TVal){};
+                            }
+                            // An array hole falls through to the prototype chain.
                         }
-                        TVal? av = hobj.get_array_idx((uint)idx_long);
-                        if (try v = av) {
-                            getprop_store(vm, ds, ra, &v, (uint)insn.a);
-                            return (TVal){};
-                        }
-                        // An array hole falls through to the prototype chain.
                     }
                 }
 
@@ -527,21 +542,28 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 if (key != null) {
-                    // ES2017 §9.4.4.6: arguments.callee throws in strict and
-                    // returns the running function's TV in sloppy. Per §9.2.6.7
-                    // the sloppy callee is the function value the call was
-                    // made through, which is preserved on ds.act.tv_func.
+                    // ES2017 §9.4.4.6: the arguments object's own `callee`
+                    // decides the outcome, not the reading code's mode. A
+                    // mapped (sloppy) arguments object installs callee as a
+                    // data property holding the function value; a strict one
+                    // installs the %ThrowTypeError% accessor, which throws on
+                    // every invocation regardless of who reads it.
                     if (hobj_cls == hobject::ObjClass.ARGUMENTS
                         && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
-                        if (poison_pill_active(vm, ds)) {
+                        int cidx = hobj.find_prop_idx(key, ds.vm.heap);
+                        if (cidx >= 0 && !hobj.get_prop_flags((uint)cidx, ds.vm.heap).is_accessor) {
+                            vm.heap.tval_copy_ref(ra, &hobj.prop_values()[cidx]);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                        } else if (cidx >= 0) {
                             if (!poison_pill_throw(vm, ds, true)) {
                                 return VM_ERROR~;
                             }
-                        } else {
-                            vm.heap.tval_copy_ref(ra, &ds.act.tv_func);
-                            track_heap_store(ds.act, ra, (uint)insn.a);
                         }
-                        return (TVal){};
+                        // cidx < 0 (callee deleted or reconfigured): fall
+                        // through to the ordinary property path below.
+                        if (cidx >= 0) {
+                            return (TVal){};
+                        }
                     }
                     // ES2017 §15.3.5.4 AddRestrictedFunctionProperties: caller
                     // and arguments throw TypeError when the target function is
@@ -613,6 +635,20 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (catch err = getprop_read_accessor(vm, ds, &res.acc, hobj, ra, (uint)insn.a, (HString*)key)) { return err~; }
                         return (TVal){};
                         } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
+                            // Sloppy mapped arguments: a NAMED index still
+                            // aliases the parameter register while the map is
+                            // live. The dense fast path above handled owner ==
+                            // null hits; this covers the promoted named case.
+                            if (res.owner == hobj && hobj_cls == hobject::ObjClass.ARGUMENTS && key != null) {
+                                HString* mapped_key = (HString*)key;
+                                if (mapped_key.is_arridx()) {
+                                    TVal mapped_v;
+                                    if (mapped_args_read(vm, hobj, mapped_key.array_index(), &mapped_v)) {
+                                        getprop_store(vm, ds, ra, &mapped_v, (uint)insn.a);
+                                        return (TVal){};
+                                    }
+                                }
+                            }
                             getprop_store(vm, ds, ra, &res.data_val, (uint)insn.a);
                             // Populate IC for this site.
                             // Only cache OWN property lookups. Inherited lookups are not cached
@@ -621,12 +657,24 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // B.prototype.foo = ... is set, an IC that previously resolved
                             // b.foo via A.prototype would return a stale value). This matches
                             // the QuickJS approach where the shape itself encodes the proto
-                            // and lookups always walk the current chain.
+                            // and lookups always walk the current chain. A live
+                            // mapped ARGUMENTS index never populates: the IC
+                            // would snapshot the parameter's CURRENT value.
                             if (res.owner == hobj && res.owner != null && ds.ic_base != null) {
-                                uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                                int owner_idx = res.owner.find_prop_idx(key, ds.vm.heap);
-                                if (owner_idx >= 0) {
-                                    ic_fill_own(vm, ds, ds.ic_base + pc_off, hobj, key, res.owner, (uint)owner_idx);
+                                bool is_live_mapped = false;
+                                if (hobj_cls == hobject::ObjClass.ARGUMENTS && key != null) {
+                                    HString* mk = (HString*)key;
+                                    if (mk.is_arridx()) {
+                                        TVal probe_v;
+                                        is_live_mapped = mapped_args_read(vm, hobj, mk.array_index(), &probe_v);
+                                    }
+                                }
+                                if (!is_live_mapped) {
+                                    uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                                    int owner_idx = res.owner.find_prop_idx(key, ds.vm.heap);
+                                    if (owner_idx >= 0) {
+                                        ic_fill_own(vm, ds, ds.ic_base + pc_off, hobj, key, res.owner, (uint)owner_idx);
+                                    }
                                 }
                             }
                         } else {
@@ -796,18 +844,24 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                     void* key = (void*)key_hstr;
                     if (key != null) {
-                        // ES2017 §9.4.4.6: arguments.callee throws in strict,
-                        // returns the running callee in sloppy.
+                        // ES2017 §9.4.4.6: the arguments object's own
+                        // `callee` decides: a mapped (sloppy) object holds a
+                        // data property with the function value, a strict one
+                        // holds the %ThrowTypeError% accessor, which throws
+                        // on every invocation.
                         if (hobj.get_class() == hobject::ObjClass.ARGUMENTS
                             && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
-                            if (poison_pill_active(vm, ds)) {
+                            int cidx2 = hobj.find_prop_idx(key, ds.vm.heap);
+                            if (cidx2 >= 0 && !hobj.get_prop_flags((uint)cidx2, ds.vm.heap).is_accessor) {
+                                vm.heap.tval_copy_ref(ra, &hobj.prop_values()[cidx2]);
+                            } else if (cidx2 >= 0) {
                                 if (!poison_pill_throw(vm, ds, true)) {
                                     return VM_ERROR~;
                                 }
-                            } else {
-                                vm.heap.tval_copy_ref(ra, &ds.act.tv_func);
                             }
-                            return (TVal){};
+                            if (cidx2 >= 0) {
+                                return (TVal){};
+                            }
                         }
                         // ES2017 §15.3.5.4: f.caller / f.arguments throw in
                         // strict; sloppy returns null (Annex B.3.2). The
@@ -901,11 +955,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             return (TVal){};
                         } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
                             // Sloppy mapped arguments (ES2015 §9.4.4.8): a
-                            // dense index read aliases the owning activation's
-                            // parameter register, which holds the current
-                            // value. Owner is null exactly for dense hits, so
-                            // this cannot misfire on a named property.
-                            if (res.owner == null && hobj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr != null && key_hstr.is_arridx()) {
+                            // NAMED index still aliases the owning
+                            // activation's parameter register while the map
+                            // is live (writable, or configurable). The dense
+                            // path above already handled owner == null hits.
+                            if (res.owner == hobj && hobj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr != null && key_hstr.is_arridx()) {
                                 TVal mapped_v;
                                 if (mapped_args_read(vm, hobj, key_hstr.array_index(), &mapped_v)) {
                                     getprop_store(vm, ds, ra, &mapped_v, (uint)insn.a);
@@ -915,12 +969,20 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             getprop_store(vm, ds, ra, &res.data_val, (uint)insn.a);
                             // Populate the IC for this site, caching own
                             // properties and anything found within
-                            // IC_MAX_CHAIN prototype links. Sloppy mapped
-                            // arguments (owner == null dense hits, handled
-                            // above) never populate: the IC would snapshot
-                            // the parameter's CURRENT value while later
-                            // writes keep moving it.
+                            // IC_MAX_CHAIN prototype links. A live mapped
+                            // ARGUMENTS index (handled above) never populates:
+                            // the IC would snapshot the parameter's CURRENT
+                            // value while later writes keep moving it.
                             if (res.owner != null && ds.ic_base != null) {
+                                bool is_mapped_arg = res.owner == hobj
+                                    && hobj.get_class() == hobject::ObjClass.ARGUMENTS
+                                    && key_hstr != null && key_hstr.is_arridx();
+                                if (is_mapped_arg) {
+                                    TVal mapped_probe;
+                                    if (mapped_args_read(vm, hobj, key_hstr.array_index(), &mapped_probe)) {
+                                        return (TVal){};
+                                    }
+                                }
                                 bool is_own = res.owner == hobj;
                                 // Record the objects stepped onto so the hit
                                 // path can revalidate the walk by identity and
@@ -1795,9 +1857,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return vm_proxy_rethrow(vm, ds);
                     }
                     if (!set_ok) {
-                        // Strict-only engine: [[Set]] returning false throws.
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "'set' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // [[Set]] returning false throws only in strict code;
+                        // sloppy drops the write silently (§13.15.2 PutValue).
+                        if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "'set' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                     }
                     return (TVal){};
@@ -1810,8 +1875,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // side effect with nothing to show for it (test262
                 // import-defer/evaluation-triggers/ignore-set-string-*).
                 if (hobj.flags.exotic_module_ns) {
-                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return VM_ERROR~;
+                    // §10.4.6.12: [[Set]] on a namespace always returns false;
+                    // only strict PutValue turns that into a TypeError.
+                    if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
                     }
                     return (TVal){};
                 }
@@ -1870,36 +1939,35 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     return (TVal){};
                 }
 
-                // Fast path: dense array indexed store (a[i] = v where i is a valid array index)
-                // ES5 §15.4: array index P satisfies ToString(ToUint32(P))===P && ToUint32(P)≠2^32−1
-                // Cap at 2^24 to avoid insane allocations for sparse arrays with huge indices.
-                // Guarded on array_part() != null, since after seal or freeze it is
-                // abandoned and elements live as named properties with proper flags.
-                if ((hobj.get_class() == hobject::ObjClass.ARRAY || hobj.get_class() == hobject::ObjClass.ARGUMENTS)
+                // Dense ARRAY indexed store (a[i] = v): array index P with
+                // ToString(ToUint32(P))===P (ES5 §15.4), capped at 2^24.
+                // Guarded on array_part() != null, since after seal or freeze
+                // it is abandoned and elements live as named properties.
+                // ARGUMENTS skips this: its dense slot needs the
+                // mapped-parameter sync and the accessor / non-writable
+                // checks, which live on the ordinary named path below.
+                if (hobj.get_class() == hobject::ObjClass.ARRAY
                     && hobj.array_part() != null
                     && (rb.is_fastint() || rb.is_number())) {
                     long idx_long = rb.is_fastint() ? rb.get_fastint() : (long)rb.get_number();
                     bool is_int_idx = rb.is_fastint() || rb.get_number() == (double)idx_long;
                     if (is_int_idx && idx_long >= 0 && idx_long < 0xFFFFFFFFL && idx_long < 0x1000000L) {
                         uint idx = (uint)idx_long;
-                        // Sloppy mapped arguments (§9.4.4.8 [[Set]] step 4):
-                        // a non-writable index does NOT write (silently, in
-                        // sloppy). The dense slot has no flags, so check the
-                        // named property first: a non-writable named entry
-                        // rejects the store outright.
-                        if (hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
-                            int widx = hobj.find_prop_idx(vm.heap.int_to_hstring((long)idx), ds.vm.heap);
-                            if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
-                                return (TVal){};
+                        // A named entry promoted by defineProperty wins over
+                        // the dense slot: a non-writable one rejects the
+                        // store (strict throws, sloppy drops silently).
+                        int widx = hobj.find_prop_idx(vm.heap.int_to_hstring((long)idx), ds.vm.heap);
+                        if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
+                            bool strict_dense = ds.act.func != null
+                                && ((CompiledFunction*)ds.act.func).is_strict();
+                            if (strict_dense) {
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
                             }
+                            return (TVal){};
                         }
                         if (hobj.set_array_idx(idx, *rc, ds.vm.heap)) {
-                            // Sloppy mapped arguments (ES2015 §9.4.4.8): the
-                            // write also updates the owning activation's
-                            // parameter register, keeping the alias in sync.
-                            if (hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
-                                mapped_args_write(vm, hobj, idx, rc);
-                            }
                             // Update .length fast: use array_length field directly (ARRAY only)
                             if (hobj.get_class() == hobject::ObjClass.ARRAY && idx >= *hobj.array_len_ptr()) {
                                 *hobj.array_len_ptr() = idx + 1;
@@ -2033,8 +2101,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return (TVal){};
                     }
                     if (!dok) {
-                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property 'length'", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
+                        // ArraySetLength rejected (e.g. non-writable length):
+                        // strict PutValue throws, sloppy silently drops (§13.15.2).
+                        if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property 'length'", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
                         }
                     }
                     return (TVal){};
@@ -2064,9 +2136,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // returns false, which PutValue turns into a TypeError
                             // (§13.15.2), always, since this engine is strict-only.
                             if (!setter_fn.is_object() || setter_fn.get_heapptr() == null) {
-                                HString* nm = (HString*)key;
-                                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
+                                // OrdinarySet without a setter returns false;
+                                // only strict PutValue turns it into a TypeError.
+                                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                    HString* nm = (HString*)key;
+                                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        return VM_ERROR~;
+                                    }
                                 }
                                 return (TVal){};
                             }
@@ -2265,6 +2341,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                             return (TVal){};
                         } else {
+                            // Ordinary own data-property write: update the
+                            // named slot. A mapped ARGUMENTS index also syncs
+                            // the parameter register (mapped_args_write is a
+                            // no-op once unmapped).
+                            if (hobj.get_class() == hobject::ObjClass.ARGUMENTS && key != null) {
+                                HString* mkey = (HString*)key;
+                                if (mkey.is_arridx()) {
+                                    mapped_args_write(vm, hobj, mkey.array_index(), &put_val);
+                                }
+                            }
                             // Update value, preserve existing flags
                             vm.heap.tval_copy_ref(entry, &put_val);
                             // Cache this site so a repeat write on the same shape
@@ -2552,10 +2638,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (hobj.flags.extensible) {
                                 hobj.put_prop(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                             } else {
-                                // ES5 §9.1.2 step 5b: if O is not extensible, throw TypeError.
-                                // Strict-only engine: always throws.
-                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot add property to non-extensible object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
+                                // ES5 §9.1.2 step 5b: if O is not extensible, throw TypeError
+                                // in strict code; sloppy drops the write silently.
+                                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot add property to non-extensible object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        return VM_ERROR~;
+                                    }
                                 }
                             }
                         }
@@ -2628,7 +2716,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                 // Strict mode turns [[Set]] returning false into a TypeError.
                 // This is the normal result when no inherited setter/proxy
-                // handles a write whose Receiver is still primitive.
+                // handles a write whose Receiver is still primitive. Sloppy
+                // code drops the write silently (ES2024 §13.15.2 PutValue).
+                if (ds.act.func == null || !((CompiledFunction*)ds.act.func).is_strict()) {
+                    return (TVal){};
+                }
                 HString* type_hstr = typeof_string(vm, &error_base);
                 char[types::ERROR_MSG_BUF] msg_buf;
                 int msg_len;
@@ -2862,15 +2954,20 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 void* key = get_prop_key(vm, rc);
-                if (key != null && hobj.get_class() == hobject::ObjClass.ARGUMENTS && rc.is_fastint()) {
+                if (key != null && hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
                     // Sloppy mapped arguments (ES2017 §9.4.4.8 step 11): a
                     // delete on a mapped index must sever the parameter alias
                     // AND clear the dense slot to undefined, so a subsequent
                     // arguments[i] read no longer returns the parameter value.
-                    long didx_long = (long)rc.get_fastint();
-                    if (mapped_args_delete(vm, hobj, (uint)didx_long)) {
-                        ra.set_boolean(true);
-                        return (TVal){};
+                    // Coerce the fastint key the same way the write path does
+                    // (get_prop_key interns 0 to "0"), so numeric and string
+                    // keys sever identically.
+                    HString* dkey = (HString*)key;
+                    if (dkey.is_arridx()) {
+                        if (mapped_args_delete(vm, hobj, dkey.array_index())) {
+                            ra.set_boolean(true);
+                            return (TVal){};
+                        }
                     }
                     // non-mapped index (out of range, parameter unmapped, or
                     // already non-configurable) falls through to ordinary delete
