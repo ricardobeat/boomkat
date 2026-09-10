@@ -1848,8 +1848,10 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             }
         }
         // Special case: ARRAY exotic "length" property (spec §22.1.3 / §10.4.2).
-        // The "length" property of an Array exotic is its `array_size` even when
-        // array_size > array_part capacity (e.g. Array.prototype.length === 0).
+        // Reached only when no "length" entry lives in the named table, so the
+        // shadow copy in array_len_ptr is authoritative for both value and
+        // writability (freeze and {writable:false} may never materialise one).
+        // The property is always {enumerable:false, configurable:false}.
         if (obj.get_class() == hobject::ObjClass.ARRAY) {
             HString* key_str = (HString*)key;
             if (key_str.equals("length")) {
@@ -1863,12 +1865,12 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
 
                 HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
                 TVal len_tv;
-                len_tv.set_fastint((long)obj.array_size);
+                len_tv.set_fastint((long)*obj.array_len_ptr());
                 desc.put_prop(value_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 HString* writable_key = builtin_intern_string(ctx.heap, "writable");
                 TVal w_tv;
-                w_tv.set_boolean(true);
+                w_tv.set_boolean(obj.flags.array_len_writable);
                 desc.put_prop(writable_key, w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 HString* enumerable_key = builtin_intern_string(ctx.heap, "enumerable");
@@ -2734,7 +2736,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         uint arr_idx2 = key_hstr.array_index();
         uint cur_arr_len = array_get_length(obj, ctx.heap);
         if (arr_idx2 >= cur_arr_len) {
-            bool arr_len_writable = true;
+            bool arr_len_writable = obj.flags.array_len_writable;
             HString* len_key_i2 = ctx.heap.str(heap::BuiltinStr.LENGTH);
             if (len_key_i2 != null) {
                 int li2 = obj.find_prop_idx(len_key_i2, ctx.heap);
@@ -3273,7 +3275,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
                 uint dp_idx = p_key.array_index();
                 if (dp_idx >= array_get_length(obj, ctx.heap)) {
                     HString* len_key_dp = ctx.heap.str(heap::BuiltinStr.LENGTH);
-                    bool dp_len_wr = true;
+                    bool dp_len_wr = obj.flags.array_len_writable;
                     if (len_key_dp != null) {
                         int li_dp = obj.find_prop_idx(len_key_dp, ctx.heap);
                         if (li_dp >= 0) dp_len_wr = obj.get_prop_flags((uint)li_dp, ctx.heap).writable;
