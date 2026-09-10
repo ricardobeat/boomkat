@@ -50,18 +50,13 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
     if (catch err = name_env_raw) return types::ALLOC_ERROR~;
     EnvRecord* name_env = name_env_raw;
     TVal func_tv; func_tv.set_object(func_obj);
-    // Strict mode: bind the name as a const (PROP_FLAGS_EC, matches PUTLEX_C).
-    // Sloppy mode: bind non-writable (PROP_FLAGS_EC without W) so a body-level
-    // `name = ...` write hits env_try_put_lex's -1 branch — strict throws
-    // TypeError, sloppy silently drops, matching Annex B.3.4's silently-
-    // ignored semantics for `function f() {}` and `function f(){}; f = 1;`.
+    // CreateImmutableBinding(N, false) (ES2024 §15.2.5 step 5): the fnexpr
+    // name is immutable with strict=false regardless of the body's mode. The
+    // immut_nonstrict bit tells PUTVAR_ASSIGN's -4 branch to consult the
+    // ASSIGNING code's strictness: sloppy silently drops, strict throws.
+    // Plain const bindings (also PROP_FLAGS_EC, no bit) always throw.
     hobject::PropFlags name_flags = hobject::PROP_FLAGS_EC;
-    // (Annex B.3.4 sloppy named-func-expr name silent-drop would need a
-    // separate runtime signal; PUTVAR_ASSIGN can't tell our sloppy-named-fn
-    // binding from a `const` binding just by the writable bit. Leave the
-    // behaviour identical to strict for now — the test cluster that needs
-    // it is small and the fix overlaps with eval-var-scope work in
-    // plans/083 P5.)
+    name_flags.immut_nonstrict = true;
     name_env.bindings.put_prop((void*)name_hstr, func_tv, name_flags, vm.heap);
     return name_env;
 }
@@ -4434,10 +4429,13 @@ fn TVal? Vm.run(Vm* vm) {
                         if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
-                                && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                                ra.set_boolean(true);
-                                track_heap_store(ds.act, ra, (uint)insn.a);
-                                break;
+                            && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
+                            // The readers of this register (THROW_UNRESOLVED,
+                            // PUTVAR_ASSIGN) route on a non-null EnvRecord*
+                            // pointer, not a boolean: null means unresolvable.
+                            ra.set_pointer(vic.env);
+                            track_heap_store(ds.act, ra, (uint)insn.a);
+                            break;
                             }
                             vic.env = null;
                         }
@@ -5604,6 +5602,21 @@ fn TVal? Vm.run(Vm* vm) {
                             return VM_ERROR~;
                         }
                         break;
+                    } else if (put_result == -4) {
+                        // Non-strict immutable binding (fnexpr own name,
+                        // CreateImmutableBinding(N, false)): sloppy drops
+                        // silently, strict throws (§9.1.1.1.5 step 5.2).
+                        bool strict_a = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (strict_a) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                        }
+                        vm.heap.decref_tval(ra);
+                        ra.set_undefined();
+                        break;
                     } else if (put_result == -2) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -5715,6 +5728,66 @@ fn TVal? Vm.run(Vm* vm) {
                     // Search lexical environment first (for let/const bindings)
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
+                        if (cur.is_with) {
+                            // A with-env intercepts with HasBinding (which
+                            // consults @@unscopables, §9.1.1.2.1) then
+                            // GetBindingValue over the prototype chain —
+                            // the same shape GETVAR's with-env branch uses.
+                            // TYPEOFIDENT returns "undefined" for an
+                            // unresolvable reference instead of throwing,
+                            // so a blocked or missing key just keeps
+                            // walking (and eventually reports "undefined").
+                            if (!cur.bindings.has_prop_proto(key, vm.heap)) {
+                                cur = cur.parent;
+                                continue;
+                            }
+                            if (vm_with_unscopables_blocks(vm, cur, key)) {
+                                cur = cur.parent;
+                                continue;
+                            }
+                            if (vm.heap.has_error) {
+                                if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                found = true;
+                                break;
+                            }
+                            hobject::PropProtoResult wproto =
+                                cur.bindings.get_prop_proto_full(key, vm.heap);
+                            if (wproto.found) {
+                                if (wproto.is_accessor) {
+                                    TVal wgetter = hobject::hobject_access_getter(wproto.value);
+                                    if (!wgetter.is_undefined() && !wgetter.is_null() && vm.heap.call_fn != null) {
+                                        TVal wthis;
+                                        wthis.set_object(wproto.owner != null ? wproto.owner : cur.bindings);
+                                        TVal wval = vm.heap.call_fn(vm, wgetter, null, 0, wthis);
+                                        if (vm.heap.has_error) {
+                                            vm.heap.has_error = false;
+                                            TVal werr = vm.heap.error_value;
+                                            if (!vm_throw_value(vm, werr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                                vm.has_error = true;
+                                                vm.heap.has_error = true;
+                                                return VM_ERROR~;
+                                            }
+                                            found = true;
+                                        } else {
+                                            HString* ts = typeof_string(vm, &wval);
+                                            vm.heap.set_reg_string(ra, ts);
+                                            found = true;
+                                        }
+                                    } else {
+                                        HString* ts = (HString*)vm.heap.strs[heap::BuiltinStr.UNDEFINED];
+                                        vm.heap.set_reg_string(ra, ts);
+                                        found = true;
+                                    }
+                                } else {
+                                    HString* ts = typeof_string(vm, &wproto.value);
+                                    vm.heap.set_reg_string(ra, ts);
+                                    found = true;
+                                }
+                                break;
+                            }
+                            cur = cur.parent;
+                            continue;
+                        }
                         int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
                             // ENV_STRICT: TYPEOFIDENT read traps are gone, since a needs_env=false
@@ -5861,13 +5934,18 @@ fn TVal? Vm.run(Vm* vm) {
                     // Combined single-walk: check lex_env, writability, and update in one pass
                     int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, false);
                     if (put_result == -1) {
-                        // A const/writable-violation throws in strict mode; in
-                        // sloppy the binding is left untouched (ES2024 §6.2.4.5
-                        // SetMutableBinding, "if the property is non-writable,
-                        // the assignment is silently ignored"). The same shape
-                        // handles a write to a built-in global like Infinity
-                        // registered with env_declare_immutable: the assignment
-                        // is dropped without throwing.
+                        // A strict-immutable binding (const) throws in BOTH
+                        // modes: SetMutableBinding promotes strict to true for
+                        // a strict binding before the immutable check
+                        // (ES2024 §9.1.1.1.5 steps 2 and 5.2).
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        break;
+                    } else if (put_result == -4) {
+                        // Non-strict immutable binding (fnexpr own name):
+                        // sloppy silently drops, strict throws.
                         if (vm.current_func.is_strict()) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -5995,10 +6073,27 @@ fn TVal? Vm.run(Vm* vm) {
                         break;
                     }
                     if (put_result == -1) {
+                        // Strict-immutable binding (const): always throws;
+                        // §9.1.1.1.5 step 2 promotes strict for strict
+                        // bindings before the immutable check.
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
+                        break;
+                    } else if (put_result == -4) {
+                        // Non-strict immutable binding (fnexpr own name):
+                        // sloppy drops silently, strict throws.
+                        bool strict_b = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (strict_b) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                        }
+                        vm.heap.decref_tval(ra);
+                        ra.set_undefined();
                         break;
                     } else if (put_result == -2) {
                         HString* name_hstr = (HString*)key;
@@ -6429,10 +6524,16 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                     if (vidx >= 0) {
-                        // Non-configurable per Annex B.3.2 — drop the lookup
-                        // but report false. No config-flip path here; Phase 2
-                        // may tighten for sloppy `function f(){var x=1;}`.
-                        ra.set_boolean(false);
+                        // Non-configurable per Annex B.3.2 → false. An
+                        // eval-created binding is configurable
+                        // (CreateMutableBinding(N, true), §18.2.1.2) and is
+                        // deleted for real, returning true.
+                        hobject::PropFlags vflags = vcur.bindings.get_prop_flags((uint)vidx, vm.heap);
+                        if (vflags.configurable) {
+                            ra.set_boolean(vcur.bindings.es_delete_prop(key, vm.heap));
+                        } else {
+                            ra.set_boolean(false);
+                        }
                         track_heap_store(ds.act, ra, (uint)insn.a);
                         found = true;
                         break;
@@ -6479,10 +6580,31 @@ fn TVal? Vm.run(Vm* vm) {
                 ra.set_boolean(false);
                 continue;
             }
-            // Found — Annex B.3.2 says false for var/function (binding exists
-            // even when on a non-binding object env like the global, because
-            // the user's "delete x" expects to remove their declaration). The
-            // delete is a no-op for the variable in both modes.
+            // Found on a declarative env. Annex B.3.2 answers false for
+            // var/function bindings (non-configurable), but a binding an
+            // eval created is configurable (CreateMutableBinding(N, true),
+            // ES2024 §18.2.1.2) and is deleted for real, returning true.
+            // Ordinary function var bindings, let/const/class, and function
+            // declarations are non-configurable → plain false. The top-level
+            // lexical env is a GlobalDeclarationInstantiation §10.2.1.8.
+            // CreateMutableBinding(dn, false): the engine stores it as a
+            // plain property, but the spec keeps it in the declarative
+            // record, so [[Configurable]] is false and `delete x` is false
+            // even though the property bit says configurable.
+            if (found_idx >= 0) {
+                bool is_global_lex = cur == vm.global_lex_env;
+                hobject::PropFlags dflags = cur.bindings.get_prop_flags((uint)found_idx, vm.heap);
+                if (dflags.configurable && !is_global_lex) {
+                    ra.set_boolean(cur.bindings.es_delete_prop(key, vm.heap));
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    continue;
+                }
+                ra.set_boolean(false);
+                continue;
+            }
+            // Found on the var_env walk (Annex B.3.2): function var/param
+            // bindings are non-configurable → false; an eval-created one is
+            // configurable and deleted (checked in the vcur walk below).
             ra.set_boolean(false);
             continue;
         }
@@ -6941,7 +7063,19 @@ fn TVal? Vm.run(Vm* vm) {
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
-                        break;
+                        threw = true;
+                    } else if (put_result == -4) {
+                        // Non-strict immutable binding (fnexpr own name):
+                        // sloppy drops silently, strict throws.
+                        bool strict_c = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (strict_c) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            threw = true;
+                        }
                     } else if (put_result == -2) {
                     HString* name_hstr = (HString*)key;
                     if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
