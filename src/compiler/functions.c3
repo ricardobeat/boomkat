@@ -1742,6 +1742,17 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
             return;
         }
     }
+    // `var arguments` in an ordinary (non-arrow) function declares no binding
+    // of its own: §10.2.11 binds "arguments" to the arguments object created
+    // at call entry, and `var arguments = v` is only an assignment to it. The
+    // name must therefore make the function need that object, exactly as a
+    // reference to `arguments` would. The hoist stub below is still emitted
+    // (reads resolve through the environment, not through its register), and
+    // the VM skips the stub for this name once the object exists.
+    bool uses_args_object = !is_global && !self.is_arrow && str_eq(var_name, "arguments");
+    if (uses_args_object) {
+        self.uses_arguments = true;
+    }
     // One binding per name: when the B.3.3 scan reaches a block FIRST a later
     // `var f` reuses the entry made here (var_declaration's find_local_reg),
     // but when `var f` comes first its entry is already in place. Declaring
@@ -1760,6 +1771,13 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     }
     ushort var_reg = self.declare_var(var_name, VAR);
     self.has_local_bindings = true;
+    // `arguments` is bound by the VM at call entry (see the uses_arguments
+    // note above), so the register must not become the live home slot: force
+    // every read through the environment, as the catch parameter does.
+    if (uses_args_object) {
+        self.scope_stack[self.scope_depth - 1].is_captured = true;
+        self.has_captured_local = true;
+    }
     self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
     uint var_name_idx = self.add_string_constant(var_name);
     uint hoist_pc = self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);

@@ -361,16 +361,28 @@ fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
 // exists (CanDeclareGlobalVar steps 4-5).
 fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare) @inline {
     Heap* h = env.heap;
+    int existing = env.bindings.find_prop_idx(key, h);
     // An existing binding stays untouched: CreateGlobalVarBinding steps 4-5
     // for the global object, and an initializer-less eval-code `var` is a
     // redundant re-stub (ES2024 §18.2.1.2). is_bare marks exactly the
     // initializer-less stubs; DECLVAR (a per-iteration value write, e.g. a
     // for-of head) must keep writing even when the binding exists.
-    if (is_bare && env.bindings.has_prop(key, h) && (is_global || is_eval_code)) {
+    if (is_bare && existing >= 0 && (is_global || is_eval_code)) {
         return true;
     }
-    hobject::PropFlags flags = !is_global ? hobject::PROP_FLAGS_WEC
-        : (is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE);
+    // A `var` binding instantiated at call entry keeps its attributes: this
+    // opcode only performs the declaration's assignment. Re-applying WEC
+    // would clear the non-configurability of the `arguments` binding
+    // (env_declare_nondeletable) and make sloppy `delete arguments` report
+    // true, and it would drop the non-writability of any other binding the
+    // declaration reused.
+    hobject::PropFlags flags;
+    if (existing >= 0 && !is_global) {
+        flags = env.bindings.get_prop_flags((uint)existing, h);
+    } else {
+        flags = !is_global ? hobject::PROP_FLAGS_WEC
+            : (is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE);
+    }
     return env.bindings.put_prop(key, val, flags, h);
 }
 
