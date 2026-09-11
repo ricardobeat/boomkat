@@ -1,11 +1,13 @@
+"use strict";
 var pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) pass++; else { fail++; print("FAIL: " + msg); } }
 
-// ES5 §10.4.3 (strict mode): a getter invoked on a primitive receiver must
-// receive the primitive itself as `this`, not a ToObject box. This engine is
-// strict-only, so every getter is a strict function and the rule is
-// unconditional. (test262 10.4.3-1-104 / -106 pin the number case; this file
-// sweeps all five primitive types plus data-prop fallbacks and chains.)
+// ES2024 §10.4.1.2: a getter invoked on a primitive receiver keeps `this` as
+// the primitive itself when the getter is a strict function. This file runs in
+// strict mode, so every getter below is strict and the primitive is never
+// ToObject-boxed. (test262 10.4.3-1-104 / -106 pin the number case; this file
+// sweeps all five primitive types plus data-prop fallbacks and chains. Section
+// 12 covers the sloppy counterpart, which does box.)
 
 // --- 1. Number receiver keeps its identity and type ---
 Object.defineProperty(Object.prototype, "g", { get: function () { return this; } });
@@ -69,6 +71,17 @@ assert(("hello").sg === 5, "String.prototype getter sees primitive this");
 // Clean up so later String.prototype uses are unaffected.
 delete String.prototype.sg;
 assert(("x").sg === undefined, "deleted String.prototype getter gone");
+
+// --- 12. A sloppy getter (the dual-mode default) ToObject-boxes its primitive
+// receiver (ES2024 §10.4.1.2), so `this` is a Number object, not the number.
+// The function is created through the Function constructor, whose body is
+// sloppy regardless of this file's strictness.
+var sloppyGetter = Function("return function () { return this; };")();
+Object.defineProperty(Object.prototype, "boxed", { get: sloppyGetter, configurable: true });
+assert(typeof (5).boxed === "object", "sloppy getter boxes the number receiver");
+assert((5).boxed.valueOf() === 5, "sloppy getter box holds the number value");
+delete Object.prototype.boxed;
+assert((5).boxed === undefined, "deleted sloppy getter gone");
 
 print("test_strict_getter_this: " + pass + " passed, " + fail + " failed");
 if (fail > 0) throw new Error("FAIL");

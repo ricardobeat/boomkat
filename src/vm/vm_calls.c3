@@ -1399,7 +1399,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                                 // primitive thisArg (ToObject). The box's
                                 // alloc ref transfers to this_binding; the
                                 // generic tail below would copy_ref and leak.
-                                HObject* boxed = builtins::to_object_for_lookup(vm.heap, *this_src);
+                                HObject* boxed = builtins::to_object_wrapper(vm.heap, *this_src);
                                 if (boxed != null) {
                                     new_act.this_binding.set_object(boxed);
                                     new_act.flags |= ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
@@ -2302,7 +2302,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 raw_this_g.set_object(vm.global_env.bindings);
                             }
                         } else if (!raw_this_g.is_object()) {
-                            HObject* boxed_g = builtins::to_object_for_lookup(vm.heap, raw_this_g);
+                            HObject* boxed_g = builtins::to_object_wrapper(vm.heap, raw_this_g);
                             if (boxed_g != null) {
                                 raw_this_g.set_object(boxed_g);
                                 boxed_this_g = true;
@@ -2519,7 +2519,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             raw_this.set_object(vm.global_env.bindings);
                         }
                     } else if (!raw_this.is_object()) {
-                        HObject* boxed = builtins::to_object_for_lookup(vm.heap, raw_this);
+                        HObject* boxed = builtins::to_object_wrapper(vm.heap, raw_this);
                         if (boxed != null) {
                             raw_this.set_object(boxed);
                             boxed_this = true;

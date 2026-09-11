@@ -317,8 +317,33 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     if (target.has_direct_eval()) {
         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }
-    vm.heap.tval_copy_ref(&new_act.this_binding, this_val);
-    new_act.flags |= ACT_FLAG_THIS_OWNED;
+    // ES5 §10.4.3 / ES2024 §10.4.1.2 for a sloppy getter: an undefined/null
+    // receiver becomes the global object and any other primitive is
+    // ToObject-boxed. A getter reached through a property access keeps the
+    // primitive as the receiver, so without this `(5).x` would run a sloppy
+    // getter with a bare 5 instead of a Number wrapper.
+    TVal coerced_this;
+    bool boxed_getter_this = false;
+    if (!target.is_arrow() && !target.is_strict()) {
+        if (this_val.is_undefined() || this_val.is_null()) {
+            if (vm.global_env != null && vm.global_env.bindings != null) {
+                coerced_this.set_object(vm.global_env.bindings);
+                this_val = &coerced_this;
+            }
+        } else if (!this_val.is_object()) {
+            HObject* boxed = builtins::to_object_wrapper(vm.heap, *this_val);
+            if (boxed != null) {
+                // Transfer the box's alloc ref; handle_return releases it.
+                new_act.this_binding.set_object(boxed);
+                new_act.flags |= ACT_FLAG_THIS_OWNED;
+                boxed_getter_this = true;
+            }
+        }
+    }
+    if (!boxed_getter_this) {
+        vm.heap.tval_copy_ref(&new_act.this_binding, this_val);
+        new_act.flags |= ACT_FLAG_THIS_OWNED;
+    }
 
     // Clear registers and copy args (getters have 0 args)
     TVal* new_regs = new_act.bottom;
