@@ -4555,6 +4555,10 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
         self.is_user_generator = true;
         self.is_constructable = false;
     }
+    // Whether THIS expression is a generator decides its name's [Yield]
+    // parameter: a GeneratorExpression's BindingIdentifier is [+Yield],
+    // unlike a plain FunctionExpression's [~Yield].
+    bool fexpr_is_generator = self.is_user_generator;
 
     // Async function expressions are not constructors (ES2017 §14.7.5).
     if (is_async_expr) {
@@ -4589,11 +4593,14 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     // never a function name.
     // A FunctionExpression's own grammar parameters are [~Yield, ~Await]
     // (§15.5.1), so its name is an Identifier in ANY non-strict context, even
-    // inside a generator body or an async function: `(function* yield(){})`
-    // and a nested `(function yield(){})` in a generator body are both legal.
-    // Only strict code reserves `yield` (and makes `let`/`static` names
-    // SyntaxErrors through is_restricted_name).
-    bool name_is_yield_ident = self.check(TokenType.YIELD) && !self.is_strict;
+    // inside a generator body or an async function: `(function yield(){})` in
+    // a generator body is legal. A GeneratorExpression is the exception — its
+    // name is [+Yield], so `function* yield(){}` is a SyntaxError as an
+    // expression but legal as a declaration, whose name inherits the
+    // enclosing grammar. Only strict code reserves `yield` (and makes
+    // `let`/`static` names SyntaxErrors through is_restricted_name).
+    bool name_is_yield_ident = self.check(TokenType.YIELD) && !self.is_strict
+        && !fexpr_is_generator;
     bool name_is_sloppy_ctx_kw = (self.check(TokenType.LET) || self.check(TokenType.STATIC))
         && !self.is_strict;
     Token name_tok;
