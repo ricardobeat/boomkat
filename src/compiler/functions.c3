@@ -3431,7 +3431,12 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 self.try_skip_ts_type_annotation()!;
 
                 if (rest_param.str_value.len > 0) {
-                    seen_params.declare(rest_param.str_value)!;
+                    // A contextual-keyword spelling already had its
+                    // enclosing-grammar decision made by
+                    // expect_binding_identifier, so the context-blind
+                    // restricted-name test must not re-reject it.
+                    seen_params.declare(rest_param.str_value,
+                                        rest_param.type != TokenType.IDENTIFIER)!;
                     // Intern now: rest_param.str_value may borrow the lexer's
                     // shared ident_buf scratch (escaped identifier), which the
                     // body parsed below will overwrite. declare_var stores this
@@ -4098,7 +4103,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 inner_ctx.try_skip_ts_type_annotation()!;
 
                 if (rest_param.str_value.len > 0) {
-                    inner_seen.declare(rest_param.str_value)!;
+                    inner_seen.declare(rest_param.str_value,
+                                       rest_param.type != TokenType.IDENTIFIER)!;
                     // Intern now: rest_param.str_value may borrow the lexer's
                     // shared ident_buf scratch (escaped identifier), which the
                     // body parsed below will overwrite. declare_var stores this
@@ -4348,14 +4354,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     bool prologue_made_strict = false;
     for (uint i = 1; i < prologue_count; i++) {
         Token t = prologue_buf[i];
-        if (t.type != TokenType.STRING) continue;
-        if (t.str_value.len != 10) continue;
-        bool is_use_strict = true;
-        char[] expected = "use strict";
-        for (usz k = 0; k < 10; k++) {
-            if (t.str_value[k] != expected[k]) { is_use_strict = false; break; }
-        }
-        if (is_use_strict && inner_ctx.params_are_simple()) {
+        if (!is_use_strict_directive(t)) continue;
+        if (inner_ctx.params_are_simple()) {
             inner_ctx.is_strict = true;
             inner_ctx.lexer.set_strict(true);
             if (inner_ctx.current_func != null) inner_ctx.current_func.flags.is_strict = true;
@@ -5418,13 +5418,16 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // the current token.
         HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(params[i]);
         char[] name = param_hstr.get_data();
-        // ArrowParameters inherit the ENCLOSING [Await], so the reservation is
-        // read off `self`, not the fresh arrow_ctx (whose is_async is the
-        // arrow's own flag). `await => 1` in script code binds a parameter
-        // named "await"; `async function g(){ await => 1 }` still rejects.
+        // ArrowParameters inherit the ENCLOSING [Await]/[Yield], so both
+        // reservations are read off `self`, not the fresh arrow_ctx (whose
+        // is_async is the arrow's own flag). `await => 1` in script code binds
+        // a parameter named "await", and `yield => 1` does the same outside a
+        // generator; `async function g(){ await => 1 }` still rejects.
         // The reparse path reaches the same answer via
-        // expect_binding_identifier and arrow_ctx.forbid_await.
-        if (is_restricted_name(name, self.await_reserved_here(), strict: self.is_strict)) {
+        // expect_binding_identifier and arrow_ctx.forbid_await/forbid_yield.
+        if (is_restricted_name(name, self.await_reserved_here(),
+                               self.is_user_generator || self.forbid_yield,
+                               strict: self.is_strict)) {
             return COMPILE_ERROR~;
         }
         for (ushort j = 0; j < i; j++) {

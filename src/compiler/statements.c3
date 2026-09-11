@@ -833,16 +833,8 @@ fn void? CompilerContext.parse_directives(&self) {
                 self.advance()!;
             }
 
-            if (str_tok.str_value.len == 10) {
-                bool is_use_strict = true;
-                char[] expected = "use strict";
-                for (usz i = 0; i < 10; i++) {
-                    if (str_tok.str_value[i] != expected[i]) {
-                        is_use_strict = false;
-                        break;
-                    }
-                }
-                if (is_use_strict) {
+            if (is_use_strict_directive(str_tok)) {
+                {
                     // ES2024 §15.2.1 / §15.3.1 / §15.4.1 / §15.5.1 / §15.6.1
                     // / §15.7.1 / §15.8.1: "It is a Syntax Error if
                     // ContainsUseStrict of FunctionBody is true and

@@ -228,6 +228,22 @@ fn bool CompilerContext.await_reserved_here(&self) {
 // (§14.13) and BindingIdentifier (§13.1) both reduce to Identifier, so the
 // label sites (`await: ;` defining it, `break await;` referencing it) and the
 // arrow-head detection scan share this one test and cannot drift apart.
+// ES2024 §12.9.4.1: a Use Strict Directive's StringLiteral must be the exact
+// code point sequence "use strict" or 'use strict' — it may not contain an
+// EscapeSequence or a LineContinuation, so `'use str\<newline>ict'` is an
+// ordinary string expression and does not make the code strict. The lexer
+// leaves raw_value empty exactly when the literal held no escapes, so that
+// is the test for the restriction.
+fn bool is_use_strict_directive(Token t) @inline {
+    if (t.type != TokenType.STRING || t.raw_value.len != 0) return false;
+    if (t.str_value.len != 10) return false;
+    char[] expected = "use strict";
+    for (usz i = 0; i < 10; i++) {
+        if (t.str_value[i] != expected[i]) return false;
+    }
+    return true;
+}
+
 fn bool CompilerContext.peek_is_binding_identifier(&self) {
     TokenType tt = self.peek_type();
     if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt)) return true;
