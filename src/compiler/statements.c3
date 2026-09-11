@@ -1780,7 +1780,11 @@ fn void? CompilerContext.emit_block_scoped_fn_decls(&self, NameSpan* lex_spans, 
         // DECLVAR_HOIST above), so the var binding tracks the CURRENT
         // closure on every execution, matching B.3.3's per-evaluation
         // [[Value]] assignment.
-        if (!self.is_strict) {
+        // B.3.3's web-compat second binding is for a plain FunctionDeclaration
+        // only: a generator, async function, or async generator declared in a
+        // block stays strictly block-scoped, so `switch (0) { default:
+        // function* x(){} } x;` is a ReferenceError.
+        if (!self.is_strict && lex_spans[i].fn_kind == NameSpanFnKind.NSP_FN_PLAIN) {
             char[] fn_name = self.name_span_text(lex_spans[i]);
             // B.3.3.1 step ii exemption, decided by block() at block-entry
             // time from the live scope stack (the scan cannot test it: late
@@ -6143,8 +6147,12 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         // var_env directly with no lex_env walk, unlike PUTVAR. At function
         // scope the wrapper's emit already covers this; the duplicate there
         // is the same value and harmless, so gate on is_global to emit once.
-        // B.3.3.1 parameterNames exemption (formals + arguments).
-        if (!self.is_strict && self.is_global && !self.is_formal_param_name(fn_name2)) {
+        // B.3.3.1 parameterNames exemption (formals + arguments), and B.3.3
+        // itself covers a plain FunctionDeclaration only: a generator, async
+        // function, or async generator declared in a block stays strictly
+        // block-scoped.
+        if (!self.is_strict && self.is_global && !is_async_decl && !gen_here
+            && !self.is_formal_param_name(fn_name2)) {
             self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)func_reg, name_idx);
         }
     } else {

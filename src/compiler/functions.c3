@@ -2325,6 +2325,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         // it declares nothing here, and hoisting its name would bind it in this
         // scope instead of only inside its own body (§15.2.5).
         if ((brace_depth > own_depth || !tok_at_stmt_start) && tt == TokenType.FUNCTION) {
+            bool b33_is_async = self.is_async;
             self.is_async = false;
             Token? nstar = self.lexer.next_token();
             if (catch _errn = nstar) continue;
@@ -2353,9 +2354,12 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // hoists in b33_hoisted_names; block() consults that list at
             // block-entry time (when the enclosing `let`s are visible) and
             // gates entry init + publish on it.
+            // B.3.3 covers a plain FunctionDeclaration only, so a generator
+            // or async function declaration stays strictly block-scoped: no
+            // var binding is created for it at all.
             if (!checks_only && !self.is_strict && b33_named && brace_depth > own_depth
                 && tok_at_stmt_start
-                && !b33_is_gen && nname.str_value.len > 0
+                && !b33_is_gen && !b33_is_async && nname.str_value.len > 0
                 && str_eq(nname.str_value, "arguments") == false) {
                 self.hoist_one_var_name(nname.str_value, is_global, true);
             }
