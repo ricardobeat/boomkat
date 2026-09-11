@@ -850,6 +850,14 @@ fn void builtin_eval(BuiltinContext* ctx) {
     vm::Vm* precheck_vm = (vm::Vm*)ctx.vm;
     usz precheck_act_count = precheck_vm.activation_count;
     vm::Activation* precheck_caller = null;
+    // The activation a direct eval's environment/this are taken from. A direct
+    // eval inside a formal-parameter default runs while the default's 0-arg
+    // thunk is on top, but that thunk is an engine artifact: in the spec the
+    // running execution context during parameter evaluation is the function
+    // being initialized, so the eval's `var` bindings must land in its
+    // parameter environment, visible to the body (ES2024 §10.2.11 steps
+    // 27-29). eval_caller therefore skips a default thunk to its parent.
+    vm::Activation* eval_caller = null;
     bool caller_has_direct_eval = false;
     // ES2015 Annex B: `new.target` is a permitted syntax inside an eval
     // source ONLY when the eval is being processed by direct eval from
@@ -873,6 +881,12 @@ fn void builtin_eval(BuiltinContext* ctx) {
     if (precheck_act_count > 0) {
         precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
         caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0;
+        eval_caller = precheck_caller;
+        if (precheck_caller.func != null
+            && ((CompiledFunction*)precheck_caller.func).flags.needs_lex_bridge
+            && precheck_caller.parent != null) {
+            eval_caller = precheck_caller.parent;
+        }
         if (caller_has_direct_eval) {
             // precheck_caller.func is the caller's CompiledFunction template
             // (for natfunc frames, like this builtin itself, the func slot
@@ -940,8 +954,8 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // the eval's variable environment is the global object record: always for
     // indirect eval, and for direct eval only when the caller is global code.
     bool eval_var_env_is_global = true;
-    if (caller_has_direct_eval && precheck_caller != null) {
-        eval_var_env_is_global = precheck_caller.var_env == ctx.global_env;
+    if (caller_has_direct_eval && eval_caller != null) {
+        eval_var_env_is_global = eval_caller.var_env == ctx.global_env;
     }
 
     // Compile the source string as eval code
@@ -1024,11 +1038,11 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // block because builtin_eval runs to completion on this thread before
     // any subsequent VM dispatch). The direct-eval decision below is
     // therefore guaranteed consistent with `caller_has_direct_eval`.
-    if (caller_has_direct_eval && precheck_caller != null) {
+    if (caller_has_direct_eval && eval_caller != null) {
         is_direct_eval = true;
-        lex_env_for_eval = precheck_caller.lex_env;
-        var_env_for_eval = precheck_caller.var_env;
-        caller_this = precheck_caller.this_binding;
+        lex_env_for_eval = eval_caller.lex_env;
+        var_env_for_eval = eval_caller.var_env;
+        caller_this = eval_caller.this_binding;
     }
     // Declaration-instantiation leak semantics follow the eval SOURCE's own
     // strictness (ES2015 §18.2.1.1 PerformEval step 12), independent of the
