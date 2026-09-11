@@ -321,6 +321,8 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     // which must register `Foo` as an export without re-parsing the header).
     if (out_name != null) *out_name = class_name;
 
+    if (self.class_name_is_restricted(class_name)) return COMPILE_ERROR~;
+
     // ES6 §14.5.14 Runtime Semantics: ClassDefinitionEvaluation creates a
     // fresh lexical environment (classScope) as a child of the current
     // LexicalEnvironment, with an *immutable* CreateImmutableBinding for the
@@ -373,6 +375,21 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     self.free_reg(ctor_reg);
 }
 
+// Is `name` an illegal class name? ES2024 §11.2.2 makes all parts of a
+// ClassDeclaration and ClassExpression strict mode code, so the name is a
+// strict-mode BindingIdentifier even when the surrounding code is sloppy:
+// `eval`, `arguments`, `let`, `static` and the ES5 future-reserved words are
+// SyntaxErrors there, and `yield` is reserved unconditionally. `await` is the
+// exception, its grammar parameter is inherited from the enclosing context
+// rather than fixed by the class (§14.5.1), so it stays legal outside an
+// async function, an async arrow and a module.
+fn bool CompilerContext.class_name_is_restricted(&self, char[] name) {
+    return is_restricted_name(name,
+        self.is_async || self.is_module || self.forbid_await,
+        true,
+        strict: true);
+}
+
 // Parse a class expression: `class [Name] [extends Base] { body }`
 // Returns the register holding the constructor.
 fn ushort? CompilerContext.class_expression(&self) {
@@ -392,8 +409,8 @@ fn ushort? CompilerContext.class_expression(&self) {
     // params rather than fixing them the way a function expression's name
     // does. await_is_identifier is the shared decision.
     //
-    // `yield` is not a valid class name: it is reserved in all strict code
-    // and this engine is strict-only.
+    // `yield` and `let`/`static` never reach the name path: they lex as their
+    // own token types, not IDENTIFIER, so the branch below rejects them.
     bool is_valid_class_name = (class_name_tt == TokenType.IDENTIFIER) ||
         self.await_is_identifier(class_name_tt);
     if (is_valid_class_name) {
@@ -405,6 +422,7 @@ fn ushort? CompilerContext.class_expression(&self) {
         // below will overwrite. declare_var stores this slice into
         // scope_stack, which outlives the current token.
         name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
+        if (self.class_name_is_restricted(name)) return COMPILE_ERROR~;
         // For named class expressions, track the name on the scope stack so
         // inner function expressions can resolve it (name inference).
         name_reg = self.declare_var(name, LET);
