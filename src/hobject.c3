@@ -2387,6 +2387,15 @@ fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
         if (idx >= 0) {
             return cur.prop_values()[idx];
         }
+        // ARRAY exotic: "length" lives in array_len_ptr, not the named table
+        // (mirrors has_prop_proto and the VM's GETPROP). Without this a
+        // `with`-env read of an inherited array length misses the binding.
+        if (cur.get_class() == ObjClass.ARRAY
+            && key == (void*)h.strs[heap::BuiltinStr.LENGTH]) {
+            TVal len;
+            len.set_fastint((long)*cur.array_len_ptr());
+            return len;
+        }
         // ARRAY / ARGUMENTS exotic: string-index keys may live only in the
         // dense array part (see get_prop).
         TVal dense;
@@ -3015,6 +3024,17 @@ fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) 
             result.found = true;
             result.value = cur.prop_values()[idx];
             result.is_accessor = cur.get_prop_flags((uint)idx, h).is_accessor;
+            result.owner = cur;
+            return result;
+        }
+        // ARRAY exotic: "length" lives in array_len_ptr, not the named table
+        // (mirrors has_prop_proto and the VM's GETPROP). Without this a
+        // `with`-env read of an inherited array length misses the binding.
+        if (cur.get_class() == ObjClass.ARRAY
+            && key == (void*)h.strs[heap::BuiltinStr.LENGTH]) {
+            result.found = true;
+            result.value.set_fastint((long)*cur.array_len_ptr());
+            result.is_accessor = false;
             result.owner = cur;
             return result;
         }
