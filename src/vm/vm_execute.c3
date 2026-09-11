@@ -7058,6 +7058,20 @@ fn TVal? Vm.run(Vm* vm) {
                 if (!builtins::js_has_property(vm, vm.heap, base, (HString*)key, &has_still)) {
                     if (vm.heap.has_error && !vm_throw_pending(vm, &ds)) return VM_ERROR~;
                     threw = true;
+                } else if (!has_still && is_strict_act) {
+                    // §9.1.1.2.5 SetMutableBinding steps 3-4: the reference was
+                    // created against this bindings object, but the read side
+                    // deleted the binding. A strict reference throws a
+                    // ReferenceError and writes nothing. A sloppy one falls
+                    // through to [[Set]], which re-creates the property with the
+                    // new value (ES5 §10.2.1.2.4's create-when-absent step).
+                    HString* name_hstr = (HString*)key;
+                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                            "%s is not defined", name_hstr.get_cstr(),
+                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    threw = true;
                 } else {
                     bool sres;
                     if (!builtins::js_set_with_receiver(vm, vm.heap, base, (HString*)key, *ra, recv, &sres)) {

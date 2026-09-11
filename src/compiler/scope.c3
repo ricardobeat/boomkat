@@ -182,11 +182,21 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
 // Returns SCOPE_ERROR if not found or if the variable is captured (must go
 // through the environment chain instead of using a register) or is in TDZ
 // (must go through the env so the runtime TDZ sentinel throws ReferenceError).
+// True when a with-env may be in scope for the code being compiled: either
+// this function pushes one (`with` in its own body) or it was compiled inside
+// an enclosing `with`, whose env record its closures capture. Every
+// with-aware decision (dynamic name resolution, the withheld register and
+// fused-op fast paths, SnapshotReference stores) reads this rather than the
+// raw cur_with_depth, which counts only this function's own with-envs.
+fn bool CompilerContext.in_with(&self) @inline {
+    return self.cur_with_depth > 0 || self.outer_with;
+}
+
 fn ushort? CompilerContext.resolve_var(&self, char[] name) {
     // Inside `with`, every identifier is dynamically scoped: the with-object
     // may own the name and shadow the static binding, so force the
     // environment lookup (GETVAR walks the with-env chain at runtime).
-    if (self.cur_with_depth > 0) {
+    if (self.in_with()) {
         return SCOPE_ERROR~;
     }
     // Search from top of scope stack backwards
@@ -220,7 +230,7 @@ fn ushort? CompilerContext.resolve_var(&self, char[] name) {
 fn ushort? CompilerContext.resolve_slot_global(&self, char[] name) {
     // Same dynamic-scope rule as resolve_var: inside `with` the name may
     // resolve to the with-object, so never use the home register.
-    if (self.cur_with_depth > 0) {
+    if (self.in_with()) {
         return SCOPE_ERROR~;
     }
     uint i = self.scope_depth;
@@ -563,7 +573,7 @@ fn bool CompilerContext.is_statically_resolvable_local(&self, char[] name) {
     if (self.is_global) return false;
     // Inside `with`, the with-object may own the name and shadow the static
     // binding, so resolvability is dynamic (same rule as resolve_var).
-    if (self.cur_with_depth > 0) return false;
+    if (self.in_with()) return false;
     uint i = self.scope_depth;
     while (i > 0) {
         i--;

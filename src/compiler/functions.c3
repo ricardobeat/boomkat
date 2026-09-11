@@ -3702,6 +3702,9 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // Create a new CompilerContext for the default expression
     CompilerContext def_ctx;
     def_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    def_ctx.outer_with = self.in_with();
     def_ctx.module_goal = self.module_goal;
 
     // Strict-only engine: always strict
@@ -3834,6 +3837,9 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
 fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     CompilerContext key_ctx;
     key_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    key_ctx.outer_with = self.in_with();
     key_ctx.module_goal = self.module_goal;
     key_ctx.lexer.set_strict(true);
     key_ctx.is_strict = self.is_strict;
@@ -3895,6 +3901,9 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
 fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     CompilerContext block_ctx;
     block_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    block_ctx.outer_with = self.in_with();
     block_ctx.module_goal = self.module_goal;
     block_ctx.lexer.set_strict(true);
     block_ctx.is_strict = self.is_strict;
@@ -3962,6 +3971,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
     inner_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    inner_ctx.outer_with = self.in_with();
     inner_ctx.module_goal = self.module_goal;
 
     inner_ctx.is_strict = self.is_strict;
@@ -4790,6 +4802,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // Create a new CompilerContext for the arrow function
     CompilerContext arrow_ctx;
     arrow_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    arrow_ctx.outer_with = self.in_with();
     arrow_ctx.module_goal = self.module_goal;
 
     // Strict-only engine: always strict
@@ -5350,6 +5365,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // Create a new CompilerContext for the arrow function
     CompilerContext arrow_ctx;
     arrow_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    arrow_ctx.outer_with = self.in_with();
     arrow_ctx.module_goal = self.module_goal;
 
     // Strict-only engine: always strict

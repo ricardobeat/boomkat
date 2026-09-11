@@ -23,6 +23,9 @@ import std::math;
 // initialization order matches source order.
 fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx, bool is_static) {
     target_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    target_ctx.outer_with = self.in_with();
     target_ctx.lexer.set_strict(true);
     target_ctx.is_strict = self.is_strict;
     target_ctx.in_class_body = self.in_class_body;

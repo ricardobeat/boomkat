@@ -791,6 +791,16 @@ int  cur_lex_depth;
 // stays on act.lex_env and the jump target reads it as still active).
 int  cur_with_depth;
 
+    // True when this function is compiled lexically inside a `with` body. A
+    // closure created there captures the with-env in its scope chain even
+    // though this function pushes no with-env of its own, so every name it
+    // touches may resolve to the with object: reads must go through the
+    // environment and the fused register/INC_VAR fast paths must be skipped,
+    // exactly as inside the `with` body itself. Kept separate from
+    // cur_with_depth, which counts only the with-envs THIS function pushes
+    // and is what the break/continue WITH_END accounting compares against.
+    bool outer_with;
+
     // Per-function strictness. Default true (the engine was strict-only when
     // this field was added); plans/083 flips script bodies to sloppy at a
     // later phase. Inner functions inherit from the enclosing context until

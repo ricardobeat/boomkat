@@ -2339,7 +2339,7 @@ fn void? CompilerContext.var_declaration(&self) {
                     // assignment, so emit the assignment as a value-only update
                     // of the existing global binding.
                     self.emit_a_bc(Opcode.PUTVAR, (uint)reg, name_idx);
-                } else if (!self.is_global && !is_lexical && has_init && self.cur_with_depth > 0) {
+                } else if (!self.is_global && !is_lexical && has_init && self.in_with()) {
                     // Function-scoped `var x = <expr>`: the binding already exists
                     // (DECLVAR_HOIST) as undefined; the assignment side runs at the
                     // current position, so it must walk the env chain. A `with`
