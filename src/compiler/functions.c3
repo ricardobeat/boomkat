@@ -189,12 +189,12 @@ fn bool SeenParams.contains(&self, char[] name) {
 
 // Apply the FormalParameters early errors to one bound name and record it.
 //
-// Rejects ES5 §13.1 restricted names (`eval`, `arguments`, `let`, ...) and
-// ES2015 §14.1.2 duplicate BoundNames. This engine is strict-only, so both
-// are unconditional SyntaxErrors. `allow_restricted` is set when the token
-// was a contextual keyword (`await`/`yield` accepted as an identifier by
-// `expect_binding_identifier`), where the enclosing-grammar check has already
-// decided the name is legal here.
+// Rejects ES5 §13.1 restricted names (`eval`, `arguments`, `let`, ...) for
+// code the caller marks strict, and ES2015 §14.1.2 duplicate BoundNames.
+// `allow_restricted` is set when the token was a contextual keyword
+// (`await`/`yield` accepted as an identifier by `expect_binding_identifier`),
+// where the enclosing-grammar check has already decided the name is legal
+// here.
 //
 // Names longer than 63 chars or beyond MAX_PARAMS entries are checked but
 // not recorded: the table is a fixed-size fast path, and overflow only
@@ -2144,10 +2144,11 @@ fn bool stmt_start_after(TokenType tt) {
 // legal in non-async/non-module code (BindingIdentifier reuses the contextual
 // await_is_identifier decision), so it must be recognized here too: missing it
 // skipped the class-body skip and the body's `var`s leaked into the enclosing
-// scope's hoist list. `yield` is always reserved in this strict-only engine,
-// as are `static`, `let`, `package`, `implements`, etc., so they fall through
-// to the parser's SyntaxError before this pre-scan's output matters. The lexer
-// is restored either way, this is pure lookahead.
+// scope's hoist list. `yield`, `static`, `let`, `package`, `implements` and
+// the other strict-mode reserved words cannot be a class name either, but they
+// lex as their own token types and the parser rejects them, so this pre-scan
+// only has to place `class` correctly for the names that can be legal.
+// The lexer is restored either way, this is pure lookahead.
 fn bool CompilerContext.class_kw_starts_class(&self) {
     TokenType nt = self.peek_type();
     return nt == TokenType.IDENTIFIER || self.await_is_identifier(nt)
@@ -3703,7 +3704,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // compiles nested function declarations via compile_inner_function, which
     // propagates self.is_strict. A "use strict" would otherwise flip the flag
     // AFTER those declarations were already compiled sloppy, missing every
-    // strict-only early error inside them. Peek the prologue now (a dynamic
+    // strict-code early error inside them. Peek the prologue now (a dynamic
     // Function body reaches this path; source functions go through
     // compile_inner_function, which has the same treatment), restore the lexer
     // to just before the body's `{`, and let block() consume the directives for
@@ -5346,10 +5347,10 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         // Block body: { ... }
         arrow_ctx.advance()!;
         // An arrow's ConciseBody has a directive prologue like any other
-        // function body. The engine is strict-only so the directive is a
-        // no-op, but it must be consumed here for its ES §15.3.1 early error:
-        // `(a = 1) => { "use strict"; }` is a SyntaxError because the arrow's
-        // parameters are not a simple list.
+        // function body. `parse_directives` applies it (a sloppy arrow becomes
+        // strict) and raises its ES §15.3.1 early error: `(a = 1) => { "use
+        // strict"; }` is a SyntaxError because the arrow's parameters are not a
+        // simple list.
         arrow_ctx.parse_directives()!;
         // An arrow ConciseBody never goes through block(), so emit the
         // deferred declarations here instead.
@@ -5689,10 +5690,10 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // Block body: { ... }
         arrow_ctx.advance()!;
         // An arrow's ConciseBody has a directive prologue like any other
-        // function body. The engine is strict-only so the directive is a
-        // no-op, but it must be consumed here for its ES §15.3.1 early error:
-        // `(a = 1) => { "use strict"; }` is a SyntaxError because the arrow's
-        // parameters are not a simple list.
+        // function body. `parse_directives` applies it (a sloppy arrow becomes
+        // strict) and raises its ES §15.3.1 early error: `(a = 1) => { "use
+        // strict"; }` is a SyntaxError because the arrow's parameters are not a
+        // simple list.
         arrow_ctx.parse_directives()!;
         // An arrow ConciseBody never goes through block(), so emit the
         // deferred declarations here instead.

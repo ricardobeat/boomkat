@@ -70,6 +70,12 @@ Breakdown of the 19 SKIP_FILES entries:
 
 ## 3. Migration Phases
 
+**Status (2026-09-12).** Phases 0-4 have landed. Phase 5 is done except for the
+`annexB` suite, which stays skipped: measured at 332/1086 passing, blocked on
+the B.3.3/B.3.4 hoisting matrices and the legacy direct/indirect eval-code
+rules. The per-phase checklists below are kept as the record of what each phase
+was for, not as instructions.
+
 ### Phase 0 — Per-function `is_strict` flag (infrastructure only, no behavior change)
 
 1. **`src/bytecode.c3`** — add `is_strict` to `FuncFlags` bitstruct. Pick the next free bit (currently bits 0-31 used; pick bit 32, may need widening). Add the `CompiledFunction.is_strict()` accessor macro alongside `subst_global_this()`.

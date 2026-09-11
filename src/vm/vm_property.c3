@@ -1871,11 +1871,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // Module Namespace Exotic [[Set]] (§10.4.6.11): always returns
-                // false, which PutValue turns into a TypeError (strict-only
-                // engine). A deferred namespace is NOT forced by it: the write
-                // cannot succeed either way, so evaluating first would be a
-                // side effect with nothing to show for it (test262
-                // import-defer/evaluation-triggers/ignore-set-string-*).
+                // false, which PutValue turns into a TypeError in strict code
+                // and drops in sloppy code. A deferred namespace is NOT forced
+                // by it: the write cannot succeed either way, so evaluating
+                // first would be a side effect with nothing to show for it
+                // (test262 import-defer/evaluation-triggers/ignore-set-string-*).
                 if (hobj.flags.exotic_module_ns) {
                     // §10.4.6.12: [[Set]] on a namespace always returns false;
                     // only strict PutValue turns that into a TypeError.
@@ -2081,14 +2081,15 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // A length write on an ARRAY exotic: a plain assignment is Set(A, "length",
-                // v, true) (ES2024 §13.15.2 PutValue, this engine being strict-only),
-                // which OrdinarySet defines as DefineOwnProperty(A, "length", {[[Value]]: v})
+                // v, true) (ES2024 §13.15.2 PutValue), which OrdinarySet defines as
+                // DefineOwnProperty(A, "length", {[[Value]]: v})
                 // when "length" is an own data property (§10.1.9.2 step 4). Route
                 // through the shared ArraySetLength algorithm (proxy.c3) so plain
                 // assignment, Object.defineProperty, and Reflect.defineProperty all
                 // apply the same double ToUint32/ToNumber coercion, writable checks,
                 // and element-deletion semantics. A rejected definition (e.g.
-                // non-writable length) throws TypeError since Throw=true here.
+                // non-writable length) throws TypeError in strict code and is
+                // dropped in sloppy code.
                 if (hobj.get_class() == hobject::ObjClass.ARRAY && rb.is_string() && rb.get_heapptr() == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
                     builtins::ProxyDesc pd;
                     pd.has_value = true;
@@ -2136,7 +2137,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             TVal setter_fn = hobject::hobject_access_setter(*entry);
                             // No setter (get-only accessor): §10.1.9.3 / OrdinarySet
                             // returns false, which PutValue turns into a TypeError
-                            // (§13.15.2), always, since this engine is strict-only.
+                            // in strict code and drops in sloppy code (§13.15.2).
                             if (!setter_fn.is_object() || setter_fn.get_heapptr() == null) {
                                 // OrdinarySet without a setter returns false;
                                 // only strict PutValue turns it into a TypeError.
@@ -2584,9 +2585,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         } else {
                             // ES5 §8.12.5 [[Set]] step 4 / ES2024 §10.1.9.2 OrdinarySet
                             // step 3: if no accessor on the chain, walk the chain for a
-                            // data property. If found and not writable, return false
-                            // (silent in sloppy, TypeError in strict). We're strict-only
-                            // so always throw.
+                            // data property. If found and not writable, return false:
+                            // silent in sloppy, TypeError in strict.
                             HObject* data_cur = hobj.prototype;
                             uint data_depth = 0;
                             bool proto_nonwritable = false;

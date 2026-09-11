@@ -335,13 +335,13 @@ enum Opcode : char {
     TYPEOFIDENT,
     // `A = delete variable[constants[BC]]`: delete a variable (A-BC).
     DELVAR,
-    // Phase 1 (plans/083): `with (expr) { ... }` body entry (A-BC format).
-    // Phase 1 stubs the runtime semantics — the VM handler throws SyntaxError.
-    // Phase 4 implements: push a with-env wrapping the object produced by A,
-    // make it the active var_env for the body, then pop it on WITH_END.
+    // `with (expr) { ... }` body entry (A-BC format). A holds the operand:
+    // a primitive is ToObject-wrapped, null/undefined throws TypeError
+    // (ES2024 §14.12.3 step 2). The resulting object becomes a with-env
+    // pushed onto `act.lex_env` for the body, which WITH_END pops.
     WITH_START,
-    // Phase 1 (plans/083): end of a `with` body (ABC, no operands used).
-    // Companion to WITH_START; same Phase 1 stub / Phase 4 real semantics split.
+    // End of a `with` body (ABC, no operands used). Companion to WITH_START;
+    // pops the env record it pushed.
     WITH_END,
     // `with-get A = B, variable[constants[C]]`: SnapshotReference read for
     // a read-modify-write on an identifier inside `with` (ES5 §11.13.2
@@ -351,23 +351,27 @@ enum Opcode : char {
     // name per HasBinding, then reads the value: on a with-env hit B holds
     // the bindings object and A the HasProperty-checked current value (the
     // base is captured before the getter runs, so a getter that deletes
-    // the binding still routes the store to this object). Otherwise B holds
-    // the global object and A the env-walked value, and the paired WTWR
-    // falls back to the env walk.
+    // the binding still routes the store to this object). Otherwise B is
+    // left undefined (a declarative hit, or an unresolvable name) and the
+    // paired WTWR falls back to the env walk.
     WITHGET,
     // `with-base A = variable[constants[C]]`: SnapshotReference base for a
     // plain assignment inside `with` (ES2024 §9.1.1.2.5 SetMutableBinding
     // steps 1-2: the base is fixed by HasBinding before the RHS runs, so an
     // unscopables getter that deletes the binding still routes the store to
     // this object). Captures only the base per HasBinding: on a with-env hit
-    // A holds the bindings object, otherwise the global object (paired WTWR
-    // falls back to the env walk). Runs no value getter, unlike WITHGET.
+    // A holds the bindings object; on a declarative or global hit A holds the
+    // owning EnvRecord*; an unresolvable name leaves A undefined. Runs no
+    // value getter, unlike WITHGET.
     WITHBASE,
     // `with-write A = B, variable[constants[C]]`: SnapshotPutValue, the
     // store half of a read-modify-write inside `with`. When B holds a
     // bindings object captured by WITHGET, writes A through [[Set]] on that
-    // object (creating the property when the binding was deleted); otherwise
-    // B holds the global object and this behaves as PUTVAR_ASSIGN.
+    // object (creating the property when the binding was deleted); when B
+    // holds an EnvRecord* it writes through SetMutableBinding from that env,
+    // so an RHS that re-shaped the chain cannot capture the store; otherwise
+    // it walks the env chain. A rejected write throws in strict code and is
+    // dropped in sloppy code. Releases the references held by A and B.
     WTWR,
 
     // ---- Closures --------------------------------------------------------
@@ -482,8 +486,6 @@ enum Opcode : char {
     CLASS_INITPROP,
     // Create the `arguments` exotic object for the current activation.
     CSVARI,
-
-    // ---- with statement REMOVED in strict-only mode -----------------------
 
     // ---- Lexical scoping (let/const) ----------------------------------
 

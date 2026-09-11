@@ -107,7 +107,7 @@ plus AddressSanitizer target, where a collection happens at every allocation.
 |---|---|
 | `rt.register_fn(name, handler, udata:, arity:, constructable:)` | binds a global; lasts until `close` |
 | `ctx.argc()` / `ctx.arg(i)` | out-of-range `arg` is undefined, so no arity check |
-| `ctx.this_value()` / `ctx.new_target()` / `ctx.is_construct()` | strict-only: an undefined receiver stays undefined |
+| `ctx.this_value()` / `ctx.new_target()` / `ctx.is_construct()` | the receiver as the call path bound it (sloppy `this` already coerced) |
 | `arg.type_of()` / `as_number()` / `as_bool()` / `as_string()` | strict, `WRONG_TYPE` on mismatch |
 | `ctx.number/string/boolean/null_value/undefined_value(v)` | build a `JsArg` |
 | `ctx.ret(v)` / `ret_number` / `ret_string` / `ret_bool` / `ret_null` | never calling one yields undefined |

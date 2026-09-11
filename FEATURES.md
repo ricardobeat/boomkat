@@ -38,7 +38,7 @@ excluded.
 | `import defer` (ES2026) | ❌ | ❌ | ❌ | ❌ |
 | Decorators | ❌ | ❌ | ❌ | ❌ |
 | `using`/`await using`, explicit resource management | ❌ | ❌ | ❌ | ❌ |
-| Sloppy mode, `with`, Annex B | ❌ rejected | ✅ | ✅ | ✅ |
+| Sloppy mode, `with`, Annex B | ⚠️ sloppy + `with`; partial Annex B | ✅ | ✅ | ✅ |
 
 ## Objects, functions, reflection
 
@@ -118,45 +118,43 @@ for the reasoning.
 
 ### Sloppy mode
 
-The engine is strict-only: one execution mode, no runtime strictness flag.
+Scripts, ordinary function bodies and dynamic `Function()` bodies run sloppy;
+modules and class code are strict, and a `"use strict"` prologue raises a unit
+to strict (`plans/083-sloppy-mode.md`).
 
 | | Status |
 |---|---|
-| `with` | ❌ rejected at parse time (181 tests) |
-| Implicit globals (`x = 1` undeclared) | ❌ ReferenceError |
-| Legacy octal literals `010`, escapes `'\101'` | ❌ SyntaxError |
-| Duplicate parameter names | ❌ SyntaxError |
-| Unqualified `delete x` | ❌ SyntaxError |
-| `arguments.callee` / `.caller` | ❌ (23 tests) |
-| Two-way `arguments` ↔ parameter binding | ❌ |
-| Sloppy `this` boxing (primitive → wrapper) | ❌ |
-| `flags: [noStrict]` tests | ❌ skipped (1313 tests) |
+| `with`, incl. `@@unscopables` and closures over the object | ✅ (181/181 tests) |
+| Implicit globals (`x = 1` undeclared) | ✅ |
+| Legacy octal literals `010`, escapes `'\101'` | ✅ octal values in sloppy, SyntaxError in strict |
+| Duplicate parameter names | ✅ simple parameter lists only (Annex B.3.1) |
+| Unqualified `delete x` | ✅ Annex B.3.1 result rules |
+| `arguments.callee` / `.caller` | ✅ |
+| Two-way `arguments` ↔ parameter binding | ✅ (Annex B.3.1 mapped arguments) |
+| Sloppy `this` boxing (primitive → wrapper, null/undefined → global) | ✅ |
+| `flags: [noStrict]` tests | ✅ run |
 
-Two deliberate exceptions, both spec-required rather than sloppy mode:
-
-- **Dynamic code reserved words.** An indirect `eval` or a `Function()` body is
-  non-strict per ES2024 §19.2.1.1 / §20.2.1.1 unless it has its own `"use
-  strict"`, so `eval`, `arguments` and the FutureReservedWords are legal
-  binding names there. Only identifier reservation relaxes — octals and the
-  rest above stay rejected. Direct `eval` inherits the caller's strictness and
-  so stays strict.
-- **`this`-substitution.** `Function('return this')()` yields the global
-  object (the UMD idiom). This is not a strictness distinction here: it is set
-  only on dynamic bodies, cleared by a `"use strict"` prologue, and never
-  inherited by nested functions.
+Still missing from sloppy semantics: Annex B.3.2 labelled function
+declarations, B.3.4 function declarations as `if` bodies, and B.3.9's
+runtime error for a call used as an assignment target (the engine raises
+the early SyntaxError instead, which B.3.9 leaves to the host).
 
 ### Annex B
 
-Mostly unsupported (1086 tests excluded), because most of it is sloppy-mode
-behavior. The web-reality parts that are mode-independent **are** implemented:
-`__proto__`, `__defineGetter__` / `__defineSetter__` / `__lookupGetter__` /
-`__lookupSetter__`, `String.prototype.substr`, `RegExp.prototype.compile`,
-`escape` / `unescape`, and HTML-like comments (`<!--`, `-->`).
+The `annexB` suite is excluded wholesale (1086 tests), but the web-reality
+parts that the engine does implement are covered from the other suites:
+
+- Mode-independent: `__proto__`, `__defineGetter__` / `__defineSetter__` /
+  `__lookupGetter__` / `__lookupSetter__`, `String.prototype.substr`,
+  `RegExp.prototype.compile`, `escape` / `unescape`, HTML-like comments
+  (`<!--`, `-->`).
+- Sloppy-mode: Annex B.3.1 (duplicate parameter names, mapped `arguments`,
+  `delete x`), B.3.3 for function declarations in a `BlockStatement`, legacy
+  octals and octal escapes.
 
 Not implemented: `Date.prototype.getYear` / `setYear`, the
 `String.prototype` HTML methods (`anchor`, `big`, `blink`, …),
-`RegExp.$1`–`RegExp.$9` legacy statics, and block-scoped function
-semantics.
+`RegExp.$1`–`RegExp.$9` legacy statics, and B.3.2 / B.3.4 / B.3.9 above.
 
 ### Out of scope
 
@@ -182,12 +180,12 @@ Also excluded as still-moving proposals: `import-defer` (229),
 | | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
 |---|---|---|---|---|
 | Language | C3 | C | C | C |
-| Baseline | ES2025 + most ES2026, strict-only | ES2025 + most ES2026 | ES2025 + most ES2026 | ES5.1, partial ES6/7 |
+| Baseline | ES2025 + most ES2026 | ES2025 + most ES2026 | ES2025 + most ES2026 | ES5.1, partial ES6/7 |
 | `BigInt` representation | int128 | arbitrary | arbitrary | |
 | `Proxy` | full | full | full | subset |
 | `SharedArrayBuffer` | single agent | shared | shared | |
-| Sloppy mode | rejected | supported | supported | supported |
-| Annex B | mode-independent parts only | supported | supported | supported |
+| Sloppy mode | supported | supported | supported | supported |
+| Annex B | sloppy-mode parts | supported | supported | supported |
 | RegExp engine | libregexp | libregexp | libregexp | built-in |
 | TypeScript stripping | erasable only | | | |
 | GC | refcount + MS | refcount + cycles | refcount + cycles | refcount + MS |

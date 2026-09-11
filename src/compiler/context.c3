@@ -728,11 +728,10 @@ struct CompilerContext {
     // bodies get a fresh CompilerContext that does not inherit this flag.
     bool forbid_await;
     // True while compiling a class static initialization block body.
-    // ClassStaticBlockStatementList is [~Yield], and this strict-only
-    // engine treats `yield` as a reserved word (not a plain identifier) in
-    // strict code, so a `yield` reference at the block's own level is a
-    // SyntaxError. Like forbid_await, resets to false in any nested
-    // function/arrow body (fresh CompilerContext).
+    // ClassStaticBlockStatementList is [~Yield], and class code is strict, so
+    // a `yield` reference at the block's own level is a SyntaxError. Like
+    // forbid_await, resets to false in any nested function/arrow body (fresh
+    // CompilerContext).
     bool forbid_yield;
 
     // True while the parser sits exactly at the start of an
@@ -801,10 +800,11 @@ int  cur_with_depth;
     // and is what the break/continue WITH_END accounting compares against.
     bool outer_with;
 
-    // Per-function strictness. Default true (the engine was strict-only when
-    // this field was added); plans/083 flips script bodies to sloppy at a
-    // later phase. Inner functions inherit from the enclosing context until
-    // a "use strict" directive is seen, then `parse_directives` flips it.
+    // Per-function strictness. The compilation entry point sets the default
+    // for its unit (sloppy for a script or a dynamic Function body, strict for
+    // a module); a class body compiles strict and class code counts as strict
+    // throughout. Inner functions inherit from the enclosing context until a
+    // "use strict" directive is seen, then `parse_directives` flips it.
     bool is_strict;
     // True only when an actual "use strict" directive was parsed. Kept as a
     // separate flag because some downstream checks want the directive's

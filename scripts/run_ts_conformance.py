@@ -103,7 +103,7 @@ JS_EARLY_ERROR_FILES = {
     "async/es6/asyncWithVarShadowing_es6.ts":
         "var in a catch block shadows the catch parameter (early error)",
     "es6/moduleExportsSystem/topLevelVarHoistingCommonJS.ts":
-        "with statement (sloppy-mode code; the engine is strict-only)",
+        "with statement in module code, which is always strict",
 }
 
 # Sentinel returned by engine workers when the run deadline has passed.

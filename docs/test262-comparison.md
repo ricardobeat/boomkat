@@ -85,6 +85,11 @@ Two adjustments were needed to keep it honest:
 
 ## boomkat's remaining 18
 
+This snapshot predates sloppy mode (`plans/083-sloppy-mode.md`), so the
+sloppy-mode groups below — `Function`-constructor duplicate params, primitive
+`this` boxing, sloppy indirect eval — are implemented now; the counts are the
+snapshot's.
+
 None are engine defects. Sixteen are sloppy-mode semantics the engine
 deliberately does not implement (see `engine-scope.md`), and two need multiple
 realms.

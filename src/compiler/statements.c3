@@ -687,23 +687,23 @@ fn void? CompilerContext.statement(&self) {
     self.reclaim_stmt_regs(stmt_base);
 }
 
-// Check if a name is restricted in strict mode (ES5 §11.6.2.2, ES2024 §13.3.1).
-// The engine is strict-only, there is no non-strict context in which these
-// may appear in a binding position, so we always reject:
-//   - `eval`, `arguments`, ES5 strict-only identifiers (§11.6.2.2).
-//   - `null`, `true`, `false`, NullLiteral / BooleanLiteral sources; never
-//     valid as an IdentifierName in binding position. Lexed as IDENTIFIER
-//     with `str_value` matching the literal name (no dedicated token type
-//     in this engine), so a post-advance check is the only way to catch
-//     `var true = 1` while still allowing property access `obj.true` etc.
-//   - `yield`, `await`, `let`, `static`, `implements`, `interface`, `package`,
-//     `private`, `protected`, `public`, strict-mode reserved words. Most
-//     already come through this path via the lexer's KEYWORDS table
-//     (which would deliver a keyword token instead of IDENTIFIER), but
-//     `yield` and `await` slip through in non-generator / non-module
-//     contexts where the lexer still returns the keyword token, and
-//     var_declaration deliberately accepts them. The strict-only engine
-//     must always reject.
+// Check whether a name may not appear in a binding position. The `strict`,
+// `in_async_or_module` and `in_generator_or_blocked_yield` parameters are the
+// grammar parameters the caller's position fixes; the defaults describe a
+// strict, non-async, non-generator position. Rejected:
+//   - `eval`, `arguments`, in strict code only (§11.6.2.2, §13.1.1).
+//   - `null`, `true`, `false`, NullLiteral / BooleanLiteral sources, in every
+//     mode; never valid as an IdentifierName in binding position. Lexed as
+//     IDENTIFIER with `str_value` matching the literal name (no dedicated
+//     token type in this engine), so a post-advance check is the only way to
+//     catch `var true = 1` while still allowing property access `obj.true`
+//     etc.
+//   - `let`, `static`, and the other strict-mode reserved words, in strict
+//     code only.
+//   - `yield` per in_generator_or_blocked_yield and `await` per
+//     in_async_or_module; callers that know the position is outside the
+//     reservation scope pass false, because the lexer still returns the
+//     keyword token there and the parser accepts it as a name.
 fn bool is_restricted_name(char[] name,
                            bool in_async_or_module = true,
                            bool in_generator_or_blocked_yield = true,
@@ -856,11 +856,10 @@ fn void? CompilerContext.parse_directives(&self) {
                     // / §15.7.1 / §15.8.1: "It is a Syntax Error if
                     // ContainsUseStrict of FunctionBody is true and
                     // IsSimpleParameterList of FormalParameters is false."
-                    // The engine is strict-only, so the directive itself is a
-                    // no-op — but the early error still has to fire, because
-                    // the parameter initialisers of a non-simple list would
-                    // otherwise be evaluated in a scope whose strictness the
-                    // directive claims to change.
+                    // The error fires here rather than after the body is
+                    // parsed, because the parameter initialisers of a
+                    // non-simple list are evaluated in a scope whose
+                    // strictness the directive claims to change.
                     //
                     // Only a FUNCTION body can hit this: at program, eval and
                     // module level there are no formals, so params_are_simple
@@ -872,9 +871,9 @@ fn void? CompilerContext.parse_directives(&self) {
                     // that it makes a dynamic Function body an ordinary strict
                     // function, whose undefined receiver stays undefined.
                     self.saw_use_strict = true;
-                    // Phase 0 (plans/083): plumb is_strict end-to-end. "use strict"
-                    // directive raises the function's strictness; Phase 1 onwards will
-                    // start branching on this flag.
+                    // The directive raises the function's strictness. Record it
+                    // on the compiled function too, which is what the VM reads
+                    // for per-function strictness at run time.
                     self.is_strict = true;
                     if (self.current_func != null) self.current_func.flags.is_strict = true;
                     // An octal escape in a prologue the lexer ALREADY knew
@@ -1684,13 +1683,14 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
 // SyntaxErrors. The same rule is §14.12.1 for a switch's CaseBlock, whose
 // clauses share one StatementList, so both call sites use this.
 //
-// Annex B's relaxation for two plain FunctionDeclarations sharing a name in
-// one block is sloppy-mode only, so it never applies here: this engine is
-// strict-only (see AGENTS.md). test262 states the split directly — the
-// generated pair for `{ function f(){} function f(){} }` and its switch
-// counterpart come from the `redeclare-allow-sloppy-function` templates and
-// carry `flags: [onlyStrict]` with `negative: phase: parse`, i.e. strict code
-// must reject exactly what sloppy code accepts.
+// Annex B.3.2.1 relaxes one pair in sloppy code: two plain
+// FunctionDeclarations may share a name in one block, while a plain one
+// paired with a generator/async/async-generator, or any generator-async
+// pairing, stays an error. test262 states the split directly — the generated
+// pair for `{ function f(){} function f(){} }` and its switch counterpart come
+// from the `redeclare-allow-sloppy-function` templates and carry
+// `flags: [onlyStrict]` with `negative: phase: parse`, i.e. strict code must
+// reject exactly what sloppy code accepts.
 //
 // This applies only to a genuine BlockStatement or CaseBlock. A function
 // BODY's top-level FunctionDeclarations are var-scoped rather than lexical,
@@ -4311,9 +4311,10 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     if (home_reg != REG_NONE) {
         self.emit_abc(Opcode.LDREG, (uint)home_reg, (uint)iter_var, 0);
     } else {
-        // PUTVAR_ASSIGN, not PUTVAR: an undeclared target must throw
-        // ReferenceError rather than create an implicit global (strict-only),
-        // and a const/TDZ target must throw like any other assignment.
+        // PUTVAR_ASSIGN, not PUTVAR: the head is an assignment position, so an
+        // undeclared target follows PutValue — ReferenceError in strict code,
+        // an implicit global in sloppy code — and a const/TDZ target throws
+        // like any other assignment.
         self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)iter_var, name_idx);
     }
 
@@ -4679,8 +4680,8 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
             } else if (head.id_is_bare) {
                 // Env-resident bare target: stage in id_reg, then store to the env.
                 // PUTVAR_ASSIGN, not PUTVAR: the head is an assignment position, so
-                // an undeclared target must throw ReferenceError instead of creating
-                // an implicit global (strict-only), and const/TDZ must throw too.
+                // an undeclared target follows PutValue (ReferenceError in strict
+                // code, an implicit global in sloppy) and const/TDZ throws too.
                 self.emit_abc(Opcode.LDREG, (uint)head.id_reg, (uint)val_slot, 0);
                 self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)head.id_reg, head.id_name_idx);
             } else {

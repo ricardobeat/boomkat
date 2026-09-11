@@ -9,14 +9,15 @@ authority.
 
 ## What it is
 
-A strict-only ES5/ES6 engine meant to be embedded. A host links it and supplies
+An ES5/ES6 engine meant to be embedded. A host links it and supplies
 its own runtime surface: module loading, timers, I/O, and whatever globals that
 host wants. The engine's own target is ECMA-262, not any particular runtime's
 API.
 
-Single execution mode. There is no sloppy mode and no `is_strict` flag to branch
-on, which removes a whole class of dual-semantics bugs and is why `noStrict`
-tests fail to compile by design.
+Both execution modes. Strictness is per function: scripts, ordinary function
+bodies and dynamic `Function()` bodies default to sloppy, modules and class
+code are strict, and a `"use strict"` prologue raises a unit to strict
+(`plans/083-sloppy-mode.md`).
 
 ## In scope, and implemented
 
@@ -39,17 +40,13 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 
 ## Deliberately out of scope
 
-- **Sloppy mode.** `with`, legacy octal, implicit globals, duplicate parameters,
-  unqualified `delete`, `arguments.callee`. Single-mode engine. Two spec-required
-  exceptions: an indirect `eval` / `Function()` body may bind the strict-mode
-  reserved words (only identifier reservation relaxes), and a dynamic body's
-  `this` substitutes to the global object for the UMD idiom.
-- **Most of Annex B**, because most of it is sloppy-mode behavior. The
-  mode-independent web-reality parts ship: `__proto__`, the
-  `__defineGetter__`/`__lookupGetter__` family, `String.prototype.substr`,
-  `RegExp.prototype.compile`, `escape`/`unescape`, HTML-like comments. Absent:
+- **The rest of Annex B**, beyond the parts sloppy mode needs. Annex B.3.1
+  (duplicate parameters, mapped `arguments`, `delete x`), B.3.3 for function
+  declarations in a block, legacy octals and octal escapes are in. Absent:
   `Date.prototype.getYear`/`setYear`, the `String.prototype` HTML methods, the
-  `RegExp` legacy statics, block-scoped function semantics.
+  `RegExp` legacy statics, B.3.2 labelled function declarations, B.3.4 function
+  declarations as `if` bodies, and B.3.9 (already excluded by an early
+  SyntaxError, which B.3.9 leaves to the host).
 - **ECMA-402.** A separate specification. `Date.prototype.toLocaleString` is
   ES5-conformant: with a locales or options argument it resolves the bag per
   ECMA-402 §11.1.2 against the engine's single locale, with no full locale

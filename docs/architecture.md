@@ -88,6 +88,13 @@ buffer, constant pool, register allocator, scope stack, and the flags that end u
 in `FuncFlags`. Nested functions get their own context, and the inner
 `CompiledFunction` is added to the parent's `inner_funcs`.
 
+Strictness is per function, and it comes from the compilation unit's default:
+sloppy for a script or a dynamic `Function()` body, strict for a module. A
+`"use strict"` directive or a class body raises it, and `FuncFlags.is_strict`
+carries the result to the VM, which is the only place that needs it at run time.
+Class code counts as strict throughout, so the class's own name is subject to
+the strict-mode binding rules even in a sloppy script.
+
 Working without an AST does cost something. Some constructs are only recognizable
 after their opening tokens have been consumed and code emitted, so the compiler
 either patches emitted instructions later or re-parses from a saved lexer
@@ -474,6 +481,13 @@ Uninitialized `let` and `const` bindings hold a **TDZ sentinel**, encoded as
 Assignment goes through `env_try_put_lex`, which walks the lexical chain once
 and returns what happened: updated, unbound and so the caller should try the var
 environment, a `const` violation, or a TDZ read.
+
+A `with` body pushes a third kind of record: one marked `is_with`, whose
+bindings object is the operand. Name resolution consults that object's `has`
+trap and `@@unscopables` before falling through to the declarative chain, so a
+name in the body never resolves at compile time. The compiler therefore withholds
+the register fast paths there and routes every read, write and increment through
+the environment.
 
 ## Memory: the heap, the collector, and strings
 

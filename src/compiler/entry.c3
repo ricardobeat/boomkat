@@ -20,12 +20,13 @@ import std::io;
 // eval uses, but deliberately NOT `in_eval_code`: this is global Script code,
 // so declaration instantiation and the global-slot pre-scan must behave
 // exactly as they do for an ordinary script.
-// `non_strict_source` opts a compilation unit out of the engine's strict-only
-// default. It is ONLY for dynamic code whose strictness the spec decides by
-// its own directive prologue: a Function() body (ES2024 §20.2.1.1 step 22
-// compiles it as non-strict FunctionBody) and an indirect eval's Script.
-// Top-level scripts and modules never pass it, so the strict-only invariant
-// the rest of the compiler relies on is unchanged for ordinary code.
+// `non_strict_source` marks a compilation unit whose strictness the spec
+// decides by its own directive prologue: a Function() body (ES2024 §20.2.1.1
+// step 22 compiles it as a non-strict FunctionBody) and an indirect eval's
+// Script. It lowers the LEXER's strictness, so a body with no "use strict"
+// still scans the sloppy-only lexical forms; the parser's own strictness
+// default already covers those units. Top-level scripts take that default
+// directly and modules are strict, so neither passes this.
 fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = false,
                               bool non_strict_source = false) {
     // Reset error state for this top-level compilation.

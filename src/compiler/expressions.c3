@@ -408,12 +408,12 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // code, instead of producing an early error, a ReferenceError exception is
     // thrown during evaluation of the assignment."
     //
-    // The allowance is real but unreachable here: it is gated on
-    // IsStrict(this CallExpression) being false, and this engine is
-    // strict-only, so IsStrict is always true and step 1 never fires. Step 2
-    // returns invalid and §13.15.1's early error applies. The early
-    // SyntaxError is therefore the only spec-conforming outcome for this
-    // engine, not merely the stricter of two permitted readings.
+    // The allowance is Normative Optional and this engine declines it in every
+    // mode: the LHS analysis returns invalid for a CallExpression whether or
+    // not the code is strict, so step 2 applies and §13.15.1's early error
+    // makes `f() = 1` a SyntaxError in sloppy code too. A host that advertises
+    // the behaviour raises the ReferenceError during evaluation instead, which
+    // is what V8 does.
     //
     // The early errors quoted above key off invalid specifically, so web-compat
     // suppresses them; the corresponding runtime clauses (e.g. §13.4.2.1 step 2)
@@ -1927,11 +1927,10 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
             } else if (self.last_was_getvar || self.last_was_local_var) {
-                // Phase 1 (plans/083): sloppy allows `delete <id>` — emit
-                // DELVAR whose VM handler walks the env chain and returns
-                // true for the unresolvable case (Annex B.3.1). Phase 2
-                // tightens this for var/function bindings and non-configurable
-                // cases.
+                // Sloppy `delete <id>` emits DELVAR: the handler walks the env
+                // chain and reports false for a var or function binding (Annex
+                // B.3.1), true for a name that resolves nowhere. Strict code
+                // rejects the form outright (ES2024 §13.5.1.1).
                 if (self.is_strict) {
                     self.last_was_getvar = false;
                     self.last_was_local_var = false;
@@ -4748,11 +4747,12 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 return id_reg;
             }
             if (!self.is_user_generator) {
-                // `yield` is reserved in all strict-mode code (ES2024
-                // §13.1.1) and this engine is strict-only, so outside a
-                // generator it is never an IdentifierReference: it can only
-                // be the start of a YieldExpression, which is not available
-                // here. Either way a SyntaxError.
+                // Reached when the identifier reading above declined, so the
+                // code is strict or a parameter default's forbid_yield marks
+                // the enclosing YieldExpression production unavailable. `yield`
+                // is reserved in strict code (ES2024 §13.1.1) and outside a
+                // generator body it can only start a YieldExpression, which is
+                // not available here. Either way a SyntaxError.
                 //
                 // The gate is is_user_generator, not is_generator: a plain
                 // async function body is compiled as a coroutine and so has

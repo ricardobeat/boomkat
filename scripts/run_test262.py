@@ -234,36 +234,11 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 # The one remaining regexp exclusion is `legacy-regexp` in
 # UNSUPPORTED_PATTERN (Annex B pattern constructs, out of scope).
 
-# Glob patterns of test files to skip. Paths are relative to test262/test().
-# Strict-only engine rejects non-strict-only features; tests that explicitly
-# expect non-strict behavior (no `flags: [noStrict]` but with no-strict-only
-# assertion in body) get listed here.
-
 # Glob patterns (relative to test262/test) skipped wholesale. Unlike SKIP_FILES
 # (exact paths) these match families of tests.
 SKIP_GLOBS = {
     # Async generators (`async function*` / `async *m()`) implemented — plan 060.
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
-}
-
-# noStrict-flagged tests exempt from the blanket noStrict exclusion in
-# skip_reason: they assert mode-independent behavior and pass under the
-# strict-only engine, verified through the canonical worker path.
-NOSTRICT_RUN_GLOBS = {
-    # Syntactic methods (class/object/arrow/generator/async, in any
-    # combination) never get own `caller`/`arguments` properties, regardless
-    # of code strictness (ES2017 §12.3.9).
-    "*/forbidden-ext/*/*.js",
-    # A private name keeps its brand across repeated evaluations of the same
-    # class source via eval (direct or indirect), so a brand check on an
-    # instance made by a later evaluation still holds.
-    "*/private-*-multiple-evaluations-of-class-*.js",
-    # Mapped arguments (ES2024 §9.4.4.8): arguments[i] aliases parameter i in
-    # a sloppy function with a simple parameter list. Both directions of the
-    # alias, and delete's severing of it, are implemented.
-    "language/arguments-object/*.js",
-    "language/arguments-object/mapped/*.js",
-    "*/*-mapped-arguments.js",
 }
 SKIP_FILES = {
     # Map/Set key/value tests that use a BigInt literal far beyond 2^127
@@ -342,18 +317,6 @@ def resolve_suite(name):
 # all post-ES5 tests.  Tests without `features:` are baseline ES5 behavior.
 ANY_FEATURES_PATTERN = re.compile(r"^features:\s*\[", re.MULTILINE)
 
-# test262 front-matter writes `flags:` two ways: the inline `flags: [noStrict]`
-# used across most of the corpus, and the YAML block list
-#
-#     flags:
-#       - noStrict
-#
-# that the imported SpiderMonkey tests under staging/sm use. Matching only the
-# inline form silently runs 147 sloppy-mode staging tests the strict-only
-# engine rejects by design, so accept both.
-FLAG_NOSTRICT_RE = re.compile(
-    r"flags:\s*(?:\[[^]]*\bnoStrict\b|(?:\n\s*-\s*\w+)*\n\s*-\s*noStrict\b)"
-)
 # Multi-worker Atomics/SharedArrayBuffer tests drive a second agent via the
 # $262.agent host hooks (agent.start / agent.broadcast / agent.receiveBroadcast
 # / agent.sleep / agent.monotonicNow). This single-agent engine has no worker
@@ -378,8 +341,7 @@ def skip_reason(path, es5_only=False):
     for skip_dir in SKIP_DIRS:
         if rel.startswith(skip_dir + os.sep) or rel.startswith(skip_dir + "/"):
             return f"excluded directory ({skip_dir})"
-    # Skip explicitly listed test files (strict-only engine can't satisfy
-    # tests that expect non-strict behavior)
+    # Skip explicitly listed test files (features the engine does not target).
     if rel in SKIP_FILES:
         return "explicit skip-list entry (SKIP_FILES)"
 
@@ -417,24 +379,6 @@ def skip_reason(path, es5_only=False):
         return "cross-realm ($262.createRealm) — single-realm engine"
     if es5_only and ANY_FEATURES_PATTERN.search(header):
         return "ES5-only mode: post-ES5 feature flag"
-    # Phase 3 (plans/083): the noStrict skip stays in place while the sloppy
-    # parser/runtime stabilises. Phase 2 turned on sloppy parsing for the
-    # shape changes (legacy octal literals, with stub, call/apply this
-    # coercion, implicit globals, etc.), and Phase 3 widened the lexer to
-    # track ctx.is_strict per compile unit, but several large surface areas
-    # are still strict-only -- notably mapped-arguments for sloppy
-    # functions (Phase 3.1 in plans/083 §3), Annex B.3.3 function-in-block
-    # sloppy-hoist (3.2), and the more delicate eval-with-parameter-
-    # collisions cases -- so flipping FLAG_NOSTRICT_RE wholesale turned a
-    # 22038/1/1687 suite into 22714/365/130 + 130 spurious parse errors.
-    # Each cluster of failures maps to one of the deferred phase-3 items;
-    # unskip step by step as those items land. NOSTRICT_RUN_GLOBS keeps
-    # running those mode-independent tests regardless.
-    # Unskipped: sloppy mode enabled.
-    # if FLAG_NOSTRICT_RE.search(header) and not any(
-    #     fnmatch.fnmatch(rel, pat) for pat in NOSTRICT_RUN_GLOBS
-    # ):
-    #     return "noStrict (strict-only engine — re-enable per Phase 3 sub-step)"
     # CanBlockIsFalse tests assume Atomics.wait throws because the agent cannot
     # suspend. This engine's single main agent has AgentCanSuspend = true (like
     # QuickJS/V8's shell), so wait returns "timed-out"/"not-equal" instead —
@@ -450,8 +394,8 @@ def skip_reason(path, es5_only=False):
     # them left the whole parse-rejection surface unmeasured.
     #
     # This check is deliberately LAST: a test excluded by the unsupported-
-    # feature, noStrict, or agent-harness rules above stays excluded, so
-    # un-skipping parse-negatives cannot resurrect a test another rule owns.
+    # feature or agent-harness rules above stays excluded, so un-skipping
+    # parse-negatives cannot resurrect a test another rule owns.
     if "$DONOTEVALUATE" in header:
         hdr, _ = _read_header(path)
         n = _NEGATIVE_RE.search(hdr)
@@ -675,8 +619,9 @@ class Worker:
             if line.startswith("PASS "):
                 result = "PASS"
             elif line.startswith("COMPILE_ERROR "):
-                # Strict-only engine: intentional parse rejection of non-strict code.
-                # Treated as a passing category in the strict-only world.
+                # categorize_ce() decides whether the rejection is the one the
+                # test's `negative:` metadata requires; a bare COMPILE_ERROR
+                # with no matching expectation is a real parser bug.
                 result = "COMPILE_ERROR"
             elif line.startswith("FAIL "):
                 result = "FAIL"

@@ -3407,8 +3407,9 @@ fn TVal host_arg(BuiltinContext* ctx, uint i) {
     return out;
 }
 
-// The `this` receiver. Undefined stays undefined: the engine is strict-only,
-// so there is no coercion to the global object.
+// The `this` receiver, exactly as the activation holds it: the call path
+// already applied the callee's receiver rule, so a sloppy callee passed
+// undefined/null sees the global object and a primitive sees its wrapper.
 fn TVal host_this(BuiltinContext* ctx) {
     TVal out;
     out.set_undefined();

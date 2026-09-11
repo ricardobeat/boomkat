@@ -427,8 +427,9 @@ fn JsArg JsCtx.arg(self, uint i) {
     return a;
 }
 
-// The receiver. In this strict-only engine an undefined receiver stays
-// undefined; it is never coerced to the global object.
+// The receiver, as the call path bound it: a sloppy callee's undefined or
+// primitive receiver has already become the global object or a wrapper, while
+// a strict one stays as passed.
 fn JsArg JsCtx.this_value(self) {
     JsArg a = { .tv = builtins::host_this(self.ctx) };
     return a;
