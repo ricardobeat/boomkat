@@ -780,21 +780,40 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 }
                 act.set_this_borrowed(arrow_this);
             } else {
-                // Not a resume, so ES5 §10.4.3 substitutes the global object for an
-                // undefined or null `this` when the callee is sloppy.
-                if (!target.is_arrow() && !target.is_strict()
-                    && (this_val.is_undefined() || this_val.is_null())
-                    && vm.global_env != null && vm.global_env.bindings != null) {
-                    this_val.set_object(vm.global_env.bindings);
+                // Not a resume: the same sloppy-receiver rules as the inline
+                // CALL path apply (ES5 §10.4.3 / ES2024 §10.4.1.2). An
+                // undefined/null `this` becomes the global object; any other
+                // primitive is ToObject-boxed. Only the substitution was here,
+                // so a callback invoked through heap.call_fn (Array.prototype
+                // iteration, Array.fromAsync's mapfn) saw a bare primitive.
+                TVal coerced_this;
+                bool used_boxed = false;
+                if (!target.is_arrow() && !target.is_strict()) {
+                    if (this_val.is_undefined() || this_val.is_null()) {
+                        if (vm.global_env != null && vm.global_env.bindings != null) {
+                            coerced_this.set_object(vm.global_env.bindings);
+                            this_val = coerced_this;
+                        }
+                    } else if (!this_val.is_object()) {
+                        HObject* boxed = builtins::to_object_wrapper(vm.heap, this_val);
+                        if (boxed != null) {
+                            // Transfer to_object_wrapper's reference to the
+                            // activation; handle_return releases it on RET.
+                            act.this_binding.set_object(boxed);
+                            act.flags |= ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+                            used_boxed = true;
+                        }
+                    }
                 }
-                // Raw assign: this_val is kept alive by the caller for the duration
-                // of the call; the previous activation[0].this_binding bits are
-                // restored verbatim below, so refcounts stay balanced.
-                // ACT_FLAG_THIS_VALID publishes the slot to the GC without
-                // claiming ownership, so a safepoint inside the callee marks the
-                // receiver instead of sweeping it at a nonzero refcount; the
-                // restore below is unaffected because no decref is scheduled.
-                act.set_this_borrowed(this_val);
+                if (!used_boxed) {
+                    // Raw assign: this_val is kept alive by the caller for the
+                    // duration of the call; the previous activation[0].this_binding
+                    // bits are restored verbatim below, so refcounts stay balanced.
+                    // ACT_FLAG_THIS_VALID publishes the slot to the GC without
+                    // claiming ownership; the restore below is unaffected because
+                    // no decref is scheduled.
+                    act.set_this_borrowed(this_val);
+                }
             }
 
             // For the initial (non-resume) call to a generator function, set up
@@ -6158,6 +6177,99 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.PUTVAR_SNAP: {
+            // A = value register, B = probe env register, C = name constant.
+            // Pairs with RESOLVEVAR, which stored the Reference's owning
+            // EnvRecord* in B before the right-hand side ran. SetMutableBinding
+            // walks from THAT env, so a binding the RHS introduced more locally
+            // (a sloppy direct eval's `var x`) cannot capture the store —
+            // ES2022 §13.15.2 PutValue step 5 uses the initially created
+            // Reference. A null probe (unresolvable Reference) falls back to
+            // PUTVAR_ASSIGN's implicit-global / ReferenceError handling.
+            uint name_idx = insn.c;
+            EnvRecord* snap_env = null;
+            if ((uint)insn.b < ds.nregs) {
+                TVal bv = ds.regs_base[(uint)insn.b];
+                if (bv.is_pointer()) snap_env = (EnvRecord*)bv.get_heapptr();
+            }
+            if (name_idx < vm.current_func.const_count) {
+                TVal name_val = ds.constants[name_idx];
+                if (name_val.is_string()) {
+                    void* key = name_val.get_heapptr();
+                    bool is_strict_act = ds.act.func != null
+                        && ((CompiledFunction*)ds.act.func).is_strict();
+                    bool unresolvable = snap_env == null;
+                    if (snap_env != null && snap_env.is_with
+                        && !snap_env.bindings.has_prop_proto(key, vm.heap)) {
+                        // The Reference's with-env lost the binding (a deleting
+                        // RHS side effect, or an unscopables getter):
+                        // SetMutableBinding must not walk past it to a parent
+                        // binding. Strict throws, sloppy drops.
+                        if (!is_strict_act) {
+                            vm.heap.decref_tval(ra);
+                            ra.set_undefined();
+                            continue;
+                        }
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                                "%s is not defined", name_hstr.get_cstr(),
+                                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        continue;
+                    }
+                    if (snap_env != null) {
+                        int put_result = env::env_try_put_lex(snap_env, key, *ra, true);
+                        if (put_result == 1) {
+                        } else if (put_result == 0) {
+                            unresolvable = true;
+                        } else if (put_result == -3) {
+                            // Unscopables getter deleted the binding after
+                            // RESOLVEVAR found it (§9.1.1.2.5 step 4).
+                            if (is_strict_act) {
+                                HString* name_hstr = (HString*)key;
+                                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                                        "%s is not defined", name_hstr.get_cstr(),
+                                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
+                                continue;
+                            }
+                        } else if (put_result == -2) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            continue;
+                        } else if (put_result == -1 || (put_result == -4 && is_strict_act)) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            continue;
+                        }
+                        // -4 in sloppy: an immutable non-strict binding drops
+                        // the write silently.
+                    }
+                    if (unresolvable) {
+                        HString* name_hstr = (HString*)key;
+                        if (is_strict_act) {
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            continue;
+                        }
+                        if (vm.global_env != null) {
+                            env::env_put(vm.global_env, key, *ra);
+                        }
+                    }
+                    vm.heap.decref_tval(ra);
+                    ra.set_undefined();
+                }
+            }
+            continue;
+        }
+
         case Opcode.DECLGLOBALFUNC: {
             // Instantiate a top-level FunctionDeclaration binding in the
             // immediate var_env (no chain walk). Unlike DECLVAR this never
@@ -6733,11 +6845,13 @@ fn TVal? Vm.run(Vm* vm) {
             // Resolves per HasBinding, then reads: on a with-env hit B holds
             // the bindings object and A the HasProperty-checked current
             // value (the base lands before the getter runs, so a deleting
-            // getter still routes the store here). Otherwise B holds the
-            // global object and A the env-walked value. B gains a
-            // register-external reference (increfed below), released by the
-            // WTWR scrub. Unscopables-throw, TDZ, and getter-throw surface
-            // through the standard throw paths.
+            // getter still routes the store here). Otherwise B stays undefined
+            // (the env-record base: a paired WTWR takes the env walk, and a
+            // caller reading B as a call receiver gets the spec's
+            // WithBaseObject() of undefined). B gains a register-external
+            // reference (increfed below), released by the WTWR scrub.
+            // Unscopables-throw, TDZ, and getter-throw surface through the
+            // standard throw paths.
             uint c_idx = insn.c;
             void* key = null;
             if (c_idx < vm.current_func.const_count) {
@@ -6749,6 +6863,10 @@ fn TVal? Vm.run(Vm* vm) {
                 rb.set_undefined();
                 continue;
             }
+            // B starts undefined so a declarative hit (which sets only A) or
+            // an unresolvable name leaves the env-record base, not whatever
+            // dead value the reserved register happened to hold.
+            rb.set_undefined();
             EnvRecord* cur = ds.act.lex_env;
             bool threw_pending = false;
             bool resolved = false;
@@ -6883,18 +7001,10 @@ fn TVal? Vm.run(Vm* vm) {
             if (threw_pending) { continue; }
             if (!resolved) {
                 // Declarative hit elsewhere, unscopables-blocked, or
-                // unresolvable: the paired WTWR takes the env walk. Mark B
-                // with the global object; A still needs the current value.
-                if (vm.global_env != null) {
-                    rb.set_object(vm.global_env.bindings);
-                    void* gbase = rb.get_heapptr();
-                    if (gbase != null) { ((types::HeapHeader*)gbase).incref(); }
-                    track_heap_store(ds.act, rb, (uint)insn.b);
-                } else {
-                    rb.set_undefined();
-                }
-                // Reuse the GETVAR slow path's value semantics: walk the
-                // chain for a declarative/TDZ/accessor hit, else undefined
+                // unresolvable: B is already undefined (set above), so the
+                // paired WTWR takes the env walk. A still needs the current
+                // value; reuse the GETVAR slow path's value semantics: walk
+                // the chain for a declarative/TDZ/accessor hit, else undefined
                 // in sloppy or a ReferenceError in strict.
                 bool done = false;
                 EnvRecord* vcur = ds.act.lex_env;
@@ -6961,13 +7071,17 @@ fn TVal? Vm.run(Vm* vm) {
             // (ES2024 §9.1.1.2.5 SetMutableBinding steps 1-2: the base is
             // fixed by HasBinding before the RHS runs). Captures only the
             // base per HasBinding, running no value getter: on a with-env
-            // hit A holds the bindings object, otherwise the global object
-            // (paired WTWR falls back to the env walk). A gains a
-            // register-external reference (increfed below), released by the
-            // WTWR scrub; the unscopables-throw path surfaces through the
-            // standard throw machinery.
+            // hit A holds the bindings object; on a declarative/global hit A
+            // holds the owning EnvRecord* so the paired WTWR writes there
+            // directly (an RHS that re-shapes the chain, e.g. by creating a
+            // property on the with object, must not capture the store); on an
+            // unresolvable Reference A is undefined and WTWR takes the env
+            // walk. The captured reference is released by the WTWR scrub; the
+            // unscopables-throw path surfaces through the standard throw
+            // machinery.
             uint bc = insn.get_bc();
             HObject* base = null;
+            EnvRecord* owner_env = null;
             bool threw = false;
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
@@ -7007,16 +7121,18 @@ fn TVal? Vm.run(Vm* vm) {
                             base = cur.bindings;
                             break;
                         }
-                        if (cur.bindings.find_prop_idx(key, vm.heap) >= 0) { break; }
+                        if (cur.bindings.find_prop_idx(key, vm.heap) >= 0) { owner_env = cur; break; }
                         cur = cur.parent;
                     }
                 }
             }
             if (!threw) {
-                if (base == null && vm.global_env != null) { base = vm.global_env.bindings; }
                 if (base != null) {
                     ra.set_object(base);
                     ((types::HeapHeader*)base).incref();
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                } else if (owner_env != null) {
+                    ra.set_pointer((void*)owner_env);
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 } else {
                     ra.set_undefined();
@@ -7090,6 +7206,49 @@ fn TVal? Vm.run(Vm* vm) {
                         threw = true;
                     }
                 }
+            } else if (key != null && rb.is_pointer()) {
+                // WITHBASE captured the owning EnvRecord*: the Reference did
+                // not resolve through a with-env, so SetMutableBinding runs
+                // against that declarative/global env directly. An RHS that
+                // re-shaped the chain (e.g. created a property on the with
+                // object, test262 S11.13.1_A6_T3) must not capture the store.
+                EnvRecord* senv = (EnvRecord*)rb.get_heapptr();
+                bool senv_strict = ds.act.func != null
+                    && ((CompiledFunction*)ds.act.func).is_strict();
+                if (senv != null) {
+                    int put_result = env::env_try_put_lex(senv, key, *ra, true);
+                    if (put_result == -1 || (put_result == -4 && senv_strict)) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        threw = true;
+                    } else if (put_result == -2) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        threw = true;
+                    } else if (put_result == -3 && senv_strict) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        threw = true;
+                    } else if (put_result == 0) {
+                        HString* name_hstr = (HString*)key;
+                        if (senv_strict) {
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            threw = true;
+                        } else if (vm.global_env != null) {
+                            env::env_put(vm.global_env, key, *ra);
+                        }
+                    }
+                }
+                vm.heap.decref_tval(ra);
+                ra.set_undefined();
             } else if (key != null) {
                     int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
                     if (put_result == -1) {

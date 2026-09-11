@@ -9,7 +9,7 @@
 [  0] LDUNDEF         r0 = r0, r0
 [  1] DECLVAR_HOIST   r0, 0
 [  2] CLOSURE         r1, 0
-[  3] DECLVAR         r1, 1
+[  3] DECLGLOBALFUNC  r1, 1
 [  4] LDINT           r0, 0
 [  5] DECLVAR         r0, 0
 [  6] LDINT           r2, +5

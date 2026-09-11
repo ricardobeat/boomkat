@@ -494,9 +494,35 @@ fn ushort CompilerContext.declare_binding_var(&self, char[] name, ScopeKind kind
     // Capture-blind lookup: a captured var is still the same binding.
     ushort? existing = self.find_local_reg(name);
     if (try er = existing) {
+        if (self.in_with()) self.mark_var_captured(name);
         return er;
     }
-    return self.declare_var(name, kind);
+    ushort reg = self.declare_var(name, kind);
+    if (self.in_with()) self.mark_var_captured(name);
+    return reg;
+}
+
+// Force every read of `name` in this function through the environment, by
+// marking its innermost scope entry captured. A `var` declared inside a `with`
+// needs this: the with-object may own the name and swallow the store, so the
+// write goes through the env (WTWR, SnapshotPutValue) and reads must do the
+// same or the register keeps a value the binding never received. The capture
+// scan cannot see it, a declarator at the top of a `with` body reads as a
+// binder. is_captured and has_captured_local flip together, or finish()'s
+// env-elision would NOP the declaration's env write (see the for-in head in
+// statements.c3 for the same pairing).
+fn void CompilerContext.mark_var_captured(&self, char[] name) {
+    for (uint j = self.scope_depth; j > 0; j--) {
+        uint idx = j - 1;
+        if (self.scope_stack[idx].kind == SCOPEMARK) continue;
+        if (str_eq(self.scope_stack[idx].name, name)) {
+            if (!self.scope_stack[idx].is_captured) {
+                self.scope_stack[idx].is_captured = true;
+                self.has_captured_local = true;
+            }
+            return;
+        }
+    }
 }
 
 // Return the constant-pool name index for `reg`'s binding when it is a CONST

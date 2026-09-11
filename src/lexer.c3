@@ -485,6 +485,14 @@ struct Lexer {
     // class body in statement position; makes the next `/` a RegExp literal
     // (not division). Cleared by the next `next_token()`.
     bool force_regex_after_brace;
+    // Set by the parser after consuming a `yield` or `await` token as an
+    // IdentifierReference instead of its operator form. The token after one of
+    // those is an operand position, so `/` there is division, not a regexp
+    // literal: `prev_was_operand` cannot tell the two apart from the previous
+    // token alone, and YIELD/AWAIT are not in its operand set because as
+    // operators they DO precede a regexp-legal operand. Cleared by the next
+    // `next_token()`, exactly like `force_regex_after_brace`.
+    bool force_division_next;
     // True when, since the start of source or the most recent real line
     // terminator, only whitespace and/or comments have been produced (i.e.
     // no real token has appeared yet on the current line). Persists across
@@ -694,6 +702,7 @@ fn void Lexer.reset(&self, char[] source) {
     self.lookahead_token_start = 0;
     self.has_pushed_back = false;
     self.force_regex_after_brace = false;
+    self.force_division_next = false;
 }
 
 // ============================================================================
@@ -2552,6 +2561,8 @@ fn Token? Lexer.next_token(&self) {
     // following token's `/` disambiguation, so clear it now.
     bool force_regex = self.force_regex_after_brace;
     self.force_regex_after_brace = false;
+    bool force_division = self.force_division_next;
+    self.force_division_next = false;
 
     if (self.at_end()) {
         Token tok = make_token(TokenType.EOF_TOKEN, self.line, self.col);
@@ -2595,7 +2606,7 @@ fn Token? Lexer.next_token(&self) {
     // whose body is "=". Only treat `/=` as the division-assign punctuator
     // when a regexp is not syntactically expected at this position.
     if (c == '/') {
-        if (force_regex || !self.prev_was_operand()) {
+        if (!force_division && (force_regex || !self.prev_was_operand())) {
             Token tok = self.scan_regexp()!;
             self.current = tok;
             return tok;

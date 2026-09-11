@@ -567,7 +567,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                         // (matters for eval completion value / chained use).
                         ushort tmp = self.alloc_reg();
                         self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-                        self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                        self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
                         self.free_reg(left);
                         left = tmp;
                     }
@@ -793,41 +793,51 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         }
     }
 
-    // For plain assignment to an identifier, preserve whether the identifier
-    // resolved before evaluating the RHS. Per ES2022 §13.15.2 step 1,
-    // evaluating the LHS IdentifierReference produces a Reference, not a
-    // value. Non-strict code keeps the old value-discarding path.
+    // For assignment to an identifier, capture the LHS Reference's environment
+    // BEFORE evaluating the RHS. Per ES2022 §13.15.2 the LHS
+    // IdentifierReference produces a Reference, and PutValue (step 5) uses
+    // that initially created Reference, so an RHS side effect that introduces
+    // a more local binding (a sloppy direct eval's `var x`) must not capture
+    // the store. RESOLVEVAR stores the owning EnvRecord* in a dedicated probe
+    // register; the store below upgrades to PUTVAR_SNAP for it.
     // Inside `with`, the LHS GETVAR already resolves through the with-env
-    // chain at runtime, so skip the RESOLVEVAR probe entirely here: the
-    // SnapshotReference path below (WITHBASE/WTWR) captures the base
-    // instead.
-    if (is_assign && lhs_was_getvar && self.code_count > 0 && !(self.in_with() && !lhs_was_getglobal)) {
+    // chain at runtime, so skip the probe: the SnapshotReference path below
+    // (WITHBASE/WTWR) captures the base instead.
+    // A plain `=` discards the LHS value, so the GETVAR is replaced in place.
+    // A compound `op=` needs the GETVAR's value as the old operand, so the
+    // probe is appended after it.
+    if ((is_assign || is_compound) && lhs_was_getvar && self.code_count > 0
+        && !(self.in_with() && !lhs_was_getglobal)) {
         Instruction lhs_last = self.code[self.code_count - 1];
         if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL
              || lhs_last.op == Opcode.GETGLOBAL_PRIM)
             && (ushort)lhs_last.a == left) {
-            // A strict plain assignment must, per PutValue, capture LHS
-            // resolvability BEFORE the RHS runs, hence the RESOLVEVAR probe
-            // and IF_TRUE/THROW_REF guard emitted below. But when the LHS is a
-            // GETGLOBAL naming a global THIS unit hoisted (CHKGLOBALVAR /
-            // CHKGLOBALFUNC ran for it), resolvability is statically TRUE, so
-            // the guard is provably dead: strip the read (its value is
-            // discarded) and leave lhs_ref_reg unset. Undeclared globals keep
-            // the guard, e.g. `undeclared = (this.undeclared = 5)` must still
-            // throw even though the RHS would create the global. A GETGLOBAL_PRIM
-            // LHS is by construction a declared primitive-only global, so it is
-            // statically resolvable too, so strip its dead read.
-            if (lhs_last.op == Opcode.GETGLOBAL_PRIM
+            // A statically resolvable LHS (a global this unit hoisted via
+            // CHKGLOBALVAR/CHKGLOBALFUNC, a GETGLOBAL_PRIM, or a local of the
+            // current function) cannot be unresolvable at runtime, and no RHS
+            // can introduce a more local binding that shadows it: skip the
+            // probe. Undeclared globals keep it, e.g. `undeclared = (this.undeclared = 5)`
+            // must still throw even though the RHS would create the global.
+            bool statically_resolvable = lhs_last.op == Opcode.GETGLOBAL_PRIM
                 || (lhs_last.op == Opcode.GETGLOBAL
                     && self.is_declared_global(lhs_getvar_name_idx))
                 || (lhs_last.op == Opcode.GETVAR
                     && lhs_ident_name_len > 0
                     && self.is_statically_resolvable_local(
-                           lhs_ident_name_buf[:lhs_ident_name_len]))) {
-                self.code_count--;
-            } else {
-                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);
-                lhs_ref_reg = left;
+                           lhs_ident_name_buf[:lhs_ident_name_len]));
+            if (is_assign) {
+                if (statically_resolvable) {
+                    self.code_count--;
+                } else {
+                    ushort probe = self.alloc_reg();
+                    self.code[self.code_count - 1] = bytecode::make_a_bc(
+                        Opcode.RESOLVEVAR, (uint)probe, lhs_getvar_name_idx);
+                    lhs_ref_reg = probe;
+                }
+            } else if (!statically_resolvable) {
+                ushort probe = self.alloc_reg();
+                self.emit_a_bc(Opcode.RESOLVEVAR, (uint)probe, lhs_getvar_name_idx);
+                lhs_ref_reg = probe;
             }
         }
     }
@@ -968,12 +978,12 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                         self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
                         self.free_reg(right);
                     }
-                    self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                    self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
                     return left;
                 }
                 // `right` is a temp: store straight from it, no moves.
                 if (left != right) { self.free_reg(left); }
-                self.emit_a_bc(ident_store_op, (uint)right, lhs_getvar_name_idx);
+                self.emit_var_store_op(ident_store_op, right, lhs_getvar_name_idx, lhs_ref_reg);
                 return right;
             }
             if (void_ctx) {
@@ -1019,7 +1029,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 // in a temp before writing back to the environment.
                 ushort tmp = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-                self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
                 self.free_reg(left);
                 left = tmp;
             } else {
@@ -1109,14 +1119,14 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 // in-place concat append requires for `acc += chunk` loops
                 // over globals; the preserve copy between them forces a full
                 // copy every iteration.
-                self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
                 return left;
             }
             // PUTVAR clears the source register, so copy to a temp first
             // so the result survives the clobber.
             ushort tmp = self.alloc_reg();
             self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-            self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+            self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
             self.free_reg(left);
             left = tmp;
         } else {
@@ -2926,6 +2936,35 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     // Consume the flag so it doesn't leak to subsequent calls.
     self.callee_is_eval = false;
 
+    // Inside `with`, a bare-identifier callee's Reference is created by
+    // ResolveBinding through the env chain before the arguments evaluate, and
+    // a with-environment record's WithBaseObject() becomes the call's `this`
+    // (ES2024 §13.3.6.1 step 3.b). Rewrite the callee's GETVAR in place to
+    // WITHGET so one HasBinding/GetBindingValue pass yields both the function
+    // value (A) and the base (B); the base register doubles as the receiver
+    // consumed below. A with-env miss leaves B undefined, the env-record case:
+    // a sloppy callee still sees globalThis through the usual substitution and
+    // a strict one keeps undefined.
+    if (self.in_with() && self.last_was_getvar && !self.last_was_local_var
+        && self.call_prop_obj_reg == REG_NONE
+        && callee_reg <= bytecode::MAX_A
+        && self.last_getvar_code_pos + 1 == self.code_count
+        && self.code[self.last_getvar_code_pos].op == Opcode.GETVAR
+        && (ushort)self.code[self.last_getvar_code_pos].a == callee_reg
+        && self.last_getvar_name_idx <= bytecode::MAX_C) {
+        ushort with_base_reg = self.alloc_reg();
+        if (with_base_reg <= bytecode::MAX_B) {
+            self.code[self.last_getvar_code_pos] = bytecode::make_abc(
+                Opcode.WITHGET, (uint)callee_reg, (uint)with_base_reg,
+                self.last_getvar_name_idx);
+            getvar_callee = false;
+            getglobal_callee = false;
+            self.call_prop_obj_reg = with_base_reg;
+        } else {
+            self.free_reg(with_base_reg);
+        }
+    }
+
     // Layout: callee_reg = func, callee_reg+1 = this, callee_reg+2.. callee_reg+1+nargs = args
     ushort first_arg = callee_reg + 2;
 
@@ -4146,9 +4185,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
             // Legacy octal escape sequences in strings are SyntaxErrors
             // per ES5 §7.8.4 + Annex B.1.2. Phase 1 (plans/083): sloppy
-            // bodies accept them; the lexer sets has_octal_escape
-            // regardless of mode, we skip the strict-mode rejection.
-            if (self.is_strict && str_tok.has_octal_escape) {
+            // bodies accept them. The lexer flags the escape either way:
+            // has_octal_escape when it lexed the string strict,
+            // has_decoded_octal when a sloppy scan decoded it. A string
+            // reached here in a strict context must be rejected in both cases
+            // (the lexer was sloppy while the enclosing context had already
+            // flipped strict, e.g. a body after a "use strict" directive).
+            if (self.is_strict && (str_tok.has_octal_escape || str_tok.has_decoded_octal)) {
                 return COMPILE_ERROR~;
             }
             if (str_tok.is_template && str_tok.has_invalid_escape) {
@@ -4419,18 +4462,30 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // Check for rest parameter
                     if (self.check(TokenType.ELLIPSIS)) {
                         self.advance()!;  // consume '...'
-                        // `(...await) => 1` binds a rest param named "await"
-                        // wherever the word is not reserved.
-                        bool rest_is_ident = self.peek_is_binding_identifier();
-                        Token t = self.advance()!;
-                        if (!rest_is_ident) {
-                            break;  // not a valid rest param, can't be arrow
-                        }
-                        param_names[pc++] = t.str_value;
-                        has_rest = true;
+                        // A rest parameter may itself be a destructuring
+                        // pattern: `(...[a, b]) => ...` / `(...{a}) => ...`.
+                        // Skip over it (handling nesting) as the plain
+                        // pattern branch below does; the bindings are
+                        // re-parsed once is_arrow is confirmed.
+                        if (self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET)) {
+                            self.advance()!;
+                            self.skip_destructure_pattern();
+                            // TS: type annotation after the rest pattern.
+                            if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+                        } else {
+                            // `(...await) => 1` binds a rest param named "await"
+                            // wherever the word is not reserved.
+                            bool rest_is_ident = self.peek_is_binding_identifier();
+                            Token t = self.advance()!;
+                            if (!rest_is_ident) {
+                                break;  // not a valid rest param, can't be arrow
+                            }
+                            param_names[pc++] = t.str_value;
+                            has_rest = true;
 
-                        // TS: rest param may carry a type annotation.
-                        if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+                            // TS: rest param may carry a type annotation.
+                            if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+                        }
 
                         if (self.check(TokenType.RPAREN)) {
                             self.advance()!;  // consume ')'
@@ -4662,6 +4717,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
             bool yield_is_ident = !self.is_strict && !self.is_user_generator && !self.forbid_yield;
             if (yield_is_ident) {
                 Token id_tok = self.advance(true)!;
+                // `yield` here is an operand, so the `/` that follows it in
+                // `yield /a` is division rather than a regexp literal. The
+                // lexer cannot tell from `yield` alone (as an operator it does
+                // expect a regexp), so hint it before anything peeks.
+                self.lexer.force_division_next = true;
                 if (!reject_arrow_head && self.check_arrow()) {
                     char[][1] params_arr;
                     params_arr[0] = id_tok.str_value;
@@ -4840,6 +4900,9 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // a plain name here. The [+Await] branch below keeps rejecting
                 // it, where `await` really is the terminal.
                 Token id_tok = self.advance(true)!;
+                // Same operand hint as the `yield` identifier branch above:
+                // `await /a` with `await` as a name is a division.
+                self.lexer.force_division_next = true;
                 if (!reject_arrow_head && self.check_arrow()) {
                     // `await => ...` could be an arrow function with one
                     // identifier parameter named "await".

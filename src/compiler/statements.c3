@@ -594,6 +594,14 @@ fn void? CompilerContext.statement(&self) {
                 // function body and underflow the retained-source span.
                 self.lexer.refresh_token_start();
                 uint id_tok_start = self.lexer.token_start;
+                // `yield`/`await` reaching here is a name, not the operator
+                // form, so the token after it is an operand position and a `/`
+                // there is division: `yield /a` is `yield / a` in sloppy code.
+                // The lexer cannot tell the two apart from `yield` alone, and
+                // the advance below is what scans that `/`, so hint it first.
+                if (tt == TokenType.YIELD || self.await_is_identifier(tt)) {
+                    self.lexer.force_division_next = true;
+                }
                 // Consume the identifier token to check what follows. The
                 // guard above admits only IDENTIFIER and an `await` that this
                 // context already treats as an identifier, and both a
@@ -812,14 +820,23 @@ fn void? CompilerContext.parse_directives(&self) {
         }
 
         Token str_tok = self.advance()!;
-        // Record this directive for the post-"use strict" check in block():
-        // a directive whose str_value shrank from raw_value carried an octal
-        // escape, which would be a SyntaxError under strict.
-        bool shrunk = str_tok.raw_value.len > 0
-            && str_tok.str_value.len < str_tok.raw_value.len;
+        // Record this directive for the post-"use strict" check in block().
+        // The lexer flags a legacy octal escape directly: has_octal_escape
+        // when it lexed the token strict, has_decoded_octal when a sloppy
+        // scan decoded it, so a following "use strict" can still reject the
+        // whole prologue (ES2024 §12.9.4.1).
+        bool octal_escape = str_tok.has_octal_escape || str_tok.has_decoded_octal;
         uint pslot = self.prologue_dir_count % 16;
-        self.prologue_octal[pslot] = shrunk;
+        self.prologue_octal[pslot] = octal_escape;
         self.prologue_dir_count++;
+
+        // Strict code rejects a legacy octal escape anywhere, directive
+        // prologue members included — including a directive that is not
+        // itself "use strict" but sits in already-strict code (a nested
+        // function inherits its enclosing body's strictness).
+        if (self.is_strict && octal_escape) {
+            return self.fail("octal escape sequences are not allowed in strict mode")~;
+        }
 
         bool has_semicolon = self.check(TokenType.SEMICOLON);
         // ASI ends the ExpressionStatement at a line terminator, and also at
@@ -1336,6 +1353,17 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
         if (tt == TokenType.FOR) {
             Token? for_open = self.lexer.next_token();
             if (catch _feo = for_open) break;
+            // `for await (... of ...)`: the `await` sits between `for` and the
+            // head's `(`, so skip it before the paren walk. Otherwise the walk
+            // never starts and the head's `var` names are collected as if they
+            // were this block's VarDeclaredNames.
+            if (for_open.type == TokenType.AWAIT
+                || (for_open.type == TokenType.IDENTIFIER
+                    && str_eq(for_open.str_value, "await"))) {
+                Token? after_await = self.lexer.next_token();
+                if (catch _fea = after_await) break;
+                for_open = after_await;
+            }
             if (for_open.type != TokenType.LPAREN) {
                 self.lexer.pushback(for_open);
                 continue;
@@ -2255,6 +2283,12 @@ fn void? CompilerContext.var_declaration(&self) {
                 } else {
                     reg = self.declare_var(name_tok.str_value, kind);
                 }
+                // A `var` declared inside a `with` is dynamically scoped: the
+                // with-object may own the name and swallow the store, so the
+                // write goes through the env (WTWR here, PUTVAR below) rather
+                // than the home register. Force the reads through the env too
+                // (see mark_var_captured).
+                if (self.in_with()) self.mark_var_captured(name_tok.str_value);
             } else {
                 // Check for duplicate let/const in the same block scope (ES6 §13.3.1)
                 if (is_lexical) {
@@ -2274,6 +2308,30 @@ fn void? CompilerContext.var_declaration(&self) {
                 reg = self.declare_var(name_tok.str_value, kind);
             }
             ushort saved_reg = self.next_reg;
+
+            // A `var x = <expr>` inside `with` stores through the Reference
+            // ResolveBinding creates BEFORE the initializer evaluates (ES2024
+            // §14.3.2.2 steps 2-3), so a with-object binding still receives the
+            // write after the initializer deletes that property. WITHBASE
+            // captures the Reference's base here, ahead of the initializer;
+            // WTWR below performs the SnapshotPutValue. `let`/`const` are
+            // block-scoped inside the with-env, so their own binding always
+            // wins the lookup and they keep the lexical store.
+            uint with_name_idx = 0xFFFFFFFF;
+            ushort with_base_reg = REG_NONE;
+            if (!is_lexical && self.in_with() && self.check(TokenType.ASSIGN)) {
+                with_name_idx = self.add_string_constant(name_tok.str_value);
+                if (with_name_idx <= bytecode::MAX_C) {
+                    ushort base_reg = self.alloc_reg();
+                    if (base_reg <= bytecode::MAX_A) {
+                        with_base_reg = base_reg;
+                        self.emit_a_bc(Opcode.WITHBASE, (uint)base_reg, with_name_idx);
+                    } else {
+                        self.free_reg(base_reg);
+                        with_name_idx = 0xFFFFFFFF;
+                    }
+                }
+            }
 
             // Optional initializer
             bool has_init = false;
@@ -2328,7 +2386,17 @@ fn void? CompilerContext.var_declaration(&self) {
                 uint name_idx = self.add_string_constant(name_tok.str_value);
                 bool slot_global = self.is_global && !is_lexical
                     && self.is_slot_global_name_index(name_idx);
-                if (slot_global) {
+                if (with_base_reg != REG_NONE) {
+                    // SnapshotPutValue through the base captured before the
+                    // initializer ran (see the WITHBASE note above). WTWR
+                    // releases the value register it stores from, and here that
+                    // is the variable's own home register, so hand it a copy:
+                    // scrubbing `reg` would leave the binding undefined.
+                    ushort val_tmp = self.alloc_reg();
+                    self.emit_abc(Opcode.LDREG, (uint)val_tmp, (uint)reg, 0);
+                    self.emit_abc(Opcode.WTWR, (uint)val_tmp, (uint)with_base_reg, with_name_idx);
+                    self.free_reg(val_tmp);
+                } else if (slot_global) {
                     // A REGISTER-RESIDENT global: the initializer already landed
                     // in the home register (LDREG above). The global property is
                     // only a mirror synced once at end of script, so skip the
@@ -2968,15 +3036,13 @@ fn void? CompilerContext.for_statement(&self) {
     // expression-init path below (unchanged behavior for non-member,
     // non-for-of/in expressions like `for (i = 0; ...)`).
     if (next_tt != TokenType.SEMICOLON && next_tt != TokenType.VAR
-        && next_tt != TokenType.LET && next_tt != TokenType.CONST
-        && next_tt != TokenType.LBRACKET && next_tt != TokenType.LBRACE) {
-        // Destructuring LHS (`[a, b] of arr` / `{x} of arr`) is handled
-        // by the bare-destructuring branch below, member_expr cannot
-        // parse a `[...]`/`{...}` pattern but would still emit code for
-        // any elements (e.g. GETVAR for a bare `[x]` element) that
-        // survives the lexer restore, leaving a stray GETVAR in the
-        // bytecode before the real destructure.  Skip member_expr here
-        // when LHS opens with `[` or `{`.
+        && next_tt != TokenType.LET && next_tt != TokenType.CONST) {
+        // A `[`/`{` LHS is a destructuring pattern when it is the whole head
+        // (`[a, b] of arr`), handled by the bare-destructuring branch below.
+        // It is a member expression when an index or property follow the
+        // literal (`[a][0] of arr`, `{x}.y in obj`); those never set
+        // last_was_member on the pattern itself, so the speculative parse
+        // below rejects them as a head without disturbing the bare path.
         ForLhsSnapshot lhs_snap = self.save_lhs_snapshot();
         ushort saved_next_reg = self.next_reg;
         uint saved_code_count = self.code_count;
@@ -3695,10 +3761,10 @@ fn void? CompilerContext.for_statement(&self) {
                 // so a declarator's Initializer is `[~In]` as well —
                 // `for (var x = 1 in {};;)` is a SyntaxError, not a for-in
                 // head. Parenthesizing (`= (1 in {})`) restores `[+In]`.
-                // Phase 1 (plans/083): sloppy allows `for (var x = 1 in y)` (Annex
-                // B.3.3). Strict keeps forbid_in = true so the `in` after the
-                // initializer is rejected as a syntax error (matches today).
-                self.forbid_in = self.is_strict;
+                // Annex B.3.5's `for (var x = 1 in y) Statement` (sloppy only)
+                // is not implemented: the unparenthesized `in` stays `[~In]`
+                // in every mode, so the Annex B form is also rejected.
+                self.forbid_in = true;
                 ushort init_val = self.assignment_expr()!;
                 self.forbid_in = false;
                 if (init_val != var_reg) {

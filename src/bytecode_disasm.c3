@@ -277,6 +277,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.TYPEOFIDENT.ordinal]  = "TYPEOFIDENT",
     [Opcode.PUTVAR.ordinal]      = "PUTVAR",
     [Opcode.PUTVAR_ASSIGN.ordinal] = "PUTVAR_ASSIGN",
+    [Opcode.PUTVAR_SNAP.ordinal] = "PUTVAR_SNAP",
     [Opcode.DECLVAR.ordinal]     = "DECLVAR",
     [Opcode.DECLGLOBALFUNC.ordinal] = "DECLGLOBALFUNC",
     [Opcode.DECLVAR_HOIST.ordinal] = "DECLVAR_HOIST",

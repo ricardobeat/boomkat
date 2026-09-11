@@ -95,9 +95,15 @@ struct DestructBind {
     // and registers discarded) and stores a lexer snapshot here;
     // emit_destruct_bindings re-parses it at the point of use via
     // emit_deferred_computed_key, landing the value in computed_key_reg.
-    // Heap-allocated; null = not deferred (param/declare paths still evaluate
-    // the key eagerly at collect time via computed_key_reg directly).
+    // Heap-allocated; null = not deferred (formal-parameter lists still
+    // evaluate the key eagerly at collect time via computed_key_reg directly).
     DeferredTarget* deferred_computed_key;
+    // Persistent register holding the EnvRecord* RESOLVEVAR captured for this
+    // binding's Reference, 0xFFFF when the store needs no captured env. Only a
+    // by-name `var` inside a `with` sets it: the declaration's binding resolves
+    // through the with-env, so ResolveBinding must run its `has` trap before the
+    // value is read. Allocated in the emit pre-scan below every callee window.
+    ushort resolve_probe_reg;
     // Private field target: the member target is a private field (this.#field).
     // Used by emit_destruct_bindings to defer the CHK_BRAND until after the
     // source property is read (GetV), per ES2022 §13.15.5.6 evaluation order.
@@ -283,16 +289,39 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             break;
         }
 
-        // Computed property key: {[expr]: target}. Per ES2015 §13.3.3, the
-        // key is an AssignmentExpression; the runtime evaluates it at
-        // extract time. (No destructuring on the key itself.)
+        // Computed property key: {[expr]: target}. Per ES2024 §14.3.3.1 the
+        // key is an AssignmentExpression evaluated during binding
+        // initialization, which is AFTER the declaration's initializer (and
+        // per iteration for a for-in/for-of head), so only a formal parameter
+        // list may evaluate it here: that list has no RHS to defer past. All
+        // other callers advance the lexer past `[expr]` with the emitted code
+        // discarded and snapshot the position, which
+        // emit_deferred_computed_key replays at the point of use. (No
+        // destructuring on the key itself.)
         if (self.check(TokenType.LBRACKET)) {
             self.advance()!; // consume '['
-            // Evaluate the computed key expression NOW into a persistent
-            // register; the emitter reads the property via GETPROP with this
-            // register. (Matches the pre-consolidation for-of behavior of
-            // evaluating the key once at pattern-collection time.)
-            ushort ck_reg = self.assignment_expr()!;
+            DeferredTarget* deferred_ck = null;
+            ushort ck_reg = 0xFFFF;
+            if (self.in_formal_params) {
+                // Evaluate the key expression NOW into a persistent register;
+                // the emitter reads the property via GETPROP with it.
+                ck_reg = self.assignment_expr()!;
+            } else {
+                DeferredTarget* snap = (DeferredTarget*)alloc::malloc_try(mem, (sz)(DeferredTarget::size)) ?? null;
+                snap.lexer = *self.lexer;
+                snap.pushback = self.pushback_stack;
+                snap.pushback_count = self.pushback_count;
+                uint pre_code = self.code_count;
+                ushort pre_reg = self.next_reg;
+                ushort? key_expr_res = self.assignment_expr();
+                if (catch err = key_expr_res) {
+                    mem::free(snap);
+                    return err~;
+                }
+                self.code_count = pre_code;
+                self.free_regs_to(pre_reg);
+                deferred_ck = snap;
+            }
             self.expect(TokenType.RBRACKET)!;
             self.expect(TokenType.COLON)!;
 
@@ -302,6 +331,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 if (*count < binds.len) {
                     binds[*count].is_computed_key = true;
                     binds[*count].computed_key_reg = ck_reg;
+                    binds[*count].deferred_computed_key = deferred_ck;
                     binds[*count].is_object = true;
                     binds[*count].arg_idx = src_reg;
                     binds[*count].parent_idx = parent_idx;
@@ -334,6 +364,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                     binds[*count].name_idx = self.add_string_constant(bind.str_value);
                     binds[*count].is_computed_key = true;
                     binds[*count].computed_key_reg = ck_reg;
+                    binds[*count].deferred_computed_key = deferred_ck;
                     binds[*count].is_object = true;
                     binds[*count].arg_idx = src_reg;
                     binds[*count].parent_idx = parent_idx;
@@ -869,6 +900,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     // can decide whether to emit a TRY guard for IteratorClose on abrupt completion.
     bool has_array_binds = false;
     for (uint di = 0; di < count; di++) {
+        binds[di].resolve_probe_reg = 0xFFFF;
         if (binds[di].is_synthetic && !binds[di].is_object && binds[di].key_idx == 0xFFFF) {
             group_regs[di] = self.alloc_persistent_reg();
         }
@@ -894,6 +926,24 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             // allocated below every callee window so it survives the GETPROP
             // reads and any nested-pattern CALLs up to point of use.
             binds[di].computed_key_reg = self.alloc_persistent_reg();
+        }
+        // A by-name `var` bound inside a `with` needs its Reference's env
+        // captured before the value is read, and the store happens after the
+        // default thunk's CALL, so the probe must sit below that call's callee
+        // window. PUTVAR_SNAP packs the env register into a single byte, so a
+        // probe that does not fit falls back to the plain DECLVAR store and
+        // loses only the `has` trap ordering, never the store itself. Object
+        // leaves only: the array branch extracts straight into bind_reg, which
+        // the probe's shadowing temporary would then clobber.
+        if (store_mode == DECLARE && !is_lexical && self.in_with()
+            && binds[di].is_object && !binds[di].is_synthetic
+            && binds[di].name_idx <= bytecode::MAX_C) {
+            ushort probe = self.alloc_persistent_reg();
+            if (probe <= bytecode::MAX_B) {
+                binds[di].resolve_probe_reg = probe;
+            } else {
+                self.free_reg(probe);
+            }
         }
         if (!binds[di].is_object) has_array_binds = true;
     }
@@ -1144,10 +1194,34 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             }
             uint ni = binds[di].name_idx;
 
+            // A by-name `var` bound inside a `with` stores through the
+            // Reference ResolveBinding created: GetIdentifierReference runs the
+            // with object's `has` trap before GetV reads the source property,
+            // and the store below re-enters that same env
+            // (ES2024 §14.3.3.3 steps 2-3, then InitializeReferencedBinding).
+            // RESOLVEVAR captures the owning EnvRecord* into a persistent
+            // register allocated below every callee window (see the pre-scan);
+            // the store becomes PUTVAR_SNAP. It is emitted per-branch, after
+            // the property name has been evaluated (PropertyBindingInitialization
+            // step 1 runs before KeyedBindingInitialization's ResolveBinding).
+            // The value is then extracted into a register ABOVE the probe:
+            // GETPROP's accessor frame sits at its result register and reuses
+            // everything above it, so binding_regs[di] (declared before any of
+            // this, hence below the probe) would let the getter destroy the
+            // probe before the store reads it. The register must stay high for
+            // the whole bind: retargeting the GETPROP down to a low register
+            // (moveelim's producer retarget) would move the getter's frame back
+            // over the probe.
+            bool needs_probe = (binds[di].resolve_probe_reg != 0xFFFF);
+
             // Extract value from source into bind_reg
             if (binds[di].is_object) {
                 if (binds[di].key_idx == 0xFFFF) {
                     // Object rest: `{...rest}` → CopyDataProperties(src, siblings).
+                    if (needs_probe) {
+                        self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
+                        bind_reg = self.alloc_reg();
+                    }
                     self.emit_object_rest(bind_reg, src_reg, binds, count, di);
                 } else if (binds[di].is_computed_key) {
                     if (binds[di].deferred_computed_key != null) {
@@ -1166,6 +1240,10 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     if (binds[di].deferred_target != null) {
                         self.emit_deferred_target(&binds[di]);
                     }
+                    if (needs_probe) {
+                        self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
+                        bind_reg = self.alloc_reg();
+                    }
                     self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)binds[di].computed_key_reg);
                 } else {
                     if (binds[di].deferred_target != null) {
@@ -1173,6 +1251,10 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     }
                     ushort key_reg = self.alloc_reg();
                     self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, binds[di].key_idx);
+                    if (needs_probe) {
+                        self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
+                        bind_reg = self.alloc_reg();
+                    }
                     self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)key_reg);
                     self.free_reg(key_reg);
                     // See the computed-key branch above: the CHK_BRAND for a
@@ -1315,7 +1397,14 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     self.emit_a_bc(Opcode.PUTVAR, (uint)bind_reg, ni);
                     self.emit_a_bc(Opcode.GETVAR, (uint)bind_reg, ni);
                 case DECLARE:
-                    self.emit_var_store(bind_reg, ni, is_lexical, is_const);
+                    if (binds[di].resolve_probe_reg != 0xFFFF) {
+                        // Store through the captured Reference (see the
+                        // RESOLVEVAR note at the leaf's extraction).
+                        self.emit_abc(Opcode.PUTVAR_SNAP, (uint)bind_reg,
+                                      (uint)binds[di].resolve_probe_reg, ni);
+                    } else {
+                        self.emit_var_store(bind_reg, ni, is_lexical, is_const);
+                    }
                 case ASSIGN_TARGET:
                     // Member-expression targets (e.g. [obj.x] = v) use PUTPROP
                     // rather than PUTVAR. The deferred target evaluation code was
@@ -3610,6 +3699,68 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // code is emitted, so declare_var can make them env-resident.
     self.pre_scan_captures();
 
+    // The body's directive prologue can flip is_strict, and hoist_decls
+    // compiles nested function declarations via compile_inner_function, which
+    // propagates self.is_strict. A "use strict" would otherwise flip the flag
+    // AFTER those declarations were already compiled sloppy, missing every
+    // strict-only early error inside them. Peek the prologue now (a dynamic
+    // Function body reaches this path; source functions go through
+    // compile_inner_function, which has the same treatment), restore the lexer
+    // to just before the body's `{`, and let block() consume the directives for
+    // real (it owns prologue_dir_count for the legacy-escape check).
+    {
+        uint pr_pos = self.lexer.pos;
+        uint pr_line = self.lexer.line;
+        uint pr_col = self.lexer.col;
+        Token pr_cur = self.lexer.current;
+        Token pr_lk = self.lexer.lookahead;
+        bool pr_has_lk = self.lexer.has_lookahead;
+        Token pr_pb = self.lexer.pushed_back;
+        bool pr_has_pb = self.lexer.has_pushed_back;
+        bool pr_slt = self.lexer.seen_line_term;
+
+        Token[8] pr_buf;
+        uint pr_count = 0;
+        Token lbrace = self.advance()!;
+        if (lbrace.type != TokenType.LBRACE) {
+            return self.fail("expected '{' to start function body")~;
+        }
+        pr_buf[pr_count++] = lbrace;
+        while (pr_count < pr_buf.len && self.check(TokenType.STRING)) {
+            Token str_tok = self.advance()!;
+            pr_buf[pr_count++] = str_tok;
+            if (!self.check(TokenType.SEMICOLON)
+                && !self.lexer.seen_line_term
+                && !self.check(TokenType.RBRACE)) {
+                break;
+            }
+            if (self.check(TokenType.SEMICOLON)) {
+                pr_buf[pr_count++] = self.advance()!;
+            }
+        }
+        self.lexer.pos = pr_pos;
+        self.lexer.line = pr_line;
+        self.lexer.col = pr_col;
+        self.lexer.current = pr_cur;
+        self.lexer.lookahead = pr_lk;
+        self.lexer.has_lookahead = pr_has_lk;
+        self.lexer.pushed_back = pr_pb;
+        self.lexer.has_pushed_back = pr_has_pb;
+        self.lexer.seen_line_term = pr_slt;
+
+        for (uint i = 1; i < pr_count; i++) {
+            if (!is_use_strict_directive(pr_buf[i])) continue;
+            // A non-simple parameter list keeps the outer mode here; block()'s
+            // parse_directives then reports the Illegal 'use strict' error.
+            if (!self.params_are_simple()) break;
+            self.is_strict = true;
+            self.lexer.set_strict(true);
+            if (self.current_func != null) self.current_func.flags.is_strict = true;
+            self.saw_use_strict = true;
+            break;
+        }
+    }
+
     // Hoist var and function declarations to the top of the function scope.
     self.hoist_decls(false)!;
 
@@ -3622,6 +3773,34 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // expression as division, not a RegularExpressionLiteral. Suppress the
     // block-close regex hint in that case (see Lexer.note_block_close doc).
     self.block(true, is_expr)!;
+
+    // A "use strict" prologue makes the whole body strict, which
+    // retroactively forbids duplicate parameter names and `eval`/`arguments`
+    // as parameter names (ES2024 §15.2.1 / §15.2.2). The list was parsed
+    // under the outer strictness, so re-apply the strict early errors now.
+    // Only reachable for a simple list: parse_directives rejects "use strict"
+    // outright when the list is non-simple (ES2024 §14.1.2). The same
+    // re-validation runs for source functions in compile_inner_function.
+    if (!seen_params.strict && self.is_strict) {
+        for (uint pi = 0; pi < seen_params.count; pi++) {
+            char[] pname = seen_params.names[pi][:seen_params.lens[pi]];
+            if (pname.len == 4 && pname[0] == 'e' && pname[1] == 'v'
+                && pname[2] == 'a' && pname[3] == 'l') {
+                return self.fail("'eval' is not a valid parameter name in strict mode")~;
+            }
+            if (pname.len == 9 && pname[0] == 'a' && pname[1] == 'r' && pname[2] == 'g'
+                && pname[3] == 'u' && pname[4] == 'm' && pname[5] == 'e'
+                && pname[6] == 'n' && pname[7] == 't' && pname[8] == 's') {
+                return self.fail("'arguments' is not a valid parameter name in strict mode")~;
+            }
+            for (uint pj = pi + 1; pj < seen_params.count; pj++) {
+                char[] other = seen_params.names[pj][:seen_params.lens[pj]];
+                if (seen_params.lens[pi] == other.len && str_eq(pname, other)) {
+                    return self.fail("duplicate parameter names in strict mode")~;
+                }
+            }
+        }
+    }
 
     // Pop the function-level lexical scope.
     // NOTE: for functions with explicit return, this POP_LEX won't execute,
@@ -5143,6 +5322,15 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         arrow_ctx.emit_simple(Opcode.PUSH_VAR);
     }
 
+    // Push a function-level lexical scope, mirroring compile_arrow_inner. An
+    // arrow ConciseBody never goes through block(), so without this the body's
+    // top-level let/const land in the variable environment and are
+    // indistinguishable from `var`s. That distinction is what a sloppy direct
+    // eval needs: ES2024 §18.2.1.2 step 3.4 walks the lexical chain up to the
+    // variable environment and throws when a `var` name already has a lexical
+    // binding (`() => { let x; eval("var x"); }`).
+    arrow_ctx.emit_simple(Opcode.PUSH_LEX);
+
     // Determine if body is block or expression. Capture `body_end_pos` right
     // after the last body token (before any trailing whitespace or comment) so
     // Function.prototype.toString returns the exact source span.
@@ -5196,12 +5384,15 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         body_end_pos = arrow_ctx.lexer.pos;
     }
 
+    // Pop the function-level lexical scope (the PUSH_LEX above).
+    arrow_ctx.emit_simple(Opcode.POP_LEX);
+
     // Pop the body's variable scope (undo PUSH_VAR)
     if (has_func_lex) {
         arrow_ctx.emit_simple(Opcode.POP_VAR);
     }
 
-    // Pop the function-level lexical scope
+    // Pop a parameter list's lexical scope (undo the param PUSH_LEX)
     if (has_func_lex) {
         arrow_ctx.emit_simple(Opcode.POP_LEX);
     }

@@ -116,6 +116,21 @@ fn uint CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
     return self.emit_a_bc(Opcode.GETVAR, reg, name_idx);
 }
 
+// Emit a by-name variable store. A PUTVAR_ASSIGN upgrades to PUTVAR_SNAP when
+// the LHS Reference's environment was captured before the RHS ran (probe_reg
+// holds the RESOLVEVAR EnvRecord*): SetMutableBinding then walks from that env
+// so an RHS side effect that introduced a more local binding cannot capture
+// the store (ES2022 §13.15.2 PutValue step 5). Falls back to the plain A-BC
+// form when the probe or the name does not fit PUTVAR_SNAP's ABC fields.
+fn void CompilerContext.emit_var_store_op(&self, Opcode op, ushort value_reg, uint name_idx, ushort probe_reg) {
+    if (op == Opcode.PUTVAR_ASSIGN && probe_reg != REG_NONE
+        && probe_reg <= bytecode::MAX_B && name_idx <= bytecode::MAX_C) {
+        self.emit_abc(Opcode.PUTVAR_SNAP, (uint)value_reg, (uint)probe_reg, name_idx);
+        return;
+    }
+    self.emit_a_bc(op, (uint)value_reg, name_idx);
+}
+
 // Emit a JUMP instruction with a placeholder offset; return the index to patch.
 fn uint CompilerContext.emit_jump(&self, Opcode op) {
     return self.emit(bytecode::make_sabc(op, 0));

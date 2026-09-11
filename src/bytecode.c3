@@ -261,6 +261,16 @@ enum Opcode : char {
     // a let/const binding still in its temporal dead zone (assignment before
     // initialization). Emitted only for genuine assignment expressions.
     PUTVAR_ASSIGN,
+    // `variable[constants[C]] = A`: user ASSIGNMENT through a Reference whose
+    // environment record was captured before the right-hand side ran (ABC
+    // format: A = value register, B = env-pointer register, C = name
+    // constant). Pairs with RESOLVEVAR, which stores the owning EnvRecord* in
+    // B's register: SetMutableBinding walks from THAT env, so an RHS side
+    // effect that introduced a more local binding (a sloppy direct eval's
+    // `var x`) cannot capture the store — ES2022 §13.15.2 PutValue uses the
+    // initially created Reference. Falls back to PUTVAR_ASSIGN's resolver when
+    // B holds null (the Reference was unresolvable).
+    PUTVAR_SNAP,
     // `declare variable[constants[BC]] = A`: declare+initialize a `var` in
     // the immediate var_env only (does not walk the scope chain).
     DECLVAR,

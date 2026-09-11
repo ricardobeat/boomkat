@@ -9,17 +9,19 @@
 [  0] LDUNDEF         r0 = r0, r0
 [  1] DECLVAR_HOIST   r0, 0
 [  2] CLOSURE         r1, 0
-[  3] DECLVAR         r1, 1
+[  3] DECLGLOBALFUNC  r1, 1
 [  4] LDINT           r0, +5
 [  5] DECLVAR         r0, 0
 [  6] LDINT           r2, 0
-[  7] JUMP            +1
-[  8] DEC_VAR         r3, 0
-[  9] GETVAR          r3, 0
-[ 10] JMP_GT          -3, r3, r2
-[ 11] LDREG           r2 = r1, r0
-[ 12] CALL_UNDEF_THIS r2 = r2, r0
-[ 13] RET             r2 = r0, r0
+[  7] JUMP            +3
+[  8] GETVAR          r3, 0
+[  9] DEC             r3
+[ 10] PUTVAR_ASSIGN   r3 = r0, r0
+[ 11] GETVAR          r3, 0
+[ 12] JMP_GT          -5, r3, r2
+[ 13] LDREG           r2 = r1, r0
+[ 14] CALL_UNDEF_THIS r2 = r2, r0
+[ 15] RET             r2 = r0, r0
 
 --- Inner function 0.0 ---
 [  0] GETVAR          r0, 0
