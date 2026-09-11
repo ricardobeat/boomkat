@@ -396,6 +396,80 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     continue;
                 }
                 int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
+                if (idx >= 0 && cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
+                    // §13.4.4: x++ is GetValue(lref), ToNumeric, then
+                    // PutValue(lref, n). An accessor binding must run its
+                    // getter and its setter (or throw per SetMutableBinding);
+                    // the in-place data-slot update below would misread the
+                    // getter/setter pair as a non-writable value.
+                    TVal old_acc;
+                    if (!builtins::js_get(vm, vm.heap, cur.bindings, (HString*)key, &old_acc)) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    TVal new_acc;
+                    new_acc.set_undefined();
+                    if (catch e = incdec_compute_no_write(ds, old_acc, is_inc, &new_acc)) {
+                        return e~;
+                    }
+                    if (ds.needs_restart) { return (TVal){}; }
+                    bool act_strict_acc = ds.act.func != null
+                        && ((CompiledFunction*)ds.act.func).is_strict();
+                    bool still_exists = false;
+                    if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &still_exists)) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    // §9.1.1.2.5 SetMutableBinding steps 3-4: a strict
+                    // Reference whose binding a deleting getter removed throws
+                    // ReferenceError; a sloppy one falls through to [[Set]],
+                    // which recreates the property.
+                    if (!still_exists && act_strict_acc) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                                "%s is not defined", name_hstr.get_cstr(),
+                                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    TVal recv_acc; recv_acc.set_object(cur.bindings);
+                    bool sres_acc = false;
+                    if (!builtins::js_set_with_receiver(vm, vm.heap, cur.bindings, (HString*)key, new_acc, recv_acc, &sres_acc)) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    if (!sres_acc && act_strict_acc) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
+                                "Cannot assign to read only property '%s'",
+                                name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    vm.heap.tval_copy_ref(ra, &new_acc);
+                    vm.heap.decref_tval(&new_acc);
+                    return (TVal){};
+                }
                 if (idx >= 0) {
                     // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
                     // lex_env == parent env, so a hit here is a legitimate parent
