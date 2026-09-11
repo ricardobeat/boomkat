@@ -2925,6 +2925,13 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
     if (gs.delegated_iter != null) {
         self.mark_hobject((HObject*)gs.delegated_iter);
     }
+    // The function the body was created from. GEN_START and every resume read it
+    // to fill the activation's borrowed callee slot, and a suspended generator
+    // can outlive every other reference to the function: `.next()` keeps only
+    // the instance, and the instance holds no back-pointer to it.
+    if (gs.func_obj != null) {
+        self.mark_hobject((HObject*)gs.func_obj);
+    }
     if (gs.async_promise != null) {
         self.mark_hobject((HObject*)gs.async_promise);
     }
