@@ -518,6 +518,10 @@ fn void? CompilerContext.statement(&self) {
             //   `type X = ...;`, `declare ...`, `namespace X { ... }`, `module X {...}`
             //   `abstract class X { ... }`
             if (self.lexer.ts_mode && tt == TokenType.IDENTIFIER) {
+                // `interface Foo { ... }` — in sloppy code the lexer hands
+                // back an IDENTIFIER rather than INTERFACE (the keyword table
+                // is gated on strictness), so recognise that form here too.
+                if (self.ts_try_interface_declaration()) break;
                 if (self.check_ts_ident("type")) {
                     if (self.ts_try_type_alias()) break;
                 }

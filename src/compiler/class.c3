@@ -738,7 +738,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // TypeScript: `implements Foo, Bar<T>` before the class body. Must be
     // skipped BEFORE prescan_private_names below, which expects the lexer
     // to be positioned right at the body's opening `{`.
-    if (self.lexer.ts_mode && self.check(TokenType.IMPLEMENTS)) {
+    // `implements` is a FutureReservedWord only in strict code, so in a
+    // sloppy body the lexer hands back a plain IDENTIFIER. Accept both
+    // spellings — the clause is TS syntax either way, and the `ts_mode`
+    // gate is what keeps it out of .js files.
+    if (self.lexer.ts_mode
+        && (self.check(TokenType.IMPLEMENTS) || self.check_ts_ident("implements"))) {
         Token _impl_early = self.advance()!;
         for (;;) {
             self.skip_type()!;
@@ -971,9 +976,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // carry no runtime semantics under erasable syntax.
         if (self.lexer.ts_mode) {
             for (;;) {
-                if (self.match(TokenType.PUBLIC)) continue;
-                if (self.match(TokenType.PRIVATE)) continue;
-                if (self.match(TokenType.PROTECTED)) continue;
+                // public/private/protected are FutureReservedWords only in
+                // strict code; in a sloppy body they arrive as IDENTIFIER.
+                // Accept both spellings (still behind the `ts_mode` gate).
+                if (self.match(TokenType.PUBLIC) || self.match_ts_ident("public")) continue;
+                if (self.match(TokenType.PRIVATE) || self.match_ts_ident("private")) continue;
+                if (self.match(TokenType.PROTECTED) || self.match_ts_ident("protected")) continue;
                 if (self.match_ts_ident("readonly")) continue;
                 if (self.match_ts_ident("override")) continue;
                 if (self.match_ts_ident("abstract")) continue;
