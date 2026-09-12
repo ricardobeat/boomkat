@@ -70,6 +70,32 @@ const uint INITIAL_HOISTED_DEFERS = 8;
 const uint INITIAL_SCOPE_DEPTH = 256;
 const uint MAX_CONST_HASH   = 1024;  // Open-addressing hash table for constant dedup
 
+// Declaration permissions of the current Statement position (the engine's
+// counterpart to QuickJS's decl_mask). The grammar admits a `Declaration`
+// only where a StatementListItem is allowed; Annex B.3.2 additionally admits a
+// plain FunctionDeclaration as a LabelledItem and B.3.4 as an if clause body.
+// A `var` statement is always permitted, so it needs no bit.
+const uint DECL_FUNC       = 1 << 0;  // plain FunctionDeclaration is legal here
+const uint DECL_FUNC_BLOCK = 1 << 1;  // ... as an Annex B.3.4 if clause: compile as an implicit Block
+const uint DECL_FUNC_LABEL = 1 << 2;  // ... as a LabelledItem (Annex B.3.2)
+const uint DECL_OTHER      = 1 << 3;  // class / let / const / generator / async declarations
+const uint DECL_ALL        = DECL_FUNC | DECL_FUNC_LABEL | DECL_OTHER;
+
+// The shape of the LeftHandSideExpression just parsed, i.e. its
+// AssignmentTargetType (ES2024 §8.6.4). This is the single source of truth the
+// assignment, update and for-head checks read; the individual reference
+// markers (last_was_getvar, member, ...) carry the payload those checks need
+// but are not consulted for validity, so a fast path that produces a value
+// without touching them cannot leave a stale verdict behind. REF_NONE is
+// restored at the start of every operand (unary_expr) and by
+// clear_ref_markers(), so the field always describes the operand just parsed.
+enum RefKind : char {
+    REF_NONE,       // a value: AssignmentTargetType invalid
+    REF_SIMPLE,     // a bare identifier reference (variable or local)
+    REF_MEMBER,     // obj.prop / obj[key]
+    REF_CALL,       // CallExpression: Annex B.3.9 web-compat in sloppy code
+}
+
 // Sentinel for "no patch" in break/continue patch lists.
 const uint NO_PATCH = 0xFFFF_FFFF;
 
@@ -491,6 +517,10 @@ struct CompilerContext {
     // target-validity is tracked here separately instead. Only the four
     // SimpleAssignmentTarget checks read it; no codegen path does.
     bool last_target_invalid;
+    // AssignmentTargetType of the operand just parsed (RefKind above). Set by
+    // every LHS producer and restored to REF_NONE at the start of each operand
+    // and by clear_ref_markers(), so it is never stale.
+    RefKind last_ref;
     // Raw text of the identifier last resolved by primary_expr (getvar or
     // local var alike). Used by assignment_expr for SetFunctionName
     // (ES2015 §12.15.4): `x = function(){}` names the RHS "x" when the LHS
@@ -1072,21 +1102,13 @@ int  cur_with_depth;
     // CompilerContext leaves it false).
     bool module_top_level;
 
-    // Set by statement_body() to mark that the statement about to be parsed
-    // sits where the grammar admits a `Statement` but not a
-    // `StatementListItem` — an if/else arm, a loop body or a labelled
-    // statement. Only a Declaration is affected, and every form except
-    // `async function` is already rejected by statement_body()'s own switch
-    // on the leading token; this flag exists for that one form, whose `async`
-    // is a contextual keyword indistinguishable from an identifier until the
-    // statement dispatcher has looked ahead. Consumed exactly once, into a
-    // local, so it cannot leak into a nested statement.
-    bool stmt_position_only;
-    // True while statement_body() parses the direct body of an if/else, a
-    // loop, or a with: §14.4.1/§14.7.1/§13.11.1 make a LabelledItem that is a
-    // FunctionDeclaration there a SyntaxError (IsLabelledFunction), while a
-    // top-level labelled function declaration stays legal in sloppy code.
-    bool labelled_fn_rejected_pos;
+    // Declaration permissions of the Statement position about to be parsed
+    // (DECL_* above). Set by statement_body() before each Statement it
+    // dispatches, and consumed exactly once, into a local, by statement() so
+    // it cannot leak into a nested statement. The default, DECL_ALL, is what a
+    // statement-list position (a block, function body, script or switch
+    // clause) leaves in place.
+    uint decl_mask;
 
     // Inferred function name for the next anonymous function expression parsed.
     // Set by assignment_expr when LHS is a plain identifier (e.g. `var f = function() {}`)
@@ -1260,6 +1282,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.lexer = lex;
     self.heap = heap;
     self.disable_optimize = g_disable_optimize;
+    self.decl_mask = DECL_ALL;
     self.next_reg = 0;
     self.max_reg = 0;
     self.reg_cap = 0xFFFF;

@@ -1495,6 +1495,28 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     }
 }
 
+// Skip a parenthesised `if` condition, from just after the `if` keyword
+// through the matching `)`. Used by the hoist scan so it can resume exactly at
+// the clause, which Annex B.3.4 makes a Statement position. A condition is an
+// Expression, so parens nest and nothing inside declares a name in this scope.
+fn void CompilerContext.skip_paren_condition(&self) {
+    Token? lp_opt = self.lexer.next_token();
+    if (catch _e = lp_opt) return;
+    if (lp_opt.type != TokenType.LPAREN) return;
+    uint depth = 1;
+    while (depth > 0) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _e2 = tok_opt) return;
+        TokenType tt = tok_opt.type;
+        if (tt == TokenType.EOF_TOKEN) return;
+        if (tt == TokenType.LPAREN) {
+            depth++;
+        } else if (tt == TokenType.RPAREN) {
+            depth--;
+        }
+    }
+}
+
 // Skip past a braced block in the lexer without compiling.
 // Assumes the lexer is positioned just after '{'. Advances past matching '}'.
 // Template-aware: a '}' that closes a template substitution is consumed via
@@ -2205,6 +2227,14 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     // other token means an expression is in progress.
     bool at_stmt_start = true;
 
+    // Annex B.3.4: a plain FunctionDeclaration is a legal if clause body in
+    // sloppy code, and hoists into the enclosing scope like a block-nested
+    // one. The scan is flat, so it keeps one flag: `if` skips its condition
+    // and `else` opens a clause directly, so the token that follows either is
+    // the clause. Only a plain `function` matters, the parser rejects a
+    // generator or async declaration in this position.
+    bool if_clause_pending = false;
+
     while (true) {
         // Save lexer state before consuming this token (so we can restore
         // and re-consume it for function compilation).
@@ -2229,6 +2259,24 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         // below `continue` out of the loop body.
         bool tok_at_stmt_start = at_stmt_start;
         at_stmt_start = stmt_start_after(tt);
+
+        // Whether THIS token is the direct FunctionDeclaration body of an if
+        // (Annex B.3.4). The flag is single-use: it describes only the token
+        // that immediately follows the condition or `else`.
+        bool b34_clause = if_clause_pending && tt == TokenType.FUNCTION;
+        if_clause_pending = false;
+
+        if (tt == TokenType.IF) {
+            // Skip the parenthesised condition so the loop resumes at the
+            // clause, which Annex B.3.4 makes a Statement position.
+            self.skip_paren_condition();
+            if_clause_pending = true;
+            at_stmt_start = true;
+            continue;
+        }
+        if (tt == TokenType.ELSE) {
+            if_clause_pending = true;
+        }
 
         if (tt == TokenType.LBRACE) {
             tscan.on_lbrace();
@@ -2414,7 +2462,8 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         // `!function f(){}()`, `[function f(){}]`) is skipped by the same path:
         // it declares nothing here, and hoisting its name would bind it in this
         // scope instead of only inside its own body (§15.2.5).
-        if ((brace_depth > own_depth || !tok_at_stmt_start) && tt == TokenType.FUNCTION) {
+        if ((brace_depth > own_depth || !tok_at_stmt_start || b34_clause)
+            && tt == TokenType.FUNCTION) {
             bool b33_is_async = self.is_async;
             self.is_async = false;
             Token? nstar = self.lexer.next_token();
@@ -2446,14 +2495,22 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // gates entry init + publish on it.
             // B.3.3 covers a plain FunctionDeclaration only, so a generator
             // or async function declaration stays strictly block-scoped: no
-            // var binding is created for it at all.
-            if (!checks_only && !self.is_strict && b33_named && brace_depth > own_depth
-                && tok_at_stmt_start
+            // var binding is created for it at all. An if clause body
+            // (b34_clause) has no `{` of its own, so its declaration is at
+            // own_depth and its `function` sits after the condition's `)`.
+            if (!checks_only && !self.is_strict && b33_named
+                && (brace_depth > own_depth || b34_clause)
+                && (tok_at_stmt_start || b34_clause)
                 && !b33_is_gen && !b33_is_async && nname.str_value.len > 0
                 && str_eq(nname.str_value, "arguments") == false) {
                 self.hoist_one_var_name(nname.str_value, is_global, true);
             }
             self.skip_function_body();
+            // The skipped body's closing `}` ends the statement, even when
+            // this was an if clause body with no braces of its own. Without
+            // this, a top-level declaration immediately after an if-body
+            // function inherits tok_at_stmt_start false and is not hoisted.
+            at_stmt_start = true;
             continue;
         }
 

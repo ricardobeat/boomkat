@@ -41,12 +41,13 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 ## Deliberately out of scope
 
 - **The rest of Annex B**, beyond the parts sloppy mode needs. Annex B.3.1
-  (duplicate parameters, mapped `arguments`, `delete x`), B.3.3 for function
-  declarations in a block, legacy octals and octal escapes are in. Absent:
-  `Date.prototype.getYear`/`setYear`, the `String.prototype` HTML methods, the
-  `RegExp` legacy statics, B.3.2 labelled function declarations, B.3.4 function
-  declarations as `if` bodies, and B.3.9 (already excluded by an early
-  SyntaxError, which B.3.9 leaves to the host).
+  (duplicate parameters, mapped `arguments`, `delete x`), B.3.2 labelled
+  function declarations, B.3.3 for function declarations in a block, B.3.4
+  function declarations as `if` bodies, B.3.5 initializers in for-in heads,
+  B.3.9 runtime errors for function call assignment targets, legacy octals and
+  octal escapes are in. Absent: `Date.prototype.getYear`/`setYear`, the
+  `String.prototype` HTML methods, the `RegExp` legacy statics, and the legacy
+  eval-code and global-code var-hoisting rules.
 - **ECMA-402.** A separate specification. `Date.prototype.toLocaleString` is
   ES5-conformant: with a locales or options argument it resolves the bag per
   ECMA-402 §11.1.2 against the engine's single locale, with no full locale

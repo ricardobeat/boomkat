@@ -386,15 +386,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     }
 
     // ES2024 §13.15.1: "It is a Syntax Error if the AssignmentTargetType of
-    // LeftHandSideExpression is invalid." A CallExpression target such as
-    // `f() = 1` reaches here with none of the reference markers set, so it is
-    // rejected at parse time, matching QuickJS. V8/node instead parse it and
-    // throw a ReferenceError at runtime; that leniency is NOT copied, and the
-    // reason is worth recording because — unlike the other node divergences —
-    // the spec does sanction a deferral here.
-    //
-    // AssignmentTargetType (ES2025 §8.6.4) returns simple, web-compat or
-    // invalid, and the CallExpression clause is a Normative Optional:
+    // LeftHandSideExpression is invalid." AssignmentTargetType (§8.6.4)
+    // returns simple, web-compat or invalid, and its CallExpression clause is
+    // a Normative Optional:
     //
     //     CallExpression : CoverCallExpressionAndAsyncArrowHead
     //     CallExpression : CallExpression Arguments
@@ -403,36 +397,26 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     //          IsStrict(this CallExpression) is false, then return web-compat.
     //       2. Return invalid.
     //
-    // Annex B.3.9 "Runtime Errors for Function Call Assignment Targets": "When
-    // a function call (13.3.6) is used as an assignment target in non-strict
-    // code, instead of producing an early error, a ReferenceError exception is
-    // thrown during evaluation of the assignment."
+    // Annex B.3.9 "Runtime Errors for Function Call Assignment Targets" makes
+    // this engine a host that supports the behaviour: a CallExpression target
+    // such as `f() = 1` in sloppy code is not an early error, the assignment
+    // throws a ReferenceError during evaluation instead. Strict code keeps the
+    // §13.15.1 early error, and so does any other invalid target.
     //
-    // The allowance is Normative Optional and this engine declines it in every
-    // mode: the LHS analysis returns invalid for a CallExpression whether or
-    // not the code is strict, so step 2 applies and §13.15.1's early error
-    // makes `f() = 1` a SyntaxError in sloppy code too. A host that advertises
-    // the behaviour raises the ReferenceError during evaluation instead, which
-    // is what V8 does.
-    //
-    // The early errors quoted above key off invalid specifically, so web-compat
-    // suppresses them; the corresponding runtime clauses (e.g. §13.4.2.1 step 2)
-    // throw the ReferenceError instead. B.3.9's Note further restricts the
-    // allowance to `=` and AssignmentOperator: it never applies to `&&=`, `||=`
-    // or `??=`, whose §13.15.1 clause tests "is not simple" rather than
-    // "is invalid" and so rejects web-compat too.
-    //
-    // test262 agrees and covers this directly: all ten
-    // language/expressions/assignmenttargettype/*callexpression* tests that
-    // cite the web-compat clause expect `phase: parse, type: SyntaxError`, and
-    // every one whose operator is deferrable is flagged onlyStrict. The two
-    // logical-assignment cases carry no strictness flag, exactly as B.3.9's
-    // Note requires. All ten pass. node fits the same shape — it defers for
-    // `=`, `+=` and `++` but keeps a SyntaxError for `&&=`/`??=` — so it is
-    // implementing B.3.9; it just also applies it to genuinely strict code
-    // (a `.mjs` module still yields ReferenceError), which B.3.9 does not
-    // permit.
+    // B.3.9's Note restricts the allowance to `=` and AssignmentOperator: it
+    // never applies to `&&=`, `||=`, or `??=`, whose §13.15.1 clause tests "is
+    // not simple" rather than "is invalid" and so rejects web-compat too.
+    // `is_assign`/`is_compound` carry that split.
     if (!self.last_was_assign_target()) {
+        // The LHS call has already run (its result is in `left`); throw before
+        // the RHS, which is still parsed so the token stream stays in sync.
+        if (self.last_ref == RefKind.REF_CALL && !self.is_strict && (is_assign || is_compound)) {
+            uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+            self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+            ushort rhs = self.assignment_expr()!;
+            self.free_reg(rhs);
+            return left;
+        }
         self.record_error("Invalid left-hand side in assignment");
         return COMPILE_ERROR~;
     }
@@ -1052,6 +1036,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                     // copies it to a temp instead of using the variable's own
                     // slot as the result destination and clobbering it.
                     self.last_was_local_var = true;
+                    self.last_ref = RefKind.REF_SIMPLE;
                     self.last_local_var_reg = left;
                     return left;
                 }
@@ -1146,6 +1131,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 // expression's value, so mark it for the enclosing
                 // operator's copy-to-temp guard (`(n *= 0.3) > 0`).
                 self.last_was_local_var = true;
+                self.last_ref = RefKind.REF_SIMPLE;
                 self.last_local_var_reg = left;
                 return left;
             }
@@ -1567,6 +1553,7 @@ fn void CompilerContext.clear_ref_markers(&self) {
     self.last_was_getvar = false;
     self.member.clear();
     self.last_was_local_var = false;
+    self.last_ref = RefKind.REF_NONE;
     // Dropping every marker already makes the target check fail, so the
     // separate ~invalid~ verdict has done its job and must not linger: a stale
     // `true` would wrongly reject the NEXT target parsed before any marker is
@@ -1577,6 +1564,13 @@ fn void CompilerContext.clear_ref_markers(&self) {
 // Parse a unary expression.
 fn ushort? CompilerContext.unary_expr(&self) {
     TokenType tt = self.peek_type();
+
+    // Every operand is parsed through here, so this is where the previous
+    // operand's AssignmentTargetType verdict is retired. The producers below
+    // (primary_expr, member_expr, call_expr) set the real kind; a fast path
+    // that returns a plain value without touching them (typeof, a literal)
+    // therefore leaves REF_NONE rather than a stale verdict.
+    self.last_ref = RefKind.REF_NONE;
 
     // A unary operator's operand is a UnaryExpression, which does not derive
     // YieldExpression, so `!yield` / `void yield` / `typeof yield` are
@@ -2010,6 +2004,12 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 return COMPILE_ERROR~;
             }
             if (!self.last_was_assign_target()) {
+                // Annex B.3.9: `++f()` is a runtime ReferenceError in sloppy code.
+                if (self.last_ref == RefKind.REF_CALL && !self.is_strict) {
+                    uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+                    self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+                    return op_inc;
+                }
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.4 strict mode: ++eval / ++arguments is a SyntaxError.
@@ -2109,6 +2109,12 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 return COMPILE_ERROR~;
             }
             if (!self.last_was_assign_target()) {
+                // Annex B.3.9: `--f()` is a runtime ReferenceError in sloppy code.
+                if (self.last_ref == RefKind.REF_CALL && !self.is_strict) {
+                    uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+                    self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+                    return op_dec;
+                }
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.5 strict mode: --eval / --arguments is a SyntaxError.
@@ -2308,6 +2314,15 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     // node defers it to a runtime ReferenceError.
     if ((tt == TokenType.INC || tt == TokenType.DEC) && !nl_before_postfix_op) {
         if (self.last_target_invalid || (!self.last_was_member() && !lhs_was_getvar && !self.last_was_local_var)) {
+            // Annex B.3.9: `f()++` / `f()--` is a runtime ReferenceError in
+            // sloppy code. The operand call already ran; consume the update
+            // operator and throw.
+            if (self.last_ref == RefKind.REF_CALL && !self.is_strict) {
+                self.advance()!;
+                uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+                self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+                return operand;
+            }
             return COMPILE_ERROR~;
         }
         // ES5 §11.3.1/§11.3.2 strict mode: eval++ / arguments-- is a SyntaxError.
@@ -2596,6 +2611,12 @@ fn void CompilerContext.drop_paren_receiver_unless_ref(&self) {
 // Parse call expressions: f(), f(a,b), obj.method(), obj[expr](), tag`...`.
 fn ushort? CompilerContext.call_expr(&self) {
     self.last_was_optional_chain = false;
+    // Annex B.3.9: track whether the operand this chain produces is itself a
+    // CallExpression (set by the LPAREN branch below, cleared by a member
+    // suffix or by the next operand's call_expr entry). assignment_expr and
+    // the update paths use it to defer `f() = 1` / `f()++` to a runtime
+    // ReferenceError in sloppy code.
+    self.last_ref = RefKind.REF_NONE;
     ushort callee = self.member_expr()!;
     // Mirrors member_expr's obj_is_base_local: true only while `callee` is
     // still the bare base operand and can therefore be a live local's home
@@ -2640,6 +2661,7 @@ fn ushort? CompilerContext.call_expr(&self) {
         if (self.check(TokenType.LPAREN)) {
             callee = self.emit_call(callee)!;
             callee_is_base_local = false;
+            self.last_ref = RefKind.REF_CALL;
             // The result of a call is not a member expression and not a
             // direct variable reference. member_expr may have set
             // last_was_member for the callee (e.g. obj.prop) and
@@ -2659,6 +2681,8 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.call_prop_obj_reg = REG_NONE;
             }
         } else if (self.is_next_template()) {
+            // A tagged template is not a CallExpression target.
+            self.last_ref = RefKind.REF_NONE;
             // Template literal after optional chain is a SyntaxError (early error)
             if (opt_jump_count > 0) {
                 self.fail("Template literal after optional chain is not supported");
@@ -2675,6 +2699,8 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.call_prop_obj_reg = REG_NONE;
             }
         } else if (self.match(TokenType.DOT)) {
+            // A member access on a call result is not itself a CallExpression.
+            self.last_ref = RefKind.REF_NONE;
             if (self.check(TokenType.HASH_IDENT)) {
                 // f().#name, private field access on a call result.
                 if (self.del_mode) {
@@ -2692,6 +2718,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 } else {
                     self.last_target_invalid = false;
                     self.member.set(MemberKind.PRIVATE, callee, priv_prop_reg, callee_is_base_local);
+                    self.last_ref = RefKind.REF_MEMBER;
                     self.call_prop_obj_reg = callee;
                 }
                 callee = priv_result;
@@ -2722,11 +2749,14 @@ fn ushort? CompilerContext.call_expr(&self) {
             } else {
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PLAIN, callee, prop_reg, callee_is_base_local);
+                self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = callee;
             }
             callee = result;
             callee_is_base_local = false;
         } else if (self.match(TokenType.LBRACKET)) {
+            // A computed member access on a call result is not a CallExpression.
+            self.last_ref = RefKind.REF_NONE;
             // Computed property access: callee[expr]
             ushort idx_reg = self.expression()!;
             self.expect(TokenType.RBRACKET)!;
@@ -2754,6 +2784,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             } else {
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PLAIN, callee, idx_reg, callee_is_base_local);
+                self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = callee;
             }
             callee = result;
@@ -3706,6 +3737,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 } else {
                     self.last_target_invalid = false;
                     self.member.set(MemberKind.PRIVATE, ctor_reg, priv_prop_reg, false);
+                    self.last_ref = RefKind.REF_MEMBER;
                     self.call_prop_obj_reg = ctor_reg;
                 }
                 // priv_result is the freshly-allocated top register; priv_prop_reg
@@ -3746,6 +3778,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 // them after emitting the store (mirrors member_expr's lhs path).
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PLAIN, ctor_reg, prop_reg, false);
+                self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = ctor_reg;
                 ctor_reg = result;
                 self.next_reg = ctor_reg + 1;
@@ -3773,6 +3806,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             } else {
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PLAIN, ctor_reg, idx_reg, false);
+                self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = ctor_reg;
                 ctor_reg = result;
                 self.next_reg = ctor_reg + 1;
@@ -3829,6 +3863,7 @@ fn ushort? CompilerContext.member_expr(&self) {
 
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PRIVATE, obj, prop_reg, obj_is_base_local);
+                self.last_ref = RefKind.REF_MEMBER;
 
                 if (self.lhs_mode) {
                     if (self.call_prop_obj_reg != REG_NONE) {
@@ -3883,6 +3918,7 @@ fn ushort? CompilerContext.member_expr(&self) {
             // no-op for registers below the top.
             self.last_target_invalid = false;
             self.member.set(MemberKind.PLAIN, obj, prop_reg, obj_is_base_local);
+            self.last_ref = RefKind.REF_MEMBER;
 
             if (self.del_mode || self.lhs_mode) {
                 // LHS / delete mode: keep obj/prop alive for possible PUTPROP/DELPROP
@@ -3956,6 +3992,7 @@ fn ushort? CompilerContext.member_expr(&self) {
             // See DOT branch above for why we always track the member.
             self.last_target_invalid = false;
             self.member.set(MemberKind.PLAIN, obj, idx_reg, obj_is_base_local);
+            self.last_ref = RefKind.REF_MEMBER;
 
             if (self.del_mode || self.lhs_mode) {
                 // LHS / delete mode: keep obj/idx alive for possible PUTPROP/DELPROP
@@ -4301,6 +4338,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (try var_reg = self.resolve_var(id_tok.str_value)) {
                         self.last_was_getvar = false;
                         self.last_was_local_var = true;
+                        self.last_ref = RefKind.REF_SIMPLE;
                         self.last_local_var_reg = var_reg;
                         self.save_lhs_ident_name(id_tok.str_value);
                         return var_reg;
@@ -4315,6 +4353,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         self.last_was_getglobal = false;
                         self.last_was_getglobal_prim = false;
                         self.last_was_local_var = true;
+                        self.last_ref = RefKind.REF_SIMPLE;
                         self.last_local_var_reg = var_reg;
                         self.save_lhs_ident_name(id_tok.str_value);
                         return var_reg;
@@ -4328,6 +4367,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 ushort id_reg = self.alloc_reg();
                 self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
                 self.last_was_getvar = true;
+                self.last_ref = RefKind.REF_SIMPLE;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
                 return id_reg;
@@ -4353,6 +4393,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (try var_reg = self.resolve_var(id_tok.str_value)) {
                     self.last_was_getvar = false;
                     self.last_was_local_var = true;
+                    self.last_ref = RefKind.REF_SIMPLE;
                     self.last_local_var_reg = var_reg;
                     self.save_lhs_ident_name(id_tok.str_value);
                     return var_reg;
@@ -4362,6 +4403,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             ushort id_reg = self.alloc_reg();
             self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
             self.last_was_getvar = true;
+            self.last_ref = RefKind.REF_SIMPLE;
             self.last_getvar_name_idx = name_idx;
             self.save_lhs_ident_name(id_tok.str_value);
             return id_reg;
@@ -4732,6 +4774,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (try var_reg = self.resolve_var(id_tok.str_value)) {
                         self.last_was_getvar = false;
                         self.last_was_local_var = true;
+                        self.last_ref = RefKind.REF_SIMPLE;
                         self.last_local_var_reg = var_reg;
                         self.save_lhs_ident_name(id_tok.str_value);
                         return var_reg;
@@ -4742,6 +4785,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 ushort id_reg = self.alloc_reg();
                 self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
                 self.last_was_getvar = true;
+                self.last_ref = RefKind.REF_SIMPLE;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
                 return id_reg;
@@ -4918,6 +4962,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (try var_reg = self.resolve_var(id_tok.str_value)) {
                         self.last_was_getvar = false;
                         self.last_was_local_var = true;
+                        self.last_ref = RefKind.REF_SIMPLE;
                         self.last_local_var_reg = var_reg;
                         self.save_lhs_ident_name(id_tok.str_value);
                         return var_reg;
@@ -4928,6 +4973,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 ushort id_reg = self.alloc_reg();
                 self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
                 self.last_was_getvar = true;
+                self.last_ref = RefKind.REF_SIMPLE;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
                 return id_reg;
@@ -5304,6 +5350,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.SUPER, super_proto_reg, super_key_reg, false);
+                self.last_ref = RefKind.REF_MEMBER;
 
                 // For super method calls (super.m() / super[s]()), the this-binding
                 // must be the current instance, not the prototype. Emit LDTHIS into a

@@ -70,11 +70,13 @@ Breakdown of the 19 SKIP_FILES entries:
 
 ## 3. Migration Phases
 
-**Status (2026-09-12).** Phases 0-4 have landed. Phase 5 is done except for the
-`annexB` suite, which stays skipped: measured at 332/1086 passing, blocked on
-the B.3.3/B.3.4 hoisting matrices and the legacy direct/indirect eval-code
-rules. The per-phase checklists below are kept as the record of what each phase
-was for, not as instructions.
+**Status (2026-09-12).** Phases 0-4 have landed, and phase 5 is complete: the
+Annex B sloppy-mode syntax gates (B.3.2, B.3.4, B.3.5, B.3.9) are in, with no
+unexpected compile errors left in the `annexB` suite (measured at 654/1086
+passing). The suite still stays skipped: the remaining failures are the legacy
+eval-code and global-code var-hoisting rules and the Annex B String/Date
+methods, not sloppy-mode gates. The per-phase checklists below are kept as the
+record of what each phase was for, not as instructions.
 
 ### Phase 0 — Per-function `is_strict` flag (infrastructure only, no behavior change)
 

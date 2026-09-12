@@ -264,50 +264,21 @@ fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
 // ============================================================================
 
 // Parse and compile a single `Statement` in a position where the grammar
-// admits `Statement` but not `StatementListItem`, so the body of `if` or `else`,
-// a loop, or a label.
+// admits `Statement` but not a full `StatementListItem`, so the body of `if`
+// or `else`, a loop, a `with`, or a labelled item.
 //
-// Only a StatementList (a block, a function body, a case clause, the top
-// level) may contain a Declaration. `if (x) let y = 1;`, `while (0) class C
-// {}` and `for (;;) function f(){}` are therefore early SyntaxErrors, even
-// though each body is a perfectly good StatementListItem. The engine has one
-// `statement()` for both positions, so without this guard every declaration
-// form was silently accepted as a bare body.
-//
-// `let` is only treated as a declaration here when a binding actually
-// follows, so the guard reports the accurate "declaration in body position"
-// error for `if (x) let y = 1;` rather than a generic parse failure. Bare
-// `let` as an identifier reference (`if (x) let;`) is rejected either way,
-// `statement()` routes every LET token to var_declaration(), so this engine
-// does not support `let` as an IdentifierReference at all.
-//
-// `async function` cannot be recognised from the leading token: `async` is a
-// contextual keyword that lexes as a plain IDENTIFIER, and distinguishing the
-// declaration from an `async` identifier reference needs the two-token
-// lookahead that statement() already performs. Rather than duplicate that
-// lookahead here (doing it before statement() runs desynchronises
-// `lexer.token_start`, which statement() refreshes to fix the
-// Function.prototype.toString span of exactly this declaration form), the
-// flag below tells statement() that it is parsing a Statement position, and
-// it raises the error once it has classified the tokens.
-fn void? CompilerContext.statement_body(&self) {
-    switch (self.peek_type()) {
-        case TokenType.CONST:
-        case TokenType.CLASS:
-        case TokenType.FUNCTION:
-            return self.fail("declaration not allowed as a single-statement body")~;
-        case TokenType.LET:
-            // Distinguish the `let` declaration from the `let` identifier by
-            // the token that follows it.
-            if (self.peek2_starts_binding()) {
-                return self.fail("declaration not allowed as a single-statement body")~;
-            }
-        default:
-            break;
-    }
-    // Consumed by statement() exactly once, into a local, so it cannot leak
-    // into any nested statement parsed below this one.
-    self.stmt_position_only = true;
+// `mask` is that position's declaration permission (DECL_* in context.c3):
+//   0                       — a loop or `with` body: no declaration is legal.
+//   DECL_FUNC|DECL_FUNC_BLOCK — an if clause: Annex B.3.4 admits a plain
+//                              FunctionDeclaration, compiled as an implicit
+//                              Block.
+//   DECL_FUNC|DECL_FUNC_LABEL — a labelled item at a statement-list position:
+//                              Annex B.3.2 admits a plain FunctionDeclaration.
+// The permission travels into statement(), which consumes it exactly once and
+// gates each Declaration form on it. That is the engine's counterpart to
+// QuickJS's `decl_mask` and Duktape's `allow_source_elem`/`label_id`.
+fn void? CompilerContext.statement_body(&self, uint mask = 0) {
+    self.decl_mask = mask;
     return self.statement();
 }
 
@@ -361,11 +332,11 @@ fn void? CompilerContext.statement(&self) {
     bool at_module_top = self.module_top_level;
     self.module_top_level = false;
 
-    // Likewise consume the Statement-position marker exactly once. See
-    // statement_body(): it flags the one Declaration form its own leading-token
-    // switch cannot see, `async function` / `async function*`.
-    bool stmt_position_only = self.stmt_position_only;
-    self.stmt_position_only = false;
+    // Likewise consume this position's declaration permission exactly once,
+    // resetting to the statement-list default so it cannot leak into a nested
+    // statement. See statement_body() and the DECL_* constants.
+    uint decl_mask = self.decl_mask;
+    self.decl_mask = DECL_ALL;
 
     switch (tt) {
         case TokenType.LBRACE:
@@ -373,6 +344,9 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.VAR:
             self.var_declaration()!;
         case TokenType.CONST:
+            if (!(decl_mask & DECL_OTHER)) {
+                return self.fail("declaration not allowed as a single-statement body")~;
+            }
             self.var_declaration()!;
         case TokenType.IF:
             self.if_statement()!;
@@ -402,8 +376,31 @@ fn void? CompilerContext.statement(&self) {
         case TokenType.CONTINUE:
             self.continue_statement()!;
         case TokenType.FUNCTION:
-            self.function_declaration()!;
+            if (!(decl_mask & DECL_FUNC)) {
+                return self.fail("declaration not allowed as a single-statement body")~;
+            }
+            if (decl_mask & DECL_OTHER) {
+                // A statement-list position admits every HoistableDeclaration.
+                self.function_declaration()!;
+            } else {
+                // Annex B.3.2 / B.3.4 admit a PLAIN FunctionDeclaration only,
+                // so a generator or anonymous one stays a SyntaxError here.
+                NameSpan span;
+                NameSpanFnKind kind;
+                if (!self.peek_fn_decl(&span, &kind) || kind != NameSpanFnKind.NSP_FN_PLAIN) {
+                    return self.fail("declaration not allowed as a single-statement body")~;
+                }
+                if (decl_mask & DECL_FUNC_BLOCK) {
+                    // Annex B.3.4 if clause: compile as if wrapped in a Block.
+                    self.block(false, false, false, &span, 1, true)!;
+                } else {
+                    self.function_declaration()!;
+                }
+            }
         case TokenType.CLASS:
+            if (!(decl_mask & DECL_OTHER)) {
+                return self.fail("declaration not allowed as a single-statement body")~;
+            }
             self.class_declaration()!;
         case TokenType.IMPORT:
         {
@@ -504,8 +501,14 @@ fn void? CompilerContext.statement(&self) {
             // literal keyword followed by a BindingList (§13.3.1). Anything
             // else is an IdentifierReference — sloppy code may name a variable
             // `let` — so `let;`, `let = 1;`, and `let [0];` are expression
-            // statements, handled by the identifier-led case below.
-            if (self.peek2_starts_binding(true)) {
+            // statements, handled by the identifier-led case below. At a
+            // clause position (no DECL_OTHER) a line terminator lets ASI end
+            // the statement, so `if (x) let \n {}` reads `let` as a name.
+            bool binding_list = self.peek2_starts_binding((decl_mask & DECL_OTHER) != 0);
+            if (binding_list) {
+                if (!(decl_mask & DECL_OTHER)) {
+                    return self.fail("declaration not allowed as a single-statement body")~;
+                }
                 self.var_declaration()!;
             } else {
                 nextcase;
@@ -622,7 +625,7 @@ fn void? CompilerContext.statement(&self) {
                         return self.fail("reserved word cannot be used as a label")~;
                     }
                     self.advance()!; // consume ':'
-                    self.labeled_statement(id_tok.str_value)!;
+                    self.labeled_statement(id_tok.str_value, decl_mask)!;
                     break;
                 }
 
@@ -655,8 +658,8 @@ fn void? CompilerContext.statement(&self) {
                         // be an if/else arm, a loop body or a labelled
                         // statement (§14.4-§14.7, §14.13). Only reachable once
                         // the tokens above have confirmed the contextual
-                        // keyword, which is why statement_body() defers to here.
-                        if (stmt_position_only) {
+                        // keyword, which is why statement() defers to here.
+                        if (!(decl_mask & DECL_OTHER)) {
                             return self.fail("declaration not allowed as a single-statement body")~;
                         }
                         // id_tok was `async`; next token is `function` on
@@ -929,6 +932,45 @@ fn char[] CompilerContext.name_span_text(&self, NameSpan span) {
     return self.lexer.source[span.pos..span.pos + span.len - 1];
 }
 
+// Read a FunctionDeclaration header (`function [*] Name`) without consuming it,
+// recording the binding name and kind into `span`. The lexer must be parked at
+// `function`. Returns false when the tokens are not a named function
+// declaration. Used to build the preset span for an implicit if-body block
+// (Annex B.3.4).
+fn bool CompilerContext.peek_fn_decl(&self, NameSpan* span, NameSpanFnKind* kind) {
+    if (self.lexer.source.len == 0) return false;
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
+    char* source_base = &self.lexer.source[0];
+    bool ok = false;
+    *kind = NameSpanFnKind.NSP_FN_PLAIN;
+
+    do {
+        Token? fn_opt = self.lexer.next_token();
+        if (catch _e = fn_opt) break;
+        if (fn_opt.type != TokenType.FUNCTION) break;
+
+        Token? star_opt = self.lexer.next_token();
+        if (catch _e2 = star_opt) break;
+        bool gen = star_opt.type == TokenType.STAR;
+        Token name_tok = star_opt;
+        if (gen) {
+            Token? nm_opt = self.lexer.next_token();
+            if (catch _e3 = nm_opt) break;
+            name_tok = nm_opt;
+        }
+        if (name_tok.type != TokenType.IDENTIFIER) break;
+
+        self.record_name_span(span, name_tok, source_base);
+        span.is_fn = true;
+        span.fn_kind = fn_kind_for(false, gen);
+        *kind = span.fn_kind;
+        ok = true;
+    } while (false);
+
+    self.restore_lhs_snapshot(snap);
+    return ok;
+}
+
 // True when a `class` following `prev_tt` is a ClassDeclaration (statement
 // position, its BindingIdentifier is a block-scoped lexical binding),
 // rather than a ClassExpression (`x = class C {}`, `f(class C {})`, etc.,
@@ -1093,6 +1135,68 @@ fn void? CompilerContext.hoist_lexical_tdz_checks(&self) {
     }
 }
 
+// Collect the BoundNames of a binding pattern (`{...}` or `[...]`) into
+// `spans`, for the lexical pre-scan's TDZ/scope bookkeeping. The opening
+// bracket has already been consumed. Mirrors hoist_var_pattern: leaf
+// identifiers are bound names unless a `:` follows (an object pattern's
+// property key), and computed keys and default-value expressions are skipped
+// wholesale because their identifiers are references, not bindings.
+fn void CompilerContext.scan_pattern_names(&self, NameSpan* spans, uint capacity,
+                                           uint* count, char* source_base, bool opened_with_brace) {
+    const uint MAX_PAT_DEPTH = 32;
+    bool[MAX_PAT_DEPTH] is_obj;
+    uint depth = 1;
+    is_obj[0] = opened_with_brace;
+    bool at_prop_start = true;
+    for (;;) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _err = tok_opt) return;
+        Token tok = tok_opt;
+        TokenType tt = tok.type;
+        if (tt == TokenType.EOF_TOKEN) return;
+        if (tt == TokenType.COMMA) {
+            at_prop_start = true;
+            continue;
+        }
+        if (tt == TokenType.LBRACKET || tt == TokenType.LBRACE) {
+            if (tt == TokenType.LBRACKET && at_prop_start && depth > 0
+                && depth <= MAX_PAT_DEPTH && is_obj[depth - 1]) {
+                self.skip_bracketed_key();
+                at_prop_start = false;
+                continue;
+            }
+            if (depth < MAX_PAT_DEPTH) {
+                is_obj[depth] = (tt == TokenType.LBRACE);
+            }
+            depth++;
+            at_prop_start = true;
+            continue;
+        }
+        if (tt == TokenType.RBRACKET || tt == TokenType.RBRACE) {
+            depth--;
+            if (depth == 0) return;
+            at_prop_start = false;
+            continue;
+        }
+        if (tt == TokenType.ASSIGN) {
+            self.skip_pattern_default();
+            at_prop_start = false;
+            continue;
+        }
+        at_prop_start = false;
+        if (tt != TokenType.IDENTIFIER) continue;
+
+        Token? peek_opt = self.lexer.peek();
+        if (try pt = peek_opt) {
+            if (pt.type == TokenType.COLON) continue;
+        }
+        if (*count < capacity) {
+            self.record_name_span(&spans[*count], tok, source_base);
+            (*count)++;
+        }
+    }
+}
+
 // Each name's position in the source text is stored in `spans` so the
 // caller can reconstruct the `char[]` slice from `lexer.source`.
 fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capacity) {
@@ -1120,6 +1224,16 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     // extra tokens and `continue` reset this to a statement boundary, since
     // a let/const/class declaration is always statement-terminated.
     TokenType prev_tt = TokenType.SEMICOLON;
+    // Clause tracking for the `let`/`const`-before-a-line-terminator rule. At
+    // a clause position ASI ends the statement, so `if (x) let \n y` reads
+    // `let` as an identifier reference; at a statement position the same text
+    // is a LexicalDeclaration. statement() makes the split via DECL_OTHER, and
+    // this scan must agree or it TDZ-initialises a binding the parser never
+    // declared. `if`/`while`/`for`/`with` open a clause after their head;
+    // `else`/`do` open one directly. `at_clause` describes the next token.
+    bool at_clause = false;
+    bool head_pending = false;
+    bool head_active = false;
 
     while (count < capacity) {
         Token? tok_opt = self.lexer.next_token();
@@ -1131,6 +1245,21 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
 
         if (tt == TokenType.EOF_TOKEN) {
             break;
+        }
+
+        bool this_at_clause = at_clause;
+        at_clause = false;
+
+        if (tt == TokenType.IF || tt == TokenType.WHILE
+            || tt == TokenType.FOR || tt == TokenType.WITH) {
+            head_pending = true;
+            prev_tt = tt;
+            continue;
+        }
+        if (tt == TokenType.ELSE || tt == TokenType.DO) {
+            at_clause = true;
+            prev_tt = tt;
+            continue;
         }
 
         if (tt == TokenType.LBRACE) {
@@ -1150,6 +1279,10 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
 
         if (tt == TokenType.LPAREN) {
             paren_depth++;
+            if (head_pending) {
+                head_pending = false;
+                head_active = true;
+            }
             prev_tt = tt;
             continue;
         }
@@ -1157,6 +1290,10 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
         if (tt == TokenType.RPAREN) {
             if (paren_depth > 0) {
                 paren_depth--;
+            }
+            if (head_active && paren_depth == 0) {
+                head_active = false;
+                at_clause = true;
             }
             prev_tt = tt;
             continue;
@@ -1168,12 +1305,13 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
         // declaration keyword (§5.1.5), so it declares nothing.
         if (brace_depth == 0 && paren_depth == 0 && !tok.has_escape
             && (tt == TokenType.LET || tt == TokenType.CONST)) {
-            // Collect one or more identifier names (comma-separated). The
-            // token that ends the list decides what follows: a `;` (or a
-            // pattern this loop cannot read) leaves us at a statement
-            // boundary, while an `=` leaves us inside an initialiser, where
-            // a following `class` is an EXPRESSION whose name binds nothing
-            // (`let A = class A {}` declares one `A`, not two).
+            // Collect one or more declarators (comma-separated): an
+            // IdentifierReference or a binding pattern, whose BoundNames are
+            // the leaves. The token that ends the list decides what follows:
+            // a `;` leaves us at a statement boundary, while an `=` leaves us
+            // inside an initialiser, where a following `class` is an
+            // EXPRESSION whose name binds nothing (`let A = class A {}`
+            // declares one `A`, not two).
             uint list_start_count = count;
             TokenType list_end = TokenType.SEMICOLON;
             for (;;) {
@@ -1182,14 +1320,26 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
                     break;
                 }
                 Token name_tok = name_opt;
-                if (name_tok.type != TokenType.IDENTIFIER) {
-                    list_end = name_tok.type;
+                // `if (x) let \n y`: at a clause position a line terminator
+                // ends the statement, so this `let` is an identifier
+                // reference, not a declaration. `let [` stays a declaration
+                // (the ExpressionStatement lookahead excludes it).
+                if (this_at_clause && count == list_start_count
+                    && name_tok.type == TokenType.IDENTIFIER
+                    && self.lexer.seen_line_term) {
                     break;
                 }
-                // Store the name's position in the source text.
-                if (count < capacity) {
-                    self.record_name_span(&spans[count], name_tok, source_base);
-                    count++;
+                if (name_tok.type == TokenType.LBRACE || name_tok.type == TokenType.LBRACKET) {
+                    self.scan_pattern_names(&spans[0], capacity, &count, source_base,
+                                            name_tok.type == TokenType.LBRACE);
+                } else if (name_tok.type == TokenType.IDENTIFIER) {
+                    if (count < capacity) {
+                        self.record_name_span(&spans[count], name_tok, source_base);
+                        count++;
+                    }
+                } else {
+                    list_end = name_tok.type;
+                    break;
                 }
                 // Check for comma (multiple declarations).
                 Token? sep_opt = self.lexer.next_token();
@@ -1468,6 +1618,12 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     // from a colon nested in parens/brackets via paren_depth.
     uint     paren_depth = 0;
     uint     question_depth = 0;
+    // See pre_scan_lexical_decls: clause tracking so a `let`/`const` followed
+    // by a line terminator at a clause position is not collected as a
+    // declaration the parser never made.
+    bool at_clause = false;
+    bool head_pending = false;
+    bool head_active = false;
 
     while (count < capacity) {
         // Snapshot before consuming, so a FunctionDeclaration found below can
@@ -1483,6 +1639,21 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
 
         if (tt == TokenType.EOF_TOKEN) {
             break;
+        }
+
+        bool this_at_clause = at_clause;
+        at_clause = false;
+
+        if (tt == TokenType.IF || tt == TokenType.WHILE
+            || tt == TokenType.FOR || tt == TokenType.WITH) {
+            head_pending = true;
+            prev_tt = tt;
+            continue;
+        }
+        if (tt == TokenType.ELSE || tt == TokenType.DO) {
+            at_clause = true;
+            prev_tt = tt;
+            continue;
         }
 
         if (tt == TokenType.LBRACE) {
@@ -1510,11 +1681,19 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
         // colon) is treated as a statement-position boundary below.
         if (tt == TokenType.LPAREN || tt == TokenType.LBRACKET) {
             paren_depth++;
+            if (tt == TokenType.LPAREN && head_pending) {
+                head_pending = false;
+                head_active = true;
+            }
             prev_tt = tt;
             continue;
         }
         if (tt == TokenType.RPAREN || tt == TokenType.RBRACKET) {
             if (paren_depth > 0) paren_depth--;
+            if (tt == TokenType.RPAREN && head_active && paren_depth == 0) {
+                head_active = false;
+                at_clause = true;
+            }
             prev_tt = tt;
             continue;
         }
@@ -1547,18 +1726,30 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
             // main loop resumes. Defaults to SEMICOLON so a list that runs to
             // a parse error still leaves the scanner at statement position.
             TokenType last_sep_tt = TokenType.SEMICOLON;
+            uint list_start_count = count;
             for (;;) {
                 Token? name_opt = self.lexer.next_token();
                 if (catch _err2 = name_opt) {
                     break;
                 }
                 Token name_tok = name_opt;
-                if (name_tok.type != TokenType.IDENTIFIER) {
+                // See pre_scan_lexical_decls: `if (x) let \n y` at a clause
+                // position reads `let` as an identifier reference.
+                if (this_at_clause && count == list_start_count
+                    && name_tok.type == TokenType.IDENTIFIER
+                    && self.lexer.seen_line_term) {
                     break;
                 }
-                if (count < capacity) {
-                    self.record_name_span(&spans[count], name_tok, source_base);
-                    count++;
+                if (name_tok.type == TokenType.LBRACE || name_tok.type == TokenType.LBRACKET) {
+                    self.scan_pattern_names(&spans[0], capacity, &count, source_base,
+                                            name_tok.type == TokenType.LBRACE);
+                } else if (name_tok.type == TokenType.IDENTIFIER) {
+                    if (count < capacity) {
+                        self.record_name_span(&spans[count], name_tok, source_base);
+                        count++;
+                    }
+                } else {
+                    break;
                 }
                 Token? sep_opt = self.lexer.next_token();
                 if (catch _err3 = sep_opt) {
@@ -1842,8 +2033,14 @@ fn void? CompilerContext.emit_block_scoped_fn_decls(&self, NameSpan* lex_spans, 
 // which only the function-body call sites pass) and for a `catch` block,
 // whose relationship to its CatchParameter is the same one (§14.15.1).
 fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex_hint = false,
-                               bool is_param_body = false) {
-    self.expect(TokenType.LBRACE)!;
+                               bool is_param_body = false, NameSpan* preset = null,
+                               uint preset_count = 0, bool implicit_body = false) {
+    // `implicit_body` compiles a body with no `{`/`}`: exactly one
+    // FunctionDeclaration, the shape Annex B.3.4 gives an if clause. The
+    // caller has already located the declaration and passes it in `preset`.
+    if (!implicit_body) {
+        self.expect(TokenType.LBRACE)!;
+    }
     uint saved_depth = self.scope_depth;
     ushort saved_reg = self.next_reg;
 
@@ -1863,7 +2060,10 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     NameSpan[MAX_PRESCAN_NAMES] lex_spans;
     uint num_lex;
     bool lexical_fns = !check_directives;
-    if (lexical_fns) {
+    if (implicit_body) {
+        num_lex = preset_count;
+        for (uint i = 0; i < preset_count; i++) lex_spans[i] = preset[i];
+    } else if (lexical_fns) {
         num_lex = self.pre_scan_switch_lexical_decls(&lex_spans, MAX_PRESCAN_NAMES);
     } else {
         num_lex = self.pre_scan_lexical_decls(&lex_spans, MAX_PRESCAN_NAMES);
@@ -1907,8 +2107,12 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     // LexicallyDeclaredNames and VarDeclaredNames of this block must not
     // intersect. A `let x; var x;` (or vice versa) at the same block level
     // is a SyntaxError. Function bodies inherit the same rule (the body is
-    // itself a block per §14.1).
-    self.check_lexical_var_conflicts(&lex_spans[0], num_lex)!;
+    // itself a block per §14.1). An implicit if-body block holds one
+    // declaration and no var of its own, so the forward scan (which has no
+    // closing brace to stop at) is skipped.
+    if (!implicit_body) {
+        self.check_lexical_var_conflicts(&lex_spans[0], num_lex)!;
+    }
 
     // Push a new lexical scope for let/const/class/function declarations inside
     // this block. Skip when the block has none, saves an allocation on every
@@ -2156,7 +2360,27 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
         self.block_fn_spans = saved_block_fn_spans;
         self.block_fn_count = saved_block_fn_count;
     }
-    if (lexical_fns && has_lex) {
+    if (implicit_body) {
+        // The lexer is parked at the single declaration's `function` keyword.
+        // Compile it at its own position (`block_fn_spans` cleared so
+        // function_declaration does not skip it), then publish the Annex B.3.3
+        // second binding to the enclosing var scope. No re-entry/seek dance:
+        // unlike a real block there is nothing after the declaration here.
+        self.block_fn_spans = null;
+        self.block_fn_count = 0;
+        self.statement()!;
+        if (!self.is_strict && num_lex > 0 && lex_spans[0].is_fn
+            && lex_spans[0].fn_kind == NameSpanFnKind.NSP_FN_PLAIN && !b33_exempt) {
+            char[] fn_name = self.name_span_text(lex_spans[0]);
+            if (!self.is_formal_param_name(fn_name)) {
+                uint var_name_idx = self.add_string_constant(fn_name);
+                ushort? b33_reg = self.find_local_reg(fn_name);
+                if (try breg = b33_reg) {
+                    self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)breg, var_name_idx);
+                }
+            }
+        }
+    } else if (lexical_fns && has_lex) {
         self.block_fn_spans = &lex_spans[0];
         self.block_fn_count = num_lex;
         self.emit_block_scoped_fn_decls(&lex_spans[0], num_lex, b33_exempt)!;
@@ -2165,13 +2389,17 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
         self.block_fn_count = 0;
     }
 
-    while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
-        self.statement()!;
+    if (!implicit_body) {
+        while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
+            self.statement()!;
+        }
     }
 
     self.force_lexical_fn_decl = saved_force_lexical_fn_decl;
 
-    self.expect(TokenType.RBRACE)!;
+    if (!implicit_body) {
+        self.expect(TokenType.RBRACE)!;
+    }
     // A `}` closing a BlockStatement is a statement boundary: per the
     // ECMAScript lexical grammar, a following `/` starts a
     // RegularExpressionLiteral, not division (see Lexer.note_block_close doc).
@@ -2476,8 +2704,12 @@ fn void? CompilerContext.if_statement(&self) {
     // Compile then-branch. The `)` just consumed closes the if-clause, not an
     // operand, so a following `/` must start a RegularExpressionLiteral (see
     // Lexer.note_block_close doc; B2).
+    //
+    // Annex B.3.4: in sloppy code a plain FunctionDeclaration is a legal
+    // clause, compiled as if wrapped in a Block (DECL_FUNC_BLOCK).
+    uint clause_mask = self.is_strict ? 0 : DECL_FUNC | DECL_FUNC_BLOCK;
     self.lexer.note_block_close();
-    self.statement_body()!;
+    self.statement_body(clause_mask)!;
 
     if (self.match(TokenType.ELSE)) {
         // Emit jump over else-branch
@@ -2487,7 +2719,7 @@ fn void? CompilerContext.if_statement(&self) {
         // Compile else-branch. `else` is a keyword, never an operand, so the
         // same regex hint applies here too.
         self.lexer.note_block_close();
-        self.statement_body()!;
+        self.statement_body(clause_mask)!;
 
         self.patch_jump(end_jump);
     } else {
@@ -2807,6 +3039,52 @@ fn void CompilerContext.emit_create_per_iteration_env(&self,
     }
 }
 
+// Annex B.3.5 detection: the lexer is at the `=` of a `for (var x = ...)` head.
+// Scans the Initializer[~In] for a top-level `in`, which is the only token that
+// can end it. A parenthesised `in` (`= (1 in {})`) is nested and does not
+// count, and a `;` means the head is C-style. Non-destructive.
+fn bool CompilerContext.is_b35_forin_head(&self) {
+    ForLhsSnapshot snap = self.save_lhs_snapshot();
+    char[512] saved_err_msg = self.lexer.err_msg;
+    uint saved_err_line = self.lexer.err_line;
+    uint saved_err_col = self.lexer.err_col;
+    bool found = false;
+    uint paren_depth = 0;
+    uint brace_depth = 0;
+    uint bracket_depth = 0;
+    TemplateScan tscan;
+    for (;;) {
+        Token? tok_opt = self.advance();
+        if (catch _e = tok_opt) break;
+        Token tok = tok_opt;
+        TokenType tt = tok.type;
+        if (tt == TokenType.EOF_TOKEN) break;
+        bool at_top = paren_depth == 0 && brace_depth == 0 && bracket_depth == 0
+                   && tscan.depth == 0;
+        if (at_top && tt == TokenType.IN) {
+            found = true;
+            break;
+        }
+        if (at_top && (tt == TokenType.SEMICOLON || tt == TokenType.RPAREN)) break;
+        if (tt == TokenType.LPAREN) { paren_depth++; }
+        else if (tt == TokenType.RPAREN) { paren_depth--; }
+        else if (tt == TokenType.LBRACE) { tscan.on_lbrace(); brace_depth++; }
+        else if (tt == TokenType.TEMPLATE_HEAD) { tscan.on_template_head(); }
+        else if (tt == TokenType.RBRACE) {
+            TemplateBrace tb = tscan.classify_rbrace(self.lexer);
+            if (tb == TemplateBrace.LEX_ERROR) break;
+            if (tb == TemplateBrace.BLOCK) brace_depth--;
+        }
+        else if (tt == TokenType.LBRACKET) { bracket_depth++; }
+        else if (tt == TokenType.RBRACKET) { bracket_depth--; }
+    }
+    self.restore_lhs_snapshot(snap);
+    self.lexer.err_msg = saved_err_msg;
+    self.lexer.err_line = saved_err_line;
+    self.lexer.err_col = saved_err_col;
+    return found;
+}
+
 // Parse for statement (basic for, for-in, for-of, for-await-of).
 fn void? CompilerContext.for_statement(&self) {
     self.expect(TokenType.FOR)!;
@@ -3056,6 +3334,9 @@ fn void? CompilerContext.for_statement(&self) {
 
         bool is_member_head = false;
         bool head_is_of = false;
+        // Annex B.3.9: a CallExpression head (`for (f() of x)`) is accepted in
+        // sloppy code and throws a runtime ReferenceError when evaluated.
+        bool is_call_head = false;
 
         if (try mreg = self.call_expr()) {
             if (self.last_was_member()) {
@@ -3068,6 +3349,17 @@ fn void? CompilerContext.for_statement(&self) {
                         head_is_of = true;
                     } else if (tok3.type == TokenType.IN) {
                         is_member_head = true;
+                        head_is_of = false;
+                    }
+                }
+            } else if (self.last_ref == RefKind.REF_CALL && !self.is_strict) {
+                self.free_reg(mreg);
+                if (try tok3 = self.lexer.peek()) {
+                    if (token_is_of(tok3)) {
+                        is_call_head = true;
+                        head_is_of = true;
+                    } else if (tok3.type == TokenType.IN) {
+                        is_call_head = true;
                         head_is_of = false;
                     }
                 }
@@ -3088,6 +3380,33 @@ fn void? CompilerContext.for_statement(&self) {
         self.lexer.err_msg = saved_err_msg;
         self.lexer.err_line = saved_err_line;
         self.lexer.err_col = saved_err_col;
+
+        if (is_call_head) {
+            // Annex B.3.9: evaluate the CallExpression head, then throw
+            // ReferenceError. The rest of the loop is compiled normally so the
+            // body's break/continue still resolve, but the throw precedes it.
+            self.call_expr()!;
+            self.discard_member_head_state();
+            uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+            self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+            self.advance()!;  // consume "of" or "in"
+            if (head_is_of) {
+                ushort iter_reg = self.assignment_expr()!;
+                self.expect(TokenType.RPAREN)!;
+                self.free_reg(iter_reg);
+            } else {
+                if (for_is_await) return self.fail("'for await' requires 'of', not 'in'")~;
+                ushort obj_reg = self.expression()!;
+                self.expect(TokenType.RPAREN)!;
+                self.free_reg(obj_reg);
+            }
+            self.push_loop(self.code_count, true);
+            self.statement_body()!;
+            self.pop_loop();
+            self.pop_scope_to(saved_scope);
+            self.free_regs_to(saved_reg);
+            return;
+        }
 
         if (is_member_head) {
             // Re-consume the LHS only to advance the lexer past it; the store
@@ -3541,10 +3860,16 @@ fn void? CompilerContext.for_statement(&self) {
             self.try_skip_ts_type_annotation()!;
 
             // Check for "in" (for-in) or "of" (for-of)
-            if (self.peek_type() == TokenType.IN) {
+            // Check for "in" (for-in) or "of" (for-of). Annex B.3.5 adds the
+            // sloppy `for (var x = <init> in obj)` head, whose initializer is
+            // evaluated once before the RHS; it applies only to a plain `var`
+            // ForBinding, never to a lexical declaration or a pattern.
+            bool b35_forin = !is_lexical && !self.is_strict
+                && self.check(TokenType.ASSIGN) && self.is_b35_forin_head();
+            if (self.peek_type() == TokenType.IN || b35_forin) {
                 if (for_is_await) return self.fail("'for await' requires 'of', not 'in'")~;
                 // for (let/const/var x in obj) { ... }
-                self.advance()!;  // consume 'in'
+                if (!b35_forin) self.advance()!;  // consume 'in'
                 // ForIn/OfHeadEvaluation creates the lexical head environment
                 // before evaluating the RHS. The binding must therefore be in
                 // TDZ while the object expression is evaluated.
@@ -3577,6 +3902,20 @@ fn void? CompilerContext.for_statement(&self) {
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
                     self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(name_tok.str_value));
+                }
+                if (b35_forin) {
+                    // Evaluate the Initializer[~In] once and store it in the
+                    // binding before the RHS runs, so the RHS can observe it.
+                    // The loop then overwrites the binding per iteration.
+                    self.advance()!;  // consume '='
+                    self.forbid_in = true;
+                    ushort init_val = self.assignment_expr()!;
+                    self.forbid_in = false;
+                    self.emit_abc(Opcode.LDREG, (uint)iter_var, (uint)init_val, 0);
+                    self.free_reg(init_val);
+                    uint init_name_idx = self.add_string_constant(name_tok.str_value);
+                    self.emit_var_store(iter_var, init_name_idx, is_lexical, is_const);
+                    self.advance()!;  // consume 'in'
                 }
                 ushort obj_reg = self.expression()!;
                 // Keep the head TDZ environment alive for closures created by
@@ -5715,7 +6054,19 @@ fn void? CompilerContext.switch_statement(&self) {
 
 // Parse a labeled statement: `identifier : statement`.
 // Supports labeled break and continue (ES5 §12.12).
-fn void? CompilerContext.labeled_statement(&self, char[] name) {
+//
+// `mask` is the declaration permission of the position the label itself sits
+// in. Annex B.3.2 lets a plain FunctionDeclaration be a LabelledItem, but only
+// where the label is a StatementListItem (DECL_FUNC_LABEL) and only in sloppy
+// code; the item mask carries DECL_FUNC so statement() compiles it as an
+// ordinary declaration. A label inside an if/loop/with body has no
+// DECL_FUNC_LABEL, so `if (x) l: function f(){}` stays a SyntaxError
+// (IsLabelledFunction).
+fn void? CompilerContext.labeled_statement(&self, char[] name, uint mask) {
+    uint item_mask = 0;
+    if (!self.is_strict && (mask & DECL_FUNC_LABEL)) {
+        item_mask = DECL_FUNC | DECL_FUNC_LABEL;
+    }
     uint saved_label_count = self.label_count;
 
     // Check for duplicate labels
@@ -5760,13 +6111,13 @@ fn void? CompilerContext.labeled_statement(&self, char[] name) {
         // self.loop_depth (the current depth before the loop's push_loop).
         self.labels[label_idx].loop_index = self.loop_depth;
         self.labels[label_idx].is_loop = true;
-        self.statement_body()!;
+        self.statement_body(item_mask)!;
     } else {
         // Non-loop label, push a virtual loop entry so break can target it.
         self.push_loop(self.code_count, false);
         self.labels[label_idx].loop_index = self.loop_depth - 1;
         self.labels[label_idx].is_loop = false;
-        self.statement_body()!;
+        self.statement_body(item_mask)!;
         self.pop_loop(); // patches all breaks targeting this label
     }
 

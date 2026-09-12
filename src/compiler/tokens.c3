@@ -636,16 +636,28 @@ fn bool CompilerContext.is_async_arrow_lookahead(&self) {
         next_tok = peek_opt;
     }
     if (next_tok.type == TokenType.LPAREN) {
-        // [no LineTerminator here] before the `(`.  When satisfied we treat
-        // this as an `async ( ... ) => ...` cover call; when violated the
-        // spec's `async` is just an identifier expr statement and the `(`
-        // starts a separate expression.
+        // [no LineTerminator here] before the `(`.  When violated the spec's
+        // `async` is just an identifier expr statement and the `(` starts a
+        // separate expression.
         if (next_tok.line != cur.line) {
             self.pushback(cur);
             return false;
         }
+        // `async (params) => ...` and the call `async (args)` share the
+        // CoverCallExpressionAndAsyncArrowHead prefix (ES2024 §13.3.1.1), so
+        // confirm the `=>` before the caller commits by consuming `async`.
+        // Otherwise `async(x)` would lose its callee and parse as `(x)`.
+        ForLhsSnapshot snap = self.save_lhs_snapshot();
+        bool is_arrow = false;
+        Token? lp_opt = self.advance();
+        if (catch _e = lp_opt) {
+            is_arrow = false;
+        } else {
+            is_arrow = self.scan_destruct_param_to_arrow();
+        }
+        self.restore_lhs_snapshot(snap);
         self.pushback(cur);
-        return true;
+        return is_arrow;
     }
     if (next_tok.type == TokenType.LT && self.lexer.ts_mode) {
         // `async <T, U>(params) => ...`: a TypeScript generic type-parameter
