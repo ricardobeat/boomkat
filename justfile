@@ -1,5 +1,6 @@
 # Boomkat — common tasks
 justfile := "benchmarks/README.md"
+BOA_TAG := "v0.22"
 
 import 'examples.just'
 
@@ -79,6 +80,42 @@ fetch-quickjs:
     echo "Cloning quickjs..."
     git clone --depth 1 https://github.com/bellard/quickjs.git quickjs
     echo "quickjs: cloned"
+
+# Fetch prebuilt Boa and Kiesel binaries (modern from-scratch engines)
+[private]
+modern-ready:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p out
+    case "$(uname -s)-$(uname -m)" in
+        Darwin-arm64)  BOA=boa-aarch64-apple-darwin;      KIESEL=kiesel-macos-aarch64-releasefast ;;
+        Darwin-x86_64) BOA=;                              KIESEL=kiesel-macos-x86_64 ;;
+        Linux-aarch64) BOA=;                              KIESEL=kiesel-linux-aarch64-releasefast ;;
+        Linux-x86_64)  BOA=boa-x86_64-unknown-linux-gnu;  KIESEL=kiesel-linux-x86_64-releasefast ;;
+        *) echo "modern engines: no prebuilt binaries for $(uname -s)-$(uname -m), skipping"; exit 0 ;;
+    esac
+    if [ ! -f out/boa ] && [ -n "$BOA" ]; then
+        echo "Downloading Boa ({{BOA_TAG}})..."
+        gh release download {{BOA_TAG}} --repo boa-dev/boa --pattern "$BOA" --output out/boa
+        chmod +x out/boa
+        rm -f out/bench_cache_boa.txt
+    fi
+    if [ ! -f out/kiesel ]; then
+        echo "Downloading Kiesel (main build)..."
+        curl -fsSL -o out/kiesel "https://files.kiesel.dev/$KIESEL"
+        chmod +x out/kiesel
+        rm -f out/bench_cache_kiesel.txt
+    fi
+    # macOS refuses to exec downloaded unsigned binaries until quarantine is
+    # cleared and they carry at least an ad-hoc signature.
+    if [ "$(uname -s)" = Darwin ]; then
+        for b in out/boa out/kiesel; do
+            [ -f "$b" ] || continue
+            xattr -d com.apple.quarantine "$b" 2>/dev/null || true
+            codesign -s - -f "$b" >/dev/null 2>&1 || true
+        done
+    fi
+    echo "modern engines: ready"
 
 # Build out/duktape if missing
 [private]
@@ -303,18 +340,18 @@ test262-gate: build-batch
 # ── Benchmarks ───────────────────────────────────────────────────────────────
 
 # Run all benchmarks without rebuilding (default: 3 iterations)
-bench n="3": duktape-ready qjs-ready
+bench n="3": duktape-ready qjs-ready modern-ready
 	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
 	bash scripts/run_benchmarks.sh {{n}}
 
 # Rebuild boomkat and run all benchmarks
-bench-rebuild n="3": duktape-ready qjs-ready
+bench-rebuild n="3": duktape-ready qjs-ready modern-ready
 	c3c build boomkat
 	bash scripts/run_benchmarks.sh {{n}}
 
 # Clear cached Duktape/QuickJS benchmark results
 bench-clear:
-	@rm -f out/bench_cache_duktape.txt out/bench_cache_qjs.txt
+	@rm -f out/bench_cache_duktape.txt out/bench_cache_qjs.txt out/bench_cache_boa.txt out/bench_cache_kiesel.txt
 	@echo "Cleared benchmark caches."
 
 # Quick single-engine benchmark (no comparison, skips deep recursion)
@@ -334,7 +371,7 @@ bench-orig file: duktape-ready
 # ── Size & Memory Benchmarks ────────────────────────────────────────────────
 
 # Measure binary sizes and peak RSS of all engines
-bench-sizes: duktape-ready qjs-ready
+bench-sizes: duktape-ready qjs-ready modern-ready
 	@echo "=== Engine Size & Memory Benchmark ==="
 	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
 	bash scripts/run_sizes_bench.sh
