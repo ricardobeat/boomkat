@@ -154,8 +154,12 @@ def sample_worker_rss(workers):
 # ---------------------------------------------------------------------------
 
 # Directories to skip entirely (relative to test262/test/)
+# `annexB` itself runs — the JS-semantics gates (B.3.2/B.3.4/B.3.5/B.3.9 plus
+# the eval/global/function-code hoisting matrices) are part of sloppy mode.
+# Only the legacy-browser built-ins stay out.
 SKIP_DIRS = {
-    "annexB",                          # 1,086 — legacy browser quirks
+    "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
+    "annexB/built-ins/Date",           # 24   — B.2.4/B.2.5 getYear/setYear/toGMTString
     "intl402",                         # 3,337 — ECMA-402, out of scope
     "staging/intl402",                 # ECMA-402 staging tests, likewise
     "harness",                         # 116   — test harness self-tests
