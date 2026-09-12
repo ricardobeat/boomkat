@@ -729,7 +729,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // Auto-box string primitive
                     HString* str_prim = (HString*)rb.get_heapptr();
 
-                    // Fast path: numeric index → character at index
+                    // Fast path: numeric index → character at index. The fastint
+                    // and number cases cover literals (`s[0]`, `s[0.0]`) and the
+                    // string case covers canonical array-index string keys after
+                    // TOPROPKEY (`s["0"]`, `s["0"]`). Mirrors the String exotic
+                    // object [[GetOwnProperty]] for primitive sources, so a
+                    // destructuring like `{ [0]: x } = "abc"` reads the
+                    // character rather than walking the prototype chain.
                     long str_idx = -1;
                     if (rc.is_fastint()) {
                         str_idx = rc.get_fastint();
@@ -737,6 +743,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         double d = rc.get_number();
                         if (d >= 0 && d == (double)(long)d) {
                             str_idx = (long)d;
+                        }
+                    } else if (rc.is_string()) {
+                        HString* key_prim = (HString*)rc.get_heapptr();
+                        if (key_prim != null && key_prim.is_arridx()) {
+                            str_idx = (long)key_prim.array_index();
                         }
                     }
                     if (str_idx >= 0 && str_idx < (long)str_prim.char_length()) {
@@ -1075,8 +1086,30 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             ra.set_undefined();
                         }
                     } else {
-                        // Auto-boxing a string primitive with a constant string key skips
-                        // the numeric-index fast path.
+                        // Auto-box string primitive. Mirror the String exotic
+                        // object [[GetOwnProperty]] for canonical array-index
+                        // string keys (`"abc"["0"]`), so a destructuring
+                        // pattern with a literal numeric key (e.g.
+                        // `{ 0: c } = "0"`) reads the character at that
+                        // index instead of walking the prototype chain. An
+                        // out-of-range index falls through to the prototype
+                        // chain lookup so explicitly-assigned out-of-range
+                        // slots are still found.
+                        if (key_hstr != null && key_hstr.is_arridx()) {
+                            long sidx = (long)key_hstr.array_index();
+                            if (sidx < (long)h_str.char_length()) {
+                                uint cp = h_str.char_at_unchecked((uint)sidx);
+                                char[4] sbuf;
+                                uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
+                                HString* interned = intern_string(vm, sbuf[:sblen]);
+                                if (interned != null) {
+                                    vm.heap.set_reg_string(ra, interned);
+                                } else {
+                                    return VM_ERROR~;
+                                }
+                                return (TVal){};
+                            }
+                        }
                         if (key_hstr != null) {
                             // Fast path: .length → string character count
                             if ((void*)key_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
