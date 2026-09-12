@@ -817,6 +817,18 @@ struct CompilerContext {
     // consume threw away. Set alongside yield_ok_here and cleared with it.
     bool yield_forbid_in;
 
+    // The value of `forbid_in` at the AssignmentExpression position binary_expr
+    // is parsing, captured before binary_expr clears it. An ArrowFunction's
+    // ConciseBody inherits the enclosing `[In]` (§13.2: `ConciseBody[?In] →
+    // AssignmentExpression[?In, ~Yield, ~Await]`), so an arrow inside a
+    // C-style for head must parse its body in `[~In]` (`for (x => 0 in 1;;)` is
+    // a SyntaxError). Same consume-on-entry reason as `yield_forbid_in`: by
+    // the time primary_expr detects the arrow, `self.forbid_in` has already
+    // been cleared. Set in binary_expr and read by compile_arrow_inner /
+    // compile_arrow_inner_reparse. ArrowParameters carry no `[In]`, so this
+    // only feeds the body parse, never the parameter parse.
+    bool arrow_forbid_in;
+
     // True while parsing the enclosing function's FormalParameters. Parameter
     // defaults must reject yield/await EXPRESSIONS (FormalParameters may not
     // Contain them, §14.1.2/§14.7), but destructuring defaults in the BODY of

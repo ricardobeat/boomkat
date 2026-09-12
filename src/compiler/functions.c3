@@ -5444,6 +5444,14 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         // Pre-scan in expression mode: nested arrows/functions inside the
         // expression can capture this arrow's params (plan 045).
         arrow_ctx.pre_scan_captures(true);
+        // An ArrowFunction's ConciseBody is `AssignmentExpression[?In]`:
+        // inherit the enclosing `[In]` so an arrow inside a C-style for
+        // head (`for (x => 0 in 1;;)`) rejects the `in` in its body.
+        // Read from `arrow_forbid_in` rather than `self.forbid_in`, which
+        // binary_expr has already cleared by the time primary_expr detects
+        // the arrow. ArrowParameters carry no `[In]`, so defaults remain
+        // `[+In]`.
+        arrow_ctx.forbid_in = self.arrow_forbid_in;
         ushort expr_reg = arrow_ctx.assignment_expr()!;
         arrow_ctx.emit_a_bc(Opcode.RET, (uint)expr_reg, 0);
         body_end_pos = arrow_ctx.lexer.pos;
@@ -5549,7 +5557,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
             break;
         }
         if (src_end > (uint)arrow_ctx.lexer.source.len) src_end = (uint)arrow_ctx.lexer.source.len;
-        uint slen = src_end - src_start;
+        // A speculative for-in/for-of LHS probe that re-parses the arrow
+        // (see the body in statements.c3) can leave `body_end_pos` before
+        // `src_start` when the lexer's `lookahead_token_start` was stale on
+        // restore. Guard against the underflow so Function.prototype.toString
+        // never reads past the source.
+        uint slen = src_end > src_start ? src_end - src_start : 0;
         if (slen > 0) {
             char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)slen + 1)) ?? null;
             if (src_heap != null) {
@@ -5796,6 +5809,14 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // No hoist here: an AssignmentExpression ConciseBody has no
         // statement-level declarations, so its VarDeclaredNames is empty.
         arrow_ctx.pre_scan_captures(true);
+        // An ArrowFunction's ConciseBody is `AssignmentExpression[?In]`:
+        // inherit the enclosing `[In]` so an arrow inside a C-style for
+        // head (`for (x => 0 in 1;;)`) rejects the `in` in its body.
+        // Read from `arrow_forbid_in` rather than `self.forbid_in`, which
+        // binary_expr has already cleared by the time primary_expr detects
+        // the arrow. ArrowParameters carry no `[In]`, so defaults remain
+        // `[+In]`.
+        arrow_ctx.forbid_in = self.arrow_forbid_in;
         ushort expr_reg = arrow_ctx.assignment_expr()!;
         arrow_ctx.emit_a_bc(Opcode.RET, (uint)expr_reg, 0);
         body_end_pos = arrow_ctx.lexer.pos;
@@ -5888,7 +5909,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
             break;
         }
         if (src_end > (uint)arrow_ctx.lexer.source.len) src_end = (uint)arrow_ctx.lexer.source.len;
-        uint slen = src_end - src_start;
+        // A speculative for-in/for-of LHS probe that re-parses the arrow
+        // (see the body in statements.c3) can leave `body_end_pos` before
+        // `src_start` when the lexer's `lookahead_token_start` was stale on
+        // restore. Guard against the underflow so Function.prototype.toString
+        // never reads past the source.
+        uint slen = src_end > src_start ? src_end - src_start : 0;
         if (slen > 0) {
             char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)slen + 1)) ?? null;
             if (src_heap != null) {

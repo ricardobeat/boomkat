@@ -1226,6 +1226,10 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // the consumed value where the yield case can find it; it travels with
     // yield_ok_here, since that marks the only position a yield can appear.
     self.yield_forbid_in = no_in && yield_ok;
+    // An ArrowFunction's ConciseBody inherits the enclosing `[In]` — see
+    // `arrow_forbid_in`'s doc — so the arrow head, detected in primary_expr,
+    // needs the pre-clear value. Park it alongside the yield version.
+    self.arrow_forbid_in = no_in;
 
     // ES2022 class-fields-private-in: `[+In] PrivateIdentifier in ShiftExpression`.
     // The grammar gives the PrivateIdentifier as a standalone LHS of the `in`
