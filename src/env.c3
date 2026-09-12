@@ -380,8 +380,15 @@ fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, boo
     if (existing >= 0 && !is_global) {
         flags = env.bindings.get_prop_flags((uint)existing, h);
     } else {
-        flags = !is_global ? hobject::PROP_FLAGS_WEC
-            : (is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE);
+        // Configurability follows who created the binding, not where it
+        // lives. ES2024 §18.2.1.2 makes an eval-code `var` configurable
+        // (CreateMutableBinding(N, true)); Annex B.3.2 makes an ordinary
+        // function-scope or Script `var` non-configurable. Both land in the
+        // same var_env when a sloppy direct eval shares its caller's scope,
+        // so is_eval_code is the only thing that separates them. Marking a
+        // function's own `var` configurable let `eval("delete x")` delete a
+        // live binding and turn every later read into a ReferenceError.
+        flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
     }
     return env.bindings.put_prop(key, val, flags, h);
 }

@@ -618,7 +618,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 continue;
             }
             if (!still_hit) {
-                if (vm.current_func.is_strict()) {
+                if (((CompiledFunction*)ds.act.func).is_strict()) {
                     HString* name_hstr = (HString*)key;
                     if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
                             "%s is not defined", name_hstr.get_cstr(),

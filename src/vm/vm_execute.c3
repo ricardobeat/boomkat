@@ -4538,7 +4538,7 @@ fn TVal? Vm.run(Vm* vm) {
             // via PUTGLOBAL/PUTVAR_ASSIGN's resolver-fallthrough at plans/083
             // phase 2. Strict code keeps the original §6.2.5.6 throw.
             if (ra.is_pointer() && ra.get_heapptr() != null) { continue; }
-            if (vm.current_func.is_strict()) {
+            if (((CompiledFunction*)ds.act.func).is_strict()) {
                 uint bc = insn.get_bc();
                 char* nm = (char*)"";
                 if (bc < vm.current_func.const_count) {
@@ -4657,7 +4657,7 @@ fn TVal? Vm.run(Vm* vm) {
                             // again on this verification.
                             if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &has_hit)
                                 || !has_hit) {
-                                if (vm.current_func.is_strict()) {
+                                if (((CompiledFunction*)ds.act.func).is_strict()) {
                                     HString* name_hstr = (HString*)key;
                                     if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
                                             "%s is not defined", name_hstr.get_cstr(),
@@ -5965,7 +5965,7 @@ fn TVal? Vm.run(Vm* vm) {
                     } else if (put_result == -4) {
                         // Non-strict immutable binding (fnexpr own name):
                         // sloppy silently drops, strict throws.
-                        if (vm.current_func.is_strict()) {
+                        if (((CompiledFunction*)ds.act.func).is_strict()) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
@@ -6602,7 +6602,7 @@ fn TVal? Vm.run(Vm* vm) {
             }
             void* key = name_val.get_heapptr();
             HString* name_hstr = (HString*)key;
-            bool is_strict_d = vm.current_func.is_strict();
+            bool is_strict_d = ((CompiledFunction*)ds.act.func).is_strict();
 
             // Walk the lex chain. A `with`-env hit is `delete obj.x`: drop the property
             // from the with object and report success. A non-with hit is a
