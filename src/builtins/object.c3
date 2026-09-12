@@ -783,6 +783,16 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
             }
         }
     }
+    // An ARRAY exotic's "length" normally lives in array_len_ptr with no
+    // named-table entry (see HObject.sync_named_length), so the prop_count
+    // walk below cannot see it. It is still an own property and must be
+    // listed, ahead of any other non-index key: it exists from creation,
+    // before any property the program adds. Emit it here, and skip the
+    // materialised copy below so arrays that do have one are not listed twice.
+    if (obj.flags.exotic_array) {
+        key_buf[key_count++] = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
+    }
+
     // Phase 2: non-index named properties (insertion order)
     // ES5 §15.2.3.4: getOwnPropertyNames returns ONLY string keys (no symbols)
     for (uint i = 0; i < obj.prop_count; i++) {
@@ -790,6 +800,9 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
             HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key.is_arridx()) continue;
             if (key.is_symbol()) continue;  // Skip symbol keys
+            // Already emitted above from array_len_ptr.
+            if (obj.flags.exotic_array
+                && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
             key_buf[key_count++] = key;
         }
     }
@@ -1040,11 +1053,21 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
         }
     }
 
+    // See the getOwnPropertyNames counterpart: an ARRAY exotic's "length"
+    // lives in array_len_ptr, not the named table, and must still be listed
+    // ahead of the other non-index keys.
+    if (obj.flags.exotic_array) {
+        key_buf[key_count++] = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
+    }
+
     // Phase 2: non-index string properties (insertion order).
     for (uint i = 0; i < obj.prop_count; i++) {
         if (obj.prop_key_at(i, ctx.heap) != null) {
             HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key.is_arridx() || key.is_symbol()) continue;
+            // Already emitted above from array_len_ptr.
+            if (obj.flags.exotic_array
+                && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
             key_buf[key_count++] = key;
         }
     }

@@ -3110,7 +3110,18 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     }
 
     // No accessor anywhere on the chain (no own property or inherited data
-    // property), define as a new own data property on obj.
+    // property). For an ARRAY exotic, "length" is not an ordinary property:
+    // it lives in array_len_ptr with no named-table entry, and its attributes
+    // are fixed at {writable:true, enumerable:false, configurable:false}.
+    // Materialising it here as a WEC data property gave it the wrong
+    // attributes (it showed up in console output and propertyIsEnumerable)
+    // and left a snapshot that goes stale the moment a dense fast path bumps
+    // array_len_ptr without touching the table. Write through to the exotic
+    // instead; the writability check above has already run.
+    if (obj.flags.exotic_array) {
+        *obj.array_len_ptr() = (uint)len_val;
+        return true;
+    }
     if (!obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap)) {
         arr_throw_type_error(ctx, "Cannot set property length, no space left");
         return false;
