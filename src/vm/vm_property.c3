@@ -246,7 +246,10 @@ fn bool getprop2_boxed_hop(Vm* vm, Dispatch* ds, TVal* mid, HString* key,
 // needs a call-frame restart.
 fn void primitive_getprop(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void* key,
                           TVal* dst, uint dst_reg) {
-    hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap);
+    // Walk starting at the wrapper prototype with the primitive as the
+    // receiver, so a [[Get]] trap on the chain sees the original primitive
+    // value (ES2024 §7.3.3 GetV -> §10.1.6 OrdinaryGet).
+    hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap, prim);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
         if (invoke_getter(vm, &res.acc, prim, dst_reg, ds.act, &ds.curr_pc, &ds.needs_restart, ds.regs_base)) {
             ds.regs_base = ds.act.bottom;
@@ -269,7 +272,9 @@ fn void primitive_getprop(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void
 // both after the call, exactly like the object hop-2 accessor case.
 fn void primitive_getprop_sync(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void* key,
                                TVal* dst, uint dst_reg, bool track = true) {
-    hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap);
+    // Same receiver rule as primitive_getprop: the primitive is the property
+    // access's receiver, so a [[Get]] trap on the chain must see it.
+    hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap, prim);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
         TVal getter = res.acc.accessor_fn;
         if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {

@@ -1728,12 +1728,17 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
         ((types::HeapHeader*)first.get_heapptr()).incref();
     }
 
-    // Steps 5-6: loop k=1..len-1, shift elements left
+    // Steps 5-6: loop k=1..len-1, shift elements left. Each Set uses the
+    // host's [[Set]] semantics so a non-writable index 0 throws TypeError
+    // instead of silently being overwritten in the dense part (the bug that
+    // 15.4.4.9 exposes).
     for (ulong k = 1; k < len; k++) {
         TVal elem;
         if (arr_get_elem_vm(obj, k, ctx.heap, ctx, &elem)) {
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            array_set_elem_ulong(obj, k - 1, elem, ctx.heap, ctx.vm);
+            if (!array_set_elem_ulong_set(ctx, obj, k - 1, elem)) {
+                ctx.result.set_undefined(); return;
+            }
         } else if (ctx.should_throw) {
             ctx.result.set_undefined(); return;
         } else {
@@ -2116,7 +2121,10 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
             if (arr_has_prop(obj, from_idx, ctx.heap, ctx.vm)) {
                 if (arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem)) {
                     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-                    if (!array_set_elem_ulong_checked(ctx, obj, to_idx, elem)) {
+                    // ES2022 §23.1.3.28 step 15.b.iv: Set(O, to, fromValue, true),
+                    // so a non-writable index throws TypeError instead of being
+                    // silently redefined via CreateDataPropertyOrThrow.
+                    if (!array_set_elem_ulong_set(ctx, obj, to_idx, elem)) {
                         ctx.result.set_undefined();
                         return;
                     }
@@ -2151,7 +2159,10 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
             if (arr_has_prop(obj, from, ctx.heap, ctx.vm)) {
                 if (arr_get_elem_vm(obj, from, ctx.heap, ctx, &elem)) {
                     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-                    if (!array_set_elem_ulong_checked(ctx, obj, to, elem)) {
+                    // ES2022 §23.1.3.28 step 16.b.iv: Set(O, to, fromValue, true),
+                    // so a non-writable index throws TypeError instead of being
+                    // silently redefined via CreateDataPropertyOrThrow.
+                    if (!array_set_elem_ulong_set(ctx, obj, to, elem)) {
                         ctx.result.set_undefined();
                         return;
                     }

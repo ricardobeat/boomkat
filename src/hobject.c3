@@ -2837,7 +2837,8 @@ fn bool force_deferred_ns_on_chain(HObject* cur, void* key, heap::Heap* h) @inli
     return h.force_deferred_ns_fn(h, h.vm_ptr, cur);
 }
 
-fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h) {
+fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h,
+                                                          TVal* recv_override = null) {
     HObject* cur = self;
     uint depth = 0;
 
@@ -2873,7 +2874,13 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
         // PROP_NOT_FOUND, since PUTPROP's own proxy check handles [[Set]].
         if (cur.flags.exotic_proxyobj && want_getter) {
             if (h.proxy_get_fn != null && h.vm_ptr != null) {
-                TVal recv = types::make_object(self);
+                // Pass the property access's receiver to the [[Get]] trap: for
+                // a primitive receiver the trap must see the primitive, not
+                // the wrapper prototype the walk started from (ES2024 §7.3.3
+                // GetV -> §10.1.6 OrdinaryGet). recv_override carries the
+                // primitive when the caller is primitive_getprop; otherwise
+                // (e.g. object.[[Get]]) self is the receiver.
+                TVal recv = recv_override != null ? *recv_override : types::make_object(self);
                 TVal out;
                 if (h.proxy_get_fn(h.vm_ptr, h, cur, key, recv, &out)) {
                     return { .kind = PropLookupKind.PROP_DATA, .data_val = out, .owner = null };
