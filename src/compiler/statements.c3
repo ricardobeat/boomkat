@@ -116,6 +116,11 @@ struct ForOfHead {
     // register, would see a stale value, since PUTVAR only updates the env slot
     // and then clears its source register (see the bare-forof var-desync fix).
     bool   id_reg_resident;
+    // Ident declaration whose binding was already on the scope stack — most
+    // commonly a sloppy catch body's B.3.5 reuse of the catch parameter, whose
+    // binding lives in the catch's lex_env above the var_env the per-iteration
+    // emit_var_store would otherwise write to with DECLVAR. Walks the chain.
+    bool   id_walk_chain;
 
     // Shared by IDENT and DESTRUCTURE.
     bool   is_lexical;     // let/const (needs per-iteration env)
@@ -2017,6 +2022,12 @@ fn void? CompilerContext.emit_block_scoped_fn_decls(&self, NameSpan* lex_spans, 
             // a same-named `let` in any enclosing block.
             if (b33_exempt) continue;
             if (self.is_formal_param_name(fn_name)) continue;
+            // At global scope function_declaration emits this same binding
+            // from func_reg (see its force_lexical_fn_decl branch): a plain
+            // global function has no scope entry, so the find_local_reg below
+            // would resolve to an unrelated same-named binding (a catch
+            // parameter) and overwrite the closure with it.
+            if (self.is_global) continue;
             uint var_name_idx = self.add_string_constant(fn_name);
             ushort? b33_reg = self.find_local_reg(fn_name);
             if (try breg = b33_reg) {
@@ -2373,7 +2384,7 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
         self.block_fn_spans = null;
         self.block_fn_count = 0;
         self.statement()!;
-        if (!self.is_strict && num_lex > 0 && lex_spans[0].is_fn
+        if (!self.is_strict && !self.is_global && num_lex > 0 && lex_spans[0].is_fn
             && lex_spans[0].fn_kind == NameSpanFnKind.NSP_FN_PLAIN && !b33_exempt) {
             char[] fn_name = self.name_span_text(lex_spans[0]);
             if (!self.is_formal_param_name(fn_name)) {
@@ -2426,7 +2437,7 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
 }
 
 // Emit the environment store for a declared variable (PUTVAR or PUTLEX/PUTLEX_C).
-fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is_lexical, bool is_const) {
+fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is_lexical, bool is_const, bool walk_chain = false) {
     if (is_lexical) {
         if (is_const) {
             self.emit_a_bc(Opcode.PUTLEX_C, (uint)reg, name_idx);
@@ -2452,6 +2463,14 @@ fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is
                 }
             }
         }
+    } else if (walk_chain) {
+        // DECLVAR writes to the immediate var_env only, which is wrong when the
+        // binding lives in an outer env: a sloppy catch body reusing the catch
+        // parameter's binding (B.3.5: same name on a BindingIdentifier catch
+        // parameter and a body `var`) is in the catch's lex_env, and a `with`
+        // body hoists to the with-object. PUTVAR walks the chain and updates
+        // the existing binding instead of creating a shadow in var_env.
+        self.emit_a_bc(Opcode.PUTVAR, (uint)reg, name_idx);
     } else {
         // DECLVAR declares the binding in the immediate var_env (function-scoped).
         // PUTVAR (plain assignment) walks the chain to update existing bindings.
@@ -3889,6 +3908,19 @@ fn void? CompilerContext.for_statement(&self) {
                     }
                 }
                 self.check_var_lex_conflict(name_tok.str_value, decl_kind)!;
+                // detect-reuse up front so the b35 init store and the per-iter
+                // store both walk the chain when the binding is the catch
+                // parameter's (B.3.5) rather than the fresh one declare_binding_var
+                // would otherwise write into var_env. Only an env-resident
+                // binding needs the walk; an uncaptured hoisted `var` keeps
+                // DECLVAR (its register-resident semantics survive PUTVAR's
+                // source-register clear).
+                bool forin_env_resident = false;
+                if (!is_lexical) {
+                    if (try _r = self.find_local_reg(name_tok.str_value)) {
+                        forin_env_resident = self.is_existing_local_env_resident(name_tok.str_value);
+                    }
+                }
                 ushort iter_var = self.declare_binding_var(name_tok.str_value, decl_kind);
                 if (is_lexical) {
                     // Mark the freshly-declared iter-var entry as captured                    // and force its reads through the env (resolves_var →
@@ -3918,7 +3950,7 @@ fn void? CompilerContext.for_statement(&self) {
                     self.emit_abc(Opcode.LDREG, (uint)iter_var, (uint)init_val, 0);
                     self.free_reg(init_val);
                     uint init_name_idx = self.add_string_constant(name_tok.str_value);
-                    self.emit_var_store(iter_var, init_name_idx, is_lexical, is_const);
+                    self.emit_var_store(iter_var, init_name_idx, is_lexical, is_const, !is_lexical && forin_env_resident);
                     self.advance()!;  // consume 'in'
                 }
                 ushort obj_reg = self.expression()!;
@@ -3960,7 +3992,7 @@ fn void? CompilerContext.for_statement(&self) {
 
                 // Store the current key in the active per-iteration environment.
                 uint forin_name_idx = self.add_string_constant(name_tok.str_value);
-                self.emit_var_store(iter_var, forin_name_idx, is_lexical, is_const);
+                self.emit_var_store(iter_var, forin_name_idx, is_lexical, is_const, !is_lexical && forin_env_resident);
 
                 // Compile body. Each body evaluation starts with an empty
                 // completion; an expression statement then replaces it.
@@ -4048,12 +4080,22 @@ fn void? CompilerContext.for_statement(&self) {
             // Declare the variable and optionally initialize
             self.check_var_lex_conflict(name_tok.str_value, decl_kind)!;
             ushort var_reg;
+            bool var_env_resident = false;
             if (!is_lexical) {
                 // Capture-blind lookup: a captured var must be detected as
                 // already declared (see the var_declaration redecl note).
                 ushort? existing = self.find_local_reg(name_tok.str_value);
                 if (try er = existing) {
                     var_reg = er;
+                    // The existing binding is only safe to write through
+                    // PUTVAR (chain walk) when it is env-resident: a sloppy
+                    // catch body's B.3.5 reuse of the catch parameter, or a
+                    // hoisted var captured by a nested closure. An
+                    // uncaptured hoisted `var` is register-resident, and
+                    // PUTVAR's post-store source-register clear would leave
+                    // the next register read stale — DECLVAR stays correct
+                    // there.
+                    var_env_resident = self.is_existing_local_env_resident(name_tok.str_value);
                 } else {
                     var_reg = self.declare_var(name_tok.str_value, decl_kind);
                 }
@@ -4117,8 +4159,13 @@ fn void? CompilerContext.for_statement(&self) {
             } else {
                 self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
             }
-            // Also store in environment (needed at global scope for GETVAR)
-            self.emit_var_store(var_reg, for_var_name_idx, is_lexical, is_const);
+            // Also store in environment (needed at global scope for GETVAR).
+            // When the binding was reused and is env-resident, walk the chain
+            // (PUTVAR): a sloppy catch body's `var err` reuses the catch
+            // parameter's lex_env binding (B.3.5), or a captured hoisted var
+            // is env-authoritative. An uncaptured hoisted `var` keeps DECLVAR,
+            // whose direct register write preserves the register-resident value.
+            self.emit_var_store(var_reg, for_var_name_idx, is_lexical, is_const, !is_lexical && var_env_resident);
 
             // More declarations?
             while (self.match(TokenType.COMMA)) {
@@ -5029,7 +5076,11 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
                 self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)head.id_reg, head.id_name_idx);
             } else {
                 self.emit_abc(Opcode.LDREG, (uint)head.id_reg, (uint)val_slot, 0);
-                self.emit_var_store(head.id_reg, head.id_name_idx, head.is_lexical, head.is_const);
+                // B.3.5 reuse of the catch parameter: PUTVAR walks the chain so
+                // the catch's lex_env binding is the one updated, not a fresh
+                // shadow created in var_env.
+                self.emit_var_store(head.id_reg, head.id_name_idx, head.is_lexical, head.is_const,
+                    head.id_walk_chain);
             }
         case DESTRUCTURE:
             // Object patterns reject null/undefined even when empty.
@@ -5569,6 +5620,12 @@ fn void? CompilerContext.try_statement(&self) {
                 // Marked as a parameter: the catch body's `let`/`const` may not
                 // redeclare it (§14.15.1), though a body `var` may.
                 ushort catch_var = self.declare_var(catch_param.str_value, VAR, true);
+                // Mark the entry as a catch parameter specifically: its
+                // binding is published via PUTLEX into the catch's lex_env
+                // (above var_env), so a body `var` / for-head that reuses it
+                // must walk the chain to update that binding rather than
+                // create a shadow in var_env (B.3.5).
+                self.scope_stack[self.scope_depth - 1].is_catch_param = true;
                 // Force the catch variable through the environment (GETVAR/PUTVAR)
                 // instead of direct register access.  PUTVAR clears the source
                 // register after storing to the env (for refcount correctness),
@@ -6528,12 +6585,19 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // Same reuse rule var_declaration applies via find_local_reg, but seeing
     // through the body marker the hoist pass declared beneath, so a
     // block-nested declaration still keeps its own binding.
+    //
+    // force_lexical_fn_decl distinguishes a block-scope FunctionDeclaration
+    // (PUTLEX + B.3.3 var_env copy) from a function-body-top-level one
+    // (var-scope only). The is_fn_decl flag the entry carries is the input
+    // has_conflicting_lexical_name and check_var_lex_conflict read to detect
+    // the B.3.3 step (ii) "would replacing f with a VariableStatement produce
+    // an Early Error" case for a `function f` enclosing block.
     ushort func_reg;
     ushort? existing_fn_reg = self.find_same_scope_reg(fn_name2);
     if (try efr = existing_fn_reg) {
         func_reg = efr;
     } else {
-        func_reg = self.declare_var(fn_name2, VAR);
+        func_reg = self.declare_var(fn_name2, VAR, false, self.force_lexical_fn_decl);
     }
 
     // Compile the function into a nested CompiledFunction with the
@@ -6572,9 +6636,14 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         // B.3.3.1 parameterNames exemption (formals + arguments), and B.3.3
         // itself covers a plain FunctionDeclaration only: a generator, async
         // function, or async generator declared in a block stays strictly
-        // block-scoped.
+        // block-scoped. A same-named `let`/`const`/`class` elsewhere in the
+        // body is the other half of the exemption ("replacing with a var
+        // would be an early error"): this emit bypasses block()'s b33_exempt
+        // gate, so it must test the lexical conflict itself or a global
+        // `{ let f; { function f(){} } }` would still publish a global `f`.
         if (!self.is_strict && self.is_global && !is_async_decl && !gen_here
-            && !self.is_formal_param_name(fn_name2)) {
+            && !self.is_formal_param_name(fn_name2)
+            && !self.has_conflicting_lexical_name(fn_name2)) {
             self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)func_reg, name_idx);
         }
     } else {

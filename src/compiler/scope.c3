@@ -92,6 +92,13 @@ fn void? CompilerContext.check_var_lex_conflict(&self, char[] name, ScopeKind ki
         if ((e.kind == ScopeKind.LET || e.kind == ScopeKind.CONST) && str_eq(e.name, name)) {
             return self.fail("lexical declaration cannot share a name with a var declaration")~;
         }
+        // A block-scope FunctionDeclaration's entry is VAR (the register is
+        // the B.3.3 hoisting target) but the binding is also lexical in its
+        // block, so a `var` in a nested block would collide with that lexical
+        // shadow. has_conflicting_lexical_name documents the matching read.
+        if (e.kind == ScopeKind.VAR && e.is_fn_decl && str_eq(e.name, name)) {
+            return self.fail("lexical declaration cannot share a name with a var declaration")~;
+        }
     }
 }
 
@@ -133,7 +140,11 @@ fn void? CompilerContext.check_lexical_redeclares_param(&self, char[] name) {
 // kind VAR (it shares `var`'s register and env treatment) but a body
 // `let`/`const` may not redeclare it, so the flag is what lets the
 // duplicate-lexical walk tell it apart from a real `var`.
-fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool is_param = false) {    ushort reg = self.alloc_reg();
+//
+// `is_fn_decl` marks a FunctionDeclaration inside a Block, which is BOTH
+// block-scoped lexical (PUTLEX) AND B.3.3-hoisted to function scope (the
+// register this entry holds). See ScopeEntry.is_fn_decl for the consumers.
+fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool is_param = false, bool is_fn_decl = false) {    ushort reg = self.alloc_reg();
     // Lexical bindings must survive env-elision when a closure can read them
     // through the env chain (see has_lexical_bindings in the elide/needs_env
     // gates).
@@ -170,6 +181,8 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         self.scope_stack[self.scope_depth].is_captured = captured;
         self.scope_stack[self.scope_depth].is_tdz = is_tdz;
         self.scope_stack[self.scope_depth].is_param = is_param;
+        self.scope_stack[self.scope_depth].is_catch_param = false;
+        self.scope_stack[self.scope_depth].is_fn_decl = is_fn_decl;
         self.scope_stack[self.scope_depth].is_slot_global =
             kind == VAR && self.is_slot_global_name(name);
         if (captured) { self.has_captured_local = true; }
@@ -320,6 +333,40 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
+// True when an existing `name` binding was already declared and is
+// env-resident (its value lives in an EnvRecord, not in a register the
+// compiler owns). A re-`var` declaration over such a binding must walk the
+// env chain to update it (PUTVAR), not write through the register and
+// create a shadow DECLVAR in var_env: a sloppy catch body's `var x` that
+// reuses the catch parameter (B.3.5) is the canonical case, where the
+// binding lives in the catch's lex_env above the var_env; an is_captured
+// hoisted `var` from a function body is a second case (the env is the
+// authoritative store the moment any nested closure observes the name).
+//
+// The opposite case — register-resident: an uncaptured hoisted `var` or
+// uncaptured formal parameter. The compiler's register IS the binding's
+// storage; PUTVAR would write to var_env AND clear the source register
+// (post-store decref in vm_execute.c3), leaving the next register read
+// with `undefined` while var_env claims the new value. DECLVAR is correct
+// there.
+fn bool CompilerContext.is_existing_local_env_resident(&self, char[] name) {
+    uint j = self.scope_depth;
+    while (j > 0) {
+        j--;
+        if (!str_eq(self.scope_stack[j].name, name)) continue;
+        ScopeEntry* e = &self.scope_stack[j];
+        if (e.kind == SCOPEMARK) continue;
+        // A catch parameter's binding is published via PUTLEX into the
+        // catch's lex_env above var_env, so any re-declaration that reuses
+        // the existing register must walk the chain to update it (PUTVAR).
+        // is_captured alone misses the top-level case where the force-capture
+        // code is skipped — the binding is still in lex_env but is_captured
+        // stays false.
+        return e.is_captured || e.is_catch_param;
+    }
+    return false;
+}
+
 // Resolve `name` to its register only if it is bound in the scope a function
 // declaration at the current position belongs to.
 //
@@ -397,6 +444,19 @@ fn bool CompilerContext.has_conflicting_lexical_name(&self, char[] name) {
             continue;
         }
         if ((e.kind == LET || e.kind == CONST) && str_eq(e.name, name)) {
+            return true;
+        }
+        // A block-scope FunctionDeclaration's entry is VAR (the register is
+        // the B.3.3 hoisting target), so the LET/CONST arm above misses it.
+        // is_fn_decl marks the entry as a block-scope function declaration,
+        // distinguishing it from a top-level `function f` whose var-scope
+        // entry is benign (multiple vars at function scope are allowed).
+        // B.3.3 step (ii): "replacing the FunctionDeclaration f with a
+        // VariableStatement ... would not produce any Early Errors" — the
+        // outer block's lexical `function f` would conflict with the would-be
+        // `var f` from the inner block, so this declaration is not
+        // Annex-B-applicable and stays block-scoped.
+        if (e.kind == VAR && e.is_fn_decl && str_eq(e.name, name)) {
             return true;
         }
     }

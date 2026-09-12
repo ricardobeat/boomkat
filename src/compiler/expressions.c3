@@ -6247,6 +6247,22 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
     head.id_reg_resident = reg_resident;
     head.is_lexical = is_lexical;
     head.is_const = is_const;
+    // B.3.5: a sloppy catch body's `var x of ...` reuses the catch
+    // parameter's binding when the parameter is a BindingIdentifier, and the
+    // catch's lex_env sits above the var_env DECLVAR would write to. Same
+    // chain-walk case as a captured hoisted `var` (env-authoritative
+    // store). Only set the chain-walk bit when the existing binding is
+    // env-resident; an uncaptured hoisted `var` stays DECLVAR because its
+    // register-resident semantics would not survive PUTVAR's source-register
+    // clear.
+    head.id_walk_chain = false;
+    if (!is_bare && !is_lexical && !is_const) {
+        if (try _r = self.find_local_reg(var_name)) {
+            if (self.is_existing_local_env_resident(var_name)) {
+                head.id_walk_chain = true;
+            }
+        }
+    }
     self.emit_forof(head, iter_reg, saved_scope, saved_reg, is_await)!;
 }
 

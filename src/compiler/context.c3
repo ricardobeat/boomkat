@@ -158,6 +158,31 @@ struct ScopeEntry {
     // `var` of the same name is explicitly allowed (it resolves to the same
     // binding), so `kind` alone cannot tell the two cases apart.
     bool is_param;
+    // True for a catch parameter specifically (a subkind of `is_param`).
+    // The catch param's binding is published via PUTLEX into the catch's
+    // lex_env — above the surrounding var_env — so a body `var` or
+    // for-statement head that reuses it must walk the chain (PUTVAR), not
+    // write through the register and create a shadow in var_env
+    // (B.3.5). For a formal parameter, `is_param` is true but the binding
+    // stays in var_env (DECLVAR, not PUTLEX), so the chain walk would still
+    // work but would be redundant with the register-resident semantics. A
+    // hoisted `var` has neither flag; its binding lives in var_env via
+    // DECLVAR_HOIST, register-resident when uncaptured, env-resident when
+    // captured by a closure (is_captured carries that signal).
+    bool is_catch_param;
+    // True for a FunctionDeclaration whose enclosing scope is a Block
+    // (force_lexical_fn_decl at compile time), so the binding is BOTH
+    // block-scoped lexical (PUTLEX into the block's lex_env) AND hoisted to
+    // function scope by B.3.3 (the register this entry holds). A
+    // FunctionDeclaration at the top of a function body is var-scope only
+    // and leaves this false. has_conflicting_lexical_name and
+    // check_var_lex_conflict read it: a top-level `function f` followed by
+    // `var f` is two vars (allowed), but `{ function f(){} } { function f(){} }`
+    // is a sibling-block conflict that needs the same kind of detection the
+    // LET/CONST path provides for `let`/`const`/`class`. Without this flag
+    // the engine's only signal would be the VAR kind, which a plain `var f`
+    // shares, so the flag is what isolates the block-scope function case.
+    bool is_fn_decl;
     // True for a top-level `var` that a whole-program pre-scan proved
     // REGISTER-RESIDENT. Its register is the binding's only storage during
     // the body; the global property is just a mirror synced at end of script.
