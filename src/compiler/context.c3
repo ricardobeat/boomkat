@@ -2103,10 +2103,29 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             // TYPEOFIDENT relies on the INITTZ sentinel in the block env to
             // throw for `typeof x` inside x's temporal dead zone, collect the
             // name indices it references so those sentinels are kept.
+            //
+            // GETVAR needs it for the same reason: resolve_var refuses the
+            // register for a binding whose scope entry is still is_tdz, so the
+            // read is compiled as an env lookup precisely so it can hit the
+            // sentinel. Dropping the INITTZ leaves the name absent from the
+            // env, and the GETVAR then walks out to an enclosing binding of
+            // the same name — a global `var y` makes `let y = y` read 99
+            // instead of throwing. Keep the sentinel for every name read
+            // through the env, matching the "elision must agree with
+            // resolve_var" invariant above.
             uint[64] typeof_names;
             uint typeof_name_count = 0;
             for (uint i = 0; i < self.code_count; i++) {
-                if (self.code[i].op == Opcode.TYPEOFIDENT && typeof_name_count < 64) {
+                Opcode kop = self.code[i].op;
+                // Writes need the sentinel as much as reads: PUTVAR_ASSIGN and
+                // the ++/-- forms check it to throw inside the dead zone, and
+                // a destructuring assignment target (`let y = [y] = []`)
+                // reaches the binding through PUTVAR_ASSIGN with no GETVAR at
+                // all.
+                if ((kop == Opcode.TYPEOFIDENT || kop == Opcode.GETVAR
+                     || kop == Opcode.PUTVAR_ASSIGN || kop == Opcode.RESOLVEVAR
+                     || kop == Opcode.INC_VAR || kop == Opcode.DEC_VAR)
+                    && typeof_name_count < 64) {
                     typeof_names[typeof_name_count++] = self.code[i].get_bc();
                 }
             }

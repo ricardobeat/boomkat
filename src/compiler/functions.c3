@@ -5412,6 +5412,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         // An arrow ConciseBody never goes through block(), so emit the
         // deferred declarations here instead.
         arrow_ctx.emit_hoisted_fn_decls();
+        // block() would also TDZ-initialise the body's own let/const/class
+        // bindings; without that pass an arrow's lexical binding has no
+        // sentinel in its lex_env, so a read inside the dead zone walks out
+        // to an enclosing binding of the same name instead of throwing
+        // (`var y = 99; (() => { let y = y; })()` read 99). Same INITTZ pass,
+        // run after the prologue so it agrees with the body's strictness.
+        arrow_ctx.hoist_lexical_tdz();
         while (!arrow_ctx.check(TokenType.RBRACE) && !arrow_ctx.is_at_end()) {
             arrow_ctx.statement()!;
         }
@@ -5755,6 +5762,13 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // An arrow ConciseBody never goes through block(), so emit the
         // deferred declarations here instead.
         arrow_ctx.emit_hoisted_fn_decls();
+        // block() would also TDZ-initialise the body's own let/const/class
+        // bindings; without that pass an arrow's lexical binding has no
+        // sentinel in its lex_env, so a read inside the dead zone walks out
+        // to an enclosing binding of the same name instead of throwing
+        // (`var y = 99; (() => { let y = y; })()` read 99). Same INITTZ pass,
+        // run after the prologue so it agrees with the body's strictness.
+        arrow_ctx.hoist_lexical_tdz();
         while (!arrow_ctx.check(TokenType.RBRACE) && !arrow_ctx.is_at_end()) {
             arrow_ctx.statement()!;
         }
