@@ -134,15 +134,13 @@ fn bool lightfunc_meta_read(Vm* vm, Dispatch* ds, uint fn_idx, HString* key,
         return true;
     }
     if (key.equals("caller") || key.equals("arguments")) {
-        // Annex B.3.2: in sloppy mode, return null. In strict mode, throw.
-        // The function being inspected is a lightfunc — built-ins never carry
-        // user-defined strictness, so the caller's strictness (the activation
-        // running this read) drives the verdict.
-        if (poison_pill_active(vm, ds)) {
-            if (!poison_pill_throw(vm, ds, false)) {
-                dst.set_undefined();
-            }
-        } else {
+        // The function being inspected is a lightfunc, i.e. a built-in. ES2024
+        // §16.2 Forbidden Extensions restricts `caller`/`arguments` on every
+        // function that is not a legacy sloppy function declaration or
+        // expression, and a built-in never is, so the pill fires whatever the
+        // reading code's strictness — the same verdict restricted_fn_props
+        // reaches for a null CompiledFunction on the object path.
+        if (!poison_pill_throw(vm, ds, false)) {
             dst.set_undefined();
         }
         return true;
@@ -192,6 +190,26 @@ fn bool poison_pill_throw(Vm* vm, Dispatch* ds, bool is_callee) @noinline @local
 // permitted is null regardless of who called.
 fn bool poison_pill_active(Vm* vm, Dispatch* ds) @inline {
     return ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict();
+}
+
+// ES2024 §16.2 Forbidden Extensions: `caller` and `arguments` are restricted
+// on every function object except a legacy sloppy function declaration or
+// expression. Arrows, generators, async functions and async generators are
+// all "newer-type" functions, so the poison pill fires for them even when
+// both the target and the reading code are sloppy; only a plain sloppy
+// function returns null per Annex B.3.2. A null CompiledFunction is a
+// built-in, which is likewise restricted.
+fn bool restricted_fn_props(CompiledFunction* target_cf) @inline {
+    return target_cf == null
+        || target_cf.is_strict()
+        || target_cf.is_arrow()
+        || target_cf.is_user_generator()
+        || target_cf.is_async()
+        || target_cf.is_async_gen()
+        // Concise methods, getters and setters (object-literal and class
+        // alike) are methods, not function declarations or expressions.
+        // has_home_object marks exactly those.
+        || target_cf.has_home_object();
 }
 
 // Cold tail: synchronous hop-2 read of a boxed primitive intermediate in a
@@ -575,13 +593,15 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         HString* key_hstr = (HString*)key;
                         if (key_hstr != null && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                             && hobj.find_prop_idx(key, ds.vm.heap) < 0) {
-                            // The target function's strictness governs the
-                            // poison pill, not the caller's.
+                            // The target function's kind governs the poison
+                            // pill, not the caller's. ES2024 §16.2 Forbidden
+                            // Extensions restricts `caller`/`arguments` on
+                            // every function except a legacy sloppy function
+                            // declaration or expression, so arrows, generators
+                            // and async functions all throw even when both the
+                            // target and the reader are sloppy.
                             CompiledFunction* target_cf = (*hobj.extra_ptr()).func.comp_func;
-                            bool target_strict = target_cf == null
-                                || target_cf.is_strict()
-                                || target_cf.is_arrow()
-                                || target_cf.is_user_generator();
+                            bool target_strict = restricted_fn_props(target_cf);
                             if (target_strict) {
                                 if (!poison_pill_throw(vm, ds, false)) {
                                     return VM_ERROR~;
@@ -874,10 +894,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                             && hobj.find_prop_idx(key, ds.vm.heap) < 0) {
                             CompiledFunction* target_cf2 = (*hobj.extra_ptr()).func.comp_func;
-                            bool target_strict2 = target_cf2 == null
-                                || target_cf2.is_strict()
-                                || target_cf2.is_arrow()
-                                || target_cf2.is_user_generator();
+                            bool target_strict2 = restricted_fn_props(target_cf2);
                             if (target_strict2) {
                                 if (!poison_pill_throw(vm, ds, false)) {
                                     return VM_ERROR~;
@@ -1283,10 +1300,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         && (key2_hstr.equals("caller") || key2_hstr.equals("arguments"))
                         && hobj2.find_prop_idx((void*)key2_hstr, ds.vm.heap) < 0) {
                         CompiledFunction* target_cf3 = (*hobj2.extra_ptr()).func.comp_func;
-                        bool target_strict3 = target_cf3 == null
-                                || target_cf3.is_strict()
-                                || target_cf3.is_arrow()
-                                || target_cf3.is_user_generator();
+                        bool target_strict3 = restricted_fn_props(target_cf3);
                         if (target_strict3) {
                             if (!poison_pill_throw(vm, ds, false)) {
                                 return VM_ERROR~;

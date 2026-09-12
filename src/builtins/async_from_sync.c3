@@ -426,17 +426,19 @@ fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
         return;
     }
 
-    // §27.1.4.2 steps 5-6: pass exactly one argument to the underlying
-    // next, undefined when the caller passed none. The test cluster
-    // yield-star-* pins the inner iterator's `arguments.length` to 1 on
-    // every call, including the first iteration where no caller value was
-    // supplied (the spec's « received.[[Value]] » is always one-element).
+    // §27.1.4.2 steps 5-6: pass `value` only when it is present (IteratorNext
+    // with an argument), otherwise call `next` with no arguments at all.
+    // The two test clusters that pin the inner iterator's arguments.length
+    // do not actually disagree: yield-star-* always resumes with a received
+    // value, so those calls carry one argument, while `for await`'s first
+    // step supplies none and must forward none.
     TVal arg;
     arg.set_undefined();
-    if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
+    bool has_arg = ctx.argc >= 1;
+    if (has_arg) arg = ctx.regs[ctx.base_reg];
     TVal sync_this;
     sync_this.set_object(sync_iter);
-    TVal step_result = heap.call_fn(ctx.vm, next_method, &arg, 1, sync_this);
+    TVal step_result = heap.call_fn(ctx.vm, next_method, &arg, has_arg ? 1 : 0, sync_this);
     if (heap.has_error) {
         TVal thrown = heap.error_value;
         heap.has_error = false;

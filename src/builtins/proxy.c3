@@ -1319,10 +1319,27 @@ fn uint ordinary_own_keys(Heap* heap, HObject* obj, HString*** buf_out) {
         HString* k = (HString*)obj.prop_key_at(i, heap);
         if (k != null && k.is_arridx() && !k.is_symbol()) buf[n++] = k;
     }
+    // ARRAY exotic: "length" is an own property backed by array_len_ptr
+    // rather than the named table (see hobject.c3's sync_named_length), so it
+    // never turns up in the prop_count loops. §10.4.2 orders it after the
+    // integer indices and before the other strings, which is exactly here.
+    // Omitting it made Reflect.ownKeys on a proxied array come back without
+    // "length", so Object.keys skipped the matching getOwnPropertyDescriptor
+    // trap.
+    if (obj.flags.exotic_array && n < cap) {
+        buf[n++] = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    }
     // Non-index strings (insertion order)
     for (uint i = 0; i < obj.prop_count && n < cap; i++) {
         HString* k = (HString*)obj.prop_key_at(i, heap);
-        if (k != null && !k.is_arridx() && !k.is_symbol()) buf[n++] = k;
+        if (k != null && !k.is_arridx() && !k.is_symbol()) {
+            // Skip a materialised "length" copy: the exotic entry above is
+            // the authoritative one and a duplicate would trip the proxy
+            // ownKeys duplicate-entry invariant.
+            if (obj.flags.exotic_array
+                && (void*)k == (void*)heap.strs[heap::BuiltinStr.LENGTH]) continue;
+            buf[n++] = k;
+        }
     }
     // Symbols (insertion order)
     for (uint i = 0; i < obj.prop_count && n < cap; i++) {
