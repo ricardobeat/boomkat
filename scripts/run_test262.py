@@ -245,41 +245,11 @@ SKIP_GLOBS = {
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
 }
 SKIP_FILES = {
-    # Map/Set key/value tests that use a BigInt literal far beyond 2^127
-    # (~10^80). Arbitrary-precision BigInt is out of scope (plan 056, fixed-width
-    # int128); these previously skipped via the WeakRef feature token (used here
-    # only incidentally) and surface the known precision limit now that WeakRef
-    # runs. Not a WeakRef defect.
-    "built-ins/Map/valid-keys.js",
-    "built-ins/Set/valid-values.js",
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
-    # Fixed-width BigInt (plan 056: int128, ~±1.7e38). These tests contain
-    # decimal/hex/binary BigInt literals whose magnitude exceeds 2**127,
-    # which this engine correctly rejects as a SyntaxError at parse time —
-    # but since that's a whole-file parse error, every other (in-range)
-    # assertion in the same file never runs either. Not bugs: arbitrary-
-    # precision BigInt would need a real bignum representation (deferred,
-    # not a small fix).
-    "built-ins/BigInt/asIntN/arithmetic.js",
-    "built-ins/BigInt/asUintN/arithmetic.js",
-    "built-ins/BigInt/constructor-from-binary-string.js",
-    "language/expressions/bitwise-and/bigint.js",
-    "language/expressions/bitwise-or/bigint.js",
-    "language/expressions/bitwise-xor/bigint.js",
-    "language/expressions/does-not-equals/bigint-and-number-extremes.js",
-    "language/expressions/equals/bigint-and-number-extremes.js",
-    "language/expressions/exponentiation/bigint-arithmetic.js",
-    "language/expressions/greater-than-or-equal/bigint-and-number-extremes.js",
-    "language/expressions/greater-than/bigint-and-number-extremes.js",
-    "language/expressions/left-shift/bigint.js",
-    "language/expressions/less-than-or-equal/bigint-and-number-extremes.js",
-    "language/expressions/less-than/bigint-and-number-extremes.js",
-    "language/expressions/multiplication/bigint-arithmetic.js",
-    "language/expressions/right-shift/bigint.js",
-    "language/expressions/strict-does-not-equals/bigint-and-number-extremes.js",
-    "language/expressions/strict-equals/bigint-and-number-extremes.js",
-    "language/expressions/unsigned-right-shift/bigint.js",
+    # (The fixed-width-BigInt skips are gone: hbigint.c3 is a limb vector with
+    # BIGINT_MAX_LIMBS = 1 << 26, ~2 billion bits, so the 2**127 ceiling those
+    # entries described no longer exists. All 21 files pass.)
     # I2 — un-skipped with the align-detached-buffer-semantics-with-web-reality
     # feature token ($262.detachArrayBuffer now implemented). These carry that
     # token but do not exercise the detach primitive itself; they expose
