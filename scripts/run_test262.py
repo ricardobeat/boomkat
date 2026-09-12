@@ -191,7 +191,7 @@ UNSUPPORTED_PATTERN = re.compile(
     # this engine implements (chunks/windows, includes, join).
     r"iterator-chunking|iterator-includes|Iterator\.prototype\.join|"
     # Standard language features: engine-specific pragmatics
-    r"cross-realm|tail-call-optimization|caller|"
+    r"cross-realm|tail-call-optimization|"
     # Non-standard feature token (not in test262/features.txt; structured-clone
     # tests are deferred as they're not core language features and the engine
     # currently prioritizes other functionality)
@@ -258,6 +258,16 @@ SKIP_FILES = {
     #                              unsupported).
     "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-throws-realm.js",
     "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
+    # The legacy `.caller` stack walk: Function.prototype.caller returning the
+    # function that invoked the callee. That is the optional Annex B-adjacent
+    # extension, not §15.3.5.4's restricted-property poison pill, and the
+    # engine returns null rather than walking the stack. These two tests are
+    # the only ones in the corpus that exercise the walk (their own fallback
+    # accepts `undefined`, but not `null`). The remaining 21 `caller`-flagged
+    # tests are the §15.3.5.4 poison-pill checks and all pass, so the feature
+    # token itself is no longer skipped.
+    "language/arguments-object/10.6-13-a-2.js",
+    "language/arguments-object/10.6-13-a-3.js",
     # staging/sm/strict — SpiderMonkey's own strict-mode suite, donated to
     # test262 in 2024 and still uncurated (its front-matter is `esid: pending`).
     # Un-skipped with plans/083: sloppy and strict now coexist, so the
