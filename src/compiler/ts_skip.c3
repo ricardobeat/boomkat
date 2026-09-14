@@ -795,6 +795,10 @@ fn bool CompilerContext.ts_try_type_only_namespace(&self) {
                 if (nt == TokenType.INTERFACE) {
                     if (catch _e = self.ts_interface_declaration()) return false;
                 } else if (nt == TokenType.IDENTIFIER) {
+                    // `export interface` arrives identifier-spelled in sloppy
+                    // code; recognise it before the type-alias/namespace
+                    // probes the same way the statement path does.
+                    if (self.ts_try_interface_declaration()) break;
                     if (self.ts_try_type_alias()) break;
                     if (self.ts_try_type_only_namespace()) break;
                     return false;
@@ -803,6 +807,9 @@ fn bool CompilerContext.ts_try_type_only_namespace(&self) {
                 }
                 break;
             case TokenType.IDENTIFIER:
+                // Sloppy-lexed `interface` (see ts_try_interface_declaration):
+                // the INTERFACE arm above only fires in strict bodies.
+                if (self.ts_try_interface_declaration()) break;
                 if (self.ts_try_declare_namespace()) break;
                 if (self.ts_try_type_alias()) break;
                 if (self.ts_try_type_only_namespace()) break;

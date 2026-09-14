@@ -98,6 +98,34 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
         self.advance(true)!;
         return kw_str;
     }
+    // TypeScript accepts `#name` as a destructuring-pattern key (tsc passes
+    // it through verbatim even though private destructuring has no runtime
+    // semantics). In ts_mode lower it to the ordinary string key "#name" so
+    // conformant files compile; the read then behaves like any other absent
+    // property. Outside ts_mode it stays a SyntaxError, as does the
+    // shorthand form (shorthand_key_is_identifier_ref rejects HASH_IDENT,
+    // since `#foo` is not a BindingIdentifier).
+    if (tt == TokenType.HASH_IDENT && self.lexer.ts_mode) {
+        Token ht = self.advance()!;
+        Heap* hhp = (Heap*)self.heap;
+        usz hlen = ht.str_value.len + 1;
+        if (hlen <= 4097) {
+            char[4097] hbuf;
+            hbuf[0] = '#';
+            for (usz hi = 0; hi < ht.str_value.len; hi++) hbuf[hi + 1] = ht.str_value[hi];
+            HString* hhs = hhp.str_intern(hbuf[:hlen]);
+            if (hhs == null) return COMPILE_ERROR~;
+            return hhs.get_data();
+        }
+        char* hmem = (char*)alloc::malloc_try(mem, (sz)hlen) ?? null;
+        if (hmem == null) return COMPILE_ERROR~;
+        hmem[0] = '#';
+        for (usz hi = 0; hi < ht.str_value.len; hi++) hmem[hi + 1] = ht.str_value[hi];
+        HString* hhs2 = hhp.str_intern(hmem[:hlen]);
+        mem::free(hmem);
+        if (hhs2 == null) return COMPILE_ERROR~;
+        return hhs2.get_data();
+    }
     self.record_error("expected a property name in destructuring pattern");
     return COMPILE_ERROR~;
 }
