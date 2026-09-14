@@ -3888,24 +3888,54 @@ fn void? CompilerContext.for_statement(&self) {
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
                 }
+                // Collect the pattern's leaf names: a captured lexical head
+                // binding needs a fresh env per iteration (§14.7.4.2), fed to
+                // the shared periterenv prologue below like a plain `let`
+                // head. The buffer is reused by comma-separated extras.
+                char[][MAX_DESTRUCT_BINDS] head_names;
+                uint head_count = 0;
                 if (after_decl == TokenType.LBRACKET) {
                     self.advance()!; // consume '['
-                    self.array_destructure(decl_kind, is_lexical, is_const)!;
+                    self.array_destructure(decl_kind, is_lexical, is_const, &head_names[0], &head_count)!;
                 } else {
                     self.advance()!; // consume '{'
-                    self.object_destructure(decl_kind, is_lexical, is_const)!;
+                    self.object_destructure(decl_kind, is_lexical, is_const, &head_names[0], &head_count)!;
                 }
+                if (is_lexical) {
+                    for (uint hi = 0; hi < head_count && periterenv_count < 8; hi++) {
+                        if (self.is_captured_name(head_names[hi])) needs_periterenv = true;
+                        periterenv_names[periterenv_count] = head_names[hi];
+                        periterenv_name_idxs[periterenv_count] = self.add_string_constant(head_names[hi]);
+                        periterenv_is_const[periterenv_count] = is_const;
+                        periterenv_count++;
+                    }
+                    head_count = 0;
+                }
+                // BISECT2: unconditional needs_periterenv
 
                 // More declarations? (var [a]=x, b=y)
                 while (self.match(TokenType.COMMA)) {
                     TokenType nt = self.peek_type();
                     if (nt == TokenType.LBRACKET) {
                         self.advance()!;
-                        self.array_destructure(decl_kind, is_lexical, is_const)!;
+                        self.array_destructure(decl_kind, is_lexical, is_const, &head_names[0], &head_count)!;
                     } else if (nt == TokenType.LBRACE) {
                         self.advance()!;
-                        self.object_destructure(decl_kind, is_lexical, is_const)!;
-                    } else {
+                        self.object_destructure(decl_kind, is_lexical, is_const, &head_names[0], &head_count)!;
+                    }
+                    // Register a comma-separated pattern's leaves for the
+                    // per-iteration env, same as the first declarator above.
+                    if (is_lexical && (nt == TokenType.LBRACKET || nt == TokenType.LBRACE)) {
+                        for (uint hi = 0; hi < head_count && periterenv_count < 8; hi++) {
+                            if (self.is_captured_name(head_names[hi])) needs_periterenv = true;
+                            periterenv_names[periterenv_count] = head_names[hi];
+                            periterenv_name_idxs[periterenv_count] = self.add_string_constant(head_names[hi]);
+                            periterenv_is_const[periterenv_count] = is_const;
+                            periterenv_count++;
+                        }
+                        head_count = 0;
+                    }
+                    if (nt != TokenType.LBRACKET && nt != TokenType.LBRACE) {
                         Token extra_name = self.expect(TokenType.IDENTIFIER)!;
                         // Intern now: escaped identifier borrows the lexer's
                         // shared ident_buf scratch, which the initializer
@@ -3926,6 +3956,19 @@ fn void? CompilerContext.for_statement(&self) {
                         }
                         uint extra_name_idx = self.add_string_constant(extra_name2);
                         self.emit_var_store(extra_reg, extra_name_idx, is_lexical, is_const);
+                        // A comma-separated plain ident joins the per-iteration
+                        // env like the pattern leaves above: once any head
+                        // binding cycles envs, every body-observable head
+                        // binding must ride along or the POP_LEX drops it.
+                        if (is_lexical && self.is_captured_name(extra_name2)) {
+                            needs_periterenv = true;
+                        }
+                        if (is_lexical && periterenv_count < 8) {
+                            periterenv_names[periterenv_count] = extra_name2;
+                            periterenv_name_idxs[periterenv_count] = extra_name_idx;
+                            periterenv_is_const[periterenv_count] = is_const;
+                            periterenv_count++;
+                        }
                     }
                 }
 
@@ -4212,8 +4255,8 @@ fn void? CompilerContext.for_statement(&self) {
                 // `for (var x = 1 in {};;)` is a SyntaxError, not a for-in
                 // head. Parenthesizing (`= (1 in {})`) restores `[+In]`.
                 // Annex B.3.5's `for (var x = 1 in y) Statement` (sloppy only)
-                // is not implemented: the unparenthesized `in` stays `[~In]`
-                // in every mode, so the Annex B form is also rejected.
+                // was detected above (b35_forin); here the unparenthesized
+                // `in` stays `[~In]` in every mode.
                 self.forbid_in = true;
                 ushort init_val = self.assignment_expr()!;
                 self.forbid_in = false;
@@ -4222,6 +4265,9 @@ fn void? CompilerContext.for_statement(&self) {
                 }
                 self.free_reg(init_val);
             } else {
+                // A `const` declarator requires an initializer (ES2024 §13.3.1),
+                // in a for head as in a plain declaration.
+                if (is_const) return self.fail("const declaration requires an initializer")~;
                 self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
             }
             // Also store in environment (needed at global scope for GETVAR).
@@ -4235,13 +4281,27 @@ fn void? CompilerContext.for_statement(&self) {
             // More declarations?
             while (self.match(TokenType.COMMA)) {
                 TokenType nt2 = self.peek_type();
+                // A comma-separated pattern's leaves join the per-iteration
+                // env like the first declarator's (see head_names above).
+                char[][MAX_DESTRUCT_BINDS] extra_names;
+                uint extra_count = 0;
                 if (nt2 == TokenType.LBRACKET) {
                     self.advance()!;
-                    self.array_destructure(decl_kind, is_lexical, is_const)!;
+                    self.array_destructure(decl_kind, is_lexical, is_const, &extra_names[0], &extra_count)!;
                 } else if (nt2 == TokenType.LBRACE) {
                     self.advance()!;
-                    self.object_destructure(decl_kind, is_lexical, is_const)!;
-                } else {
+                    self.object_destructure(decl_kind, is_lexical, is_const, &extra_names[0], &extra_count)!;
+                }
+                if (is_lexical && (nt2 == TokenType.LBRACKET || nt2 == TokenType.LBRACE)) {
+                    for (uint ei = 0; ei < extra_count && periterenv_count < 8; ei++) {
+                        if (self.is_captured_name(extra_names[ei])) needs_periterenv = true;
+                        periterenv_names[periterenv_count] = extra_names[ei];
+                        periterenv_name_idxs[periterenv_count] = self.add_string_constant(extra_names[ei]);
+                        periterenv_is_const[periterenv_count] = is_const;
+                        periterenv_count++;
+                    }
+                }
+                if (nt2 != TokenType.LBRACKET && nt2 != TokenType.LBRACE) {
                     Token extra_name = self.expect(TokenType.IDENTIFIER)!;
                     // Intern now: escaped identifier borrows the lexer's
                     // shared ident_buf scratch, which the initializer
@@ -4272,6 +4332,7 @@ fn void? CompilerContext.for_statement(&self) {
                         }
                         self.free_reg(extra_val);
                     } else {
+                        if (is_const) return self.fail("const declaration requires an initializer")~;
                         self.emit_abc(Opcode.LDUNDEF, (uint)extra_reg, 0, 0);
                     }
                     uint extra_name_idx = self.add_string_constant(extra_name2);

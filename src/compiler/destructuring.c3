@@ -110,6 +110,25 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
 // path uses. This makes statement-level destructuring work for any iterable
 // (generators, custom iterables), at arbitrary nesting depth, not just Arrays.
 // See plan 044; mirrors QuickJS's OP_for_of_start/OP_for_of_next lowering.
+//
+// A lexical (let/const) pattern must not repeat a bound name (ES2024 §13.3.1:
+// BoundNames of a LexicalDeclaration contains no duplicates) — `let [z, z]`
+// is an early error in any mode, while `var` patterns allow repeats.
+fn void? CompilerContext.check_destruct_no_dup(&self, DestructBind[] binds, uint count) {
+    for (uint i = 0; i < count; i++) {
+        if (binds[i].is_synthetic) continue;
+        HString* hi = (HString*)self.constants[binds[i].name_idx].get_heapptr();
+        char[] ni = hi.get_data();
+        for (uint j = i + 1; j < count; j++) {
+            if (binds[j].is_synthetic) continue;
+            HString* hj = (HString*)self.constants[binds[j].name_idx].get_heapptr();
+            if (str_eq(ni, hj.get_data())) {
+                return self.fail("duplicate binding in lexical declaration")~;
+            }
+        }
+    }
+    return;
+}
 fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexical, bool is_const,
                                             char[]* out_names = null, uint* out_count = null) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
@@ -132,6 +151,10 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     // once it is known (RHS is parsed after the pattern). Nested binds carry a
     // parent_idx instead and resolve their source from the parent group temp.
     self.collect_arr_param_binds(binds[..], &count, 0, 0xFFFF)!;
+
+    // Lexical patterns reject duplicate bound names before anything is
+    // declared, so a failure leaves no partial bindings behind.
+    if (is_lexical) self.check_destruct_no_dup(binds[..], count)!;
 
     ushort[MAX_DESTRUCT_BINDS] group_regs;
     ushort[MAX_DESTRUCT_BINDS] binding_regs;
@@ -158,9 +181,11 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     }
 
     // No initializer (`var [a, b];`): bind everything to undefined.
+    // A `const` pattern always requires one (ES2024 §13.3.1).
     if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
 
     if (!self.match(TokenType.ASSIGN)) {
+        if (is_const) return self.fail("const declaration requires an initializer")~;
         for (uint i = 0; i < count; i++) {
             if (binds[i].is_synthetic) continue;
             ushort dreg = binding_regs[i];
@@ -221,6 +246,10 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
     uint count = 0;
     self.collect_obj_param_binds(binds[..], &count, 0, 0xFFFF)!;
 
+    // Same duplicate-bound-names rule as array patterns (see
+    // check_destruct_no_dup): lexical only, `var` repeats stay legal.
+    if (is_lexical) self.check_destruct_no_dup(binds[..], count)!;
+
     ushort[MAX_DESTRUCT_BINDS] group_regs;
     ushort[MAX_DESTRUCT_BINDS] binding_regs;
     for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
@@ -245,10 +274,11 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
 
     // No initializer (`var {a};`, only valid via for-in/of heads, but keep the
     // path): bind everything to undefined. RequireObjectCoercible does not apply
-    // without a source value.
+    // without a source value. A `const` pattern always requires one.
     if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
 
     if (!self.match(TokenType.ASSIGN)) {
+        if (is_const) return self.fail("const declaration requires an initializer")~;
         for (uint i = 0; i < count; i++) {
             if (binds[i].is_synthetic) continue;
             self.emit_abc(Opcode.LDUNDEF, (uint)binding_regs[i], 0, 0);
