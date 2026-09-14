@@ -323,15 +323,33 @@ fn bool CompilerContext.ts_name_is_runtime_binding(&self, char[] name) {
 // existing binding, never re-declare and clobber the env value). Normal
 // reads/writes must use resolve_var so captured locals stay env-resident.
 fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
+    // Resolve a variable name to its register REGARDLESS of capture status.
+    // Only for declaration-site checks (e.g. `var` redeclaration must reuse
+    // the existing binding, never re-declare and clobber the env value). Normal
+    // reads/writes must use resolve_var so captured locals stay env-resident.
+    //
+    // Restrict to VAR and param entries (skip LET/CONST/class): those live
+    // in a separate lex_env and B.3.3's `var` substitution never collides
+    // with them — Annex B.3.3.1 step ii treats the lex-vs-var conflict as
+    // the exemption signal that suppresses the second binding altogether.
+    // Returning a LET/CONST reg here would let emit_block_scoped_fn_decls
+    // emit DECLGLOBALFUNC against a register owned by the lexical binding,
+    // so the closure overwrites the lexical slot's register-resident value
+    // and a subsequent read returns the closure instead of the original
+    // lexical binding.
     uint i = self.scope_depth;
     while (i > 0) {
         i--;
-        if (str_eq(self.scope_stack[i].name, name)) {
-            return self.scope_stack[i].reg;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (!str_eq(e.name, name)) continue;
+        if (e.kind == ScopeKind.VAR || e.is_param) {
+            return e.reg;
         }
+        return SCOPE_ERROR~;
     }
     return SCOPE_ERROR~;
 }
+
 
 // True when an existing `name` binding was already declared and is
 // env-resident (its value lives in an EnvRecord, not in a register the
@@ -463,21 +481,17 @@ fn bool CompilerContext.has_conflicting_lexical_name(&self, char[] name) {
     return false;
 }
 
-// True when `name` is a FORMAL parameter of the enclosing function, or is
-// the implicit `arguments` binding when the function needs an arguments
-// object (B.3.3.1's parameterNames, which appends "arguments" per ES2015
-// §9.2.10 step 22.f).
+// True when `name` is a FORMAL parameter of the enclosing function.
 //
-// Catch parameters do not count: the exemption covers BoundNames of formals
-// (plus "arguments"), never a catch binding, so
-// `try{}catch(f){ {function f(){}} }` must still publish the closure to var
-// scope. Formals are declared before the body marker is pushed while a catch
-// parameter is declared after it, so only entries below the first body mark
-// (scanning up from the bottom) qualify. Always false at global scope, which
-// has no formals — a same-named catch parameter there must not exempt.
+// Catch parameters do not count: the exemption covers BoundNames of formals,
+// never a catch binding, so `try{}catch(f){ {function f(){}} }` must still
+// publish the closure to var scope. Formals are declared before the body
+// marker is pushed while a catch parameter is declared after it, so only
+// entries below the first body mark (scanning up from the bottom) qualify.
+// Always false at global scope, which has no formals — a same-named catch
+// parameter there must not exempt.
 fn bool CompilerContext.is_formal_param_name(&self, char[] name) {
     if (self.is_global) return false;
-    if (str_eq(name, "arguments") && self.uses_arguments) return true;
     uint i = 0;
     while (i < self.scope_depth) {
         ScopeEntry* e = &self.scope_stack[i];

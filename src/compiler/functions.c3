@@ -2226,6 +2226,22 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     // `;`, after a block/statement brace, or after a label colon; every
     // other token means an expression is in progress.
     bool at_stmt_start = true;
+    // Most-recently consumed token type that isn't consumed by the case
+    // labels of `stmt_start_after` (which themselves are statement-start
+    // sentinels). Used to detect a label colon: IDENTIFIER followed by
+    // COLON at statement-start position. Initialised to SEMICOLON so the
+    // first token starts a statement.
+    TokenType prev_significant_tt = TokenType.SEMICOLON;
+    bool prev_tok_at_stmt_start = true;  // initial sentinel: SEMICOLON resets to true
+    // Annex B.3.2: a `function` that immediately follows a label colon
+    // (`l: function f() {}` or `l0: l: function f() {}` at a
+    // StatementListItem position) is a labelled FunctionDeclaration and the
+    // B.3.3 second binding applies even at own_depth. Set to true on the
+    // iteration that consumes the COLON (preceded by an IDENTIFIER at
+    // statement-start position), reset by every other token. Only
+    // statement-start colons count — a `case 1:` or ternary/object literal
+    // `:` is excluded by the at_stmt_start check below.
+    bool function_after_label = false;
 
     // Annex B.3.4: a plain FunctionDeclaration is a legal if clause body in
     // sloppy code, and hoists into the enclosing scope like a block-nested
@@ -2260,11 +2276,42 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         bool tok_at_stmt_start = at_stmt_start;
         at_stmt_start = stmt_start_after(tt);
 
+        // Track the previous significant token's tok_at_stmt_start for the
+        // Annex B.3.2 label-colon check above. stmt_start_after returns true
+        // for COLON, so a `:` always has tok_at_stmt_start true (the next
+        // `function` after a label colon is at statement-start position),
+        // but the *previous* token's tok_at_stmt_start is what tells us
+        // whether the IDENTIFIER was itself at stmt-start — i.e., a real
+        // label pattern rather than a property-key / case-label colon.
+        prev_tok_at_stmt_start = tok_at_stmt_start;
+        prev_significant_tt = tt;
+
         // Whether THIS token is the direct FunctionDeclaration body of an if
         // (Annex B.3.4). The flag is single-use: it describes only the token
         // that immediately follows the condition or `else`.
         bool b34_clause = if_clause_pending && tt == TokenType.FUNCTION;
         if_clause_pending = false;
+
+        // Whether THIS token is the `:` of a label (Annex B.3.2). The label
+        // grammar is `LabelIdentifier : Statement`, where LabelIdentifier is
+        // an Identifier at statement-start position. tok_at_stmt_start for
+        // this `:` itself is false (the preceding IDENTIFIER is not in
+        // stmt_start_after, so at_stmt_start resets before this iteration);
+        // we instead check prev_significant_tt == IDENTIFIER AND that the
+        // preceding IDENTIFIER was at stmt-start. case/default colon and
+        // ternary/object-literal colons do not satisfy both — case/default
+        // sit at clause positions (the case-expression precedes), and
+        // object-literal colons follow a property key that sits at a stmt-
+        // start position only after `{`/`;` (still followed by a `:` whose
+        // label-viability is a real concern below). Distinguishing the two
+        // via the brace depth at the COLON is more robust: a label colon
+        // only occurs at the boundary of an enclosing block or program,
+        // never inside an object literal's key/value run.
+        if (tt == TokenType.COLON && !self.is_strict
+            && prev_significant_tt == TokenType.IDENTIFIER
+            && prev_tok_at_stmt_start) {
+            function_after_label = true;
+        }
 
         if (tt == TokenType.IF) {
             // Skip the parenthesised condition so the loop resumes at the
@@ -2281,6 +2328,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         if (tt == TokenType.LBRACE) {
             tscan.on_lbrace();
             brace_depth++;
+            function_after_label = false;
             continue;
         }
         // TEMPLATE_HEAD opens a template substitution: the lexer already
@@ -2296,6 +2344,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             if (tb == TemplateBrace.SUBST) continue;
             if (!is_global && brace_depth == 0) break;
             if (brace_depth > 0) brace_depth--;
+            function_after_label = false;
             // For function-level hoisting, stop when the function body's
             // closing '}' returns brace_depth to 0 (end of scanned scope).
             if (!is_global && brace_depth == 0) break;
@@ -2498,9 +2547,20 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // var binding is created for it at all. An if clause body
             // (b34_clause) has no `{` of its own, so its declaration is at
             // own_depth and its `function` sits after the condition's `)`.
+            //
+            // Annex B.3.2 extends B.3.3 to a labelled FunctionDeclaration at
+            // a StatementListItem position (DECL_FUNC_LABEL mask). The
+            // parser's labeled_statement() passes DECL_FUNC | DECL_FUNC_LABEL
+            // through to statement() so the function compiles normally. The
+            // second-binding hoist therefore fires when the `function` token
+            // follows a label colon (IDENTIFIER `l` then COLON `:`), tracked
+            // by `function_after_label` below. Without it,
+            // `eval("fe(); l: function fe() {}")` and the StatementListItem
+            // shapes `l: function f() {}` / `l0: l: function f() {}` leave
+            // the pre-call `fe()` reference unresolvable.
             if (!checks_only && !self.is_strict && b33_named
-                && (brace_depth > own_depth || b34_clause)
-                && (tok_at_stmt_start || b34_clause)
+                && (brace_depth > own_depth || b34_clause || function_after_label)
+                && (tok_at_stmt_start || b34_clause || function_after_label)
                 && !b33_is_gen && !b33_is_async && nname.str_value.len > 0
                 && str_eq(nname.str_value, "arguments") == false) {
                 self.hoist_one_var_name(nname.str_value, is_global, true);
@@ -3036,6 +3096,19 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                 prev_toplevel = TokenType.RBRACE;
                 has_prev = true;
             }
+            continue;
+        }
+
+        // Annex B.3.2: a `function` after a label colon at top-level is a
+        // labelled FunctionDeclaration and B.3.3 hoists it. Mirror the
+        // prev_toplevel tracking in hoist_global_fn_decls so the in_stmt_pos
+        // check below accepts the function: a label colon resets prev_toplevel
+        // to a statement-terminator (SEMICOLON), putting the `function`
+        // immediately following into a statement position.
+        if (tt == TokenType.COLON && brace_depth == 0
+            && prev_toplevel == TokenType.IDENTIFIER) {
+            prev_toplevel = TokenType.SEMICOLON;
+            has_prev = true;
             continue;
         }
 

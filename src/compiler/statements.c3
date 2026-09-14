@@ -2201,9 +2201,67 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
             int b33_idx = self.b33_hoisted_index(ename);
             if (b33_idx < 0) continue;
             b33_idxs[ei] = b33_idx;
+            if (self.b33_hoisted_pcs[b33_idx] == 0xFFFFFFFF) {
+                // Already withdrawn by an enclosing block's let/const/class
+                // declaration. The hoist scan created a `var f` entry that
+                // the surrounding scope's lex-vs-var conflict suppresses
+                // (see the non-fn loop below); the inner block's fn span
+                // stays block-scoped and the per-block DECLGLOBALFUNC
+                // publish is skipped here.
+                b33_span_exempt[ei] = true;
+                b33_exempt = true;
+                continue;
+            }
             if (self.has_conflicting_lexical_name(ename) || self.is_formal_param_name(ename)) {
                 b33_span_exempt[ei] = true;
                 b33_exempt = true;
+            }
+        }
+
+        // Annex B.3.3.1 step ii is forward-looking from the hoist scan:
+        // a same-named `let`/`const`/`class` ANYWHERE in the function body
+        // would make the var substitution produce an early error. The
+        // hoist scan cannot see this — late `let`s undeclared, formals
+        // unparsed — and block() at entry only sees this block's own
+        // lex_spans for fn spans via the loop above. A `let` in this very
+        // block (or a sibling block whose hoisted-fn entry we are about to
+        // declare at this block-entry) must still withdraw the hoisted
+        // entry: when this block's `let x` is later declared, the would-be
+        // `var x` from an inner sub-block's `function x` collides lex-vs-var
+        // (ES2024 §13.2.1), so B.3.3 doesn't apply. The publish-time
+        // DECLGLOBALFUNC must not fire; the entry-init DECLVAR_HOIST must
+        // not initialize a register that ends up never written.
+        for (uint ni = 0; ni < num_lex; ni++) {
+            if (lex_spans[ni].is_fn) { continue; }
+            char[] lname = self.name_span_text(lex_spans[ni]);
+            int lb33_idx = self.b33_hoisted_index(lname);
+            if (lb33_idx < 0) continue;
+            uint lhpc = self.b33_hoisted_pcs[lb33_idx];
+            if (lhpc == 0xFFFFFFFF) continue;
+            // NOP the DECLVAR_HOIST the hoist scan emitted for this name.
+            self.b33_hoisted_pcs[lb33_idx] = 0xFFFFFFFF;
+            if (lhpc < self.code_count && self.code[lhpc].op == Opcode.DECLVAR_HOIST) {
+                self.code[lhpc] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+            }
+            // Erase the function-scope VAR entry the hoist scan allocated.
+            // The scan declared it with is_fn_decl=false (it's a synthesized
+            // hoisted var, not a block-scope function declaration), so the
+            // existing exemption walk that pairs with b33_span_exempt does
+            // not see it. b33_hoisted_pcs is now 0xFFFFFFFF, so subsequent
+            // block entries (for sibling blocks whose fn spans carry the
+            // same name) skip the record via the fn-span loop's withdrawn
+            // check above.
+            uint j = self.scope_depth;
+            while (j > 0) {
+                j--;
+                ScopeEntry* e = &self.scope_stack[j];
+                if (e.kind == VAR && !e.is_param && str_eq(e.name, lname)) {
+                    for (uint k = j + 1; k < self.scope_depth; k++) {
+                        self.scope_stack[k - 1] = self.scope_stack[k];
+                    }
+                    self.scope_depth--;
+                    break;
+                }
             }
         }
     }
@@ -2395,7 +2453,14 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
                 }
             }
         }
-    } else if (lexical_fns && has_lex) {
+    } else if (lexical_fns && has_lex && self.cur_with_depth == 0) {
+        // Annex B.3.3 NOTE 1: a function declaration inside a `with` body is
+        // bound at its lexical position, not at the start of the block. The
+        // VM still creates the closure and PUTLEXes it into the block's
+        // lex_env, but the var-env second binding (and the closure itself)
+        // are deferred until statement() reaches the declaration, so the
+        // pre-declaration statements observe the DECLVAR_HOIST `undefined`
+        // stub from function entry rather than the closure.
         self.block_fn_spans = &lex_spans[0];
         self.block_fn_count = num_lex;
         self.emit_block_scoped_fn_decls(&lex_spans[0], num_lex, b33_exempt)!;
@@ -5896,7 +5961,12 @@ fn void? CompilerContext.switch_statement(&self) {
                 char[] ename = self.name_span_text(switch_lex_spans[ei]);
                 int sw_idx = self.b33_hoisted_index(ename);
                 if (sw_idx < 0) continue;
-                if (self.b33_hoisted_pcs[sw_idx] == 0xFFFFFFFF) continue;
+                // A same-named `let`/`const`/`class` anywhere in the body
+                // suppresses B.3.3 entirely, even when an enclosing block's
+                // lex-vs-var check (block()'s non-fn withdrawal loop) has
+                // already marked the hoisted record withdrawn. Re-check
+                // here so sw_b33_exempt fires for cases whose exempt span
+                // was withdrawn by an outer block, not the switch itself.
                 if (self.has_conflicting_lexical_name(ename) || self.is_formal_param_name(ename)) {
                     uint hpc = self.b33_hoisted_pcs[sw_idx];
                     self.b33_hoisted_pcs[sw_idx] = 0xFFFFFFFF;
