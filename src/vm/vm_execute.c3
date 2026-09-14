@@ -6619,6 +6619,17 @@ fn TVal? Vm.run(Vm* vm) {
             while (cur != null) {
                 if (cur.is_with) {
                     if (cur.bindings.has_prop_proto(key, vm.heap)) {
+                        // @@unscopables hides the binding (ES2024 §9.1.1.2.5
+                        // HasBinding): skip to the enclosing scope instead of
+                        // deleting from the with object.
+                        if (vm_with_unscopables_blocks(vm, cur, key)) {
+                            cur = cur.parent;
+                            continue;
+                        }
+                        if (vm.heap.has_error) {
+                            if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                            continue;
+                        }
                         // delete obj.x inside `with`: [[Delete]] the own
                         // property and report its boolean result. The with-env
                         // hit is a property delete, not a var-binding delete,
@@ -6646,6 +6657,15 @@ fn TVal? Vm.run(Vm* vm) {
                 while (vcur != null) {
                     if (vcur.is_with) {
                         if (vcur.bindings.has_prop_proto(key, vm.heap)) {
+                            // Same @@unscopables skip as the lex walk above.
+                            if (vm_with_unscopables_blocks(vm, vcur, key)) {
+                                vcur = vcur.parent;
+                                continue;
+                            }
+                            if (vm.heap.has_error) {
+                                if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
+                                continue;
+                            }
                             ra.set_boolean(vcur.bindings.es_delete_prop(key, vm.heap));
                             track_heap_store(ds.act, ra, (uint)insn.a);
                             found = true;

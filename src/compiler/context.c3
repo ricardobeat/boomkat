@@ -2132,6 +2132,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !elide_has_params_needing_env
                      && !self.has_captured_local
                      && !self.has_with_stmt  // dynamic scope: a with-object may own any local's name
+                     && !self.outer_with  // created inside a with body: every read goes through the env
                      && !self.is_global   // global/eval vars are env-resident (resolve_var skips global scope)
                      && !self.is_arrow
                      && !self.is_generator
@@ -2527,10 +2528,16 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // own scope rather than the captured parent (e.g. a global record or
     // a `with` object); otherwise a body like `var x = ...` called from
     // inside `with` would walk the chain and write through to the with-env.
+    // A function compiled inside a `with` body (outer_with) likewise owns
+    // one: every name it touches resolves through the environment (see the
+    // outer_with contract above), so its own params/locals must live in an
+    // env — with needs_env=false the CALL path reuses the captured parent
+    // env and the bindings have nowhere to land.
     bool can_skip_env = !needs_runtime_env
                      && !has_params_needing_env
                      && !self.has_captured_local
                      && !self.has_local_bindings
+                     && !self.outer_with
                      && !self.is_arrow
                      && !self.is_generator
                      && !self.is_async
