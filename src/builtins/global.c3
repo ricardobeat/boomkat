@@ -1108,13 +1108,18 @@ fn void builtin_eval(BuiltinContext* ctx) {
         // already exists there is re-declared by the SetMutableBinding step
         // (step 16), not rejected (var-env-var-init-local-exstng.js,
         // var-env-func-init-local-update.js, global-env-rec-eval.js).
+        // Catch-parameter environments are likewise skipped:
+        // sec-variablestatements-in-catch-blocks replaces step 5.d.ii.2.a.i
+        // with "If thisEnvRec is not the Environment Record for a Catch
+        // clause, throw", so eval("var x") inside catch (x) binds in the
+        // var env instead of throwing.
         if (func.eval_var_count > 0) {
             EnvRecord* walker = lex_env_for_eval;
             bool collision = false;
             while (walker != null) {
                 if (walker == var_env_for_eval) break;
                 bool is_global_obj = walker == ctx.global_env;
-                if (!walker.is_with && walker.bindings != null && !is_global_obj) {
+                if (!walker.is_with && !walker.is_catch && walker.bindings != null && !is_global_obj) {
                     for (uint vi = 0; vi < func.eval_var_count; vi++) {
                         TVal nv = func.constants[func.eval_var_idxs[vi]];
                         if (nv.is_string()

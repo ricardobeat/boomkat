@@ -72,6 +72,12 @@ struct EnvRecord {
     // prototype chain (ES5 §10.2.1.2.1), and unresolved assignments fall
     // through to the enclosing scope rather than landing on the with object.
     bool is_with;
+    // Catch-parameter environment: holds a Catch clause's parameter bindings
+    // (plain or destructured). Only the sloppy-eval var-collision gate reads
+    // it: sec-variablestatements-in-catch-blocks exempts a colliding catch
+    // env from the §18.2.1.2 step 5.4 SyntaxError, so eval("var x") inside
+    // catch (x) binds in the var env instead of throwing.
+    bool is_catch;
     // Owning heap for bindings and property operations.
     Heap* heap;
 }

@@ -1270,8 +1270,12 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
 
         case Opcode.PUSH_LEX: {
             // Push a new declarative environment record onto ds.act.lex_env.
+            // A nonzero A operand marks a catch-parameter environment
+            // (is_catch), which the sloppy-eval var-collision gate exempts
+            // per sec-variablestatements-in-catch-blocks.
             EnvRecord*? env_raw = env::env_create_declarative(vm.heap, ds.act.lex_env);
             if (try new_env = env_raw) {
+                if (insn.a != 0) new_env.is_catch = true;
                 ds.act.lex_env = new_env;
             } else {
                 return VM_ERROR~;

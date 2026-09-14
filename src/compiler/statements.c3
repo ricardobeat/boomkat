@@ -5714,7 +5714,10 @@ fn void? CompilerContext.try_statement(&self) {
                 // Catch bindings live in their own lexical scope so they
                 // shadow (not clobber) same-named outer bindings. The VM's
                 // CATCH handler rebalanced lex_env to the TRY-entry level.
-                self.emit_simple(Opcode.PUSH_LEX);
+                // A nonzero PUSH_LEX operand marks the catch-parameter env
+                // (is_catch), which the sloppy-eval var-collision gate
+                // exempts per sec-variablestatements-in-catch-blocks.
+                self.emit_a_bc(Opcode.PUSH_LEX, 1, 0);
                 self.cur_lex_depth++;
                 catch_binding_scope = true;
 
@@ -5764,8 +5767,10 @@ fn void? CompilerContext.try_statement(&self) {
                 // The catch parameter lives in its own lexical scope so it
                 // shadows (not clobbers) a same-named outer binding: PUTLEX
                 // declares it in the fresh env. Subsequent GETVAR/TYPEOFIDENT
-                // resolve it through the environment chain.
-                self.emit_simple(Opcode.PUSH_LEX);
+                // resolve it through the environment chain. The nonzero
+                // PUSH_LEX operand marks the catch-parameter env (is_catch;
+                // see the destructured path above).
+                self.emit_a_bc(Opcode.PUSH_LEX, 1, 0);
                 self.cur_lex_depth++;
                 catch_binding_scope = true;
                 {
