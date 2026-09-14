@@ -3234,7 +3234,14 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                 // leak into later declarations in the scan.
                 self.is_async = false;
                 self.skip_function_body();
-                prev_toplevel = TokenType.FUNCTION;
+                // A skipped body ends at its `}`, a statement terminator:
+                // `if (c) function f() {} function g() {}` puts g in
+                // statement position (B.3.4 if-body followed by a top-level
+                // declaration). Recording FUNCTION instead left g
+                // misclassified as expression-position, so it was never
+                // hoisted and a same-named B.3.3 entry init clobbered the
+                // binding with undefined.
+                prev_toplevel = TokenType.RBRACE;
                 has_prev = true;
                 continue;
             }

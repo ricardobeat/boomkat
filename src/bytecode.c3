@@ -294,6 +294,16 @@ enum Opcode : char {
     // this: CreateGlobalVarBinding must leave an existing property entirely
     // untouched, so the two declaration kinds need distinct opcodes.
     DECLGLOBALFUNC,
+    // `global[constants[BC]] = A` preserving attributes (A-BC): the
+    // per-evaluation publish of a block-nested function declaration at
+    // global scope (Annex B.3.2 rule: genvRec.SetMutableBinding). Unlike
+    // DECLGLOBALFUNC (CreateGlobalFunctionBinding: redefine the property) it
+    // never touches attributes: an existing non-enumerable global stays
+    // non-enumerable (Annex B.3.3.3), a missing binding is created
+    // { writable: true, enumerable: true, configurable: true }. Emitted only
+    // under the is_global gate in function_declaration, so like DECLB33HOIST
+    // it never meets the elide pass.
+    DECLB33GLOBAL,
     // `A = global[constants[BC]]`: read a top-level global binding by name
     // (A-BC). Emitted only at true global scope (no nested lexical env), where
     // lex_env == global_lex_env and var_env == global_env are both permanent
@@ -1037,6 +1047,7 @@ fn OpFormat get_op_format(Opcode op) {
         case DECLVAR:   return A_BC;
         case DECLVAR_HOIST: return A_BC;
         case DECLGLOBALFUNC: return A_BC;
+        case DECLB33GLOBAL: return A_BC;
         case GETGLOBAL: return A_BC;
         case PUTGLOBAL: return A_BC;
         case GETGLOBAL_PRIM: return A_BC;

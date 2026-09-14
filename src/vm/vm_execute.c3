@@ -6318,6 +6318,44 @@ fn TVal? Vm.run(Vm* vm) {
             break;
         }
 
+        case Opcode.DECLB33GLOBAL: {
+            // Per-evaluation publish of a block-nested function declaration
+            // at global scope (Annex B.3.2: genvRec.SetMutableBinding). An
+            // existing property keeps its attributes: only the value is
+            // replaced, so a pre-existing non-enumerable global stays
+            // non-enumerable (Annex B.3.3.3). A missing binding is created
+            // { writable: true, enumerable: true, configurable: true }.
+            // Accessor and non-writable targets drop silently: this opcode
+            // only emits for sloppy functions (SetMutableBinding S=false).
+            uint b33_bc = insn.get_bc();
+            if (b33_bc < vm.current_func.const_count) {
+                TVal b33_name = ds.constants[b33_bc];
+                if (b33_name.is_string()) {
+                    $if types::ENV_STRICT:
+                    if (vm.current_func.needs_env() == false) { unreachable("ENV_STRICT: needs_env=false fn touched own env: DECLB33GLOBAL"); }
+                    $endif
+                    void* b33_key = b33_name.get_heapptr();
+                    EnvRecord* b33_venv = ds.act.var_env;
+                    if (b33_venv == vm.global_env) {
+                        int b33_idx = b33_venv.bindings.find_prop_idx(b33_key, vm.heap);
+                        if (b33_idx >= 0) {
+                            hobject::PropFlags b33_fl = b33_venv.bindings.get_prop_flags((uint)b33_idx, vm.heap);
+                            if (!b33_fl.is_accessor && b33_fl.writable) {
+                                TVal* b33_pv = &b33_venv.bindings.prop_values()[b33_idx];
+                                vm.heap.tval_move_slot_fast(b33_pv, ra);
+                                ra.set_undefined();
+                            }
+                        } else {
+                            b33_venv.bindings.put_prop(b33_key, *ra, hobject::PROP_FLAGS_WEC, vm.heap);
+                        }
+                    } else {
+                        env::env_declare_global_func(b33_venv, b33_key, *ra, false, ((CompiledFunction*)ds.act.func).is_eval_fn());
+                    }
+                }
+            }
+            break;
+        }
+
         case Opcode.DECLVAR_HOIST: {
             // Initializer-less `var` stub. Deliberately skips the VarIC: the
             // fast path writes unconditionally, which would overwrite a live

@@ -6728,6 +6728,14 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
     // has_conflicting_lexical_name and check_var_lex_conflict read to detect
     // the B.3.3 step (ii) "would replacing f with a VariableStatement produce
     // an Early Error" case for a `function f` enclosing block.
+    // B.3.3.1 step ii exemption, decided BEFORE declare_var below: at
+    // global scope a slot-global name pushes the declaration's own entry
+    // (VAR + is_fn_decl) onto the stack, which
+    // has_conflicting_lexical_name would mistake for an outer block-scope
+    // function and wrongly veto this declaration's own publish
+    // (`switch (1) { case 1: function f() {} } var f = 123` left global `f`
+    // undefined). An outer entry the check should see is already present.
+    bool b33_lex_conflict = self.has_conflicting_lexical_name(fn_name2);
     ushort func_reg;
     ushort? existing_fn_reg = self.find_same_scope_reg(fn_name2);
     if (try efr = existing_fn_reg) {
@@ -6779,8 +6787,13 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         // `{ let f; { function f(){} } }` would still publish a global `f`.
         if (!self.is_strict && self.is_global && !is_async_decl && !gen_here
             && !self.is_formal_param_name(fn_name2)
-            && !self.has_conflicting_lexical_name(fn_name2)) {
-            self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)func_reg, name_idx);
+            && !b33_lex_conflict) {
+            // B.3.3 second binding at global scope: SetMutableBinding
+            // semantics (Annex B.3.2), preserving an existing property's
+            // attributes. DECLGLOBALFUNC's CreateGlobalFunctionBinding
+            // redefine would turn a pre-existing non-enumerable global
+            // enumerable (Annex B.3.3.3).
+            self.emit_a_bc(Opcode.DECLB33GLOBAL, (uint)func_reg, name_idx);
         }
     } else {
         // Declare the binding in the immediate var_env so inner functions can
