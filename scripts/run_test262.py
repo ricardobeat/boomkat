@@ -186,7 +186,10 @@ UNSUPPORTED_PATTERN = re.compile(
     r"legacy-regexp|"
     r"await-dictionary|canonical-tz|"
     r"export-defer|immutable-arraybuffer|import-bytes|import-text|"
-    r"joint-iteration|nonextensible-applies-to-private|"
+    r"joint-iteration|"
+    # nonextensible-applies-to-private un-skipped: the private-names
+    # implementation already applies the non-extensible check, and both
+    # runnable tests carrying only this token pass.
     # Iterator-helper proposals that landed in test262 after the ES2025 set
     # this engine implements (chunks/windows, includes, join).
     r"iterator-chunking|iterator-includes|Iterator\.prototype\.join|"
