@@ -492,6 +492,11 @@ fn bool CompilerContext.has_conflicting_lexical_name(&self, char[] name) {
 // parameter there must not exempt.
 fn bool CompilerContext.is_formal_param_name(&self, char[] name) {
     if (self.is_global) return false;
+    // "arguments" counts as a parameter name: FunctionDeclarationInstantiation
+    // step 22.f appends it to parameterNames when the arguments object is
+    // needed, so B.3.3 step ii exempts `function arguments(){}` in a block
+    // from the var-scope second binding (block-decl-func-skip-arguments.js).
+    if (str_eq(name, "arguments") && self.uses_arguments) return true;
     uint i = 0;
     while (i < self.scope_depth) {
         ScopeEntry* e = &self.scope_stack[i];

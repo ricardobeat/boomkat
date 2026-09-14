@@ -272,6 +272,15 @@ SKIP_FILES = {
     # test262 in 2024 and still uncurated (its front-matter is `esid: pending`).
     # Un-skipped with plans/083: sloppy and strict now coexist, so the
     # testLenientAndStrict helper's dual evaluation observes both modes.
+    # staging/sm/lexical-environment/block-scoped-functions-annex-b-arguments
+    # contradicts the normative
+    # annexB/language/function-code/block-decl-func-skip-arguments.js: its
+    # front-matter is `esid: pending` and it expects the B.3.3 second binding
+    # to overwrite the arguments object, but FunctionDeclarationInstantiation
+    # step 22.f appends "arguments" to parameterNames, so B.3.3 step ii
+    # exempts `function arguments(){}` and the Arguments object survives the
+    # block (V8 agrees). Skipped until the SM test is reconciled upstream.
+    "staging/sm/lexical-environment/block-scoped-functions-annex-b-arguments.js",
 }
 
 # ---------------------------------------------------------------------------
