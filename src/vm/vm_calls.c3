@@ -721,7 +721,54 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     return;
 }
 
-// Fast path for CALL/CALL_S/CALL_UNDEF_THIS on a direct (non-generator,
+// Whether every catcher still linked on `act` can simply be discarded, which
+// is the case only when each one is a finally block that is currently running
+// and owes no replayed completion. See the tail-call eligibility test.
+fn bool tailcall_catchers_discardable(Activation* act) {
+    Catcher* c = (Catcher*)act.cat;
+    const uint PENDING =
+        CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_BREAK
+        | CATCHER_FLAG_PENDING_CONTINUE | CATCHER_FLAG_PENDING_RETURN_GEN;
+    while (c != null) {
+        if ((c.flags & CATCHER_FLAG_IN_FINALLY) == 0) { return false; }
+        if ((c.flags & PENDING) != 0) { return false; }
+        c = c.parent;
+    }
+    return true;
+}
+
+// Free the catcher chain a tail call is discarding along with the frame.
+fn void tailcall_free_catchers(Vm* vm, Activation* act) {
+    Catcher* c = (Catcher*)act.cat;
+    while (c != null) {
+        Catcher* next = c.parent;
+        vm.heap.free_func(vm.heap.heap_udata, c);
+        c = next;
+    }
+    act.cat = null;
+}
+
+// Map a TAILCALL_* opcode back to the plain call opcode it shadows. The two
+// forms decode operands and pick a receiver identically; only frame handling
+// differs, which is decided separately via tailcall_is_tail. Normalizing here
+// keeps every existing operand/receiver branch in the call path unchanged.
+fn Opcode tailcall_base_op(Opcode op) {
+    switch (op) {
+        case Opcode.TAILCALL_UNDEF_THIS: return Opcode.CALL_UNDEF_THIS;
+        case Opcode.TAILCALL_VAR:        return Opcode.CALL_VAR;
+        case Opcode.TAILCALL_GLOBAL:     return Opcode.CALL_GLOBAL;
+        case Opcode.TAILCALL_CALL:       return Opcode.CALL;
+        default:                         return op;
+    }
+}
+
+fn bool tailcall_is_tail(Opcode op) {
+    return op == Opcode.TAILCALL_UNDEF_THIS || op == Opcode.TAILCALL_VAR
+        || op == Opcode.TAILCALL_GLOBAL || op == Opcode.TAILCALL_CALL;
+}
+
+// Fast path for CALL/CALL_S/CALL_UNDEF_THIS and their TAILCALL_* forms on a
+// direct (non-generator,
 // non-class-ctor) compiled-function callee, which is the common
 // shape for ordinary recursive/iterative JS calls. Hoisted out of
 // dispatch_calls so Vm.run's CALL case can @inline it directly and skip
@@ -736,6 +783,11 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
 fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool* handled) @inline {
     Vm* vm = ds.vm;
     *handled = false;
+
+    // A TAILCALL_* decodes exactly like the call it shadows; `is_tail` alone
+    // selects frame reuse further down.
+    bool is_tail = tailcall_is_tail(op);
+    op = tailcall_base_op(op);
 
     // Safe point: run deferred GC before entering callee
     if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
@@ -1095,8 +1147,83 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     }
                     }
 
-                    // The activation is fully initialized, so make it visible to the GC.
-                    vm.activation_count++;
+                    // Proper tail call (ES2015 §14.8): retire the caller's
+                    // activation instead of stacking a new one, so unbounded
+                    // recursion in tail position runs in constant stack.
+                    //
+                    // The frame was built one slot above the caller's, in the
+                    // usual sliding-window position. Committing it as a tail
+                    // call means taking over the caller's slot: the callee
+                    // inherits where the caller's result was going (retval),
+                    // who it returns to (parent), and the valstack mark to
+                    // restore (caller_valstack_top), so its eventual RET
+                    // returns directly to the caller's caller.
+                    //
+                    // Declined when the caller's frame still owns state that
+                    // must outlive the call. The compiler already excluded
+                    // try/catch/finally regions and pending iterator closes
+                    // syntactically; these are the runtime-only shapes it
+                    // cannot see:
+                    //
+                    //   cat != null        a live catcher chain (a finally
+                    //                      reached through a nested frame)
+                    //   forin != null      a live for-in enumeration
+                    //   ACT_FLAG_ASYNC     an async frame settles a promise
+                    //                      on return
+                    //   ACT_FLAG_CONSTRUCT / DERIVED / SUPER_CTOR
+                    //                      constructor frames own the new
+                    //                      object and super() bookkeeping
+                    //   ACT_FLAG_DIRECT_EVAL  the frame's locals are visible
+                    //                      to an eval that may still run
+                    // heap_reg_count is deliberately NOT a disqualifier: the
+                    // caller's owned register values are released below, before
+                    // the slide overwrites their slots. That is the whole point
+                    // of a tail call — the caller's registers are dead.
+                    //   activation_count<=1  the outermost frame has no caller
+                    //                      to return to
+                    //   is_eval_fn         an eval body returns into its
+                    //                      invoking frame, not past it
+                    //
+                    // A declined tail call runs as an ordinary call; the RET
+                    // the compiler folded away is supplied by the TAILCALL
+                    // write-back in vm_execute.
+                    bool do_tail = false;
+                    if (is_tail && vm.activation_count > 1) {
+                        Activation* ca = ds.act;
+                        const uint TAIL_BLOCKING_FLAGS =
+                            ACT_FLAG_CONSTRUCT | ACT_FLAG_DERIVED | ACT_FLAG_SUPER_CTOR
+                            | ACT_FLAG_ASYNC | ACT_FLAG_DIRECT_EVAL;
+                        // A live catcher normally forbids the tail call: the
+                        // handler or finally block still has to run, so the
+                        // frame is not the caller's to give away. The exception
+                        // is a `return` in a *finally body*, which §14.8.1 puts
+                        // in tail position: that finally IS the pending work
+                        // and it is running now, so nothing is left owed.
+                        //
+                        // CATCHER_FLAG_IN_FINALLY, set by the FINALLY opcode,
+                        // is the runtime witness for that. Every catcher still
+                        // on the chain must carry it (an enclosing try whose
+                        // *body* we are inside has not reached its finally, so
+                        // it does not) and none may hold a pending completion
+                        // that ENDFINALLY still has to replay.
+                        bool cat_ok = tailcall_catchers_discardable(ca);
+                        if (cat_ok && ca.forin == null
+                            && (ca.flags & TAIL_BLOCKING_FLAGS) == 0
+                            && ca.retval != null
+                            && !target_fast.is_eval_fn()
+                            && !target_fast.has_direct_eval()) {
+                            do_tail = true;
+                        }
+                    }
+
+                    // Publishing is deferred for a tail call: the frame is
+                    // still being populated from the caller's registers below,
+                    // and the takeover overwrites exactly those slots. See the
+                    // commit just before the dispatch handoff.
+                    if (!do_tail) {
+                        // The activation is fully initialized, so make it visible to the GC.
+                        vm.activation_count++;
+                    }
 
                     TVal* new_regs = new_act.bottom;
                     uint new_nregs = target_fast.num_regs;
@@ -1170,11 +1297,117 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         }
                     }
 
+                    // Save the caller's resume point before any takeover:
+                    // for an ordinary call the callee returns to it, and for a
+                    // tail call ds.act is about to *become* the callee, so
+                    // writing it afterwards would clobber the callee's entry pc
+                    // with the caller's.
+                    ds.act.curr_pc = ds.curr_pc;
+
+                    if (do_tail) {
+                        // Commit the tail call: the frame is fully populated
+                        // from the caller's registers, so it can now be slid
+                        // down onto the caller's base and take over its slot.
+                        Activation* ca = ds.act;
+                        // Any catcher still linked is a finally block that is
+                        // running now and owes nothing (the eligibility test
+                        // above established that); it dies with the frame.
+                        tailcall_free_catchers(vm, ca);
+                        // The caller's this_binding dies with its frame.
+                        if ((ca.flags & ACT_FLAG_THIS_OWNED) != 0
+                            && (ca.flags & ACT_FLAG_THIS_VALID) != 0) {
+                            vm.heap.decref_tval(&ca.this_binding);
+                        }
+                        bool ca_borrowed = (ca.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
+
+                        // Take ownership of the arguments before releasing the
+                        // caller's registers.
+                        //
+                        // An argument the caller passes through from one of its
+                        // own registers (`function deep(n, f) { return
+                        // deep(n - 1, f); }`) lives in the callee window as a
+                        // plain copy of a reference the CALLER owns. For an
+                        // ordinary call that is sound: the caller's register
+                        // holds the value alive for as long as the callee runs.
+                        // A tail call discards those registers now, so the copy
+                        // has to become owned or the sweep below drops the only
+                        // reference — once per tail call, freeing the argument
+                        // after a handful of iterations.
+                        //
+                        // Increfing here and raising heap_reg_count so RET's
+                        // decref_callee_regs covers the slots keeps the counts
+                        // balanced: one incref now, one decref when this frame
+                        // finally returns.
+                        {
+                            TVal* arg_regs = new_act.bottom;
+                            for (uint ai = 0; ai < nargs; ai++) {
+                                if (arg_regs[ai].is_heap_allocated()) {
+                                    void* ap = arg_regs[ai].get_heapptr();
+                                    if (ap != null) { ((HeapHeader*)ap).incref(); }
+                                }
+                            }
+                            if (nargs > new_act.heap_reg_count) {
+                                new_act.heap_reg_count = nargs;
+                            }
+                        }
+
+                        // Release the caller's owned register values: the frame
+                        // is being discarded and the slide is about to overwrite
+                        // its slots. Only the slots BELOW the callee's window are
+                        // swept — the overlap holds the callee's arguments, which
+                        // the block above just made this frame's own.
+                        //
+                        // The callee register is skipped outright. When the
+                        // resolution borrowed (callee_borrowed / a committed
+                        // ACT_FLAG_BORROWED_CALLEE) the slot holds a non-owned
+                        // reference the sweep must not decref; and it sits
+                        // BELOW the callee window (callee_reg, not
+                        // callee_reg + 2), so the overlap bound does not
+                        // exclude it the way the original comment assumed.
+                        // Either way its reference is the live callee's, which
+                        // outlives this frame.
+                        if (ca.heap_reg_count != 0) {
+                            CompiledFunction* ca_func = (CompiledFunction*)ca.func;
+                            if (ca_func != null) {
+                                uint ca_nregs = ca_func.num_regs;
+                                uint sweep = ca.heap_reg_count - 1;
+                                if (sweep >= ca_nregs && ca_nregs > 0) { sweep = ca_nregs - 1; }
+                                // Stop below the callee's frame, which begins at
+                                // callee_reg + 2 in this frame's window.
+                                uint overlap_start = callee_reg + 2;
+                                TVal* ca_regs = ca.bottom;
+                                for (uint ri = 0; ri < overlap_start && ri <= sweep && ri < ca_nregs; ri++) {
+                                    if (ri == callee_reg) { continue; }
+                                    vm.heap.decref_tval(&ca_regs[ri]);
+                                    ca_regs[ri].set_undefined();
+                                }
+                            }
+                        }
+
+                        // Slide the populated register window down. The windows
+                        // overlap (the callee sits callee_reg+2 above the
+                        // caller's base), so copy ascending: every destination
+                        // slot is below its source.
+                        TVal* dst = ca.bottom;
+                        if (dst != new_regs) {
+                            for (uint ti = 0; ti < new_nregs; ti++) { dst[ti] = new_regs[ti]; }
+                        }
+                        // Inherit the caller's return destination, caller link
+                        // and valstack mark, so this frame's RET returns
+                        // straight to the caller's caller.
+                        new_act.bottom = dst;
+                        new_act.retval = ca.retval;
+                        new_act.parent = ca.parent;
+                        new_act.caller_valstack_top = ca.caller_valstack_top;
+                        if (ca_borrowed) { new_act.flags |= ACT_FLAG_BORROWED_CALLEE; }
+                        else { new_act.flags &= ~ACT_FLAG_BORROWED_CALLEE; }
+                        *ca = *new_act;
+                        new_act = ca;
+                        new_regs = dst;
+                    }
+
                     vm.valstack_top = new_regs + new_nregs;
                     vm.valstack_bottom = new_act.bottom;
-
-                    // Save caller resume point before switching activations
-                    ds.act.curr_pc = ds.curr_pc;
 
                     // Direct dispatch to new activation (avoid restart overhead)
                     ds.act = new_act;
@@ -1220,6 +1453,11 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
 
 fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
+    // A TAILCALL_* that reaches the slow path (a builtin, bound, lightfunc or
+    // generator callee, or any shape the fast path declined) cannot reuse the
+    // frame anyway, so it runs as the ordinary call it shadows, and the RET
+    // the compiler folded away is supplied by tailcall_return below.
+    op = tailcall_base_op(op);
     // Record the caller's resume point before any nested execution below. The
     // compiled-function fast path already does this itself, but the builtin
     // (lightfunc/bound/host) paths dispatch synchronously without pushing an

@@ -36,10 +36,13 @@ if (caught === null) {
     }
 }
 
-// A deep stack must not truncate the location suffixes either.
+// A deep stack must not truncate the location suffixes either. The recursive
+// call is deliberately NOT in tail position: a proper tail call (ES2015 §14.8)
+// reuses its caller's frame, so `return deepRecurse(n-1)` would correctly leave
+// a two-frame stack. The array wrapper keeps each frame live across its callee.
 function deepRecurse(n) {
     if (n === 0) { throw new RangeError('deep'); }
-    return deepRecurse(n - 1);
+    return [deepRecurse(n - 1)][0];
 }
 var deepCaught = null;
 try { deepRecurse(50); } catch (e) { deepCaught = e; }

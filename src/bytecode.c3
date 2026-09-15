@@ -952,6 +952,19 @@ enum Opcode : char {
     // skips all of them.
     WIDE,
 
+    // Proper tail calls (ES2015 §14.8): the tail forms of the three plain
+    // (undefined-this) call opcodes. Each behaves exactly like the call it
+    // shadows, except that when the callee is a plain compiled function the
+    // VM reuses the current frame instead of pushing a new activation, and
+    // the callee returns directly to this frame's caller. Emitted by
+    // run_tail_calls (src/compiler/tailcall.c3) for a `CALL* rDst; RET rDst`
+    // pair outside any try region. Appended here rather than beside the call
+    // opcodes so existing ordinals, which golden bytecode records, do not shift.
+    TAILCALL_UNDEF_THIS,
+    TAILCALL_VAR,
+    TAILCALL_GLOBAL,
+    TAILCALL_CALL,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

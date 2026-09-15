@@ -81,8 +81,13 @@ check_catchable "concat past the limit is catchable" 60 \
 # to the frame layout cannot silently turn it into a segfault.
 check_catchable "unbounded recursion" 30 \
   'function r(n) { return n <= 0 ? 0 : 1 + r(n - 1); } r(10000000);'
+# `return b(n+1)` is a proper tail call (ES2015 §14.8), so mutual recursion in
+# that shape runs in constant stack and never overflows — a non-terminating
+# program, which is the specified behavior, not a stack failure. What must
+# still be guarded is that a *non*-tail mutual recursion overflows catchably,
+# so the arithmetic below keeps each call's frame live across the callee.
 check_catchable "unbounded mutual recursion" 30 \
-  'function a(n){ return b(n+1); } function b(n){ return a(n+1); } a(0);'
+  'function a(n){ return 1 + b(n+1); } function b(n){ return 1 + a(n+1); } a(0);'
 
 # --- deeply nested source ---------------------------------------------------
 # Compile-time nesting must not overflow the parser's native stack.

@@ -56,9 +56,14 @@ if (caught === null) {
 }
 
 // --- frame count grows with call depth --------------------------------------
+// The recursive calls below are deliberately NOT in tail position: a proper
+// tail call (ES2015 §14.8) reuses its caller's frame, so `return recurse(n-1)`
+// would correctly leave a two-frame stack and prove nothing about depth. The
+// array wrapper keeps each frame live across its callee without coercing the
+// Error the recursion returns.
 function recurse(n) {
     if (n === 0) { return new Error('depth'); }
-    return recurse(n - 1);
+    return [recurse(n - 1)][0];
 }
 var deep = frameNames(recurse(5).stack);
 var shallow = frameNames(recurse(1).stack);
@@ -70,7 +75,7 @@ if (deep.length - shallow.length !== 4) {
 // --- a deep stack is not truncated ------------------------------------------
 function deepRecurse(n) {
     if (n === 0) { return new Error('long'); }
-    return deepRecurse(n - 1);
+    return [deepRecurse(n - 1)][0];
 }
 var longStack = deepRecurse(200).stack;
 var longNames = frameNames(longStack);

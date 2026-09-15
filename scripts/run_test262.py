@@ -188,7 +188,7 @@ UNSUPPORTED_PATTERN = re.compile(
     # this engine implements (chunks/windows, includes, join).
     r"iterator-chunking|iterator-includes|Iterator\.prototype\.join|"
     # Standard language features: engine-specific pragmatics
-    r"cross-realm|tail-call-optimization|caller|"
+    r"cross-realm|caller|"
     # Non-standard feature token (not in test262/features.txt; structured-clone
     # tests are deferred as they're not core language features and the engine
     # currently prioritizes other functionality)

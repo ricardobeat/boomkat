@@ -30,9 +30,10 @@ $if $feature(TRACE_VM):
 
     pos = write_opcode_name(op, buf, pos);
 
-    // Pad to column 16 for alignment (widest mnemonic is CALL_UNDEF_THIS,
-    // 15 chars, so leave at least one space before the operands).
-    while (pos < 16 && pos < buf.len) {
+    // Pad to column 20 for alignment (widest mnemonic is
+    // TAILCALL_UNDEF_THIS at 19 chars, so leave at least one space
+    // before the operands).
+    while (pos < 20 && pos < buf.len) {
         buf[pos] = ' ';
         pos++;
     }
@@ -130,7 +131,7 @@ $if $feature(TRACE_VM):
 
     pos = write_opcode_name(op, buf, pos);
 
-    while (pos < 16 && pos < buf.len) {
+    while (pos < 20 && pos < buf.len) {
         buf[pos] = ' ';
         pos++;
     }
@@ -269,6 +270,10 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CALL_PROP.ordinal]   = "CALL_PROP",
     [Opcode.NEW_OBJ.ordinal]     = "NEW_OBJ",
     [Opcode.TAILCALL.ordinal]    = "TAILCALL",
+    [Opcode.TAILCALL_UNDEF_THIS.ordinal] = "TAILCALL_UNDEF_THIS",
+    [Opcode.TAILCALL_VAR.ordinal]        = "TAILCALL_VAR",
+    [Opcode.TAILCALL_GLOBAL.ordinal]     = "TAILCALL_GLOBAL",
+    [Opcode.TAILCALL_CALL.ordinal]       = "TAILCALL_CALL",
     [Opcode.RET.ordinal]         = "RET",
     [Opcode.RETUNDEF.ordinal]    = "RETUNDEF",
     [Opcode.GETVAR.ordinal]      = "GETVAR",

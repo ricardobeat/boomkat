@@ -1916,6 +1916,16 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         }
         run_move_elimination(self.code, self.code_count, me_jump_targets, me_in_try, me_live_out, me_live_in,
                              me_ret_out, me_ret_in, &me_scratch[0]);
+        // Proper tail calls (ES2015 §14.8). Runs after move elimination, so a
+        // retargeted producer has already put the call's result in its final
+        // register and the `CALL* rDst; RET rDst` pair is in its final shape,
+        // and before NOP compaction, which removes the RET this leaves behind.
+        // Reuses the jump-target and try-region maps moveelim just built; both
+        // still describe this instruction sequence, since move elimination only
+        // retargets operands and NOPs instructions in place.
+        moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
+                                                   me_jump_targets, me_in_try);
+        run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try);
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);
         h.free_func(h.heap_udata, me_live_out);

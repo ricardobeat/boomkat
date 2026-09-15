@@ -1,34 +1,34 @@
 --- Bytecode ---
-[  0] CHKGLOBALVAR    r0, 0
-[  1] CHKGLOBALVAR    r0, 1
-[  2] CHKGLOBALVAR    r0, 2
-[  3] CHKGLOBALVAR    r0, 3
-[  4] LDUNDEF         r0 = r0, r0
-[  5] DECLVAR_HOIST   r0, 0
-[  6] LDUNDEF         r1 = r0, r0
-[  7] DECLVAR_HOIST   r1, 1
-[  8] LDUNDEF         r2 = r0, r0
-[  9] DECLVAR_HOIST   r2, 2
-[ 10] LDUNDEF         r3 = r0, r0
-[ 11] DECLVAR_HOIST   r3, 3
-[ 12] LDINT           r0, +1
-[ 13] LDINT           r1, +2
-[ 14] LDINT           r2, +3
-[ 15] LDINT           r3, 0
-[ 16] DECLVAR         r3, 3
-[ 17] LDINT           r4, +3
-[ 18] JUMP            +4
-[ 19] LDREG           r0 = r1, r0
-[ 20] LDREG           r1 = r2, r0
-[ 21] LDREG           r2 = r3, r0
-[ 22] INC             r3
-[ 23] JMP_LT          -5, r3, r4
-[ 24] ADD             r6 = r0, r1
-[ 25] ADD             r6 = r6, r2
-[ 26] CALL_GLOBAL     r4, argc=1, K[4]
-[ 27] PUTVAR          r0, 0
-[ 28] PUTVAR          r1, 1
-[ 29] PUTVAR          r2, 2
-[ 30] PUTVAR          r3, 3
-[ 31] RETUNDEF        
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALVAR        r0, 1
+[  2] CHKGLOBALVAR        r0, 2
+[  3] CHKGLOBALVAR        r0, 3
+[  4] LDUNDEF             r0 = r0, r0
+[  5] DECLVAR_HOIST       r0, 0
+[  6] LDUNDEF             r1 = r0, r0
+[  7] DECLVAR_HOIST       r1, 1
+[  8] LDUNDEF             r2 = r0, r0
+[  9] DECLVAR_HOIST       r2, 2
+[ 10] LDUNDEF             r3 = r0, r0
+[ 11] DECLVAR_HOIST       r3, 3
+[ 12] LDINT               r0, +1
+[ 13] LDINT               r1, +2
+[ 14] LDINT               r2, +3
+[ 15] LDINT               r3, 0
+[ 16] DECLVAR             r3, 3
+[ 17] LDINT               r4, +3
+[ 18] JUMP                +4
+[ 19] LDREG               r0 = r1, r0
+[ 20] LDREG               r1 = r2, r0
+[ 21] LDREG               r2 = r3, r0
+[ 22] INC                 r3
+[ 23] JMP_LT              -5, r3, r4
+[ 24] ADD                 r6 = r0, r1
+[ 25] ADD                 r6 = r6, r2
+[ 26] CALL_GLOBAL         r4, argc=1, K[4]
+[ 27] PUTVAR              r0, 0
+[ 28] PUTVAR              r1, 1
+[ 29] PUTVAR              r2, 2
+[ 30] PUTVAR              r3, 3
+[ 31] RETUNDEF            
 --- End bytecode ---
