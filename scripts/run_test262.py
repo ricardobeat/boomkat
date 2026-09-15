@@ -162,7 +162,6 @@ SKIP_DIRS = {
     "annexB/built-ins/Date",           # 24   — B.2.4/B.2.5 getYear/setYear/toGMTString
     "intl402",                         # 3,337 — ECMA-402, out of scope
     "staging/intl402",                 # ECMA-402 staging tests, likewise
-    "harness",                         # 116   — test harness self-tests
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
     "built-ins/DisposableStack",       # 93    — Stage 3
     "built-ins/AsyncDisposableStack",  # 104   — Stage 3
