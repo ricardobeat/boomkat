@@ -2951,6 +2951,11 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
                         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                         *ctx.result = res;
                         return;
+                    } else {
+                        // GetMethod: if not callable, throw TypeError.
+                        arr_throw_type_error(ctx, "Symbol.match is not callable");
+                        ctx.result.set_undefined();
+                        return;
                     }
                 }
             }
@@ -3510,6 +3515,11 @@ fn void builtin_string_proto_search(BuiltinContext* ctx) {
                         }
                         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                         *ctx.result = res;
+                        return;
+                    } else {
+                        // GetMethod: if not callable, throw TypeError.
+                        arr_throw_type_error(ctx, "Symbol.search is not callable");
+                        ctx.result.set_undefined();
                         return;
                     }
                 }
