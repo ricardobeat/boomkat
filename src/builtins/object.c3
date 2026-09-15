@@ -1368,6 +1368,13 @@ fn void builtin_reflect_preventExtensions(BuiltinContext* ctx) {
         ctx.result.set_boolean(res);
         return;
     }
+    // Integer-Indexed exotic [[PreventExtensions]] (ES2024 §10.4.5.1): a view
+    // that is length-tracking or backed by a resizable ArrayBuffer can still
+    // change length, so it cannot be made non-extensible.
+    if (is_typed_array_class(obj.get_class()) && !ta_is_fixed_length(obj)) {
+        ctx.result.set_boolean(false);
+        return;
+    }
     obj.flags.extensible = false;
     ctx.result.set_boolean(true);
 }
@@ -1621,6 +1628,14 @@ fn void builtin_object_preventExtensions(BuiltinContext* ctx) {
             return;
         }
         ctx.result.set_object(obj);
+        return;
+    }
+    // Integer-Indexed exotic [[PreventExtensions]] (ES2024 §10.4.5.1): a view
+    // that is length-tracking or backed by a resizable ArrayBuffer can still
+    // change length, so it cannot be made non-extensible. §20.1.2.19 throws
+    // when the internal method returns false.
+    if (is_typed_array_class(obj.get_class()) && !ta_is_fixed_length(obj)) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot prevent extensions of this TypedArray");
         return;
     }
     obj.flags.extensible = false;
