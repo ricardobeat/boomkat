@@ -222,6 +222,20 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
 // If the accessor function `fn_obj` currently has an empty `.name` property,
 // overwrite it with `prefix + key_str` (string key) or `prefix + "[desc]"`
 // (symbol key), matching the computed-accessor name spec.
+// Overwrite a property-key operand with its already-converted string form.
+// The CLASS_INIT* / INITPROPN handlers run ToPropertyKey once, then hand the
+// same operand to class_initaccessor_set_name; without this the name step
+// would see the raw numeric, bigint or object key and produce an empty name
+// (or a bare "get "/"set " prefix). Converting there instead is not an option:
+// an object key's toString would run a second time, which is observable.
+fn void normalize_prop_key_operand(Vm* vm, TVal* key_val, void* key) {
+    if (key == null || key_val == null) return;
+    if (key_val.is_string()) return;
+    TVal key_tv;
+    key_tv.set_string((HString*)key);
+    vm.heap.tval_copy_ref(key_val, &key_tv);
+}
+
 fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, char[] prefix) {
     if (fn_obj == null) return;
     // Only update if current .name is the empty string (compiler-emitted
@@ -300,6 +314,11 @@ const int INITPROP_ABRUPT = 2;       // heap.has_error / heap.error_value alread
 fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
     void* key = get_prop_key(vm, key_val);
     if (key == null) return INITPROP_OK;
+    // Normalize the operand to the converted key, so a caller that reads it
+    // afterwards (SetFunctionName for a computed method key) sees a string
+    // without converting again: ToPrimitive on an object key is observable
+    // and must run exactly once.
+    normalize_prop_key_operand(vm, key_val, key);
 
     // [[DefineOwnProperty]] on a deferred module namespace evaluates the
     // module first (ES2025 import-defer), even though the define then fails:
@@ -861,6 +880,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
                 void* key = get_prop_key(vm, rb);
+                normalize_prop_key_operand(vm, rb, key);
                 TVal getter_val = *rc;
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
@@ -903,6 +923,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
                 void* key = get_prop_key(vm, rb);
+                normalize_prop_key_operand(vm, rb, key);
                 TVal setter_val = *rc;
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
@@ -1041,6 +1062,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
                 void* key = get_prop_key(vm, rb);
+                normalize_prop_key_operand(vm, rb, key);
                 // ToPropertyKey abrupt completion: propagate as throw (§14.5.14 step 9.a.i).
                 if (vm.throw_pending) {
                     vm.throw_pending = false;
@@ -1107,6 +1129,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
                 void* key = get_prop_key(vm, rb);
+                normalize_prop_key_operand(vm, rb, key);
                 // ToPropertyKey abrupt completion: propagate as throw (§14.5.14 step 9.a.i).
                 if (vm.throw_pending) {
                     vm.throw_pending = false;
@@ -1166,6 +1189,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
                 void* key = get_prop_key(vm, rb);
+                normalize_prop_key_operand(vm, rb, key);
                 // ToPropertyKey abrupt completion: propagate as throw (§14.5.14 step 9.a.i).
                 if (vm.throw_pending) {
                     vm.throw_pending = false;
