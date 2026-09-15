@@ -173,6 +173,21 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
         }
     }
 
+    // Integer-Indexed exotic: elements are enumerable own properties served
+    // lazily (§10.4.5.1), absent from both the named table and array_part.
+    if (builtins::is_typed_array_class(source.get_class())) {
+        uint ta_len = builtins::ta_element_count(source);
+        for (uint ti = 0; ti < ta_len; ti++) {
+            HString* ik = vm.heap.int_to_hstring((long)ti);
+            if (ik == null || key_is_excluded((void*)ik, excluded)) continue;
+            if (!builtins::ta_is_valid_integer_index(source, (double)ti)) continue;
+            TVal tv = builtins::ta_read_element_checked(vm.heap, source, ti);
+            if (!target.put_prop((void*)ik, tv, hobject::PROP_FLAGS_WEC, vm.heap)) {
+                return VM_ERROR~;
+            }
+        }
+    }
+
     // STRING exotic: enumerate character indices via lazy access
     if (source.flags.exotic_stringobj) {
         HString* prim = (HString*)(*source.extra_ptr()).prim.primitive_value.get_heapptr();

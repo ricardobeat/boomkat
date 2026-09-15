@@ -2292,9 +2292,16 @@ fn bool key_is_currently_enumerable(HObject* obj, hstring::HString* key, Heap* h
 }
 
 // [[Get]] for Object.values/entries enumeration: like desc_get, but also serves
-// the lazily-materialised indexed character properties of a String exotic object
-// (which don't live in the property table and so aren't found by desc_get).
+// the lazily-materialised indexed properties that never enter the property
+// table, and so are invisible to desc_get: String exotic character indices and
+// Integer-Indexed exotic (TypedArray) elements.
 fn bool desc_get_enum(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal* out) {
+    if (is_typed_array_class(obj.get_class()) && key.is_arridx()) {
+        uint ti = (uint)key.array_index();
+        if (!ta_is_valid_integer_index(obj, (double)ti)) return false;
+        *out = ta_read_element_checked(ctx.heap, obj, ti);
+        return true;
+    }
     if (obj.flags.exotic_stringobj && key.is_arridx()
         && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
@@ -4351,6 +4358,23 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                 }
             }
         }
+        // Integer-Indexed exotic: elements are enumerable own properties served
+        // lazily (§10.4.5.1), so they are absent from both walks above.
+        if (is_typed_array_class(src_obj.get_class())) {
+            uint ta_len = ta_element_count(src_obj);
+            for (uint ti = 0; ti < ta_len; ti++) {
+                HString* ik = ctx.heap.int_to_hstring((long)ti);
+                if (ik == null) continue;
+                // A [[Set]] on the downstream object can run user code that
+                // detaches or resizes the source, so re-check each index.
+                if (!ta_is_valid_integer_index(src_obj, (double)ti)) continue;
+                TVal tv = ta_read_element_checked(ctx.heap, src_obj, ti);
+                if (!obj_assign_set(ctx, downstream, ik, &tv)) {
+                    ctx.result.set_undefined();
+                    return;
+                }
+            }
+        }
         // STRING exotic: copy lazy character indices [[Set]] per ES5 §15.5.5.1
         if (src_obj.flags.exotic_stringobj && (*src_obj.extra_ptr()).prim.primitive_value.is_string()) {
             HString* prim = (HString*)(*src_obj.extra_ptr()).prim.primitive_value.get_heapptr();
@@ -5450,6 +5474,12 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
             ctx.result.set_boolean(false);
             return;
         }
+    }
+    // Integer-Indexed exotic: elements are enumerable own properties served
+    // lazily (§10.4.5.1), so they never reach the property table.
+    if (is_typed_array_class(obj.get_class()) && key.is_arridx()) {
+        ctx.result.set_boolean(ta_is_valid_integer_index(obj, (double)key.array_index()));
+        return;
     }
     // STRING exotic: integer indices [0, clen) are enumerable own properties served lazily.
     if (obj.flags.exotic_stringobj && key.is_arridx() && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
