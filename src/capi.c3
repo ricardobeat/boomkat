@@ -643,7 +643,7 @@ fn ulong bk_keys(void* ctxp, ulong obj_id) @export("bk_keys") {
     bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
     if (obj.array_size > 0 && array_part_is_indexed) {
         for (uint i = 0; i < obj.array_size && key_count < max_keys; i++) {
-            if (obj.array_part()[i].is_undefined()) continue;
+            if (!obj.dense_idx_present(i)) continue;
             HString* ki = h.int_to_hstring((long)i);
             if (ki == null) continue;
             if (ki.is_arridx() && obj.find_prop_idx(ki, h) >= 0) continue;

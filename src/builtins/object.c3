@@ -330,7 +330,7 @@ fn bool own_has_enum_string_key(Heap* heap, HObject* obj) {
     if (is_typed_array_class(obj.get_class()) && ta_element_count(obj) > 0) return true;
     if (obj.flags.exotic_array || obj.flags.exotic_arguments) {
         for (uint i = 0; i < obj.array_size; i++) {
-            if (!obj.array_part()[i].is_undefined()) return true;
+            if (obj.dense_idx_present(i)) return true;
         }
     }
     for (uint i = 0; i < obj.prop_count; i++) {
@@ -384,7 +384,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
         bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
         if (obj.array_size > 0 && array_part_is_indexed) {
             for (uint i = 0; i < obj.array_size; i++) {
-                if (!obj.array_part()[i].is_undefined()) {
+                if (obj.dense_idx_present(i)) {
                     HString* ki = heap.int_to_hstring((long)i);
                     if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, heap) >= 0) continue;
                     dense_int_count++;
@@ -413,7 +413,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
                 }
                 // Add dense array indices (not already in named props)
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
-                    if (!obj.array_part()[i].is_undefined()) {
+                    if (obj.dense_idx_present(i)) {
                         HString* ki = heap.int_to_hstring((long)i);
                         if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, heap) >= 0) continue;
                         sort_buf[p * 3] = (uint)i;
@@ -713,7 +713,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
         if (obj.array_size > 0 && array_part_is_indexed) {
             for (uint i = 0; i < obj.array_size; i++) {
-                if (!obj.array_part()[i].is_undefined()) {
+                if (obj.dense_idx_present(i)) {
                     HString* ki = ctx.heap.int_to_hstring((long)i);
                     if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                     dense_int_count++;
@@ -740,7 +740,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
                 }
                 // Add dense array indices
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
-                    if (!obj.array_part()[i].is_undefined()) {
+                    if (obj.dense_idx_present(i)) {
                         HString* ki = ctx.heap.int_to_hstring((long)i);
                         if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                         sort_buf[p * 3] = (uint)i;
@@ -986,7 +986,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
         bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
         if (obj.array_size > 0 && array_part_is_indexed) {
             for (uint i = 0; i < obj.array_size; i++) {
-                if (!obj.array_part()[i].is_undefined()) {
+                if (obj.dense_idx_present(i)) {
                     HString* ki = ctx.heap.int_to_hstring((long)i);
                     if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                     dense_int_count++;
@@ -1011,7 +1011,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
                     }
                 }
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
-                    if (!obj.array_part()[i].is_undefined()) {
+                    if (obj.dense_idx_present(i)) {
                         HString* ki = ctx.heap.int_to_hstring((long)i);
                         if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                         sort_buf[p * 3] = i;
@@ -2192,7 +2192,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
     }
     if (obj.flags.exotic_array || obj.flags.exotic_arguments) {
         for (uint i = 0; i < obj.array_size && kn < cap; i++) {
-            if (!obj.array_part()[i].is_undefined()) {
+            if (obj.dense_idx_present(i)) {
                 HString* k = ctx.heap.int_to_hstring((long)i);
                 if (k != null) keys[kn++] = k;
             }
@@ -4343,7 +4343,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         if (src_obj.array_part() != null) {
             char[12] digit_buf;
             for (uint i = 0; i < src_obj.array_size; i++) {
-                if (!src_obj.array_part()[i].is_undefined()) {
+                if (src_obj.dense_idx_present(i)) {
                     int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
                     if (dlen > 0) {
                         HString* key = builtin_intern_string(ctx.heap, digit_buf[:(uint)dlen]);
@@ -5244,7 +5244,7 @@ fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
     if (obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) {
         if (key.is_arridx()) {
             uint ai = (uint)key.array_index();
-            if (ai < obj.array_size && !obj.array_part()[ai].is_undefined()) {
+            if (ai < obj.array_size && obj.dense_idx_present(ai)) {
                 ctx.result.set_boolean(true);
                 return;
             }
@@ -5464,7 +5464,7 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     if (obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) {
         if (key.is_arridx()) {
             uint ai = (uint)key.array_index();
-            if (ai < obj.array_size && !obj.array_part()[ai].is_undefined()) {
+            if (ai < obj.array_size && obj.dense_idx_present(ai)) {
                 ctx.result.set_boolean(true);
                 return;
             }

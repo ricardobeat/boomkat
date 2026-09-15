@@ -1483,10 +1483,8 @@ fn bool HObject.dense_arridx_lookup(&self, void* key, TVal* out) {
     HString* hkey = (HString*)key;
     if (!hkey.is_arridx()) return false;
     uint ai = (uint)hkey.array_index();
-    if (ai >= self.array_size) return false;
-    TVal v = self.array_part()[ai];
-    if (v.is_undefined()) return false;
-    *out = v;
+    if (!self.dense_idx_present(ai)) return false;
+    *out = self.array_part()[ai];
     return true;
 }
 
@@ -1513,6 +1511,23 @@ fn bool HObject.is_prop_writable(&self, void* key, heap::Heap* h) {
 // further away is treated as sparse and goes to the named-property table.
 const uint DENSE_GROW_FLOOR = 1024;        // below this index, always dense
 const uint DENSE_GROW_SLACK = 1u << 16;    // how far past array_size an index may jump
+// True when dense slot `idx` is an own indexed property of `self`.
+//
+// The dense part marks a hole with `undefined`, so a stored `undefined` is
+// indistinguishable from an absent index. Writers keep the dense part free of
+// `undefined` (those stores take the named-table path, which records presence
+// properly), so within the dense part the sentinel means "absent".
+//
+// ARGUMENTS objects are the exception and are still wrong here: their slots
+// are filled at call time from the actual arguments, `undefined` included, so
+// an `undefined` argument reads back as an absent index. Fixing that needs
+// per-index presence tracking, since `delete arguments[i]` must still produce
+// a real hole; see plans/084 §11.
+fn bool HObject.dense_idx_present(&self, uint idx) {
+    if (idx >= self.array_size) return false;
+    return !self.array_part()[idx].is_undefined();
+}
+
 fn bool dense_index_ok(uint cur_size, uint idx) {
     if (idx < DENSE_GROW_FLOOR) return true;
     return idx <= cur_size + DENSE_GROW_SLACK;
@@ -1573,8 +1588,15 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
             HString* ks = (HString*)key;
             if (ks.is_arridx()) {
                 uint ks_idx = ks.array_index();
-                if (ks_idx < self.array_size) {
+                // A dense `undefined` reads back as a hole, so the named entry
+                // written above is the only record of this index. Clear the
+                // stale dense value instead of mirroring the store: reads
+                // consult the named table when the dense slot is a hole.
+                if (ks_idx < self.array_size && !val.is_undefined()) {
                     self.set_array_idx(ks_idx, val, h);
+                } else if (ks_idx < self.array_size) {
+                    TVal hole; hole.set_undefined();
+                    self.set_array_idx(ks_idx, hole, h);
                 }
                 if (ks_idx >= *self.array_len_ptr()) {
                     *self.array_len_ptr() = ks_idx + 1;

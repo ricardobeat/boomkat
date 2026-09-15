@@ -182,15 +182,27 @@ fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
 // Per spec, @@iterator must be the *same function object* as
 // %Array.prototype.values%, so callers must go through this helper rather
 // than re-deriving the value property-by-property at each call site.
+// Store argument `idx` as a named own property.
+//
+// ARGUMENTS objects keep their elements in the named table rather than the
+// dense part: the dense part marks a hole with `undefined`, so an `undefined`
+// argument stored there would read back as an absent index, while
+// `delete arguments[i]` must still be able to produce a real hole. The named
+// table records presence and absence exactly.
+fn void args_store_elem(Vm* vm, HObject* args_obj, uint idx, TVal val) {
+    HString* key = vm.heap.int_to_hstring((long)idx);
+    if (key == null) return;
+    args_obj.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC, vm.heap);
+}
+
 fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint nargs) {
     HString* callee_key = (HString*)vm.heap.strs[heap::BuiltinStr.CALLEE];
     if (callee_key == null) return;
-    // Stash `nargs` in the otherwise-unused array_len_ptr slot for ARGUMENTS:
-    // the engine's set_array_idx only increments array_used when the new
-    // value is non-undefined, so an arguments object whose actual arg count
-    // includes `undefined` slots reports array_used < nargs. The iterator
-    // and length lookup both consult this slot instead. Only safe because
-    // no ARGUMENTS codepath uses array_len_ptr.
+    // Stash `nargs` in the otherwise-unused array_len_ptr slot for ARGUMENTS.
+    // The iterator and the length lookup both consult it, so neither has to
+    // count own indices to recover the original argument count, which `delete
+    // arguments[i]` would otherwise change. Only safe because no ARGUMENTS
+    // codepath uses array_len_ptr.
     *args_obj.array_len_ptr() = nargs;
     // Sloppy + simple params: mapped arguments (§9.4.4.8 CreateMapped-
     // ArgumentsObject step 5). `callee` here is the caller HObject passed by
@@ -1433,7 +1445,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                         if (try args_obj = args_obj_raw) {
                             for (uint ai = 0; ai < nargs; ai++) {
-                                args_obj.set_array_idx(ai, new_regs[ai], ds.vm.heap);
+                                args_store_elem(vm, args_obj, ai, new_regs[ai]);
                             }
                             args_obj.prototype = vm.heap.object_proto;
                             finish_arguments_object(vm, args_obj, hobj_fast, nargs);
@@ -2369,7 +2381,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     HObject*? args_obj_raw_g = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                     if (try args_obj_g = args_obj_raw_g) {
                         for (uint ai = 0; ai < nargs; ai++) {
-                            args_obj_g.set_array_idx(ai, new_regs_g[ai], ds.vm.heap);
+                            args_store_elem(vm, args_obj_g, ai, new_regs_g[ai]);
                         }
                         args_obj_g.prototype = vm.heap.object_proto;
                         finish_arguments_object(vm, args_obj_g, hobj, nargs);
@@ -2624,7 +2636,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj = args_obj_raw) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj.set_array_idx(ai, new_regs[ai], ds.vm.heap);
+                        args_store_elem(vm, args_obj, ai, new_regs[ai]);
                     }
                     args_obj.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj, hobj, nargs);
@@ -3094,7 +3106,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 HObject*? args_obj_raw_su = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj_su = args_obj_raw_su) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj_su.set_array_idx(ai, old_args[ai], ds.vm.heap);
+                        args_store_elem(vm, args_obj_su, ai, old_args[ai]);
                     }
                     args_obj_su.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj_su, super_hobj, nargs);
@@ -3550,7 +3562,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 HObject*? args_obj_raw2 = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj2 = args_obj_raw2) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj2.set_array_idx(ai, old_args2[ai], ds.vm.heap);
+                        args_store_elem(vm, args_obj2, ai, old_args2[ai]);
                     }
                     args_obj2.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj2, hobj, nargs);

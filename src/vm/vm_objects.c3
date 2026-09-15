@@ -158,7 +158,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     if (source.array_part() != null) {
         char[12] digit_buf;
         for (uint i = 0; i < source.array_size; i++) {
-            if (!source.array_part()[i].is_undefined()) {
+            if (source.dense_idx_present(i)) {
                 int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
                 if (dlen > 0) {
                     HString* key = intern_string(vm, digit_buf[:(uint)dlen]);

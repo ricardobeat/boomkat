@@ -420,7 +420,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
 
         // Integer keys from the dense array part, which come before named props.
         for (uint i = 0; i < cur.array_size; i++) {
-            if (!cur.array_part()[i].is_undefined()) {
+            if (cur.dense_idx_present(i)) {
                 HString* k = vm.heap.int_to_hstring((long)i);
                 if (k == null) continue;
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {

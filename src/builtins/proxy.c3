@@ -1308,7 +1308,7 @@ fn uint ordinary_own_keys(Heap* heap, HObject* obj, HString*** buf_out) {
     // Dense array part (ascending; holes are undefined sentinels)
     if (obj.array_part() != null) {
         for (uint i = 0; i < obj.array_used && n < cap; i++) {
-            if (!obj.array_part()[i].is_undefined()) {
+            if (obj.dense_idx_present(i)) {
                 HString* k = heap.int_to_hstring((long)i);
                 if (k != null) buf[n++] = k;
             }

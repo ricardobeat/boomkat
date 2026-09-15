@@ -2000,8 +2000,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // ARGUMENTS skips this: its dense slot needs the
                 // mapped-parameter sync and the accessor / non-writable
                 // checks, which live on the ordinary named path below.
+                // Storing `undefined` takes the named path: the dense part
+                // marks holes with `undefined`, so a dense store would make
+                // the index read as absent (`i in a`, Object.keys, forEach).
                 if (hobj.get_class() == hobject::ObjClass.ARRAY
                     && hobj.array_part() != null
+                    && !rc.is_undefined()
                     && (rb.is_fastint() || rb.is_number())) {
                     long idx_long = rb.is_fastint() ? rb.get_fastint() : (long)rb.get_number();
                     bool is_int_idx = rb.is_fastint() || rb.get_number() == (double)idx_long;

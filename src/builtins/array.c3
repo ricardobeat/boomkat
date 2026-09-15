@@ -925,7 +925,10 @@ fn void array_set_elem(HObject* obj, uint idx, TVal val, Heap* heap, void* vm = 
         proxy_mop_set(vm, heap, obj, key, val, recv, &sres);
         return;
     }
+    // `undefined` takes the named path: the dense part marks holes with
+    // `undefined`, so a dense store would make the index read as absent.
     if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS)
+        && !val.is_undefined()
         && obj.set_array_idx(idx, val, heap)) {
         return;
     }
@@ -1587,7 +1590,15 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         HString* len_key_fast = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         int len_own_idx = obj.find_prop_idx(len_key_fast, ctx.heap);
         bool length_ok = len_own_idx < 0 || !obj.get_prop_flags((uint)len_own_idx, ctx.heap).is_accessor;
-        if (length_ok
+        // A dense `undefined` reads back as a hole, so a push of one takes the
+        // Set path below, which records presence in the named table. Checked
+        // up front: inside the loop, fast_ok = false means an OOM that has
+        // already written earlier elements.
+        bool all_defined = true;
+        for (ushort i = 0; i < ctx.argc; i++) {
+            if (ctx.regs[ctx.base_reg + i].is_undefined()) { all_defined = false; break; }
+        }
+        if (length_ok && all_defined
             && (obj.prototype == null || proto_chain_has_no_indexed_props(obj.prototype))) {
             bool fast_ok = true;
             for (ushort i = 0; i < ctx.argc; i++) {
