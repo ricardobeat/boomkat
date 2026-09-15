@@ -931,7 +931,12 @@ fn void builtin_promise(BuiltinContext* ctx) {
         if (ctx.heap.has_error) {
             // ES6 §25.4.3.1 step 10: abrupt completion → call reject
             TVal err_val = ctx.heap.error_value;
-            ctx.heap.has_error = false;
+            // ES2015 §27.2.3.1 step 9 rejects and returns; it never lets the
+            // throw escape. heap.call_fn raised it on the VM channels too
+            // (vm.has_error here, see vm_call_fn_impl), so clearing only
+            // heap.has_error left vm.has_error set for the next opcode to
+            // re-fire — the constructor rejected *and* propagated.
+            promise_clear_error_channels(ctx.heap, ctx.vm);
             TVal undef_this; undef_this.set_undefined();
             heap.call_fn(ctx.vm, reject_tv, &err_val, 1, undef_this);
             if (ctx.heap.has_error) {
