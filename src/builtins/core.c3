@@ -1769,8 +1769,10 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     if (try d = builtins_generic_get(res_obj, done_key, ctx)) { done_val = d; }
                 }
                 if (ctx.should_throw) {
-                    // done getter threw, close iterator then propagate.
-                    arr_iterator_close_after_throw(ctx, iterator);
+                    // The done getter threw. This is part of IteratorStep, so
+                    // the iterator is already in an abrupt completion of its
+                    // own step and IteratorClose does not run (§7.4.6 is only
+                    // reached from the loop body). Propagate without closing.
                     ctx.result.set_undefined();
                     return;
                 }
@@ -1783,8 +1785,9 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     if (try v = builtins_generic_get(res_obj, value_key, ctx)) { val_tv = v; }
                 }
                 if (ctx.should_throw) {
-                    // value getter threw, close iterator then propagate (ES2022 §7.4.5).
-                    arr_iterator_close_after_throw(ctx, iterator);
+                    // Likewise IteratorValue: a throwing value getter is the
+                    // iterator's own abrupt completion, not the loop body's,
+                    // so the iterator is not closed.
                     ctx.result.set_undefined();
                     return;
                 }
@@ -2280,7 +2283,8 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
 
         TVal? value_opt = builtins_generic_get(result_obj, value_key, ctx);
         if (ctx.should_throw) {
-            arr_iterator_close_after_throw(ctx, iterator);
+            // IteratorValue's own abrupt completion: not closed, matching the
+            // done getter above.
             return null;
         }
         TVal next_value;
