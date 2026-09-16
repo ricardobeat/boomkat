@@ -742,7 +742,7 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
             uint str_charlen = input_hstr != null ? input_hstr.char_length() : 0;
             if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
                 TVal zero_tv; zero_tv.set_fastint(0);
-                if (!regexp_set_prop(ctx, obj, li_key, &zero_tv)) return;
+                if (!builtins_generic_set(ctx, obj, li_key, zero_tv, "lastIndex")) return;
                 ctx.result.set_null();
                 return;
             }
@@ -773,7 +773,7 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
         // For sticky, Set throws if lastIndex is non-writable (step 9.c.i.1).
         if (global_flag || sticky_flag) {
             TVal zero_tv; zero_tv.set_fastint(0);
-            if (!regexp_set_prop(ctx, obj, li_key, &zero_tv)) return;
+            if (!builtins_generic_set(ctx, obj, li_key, zero_tv, "lastIndex")) return;
         }
         ctx.result.set_null();
         return;
@@ -790,7 +790,7 @@ fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
             ? (long)input_hstr.byte_offset_to_char_offset((uint)out_end)
             : (long)hstring::compute_charlen(input[:out_end]);
         TVal end_tv; end_tv.set_fastint(new_li);
-        if (!regexp_set_prop(ctx, obj, li_key, &end_tv)) return;
+        if (!builtins_generic_set(ctx, obj, li_key, end_tv, "lastIndex")) return;
     }
 
     // Build result array with .groups and .indices (when d flag is set)
@@ -983,7 +983,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     // 8.a. Perform ? Set(rx, "lastIndex", 0, true), throws TypeError if non-writable.
     HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
     TVal zero_tv; zero_tv.set_fastint(0);
-    if (!regexp_set_with_setter(ctx, rx, li_key, zero_tv)) return;
+    if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
 
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result.set_null(); return; }
@@ -1061,7 +1061,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
             }
             TVal next_tv; next_tv.set_fastint(next_index);
             // 8.g.iii. Perform ? Set(rx, "lastIndex", nextIndex, true).
-            if (!regexp_set_with_setter(ctx, rx, li_key, next_tv)) return;
+            if (!builtins_generic_set(ctx, rx, li_key, next_tv, "lastIndex")) return;
         }
         // continue loop
     }
@@ -1109,7 +1109,7 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
     // 5. If SameValue(previousLastIndex, 0) is false, Set(rx, "lastIndex", 0, true).
     TVal zero_tv; zero_tv.set_fastint(0);
     if (!same_value(previous_last_index, zero_tv)) {
-        if (!regexp_set_with_setter(ctx, rx, li_key, zero_tv)) return;
+        if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
     }
 
     // 6. Let result be ? RegExpExec(rx, S).
@@ -1125,7 +1125,7 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 
     // 8. If SameValue(currentLastIndex, previousLastIndex) is false, restore it.
     if (!same_value(current_last_index, previous_last_index)) {
-        if (!regexp_set_with_setter(ctx, rx, li_key, previous_last_index)) return;
+        if (!builtins_generic_set(ctx, rx, li_key, previous_last_index, "lastIndex")) return;
     }
 
     if (result.is_null()) {
@@ -1367,7 +1367,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     // Step 11: if global → Set(rx, "lastIndex", 0, true), throws if non-writable.
     if (global_flag) {
         TVal zero_tv; zero_tv.set_fastint(0);
-        if (!regexp_set_prop(ctx, rx, li_key, &zero_tv)) return;
+        if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
     }
 
     // Collect all results first, then process (per spec two-pass structure).
@@ -1431,7 +1431,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                         } else {
                             next_li_tv2.set_number((double)next_li2);
                         }
-                        if (!regexp_set_prop(ctx, rx, li_key, &next_li_tv2)) return;
+                        if (!builtins_generic_set(ctx, rx, li_key, next_li_tv2, "lastIndex")) return;
                     }
                 }
             }
@@ -1861,7 +1861,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         {
             long q_cu = (long)s_hstr.byte_offset_to_char_offset((uint)q);
             TVal q_tv; q_tv.set_fastint(q_cu);
-            if (!regexp_set_with_setter(ctx, splitter, li_key, q_tv)) return;
+            if (!builtins_generic_set(ctx, splitter, li_key, q_tv, "lastIndex")) return;
         }
 
         // Step 24.c: Let z be ? RegExpExec(splitter, S).
@@ -2142,7 +2142,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     TVal li_tv; li_tv.set_fastint((long)li_d);
 
     // 7. Perform ? Set(matcher, "lastIndex", lastIndex, true).
-    if (!regexp_set_with_setter(ctx, matcher, li_key, li_tv)) return;
+    if (!builtins_generic_set(ctx, matcher, li_key, li_tv, "lastIndex")) return;
 
     // 8. If flags contains "g", let global be true.
     bool global_flag = false;
@@ -2220,51 +2220,6 @@ fn HObject* regexp_get_symbol_this(BuiltinContext* ctx) {
         return null;
     }
     return (HObject*)this_val.get_heapptr();
-}
-
-// Set `rx.prop = val` with spec-compliant strict Set semantics:
-// Throws TypeError if the own property exists but is non-writable.
-// Returns true when the property was written successfully.
-fn bool regexp_set_prop(BuiltinContext* ctx, HObject* rx, HString* key, TVal* val_ptr) {
-    TVal val = *val_ptr;
-    // Check writability of existing own property before writing.
-    if (!rx.is_prop_writable((void*)key, ctx.heap)) {
-        // Own non-writable data property, Set throws TypeError per spec.
-        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Cannot assign to read only property 'lastIndex'");
-        return false;
-    }
-    rx.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
-    return true;
-}
-
-// Spec-compliant Set(obj, key, val, true) that handles both data properties
-// and accessor setters. Invokes the setter via call_fn when one exists.
-// Propagates throws via ctx.should_throw. Returns false on throw.
-fn bool regexp_set_with_setter(BuiltinContext* ctx, HObject* obj, HString* key, TVal val) {
-    // Check for accessor setter first.
-    AccessorResult acc = obj.find_accessor_proto((void*)key, false, ctx.heap);  // false = want setter
-    if (acc.found) {
-        // Accessor property, invoke setter.
-        if (acc.accessor_fn.is_undefined() || acc.accessor_fn.is_null()) {
-            // No setter → strict TypeError.
-            builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
-                "Cannot set property, no setter");
-            return false;
-        }
-        if (ctx.heap.call_fn != null && ctx.vm != null) {
-            TVal this_tv; this_tv.set_object(obj);
-            ctx.heap.call_fn(ctx.vm, acc.accessor_fn, &val, 1, this_tv);
-            if (ctx.heap.has_error) {
-                ctx.should_throw = true;
-                ctx.throw_value = ctx.heap.error_value;
-                ctx.heap.has_error = false;
-                return false;
-            }
-        }
-        return true;
-    }
-    // Data property, use regexp_set_prop (checks writable, throws if not).
-    return regexp_set_prop(ctx, obj, key, &val);
 }
 
 // RegExpExec abstract operation (ES2017 §21.2.5.2.1), sets ctx.result:
@@ -2352,7 +2307,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
             uint str_charlen = s_hstr.char_length();
             if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
                 TVal zero_tv; zero_tv.set_fastint(0);
-                if (!regexp_set_prop(ctx, rx, li_key, &zero_tv)) return false;
+                if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return false;
                 ctx.result.set_null();
                 return true;
             }
@@ -2376,7 +2331,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     if (result != re_bindings::RE_MATCH) {
         if (global_flag || sticky_flag) {
             TVal zero_tv; zero_tv.set_fastint(0);
-            if (!regexp_set_prop(ctx, rx, li_key, &zero_tv)) return false;
+            if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return false;
         }
         ctx.result.set_null();
         return true;
@@ -2390,7 +2345,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
         // covered. Do NOT advance here, set lastIndex = charlen(input[:e]).
         long new_li = (long)s_hstr.byte_offset_to_char_offset((uint)out_end);
         TVal end_tv; end_tv.set_fastint(new_li);
-        if (!regexp_set_prop(ctx, rx, li_key, &end_tv)) return false;
+        if (!builtins_generic_set(ctx, rx, li_key, end_tv, "lastIndex")) return false;
     }
 
     int num_caps = out_num_captures;

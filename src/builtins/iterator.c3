@@ -513,7 +513,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
             TVal next_tv; next_tv.set_fastint(next_index);
 
             // 3. Perform ? Set(R, "lastIndex", nextIndex, true).
-            if (!regexp_set_with_setter(ctx, rx, li_key, next_tv)) return;
+            if (!builtins_generic_set(ctx, rx, li_key, next_tv, "lastIndex")) return;
         }
     } else {
         // Non-global: yield exactly one match, then done on subsequent calls.

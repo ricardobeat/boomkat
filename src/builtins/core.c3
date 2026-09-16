@@ -873,6 +873,62 @@ fn TVal? builtins_generic_get(HObject* obj, HString* key, BuiltinContext* ctx) {
     }
 }
 
+// ES2020 §10.1.9 [[Set]] / OrdinarySet, the counterpart to
+// builtins_generic_get, for builtins performing a spec `Set(O, P, V, true)`.
+//
+// An accessor anywhere on the prototype chain is invoked with `this` set to
+// the receiver, and a setter-less accessor is a TypeError.
+//
+// An existing own data property keeps its attributes: §10.1.9.2
+// OrdinarySetWithOwnDescriptor passes only [[Value]] to DefineOwnProperty, so
+// a Set writes a value and never redefines the property. That matters for the
+// properties a builtin creates non-enumerable and non-configurable and then
+// writes again, such as a RegExp's `lastIndex`, whose attributes are visible
+// through getOwnPropertyDescriptor, Object.keys and JSON.stringify.
+//
+// `what` names the property in the TypeError raised for a non-writable target.
+// Returns false on throw, with the throw parked in ctx.
+fn bool builtins_generic_set(BuiltinContext* ctx, HObject* obj, HString* key, TVal val, char[] what) {
+    if (obj == null || key == null) return true;
+
+    // An accessor on the object or its prototype chain takes precedence over
+    // any data property it shadows.
+    AccessorResult acc = obj.find_accessor_proto((void*)key, false, ctx.heap);  // false = want setter
+    if (acc.found) {
+        if (acc.accessor_fn.is_undefined() || acc.accessor_fn.is_null()) {
+            builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
+                "Cannot set property, no setter");
+            return false;
+        }
+        if (ctx.heap.call_fn != null && ctx.vm != null) {
+            TVal this_tv; this_tv.set_object(obj);
+            ctx.heap.call_fn(ctx.vm, acc.accessor_fn, &val, 1, this_tv);
+            if (ctx.heap.has_error) {
+                ctx.should_throw = true;
+                ctx.throw_value = ctx.heap.error_value;
+                ctx.heap.has_error = false;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Data property: a non-writable own (or inherited) one makes Set throw.
+    if (!obj.is_prop_writable((void*)key, ctx.heap)) {
+        char[128] buf;
+        usz len = (usz)(io::bprintf(&buf, "Cannot assign to read only property '%s'",
+                                    (String)what) ?? buf[:0]).len;
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, buf[:len]);
+        return false;
+    }
+
+    PropFlags flags = hobject::PROP_FLAGS_WEC;
+    int idx = obj.find_prop_idx((void*)key, ctx.heap);
+    if (idx >= 0) flags = obj.get_prop_flags((uint)idx, ctx.heap);
+    obj.put_prop((void*)key, val, flags, ctx.heap);
+    return true;
+}
+
 // ============================================================================
 // Shared helpers
 // ============================================================================
