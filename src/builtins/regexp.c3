@@ -464,11 +464,11 @@ fn void builtin_regexp_proto_compile(BuiltinContext* ctx) {
 // custom `exec` override is honored and lastIndex is handled in UTF-16
 // code-unit terms throughout, matching `RegExp.prototype.exec`.
 fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
-    HObject* obj = regexp_get_this(ctx);
-    if (obj == null) {
-        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "RegExp.prototype.test called on incompatible receiver");
-        return;
-    }
+    // Steps 1-2: the receiver need only be an Object. A `this` with no
+    // [[RegExpMatcher]] is still valid as long as it carries a callable
+    // `exec`; RegExpExec is what rejects a receiver that has neither.
+    HObject* obj = regexp_get_symbol_this(ctx);
+    if (obj == null) return;
 
     // Step 3: Let S be ? ToString(string). If no argument, ToString(undefined).
     HString* s_hstr;
@@ -679,134 +679,18 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
 
 // RegExp.prototype.exec(string), ES5 §15.10.6.2
 fn void builtin_regexp_proto_exec(BuiltinContext* ctx) {
+    // Step 1-3: the receiver must carry a [[RegExpMatcher]]; unlike the
+    // @@-method entry points this one is not reached through RegExpExec, so
+    // a plain Object with an `exec` property is not a valid `this` here.
     HObject* obj = regexp_get_this(ctx);
     if (obj == null || (*obj.extra_ptr()).regexp.regexp_data == null) {
-        // ES5 §15.10.6.2 step 2: throw TypeError if this is not a RegExp
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "RegExp.prototype.exec called on incompatible receiver");
         return;
     }
-
-    // ES5 §15.10.6.2 step 2: Let S be ? ToString(string).
-    // If no argument, ToString(undefined) = "undefined".
-    char* input = "undefined";
-    int input_len = 9;  // "undefined".length
-    HString* input_hstr = null;
-    if (ctx.argc > 0) {
-        TVal* arg = &ctx.regs[ctx.base_reg];
-        if (arg.is_undefined()) {
-            // Already defaults to "undefined"
-        } else {
-            HString* hs;
-            if (arg.is_string()) {
-                hs = (HString*)arg.get_heapptr();
-            } else {
-                hs = builtin_to_string_vm(ctx, arg);
-            }
-            if (hs != null) {
-                input_hstr = hs;
-                input = hs.get_cstr();
-                input_len = (int)hs.blen;
-            } else if (ctx.should_throw) {
-                return;
-            }
-        }
-    }
-
-    // Get the global and sticky flags (ES2015 §21.2.5.2 steps 4-5)
-    // Read directly from internal flags: 1=g, 2=i, 4=m, 8=s, 16=u, 32=y
-    int jsf = (*obj.extra_ptr()).regexp.flags;
-    bool global_flag = (jsf & 1) != 0;
-    bool sticky_flag = (jsf & 32) != 0;
-
-    // ES §22.2.5.2.2 RegExpBuiltinExec steps 4-8:
-    // Step 4: Let lastIndex be ? ToLength(? Get(R, "lastIndex")).
-    //   ToLength always runs (so valueOf on an object lastIndex is called).
-    // Step 8: If global and sticky are both false, let lastIndex be 0.
-    //   (The property is NOT modified in this case.)
-    HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
-    int start_pos = 0;
-    {
-        TVal? li_opt = builtins_generic_get(obj, li_key, ctx);
-        if (ctx.should_throw) return;
-        // Always ToLength-coerce (calls valueOf), spec step 4.
-        TVal li_raw; li_raw.set_fastint(0);
-        if (try lv = li_opt) { li_raw = lv; }
-        double li_d = builtin_to_integer_vm(ctx, &li_raw);
-        if (ctx.should_throw) return;
-        if (li_d < 0.0) li_d = 0.0;
-        if (global_flag || sticky_flag) {
-            // lastIndex is a UTF-16 code unit count; convert to CESU-8 byte
-            // offset for re_run (which takes byte offsets). Spec step 7:
-            // if lastIndex > length (char-unit length), reset and return null.
-            long li_charunit = (long)li_d;
-            uint str_charlen = input_hstr != null ? input_hstr.char_length() : 0;
-            if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
-                TVal zero_tv; zero_tv.set_fastint(0);
-                if (!builtins_generic_set(ctx, obj, li_key, zero_tv, "lastIndex")) return;
-                ctx.result.set_null();
-                return;
-            }
-            // Convert char-unit index → byte offset.
-            if (input_hstr != null) {
-                start_pos = (int)input_hstr.char_offset_to_byte_offset((uint)li_charunit);
-            }
-        }
-        // For non-global, non-sticky: start_pos stays 0; don't modify lastIndex.
-    }
-
-    // Execute with capture arrays
-    int out_start = 0;
-    int out_end = 0;
-    int out_num_captures = 0;
-    int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
-    int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
-
-    int result = re_bindings::re_run(
-        (*obj.extra_ptr()).regexp.regexp_data, input, input_len, start_pos,
-        (int)(input_hstr == null || input_hstr.is_ascii()),
-        &out_start, &out_end, &out_num_captures,
-        &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
-    );
-
-    if (result != re_bindings::RE_MATCH) {
-        // Step 9: no match, reset lastIndex to 0 if global or sticky.
-        // For sticky, Set throws if lastIndex is non-writable (step 9.c.i.1).
-        if (global_flag || sticky_flag) {
-            TVal zero_tv; zero_tv.set_fastint(0);
-            if (!builtins_generic_set(ctx, obj, li_key, zero_tv, "lastIndex")) return;
-        }
-        ctx.result.set_null();
-        return;
-    }
-
-    // Step 10: if global OR sticky, update lastIndex to end of match (= e).
-    // lastIndex is a UTF-16 code unit index; we store strings as CESU-8,
-    // so convert byte offset → code unit count.
-    // Per spec (ES2022 §22.2.7.2.2 step 16), we set lastIndex = e without
-    // any AdvanceStringIndex here; callers (@@match step 8.g, @@replace step
-    // 11.d) handle the empty-match advance so that custom exec overrides work.
-    if (global_flag || sticky_flag) {
-        long new_li = input_hstr != null
-            ? (long)input_hstr.byte_offset_to_char_offset((uint)out_end)
-            : (long)hstring::compute_charlen(input[:out_end]);
-        TVal end_tv; end_tv.set_fastint(new_li);
-        if (!builtins_generic_set(ctx, obj, li_key, end_tv, "lastIndex")) return;
-    }
-
-    // Build result array with .groups and .indices (when d flag is set)
-    void* re_data = (*obj.extra_ptr()).regexp.regexp_data;
-    int num_caps = out_num_captures;
-    if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-    bool has_indices = (jsf & 64) != 0;
-    HString* input_str = input_hstr != null ? input_hstr : builtin_intern_string(ctx.heap, input[:input_len]);
-    HObject* arr = regexp_build_match_result(ctx, re_data, input_str, input, input_len,
-                                             out_start, out_end,
-                                             &caps_start, &caps_end, num_caps, has_indices);
-    if (arr == null) {
-        ctx.result.set_null();
-        return;
-    }
-    ctx.result.set_object(arr);
+    TVal arg;
+    arg.set_undefined();
+    if (ctx.argc > 0) arg = ctx.regs[ctx.base_reg];
+    regexp_builtin_exec(ctx, obj, &arg);
 }
 
 // RegExp.prototype.toString(), ES5 §15.10.6.4 / ES2023 §22.2.6.13
@@ -1489,8 +1373,15 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         double str_charlen_d = (double)s_hstr.char_length();
         if (pos_d > str_charlen_d) pos_d = str_charlen_d;
         int out_start = (int)s_hstr.char_offset_to_byte_offset((uint)pos_d);
-        int out_end = out_start + (int)matched_hstr.blen;
-        if (out_end > input_len) out_end = input_len;
+        // Step 14.h: endOfLastMatch is position + the match's length in code
+        // units. `matched` comes from the exec result and is its own string,
+        // so its byte length says nothing about how many bytes of the input
+        // the match spans -- adding it to a byte offset into `input` lands
+        // mid-character whenever the two differ in encoding, and with an exec
+        // override `matched` need not occur in the input at all.
+        double end_charunit = pos_d + (double)matched_hstr.char_length();
+        if (end_charunit > str_charlen_d) end_charunit = str_charlen_d;
+        int out_end = (int)s_hstr.char_offset_to_byte_offset((uint)end_charunit);
 
         // Step 14.f: coerce each capture to HString* (null = undefined).
         HString*[re_bindings::RE_MAX_CAPTURES] cap_strs;
@@ -2272,48 +2163,69 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
         return false;
     }
     // 6. Return ? RegExpBuiltinExec(R, S).
-    void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
-    int jsf = (*rx.extra_ptr()).regexp.flags;
-    bool global_flag = (jsf & 1) != 0;
-    bool sticky_flag = (jsf & 32) != 0;
-    bool has_indices = (jsf & 64) != 0;
+    regexp_builtin_exec(ctx, rx, input_str_tv);
+    return !ctx.should_throw;
+}
 
+// RegExpBuiltinExec (ES2023 §22.2.7.2), sets ctx.result to the match array or
+// null. `rx` must already be a REGEXP-class object with a compiled matcher.
+fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     HString* s_hstr;
     if (input_str_tv.is_string() && input_str_tv.get_heapptr() != null) {
         s_hstr = (HString*)input_str_tv.get_heapptr();
     } else {
         s_hstr = builtin_to_string_vm(ctx, input_str_tv);
-        if (ctx.should_throw) return false;
+        if (ctx.should_throw) return;
         if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
     char* input = s_hstr.get_cstr();
     int input_len = (int)s_hstr.blen;
 
-    int start_pos = 0;
+    // Step 3: ToLength(Get(R, "lastIndex")). Both halves can run arbitrary
+    // script -- a getter on the receiver, then `valueOf` on what it returns --
+    // and `RegExp.prototype.compile` called from there replaces this object's
+    // matcher and flags in place. The spec reads `global` and `sticky` in
+    // steps 5-6, after this, so the matcher and flags are loaded below rather
+    // than before; a pointer latched up here would also be to a matcher
+    // `compile` has already freed.
     HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
+    double li_d;
     {
-        // Always ToLength(Get(R, "lastIndex")), spec step 4 (triggers valueOf).
         TVal? li_opt = builtins_generic_get(rx, li_key, ctx);
-        if (ctx.should_throw) return false;
+        if (ctx.should_throw) return;
         TVal li_raw; li_raw.set_fastint(0);
         if (try lv = li_opt) { li_raw = lv; }
-        double li_d = builtin_to_integer_vm(ctx, &li_raw);
-        if (ctx.should_throw) return false;
+        li_d = builtin_to_integer_vm(ctx, &li_raw);
+        if (ctx.should_throw) return;
         if (li_d < 0.0) li_d = 0.0;
-        if (global_flag || sticky_flag) {
-            // lastIndex is a UTF-16 code unit count; convert to CESU-8 byte
-            // offset for re_run. Bounds-check against char-unit length.
-            long li_charunit = (long)li_d;
-            uint str_charlen = s_hstr.char_length();
-            if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
-                TVal zero_tv; zero_tv.set_fastint(0);
-                if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return false;
-                ctx.result.set_null();
-                return true;
-            }
-            start_pos = (int)s_hstr.char_offset_to_byte_offset((uint)li_charunit);
+    }
+
+    void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
+    int jsf = (*rx.extra_ptr()).regexp.flags;
+    bool global_flag = (jsf & 1) != 0;
+    bool sticky_flag = (jsf & 32) != 0;
+    bool has_indices = (jsf & 64) != 0;
+    if (re_data == null) {
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
+            "RegExp method called on incompatible receiver");
+        return;
+    }
+
+    // A non-global, non-sticky match always starts at 0 and leaves lastIndex
+    // alone, however large the value read above.
+    int start_pos = 0;
+    if (global_flag || sticky_flag) {
+        // lastIndex is a UTF-16 code unit count; convert to CESU-8 byte
+        // offset for re_run. Bounds-check against char-unit length.
+        long li_charunit = (long)li_d;
+        uint str_charlen = s_hstr.char_length();
+        if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
+            TVal zero_tv; zero_tv.set_fastint(0);
+            if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
+            ctx.result.set_null();
+            return;
         }
-        // For non-global/non-sticky: start_pos stays 0; don't modify lastIndex.
+        start_pos = (int)s_hstr.char_offset_to_byte_offset((uint)li_charunit);
     }
 
     int out_start = 0;
@@ -2331,10 +2243,10 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
     if (result != re_bindings::RE_MATCH) {
         if (global_flag || sticky_flag) {
             TVal zero_tv; zero_tv.set_fastint(0);
-            if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return false;
+            if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
         }
         ctx.result.set_null();
-        return true;
+        return;
     }
 
     if (global_flag || sticky_flag) {
@@ -2345,7 +2257,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
         // covered. Do NOT advance here, set lastIndex = charlen(input[:e]).
         long new_li = (long)s_hstr.byte_offset_to_char_offset((uint)out_end);
         TVal end_tv; end_tv.set_fastint(new_li);
-        if (!builtins_generic_set(ctx, rx, li_key, end_tv, "lastIndex")) return false;
+        if (!builtins_generic_set(ctx, rx, li_key, end_tv, "lastIndex")) return;
     }
 
     int num_caps = out_num_captures;
@@ -2355,10 +2267,10 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
                                              &caps_start, &caps_end, num_caps, has_indices);
     if (arr == null) {
         ctx.result.set_null();
-        return true;
+        return;
     }
     ctx.result.set_object(arr);
-    return true;
+    return;
 }
 
 // RegExp.prototype.flags, ES6 §21.2.5.7
