@@ -1876,21 +1876,6 @@ fn void builtin_date_proto_setUTCFullYear(BuiltinContext* ctx) {
     date_store(ctx, obj, new_ms);
 }
 
-// Helper: pad integer to 2 digits
-fn void date_pad2(char* buf, long val) {
-    if (val < 10) { buf[0] = '0'; buf[1] = (char)(val + 48); }
-    else { buf[0] = (char)(val / 10 + 48); buf[1] = (char)(val % 10 + 48); }
-}
-
-// Helper: pad |val| (positive) to 4 digits, buf[0..3].
-// Callers handle sign separately. For dates, val is always 0..9999 here.
-fn void date_pad4(char* buf, long val) {
-    buf[0] = (char)(val / 1000 % 10 + 48);
-    buf[1] = (char)(val / 100 % 10 + 48);
-    buf[2] = (char)(val / 10 % 10 + 48);
-    buf[3] = (char)(val % 10 + 48);
-}
-
 // Date.prototype.toISOString(), ES5 §15.9.5.43
 // Returns a string in ISO 8601 format: "YYYY-MM-DDTHH:mm:ss.sssZ".
 // Throws RangeError if the date value is NaN.
@@ -1907,79 +1892,25 @@ fn void builtin_date_proto_toISOString(BuiltinContext* ctx) {
     date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
     long ms = (long)tv % 1000; if (ms < 0) ms += 1000;
 
-    // Expanded format for large years (>=10000 or <=-9999): +YYYYYY or -YYYYYY
-    if (year >= 10000 || year <= -9999) {
-        char[27] buf;
-        long abs_year = (year < 0) ? -year : year;
-        buf[0] = (year < 0) ? '-' : '+';
-        buf[1] = (char)(abs_year / 100000 % 10 + 48);
-        buf[2] = (char)(abs_year / 10000 % 10 + 48);
-        buf[3] = (char)(abs_year / 1000 % 10 + 48);
-        buf[4] = (char)(abs_year / 100 % 10 + 48);
-        buf[5] = (char)(abs_year / 10 % 10 + 48);
-        buf[6] = (char)(abs_year % 10 + 48);
-        buf[7] = '-';
-        date_pad2(&buf[8], month + 1);
-        buf[10] = '-';
-        date_pad2(&buf[11], day);
-        buf[13] = 'T';
-        date_pad2(&buf[14], hour);
-        buf[16] = ':';
-        date_pad2(&buf[17], min);
-        buf[19] = ':';
-        date_pad2(&buf[20], sec);
-        buf[22] = '.';
-        buf[23] = (char)(ms / 100 + 48);
-        buf[24] = (char)(ms / 10 % 10 + 48);
-        buf[25] = (char)(ms % 10 + 48);
-        buf[26] = 'Z';
-        ctx.result.set_string(builtin_intern_string(ctx.heap, buf[0:27]));
-    } else if (year < 0) {
-        // Negative year within standard range: -YYYY-MM-DDTHH:mm:ss.sssZ (25 bytes)
-        char[25] buf;
-        buf[0] = '-';
-        long neg_year = -year;
-        buf[1] = (char)(neg_year / 1000 + 48);
-        buf[2] = (char)(neg_year / 100 % 10 + 48);
-        buf[3] = (char)(neg_year / 10 % 10 + 48);
-        buf[4] = (char)(neg_year % 10 + 48);
-        buf[5] = '-';
-        date_pad2(&buf[6], month + 1);
-        buf[8] = '-';
-        date_pad2(&buf[9], day);
-        buf[11] = 'T';
-        date_pad2(&buf[12], hour);
-        buf[14] = ':';
-        date_pad2(&buf[15], min);
-        buf[17] = ':';
-        date_pad2(&buf[18], sec);
-        buf[20] = '.';
-        buf[21] = (char)(ms / 100 + 48);
-        buf[22] = (char)(ms / 10 % 10 + 48);
-        buf[23] = (char)(ms % 10 + 48);
-        buf[24] = 'Z';
-        ctx.result.set_string(builtin_intern_string(ctx.heap, buf[0:25]));
+    // The DateTimeString format (§21.4.1.33) spells the year as four bare
+    // digits only for years 0 through 9999. Every other year, negative ones
+    // included, takes the six-digit form with an explicit sign, so year -1 is
+    // "-000001".
+    char[16] year_str;
+    usz year_len;
+    if (year >= 0 && year <= 9999) {
+        year_len = (usz)(io::bprintf(&year_str, "%04d", (int)year) ?? year_str[:0]).len;
     } else {
-        // Standard format: YYYY-MM-DDTHH:mm:ss.sssZ (24 bytes)
-        char[24] buf;
-        date_pad4(&buf[0], year);
-        buf[4] = '-';
-        date_pad2(&buf[5], month + 1);
-        buf[7] = '-';
-        date_pad2(&buf[8], day);
-        buf[10] = 'T';
-        date_pad2(&buf[11], hour);
-        buf[13] = ':';
-        date_pad2(&buf[14], min);
-        buf[16] = ':';
-        date_pad2(&buf[17], sec);
-        buf[19] = '.';
-        buf[20] = (char)(ms / 100 + 48);
-        buf[21] = (char)(ms / 10 % 10 + 48);
-        buf[22] = (char)(ms % 10 + 48);
-        buf[23] = 'Z';
-        ctx.result.set_string(builtin_intern_string(ctx.heap, buf[0:24]));
+        long abs_year = year < 0 ? -year : year;
+        year_len = (usz)(io::bprintf(&year_str, "%c%06d",
+            year < 0 ? '-' : '+', (int)abs_year) ?? year_str[:0]).len;
     }
+
+    char[types::FORMAT_BUF] buf;
+    usz len = (usz)(io::bprintf(&buf, "%s-%02d-%02dT%02d:%02d:%02d.%03dZ",
+        (String)year_str[:year_len], (int)(month + 1), (int)day,
+        (int)hour, (int)min, (int)sec, (int)ms) ?? buf[:0]).len;
+    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 
 // Date.prototype.toUTCString(), ES5 §15.9.5.44
