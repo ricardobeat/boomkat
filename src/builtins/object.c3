@@ -1345,6 +1345,10 @@ fn void builtin_reflect_preventExtensions(BuiltinContext* ctx) {
         ctx.result.set_boolean(res);
         return;
     }
+    if (!ta_prevent_extensions_allowed(obj)) {
+        ctx.result.set_boolean(false);
+        return;
+    }
     obj.flags.extensible = false;
     ctx.result.set_boolean(true);
 }
@@ -1598,6 +1602,11 @@ fn void builtin_object_preventExtensions(BuiltinContext* ctx) {
             return;
         }
         ctx.result.set_object(obj);
+        return;
+    }
+    if (!ta_prevent_extensions_allowed(obj)) {
+        builtin_throw(ctx, ctx.heap.type_err_proto,
+            "Cannot prevent extensions on a non-fixed-length TypedArray");
         return;
     }
     obj.flags.extensible = false;

@@ -1084,6 +1084,19 @@ fn bool ta_is_fixed_length(HObject* obj) {
     return true;
 }
 
+// §10.4.5.2 [[PreventExtensions]] for an Integer-Indexed exotic object: it
+// succeeds only when the view's length can no longer change, because a
+// non-extensible object must not gain properties and the element keys ARE the
+// properties. A length-tracking view, or any view over a resizable non-shared
+// buffer, can still shrink and re-grow; a fixed-length view over a growable
+// SharedArrayBuffer cannot, since a GSAB only grows.
+//
+// Non-TypedArrays always succeed.
+fn bool ta_prevent_extensions_allowed(HObject* obj) {
+    if (!is_typed_array_class(obj.get_class())) return true;
+    return ta_is_fixed_length(obj);
+}
+
 // Effective byte length of a view given the CURRENT backing buffer length.
 // For length-tracking views this is recomputed from the buffer; for fixed
 // views it is the stored byte_length (0 when out of bounds). For TypedArrays
