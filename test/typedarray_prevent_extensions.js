@@ -75,6 +75,59 @@ t[1] = 9;
 ok(t[0] === 7 && t[1] === 9, 'elements stay writable after preventExtensions');
 throwsTypeError(function () { t.extra = 1; }, 'a new named property is barred');
 
+// --- integrity levels -----------------------------------------------------
+//
+// SetIntegrityLevel (§7.3.15) performs [[PreventExtensions]] first and only
+// then defines every own key, so a seal or freeze that fails on the elements
+// has already made the object non-extensible.
+//
+// TestIntegrityLevel has to look at the elements too: they live in the backing
+// buffer rather than the named property table, and §10.4.5.3 refuses to make
+// an in-bounds index non-configurable, so a view with any element is neither
+// sealed nor frozen however non-extensible it is.
+
+var nonEmpty = new Int32Array(10);
+throwsTypeError(function () { Object.seal(nonEmpty); }, 'seal a non-empty view');
+ok(Object.isExtensible(nonEmpty) === false, 'a failed seal still prevents extensions');
+ok(Object.isSealed(nonEmpty) === false, 'a non-empty view is not sealed');
+ok(Object.isFrozen(nonEmpty) === false, 'a non-empty view is not frozen');
+
+var nonEmpty2 = new Int32Array(1024);
+throwsTypeError(function () { Object.freeze(nonEmpty2); }, 'freeze a non-empty view');
+ok(Object.isExtensible(nonEmpty2) === false, 'a failed freeze still prevents extensions');
+ok(Object.isSealed(nonEmpty2) === false, 'a non-empty view is not sealed after freeze');
+ok(Object.isFrozen(nonEmpty2) === false, 'a non-empty view is not frozen after freeze');
+
+// preventExtensions alone leaves the elements configurable.
+var pe = new Int32Array(4);
+Object.preventExtensions(pe);
+ok(Object.isExtensible(pe) === false, 'preventExtensions took effect');
+ok(Object.isSealed(pe) === false, 'preventExtensions alone does not seal');
+ok(Object.isFrozen(pe) === false, 'preventExtensions alone does not freeze');
+
+// An empty view has no element keys, so it seals and freezes.
+var e1 = new Int32Array(0);
+Object.seal(e1);
+ok(Object.isExtensible(e1) === false, 'an empty view seals');
+ok(Object.isSealed(e1) === true, 'an empty sealed view is sealed');
+ok(Object.isFrozen(e1) === true, 'an empty sealed view is frozen');
+
+var e2 = new Int32Array(0);
+Object.freeze(e2);
+ok(Object.isSealed(e2) === true, 'an empty frozen view is sealed');
+ok(Object.isFrozen(e2) === true, 'an empty frozen view is frozen');
+
+var e3 = new Int32Array(0);
+Object.preventExtensions(e3);
+ok(Object.isSealed(e3) === true, 'a non-extensible empty view is sealed');
+ok(Object.isFrozen(e3) === true, 'a non-extensible empty view is frozen');
+
+// A non-fixed-length view fails at the [[PreventExtensions]] step instead, so
+// it stays extensible.
+var rabSeal = new Int32Array(new ArrayBuffer(0, { maxByteLength: 8 }));
+throwsTypeError(function () { Object.seal(rabSeal); }, 'seal a length-tracking view');
+ok(Object.isExtensible(rabSeal) === true, 'a view that cannot prevent extensions stays extensible');
+
 if (fail === 0) {
     print('PASS: TypedArray preventExtensions (' + pass + ' checks)');
 } else {

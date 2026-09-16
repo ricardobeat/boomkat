@@ -1621,8 +1621,7 @@ fn void builtin_object_preventExtensions(BuiltinContext* ctx) {
 fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     // A missing argument is `undefined`; ToObject then throws, exactly as it
     // does for an explicit undefined.
-    TVal arg0; arg0.set_undefined();
-    if (ctx.argc > 0) arg0 = ctx.regs[ctx.base_reg];
+    TVal arg0 = builtin_arg(ctx, 0);
 
     // Handle lightfuncs: synthesize .name and .length property descriptors
     if (arg0.is_lightfunc()) {
@@ -1759,8 +1758,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     // Resolve the property key (second argument). A missing one is `undefined`,
     // which ToPropertyKey turns into the key "undefined" -- an ordinary lookup,
     // proxy trap included.
-    TVal key_val; key_val.set_undefined();
-    if (ctx.argc > 1) key_val = ctx.regs[ctx.base_reg + 1];
+    TVal key_val = builtin_arg(ctx, 1);
     // ES2015+ ToPropertyKey. The shared helper passes symbols through, coerces
     // objects via ToPrimitive, and interns the key: property lookup compares by
     // pointer identity, so an un-interned concatenation result would miss.
@@ -3478,15 +3476,24 @@ fn void builtin_object_seal(BuiltinContext* ctx) {
         ctx.result.set_object(obj);
         return;
     }
-    // Integer-Indexed exotic SetIntegrityLevel(O, sealed), same gap as
-    // freeze: [[PreventExtensions]] returns false for a non-fixed-length
-    // view (§10.4.5.1), and [[DefineOwnProperty]] with {configurable:false}
-    // on an in-bounds element returns false (§10.4.5.3), so seal throws for
-    // exactly the same condition; only a fixed-length zero-length view seals.
-    if (is_typed_array_class(obj.get_class())
-        && (!ta_is_fixed_length(obj) || ta_element_count(obj) > 0)) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot seal this TypedArray");
-        return;
+    // Integer-Indexed exotic SetIntegrityLevel(O, sealed), §7.3.15. Step 3
+    // performs [[PreventExtensions]], which fails for a non-fixed-length view
+    // (§10.4.5.2). It then defines every own key {configurable: false}, which
+    // fails for an in-bounds element (§10.4.5.3), so only a fixed-length
+    // zero-length view seals.
+    //
+    // The order matters: a seal that fails at the define step has already made
+    // the object non-extensible, and isExtensible reports that.
+    if (is_typed_array_class(obj.get_class())) {
+        if (!ta_prevent_extensions_allowed(obj)) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot seal this TypedArray");
+            return;
+        }
+        obj.flags.extensible = false;
+        if (ta_element_count(obj) > 0) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot seal this TypedArray");
+            return;
+        }
     }
     obj.seal(ctx.heap);
     ctx.result.set_object(obj);
@@ -3525,10 +3532,16 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
     // fixed-length TypedArray with in-bounds elements still throws because
     // DefineOwnProperty with {[[Writable]]: false} on an element returns false
     // (§10.4.5.3); a fixed-length zero-length view has no keys and freezes.
-    if (is_typed_array_class(obj.get_class())
-        && (!ta_is_fixed_length(obj) || ta_element_count(obj) > 0)) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot freeze this TypedArray");
-        return;
+    if (is_typed_array_class(obj.get_class())) {
+        if (!ta_prevent_extensions_allowed(obj)) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot freeze this TypedArray");
+            return;
+        }
+        obj.flags.extensible = false;
+        if (ta_element_count(obj) > 0) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot freeze this TypedArray");
+            return;
+        }
     }
     // Module Namespace Exotic SetIntegrityLevel(O, frozen), §7.3.15:
     // [[DefineOwnProperty]] with {[[Writable]]: false} on any export returns
@@ -3583,6 +3596,15 @@ fn void builtin_object_isSealed(BuiltinContext* ctx) {
     // Dense array elements are always writable and configurable (no per-element
     // flags in the flat array part).  If any exist, the object can't be sealed.
     if (obj.array_used > 0) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+
+    // TypedArray elements live in the backing buffer, not in the named table or
+    // the array part, so the scans below never see them. They are permanently
+    // configurable (§10.4.5.3 refuses {configurable: false} on an in-bounds
+    // index), so a view with any in-bounds element is not sealed.
+    if (is_typed_array_class(obj.get_class()) && ta_element_count(obj) > 0) {
         ctx.result.set_boolean(false);
         return;
     }
@@ -3651,6 +3673,14 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
     // Dense array elements are always writable and configurable (no per-element
     // flags in the flat array part).  If any exist, the object can't be frozen.
     if (obj.array_used > 0) {
+        ctx.result.set_boolean(false);
+        return;
+    }
+
+    // TypedArray elements live in the backing buffer, so the scans below never
+    // see them. They are permanently writable and configurable (§10.4.5.3), so
+    // a view with any in-bounds element is not frozen.
+    if (is_typed_array_class(obj.get_class()) && ta_element_count(obj) > 0) {
         ctx.result.set_boolean(false);
         return;
     }
@@ -4056,10 +4086,8 @@ fn void builtin_object_is(BuiltinContext* ctx) {
 fn void builtin_object_hasOwn(BuiltinContext* ctx) {
     // Both arguments default to `undefined` when absent: ToObject rejects the
     // first, and ToPropertyKey turns the second into the key "undefined".
-    TVal obj_val;  obj_val.set_undefined();
-    TVal prop_val; prop_val.set_undefined();
-    if (ctx.argc > 0) obj_val = ctx.regs[ctx.base_reg];
-    if (ctx.argc > 1) prop_val = ctx.regs[ctx.base_reg + 1];
+    TVal obj_val  = builtin_arg(ctx, 0);
+    TVal prop_val = builtin_arg(ctx, 1);
     // ToObject on first argument, throw TypeError for null/undefined
     if (obj_val.is_null() || obj_val.is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");

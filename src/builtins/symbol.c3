@@ -324,8 +324,7 @@ fn void builtin_symbol(BuiltinContext* ctx) {
 fn void builtin_symbol_for(BuiltinContext* ctx) {
     // A missing argument is `undefined`, so Symbol.for() registers the key
     // "undefined" exactly as Symbol.for(undefined) does.
-    TVal key_val; key_val.set_undefined();
-    if (ctx.argc > 0) key_val = ctx.regs[ctx.base_reg];
+    TVal key_val = builtin_arg(ctx, 0);
 
     // ToString(key), must throw TypeError for Symbol and propagate errors
     // from toString/valueOf (for/to-string-err.js, for/description.js).
@@ -363,8 +362,7 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
 fn void builtin_symbol_keyfor(BuiltinContext* ctx) {
     // A missing argument is `undefined`, which is not a Symbol, so
     // Symbol.keyFor() throws just as Symbol.keyFor(undefined) does.
-    TVal sym_val; sym_val.set_undefined();
-    if (ctx.argc > 0) sym_val = ctx.regs[ctx.base_reg];
+    TVal sym_val = builtin_arg(ctx, 0);
     if (!is_symbol_val(sym_val)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Symbol.keyFor requires a symbol argument");
         return;
