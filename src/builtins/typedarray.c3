@@ -733,19 +733,32 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 HString* done_key = heap.str(heap::BuiltinStr.DONE);
                 HString* value_key = heap.str(heap::BuiltinStr.VALUE);
 
-                while (true) {
-                    if (!iterator.is_object() || iterator.get_heapptr() == null) break;
-                    HObject* iter_obj = (HObject*)iterator.get_heapptr();
-                    TVal? next_method_opt = iter_obj.get_prop_proto(next_key, ctx.heap);
-                    TVal next_method;
-                    if (try nm = next_method_opt) { next_method = nm; } else { break; }
-                    bool next_callable = false;
-                    if (next_method.is_lightfunc()) {
-                        next_callable = true;
-                    } else if (next_method.is_object() && next_method.get_heapptr() != null) {
-                        next_callable = ((HObject*)next_method.get_heapptr()).is_callable();
+                // §7.4.2 GetIterator reads `next` once, outside the loop; see
+                // the matching note in TypedArray.from below.
+                TVal next_method; next_method.set_undefined();
+                bool next_callable = false;
+                if (iterator.is_object() && iterator.get_heapptr() != null) {
+                    HObject* iter_obj0 = (HObject*)iterator.get_heapptr();
+                    // Through builtins_generic_get, not get_prop_proto: `next`
+                    // may be an accessor, and the raw slot lookup would hand
+                    // back the getter-setter box instead of calling it.
+                    TVal? next_method_opt = builtins_generic_get(iter_obj0, next_key, ctx);
+                    if (ctx.should_throw) {
+                        heap.free_func(heap.heap_udata, items);
+                        return;
                     }
-                    if (!next_callable) break;
+                    if (try nm = next_method_opt) {
+                        next_method = nm;
+                        if (next_method.is_lightfunc()) {
+                            next_callable = true;
+                        } else if (next_method.is_object() && next_method.get_heapptr() != null) {
+                            next_callable = ((HObject*)next_method.get_heapptr()).is_callable();
+                        }
+                    }
+                }
+                next_method.set_temproot();
+
+                while (next_callable) {
 
                     TVal result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
                     if (ctx.heap.has_error) {
@@ -1131,6 +1144,12 @@ fn void ta_integer_indexed_element_set(BuiltinContext* ctx, HObject* obj, double
     ta_write_element((char*)&scratch, cls, &converted, ctx);
     if (ctx.should_throw) return;
     if (!ta_is_valid_integer_index(obj, num)) return;
+    // An immutable backing buffer makes every index invalid FOR A WRITE, so
+    // the store is dropped exactly as an out-of-bounds one is. Reads still see
+    // a valid index, which is why this lives here and not in
+    // ta_is_valid_integer_index.
+    HObject* set_buf = (*obj.extra_ptr()).view.buffer;
+    if (set_buf != null && (*set_buf.extra_ptr()).ab.immutable) return;
     uint idx = (uint)(long)num;
     HObject* buf = (*obj.extra_ptr()).view.buffer;
     char* base = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset;
@@ -1175,9 +1194,23 @@ fn void builtin_ta_proto_entries(BuiltinContext* ctx) {
 // ---- set ----
 
 // %TypedArray%.prototype.set(source [, offset]), §23.2.3.24.
+// True (having thrown a TypeError) iff `view`'s backing buffer is immutable.
+//
+// The in-place mutators (set, fill, copyWithin, reverse, sort) reject an
+// immutable buffer BEFORE coercing any argument or calling any comparator, and
+// do so even when the view is empty — so this runs immediately after
+// ta_validate rather than at the store sites those methods reach later.
+fn bool ta_reject_immutable(BuiltinContext* ctx, HObject* view, char[] method) {
+    HObject* buf = (*view.extra_ptr()).view.buffer;
+    if (buf == null || !(*buf.extra_ptr()).ab.immutable) { return false; }
+    arraybuffer_throw_type_error_label(ctx, method, "backing buffer is immutable");
+    return true;
+}
+
 fn void builtin_ta_proto_set(BuiltinContext* ctx) {
     HObject* dst = ta_validate(ctx);
     if (dst == null) return;
+    if (ta_reject_immutable(ctx, dst, "%TypedArray%.prototype.set")) return;
     Heap* heap = ctx.heap;
 
     hobject::ObjClass dst_cls = dst.flags.obj_class;
@@ -1492,6 +1525,7 @@ fn void builtin_ta_proto_subarray(BuiltinContext* ctx) {
 fn void builtin_ta_proto_fill(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
+    if (ta_reject_immutable(ctx, obj, "%TypedArray%.prototype.fill")) return;
     Heap* heap = ctx.heap;
 
     hobject::ObjClass cls = obj.flags.obj_class;
@@ -1570,6 +1604,7 @@ fn void builtin_ta_proto_fill(BuiltinContext* ctx) {
 fn void builtin_ta_proto_copyWithin(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
+    if (ta_reject_immutable(ctx, obj, "%TypedArray%.prototype.copyWithin")) return;
     Heap* heap = ctx.heap;
 
     hobject::ObjClass cls = obj.flags.obj_class;
@@ -1840,6 +1875,13 @@ fn HObject* ta_species_create(BuiltinContext* ctx, HObject* exemplar, uint count
     HObject* result_buf = (*result_obj.extra_ptr()).view.buffer;
     if (result_buf == null || ((*result_buf.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
         arraybuffer_throw_type_error(ctx, "TypedArray species: result buffer is detached");
+        return null;
+    }
+    // The caller writes every element into this destination, so an immutable
+    // buffer cannot back it. Rejecting here, where the result is validated,
+    // keeps the throw ahead of any element visiting the caller would do.
+    if ((*result_buf.extra_ptr()).ab.immutable) {
+        arraybuffer_throw_type_error(ctx, "TypedArray species: result buffer is immutable");
         return null;
     }
     uint result_len = ta_element_count(result_obj);
@@ -2600,6 +2642,7 @@ fn void builtin_ta_proto_findLastIndex(BuiltinContext* ctx) {
 fn void builtin_ta_proto_reverse(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
+    if (ta_reject_immutable(ctx, obj, "%TypedArray%.prototype.reverse")) return;
     hobject::ObjClass cls = obj.flags.obj_class;
     uint elem_sz = ta_elem_size(cls);
     HObject* buf = (*obj.extra_ptr()).view.buffer;
@@ -2762,6 +2805,7 @@ fn void ta_insertion_sort(TVal[] arr, BuiltinContext* ctx, TVal comparefn, bool 
 fn void builtin_ta_proto_sort(BuiltinContext* ctx) {
     HObject* obj = ta_validate(ctx);
     if (obj == null) return;
+    if (ta_reject_immutable(ctx, obj, "%TypedArray%.prototype.sort")) return;
     Heap* heap = ctx.heap;
     hobject::ObjClass cls = obj.flags.obj_class;
     uint shift = ta_elem_shift(cls);
@@ -3185,6 +3229,14 @@ fn HObject* ta_typed_array_create(BuiltinContext* ctx, TVal* args, uint nargs) {
         arraybuffer_throw_type_error(ctx, "TypedArrayCreate: constructor did not return a TypedArray");
         return null;
     }
+    // Every caller of TypedArrayCreate fills the result it gets back, so an
+    // immutable backing buffer cannot serve. Rejecting here keeps the throw
+    // immediately after construction, before any source element is visited.
+    HObject* create_buf = (*result_obj.extra_ptr()).view.buffer;
+    if (create_buf != null && (*create_buf.extra_ptr()).ab.immutable) {
+        arraybuffer_throw_type_error(ctx, "TypedArrayCreate: result buffer is immutable");
+        return null;
+    }
     // ES2022 §23.2.4.3 TypedArrayCreate step 4: when argumentList is
     // «length», validate the result's [[ArrayLength]] is at least the
     // requested length (a custom constructor may have ignored/shrunk it).
@@ -3340,30 +3392,36 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
         if (items == null) { ctx.result.set_undefined(); return; }
         uint count = 0;
 
-        while (true) {
-            HObject* iter_obj = (HObject*)iterator.get_heapptr();
+        // §7.4.2 GetIterator reads `next` ONCE, when the iterator is obtained;
+        // every step then calls that same function. Reading it per iteration is
+        // observable, and an accessor returning a fresh closure each time would
+        // restart that closure's state on every step, so an iterator that would
+        // finish never does.
+        HObject* iter_obj = (HObject*)iterator.get_heapptr();
+        TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
+        if (ctx.should_throw) {
+            heap.free_func(heap.heap_udata, items);
+            ctx.result.set_undefined();
+            return;
+        }
+        TVal next_method;
+        if (try nm = next_method_opt) { next_method = nm; }
+        else {
+            heap.free_func(heap.heap_udata, items);
+            arraybuffer_throw_type_error(ctx, "TypedArray.from: iterator has no next method");
+            return;
+        }
+        bool nm_callable = next_method.is_lightfunc() ||
+            (next_method.is_object() && next_method.get_heapptr() != null &&
+             ((HObject*)next_method.get_heapptr()).is_callable());
+        if (!nm_callable) {
+            heap.free_func(heap.heap_udata, items);
+            arraybuffer_throw_type_error(ctx, "TypedArray.from: iterator.next is not callable");
+            return;
+        }
+        next_method.set_temproot();
 
-            TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
-            if (ctx.should_throw) {
-                heap.free_func(heap.heap_udata, items);
-                ctx.result.set_undefined();
-                return;
-            }
-            TVal next_method;
-            if (try nm = next_method_opt) { next_method = nm; }
-            else {
-                heap.free_func(heap.heap_udata, items);
-                arraybuffer_throw_type_error(ctx, "TypedArray.from: iterator has no next method");
-                return;
-            }
-            bool nm_callable = next_method.is_lightfunc() ||
-                (next_method.is_object() && next_method.get_heapptr() != null &&
-                 ((HObject*)next_method.get_heapptr()).is_callable());
-            if (!nm_callable) {
-                heap.free_func(heap.heap_udata, items);
-                arraybuffer_throw_type_error(ctx, "TypedArray.from: iterator.next is not callable");
-                return;
-            }
+        while (true) {
 
             TVal step_result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
             if (heap.has_error) {
@@ -3991,6 +4049,7 @@ fn void builtin_uint8array_proto_to_hex(BuiltinContext* ctx) {
 fn void builtin_uint8array_proto_set_from_base64(BuiltinContext* ctx) {
     HObject* obj = b64_validate_uint8array(ctx);
     if (obj == null) return;
+    if (ta_reject_immutable(ctx, obj, "Uint8Array.prototype.setFrom")) return;
     HString* str = b64_require_string_arg(ctx);
     if (str == null) return;
     TVal opt; if (ctx.argc >= 2) { opt = ctx.regs[ctx.base_reg + 1]; } else { opt.set_undefined(); }
@@ -4022,6 +4081,7 @@ fn void builtin_uint8array_proto_set_from_base64(BuiltinContext* ctx) {
 fn void builtin_uint8array_proto_set_from_hex(BuiltinContext* ctx) {
     HObject* obj = b64_validate_uint8array(ctx);
     if (obj == null) return;
+    if (ta_reject_immutable(ctx, obj, "Uint8Array.prototype.setFrom")) return;
     HString* str = b64_require_string_arg(ctx);
     if (str == null) return;
 

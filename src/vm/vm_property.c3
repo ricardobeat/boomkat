@@ -1768,13 +1768,19 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         uint elem_count = (buf != null && (*buf.extra_ptr()).ab.resizable)
                             ? builtins::ta_element_count(hobj)
                             : (*hobj.extra_ptr()).view.byte_length >> shift;
+                        // An immutable backing buffer makes every index invalid
+                        // for a WRITE, so the store is dropped exactly as an
+                        // out-of-bounds one is — after the conversion above,
+                        // whose side effects the spec still requires.
                         if (buf != null && (*buf.extra_ptr()).ab.data != null
+                            && !(*buf.extra_ptr()).ab.immutable
                             && (ulong)idx_long < (ulong)elem_count) {
                             char* base = (*buf.extra_ptr()).ab.data + (*hobj.extra_ptr()).view.byte_offset;
                             char* p = base + (idx_long << shift);
                             builtins::ta_store_scalar(p, ta_cls, &sc);
                         }
-                        // Out-of-bounds or detached after conversion silently succeeds.
+                        // Out-of-bounds, detached or immutable after conversion
+                        // silently succeeds.
                     }
                     return (TVal){};
                 }

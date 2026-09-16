@@ -317,6 +317,20 @@ fn void atomics_rmw_bigint(char* p, hobject::ObjClass cls, AtomicOp op, int128 o
 // Generic AtomicReadModifyWrite (§25.4.3.11) driver for the 8 RMW builtins.
 // ============================================================================
 
+// True (having thrown a TypeError) iff `ta`'s backing buffer is immutable.
+//
+// Only the writing operations (store, compareExchange and the read-modify-write
+// ops) consult this; Atomics.load and the wait family read, so they are
+// unaffected. The check follows ValidateIntegerTypedArray and precedes the
+// index and value coercions, so no user code runs for a write that cannot
+// happen.
+fn bool atomics_reject_immutable(BuiltinContext* ctx, HObject* ta) {
+    HObject* buf = (*ta.extra_ptr()).view.buffer;
+    if (buf == null || !(*buf.extra_ptr()).ab.immutable) { return false; }
+    arraybuffer_throw_type_error(ctx, "Atomics: backing buffer is immutable");
+    return true;
+}
+
 fn void atomics_rmw_op(BuiltinContext* ctx, AtomicOp op) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
@@ -327,6 +341,7 @@ fn void atomics_rmw_op(BuiltinContext* ctx, AtomicOp op) {
 
     HObject* ta = atomics_validate_int_ta(ctx, ta_arg, false);
     if (ta == null) return;
+    if (atomics_reject_immutable(ctx, ta)) return;
 
     uint idx = 0;
     if (!atomics_validate_access(ctx, ta, idx_arg, &idx)) return;
@@ -408,6 +423,7 @@ fn void builtin_atomics_store(BuiltinContext* ctx) {
 
     HObject* ta = atomics_validate_int_ta(ctx, ta_arg, false);
     if (ta == null) return;
+    if (atomics_reject_immutable(ctx, ta)) return;
 
     uint idx = 0;
     if (!atomics_validate_access(ctx, ta, idx_arg, &idx)) return;
@@ -473,6 +489,7 @@ fn void builtin_atomics_compareexchange(BuiltinContext* ctx) {
 
     HObject* ta = atomics_validate_int_ta(ctx, ta_arg, false);
     if (ta == null) return;
+    if (atomics_reject_immutable(ctx, ta)) return;
 
     uint idx = 0;
     if (!atomics_validate_access(ctx, ta, idx_arg, &idx)) return;

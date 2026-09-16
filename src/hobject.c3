@@ -703,6 +703,11 @@ struct HObjectGetterSetter {
 // A resizable buffer (ES2024) sets `resizable` and caps growth at
 // `max_byte_length`. Fixed buffers leave both unset, so the fixed-buffer fast
 // path never reads the cap.
+//
+// An immutable buffer (transferToImmutable) sets `immutable`. Its data block
+// never changes after construction: every write through a view is rejected,
+// and it can be neither detached nor resized. `immutable` and `resizable` are
+// mutually exclusive.
 struct HObjectArrayBuffer {
     char*    data;          // heap.alloc_func'd, zeroed; null when detached or zero-length
     uint     byte_length;   // byte length; set to 0xFFFFFFFF on detach
@@ -710,6 +715,7 @@ struct HObjectArrayBuffer {
     uint     max_byte_length; // cap for resizable buffers; unused (0) when !resizable
     bool     resizable;     // true iff constructed with {maxByteLength}
     bool     is_shared;     // true iff this is a SharedArrayBuffer (never detachable)
+    bool     immutable;     // true iff produced by transferToImmutable
 }
 
 // TypedArray or DataView, active for INT8ARRAY through FLOAT64ARRAY and DATAVIEW.

@@ -339,6 +339,13 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
     HObject* obj = (HObject*)this_val.get_heapptr();
     HObject* buf = (*obj.extra_ptr()).view.buffer;
 
+    // An immutable backing buffer rejects the store before either argument is
+    // coerced, so no user code runs for a write that cannot happen.
+    if (buf != null && (*buf.extra_ptr()).ab.immutable) {
+        arraybuffer_throw_type_error(ctx, "DataView setter: backing buffer is immutable");
+        return;
+    }
+
     TVal pos_arg; pos_arg.set_undefined();
     if (ctx.argc >= 1) pos_arg = ctx.regs[ctx.base_reg];
     uint pos = 0;

@@ -343,6 +343,16 @@ fn void builtin_arraybuffer_proto_detached_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
+// ArrayBuffer.prototype.immutable getter (immutable ArrayBuffer proposal)
+// ============================================================================
+
+fn void builtin_arraybuffer_proto_immutable_get(BuiltinContext* ctx) {
+    HObject* obj = ab_this(ctx, "immutable");
+    if (obj == null) return;
+    ctx.result.set_boolean((*obj.extra_ptr()).ab.immutable);
+}
+
+// ============================================================================
 // ArrayBuffer.prototype.resizable getter, ES2024 §25.1.6.4
 // ============================================================================
 
@@ -442,23 +452,32 @@ fn void builtin_arraybuffer_proto_resize(BuiltinContext* ctx) {
 // then detaches the source. `preserve_resizable` keeps the source's resizability
 // and maxByteLength (transfer); transferToFixedLength always produces a
 // fixed-length buffer.
+//
+// transferToImmutable takes the same path with `make_immutable`: the immutable
+// proposal defines it as ArrayBufferCopyAndDetach with an immutable result, so
+// it shares the detach, the newLength coercion and its re-validation. An
+// immutable result is never resizable; its maxByteLength therefore reports its
+// byteLength, which the shared `dest_max = new_len` for a fixed result already
+// gives.
 // ============================================================================
 
-fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable) {
+fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable, bool make_immutable) {
     HObject* obj = ab_this(ctx, "transfer");
     if (obj == null) return;
-    // Step 4: IsDetachedBuffer(O), throw TypeError.
-    if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.transfer: buffer is detached");
-        return;
-    }
 
+    // Step 4 coerces newLength BEFORE step 5 rejects a detached buffer and
+    // step 6 rejects an immutable one, so the coercion's user code runs even
+    // for a receiver that is already going to be rejected. Both checks are
+    // therefore made after the coercion below; a buffer that starts detached
+    // still reaches them, since nothing in between reads its data.
+    //
     // Steps 5-6: newLength defaults to the current byteLength; otherwise
     // ToIntegerOrInfinity (may run user code that detaches the buffer).
     bool has_new_length = ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined();
     uint new_len;
     if (!has_new_length) {
         new_len = (*obj.extra_ptr()).ab.byte_length;
+        if (new_len == 0xFFFFFFFFu) { new_len = 0; }
     } else {
         TVal len_arg = ctx.regs[ctx.base_reg];
         double d = builtin_to_integer_vm(ctx, &len_arg);
@@ -474,17 +493,27 @@ fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable) 
         } else {
             new_len = (uint)d;
         }
-        // ToIntegerOrInfinity may have detached the source (step 6 side effects
-        // precede the detach in step 14; re-validate before the copy).
-        if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-            arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.transfer: buffer detached during length coercion");
-            return;
-        }
+    }
+
+    // Step 5: IsDetachedBuffer(O). The coercion above may itself have detached
+    // the source, so this one check covers both a receiver that arrived
+    // detached and one detached by the coercion's user code.
+    if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
+        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.transfer: buffer is detached");
+        return;
+    }
+
+    // Step 6: IsImmutableBuffer(O). An immutable buffer's data block must
+    // never move, and transferring detaches the source.
+    if ((*obj.extra_ptr()).ab.immutable) {
+        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.transfer: buffer is immutable");
+        return;
     }
 
     // The destination preserves resizability/maxByteLength only for transfer;
     // transferToFixedLength (and a non-resizable source) yields a fixed buffer.
-    bool dest_resizable = preserve_resizable && (*obj.extra_ptr()).ab.resizable;
+    bool dest_resizable = preserve_resizable && !make_immutable
+        && (*obj.extra_ptr()).ab.resizable;
     uint dest_max = dest_resizable ? (*obj.extra_ptr()).ab.max_byte_length : new_len;
     if (dest_resizable && new_len > dest_max) {
         arraybuffer_throw_range_error(ctx, "ArrayBuffer length exceeds maxByteLength");
@@ -522,6 +551,7 @@ fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable) 
     (*new_buf.extra_ptr()).ab.byte_length = new_len;
     (*new_buf.extra_ptr()).ab.resizable = dest_resizable;
     (*new_buf.extra_ptr()).ab.max_byte_length = dest_max;
+    (*new_buf.extra_ptr()).ab.immutable = make_immutable;
 
     // Step 14: DetachArrayBuffer(O), free the source's backing store.
     arraybuffer_detach(ctx.heap, obj);
@@ -530,11 +560,114 @@ fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable) 
 }
 
 fn void builtin_arraybuffer_proto_transfer(BuiltinContext* ctx) {
-    arraybuffer_transfer_impl(ctx, true);
+    arraybuffer_transfer_impl(ctx, true, false);
 }
 
 fn void builtin_arraybuffer_proto_transfer_to_fixed_length(BuiltinContext* ctx) {
-    arraybuffer_transfer_impl(ctx, false);
+    arraybuffer_transfer_impl(ctx, false, false);
+}
+
+// ============================================================================
+// ArrayBuffer.prototype.sliceToImmutable(start, end)
+// (immutable ArrayBuffer proposal)
+//
+// Unlike slice(), this takes no species constructor: the result is always a
+// plain immutable %ArrayBuffer%, so there is no user-code re-entry between
+// allocating the destination and copying into it.
+//
+// The bounds come from the length read BEFORE ToIntegerOrInfinity runs, since
+// that coercion is user code that may resize or detach the receiver. A shrink
+// is then a RangeError (step 14) while a detach is a TypeError (step 11), and
+// a grow leaves the original bounds in force.
+// ============================================================================
+
+fn void builtin_arraybuffer_proto_slice_to_immutable(BuiltinContext* ctx) {
+    HObject* obj = ab_this(ctx, "sliceToImmutable");
+    if (obj == null) return;
+
+    // Step 3: a SharedArrayBuffer has no immutable form.
+    if ((*obj.extra_ptr()).ab.is_shared) {
+        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.sliceToImmutable: receiver is a SharedArrayBuffer");
+        return;
+    }
+
+    // Step 4: a receiver that ALREADY arrived detached is rejected before the
+    // arguments are read. That is the opposite of transferToImmutable, whose
+    // detach check comes after its coercion; the step-11 re-check below still
+    // catches a receiver detached BY that coercion.
+    if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
+        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.sliceToImmutable: buffer is detached");
+        return;
+    }
+
+    // Step 5: len is sampled here, before any coercion below can change it.
+    uint len = (*obj.extra_ptr()).ab.byte_length;
+
+    // Step 6 (ResolveBounds): both coercions run, in order, even when the
+    // first one has already invalidated the receiver.
+    double rel_start = 0.0;
+    if (ctx.argc >= 1) {
+        TVal start_arg = ctx.regs[ctx.base_reg];
+        rel_start = builtin_to_integer_vm(ctx, &start_arg);
+        if (ctx.should_throw) return;
+    }
+    uint first = ta_norm_index(rel_start, len);
+
+    uint final_idx = len;
+    if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+        TVal end_arg = ctx.regs[ctx.base_reg + 1];
+        double rel_end = builtin_to_integer_vm(ctx, &end_arg);
+        if (ctx.should_throw) return;
+        final_idx = ta_norm_index(rel_end, len);
+    }
+
+    uint new_len = final_idx > first ? final_idx - first : 0;
+
+    // Step 11: the coercions above may have detached the receiver.
+    if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
+        arraybuffer_throw_type_error(ctx, "ArrayBuffer.prototype.sliceToImmutable: buffer is detached");
+        return;
+    }
+
+    // Step 14: a resizable receiver may have shrunk below the resolved end.
+    if ((*obj.extra_ptr()).ab.byte_length < final_idx) {
+        arraybuffer_throw_range_error(ctx, "ArrayBuffer.prototype.sliceToImmutable: buffer shrank below the requested range");
+        return;
+    }
+
+    HObject*? new_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
+    if (catch err = new_raw) {
+        arraybuffer_throw_range_error(ctx, "Out of memory allocating ArrayBuffer");
+        return;
+    }
+    HObject* new_buf = new_raw;
+    new_buf.prototype = ctx.heap.arraybuffer_proto;
+    (*new_buf.extra_ptr()).ab.views_head = null;
+
+    char* new_data = null;
+    if (new_len > 0) {
+        new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
+        if (new_data == null) {
+            arraybuffer_throw_range_error(ctx, "Out of memory allocating ArrayBuffer");
+            return;
+        }
+        mem::clear(new_data, (sz)((usz)new_len));
+        char* src_data = (*obj.extra_ptr()).ab.data;
+        if (src_data != null) {
+            mem::copy(new_data, src_data + first, (sz)((usz)new_len));
+        }
+    }
+    (*new_buf.extra_ptr()).ab.data = new_data;
+    (*new_buf.extra_ptr()).ab.byte_length = new_len;
+    (*new_buf.extra_ptr()).ab.max_byte_length = new_len;
+    (*new_buf.extra_ptr()).ab.immutable = true;
+
+    ctx.result.set_object(new_buf);
+}
+
+// ArrayBuffer.prototype.transferToImmutable() (immutable ArrayBuffer proposal)
+fn void builtin_arraybuffer_proto_transfer_to_immutable(BuiltinContext* ctx) {
+    arraybuffer_transfer_impl(ctx, false, true);
 }
 
 // ============================================================================
@@ -673,6 +806,12 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
         if (!result_ok) {
             char[] kind = is_shared ? "a SharedArrayBuffer" : "an ArrayBuffer";
             arraybuffer_throw_type_error_label2(ctx, label, "species constructor did not return", kind);
+            return;
+        }
+        // slice() copies into the species result, so an immutable one cannot
+        // serve: its data block must never change after construction.
+        if ((*new_buf.extra_ptr()).ab.immutable) {
+            arraybuffer_throw_type_error_label(ctx, label, "species constructor returned an immutable buffer");
             return;
         }
         if (new_buf == obj) {
@@ -940,6 +1079,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     // Accessors
     if (!register_arraybuffer_accessor(proto, heap, "byteLength", Builtin.ARRAYBUFFER_PROTO_BYTELENGTH_GET.ordinal)) return false;
     if (!register_arraybuffer_accessor(proto, heap, "detached", Builtin.ARRAYBUFFER_PROTO_DETACHED_GET.ordinal)) return false;
+    if (!register_arraybuffer_accessor(proto, heap, "immutable", Builtin.ARRAYBUFFER_PROTO_IMMUTABLE_GET.ordinal)) return false;
     if (!register_arraybuffer_accessor(proto, heap, "resizable", Builtin.ARRAYBUFFER_PROTO_RESIZABLE_GET.ordinal)) return false;
     if (!register_arraybuffer_accessor(proto, heap, "maxByteLength", Builtin.ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal)) return false;
 
@@ -948,6 +1088,8 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "resize", Builtin.ARRAYBUFFER_PROTO_RESIZE.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "transfer", Builtin.ARRAYBUFFER_PROTO_TRANSFER.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "transferToFixedLength", Builtin.ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "transferToImmutable", Builtin.ARRAYBUFFER_PROTO_TRANSFER_TO_IMMUTABLE.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "sliceToImmutable", Builtin.ARRAYBUFFER_PROTO_SLICE_TO_IMMUTABLE.ordinal)) return false;
 
     // @@toStringTag
     HString* tag_key = ensure_tostringtag_symbol(heap);

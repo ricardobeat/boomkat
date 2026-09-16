@@ -182,7 +182,9 @@ so it's not load-bearing. Reuse f32/f64 ↔ bits unions from TVal/dtoa plumbing.
 - `scripts/run_test262.py`: new phase **22 — Buffers** with dirs
   `built-ins/ArrayBuffer`, `built-ins/TypedArray`, `built-ins/TypedArrayConstructors`,
   `built-ins/DataView`. Add `Float16Array|arraybuffer-transfer|immutable-arraybuffer`
-  to the feature skip regex. Update plan 040's "what 100% means" arithmetic
+  to the feature skip regex. (`immutable-arraybuffer` was removed from that regex
+  by plan 084 item 4, which implemented the proposal; the token is no longer
+  skipped.) Update plan 040's "what 100% means" arithmetic
   (+~2,460 executable) and `progress.md`'s phase table.
 
 ## Stages (each: build + local oracle + phase-22 slice + commit)

@@ -328,16 +328,24 @@ fn HObject* aggregate_error_iterable_to_list(BuiltinContext* ctx, TVal items) {
     HString* value_key = heap.str(heap::BuiltinStr.VALUE);
     HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
 
+    // §7.4.2 GetIterator reads `next` ONCE, when the iterator is obtained;
+    // every step then calls that same function. Reading it per iteration is
+    // observable, and an accessor returning a fresh closure each time would
+    // restart that closure's state on every step, so an iterator that would
+    // finish never does.
+    TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
+    if (ctx.should_throw) return null;
+    TVal next_method; next_method.set_undefined();
+    bool have_next = false;
+    if (try nm = next_method_opt) { next_method = nm; have_next = true; }
+    if (have_next && !arr_from_is_callable(next_method)) {
+        arr_throw_type_error(ctx, "iterator.next is not callable");
+        return null;
+    }
+    next_method.set_temproot();
+
     uint k = 0;
-    while (true) {
-        TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
-        if (ctx.should_throw) return null;
-        TVal next_method;
-        if (try nm = next_method_opt) { next_method = nm; } else { break; }
-        if (!arr_from_is_callable(next_method)) {
-            arr_throw_type_error(ctx, "iterator.next is not callable");
-            return null;
-        }
+    while (have_next) {
 
         TVal step_result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
         if (ctx.heap.has_error) {

@@ -3289,25 +3289,33 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         mapfn.set_temproot();
         this_arg.set_temproot();
 
+        // ES2015 §7.4.2 GetIterator reads `next` ONCE, when the iterator is
+        // obtained, and every IteratorStep calls that same function. Reading it
+        // per iteration is observable — an accessor `next` sees one get per
+        // element instead of one — and when the accessor returns a FRESH
+        // closure each time, the per-call state that closure holds restarts on
+        // every step, so an iterator that would finish never does.
+        TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
+        if (ctx.should_throw) {
+            // GetMethod(iterator, "next") threw, no iterator to close
+            // (the step failed before invoking next()).
+            ctx.result.set_undefined();
+            return;
+        }
+        TVal next_method; next_method.set_undefined();
+        bool have_next = false;
+        if (try nm = next_method_opt) { next_method = nm; have_next = true; }
+        if (have_next && !arr_from_is_callable(next_method)) {
+            arr_throw_type_error(ctx, "iterator.next is not callable");
+            ctx.result.set_undefined();
+            return;
+        }
+        next_method.set_temproot();
+
         uint k = 0;
-        while (true) {
+        while (have_next) {
             // g.i: Pk = ToString(k) (implicit via int_to_hstring below).
             // g.ii-iii: next = IteratorStep(iterator); ReturnIfAbrupt.
-            TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
-            if (ctx.should_throw) {
-                // GetMethod(iterator, "next") threw, no iterator to close
-                // (IteratorStep itself failed before invoking next()).
-                ctx.result.set_undefined();
-                return;
-            }
-            TVal next_method;
-            if (try nm = next_method_opt) { next_method = nm; } else { break; }
-            if (!arr_from_is_callable(next_method)) {
-                arr_throw_type_error(ctx, "iterator.next is not callable");
-                ctx.result.set_undefined();
-                return;
-            }
-
             TVal step_result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
             if (ctx.heap.has_error) {
                 ctx.should_throw = true;

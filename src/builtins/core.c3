@@ -747,6 +747,10 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false, &builtin_arraybuffer_proto_maxbytelength_get},
     ARRAYBUFFER_PROTO_TRANSFER {"transfer", 0, false, &builtin_arraybuffer_proto_transfer},
     ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH {"transferToFixedLength", 0, false, &builtin_arraybuffer_proto_transfer_to_fixed_length},
+    // --- Immutable ArrayBuffer proposal ---
+    ARRAYBUFFER_PROTO_IMMUTABLE_GET {"", -1, false, &builtin_arraybuffer_proto_immutable_get},
+    ARRAYBUFFER_PROTO_TRANSFER_TO_IMMUTABLE {"transferToImmutable", 0, false, &builtin_arraybuffer_proto_transfer_to_immutable},
+    ARRAYBUFFER_PROTO_SLICE_TO_IMMUTABLE {"sliceToImmutable", 2, false, &builtin_arraybuffer_proto_slice_to_immutable},
     // --- SharedArrayBuffer (single-agent) ---
     SHAREDARRAYBUFFER {"SharedArrayBuffer", 1, true, &builtin_sharedarraybuffer},
     SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_sharedarraybuffer_proto_bytelength_get},
@@ -1741,14 +1745,25 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
             iterator.set_temproot();
             adder.set_temproot();
 
-            while (true) {
-                TVal next_fn;
-                next_fn.set_undefined();
-                if (try found_next_fn = iter_obj.get_prop_proto(next_key, ctx.heap)) { next_fn = found_next_fn; }
-                if (!next_fn.is_object() || ((HObject*)next_fn.get_heapptr()) == null ||
-                    !((HObject*)next_fn.get_heapptr()).is_callable()) {
-                    break;
-                }
+            // §7.4.2 GetIterator reads `next` ONCE, when the iterator is
+            // obtained; every step then calls that same function. Reading it
+            // per iteration is observable, and an accessor returning a fresh
+            // closure each time would restart that closure's state on every
+            // step, so an iterator that would finish never does.
+            //
+            // Through builtins_generic_get, not get_prop_proto: `next` may be
+            // an accessor, and the raw slot lookup would hand back the
+            // getter-setter box instead of calling it.
+            TVal next_fn;
+            next_fn.set_undefined();
+            if (try found_next_fn = builtins_generic_get(iter_obj, next_key, ctx)) { next_fn = found_next_fn; }
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            bool next_ok = next_fn.is_lightfunc()
+                || (next_fn.is_object() && next_fn.get_heapptr() != null
+                    && ((HObject*)next_fn.get_heapptr()).is_callable());
+            next_fn.set_temproot();
+
+            while (next_ok) {
                 TVal result = ctx.heap.call_fn(ctx.vm, next_fn, null, 0, iterator);
                 if (ctx.heap.has_error) {
                     ctx.should_throw = true;
@@ -2248,12 +2263,17 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
     HString* done_key = heap.str(heap::BuiltinStr.DONE);
     HString* value_key = heap.str(heap::BuiltinStr.VALUE);
 
-    ulong k = 0;
-    while (true) {
-        TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
-        if (ctx.should_throw) return null;
-        TVal next_method;
-        if (try nm = next_method_opt) { next_method = nm; } else { break; }
+    // §7.4.2 GetIterator reads `next` ONCE, when the iterator is obtained;
+    // every step then calls that same function. Reading it per iteration is
+    // observable, and an accessor returning a fresh closure each time would
+    // restart that closure's state on every step, so an iterator that would
+    // finish never does.
+    TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
+    if (ctx.should_throw) return null;
+    TVal next_method; next_method.set_undefined();
+    bool have_next = false;
+    if (try nm = next_method_opt) { next_method = nm; have_next = true; }
+    if (have_next) {
         bool next_callable = next_method.is_lightfunc() ||
             (next_method.is_object() && next_method.get_heapptr() != null &&
              ((HObject*)next_method.get_heapptr()).is_callable());
@@ -2261,6 +2281,11 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
             builtin_throw_no_result_change(ctx, heap.type_err_proto, "iterator.next is not callable");
             return null;
         }
+    }
+    next_method.set_temproot();
+
+    ulong k = 0;
+    while (have_next) {
 
         TVal step_result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
         if (heap.has_error) {
