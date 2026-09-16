@@ -2167,6 +2167,16 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
 // Returns true if the property exists, setting `out` to the result value.
 fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal* out) {
     if (obj.flags.exotic_proxyobj) {
+        // ToPropertyDescriptor (§6.2.5.5) asks HasProperty for each field
+        // before Get. Treating the Get alone as the presence test reports
+        // every field present, so a descriptor that names only data fields
+        // looks like it names the accessor ones too.
+        bool has;
+        if (!proxy_mop_has(ctx.vm, ctx.heap, obj, key, &has)) {
+            proxy_ctx_ok(ctx);
+            return false;
+        }
+        if (!has) return false;
         TVal recv; recv.set_object(obj);
         if (!proxy_mop_get(ctx.vm, ctx.heap, obj, key, recv, out)) {
             proxy_ctx_ok(ctx);
