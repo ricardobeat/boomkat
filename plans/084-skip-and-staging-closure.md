@@ -99,7 +99,7 @@ missing rest-param duplicate rejection (`Function/rest-has-duplicated.js`),
 carrying a written reason. Re-run the full suite afterwards: fixes to shared
 machinery like `Object.values` touch far more than `staging`.
 
-**Progress.** 171 -> 75 failures. The buckets closed so far, each a real engine
+**Progress.** 171 -> 65 failures. The buckets closed so far, each a real engine
 bug with a normative regression test, since by definition the normative suite
 missed it:
 
@@ -121,11 +121,42 @@ missed it:
   `Object.assign`, object spread, `propertyIsEnumerable` and `hasOwnProperty`.
   `Object.hasOwn` reimplemented the lookup and missed dense array indices,
   Array `length`, Arguments indices and String characters too.
+- `RegExp.prototype.exec` carried a second copy of RegExpBuiltinExec, and both
+  it and the shared one latched the compiled matcher and the flag bits before
+  the Get + ToLength on `lastIndex` that can recompile the object underneath
+  them -- through a pointer the old matcher's free had invalidated. There is
+  one implementation now, reading after the side effects. @@replace measured
+  the match in bytes of a different string and cut `$\``, `$'` and the tail
+  mid-character.
+- `Object.defineProperties` walked the property table, so it visited symbols
+  before strings, and its proxy-target branch read keys from a table a Proxy
+  source leaves empty and so defined nothing.
+- `Function.prototype.bind` read the target's `length` from its own property
+  table instead of through HasOwnProperty + Get, missing a Proxy target and any
+  getter. `Function.prototype.toString` emitted the function's `name` whatever
+  it was, including the "bound " of a bound anonymous function, which is not a
+  PropertyName.
+- `toISOString` gave a negative year the four-digit spelling the format
+  reserves for years 0 through 9999.
+- ToPropertyDescriptor took the Get as the presence test for a Proxy
+  descriptor object, so every field read as present and a data descriptor
+  looked like it named `get` and `set` too.
+- A class constructor called by the host -- a sort comparator, a map callback,
+  a Symbol.toPrimitive method, a Proxy trap -- was skipped and `undefined`
+  returned in its place. The call opcodes checked for it; the entry point every
+  builtin uses did not.
 
 The recurring shape is the one the plan predicted: one spec behavior with two
 internal representations, tested on only one of them. Elements held in a
 backing buffer, or values computed rather than stored, are invisible to any
-surface that scans the property table and the array part and stops there.
+surface that scans the property table and the array part and stops there, and
+a Proxy -- whose every field is served by a trap and whose table is empty --
+is invisible to all of them at once.
+
+The other half is a spec operation written twice. RegExpBuiltinExec had two
+copies and both had the same re-entrancy bug; the class-constructor check
+existed in the call opcodes but not in the host call path. Fixing the copy the
+failing test reaches leaves the other wrong.
 
 ## 2. A Promise executor throw must reject, not propagate — ✅ DONE
 
