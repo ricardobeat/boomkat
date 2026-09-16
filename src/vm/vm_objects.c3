@@ -194,6 +194,22 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
         }
     }
 
+    // Integer-Indexed exotic: elements are enumerable own data properties
+    // (§10.4.5.1) held in the backing buffer, so the property-table and
+    // array-part passes never see them. They come first in
+    // [[OwnPropertyKeys]] order, like the String character indices above.
+    if (builtins::is_typed_array_class(source.get_class())) {
+        uint ta_len = builtins::ta_element_count(source);
+        for (uint ti = 0; ti < ta_len; ti++) {
+            HString* ik = vm.heap.int_to_hstring((long)ti);
+            if (ik == null || key_is_excluded((void*)ik, excluded)) continue;
+            TVal ev = builtins::ta_read_element_checked(vm.heap, source, ti);
+            if (!target.put_prop((void*)ik, ev, hobject::PROP_FLAGS_WEC, vm.heap)) {
+                return VM_ERROR~;
+            }
+        }
+    }
+
     // Copy own named properties (enumerable only), in spec order
     // (ES2015 §9.1.11.1 OrdinaryOwnPropertyKeys / §7.3.23
     // CopyDataProperties): named-table array-index keys ascending,

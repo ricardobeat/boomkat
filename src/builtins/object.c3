@@ -2222,9 +2222,17 @@ fn bool key_is_currently_enumerable(HObject* obj, hstring::HString* key, Heap* h
 }
 
 // [[Get]] for Object.values/entries enumeration: like desc_get, but also serves
-// the lazily-materialised indexed character properties of a String exotic object
-// (which don't live in the property table and so aren't found by desc_get).
+// the indexed properties that are computed rather than stored, and so are not
+// in the property table desc_get walks -- a String exotic object's characters
+// and a TypedArray's elements.
 fn bool desc_get_enum(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal* out) {
+    if (is_typed_array_class(obj.get_class()) && key.is_arridx()) {
+        uint ti = key.array_index();
+        if (ti < ta_element_count(obj)) {
+            *out = ta_read_element_checked(ctx.heap, obj, ti);
+            return true;
+        }
+    }
     if (obj.flags.exotic_stringobj && key.is_arridx()
         && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
@@ -4055,6 +4063,22 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                 }
             }
         }
+
+        // Integer-Indexed exotic: elements are enumerable own data properties
+        // (§10.4.5.1) living in the backing buffer, so the property-table and
+        // array-part scans above never reach them.
+        if (is_typed_array_class(src_obj.get_class())) {
+            uint ta_len = ta_element_count(src_obj);
+            for (uint ti = 0; ti < ta_len; ti++) {
+                HString* ik = ctx.heap.int_to_hstring((long)ti);
+                if (ik == null) continue;
+                TVal ev = ta_read_element_checked(ctx.heap, src_obj, ti);
+                if (!obj_assign_set(ctx, downstream, ik, &ev)) {
+                    ctx.result.set_undefined();
+                    return;
+                }
+            }
+        }
     }
     ctx.result.set_object(downstream);
 }
@@ -4106,18 +4130,9 @@ fn void builtin_object_hasOwn(BuiltinContext* ctx) {
         ctx.result.set_boolean(false);
         return;
     }
-    if (obj.flags.exotic_proxyobj) {
-        ProxyDesc pd;
-        if (!proxy_mop_get_own(ctx.vm, ctx.heap, obj, key, &pd)) { proxy_ctx_ok(ctx); return; }
-        ctx.result.set_boolean(pd.found);
-        return;
-    }
-    PropValue*? entry = obj.find_prop(key, ctx.heap);
-    if (try e = entry) {
-        ctx.result.set_boolean(true);
-    } else {
-        ctx.result.set_boolean(false);
-    }
+    bool found;
+    if (!object_has_own_property(ctx, obj, key, &found)) return;
+    ctx.result.set_boolean(found);
 }
 
 // ============================================================================
@@ -4825,6 +4840,76 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
     ctx.result.set_string(builtin_intern_string(ctx.heap, "[object Object]"));
 }
 
+// HasOwnProperty(O, P) (§7.3.12), shared by Object.prototype.hasOwnProperty and
+// Object.hasOwn, which the spec defines as the same operation.
+//
+// An own property is not always in the property table: a Proxy answers through
+// its trap, a module namespace through its live binding, and an Array,
+// Arguments, String or TypedArray serves indices from storage of its own.
+//
+// Writes the answer through `out` and returns true; returns false when a trap
+// or a TDZ binding threw, with the throw parked in ctx.
+fn bool object_has_own_property(BuiltinContext* ctx, HObject* obj, HString* key, bool* out) {
+    if (obj.flags.exotic_proxyobj) {
+        ProxyDesc pd;
+        if (!proxy_mop_get_own(ctx.vm, ctx.heap, obj, key, &pd)) { proxy_ctx_ok(ctx); return false; }
+        *out = pd.found;
+        return true;
+    }
+    // Module Namespace Exotic: HasOwnProperty calls [[GetOwnProperty]], which
+    // materialises the export's value via [[Get]] and throws ReferenceError for
+    // a TDZ binding (§10.4.6.5 step 4).
+    // A deferred namespace evaluates before any of the MOP operations
+    // the spec makes triggers (ES2025 import-defer).
+    if (!ns_force_deferred(ctx, obj, key)) return false;
+    if (obj.flags.exotic_module_ns) {
+        ProxyDesc nd;
+        if (!module_ns_own_desc(ctx.vm, ctx.heap, obj, key, &nd)) { proxy_ctx_ok(ctx); return false; }
+        *out = nd.found;
+        return true;
+    }
+
+    if (try e = obj.find_prop(key, ctx.heap)) {
+        *out = true;
+        return true;
+    }
+
+    // ARRAY / ARGUMENTS exotic: numeric indices < array_size and stored in the
+    // dense part are own properties (§10.4.2 [[GetOwnProperty]]). Without this,
+    // a dense-only array produced by concat/slice reports no indices at all.
+    if (obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+        if (key.is_arridx()) {
+            uint ai = (uint)key.array_index();
+            if (ai < obj.array_size && !obj.array_part()[ai].is_undefined()) {
+                *out = true;
+                return true;
+            }
+        }
+        // ARRAY "length" is an own property of every Array exotic (§22.1.3).
+        if (obj.get_class() == hobject::ObjClass.ARRAY && key.equals("length")) {
+            *out = true;
+            return true;
+        }
+    }
+
+    // STRING exotic: integer indices [0, clen) are own properties served lazily.
+    if (obj.flags.exotic_stringobj && key.is_arridx() && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
+        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
+        *out = prim != null && key.array_index() < prim.char_length();
+        return true;
+    }
+
+    // Integer-Indexed exotic: an in-bounds index is an own data property
+    // (§10.4.5.1), held in the backing buffer rather than the property table.
+    if (is_typed_array_class(obj.get_class()) && key.is_arridx()) {
+        *out = key.array_index() < ta_element_count(obj);
+        return true;
+    }
+
+    *out = false;
+    return true;
+}
+
 // Object.prototype.hasOwnProperty, ES2022 §20.1.3.2
 // Step 1: Let P = ? ToPropertyKey(V)  (before ToObject)
 // Step 2: Let O = ? ToObject(this value)
@@ -4869,55 +4954,9 @@ fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
         ctx.result.set_boolean(false);
         return;
     }
-    if (obj.flags.exotic_proxyobj) {
-        ProxyDesc pd;
-        if (!proxy_mop_get_own(ctx.vm, ctx.heap, obj, key, &pd)) { proxy_ctx_ok(ctx); return; }
-        ctx.result.set_boolean(pd.found);
-        return;
-    }
-    // Module Namespace Exotic: HasOwnProperty calls [[GetOwnProperty]], which
-    // materialises the export's value via [[Get]] and throws ReferenceError for
-    // a TDZ binding (§10.4.6.5 step 4).
-    // A deferred namespace evaluates before any of the MOP operations
-    // the spec makes triggers (ES2025 import-defer).
-    if (!ns_force_deferred(ctx, obj, key)) return;
-    if (obj.flags.exotic_module_ns) {
-        ProxyDesc nd;
-        if (!module_ns_own_desc(ctx.vm, ctx.heap, obj, key, &nd)) { proxy_ctx_ok(ctx); return; }
-        ctx.result.set_boolean(nd.found);
-        return;
-    }
-    // Check own property
-    PropValue*? entry = obj.find_prop(key, ctx.heap);
-    if (try e = entry) {
-        ctx.result.set_boolean(true);
-        return;
-    }
-    // ARRAY / ARGUMENTS exotic: numeric indices < array_size and stored in
-    // the dense part are own properties (spec §10.4.2 [[GetOwnProperty]]).
-    // Without this, hasOwnProperty returns false for dense-only arrays
-    // produced by concat/slice/etc.
-    if (obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) {
-        if (key.is_arridx()) {
-            uint ai = (uint)key.array_index();
-            if (ai < obj.array_size && !obj.array_part()[ai].is_undefined()) {
-                ctx.result.set_boolean(true);
-                return;
-            }
-        }
-        // ARRAY "length" is an own property of every Array exotic (§22.1.3).
-        if (obj.get_class() == hobject::ObjClass.ARRAY && key.equals("length")) {
-            ctx.result.set_boolean(true);
-            return;
-        }
-    }
-    // STRING exotic: integer indices [0, clen) are own properties served lazily.
-    if (obj.flags.exotic_stringobj && key.is_arridx() && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
-        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        ctx.result.set_boolean(prim != null && key.array_index() < prim.char_length());
-        return;
-    }
-    ctx.result.set_boolean(false);
+    bool found;
+    if (!object_has_own_property(ctx, obj, key, &found)) return;
+    ctx.result.set_boolean(found);
 }
 
 // ---------------------------------------------------------------------------
@@ -5146,6 +5185,13 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         // Indices in [0, clen) are enumerable per ES5 §15.5.5.1
         ctx.result.set_boolean(prim != null && key.array_index() < prim.char_length());
+        return;
+    }
+    // Integer-Indexed exotic: an in-bounds index is an enumerable own data
+    // property (§10.4.5.1), served from the backing buffer rather than the
+    // property table.
+    if (is_typed_array_class(obj.get_class()) && key.is_arridx()) {
+        ctx.result.set_boolean(key.array_index() < ta_element_count(obj));
         return;
     }
     ctx.result.set_boolean(false);
