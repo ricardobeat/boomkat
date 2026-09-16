@@ -880,10 +880,17 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
         HObject* tobj = (HObject*)downstream.get_heapptr();
         if (tobj != null) {
             HString* tlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-            // HasOwnProperty: check own properties only
-            int own_idx = tobj.find_prop_idx(tlen_key, ctx.heap);
-            if (own_idx >= 0) {
-                TVal tlen_val = tobj.prop_values()[own_idx];
+            // Steps 3-4: HasOwnProperty(Target, "length") and then
+            // Get(Target, "length"). Both are trapped operations -- a Proxy
+            // target serves them from its handler and keeps nothing in its
+            // own property table -- so neither can be a raw slot read.
+            bool has_own_len = false;
+            if (!object_has_own_property(ctx, tobj, tlen_key, &has_own_len)) return;
+            if (has_own_len) {
+                TVal? tlen_opt = builtins_generic_get(tobj, tlen_key, ctx);
+                if (ctx.should_throw) return;
+                TVal tlen_val; tlen_val.set_undefined();
+                if (try tv = tlen_opt) { tlen_val = tv; }
                 double target_len_d = 0.0;
                 bool has_numeric = false;
                 if (tlen_val.is_number()) {
@@ -980,6 +987,36 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     ctx.result.set_object(bound_obj);
 }
 
+// Whether `name` can appear as the optional PropertyName in the NativeFunction
+// grammar (§20.2.3.5). The name comes from the function's `name` property,
+// which is an arbitrary string: `Function.prototype.bind` prefixes "bound "
+// onto an anonymous target, and a Symbol-keyed method is named "[Symbol.foo]".
+// A name that is not a PropertyName is left out, leaving "function () {
+// [native code] }".
+fn bool is_native_property_name(char* name, usz len) {
+    // An accessor is named "get x" / "set x" in the grammar, so the prefix is
+    // stepped over and the rest checked as the PropertyName.
+    if (len > 4 && name[3] == ' '
+        && ((name[0] == 'g' && name[1] == 'e' && name[2] == 't')
+         || (name[0] == 's' && name[1] == 'e' && name[2] == 't'))) {
+        name = &name[4];
+        len -= 4;
+    }
+    if (len == 0) return false;
+    // ComputedPropertyName, how a Symbol-keyed method is named.
+    if (name[0] == '[') return name[len - 1] == ']';
+    // IdentifierName, approximated as the identifier characters. A name with a
+    // space, a quote or a paren in it is what this is here to reject.
+    for (usz i = 0; i < len; i++) {
+        char c = name[i];
+        bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+               || (c >= '0' && c <= '9') || c == '_' || c == '$'
+               || (uint)c >= 0x80;
+        if (!ok) return false;
+    }
+    return true;
+}
+
 // Function.prototype.toString()
 //
 // Returns a string representation of the function.
@@ -1060,8 +1097,12 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             buf[0] = 'f'; buf[1] = 'u'; buf[2] = 'n'; buf[3] = 'c'; buf[4] = 't'; buf[5] = 'i'; buf[6] = 'o'; buf[7] = 'n';
             buf[8] = ' ';
             int pos = 9;
-            for (usz i = 0; i < name_len && pos < 250; i++) {
-                buf[pos++] = name_ptr[i];
+            if (is_native_property_name(name_ptr, name_len)) {
+                for (usz i = 0; i < name_len && pos < 250; i++) {
+                    buf[pos++] = name_ptr[i];
+                }
+            } else {
+                pos = 8;
             }
             // Add "() { [native code] }"
             char[] suffix = "() { [native code] }";
