@@ -1030,6 +1030,18 @@ fn bool HObject.is_constructable(&self) @inline { return self.flags.constructabl
 // Returns true when the object is a bound function.
 fn bool HObject.is_bound(&self)         @inline { return self.flags.is_bound; }
 
+// Returns true when the object is a class constructor. A class is
+// constructable but not callable in the IsCallable sense (§7.2.3): calling one
+// without `new` is a TypeError, so wherever the spec asks for a callable --
+// GetMethod, a Proxy trap, a callback argument -- a class does not qualify,
+// even though `typeof` still reports "function".
+fn bool HObject.is_class_ctor(&self) {
+    if (self.flags.obj_class != ObjClass.FUNCTION) return false;
+    HObjectFunction* fn_extra = (HObjectFunction*)self.extra_ptr();
+    if (fn_extra.comp_func == null) return false;
+    return fn_extra.comp_func.is_class_ctor();
+}
+
 // Work out the callable kind from fields the object already has.
 fn CallableKind HObject.callable_kind(&self) @inline {
     if (self.flags.is_bound) return CallableKind.BOUND_FN;

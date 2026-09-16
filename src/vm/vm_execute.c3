@@ -311,14 +311,18 @@ fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data) {
     return vm.heap.alloc_concat_accumulator(data, (uint)cap);
 }
 
-fn bool vm_run_depth_exceeded(Vm* vm) {
-    if (vm.run_depth < MAX_RUN_DEPTH) return false;
+// Raise `message` as an error of class `proto` on every channel a host call
+// can be observed through. The coercion paths (vm_to_number and the builtins
+// reached through it) test throw_pending, not has_error, so an error raised
+// on only one channel is invisible to them: they read the result as a value
+// and carry on.
+fn void vm_host_throw(Vm* vm, HObject* proto, String message) {
     TVal err;
     err.set_undefined();
     HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try eo = err_raw) {
-        eo.prototype = vm.heap.range_err_proto;
-        HString* msg_str = intern_string(vm, "Maximum call stack size exceeded");
+        eo.prototype = proto;
+        HString* msg_str = intern_string(vm, message);
         HString* msg_key = intern_string(vm, "message");
         if (msg_str != null && msg_key != null) {
             TVal msg_val;
@@ -331,13 +335,13 @@ fn bool vm_run_depth_exceeded(Vm* vm) {
     vm.heap.has_error = true;
     vm.heap.tval_copy_ref(&vm.heap.error_value, &err);
     vm.heap.tval_copy_ref(&vm.return_val, &err);
-    // The coercion paths (vm_to_number and the builtins reached through it)
-    // test throw_pending, not has_error, so a depth throw raised on only the
-    // has_error channel is invisible to them: they read the NaN result as a
-    // value and coerce again, and the recursion this guard exists to stop
-    // continues.
     vm.throw_pending = true;
     vm.heap.tval_copy_ref(&vm.throw_value, &err);
+}
+
+fn bool vm_run_depth_exceeded(Vm* vm) {
+    if (vm.run_depth < MAX_RUN_DEPTH) return false;
+    vm_host_throw(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded");
     return true;
 }
 
@@ -435,6 +439,20 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             }
 
             return vm_call_fn_impl(vm_ptr, bound_target, combined_args, combined_idx, bound_this);
+        }
+    }
+
+    // §9.2.1 step 1: a class constructor called without `new` is a TypeError.
+    // The call opcodes check this for calls written in script; this is the
+    // same check for every call the host makes, so a class handed to a builtin
+    // as a callback -- a sort comparator, a map function, a Symbol.toPrimitive
+    // method -- throws rather than being quietly skipped.
+    if (func.is_object() && func.get_heapptr() != null) {
+        HObject* cobj = (HObject*)func.get_heapptr();
+        if (cobj.is_class_ctor()) {
+            vm_host_throw(vm, vm.heap.type_err_proto,
+                          "Class constructor cannot be invoked without 'new'");
+            return undef;
         }
     }
 
