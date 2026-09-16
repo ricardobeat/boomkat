@@ -322,14 +322,13 @@ fn void builtin_symbol(BuiltinContext* ctx) {
 // Symbol.for(key), ES6 §19.4.2.1
 // ============================================================================
 fn void builtin_symbol_for(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_undefined();
-        return;
-    }
+    // A missing argument is `undefined`, so Symbol.for() registers the key
+    // "undefined" exactly as Symbol.for(undefined) does.
+    TVal key_val; key_val.set_undefined();
+    if (ctx.argc > 0) key_val = ctx.regs[ctx.base_reg];
 
     // ToString(key), must throw TypeError for Symbol and propagate errors
     // from toString/valueOf (for/to-string-err.js, for/description.js).
-    TVal key_val = ctx.regs[ctx.base_reg];
     HString* key_str = builtin_to_string_vm(ctx, &key_val);
     if (ctx.should_throw) return;
     if (key_str == null) {
@@ -362,12 +361,10 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
 // Symbol.keyFor(sym), ES6 §19.4.2.5
 // ============================================================================
 fn void builtin_symbol_keyfor(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_undefined();
-        return;
-    }
-
-    TVal sym_val = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`, which is not a Symbol, so
+    // Symbol.keyFor() throws just as Symbol.keyFor(undefined) does.
+    TVal sym_val; sym_val.set_undefined();
+    if (ctx.argc > 0) sym_val = ctx.regs[ctx.base_reg];
     if (!is_symbol_val(sym_val)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Symbol.keyFor requires a symbol argument");
         return;

@@ -1619,11 +1619,10 @@ fn void builtin_object_preventExtensions(BuiltinContext* ctx) {
 // Returns a property descriptor for an own property of the given object.
 // Throws TypeError if first argument is not an object.
 fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        ctx.result.set_undefined();
-        return;
-    }
-    TVal arg0 = ctx.regs[ctx.base_reg];
+    // A missing argument is `undefined`; ToObject then throws, exactly as it
+    // does for an explicit undefined.
+    TVal arg0; arg0.set_undefined();
+    if (ctx.argc > 0) arg0 = ctx.regs[ctx.base_reg];
 
     // Handle lightfuncs: synthesize .name and .length property descriptors
     if (arg0.is_lightfunc()) {
@@ -1757,25 +1756,11 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)arg0.get_heapptr();
 
-    // Resolve the property key (second argument)
-    if (ctx.argc < 2) {
-        // ToPropertyKey(undefined) = "undefined", still runs the proxy trap
-        // (and the revoked-proxy TypeError).
-        if (obj != null && obj.flags.exotic_proxyobj) {
-            HString* ukey = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
-            ProxyDesc upd;
-            if (!proxy_mop_get_own(ctx.vm, ctx.heap, obj, ukey, &upd)) { proxy_ctx_ok(ctx); return; }
-            if (!upd.found) { ctx.result.set_undefined(); return; }
-            upd.complete();
-            HObject* udesc = proxy_desc_to_object(ctx.heap, &upd);
-            if (udesc == null) { ctx.result.set_undefined(); return; }
-            ctx.result.set_object(udesc);
-            return;
-        }
-        ctx.result.set_undefined();
-        return;
-    }
-    TVal key_val = ctx.regs[ctx.base_reg + 1];
+    // Resolve the property key (second argument). A missing one is `undefined`,
+    // which ToPropertyKey turns into the key "undefined" -- an ordinary lookup,
+    // proxy trap included.
+    TVal key_val; key_val.set_undefined();
+    if (ctx.argc > 1) key_val = ctx.regs[ctx.base_reg + 1];
     // ES2015+ ToPropertyKey. The shared helper passes symbols through, coerces
     // objects via ToPrimitive, and interns the key: property lookup compares by
     // pointer identity, so an un-interned concatenation result would miss.
@@ -4069,12 +4054,12 @@ fn void builtin_object_is(BuiltinContext* ctx) {
 // Object.hasOwn(obj, prop), returns true if obj has own property prop.
 // Equivalent to Object.prototype.hasOwnProperty.call(obj, prop).
 fn void builtin_object_hasOwn(BuiltinContext* ctx) {
-    if (ctx.argc < 2) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Object.hasOwn requires 2 arguments");
-        return;
-    }
-    TVal obj_val = ctx.regs[ctx.base_reg];
-    TVal prop_val = ctx.regs[ctx.base_reg + 1];
+    // Both arguments default to `undefined` when absent: ToObject rejects the
+    // first, and ToPropertyKey turns the second into the key "undefined".
+    TVal obj_val;  obj_val.set_undefined();
+    TVal prop_val; prop_val.set_undefined();
+    if (ctx.argc > 0) obj_val = ctx.regs[ctx.base_reg];
+    if (ctx.argc > 1) prop_val = ctx.regs[ctx.base_reg + 1];
     // ToObject on first argument, throw TypeError for null/undefined
     if (obj_val.is_null() || obj_val.is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
