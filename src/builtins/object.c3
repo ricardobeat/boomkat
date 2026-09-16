@@ -2957,15 +2957,54 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
     object_define_properties(ctx, obj, props);
 }
 
+// Reorder collected own keys into [[OwnPropertyKeys]] order: integer indices
+// ascending, then the remaining strings, then symbols, each group otherwise
+// keeping the order it came in. The property table stores every key in
+// insertion order, so a caller that walks it directly sees a symbol before a
+// string whenever it was assigned first.
+fn void sort_own_keys(HString*[] keys, uint count) {
+    uint w = 0;
+    // Integer indices, ascending. There are rarely more than a handful here,
+    // so a selection pass beats allocating a sort buffer.
+    for (uint pass = 0; pass < count; pass++) {
+        uint best = count;
+        uint best_val = 0;
+        for (uint i = w; i < count; i++) {
+            if (keys[i] == null || !keys[i].is_arridx()) continue;
+            uint v = keys[i].array_index();
+            if (best == count || v < best_val) { best = i; best_val = v; }
+        }
+        if (best == count) break;
+        HString* t = keys[best];
+        for (uint i = best; i > w; i--) keys[i] = keys[i - 1];
+        keys[w++] = t;
+    }
+    // Non-index strings, then symbols, each stable.
+    for (uint i = w; i < count; i++) {
+        if (keys[i] == null || keys[i].is_symbol()) continue;
+        HString* t = keys[i];
+        for (uint j = i; j > w; j--) keys[j] = keys[j - 1];
+        keys[w++] = t;
+    }
+}
+
 // ObjectDefineProperties, §20.1.2.3.1. Shared by Object.defineProperties and
 // Object.create, whose step 4 is defined as this same abstract operation.
 fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* props) {
-    // Proxy exotic target: parse each descriptor and route through
-    // [[DefineOwnProperty]].
-    if (obj.flags.exotic_proxyobj) {
-        for (uint i = 0; i < props.prop_count; i++) {
+    // Proxy target, ordinary source: read the keys from the property table and
+    // route each descriptor through [[DefineOwnProperty]]. A Proxy source has
+    // an empty table and is handled by the branch below, which defines onto a
+    // Proxy target just as well.
+    if (obj.flags.exotic_proxyobj && !props.flags.exotic_proxyobj) {
+        HString*[256] pkeys;
+        uint pkeys_count = 0;
+        for (uint i = 0; i < props.prop_count && pkeys_count < 256; i++) {
             if (props.prop_key_at(i, ctx.heap) == null || !props.get_prop_flags(i, ctx.heap).enumerable) continue;
-            HString* k = (HString*)props.prop_key_at(i, ctx.heap);
+            pkeys[pkeys_count++] = (HString*)props.prop_key_at(i, ctx.heap);
+        }
+        sort_own_keys(pkeys[:pkeys_count], pkeys_count);
+        for (uint i = 0; i < pkeys_count; i++) {
+            HString* k = pkeys[i];
             TVal desc_val;
             if (!desc_get(ctx, props, k, &desc_val)) {
                 if (ctx.should_throw) return;
@@ -2988,7 +3027,8 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
         return;
     }
 
-    // Proxy props: [[OwnPropertyKeys]] + [[GetOwnProperty]] per key (in trap order).
+    // Proxy source: the keys come from [[OwnPropertyKeys]] and each descriptor
+    // from [[GetOwnProperty]] + [[Get]], so every trap runs in spec order.
     if (props.flags.exotic_proxyobj) {
         HObject* karr;
         if (!proxy_mop_own_keys(ctx.vm, ctx.heap, props, &karr)) { proxy_ctx_ok(ctx); return; }
@@ -3068,6 +3108,8 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
             }
         }
     }
+
+    sort_own_keys(keys_arr[:keys_count], keys_count);
 
     for (uint k = 0; k < keys_count; k++) {
         HString* p_key = keys_arr[k];
