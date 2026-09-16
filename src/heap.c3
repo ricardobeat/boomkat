@@ -3437,15 +3437,16 @@ fn void Heap.mark_roots(&self) {
 
     // ModuleDefs are in a malloc'd cache the sweep never scans, so the values
     // they hold are rooted here. `eval_error` is an ERRORED module's cached
-    // [[EvaluationError]], re-rejected on every later import, and `json_value`
-    // is a JSON module's default export.
+    // [[EvaluationError]], re-rejected on every later import, and `synth_value`
+    // is a synthetic module's default export -- for a bytes module, the only
+    // reference to its Uint8Array and the immutable buffer behind it.
     if (self.module_cache != null) {
         esm::ModuleDef** cache = (esm::ModuleDef**)self.module_cache;
         for (uint i = 0; i < self.module_cache_count; i++) {
             esm::ModuleDef* mod = cache[i];
             if (mod == null) continue;
             if (mod.has_eval_error) { self.mark_tval(&mod.eval_error); }
-            if (mod.is_json)        { self.mark_tval(&mod.json_value); }
+            if (mod.is_synthetic)   { self.mark_tval(&mod.synth_value); }
             // The cached import.meta object (§16.2.1.10 [[ImportMeta]]) carries
             // user-visible state such as added properties and a changed
             // prototype, and lives as long as the module.

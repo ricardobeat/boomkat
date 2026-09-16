@@ -1,7 +1,7 @@
 # Test262 Closure After Sloppy Mode
 
 **Date:** 2026-09-15
-**Status:** 📝 PLANNED
+**Status:** 🚧 IN PROGRESS — items 2-5 done; item 1 partial; items 6-8 gated
 
 After plan 083 the suite sits at 48,331 pass / 171 fail (99.6%) with 4,961
 skips. What is left falls into three kinds of work, in the order below: bugs
@@ -99,7 +99,7 @@ missing rest-param duplicate rejection (`Function/rest-has-duplicated.js`),
 carrying a written reason. Re-run the full suite afterwards: fixes to shared
 machinery like `Object.values` touch far more than `staging`.
 
-## 2. A Promise executor throw must reject, not propagate
+## 2. A Promise executor throw must reject, not propagate — ✅ DONE
 
 6 `harness` tests, plus correctness everywhere `new Promise` wraps a throwing
 executor. Medium risk: VM error-propagation plumbing.
@@ -165,7 +165,7 @@ with a reason rather than a fix:
 
 ---
 
-## 3. Proper tail calls (ES2015 §14.8)
+## 3. Proper tail calls (ES2015 §14.8) — ✅ DONE
 
 35 tests. High risk: it touches the core call path.
 
@@ -211,7 +211,7 @@ what breaks unrelated call paths. Drop `tail-call-optimization` from
 changes error `.stack` output, and some `test/` fixtures pin it. Expect to
 re-baseline a few.
 
-## 4. Immutable ArrayBuffer
+## 4. Immutable ArrayBuffer — ✅ DONE
 
 66 tests (61 in `built-ins`). Low risk. Needed by item 5, whose `bytes` type
 returns one.
@@ -239,7 +239,7 @@ Remove `immutable-arraybuffer` from `UNSUPPORTED_PATTERN`, and update plan
 049's note at `plans/049-arraybuffer-typedarray-dataview.md:184`, which names
 the same token.
 
-## 5. Import Text and Import Bytes
+## 5. Import Text and Import Bytes — ✅ DONE
 
 6 `import-text` tests plus the `language/import/import-bytes/` files item 4
 unblocks. Low risk, but it needs a host hook.
@@ -265,6 +265,24 @@ override the text (UTF-8) and bytes reads.
 **Gate.** `just test262-dir language/import` and
 `language/expressions/dynamic-import/import-attributes` — dynamic `import()`
 takes the same attributes and must share the dispatch.
+
+**Done.** `language/import` 125/125, dynamic-import 942/942. Rather than a
+second constructor, the existing JSON-module path generalized: all three types
+are CreateDefaultExportSyntheticModule, so `is_json`/`json_value` became
+`is_synthetic`/`synth_value` and the `bool wants_json` threaded through the
+compiler, loader and VM became a `ModuleAttrType` enum.
+
+Two things the plan did not anticipate, both pre-existing and both only
+reachable once a non-JSON type existed:
+
+  - The loader treats an empty read as "keep probing extensions", so an empty
+    file could not be a module at all. A type-attributed import names its file
+    exactly, so it now reads the exact path and an empty text or bytes file is
+    a legitimately empty module.
+  - The module map was keyed on the specifier alone, but §16.2.1.7 keys it on
+    the specifier AND the attributes. `import './self.js' with { type: "text" }`
+    from inside self.js got the in-progress JS record back. The JSON path had
+    the same bug; nothing in the corpus reached it.
 
 ---
 

@@ -30,11 +30,13 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 - `Promise`, the microtask queue, `Map`/`Set`/`WeakMap`/`WeakSet`
 - `WeakRef` and `FinalizationRegistry`
 - `Symbol`, including the well-known symbols
-- TypedArrays, `ArrayBuffer` (including resizable), `DataView`
+- TypedArrays, `ArrayBuffer` (including resizable and immutable), `DataView`
 - `Atomics` and `SharedArrayBuffer`, on a single agent
 - ESM: `import`, `export`, namespace objects, dynamic `import()`, import
-  attributes (`with { type: "json" }`)
+  attributes (`with { type: "json" | "text" | "bytes" }`)
 - Iterator helpers (`Iterator.prototype.map`/`filter`/`take`/`drop`/...)
+- Proper tail calls (ES2015 §14.8): a call in syntactic tail position reuses
+  the caller's frame, so tail recursion runs in constant stack
 - `BigInt`, arbitrary precision (a 32-bit limb vector; the only ceiling is
   `BIGINT_MAX_LIMBS`, ~2 billion bits, which turns a runaway expression into a
   RangeError instead of exhausting memory)
@@ -67,7 +69,6 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   second agent through the `$262.agent` hooks are skipped per file rather than
   the whole directory being excluded. `CanBlockIsFalse` tests are skipped for the
   opposite reason: this engine's single agent can suspend.
-- **Proper tail calls.** Not implemented.
 
 ## Two notes for anyone editing the skip list
 

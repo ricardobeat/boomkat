@@ -51,14 +51,24 @@ struct CompStarExportEntry {
     uint req_module_idx;
 }
 
+// The `type` of an import attribute clause, selecting how the referenced file
+// becomes a module. Every non-NONE type is a synthetic module whose sole export
+// is `default` (CreateDefaultExportSyntheticModule); the file is never compiled
+// as ECMAScript. Backed by `char` so the layout matches module::ReqModuleEntry,
+// which mirrors this struct field for field.
+enum ModuleAttrType : char {
+    NONE,   // no `type` attribute: compile the file as ECMAScript
+    JSON,   // `with { type: "json" }`  -> JSON.parse of the contents
+    TEXT,   // `with { type: "text" }`  -> the contents as a UTF-8 String
+    BYTES,  // `with { type: "bytes" }` -> a Uint8Array over an immutable buffer
+}
+
 struct CompReqModuleEntry {
     char[] module_name;
     void*  resolved;
-    // True when the import specifier carried `with { type: "json" }`. The
-    // referenced module is then loaded as a JSON module (parsed with
-    // JSON.parse, default export = the parsed value) rather than compiled as
-    // ECMAScript. Layout must match module::ReqModuleEntry.
-    bool   wants_json;
+    // The `type` the import specifier asked for, selecting the load path for
+    // the referenced file. Layout must match module::ReqModuleEntry.
+    ModuleAttrType attr_type;
     // Set at link time when the statement's bindings were all type-only (see
     // module::ReqModuleEntry.type_only). Layout must match module::ReqModuleEntry.
     bool   type_only;
@@ -169,12 +179,12 @@ fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_
 }
 
 // Register a required module specifier, returning its index (deduplicates).
-fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants_json = false, bool deferred = false) {
+fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, ModuleAttrType attr_type = ModuleAttrType.NONE, bool deferred = false) {
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
-        // A JSON import and an ECMAScript import of the same specifier are
+        // Imports of the same specifier under different `type` attributes are
         // distinct module requests (different [[Attributes]]), so only reuse
-        // an entry whose json-ness matches too.
-        if (mod.req_modules[i].wants_json == wants_json &&
+        // an entry whose type matches too.
+        if (mod.req_modules[i].attr_type == attr_type &&
             str_eq(mod.req_modules[i].module_name, specifier)) {
             // The request stays deferred only while EVERY import of it is:
             // one eager import makes the module evaluate in dependency order
@@ -190,7 +200,7 @@ fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, bool wants
         }
     }
     uint idx = (uint)mod.req_modules.len();
-    mod.req_modules.push({ specifier, null, wants_json, false, deferred, idx });
+    mod.req_modules.push({ specifier, null, attr_type, false, deferred, idx });
     return idx;
 }
 
@@ -5852,9 +5862,9 @@ fn bool CompilerContext.match_import_phase(&self, char[] kw) {
 // Unknown keys and unknown `type` values are NOT parse errors, they are left
 // for the host load step, matching the spec and the test262 corpus (the
 // resolution-phase tests rely on the syntax being accepted).
-fn bool? CompilerContext.parse_with_clause(&self) {
+fn ModuleAttrType? CompilerContext.parse_with_clause(&self) {
     // No WithClause present.
-    if (self.peek_type() != TokenType.WITH) return false;
+    if (self.peek_type() != TokenType.WITH) return ModuleAttrType.NONE;
     self.advance()!;  // consume 'with'
     self.expect(TokenType.LBRACE)!;
 
@@ -5862,7 +5872,7 @@ fn bool? CompilerContext.parse_with_clause(&self) {
     // plenty (the corpus's largest is 4); overflow simply stops collecting.
     char[][32] seen_keys;
     uint seen_count = 0;
-    bool wants_json = false;
+    ModuleAttrType attr_type = ModuleAttrType.NONE;
 
     while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
         // AttributeKey: an IdentifierName (incl. reserved words like `if`,
@@ -5892,14 +5902,19 @@ fn bool? CompilerContext.parse_with_clause(&self) {
         }
         Token val_tok = self.advance()!;
 
-        if (str_eq(key_str, "type") && str_eq(val_tok.str_value, "json")) {
-            wants_json = true;
+        if (str_eq(key_str, "type")) {
+            // An unrecognized `type` stays NONE here, not a parse error: the
+            // spec leaves unknown types to the host load step, and the
+            // resolution-phase tests rely on the syntax being accepted.
+            if (str_eq(val_tok.str_value, "json"))  attr_type = ModuleAttrType.JSON;
+            if (str_eq(val_tok.str_value, "text"))  attr_type = ModuleAttrType.TEXT;
+            if (str_eq(val_tok.str_value, "bytes")) attr_type = ModuleAttrType.BYTES;
         }
 
         if (!self.match(TokenType.COMMA)) break;
     }
     self.expect(TokenType.RBRACE)!;
-    return wants_json;
+    return attr_type;
 }
 
 // Parse a `ModuleExportName : IdentifierName | StringLiteral` (§16.2.3).
@@ -5976,8 +5991,8 @@ fn void? CompilerContext.import_declaration(&self) {
         char[] ns_local = self.intern_slot_name(ns_tok.str_value);
         self.expect_from()!;
         Token spec_tok = self.expect(TokenType.STRING)!;
-        bool wants_json = self.parse_with_clause()!;
-        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json, true);
+        ModuleAttrType wants_type = self.parse_with_clause()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type, true);
         mod_register_import(mod, ns_local, "*", req_idx, true, false, true);
         self.match(TokenType.SEMICOLON);
         return;
@@ -5989,8 +6004,8 @@ fn void? CompilerContext.import_declaration(&self) {
         char[] src_local = self.intern_slot_name(bind_tok.str_value);
         self.expect_from()!;
         Token spec_tok = self.expect(TokenType.STRING)!;
-        bool wants_json = self.parse_with_clause()!;
-        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+        ModuleAttrType wants_type = self.parse_with_clause()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type);
         // The binding holds the target's Module Source object. SOURCE_BINDING
         // is the import name, standing for the spec's ~source~ the way "*"
         // stands for a namespace: it is not an exported name, so it can never
@@ -6003,8 +6018,8 @@ fn void? CompilerContext.import_declaration(&self) {
     // Side-effect import: import 'module'
     if (tt == TokenType.STRING) {
         Token spec_tok = self.advance()!;
-        bool wants_json = self.parse_with_clause()!;
-        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+        ModuleAttrType wants_type = self.parse_with_clause()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type);
         self.match(TokenType.SEMICOLON);
         return;
     }
@@ -6027,8 +6042,8 @@ fn void? CompilerContext.import_declaration(&self) {
             // Must be: import defaultName from 'module'
             self.expect_from()!;
             Token spec_tok = self.expect(TokenType.STRING)!;
-            bool wants_json = self.parse_with_clause()!;
-            uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+            ModuleAttrType wants_type = self.parse_with_clause()!;
+            uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type);
             mod_register_import(mod, default_local, "default", req_idx, false, true);
             self.match(TokenType.SEMICOLON);
             return;
@@ -6049,8 +6064,8 @@ fn void? CompilerContext.import_declaration(&self) {
         char[] ns_local = self.intern_slot_name(ns_tok.str_value);
         self.expect_from()!;
         Token spec_tok = self.expect(TokenType.STRING)!;
-        bool wants_json = self.parse_with_clause()!;
-        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+        ModuleAttrType wants_type = self.parse_with_clause()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type);
         mod_register_import(mod, ns_local, "*", req_idx, true, false);
         if (has_default) {
             mod_register_import(mod, default_local, "default", req_idx, false, true);
@@ -6122,8 +6137,8 @@ fn void? CompilerContext.import_declaration(&self) {
         self.expect(TokenType.RBRACE)!;
         self.expect_from()!;
         Token spec_tok = self.expect(TokenType.STRING)!;
-        bool wants_json = self.parse_with_clause()!;
-        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+        ModuleAttrType wants_type = self.parse_with_clause()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type);
 
         // Register import metadata (bindings are created at link time by execute_module)
         for (uint i = 0; i < binding_count; i++) {
@@ -6347,8 +6362,8 @@ fn void? CompilerContext.export_declaration(&self) {
             char[] ns_name = self.parse_module_export_name()!;
             self.expect_from()!;
             Token spec_tok = self.expect(TokenType.STRING)!;
-            bool wants_json = self.parse_with_clause()!;
-            uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+            ModuleAttrType wants_type = self.parse_with_clause()!;
+            uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type);
             self.register_export(mod, "*", ns_name, true, req_idx)!;
             self.expect_semicolon_or_asi()!;
             return;
@@ -6356,8 +6371,8 @@ fn void? CompilerContext.export_declaration(&self) {
 
         self.expect_from()!;
         Token spec_tok = self.expect(TokenType.STRING)!;
-        bool wants_json = self.parse_with_clause()!;
-        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+        ModuleAttrType wants_type = self.parse_with_clause()!;
+        uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type);
         mod_register_star_export(mod, req_idx);
         self.expect_semicolon_or_asi()!;
         return;
@@ -6426,8 +6441,8 @@ fn void? CompilerContext.export_declaration(&self) {
         // Check for 'from' clause (indirect export)
         if (self.match_from()) {
             Token spec_tok = self.expect(TokenType.STRING)!;
-            bool wants_json = self.parse_with_clause()!;
-            uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_json);
+            ModuleAttrType wants_type = self.parse_with_clause()!;
+            uint req_idx = mod_register_req_module(mod, spec_tok.str_value, wants_type);
             for (uint i = 0; i < count; i++) {
                 self.register_export(mod, local_names[i], export_names[i], true, req_idx)!;
             }

@@ -182,6 +182,46 @@ fn void typedarray_link_view(HObject* buf, HObject* view) {
     (*buf.extra_ptr()).ab.views_head = view;
 }
 
+// Build a Uint8Array over a fresh immutable ArrayBuffer holding a copy of
+// `bytes`, for the `with { type: "bytes" }` module type (CreateBytesModule).
+//
+// Heap-only: module resolution has no BuiltinContext, and this needs none --
+// there is no `new.target`, no user constructor and no coercion, just the two
+// objects and the copy. Returns null if any allocation fails.
+fn HObject* bytes_module_view(Heap* heap, char[] bytes) {
+    uint byte_length = (uint)bytes.len;
+    char* data = null;
+    if (byte_length > 0) {
+        data = (char*)heap.alloc_func(heap.heap_udata, (usz)byte_length);
+        if (data == null) return null;
+        mem::copy(data, bytes.ptr, (sz)((usz)byte_length));
+    }
+
+    HObject*? raw_buf = heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
+    if (catch err = raw_buf) {
+        if (data != null) heap.free_func(heap.heap_udata, data);
+        return null;
+    }
+    HObject* buf = raw_buf;
+    buf.prototype = heap.arraybuffer_proto;
+    (*buf.extra_ptr()).ab.data = data;
+    (*buf.extra_ptr()).ab.byte_length = byte_length;
+    (*buf.extra_ptr()).ab.views_head = null;
+    // The proposal hands the importer a buffer nothing can write to, so the
+    // module's bytes cannot be mutated by one importer under another's feet.
+    (*buf.extra_ptr()).ab.immutable = true;
+
+    HObject*? raw_view = heap.alloc_object(hobject::ObjClass.UINT8ARRAY);
+    if (catch err = raw_view) return null;
+    HObject* view = raw_view;
+    view.prototype = heap.uint8array_proto;
+    (*view.extra_ptr()).view.byte_offset = 0;
+    (*view.extra_ptr()).view.byte_length = byte_length;
+    (*view.extra_ptr()).view.length_tracking = false;
+    typedarray_link_view(buf, view);
+    return view;
+}
+
 // Resolve the constructor's `.prototype` (falling back to the shared
 // %TypedArray%.prototype-derived per-class prototype) for `new.target`-style
 // prototype inheritance.

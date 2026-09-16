@@ -104,9 +104,9 @@ struct StarExportEntry {
 struct ReqModuleEntry {
     char[]       module_name;   // the specifier string
     void*        resolved;      // ModuleDef* filled during resolve phase (opaque to avoid cycle)
-    // True when the import carried `with { type: "json" }`; the referenced
-    // module is loaded as a JSON module. Layout mirrors CompReqModuleEntry.
-    bool         wants_json;
+    // The `type` the import carried, selecting the load path for the
+    // referenced file. Layout mirrors CompReqModuleEntry.
+    compiler::ModuleAttrType attr_type;
     // True when every binding of the import statement was type-only and was
     // elided (see mark_type_only_req_modules). The statement is then gone
     // entirely: the target must not be evaluated as part of this module's
@@ -234,13 +234,22 @@ struct ModuleDef {
     // (ES2025 source-phase-imports; staging/source-phase-imports).
     bool                          has_source_repr;
 
-    // JSON module support (ES2025 `import x from "m" with { type: "json" }`).
-    // A JSON module has no compiled body: `func` is null and its sole export is
-    // `default`, bound to `json_value` (the JSON.parse of the file contents,
-    // computed at resolve time). `is_json` distinguishes it from an empty JS
-    // module so link/execute can install the synthetic default binding.
-    bool                          is_json;
-    TVal                          json_value;
+    // Synthetic module support: `with { type: "json" | "text" | "bytes" }`.
+    // Such a module has no compiled body -- `func` is null and its sole export
+    // is `default`, bound to `synth_value`, computed at resolve time from the
+    // file contents. `is_synthetic` distinguishes it from an empty JS module so
+    // link/execute install the synthetic default binding instead of running a
+    // body. All three types share this shape because all three are
+    // CreateDefaultExportSyntheticModule; only the value differs.
+    bool                          is_synthetic;
+    TVal                          synth_value;
+    // Which `type` attribute produced this record. Part of the module map key
+    // (§16.2.1.7 keys on specifier AND attributes), not just a description of
+    // synth_value: the same file is a different module under a different type,
+    // and `import './self.js' with { type: "text" }` from inside self.js must
+    // get the text module rather than the JS module already being loaded
+    // (test262 text-self).
+    compiler::ModuleAttrType      attr_type;
 
     // Cached evaluation error (ECMA-262 16.2.1.5 [[EvaluationError]]). When a
     // module body (or a dependency's) throws, the module transitions to ERRORED
@@ -315,11 +324,13 @@ struct ModuleDef {
 const uint INITIAL_MODULE_CAP = 16;
 
 // Find a loaded module by normalized name. Returns null if not found.
-fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name) {
+fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name,
+                                      compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
     if (heap.module_cache == null) return null;
     ModuleDef** cache = (ModuleDef**)heap.module_cache;
     for (uint i = 0; i < heap.module_cache_count; i++) {
-        if (cache[i] != null && cache[i].module_name.len == name.len) {
+        if (cache[i] != null && cache[i].attr_type == attr_type
+            && cache[i].module_name.len == name.len) {
             bool match = true;
             for (usz j = 0; j < name.len; j++) {
                 if (cache[i].module_name[j] != name[j]) { match = false; break; }
@@ -713,12 +724,27 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
 }
 
 // Call the host's read_source hook, or use the default.
-fn char[]? call_read_source(Heap* heap, char[] normalized_name) {
+//
+// `attr_type` selects how the file is located, not how it is decoded. An
+// ECMAScript import may name `./x` and mean `./x.ts`, so the default reader
+// probes extensions and treats an empty read as "keep looking". A synthetic
+// module (`with { type: ... }`) names its file exactly -- `./f.txt`, a `.png`,
+// an extensionless fixture -- so it neither wants the probing nor can afford
+// that convention: an empty text or bytes file is a legitimate empty module
+// (test262 text-empty, bytes-from-empty), not a miss.
+//
+// A host hook still gets first refusal either way, so an embedder can serve
+// the text and bytes reads itself.
+fn char[]? call_read_source(Heap* heap, char[] normalized_name,
+                            compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
     if (heap.module_hooks != null) {
         ModuleHostHooks* hooks = (ModuleHostHooks*)heap.module_hooks;
         if (hooks.read_source != null) {
             return hooks.read_source(normalized_name, hooks.udata);
         }
+    }
+    if (attr_type != compiler::ModuleAttrType.NONE) {
+        return file::load(mem, (String)normalized_name);
     }
     return default_module_read(normalized_name, null);
 }
@@ -744,12 +770,14 @@ fn void call_on_module_evaluated(Heap* heap, void* mod) {
 }
 
 // Find or create a ModuleDef by name in the heap's module cache.
-fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name) {
+fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name,
+                                  compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
     // Check existing cache
     if (heap.module_cache != null) {
         ModuleDef** cache = (ModuleDef**)heap.module_cache;
         for (uint i = 0; i < heap.module_cache_count; i++) {
-            if (cache[i] != null && cache[i].module_name.len == name.len) {
+            if (cache[i] != null && cache[i].attr_type == attr_type
+                && cache[i].module_name.len == name.len) {
                 bool match = true;
                 for (usz j = 0; j < name.len; j++) {
                     if (cache[i].module_name[j] != name[j]) { match = false; break; }
@@ -765,6 +793,7 @@ fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name) {
     mem::clear(raw, (sz)(ModuleDef::size));
     ModuleDef* mod = (ModuleDef*)raw;
     mod.module_name = name;
+    mod.attr_type = attr_type;
     mod.status = ModuleStatus.UNLOADED;
     // The metadata lists grow on the malloc-backed default allocator (the one
     // the compiler uses for its own growable sets); ModuleDefs live until the
@@ -800,15 +829,15 @@ fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name) {
 }
 
 // Resolve a module specifier, compile it, and recursively resolve dependencies.
-// `wants_json` selects the JSON-module load path (parse the file with
-// JSON.parse; sole export is `default`) rather than ECMAScript compilation.
+// A non-NONE `attr_type` selects a synthetic-module load path (sole export
+// `default`, built from the file contents) rather than ECMAScript compilation.
 //
 // `quiet` suppresses the compile-error diagnostic on stderr, for a caller that
 // turns the failure into a value the program can observe: a dynamic import()
 // rejects its promise with the parked SyntaxError, and printing as well emits
 // an engine diagnostic for an error the script is handling. The static path
 // leaves it false — there the diagnostic is the only report of what went wrong.
-fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bool wants_json = false, bool quiet = false) {
+fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE, bool quiet = false) {
     // The test262 host convention (INTERPRETING.md): `<module source>` names
     // "a module that provides a valid Module Source". It is not a path, so it
     // never reaches the filesystem; an empty module answers it, because every
@@ -830,33 +859,66 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
     char[] normalized = normalized_opt;
 
     // 2. Check engine cache
-    ModuleDef* cached = heap_find_loaded_module(heap, normalized);
+    ModuleDef* cached = heap_find_loaded_module(heap, normalized, attr_type);
     if (cached != null) return cached;
 
     // 3. Read source via host hook
-    char[]? source_opt = call_read_source(heap, normalized);
+    char[]? source_opt = call_read_source(heap, normalized, attr_type);
     if (catch err = source_opt) return MODULE_ERROR~;
     char[] source = source_opt;
-    if (source.len == 0) return MODULE_ERROR~;
+    // An empty ECMAScript file is a module with no body, but the loader's
+    // extension probing uses emptiness as its "keep looking" signal (see
+    // default_module_read), so an empty read here means nothing was found.
+    // A synthetic module names its file exactly -- no probing, no extension
+    // guessing -- so an empty file is genuinely an empty text or bytes module
+    // (test262 text-empty, bytes-from-empty) and must not be an error.
+    if (source.len == 0 && attr_type == compiler::ModuleAttrType.NONE) return MODULE_ERROR~;
 
     // 4. Create ModuleDef (marks as LOADING for cycle detection)
-    ModuleDef*? mod_opt = heap_ensure_module(heap, normalized);
+    ModuleDef*? mod_opt = heap_ensure_module(heap, normalized, attr_type);
     if (catch err = mod_opt) return MODULE_ERROR~;
     ModuleDef* mod = mod_opt;
     mod.status = ModuleStatus.LOADING;
 
-    // 4a. JSON module: parse the file with JSON.parse and synthesize a single
-    // `default` export = the parsed value (ECMA-262 ParseJSONModule §1.4). The
-    // env is created and rooted here so the parsed value survives any GC before
-    // link/evaluate. No dependencies, no compiled body.
-    if (wants_json) {
-        TVal? parsed = builtins::json_parse_module_source(heap, source);
-        if (catch err = parsed) {
-            // A JSON parse failure surfaces as a resolution-phase SyntaxError.
-            return MODULE_ERROR~;
+    // 4a. Synthetic module: turn the file contents into one value and export it
+    // as `default` (CreateDefaultExportSyntheticModule). No dependencies, no
+    // compiled body. Only the value differs between the three types:
+    //
+    //   json  -> JSON.parse of the contents (ECMA-262 ParseJSONModule §1.4)
+    //   text  -> the contents as a String, NEVER parsed as JavaScript even when
+    //            the file is valid JavaScript (test262 text-javascript)
+    //   bytes -> a Uint8Array over an immutable ArrayBuffer of the raw bytes
+    //
+    // The env is created and rooted below so the value survives any GC before
+    // link/evaluate.
+    if (attr_type != compiler::ModuleAttrType.NONE) {
+        TVal synth;
+        switch (attr_type) {
+            case compiler::ModuleAttrType.JSON:
+                TVal? parsed = builtins::json_parse_module_source(heap, source);
+                // A JSON parse failure surfaces as a resolution-phase SyntaxError.
+                if (catch err = parsed) return MODULE_ERROR~;
+                synth = parsed;
+            case compiler::ModuleAttrType.TEXT:
+                // str_intern normalizes raw 4-byte UTF-8 to CESU-8, which a
+                // file's contents may well contain, and leaves anything past
+                // MAX_INTERN_BYTES un-interned -- so a large text module does
+                // not pile into the string table.
+                HString* str = heap.str_intern(source);
+                if (str == null) return MODULE_ERROR~;
+                synth.set_string(str);
+            case compiler::ModuleAttrType.BYTES:
+                HObject* view = builtins::bytes_module_view(heap, source);
+                if (view == null) return MODULE_ERROR~;
+                synth.set_object(view);
+            default:
+                // An unrecognized `type` is a load-phase failure, not a parse
+                // error: the grammar accepts any attribute value and the host
+                // decides which types it supports.
+                return MODULE_ERROR~;
         }
-        mod.is_json = true;
-        mod.json_value = parsed;
+        mod.is_synthetic = true;
+        mod.synth_value = synth;
         // Sole export: `default`, a plain (non-lexical, non-indirect) binding.
         ExportEntry def;
         def.local_name = "default";
@@ -867,7 +929,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         mod.exports.push(def);
         // Create + root the env now and declare `default`, so build_namespace_object
         // and install_live_binding see the value even before link_module runs. A
-        // JSON module never runs code, so its env needs no scope-chain parent.
+        // synthetic module never runs code, so its env needs no scope-chain parent.
         EnvRecord*? env_opt = env::env_create_declarative(heap, null);
         if (catch err = env_opt) return MODULE_ERROR~;
         mod.env = env_opt;
@@ -876,7 +938,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         }
         HString* def_key = heap.str_intern("default");
         if (def_key != null) {
-            env::env_declare(mod.env, def_key, mod.json_value);
+            env::env_declare(mod.env, def_key, mod.synth_value);
         }
         call_on_module_loaded(heap, mod);
         mod.status = ModuleStatus.LOADED;
@@ -955,7 +1017,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, bo
         ReqModuleEntry* rme = &mod.req_modules[i];
         // A dependency of a quietly-resolved module is quiet too: its parse
         // failure reaches the same promise rejection.
-        ModuleDef*? dep = resolve_module(heap, rme.module_name, normalized, rme.wants_json, quiet);
+        ModuleDef*? dep = resolve_module(heap, rme.module_name, normalized, rme.attr_type, quiet);
         if (catch err = dep) {
             return MODULE_ERROR~;
         }
@@ -1196,10 +1258,10 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
         ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
-        if (source_mod.is_json) {
+        if (source_mod.is_synthetic) {
             if (!char_slice_eq(ie.import_name, "default")) {
                 return module_raise_link_error(heap,
-                    "requested JSON module does not provide the requested export");
+                    "requested module does not provide the requested export");
             }
             continue;
         }
@@ -1256,12 +1318,12 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     if (mod.status == ModuleStatus.EVALUATING_ASYNC) return true;
     if (mod.status == ModuleStatus.ERRORED) return true;
 
-    // A JSON module has no body and no dependencies; its env (holding the sole
-    // `default` binding) is created and rooted at resolve time. Just validate
-    // that no importer requests a named binding other than `default` (JSON
-    // modules define no named bindings. ECMA-262; `import {x}` must be a
+    // A synthetic module has no body and no dependencies; its env (holding the
+    // sole `default` binding) is created and rooted at resolve time. Just
+    // validate that no importer requests a named binding other than `default`
+    // (a synthetic module defines no named bindings, so `import {x}` must be a
     // resolution-phase SyntaxError) and mark it linked.
-    if (mod.is_json) {
+    if (mod.is_synthetic) {
         mod.status = ModuleStatus.LINKED;
         return true;
     }
@@ -2147,9 +2209,9 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     if (mod.status == ModuleStatus.EVALUATING ||
         mod.status == ModuleStatus.EVALUATING_ASYNC) return true;
 
-    // A JSON module has no body; its `default` binding was installed at resolve
-    // time, so it is complete the moment it is reached.
-    if (mod.is_json) {
+    // A synthetic module has no body; its `default` binding was installed at
+    // resolve time, so it is complete the moment it is reached.
+    if (mod.is_synthetic) {
         mod.status = ModuleStatus.EVALUATED;
         call_on_module_evaluated(heap, mod);
         return true;
@@ -2515,8 +2577,8 @@ fn void capture_and_clear_error(Heap* heap, Vm* vm, TVal* out, char[] fallback_m
 // carries no per-attribute behavior beyond the already-supported JSON module
 // type inferred from the specifier, so a well-formed `with` clause is a
 // no-op here (matching the module resolution level already in place).
-fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason, bool* wants_json) {
-    *wants_json = false;
+fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason, compiler::ModuleAttrType* attr_type) {
+    *attr_type = compiler::ModuleAttrType.NONE;
     if (options.is_undefined()) return true;
     if (!options.is_object()) {
         *reason = module_type_error(heap, "import options must be an object");
@@ -2604,13 +2666,17 @@ fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason,
             ok = false;
             break;
         }
-        // Recognize the `type: "json"` attribute so the loader parses the
-        // referenced file as a JSON module (ES2025). Other attributes are
-        // accepted (well-formed) but carry no loader behavior here.
+        // Recognize the `type` attribute so the loader takes the matching
+        // synthetic-module path. Other attributes are accepted (well-formed)
+        // but carry no loader behavior here. This mirrors parse_with_clause,
+        // since `import()` takes the same attributes as a static import.
         if (char_slice_eq(key.get_data(), "type")) {
             HString* avs2 = (HString*)av.get_heapptr();
-            if (avs2 != null && char_slice_eq(avs2.get_data(), "json")) {
-                *wants_json = true;
+            if (avs2 != null) {
+                char[] tv = avs2.get_data();
+                if (char_slice_eq(tv, "json"))  *attr_type = compiler::ModuleAttrType.JSON;
+                if (char_slice_eq(tv, "text"))  *attr_type = compiler::ModuleAttrType.TEXT;
+                if (char_slice_eq(tv, "bytes")) *attr_type = compiler::ModuleAttrType.BYTES;
             }
         }
     }
@@ -2659,7 +2725,7 @@ const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
 // spec, dynamic import starts a new job rather than running inline with the
 // calling module's own (possibly still in-progress) static evaluation, and
 // running it inline let import() observably preempt that static DFS order.
-fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = false, bool deferred = false, bool source_phase = false) {
+fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE, bool deferred = false, bool source_phase = false) {
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = prom_raw) return MODULE_ERROR~;
     HObject* prom = prom_raw;
@@ -2718,8 +2784,10 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
         TVal base_tv; base_tv.set_string(base_str);
         job.put_prop(base_key, base_tv, hobject::PROP_FLAGS_WEC, heap);
     }
-    TVal json_tv; json_tv.set_boolean(wants_json);
-    job.put_prop(json_key, json_tv, hobject::PROP_FLAGS_WEC, heap);
+    // The attribute type rides to the job as its ordinal: the hidden slot
+    // holds a TVal, and the job runs long after this frame is gone.
+    TVal type_tv; type_tv.set_number((double)attr_type.ordinal);
+    job.put_prop(json_key, type_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal defer_tv; defer_tv.set_boolean(deferred);
     job.put_prop(defer_key, defer_tv, hobject::PROP_FLAGS_WEC, heap);
     TVal srcph_tv; srcph_tv.set_boolean(source_phase);
@@ -2738,7 +2806,7 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, bool wants_json = 
 }
 
 // Microtask handler for DYNAMIC_IMPORT_JOB. Reads the deferred
-// specifier/base/wants_json/promise off ctx.callee_obj's hidden slots and
+// specifier/base/attr-type/promise off ctx.callee_obj's hidden slots and
 // performs the resolve → link → evaluate pipeline. If the module's
 // evaluation is still pending when execute_module returns (an async/TLA
 // module whose completion this job, itself running inside a microtask
@@ -2766,9 +2834,17 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     if (try bv = ctx.callee_obj.get_prop(base_key, ctx.heap)) {
         if (bv.is_string()) base_data = ((HString*)bv.get_heapptr()).get_data();
     }
-    bool wants_json = false;
+    compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE;
     if (try jv = ctx.callee_obj.get_prop(json_key, ctx.heap)) {
-        if (jv.is_boolean()) wants_json = jv.get_boolean();
+        if (jv.is_number()) {
+            uint ord = (uint)jv.get_number();
+            switch (ord) {
+                case 1: attr_type = compiler::ModuleAttrType.JSON;
+                case 2: attr_type = compiler::ModuleAttrType.TEXT;
+                case 3: attr_type = compiler::ModuleAttrType.BYTES;
+                default: break;
+            }
+        }
     }
     bool deferred = false;
     if (defer_key != null) {
@@ -2799,7 +2875,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     ModuleDef* mod = null;
     heap.has_error = false;
     heap.error_value.set_undefined();
-    ModuleDef*? mod_opt = resolve_module(heap, spec_data, base_data, wants_json, true);
+    ModuleDef*? mod_opt = resolve_module(heap, spec_data, base_data, attr_type, true);
     if (catch err = mod_opt) {
         // A load failure may have parked a specific static-semantics error
         // (SyntaxError for a module parse failure) on the heap error channel.

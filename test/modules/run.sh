@@ -28,6 +28,7 @@ TESTS=(
   "t14_resolve_accept:resolvable import forms must not be over-rejected"
   "t15_hoist_asi:function decl after ASI'd statement must be hoisted/exported"
   "t16_error_identity:a failed module re-reports one cached error object"
+  "t17_import_types:import attribute types (json/text/bytes)"
 )
 
 for entry in "${TESTS[@]}"; do

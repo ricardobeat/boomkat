@@ -9,6 +9,7 @@ import boomkat::hobject;
 import boomkat::env;
 import boomkat::builtins;
 import boomkat::esm;
+import boomkat::compiler;
 import boomkat::re_bindings;
 import std::io;
 import std::math;
@@ -3748,8 +3749,8 @@ fn TVal? Vm.run(Vm* vm) {
             TVal opts_tv = *rc;
             TVal opt_reason;
             opt_reason.set_undefined();
-            bool wants_json = false;
-            if (!esm::validate_import_options(vm.heap, vm, &opts_tv, &opt_reason, &wants_json)) {
+            compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE;
+            if (!esm::validate_import_options(vm.heap, vm, &opts_tv, &opt_reason, &attr_type)) {
                 ds.regs_base = ds.act.bottom;
                 TVal? orej_opt = esm::dynamic_import_reject(vm.heap, vm, &opt_reason);
                 ds.regs_base = ds.act.bottom;
@@ -3767,7 +3768,7 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             ds.regs_base = ds.act.bottom;
-            TVal? prom_opt = esm::dynamic_import(vm.heap, vm, spec_str.get_data(), wants_json,
+            TVal? prom_opt = esm::dynamic_import(vm.heap, vm, spec_str.get_data(), attr_type,
                                                  op == Opcode.DYN_IMPORT_DEFER,
                                                  op == Opcode.DYN_IMPORT_SOURCE);
             // The nested module evaluation may have reallocated the valstack.
