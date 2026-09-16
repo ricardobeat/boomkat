@@ -99,6 +99,34 @@ missing rest-param duplicate rejection (`Function/rest-has-duplicated.js`),
 carrying a written reason. Re-run the full suite afterwards: fixes to shared
 machinery like `Object.values` touch far more than `staging`.
 
+**Progress.** 171 -> 75 failures. The buckets closed so far, each a real engine
+bug with a normative regression test, since by definition the normative suite
+missed it:
+
+- A spec `Set` wrote through `put_prop` with the default attributes, so a
+  property created non-enumerable and non-configurable (a RegExp's `lastIndex`)
+  became enumerable and configurable on the next write. builtins had
+  `builtins_generic_get` with no counterpart; `builtins_generic_set` is now the
+  missing half.
+- `[[PreventExtensions]]` accepted a TypedArray whose length can still change,
+  and `Object.seal`/`freeze` threw before preventing extensions rather than
+  after, leaving the object extensible.
+- `isSealed`/`isFrozen` ignored TypedArray elements and so called a
+  non-extensible view sealed and frozen whatever its length.
+- A missing argument was treated as a reason to return early rather than as
+  `undefined`, so `Symbol.for()`, `Symbol.keyFor()`,
+  `Object.getOwnPropertyDescriptor()` and `Object.hasOwn(o)` skipped the
+  coercion the spec requires.
+- TypedArray elements were invisible to `Object.values`/`entries`,
+  `Object.assign`, object spread, `propertyIsEnumerable` and `hasOwnProperty`.
+  `Object.hasOwn` reimplemented the lookup and missed dense array indices,
+  Array `length`, Arguments indices and String characters too.
+
+The recurring shape is the one the plan predicted: one spec behavior with two
+internal representations, tested on only one of them. Elements held in a
+backing buffer, or values computed rather than stored, are invisible to any
+surface that scans the property table and the array part and stops there.
+
 ## 2. A Promise executor throw must reject, not propagate — ✅ DONE
 
 6 `harness` tests, plus correctness everywhere `new Promise` wraps a throwing
