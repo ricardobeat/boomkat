@@ -341,22 +341,39 @@ fn bool CompilerContext.primary_is_member_target(&self) {
 
 // Parse a DestructuringAssignmentTarget, any LeftHandSideExpression valid
 // as an assignment target (§13.15.5). Returns true when the target is a
+// A parsed destructuring assignment target: either a member expression, whose
+// evaluated object and key wait in registers for the store, or a plain
+// identifier, named by its constant-pool index.
+struct AssignTarget {
+    bool is_member;
+    // Member targets only.
+    ushort obj_reg;
+    ushort key_reg;
+    // `super.x` / `super[k]`, whose store is PUTPROP_SUPER: obj_reg holds the
+    // home object's prototype, where the property walk starts, but a setter
+    // found there runs with the current `this` as its receiver (§13.15.2).
+    bool is_super;
+    // Identifier targets only.
+    uint name_idx;
+}
+
 // member expression (`a.b`, `a[i]`, `{}[f()]`, etc.); false when it is a
 // plain identifier.
 //
-// For member targets, emits code to evaluate the object and key into fresh
-// registers (`*out_obj_reg` / `*out_key_reg`) for a later PUTPROP.
-// For identifier targets, `*out_name_idx` receives the constant-pool index
-// of the name; no code is emitted.
+// For a member target it emits code evaluating the object and key into fresh
+// registers, for a later PUTPROP; for an identifier target it emits nothing
+// and reports the name's constant-pool index.
 //
 // When the next token is an IDENTIFIER not followed by `.`, `[`, or `(`,
 // we consume it cheaply without emitting a GETVAR, assignment patterns
 // only write to the target, never read from it.  For anything more complex
 // (member chains starting with any primary, `new`, etc.) we call
 // `postfix_expr` in lhs_mode and NOP the trailing GETPROP.
-fn bool? CompilerContext.parse_assign_target_lhs(&self,
-    ushort* out_obj_reg, ushort* out_key_reg, uint* out_name_idx)
-{
+fn AssignTarget? CompilerContext.parse_assign_target_lhs(&self) {
+    AssignTarget out;
+    out.name_idx = 0xFFFFFFFF;
+    out.obj_reg = 0xFFFF;
+    out.key_reg = 0xFFFF;
     // Fast path: plain identifier target, no code emission needed.
     // We only commit to the fast path when the very next token after the
     // identifier is NOT a property/call/index accessor, ensuring that
@@ -399,8 +416,8 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
         if (!is_accessor) {
             // True simple identifier: consume the token and return the name.
             Token id = self.advance()!;
-            *out_name_idx = self.add_string_constant(id.str_value);
-            return false;
+            out.name_idx = self.add_string_constant(id.str_value);
+            return out;
         }
         // Falls through to the full expression path below.
     }
@@ -427,20 +444,22 @@ fn bool? CompilerContext.parse_assign_target_lhs(&self,
             }
         }
         self.free_reg(lhs_result);
-        *out_obj_reg  = self.member_obj();
-        *out_key_reg  = self.member_prop();
+        out.is_member = true;
+        out.obj_reg   = self.member_obj();
+        out.key_reg   = self.member_prop();
+        out.is_super  = self.member_is_super();
         self.member.clear();
         self.call_prop_obj_reg = REG_NONE;
-        return true;
+        return out;
     }
 
     if (self.last_was_getvar) {
         // Identifier that was reached through a complex path (e.g. after
         // `new` or other non-member primaries that still set last_was_getvar).
-        *out_name_idx = self.last_getvar_name_idx;
+        out.name_idx = self.last_getvar_name_idx;
         self.free_reg(lhs_result);
         self.last_was_getvar = false;
-        return false;
+        return out;
     }
 
     // Not a valid assignment target.
@@ -462,15 +481,14 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
     uint pre_code = self.code_count;
     ushort pre_reg = self.next_reg;
 
-    ushort tgt_obj  = 0xFFFF;
-    ushort tgt_key  = 0xFFFF;
-    uint   tgt_name = 0xFFFFFFFF;
-    bool? is_member_res = self.parse_assign_target_lhs(&tgt_obj, &tgt_key, &tgt_name);
-    if (catch err = is_member_res) {
+    AssignTarget? tgt_res = self.parse_assign_target_lhs();
+    if (catch err = tgt_res) {
         mem::free(snap);
         return err~;
     }
-    bool is_member = is_member_res;
+    AssignTarget tgt = tgt_res;
+    bool is_member = tgt.is_member;
+    uint tgt_name = tgt.name_idx;
 
     // AssignmentElement's target must be a valid simple assignment target
     // (ES2024 §13.15.1): in strict code `eval`, `arguments` and the reserved
@@ -492,8 +510,8 @@ fn void? CompilerContext.collect_assign_target(&self, DestructBind* bind)
 
     bind.name_idx         = tgt_name;
     bind.is_member_target = is_member;
-    bind.member_obj_reg   = tgt_obj;
-    bind.member_prop_reg  = tgt_key;
+    bind.member_obj_reg   = tgt.obj_reg;
+    bind.member_prop_reg  = tgt.key_reg;
     if (is_member) {
         self.code_count = pre_code;
         self.free_regs_to(pre_reg);
@@ -548,10 +566,8 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
     self.deferred_brand_reg_hint = bind.private_brand_reg;
 
     ushort pre_reg = self.next_reg;
-    ushort tgt_obj  = 0xFFFF;
-    ushort tgt_key  = 0xFFFF;
-    uint   tgt_name = 0xFFFFFFFF;
-    if (catch self.parse_assign_target_lhs(&tgt_obj, &tgt_key, &tgt_name)) {
+    AssignTarget? tgt_res = self.parse_assign_target_lhs();
+    if (catch tgt_res) {
         // Unreachable: the same token stream parsed successfully at collection.
         self.defer_brand_check = false;
         self.deferred_brand_reg_hint = 0xFFFF;
@@ -590,9 +606,11 @@ fn void CompilerContext.emit_deferred_target(&self, DestructBind* bind)
         self.free_reg(bind.private_brand_reg);
     }
     self.defer_brand_check = false;
+    AssignTarget tgt = tgt_res;
+    bind.is_super_target = tgt.is_super;
 
-    self.emit_abc(Opcode.LDREG, (uint)bind.member_obj_reg, (uint)tgt_obj, 0);
-    self.emit_abc(Opcode.LDREG, (uint)bind.member_prop_reg, (uint)tgt_key, 0);
+    self.emit_abc(Opcode.LDREG, (uint)bind.member_obj_reg, (uint)tgt.obj_reg, 0);
+    self.emit_abc(Opcode.LDREG, (uint)bind.member_prop_reg, (uint)tgt.key_reg, 0);
     self.free_regs_to(pre_reg);
     // bind.private_brand_reg (when is_private_target) is a persistent
     // register allocated in emit_destruct_bindings's pre-scan, well below
@@ -968,10 +986,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
 
         // Object rest: `{...target}`, must be last.
         if (self.match(TokenType.ELLIPSIS)) {
-            ushort tgt_obj  = 0xFFFF;
-            ushort tgt_key  = 0xFFFF;
-            uint   tgt_name = 0xFFFFFFFF;
-            bool is_member = self.parse_assign_target_lhs(&tgt_obj, &tgt_key, &tgt_name)!;
+            AssignTarget tgt = self.parse_assign_target_lhs()!;
+            bool is_member = tgt.is_member;
+            uint tgt_name = tgt.name_idx;
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
@@ -984,8 +1001,8 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
                 binds[*count].arg_idx          = 0xFFFF;
                 binds[*count].parent_idx       = parent_idx;
                 binds[*count].is_member_target = is_member;
-                binds[*count].member_obj_reg   = tgt_obj;
-                binds[*count].member_prop_reg  = tgt_key;
+                binds[*count].member_obj_reg   = tgt.obj_reg;
+                binds[*count].member_prop_reg  = tgt.key_reg;
                 binds[*count].name_len         = 0;
                 (*count)++;
             }

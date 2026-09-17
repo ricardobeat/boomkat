@@ -108,6 +108,12 @@ struct DestructBind {
     // Used by emit_destruct_bindings to defer the CHK_BRAND until after the
     // source property is read (GetV), per ES2022 §13.15.5.6 evaluation order.
     bool is_private_target;
+    // Member target written as `super.x` / `super[k]`. The store must be
+    // PUTPROP_SUPER, whose receiver is the `this` value rather than the
+    // recorded base (§13.15.5.3 PutValue on a super Reference): member_obj_reg
+    // holds the home object's prototype, and a setter found there has to run
+    // with `this` as its receiver.
+    bool is_super_target;
     // Brand register: for private targets, holds the register with the
     // CHK_BRAND operand (the brand symbol). Set by emit_deferred_target when
     // is_private_target is true and deferred_brand_check is active.
@@ -1423,7 +1429,14 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                                 binds[di].private_brand_name_c);
                             self.free_reg(binds[di].private_brand_reg);
                         }
-                        self.emit_abc(Opcode.PUTPROP,
+                        // A `super.x` target stores through PUTPROP_SUPER:
+                        // member_obj_reg holds the home object's prototype,
+                        // where the walk starts, but a setter found there runs
+                        // with the current `this` as its receiver (§13.15.2
+                        // SetSuperProperty), and a new data property lands
+                        // there too.
+                        self.emit_abc(binds[di].is_super_target
+                                          ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP,
                             (uint)binds[di].member_obj_reg,
                             (uint)binds[di].member_prop_reg,
                             (uint)bind_reg);
