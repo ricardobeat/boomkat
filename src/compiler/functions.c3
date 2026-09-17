@@ -3655,7 +3655,58 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // activation so TDZ sentinels for params are visible via GETVAR.
     func.flags.needs_lex_bridge = true;
 
+    // Every name the thunk reads or writes by name resolves through the
+    // enclosing scope's environment chain, so the enclosing binding has to
+    // live in an environment rather than a register. Nothing else marks these:
+    // the body's capture pre-scan ran before this statement was reached, and
+    // the parameter-list path in pre_scan_captures only covers defaults inside
+    // a `(...)`. Without the mark a write like `[x = (p = 1)] = []` lands in
+    // the thunk's own frame and is lost when it returns.
+    //
+    // The thunk has no parameters and declares its own bindings through
+    // PUTLEX, so every by-name access it emits is a free reference. Marking
+    // one that turns out to be shadowed only costs an environment slot.
+    self.mark_default_expr_captures(func);
+
     return func;
+}
+
+// Mark each name a compiled default-expression thunk accesses by name as
+// captured in the enclosing scope, so the binding is environment-backed and
+// the thunk's reads and writes reach it.
+fn void CompilerContext.mark_default_expr_captures(&self, CompiledFunction* func) {
+    if (self.is_global || func == null || func.code == null) return;
+    for (uint i = 0; i < func.code_count; i++) {
+        Instruction ins = func.code[i];
+        uint name_idx;
+        switch (ins.op) {
+            case Opcode.GETVAR:
+            case Opcode.PUTVAR:
+            case Opcode.PUTVAR_ASSIGN:
+            case Opcode.RESOLVEVAR:
+            case Opcode.TYPEOFIDENT:
+                name_idx = ins.get_bc();
+            default:
+                continue;
+        }
+        if (name_idx >= func.const_count) continue;
+        TVal kv = func.constants[name_idx];
+        if (!kv.is_string()) continue;
+        HString* hs = (HString*)kv.get_heapptr();
+        if (hs == null) continue;
+        self.add_captured_name(hs.get_data());
+    }
+    // The scan above only fills the capture set; the enclosing scopes were
+    // already declared, so flip the ones it names the way pre_scan_captures
+    // does for parameters.
+    for (uint i = 0; i < self.scope_depth; i++) {
+        if (self.scope_stack[i].kind == SCOPEMARK) continue;
+        if (!self.scope_stack[i].is_captured
+            && self.is_captured_name(self.scope_stack[i].name)) {
+            self.scope_stack[i].is_captured = true;
+            self.has_captured_local = true;
+        }
+    }
 }
 
 // Compile a computed property key expression into a 0-arg inner function.
