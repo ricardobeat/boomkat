@@ -314,6 +314,23 @@ SKIP_FILES = {
     "staging/sm/syntax/declaration-forbidden-in-label.js",
     "staging/sm/syntax/escaped-let-static-identifier.js",
     "staging/sm/expressions/delete-name-parenthesized-early-error-strict-mode.js",
+    # Legacy browser quirks this engine does not implement.
+    #
+    # The [[IsHTMLDDA]] slot (§B.3.6) is the `document.all` object: falsy to
+    # ToBoolean, "undefined" to typeof, and loosely equal to null and
+    # undefined. It exists so the web keeps working and is reachable from a
+    # test only through the host's $262.IsHTMLDDA, which a non-browser
+    # embedding has nothing to point at.
+    "staging/sm/expressions/nullish-coalescing.js",
+    "staging/sm/generators/yield-star-throw-htmldda.js",
+    # The Annex B String.prototype HTML methods (blink, fontcolor, ...) exist
+    # for the same reason and are equally out of scope. Both tests check that
+    # a builtin's toString matches the NativeFunction grammar, which the engine
+    # does correctly for every builtin it has -- see
+    # test/function_bind_and_native_tostring.js -- but they reach
+    # String.prototype.blink to do it.
+    "staging/sm/Function/function-toString-builtin.js",
+    "staging/sm/Function/function-toString-builtin-name.js",
     # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
     # Strict-only engine never installs these legacy methods on
     # Object.prototype, so `this.__lookupSetter__(...)` throws
