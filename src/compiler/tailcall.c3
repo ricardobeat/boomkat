@@ -55,60 +55,30 @@ import std::core::mem;
 
 // The plain-call opcodes this pass rewrites, paired with their tail forms.
 //
-// Only the undefined-this call forms are eligible. A method call
-// (CALL_PROP) evaluates a receiver whose lifetime the frame owns, and
-// SUPER_CALL / NEW_OBJ bind `this` into the frame being returned from;
-// neither can hand its frame to the callee. CALL_S is excluded for the same
-// reason: it reads an explicit receiver from callee_reg + 1.
+// The undefined-this forms (CALL_UNDEF_THIS, CALL_VAR, CALL_GLOBAL) are plain
+// calls. CALL is the method-call form: it carries its receiver in
+// callee_reg + 1 instead of materializing `undefined`, which is how `o.m(x)`,
+// `o[k](x)` and a tagged template's call all compile. §14.8.1 lists a
+// MethodCall in tail position, and a receiver is no obstacle to handing the
+// frame away: the runtime moves it into the callee's this_binding, owning a
+// reference of its own, before the caller's registers are released.
 //
-// Plain CALL reads that receiver slot too, so it qualifies only when the
-// receiver is provably `undefined` — see tailcall_call_has_undef_receiver.
+// CALL_S is the same method-call layout with a spread argument list, so the
+// argument count comes from a register instead of the instruction. It has its
+// own tail form so the VM can decode it as the call it shadows.
+//
+// SUPER_CALL and NEW_OBJ are excluded. A `super(...)` call and a `new` bind
+// `this` into the frame being returned from, and a NewExpression is not a
+// tail position to begin with.
 fn Opcode tailcall_form(Opcode op) {
     switch (op) {
         case Opcode.CALL_UNDEF_THIS: return Opcode.TAILCALL_UNDEF_THIS;
         case Opcode.CALL_VAR:        return Opcode.TAILCALL_VAR;
         case Opcode.CALL_GLOBAL:     return Opcode.TAILCALL_GLOBAL;
         case Opcode.CALL:            return Opcode.TAILCALL_CALL;
+        case Opcode.CALL_S:          return Opcode.TAILCALL_CALL_S;
         default:                     return Opcode.NOP;
     }
-}
-
-// Whether a plain CALL's receiver slot (callee_reg + 1) is loaded with
-// `undefined` in the straight-line run-up to the call.
-//
-// A tagged template compiles to a plain CALL with an explicit `undefined`
-// receiver rather than to CALL_UNDEF_THIS:
-//
-//     LDREG r11 = r2      ; callee
-//     LDUNDEF r12         ; receiver
-//     LDREG r13 = r5      ; strings
-//     LDREG r14 = r4      ; substitution
-//     CALL r15 = r11, 2
-//
-// §14.8.1 puts a tagged template's call in tail position, so excluding every
-// CALL would leave that form out for a receiver that carries no frame state
-// at all. Scanning back to the LDUNDEF proves it is the same no-receiver
-// shape CALL_UNDEF_THIS represents; anything else (a real receiver whose
-// lifetime the frame owns) still declines.
-fn bool tailcall_call_has_undef_receiver(Instruction* code, uint call_idx, bool* jump_targets) @local {
-    Instruction call_insn = code[call_idx];
-    uint recv_reg = (uint)call_insn.b + 1;
-    // The argument set-up is straight-line: walk back over it to the store
-    // into the receiver slot. A jump target means another path reaches the
-    // call with a receiver this scan never saw.
-    uint k = call_idx;
-    while (k > 0) {
-        k--;
-        if (jump_targets[k]) { return false; }
-        Instruction ins = code[k];
-        if (ins.op == Opcode.LDUNDEF && (uint)ins.a == recv_reg) { return true; }
-        // Only the register moves and loads that build an argument list may
-        // intervene. Anything else could be the receiver's own evaluation.
-        if (ins.op != Opcode.LDREG && ins.op != Opcode.LDUNDEF
-            && ins.op != Opcode.LDCONST && ins.op != Opcode.LDINT) { return false; }
-        if ((uint)ins.a == recv_reg) { return false; }
-    }
-    return false;
 }
 
 // Clear the tail-call protection flag over each try's finally body, then
@@ -183,8 +153,6 @@ fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, b
         Instruction call_insn = code[i];
         Opcode tail_op = tailcall_form(call_insn.op);
         if (tail_op == Opcode.NOP) { continue; }
-        if (call_insn.op == Opcode.CALL
-            && !tailcall_call_has_undef_receiver(code, i, jump_targets)) { continue; }
 
         // The RET must follow the call, either immediately or through a single
         // register copy. The copy is what a conditional in tail position emits:

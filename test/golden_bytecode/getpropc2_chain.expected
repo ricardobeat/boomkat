@@ -16,7 +16,7 @@
 [  0] GETPROPC2           r2 = r0, r1
 [  1] GETPROPC            r4 = r2, r2
 [  2] LDREG               r5 = r2, r0
-[  3] CALL                r4 = r4, r0
+[  3] TAILCALL_CALL       r4 = r4, r0
 [  4] RET                 r4 = r0, r0
 
 --- Inner function 1 ---

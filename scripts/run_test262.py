@@ -283,15 +283,6 @@ SKIP_FILES = {
     # exempts `function arguments(){}` and the Arguments object survives the
     # block (V8 agrees). Skipped until the SM test is reconciled upstream.
     "staging/sm/lexical-environment/block-scoped-functions-annex-b-arguments.js",
-    # A tail call whose callee is resolved through a `with` environment. The
-    # compiler proves tail position by scanning back from the call for the
-    # LDUNDEF that wrote the receiver slot; under `with`, WITHGET writes that
-    # slot at runtime (the with-object when it owns the name, undefined when it
-    # does not), so the receiver is not statically undefined and the pass
-    # correctly declines. Declining is spec-safe -- the call runs as an ordinary
-    # call -- but the test asserts constant stack over 100_000 iterations.
-    # Lifting it needs a TAILCALL form that checks the receiver at runtime.
-    "language/expressions/call/tco-non-eval-with.js",
     # Legacy browser quirks this engine does not implement.
     #
     # The [[IsHTMLDDA]] slot (§B.3.6) is the `document.all` object: falsy to

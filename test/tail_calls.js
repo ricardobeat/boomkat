@@ -35,11 +35,64 @@ ok(commaTail(DEEP) === 'k', 'last expression of a comma');
 var arrowTail = function (n) { return n === 0 ? 'w' : arrowTail(n - 1); };
 ok(arrowTail(DEEP) === 'w', "arrow's expression body");
 
-// A tagged template's call is in tail position too. It compiles to a plain
-// CALL with an explicit `undefined` receiver rather than to the undefined-this
-// call form, so it needs its own tail form.
+// A tagged template's call is in tail position too. It compiles to the
+// method-call form, with an explicit `undefined` receiver rather than the
+// undefined-this call form.
 function tagged(_, n) { if (n === 0) return 'tag'; return tagged`${n - 1}`; }
 ok(tagged(null, DEEP) === 'tag', 'tagged template');
+
+// --- method calls (§14.8.1 MethodCall) -------------------------------------
+
+var methodObj = { m: function (n) { if (n === 0) return 'mm'; return methodObj.m(n - 1); } };
+ok(methodObj.m(DEEP) === 'mm', 'method call through an object literal');
+
+function Receiver(tag) { this.tag = tag; }
+Receiver.prototype.walk = function (n) { if (n === 0) return 'rw'; return this.walk(n - 1); };
+var recv = new Receiver('recv');
+ok(recv.walk(DEEP) === 'rw', 'method call through this');
+// The receiver moves into the callee's this_binding before the caller's
+// registers are released, so repeated reuse must not free it.
+ok(recv.tag === 'recv', 'the receiver survives repeated frame reuse');
+
+var bracket = [function (n) { if (n === 0) return 'br'; return bracket[0](n - 1); }];
+ok(bracket[0](DEEP) === 'br', 'call through a computed member');
+
+class Walker { walk(n) { if (n === 0) return 'cw'; return this.walk(n - 1); } }
+ok(new Walker().walk(DEEP) === 'cw', 'method call in a class');
+
+class SubWalker extends Walker {
+    walk(n) { if (n === 0) return 'sw'; return super.walk(n - 1); }
+}
+ok(new SubWalker().walk(DEEP) === 'sw', 'super method call');
+
+// The callee name resolves through a with environment, so the receiver slot is
+// written at run time by WITHGET rather than by a static LDUNDEF. The frame is
+// still reusable: the resolution has already happened when the call runs.
+var withScope = {};
+function withLookup(n) { with (withScope) { return target(n); } }
+withScope.target = function (n) { if (n === 0) return 'wv'; return withLookup(n - 1); };
+ok(withLookup(DEEP) === 'wv', 'callee resolved through a with environment');
+
+// --- spread argument lists -------------------------------------------------
+
+// The argument count comes from a register rather than the instruction, so
+// this form has a tail opcode of its own.
+function spreadArgs(n, ...rest) { if (n === 0) return 'sa'; return spreadArgs(n - 1, ...rest); }
+ok(spreadArgs(DEEP, 1, 2) === 'sa', 'spread argument list');
+
+var spreadObj = { m: function (n, ...rest) { if (n === 0) return 'sm'; return this.m(n - 1, ...rest); } };
+ok(spreadObj.m(DEEP, 1) === 'sm', 'method call with a spread argument list');
+
+// --- an arrow's captured `this` outlives the reused frame ------------------
+
+// A tail-recursive arrow keeps its captured `this` in a local; reusing the
+// frame must not release that object's last reference.
+var arrowHolder = { tag: 'alive', walk: function () {
+    var step = (n) => { if (n === 0) return 'ad'; return step(n - 1); };
+    return step(DEEP);
+} };
+ok(arrowHolder.walk() === 'ad', 'tail-recursive arrow inside a method');
+ok(arrowHolder.tag === 'alive', "an arrow's captured this survives the recursion");
 
 // --- finally -------------------------------------------------------------
 

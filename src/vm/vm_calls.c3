@@ -1047,13 +1047,15 @@ fn Opcode tailcall_base_op(Opcode op) {
         case Opcode.TAILCALL_VAR:        return Opcode.CALL_VAR;
         case Opcode.TAILCALL_GLOBAL:     return Opcode.CALL_GLOBAL;
         case Opcode.TAILCALL_CALL:       return Opcode.CALL;
+        case Opcode.TAILCALL_CALL_S:     return Opcode.CALL_S;
         default:                         return op;
     }
 }
 
 fn bool tailcall_is_tail(Opcode op) {
     return op == Opcode.TAILCALL_UNDEF_THIS || op == Opcode.TAILCALL_VAR
-        || op == Opcode.TAILCALL_GLOBAL || op == Opcode.TAILCALL_CALL;
+        || op == Opcode.TAILCALL_GLOBAL || op == Opcode.TAILCALL_CALL
+        || op == Opcode.TAILCALL_CALL_S;
 }
 
 // Fast path for CALL/CALL_S/CALL_UNDEF_THIS and their TAILCALL_* forms on a
@@ -1758,7 +1760,21 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         new_act.caller_valstack_top = ca.caller_valstack_top;
                         if (ca_borrowed) { new_act.flags |= ACT_FLAG_BORROWED_CALLEE; }
                         else { new_act.flags &= ~ACT_FLAG_BORROWED_CALLEE; }
-                        *ca = *new_act;
+                        // The callee's frame was built in the pooled slot one
+                        // above the caller's, and a tail call never advances
+                        // `activation_count` past it, so that slot is abandoned
+                        // rather than popped and handle_return never releases
+                        // the this_binding it owns. Clear the bits instead of
+                        // decrefing, because the copy below hands that same
+                        // reference to ca. Leaving them behind is what cannot
+                        // work: the next frame built in this slot decrefs the
+                        // stale TVal it finds there (Heap.tval_copy_ref decrefs
+                        // its destination) and the next takeover decrefs ca's
+                        // copy, so one acquisition gets released twice.
+                        Activation* scratch = new_act;
+                        *ca = *scratch;
+                        scratch.this_binding.set_undefined();
+                        scratch.flags &= ~(ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID);
                         new_act = ca;
                         new_regs = dst;
                     }

@@ -236,30 +236,43 @@ pass them.
 Tail position is syntactic, fixed at compile time (§14.8.1): the last
 expression of a `return`, both arms of a conditional in tail position, the RHS
 of `&&`/`||`/`??` in tail position, the last expression of a comma in tail
-position, and the body of an arrow with an expression body. §14.8 applies to
-strict code only, so the `is_strict` bit from plan 083 gates the feature.
-Sloppy code keeps mapped `arguments` and the `.caller` walk, neither of which
-survives frame reuse.
+position, the body of an arrow with an expression body, a method call, and a
+tagged template. §14.8 applies to strict code only; the pass runs in both
+modes, since a sloppy frame is no harder to hand away, and the runtime decides
+what it can actually reuse.
 
 A call in a syntactic tail position is still not a tail call when the frame
 holds state that must outlive it:
 
-- inside a `try` block, or a `catch` with a `finally` still to run
-- inside a `with` body, where the env chain stays live
-- the callee is a direct `eval`
-- the frame owns a generator or async suspension point
-- a register-resident local is captured by an escaping closure (the plan
-  038a/045 coherence gap; disqualify rather than reason about it)
+- inside a `try` block, or a `catch` with a `finally` still to run (a `return`
+  in the finally body itself is in tail position: it is the pending work)
+- the callee is not a plain compiled function -- a builtin, bound function,
+  generator, class constructor or eval body, decided at run time
+- the frame owns a generator or async suspension point, or a constructor's
+  `this`
+- a call whose argument count is not fixed at the call (`f(...args)`), and
+  `super()` / `new`, which bind `this` into the frame being returned from
 
-**Steps.** Thread a `bool in_tail_position` through expression emission, set at
-the §14.8.1 sites and cleared at every disqualifier, and emit `CALL_TAIL` /
-`CALL_METHOD_TAIL` at a surviving site. Landing that alone with the new opcodes
-aliased to the existing handlers is a no-op that can be verified green before
-any VM work. Then make `CALL_TAIL` overwrite the caller's frame base with the
-callee's arguments and jump rather than recurse, with the receiver,
-`new.target`, and env chain following the callee. Cover it with a fixture
-asserting 100,000-deep recursion in every §14.8.1 position, plus one per
-disqualifier asserting the frame is not reused.
+A local captured by a closure is not a disqualifier: the scope it lives in is
+a heap object the closure owns, so reusing the frame does not disturb it.
+
+**Steps.** Landed as a peephole over the final instruction stream rather than a
+threaded `in_tail_position` flag: `CALL* rDst` followed by `RET rDst`,
+optionally through one register copy and one jump, is rewritten to the matching
+`TAILCALL_*` opcode. That covers every §14.8.1 form without re-teaching a flag
+at each expression emitter. The pass runs after move elimination, so the pair
+is in its final shape, and before NOP compaction; the `RET` stays, so a call
+the runtime declines still completes as an ordinary one.
+
+Method calls came last. A `MethodCall` compiles to the same `CALL` with an
+explicit receiver, and the runtime moves that receiver into the callee's
+`this_binding` -- owning a reference of its own -- before the caller's
+registers are released, so a receiver is no obstacle. The one ownership hazard
+is in the reuse path itself: the callee's frame is built in the pooled
+activation slot above the caller's, and a tail call abandons that slot instead
+of popping it, so the `this_binding` it owns has to be dropped when the frame
+is copied down. Leaving it there released that reference a second time, which
+freed an object an arrow had captured as `this`.
 
 **Gate.** `just test262-dir language/statements/return`, the `tco-*` files
 across `language/`, then a full `just rosetta`, since frame reuse is exactly
