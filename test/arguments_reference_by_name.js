@@ -8,6 +8,8 @@
 // The same name is an early SyntaxError anywhere in a class field initializer
 // (§15.7.1), including under `typeof`, so both checks travel together.
 
+'use strict';
+
 var pass = 0, fail = 0;
 function ok(c, m) { if (c) { pass++; } else { fail++; print('FAIL: ' + m); } }
 function eq(a, b, m) { ok(a === b, m + ' (got ' + a + ', want ' + b + ')'); }

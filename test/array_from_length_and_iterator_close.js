@@ -22,6 +22,8 @@
 //    NOT trigger IteratorClose — only iterator.next()/done and the
 //    map/CreateDataProperty steps that consume nextValue do.
 
+'use strict';
+
 var failures = 0;
 function check(name, actual, expected) {
     if (actual !== expected) {

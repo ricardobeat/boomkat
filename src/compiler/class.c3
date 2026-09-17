@@ -24,7 +24,11 @@ import std::math;
 fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx, bool is_static) {
     target_ctx.init(self.lexer, self.heap);
     target_ctx.module_goal = self.module_goal;
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    target_ctx.outer_with = self.in_with();
     target_ctx.lexer.set_strict(true);
+    target_ctx.is_strict = self.is_strict;
     target_ctx.in_class_body = self.in_class_body;
     target_ctx.has_super_binding = self.has_super_binding;
     target_ctx.super_is_home_object = self.super_is_home_object;
@@ -178,6 +182,13 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
     CompiledFunction* func = (CompiledFunction*)raw;
     func.flags.htype = HType.OBJECT;
     func.flags.is_constructable = true;
+    // Class constructors are strict code regardless of the enclosing
+    // script/function strictness (ES2015 §14.5.14 step 22). A default
+    // constructor produced by make_default_constructor inherits this from
+    // Phase 1's `is_strict = true` in parse_class_tail_with_name, so stamp
+    // it here too. Without it, the poison-pill read of `caller` /
+    // `arguments` on the class itself skips the throw and returns null.
+    func.flags.is_strict = true;
     // Class constructor: .prototype is non-configurable per ES2015 §14.5.14
     // step 25.  CLOSURE checks this flag and uses PROP_FLAGS_WENC (configurable=false).
     func.flags.is_class_ctor = true;
@@ -315,6 +326,8 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     // which must register `Foo` as an export without re-parsing the header).
     if (out_name != null) *out_name = class_name;
 
+    if (self.class_name_is_restricted(class_name)) return COMPILE_ERROR~;
+
     // ES6 §14.5.14 Runtime Semantics: ClassDefinitionEvaluation creates a
     // fresh lexical environment (classScope) as a child of the current
     // LexicalEnvironment, with an *immutable* CreateImmutableBinding for the
@@ -367,6 +380,21 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     self.free_reg(ctor_reg);
 }
 
+// Is `name` an illegal class name? ES2024 §11.2.2 makes all parts of a
+// ClassDeclaration and ClassExpression strict mode code, so the name is a
+// strict-mode BindingIdentifier even when the surrounding code is sloppy:
+// `eval`, `arguments`, `let`, `static` and the ES5 future-reserved words are
+// SyntaxErrors there, and `yield` is reserved unconditionally. `await` is the
+// exception, its grammar parameter is inherited from the enclosing context
+// rather than fixed by the class (§14.5.1), so it stays legal outside an
+// async function, an async arrow and a module.
+fn bool CompilerContext.class_name_is_restricted(&self, char[] name) {
+    return is_restricted_name(name,
+        self.is_async || self.is_module || self.forbid_await,
+        true,
+        strict: true);
+}
+
 // Parse a class expression: `class [Name] [extends Base] { body }`
 // Returns the register holding the constructor.
 fn ushort? CompilerContext.class_expression(&self) {
@@ -386,8 +414,8 @@ fn ushort? CompilerContext.class_expression(&self) {
     // params rather than fixing them the way a function expression's name
     // does. await_is_identifier is the shared decision.
     //
-    // `yield` is not a valid class name: it is reserved in all strict code
-    // and this engine is strict-only.
+    // `yield` and `let`/`static` never reach the name path: they lex as their
+    // own token types, not IDENTIFIER, so the branch below rejects them.
     bool is_valid_class_name = (class_name_tt == TokenType.IDENTIFIER) ||
         self.await_is_identifier(class_name_tt);
     if (is_valid_class_name) {
@@ -399,6 +427,7 @@ fn ushort? CompilerContext.class_expression(&self) {
         // below will overwrite. declare_var stores this slice into
         // scope_stack, which outlives the current token.
         name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
+        if (self.class_name_is_restricted(name)) return COMPILE_ERROR~;
         // For named class expressions, track the name on the scope stack so
         // inner function expressions can resolve it (name inference).
         name_reg = self.declare_var(name, LET);
@@ -593,6 +622,16 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     uint saved_super_name_idx = self.super_name_idx;
     uint saved_static_super_name_idx = self.static_super_name_idx;
     uint saved_home_object_name_idx = self.home_object_name_idx;
+    bool saved_is_strict = self.is_strict;
+    // ES2024 §15.4.1: a ClassBody is always strict code, regardless of the
+    // enclosing strictness. Phase 1 (plans/083): sloppy enclosing scripts now
+    // exist, so force is_strict = true for the class body and any nested
+    // method / static block that inherits it via compile_inner_function.
+    self.is_strict = true;
+    // The lexer's strictness has to follow, or the body is tokenized under the
+    // enclosing mode (legacy octals accepted, FutureReservedWords not
+    // reserved). Restored together with is_strict at the end.
+    self.lexer.set_strict(true);
     self.in_class_body = true;
     self.has_super_binding = false;
 
@@ -743,7 +782,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // TypeScript: `implements Foo, Bar<T>` before the class body. Must be
     // skipped BEFORE prescan_private_names below, which expects the lexer
     // to be positioned right at the body's opening `{`.
-    if (self.lexer.ts_mode && self.check(TokenType.IMPLEMENTS)) {
+    // `implements` is a FutureReservedWord only in strict code, so in a
+    // sloppy body the lexer hands back a plain IDENTIFIER. Accept both
+    // spellings — the clause is TS syntax either way, and the `ts_mode`
+    // gate is what keeps it out of .js files.
+    if (self.lexer.ts_mode
+        && (self.check(TokenType.IMPLEMENTS) || self.check_ts_ident("implements"))) {
         Token _impl_early = self.advance()!;
         for (;;) {
             self.skip_type()!;
@@ -976,9 +1020,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // carry no runtime semantics under erasable syntax.
         if (self.lexer.ts_mode) {
             for (;;) {
-                if (self.match(TokenType.PUBLIC)) continue;
-                if (self.match(TokenType.PRIVATE)) continue;
-                if (self.match(TokenType.PROTECTED)) continue;
+                // public/private/protected are FutureReservedWords only in
+                // strict code; in a sloppy body they arrive as IDENTIFIER.
+                // Accept both spellings (still behind the `ts_mode` gate).
+                if (self.match(TokenType.PUBLIC) || self.match_ts_ident("public")) continue;
+                if (self.match(TokenType.PRIVATE) || self.match_ts_ident("private")) continue;
+                if (self.match(TokenType.PROTECTED) || self.match_ts_ident("protected")) continue;
                 if (self.match_ts_ident("readonly")) continue;
                 if (self.match_ts_ident("override")) continue;
                 if (self.match_ts_ident("abstract")) continue;
@@ -1761,6 +1808,11 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // (__static_super__), not the prototype.
         bool saved_super_is_static_method = self.super_is_static_method;
         self.super_is_static_method = is_static;
+        // ES2024 §15.4.5: class MethodDefinitions use UniqueFormalParameters,
+        // duplicate names forbidden regardless of strictness. Force the
+        // inner duplicate-name check on (compile_inner_function's
+        // is_method_body parameter); the surrounding is_strict
+        // assignment above already made the body itself strict.
         CompiledFunction* inner = self.compile_inner_function(method_name_buf[:method_name_len], false, class_elem_src_start, true, true)!;
         self.super_is_static_method = saved_super_is_static_method;
 
@@ -2155,6 +2207,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     self.super_name_idx = saved_super_name_idx;
     self.static_super_name_idx = saved_static_super_name_idx;
     self.home_object_name_idx = saved_home_object_name_idx;
+    self.is_strict = saved_is_strict;
+    self.lexer.set_strict(saved_is_strict);
     self.pop_private_scope();
 
     return ctor_reg;

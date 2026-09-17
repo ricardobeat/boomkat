@@ -2,7 +2,7 @@
 
 How to package this engine as a library and drive it from a host program.
 
-The engine is a strict-only ES5/ES6 interpreter meant to be embedded (see
+The engine is an ES5/ES6 interpreter meant to be embedded (see
 `engine-scope.md`). This document covers the `bk_` C ABI, which is the only
 supported boundary for non-C3 hosts, and the language bindings built on top of
 it.

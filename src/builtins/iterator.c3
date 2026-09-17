@@ -219,7 +219,18 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
         }
         // detached/OOB: value stays undefined (spec: detach mid-iteration -> undefined)
     } else {
-        // Try dense array part first, then fall back to property table
+        // Try dense array part first, then fall back to property table.
+        // A live mapped ARGUMENTS index aliases the owning activation's
+        // parameter register, so read it there (ES2015 §9.4.4.4).
+        bool took_mapped = false;
+        if (target.get_class() == hobject::ObjClass.ARGUMENTS) {
+            TVal mapped_v;
+            if (vm::mapped_args_read(ctx.vm, target, idx, &mapped_v)) {
+                value = mapped_v;
+                took_mapped = true;
+            }
+        }
+        if (!took_mapped) {
         TVal? elem = target.get_array_idx(idx);
         if (try v = elem) {
             value = v;
@@ -241,6 +252,7 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
                 return;
             }
             // else: element is a hole, value stays undefined
+        }
         }
     }
     }

@@ -921,7 +921,10 @@ fn void array_set_elem(HObject* obj, uint idx, TVal val, Heap* heap, void* vm = 
         proxy_mop_set(vm, heap, obj, key, val, recv, &sres);
         return;
     }
+    // `undefined` takes the named path: the dense part marks holes with
+    // `undefined`, so a dense store would make the index read as absent.
     if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS)
+        && !val.is_undefined()
         && obj.set_array_idx(idx, val, heap)) {
         return;
     }
@@ -1586,7 +1589,15 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         HString* len_key_fast = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         int len_own_idx = obj.find_prop_idx(len_key_fast, ctx.heap);
         bool length_ok = len_own_idx < 0 || !obj.get_prop_flags((uint)len_own_idx, ctx.heap).is_accessor;
-        if (length_ok
+        // A dense `undefined` reads back as a hole, so a push of one takes the
+        // Set path below, which records presence in the named table. Checked
+        // up front: inside the loop, fast_ok = false means an OOM that has
+        // already written earlier elements.
+        bool all_defined = true;
+        for (ushort i = 0; i < ctx.argc; i++) {
+            if (ctx.regs[ctx.base_reg + i].is_undefined()) { all_defined = false; break; }
+        }
+        if (length_ok && all_defined
             && (obj.prototype == null || proto_chain_has_no_indexed_props(obj.prototype))) {
             bool fast_ok = true;
             for (ushort i = 0; i < ctx.argc; i++) {
@@ -1730,7 +1741,9 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
     // Steps 5-6: loop k=1..len-1, shift elements left. ES2022 §23.1.3.31
     // step 5.b-d: fromPresent = HasProperty(O, from), THEN only if present,
     // Get(O, from) -- a Proxy observes these as two separate trap calls
-    // ("has" before "get"), not one combined presence-check-via-Get.
+    // ("has" before "get"), not one combined presence-check-via-Get. Each
+    // write goes through [[Set]], so a non-writable index 0 throws TypeError
+    // instead of being silently overwritten in the dense part.
     for (ulong k = 1; k < len; k++) {
         bool from_present = arr_has_prop_ctx(ctx, obj, k);
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
@@ -1740,8 +1753,11 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
                 elem.set_undefined();
             }
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            array_set_elem_ulong(obj, k - 1, elem, ctx.heap, ctx.vm);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (!array_set_elem_ulong_set(ctx, obj, k - 1, elem)) {
+                ctx.result.set_undefined(); return;
+            }
+        } else if (ctx.should_throw) {
+            ctx.result.set_undefined(); return;
         } else {
             // fromPresent is false: delete target slot (k-1)
             arr_delete_elem_strict_or_throw(ctx, obj, k - 1);
@@ -2124,7 +2140,10 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
             if (arr_has_prop_ctx(ctx, obj, from_idx)) {
                 if (arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem)) {
                     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-                    if (!array_set_elem_ulong_checked(ctx, obj, to_idx, elem)) {
+                    // ES2022 §23.1.3.28 step 15.b.iv: Set(O, to, fromValue, true),
+                    // so a non-writable index throws TypeError instead of being
+                    // silently redefined via CreateDataPropertyOrThrow.
+                    if (!array_set_elem_ulong_set(ctx, obj, to_idx, elem)) {
                         ctx.result.set_undefined();
                         return;
                     }
@@ -2159,7 +2178,10 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
             if (arr_has_prop_ctx(ctx, obj, from)) {
                 if (arr_get_elem_vm(obj, from, ctx.heap, ctx, &elem)) {
                     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-                    if (!array_set_elem_ulong_checked(ctx, obj, to, elem)) {
+                    // ES2022 §23.1.3.28 step 16.b.iv: Set(O, to, fromValue, true),
+                    // so a non-writable index throws TypeError instead of being
+                    // silently redefined via CreateDataPropertyOrThrow.
+                    if (!array_set_elem_ulong_set(ctx, obj, to, elem)) {
                         ctx.result.set_undefined();
                         return;
                     }
@@ -3052,20 +3074,17 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
         return false;
     }
 
-    // ES2022 §10.4.2.1 ArraySetLength step 3.a: if the exotic "length" is
-    // non-writable and the new length differs from the current length,
-    // return false (callers translate to TypeError). The prop-table branch
-    // below handles the case where "length" is a named property; this
-    // guards the ARRAY-only path where length lives in array_len_ptr and
-    // no named property exists (e.g. arrays produced by new Array(n) where
-    // the descriptor {writable:false} or freeze never materialised a
-    // prop-table entry).
+    // The exotic "length" is a non-writable own data property, so
+    // OrdinarySetWithOwnDescriptor step 2.a rejects the [[Set]] even when
+    // the new value equals the current length (callers translate the false
+    // to TypeError). The prop-table branch below handles the case where
+    // "length" is a named property; this guards the ARRAY-only path where
+    // length lives in array_len_ptr and no named property exists (e.g.
+    // arrays produced by new Array(n) where the descriptor {writable:false}
+    // or freeze never materialised a prop-table entry).
     if (obj.get_class() == hobject::ObjClass.ARRAY && !obj.flags.array_len_writable) {
-        uint cur_len = *obj.array_len_ptr();
-        if (len_val != (ulong)cur_len) {
-            arr_throw_type_error(ctx, "Cannot assign to read-only property 'length'");
-            return false;
-        }
+        arr_throw_type_error(ctx, "Cannot assign to read-only property 'length'");
+        return false;
     }
 
     TVal len_tv;
@@ -3153,8 +3172,20 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     }
 
     // No accessor anywhere on the chain (no own property or inherited data
-    // property), define as a new own data property on obj. Set()'s
-    // OrdinarySet CreateDataProperty step requires obj to be extensible.
+    // property). For an ARRAY exotic, "length" is not an ordinary property:
+    // it lives in array_len_ptr with no named-table entry, and its attributes
+    // are fixed at {writable:true, enumerable:false, configurable:false}.
+    // Materialising it here as a WEC data property gave it the wrong
+    // attributes (it showed up in console output and propertyIsEnumerable)
+    // and left a snapshot that goes stale the moment a dense fast path bumps
+    // array_len_ptr without touching the table. Write through to the exotic
+    // instead; the writability check above has already run.
+    if (obj.flags.exotic_array) {
+        *obj.array_len_ptr() = (uint)len_val;
+        return true;
+    }
+    // A plain object reaching here has no own "length", so the Set falls to
+    // OrdinarySet's CreateDataProperty step, which requires extensibility.
     if (!obj.is_extensible()) {
         arr_throw_type_error(ctx, "Cannot add property length, object is not extensible");
         return false;

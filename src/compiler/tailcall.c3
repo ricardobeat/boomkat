@@ -18,8 +18,10 @@
 // would have to be re-taught at each new expression form; matching the emitted
 // shape cannot drift from what the compiler actually produces.
 //
-// §14.8 applies to strict code only. This engine is strict-only, so the gate
-// is satisfied unconditionally and no per-function strictness bit is consulted.
+// §14.8 applies to strict code only. Sloppy code is not required to have
+// proper tail calls, and rewriting there is still sound (a TAILCALL reuses
+// the frame only when the runtime finds nothing in it that must outlive the
+// call), so the pass runs regardless of mode.
 //
 // A call in a syntactic tail position is still NOT a tail call when the frame
 // holds state that must outlive it. Each disqualifier below is why:

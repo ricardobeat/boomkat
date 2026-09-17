@@ -9,6 +9,8 @@
 // SharedArrayBuffer is the exception: a GSAB only grows, so a fixed-length
 // view over one keeps its length.
 
+'use strict';
+
 var pass = 0, fail = 0;
 function ok(c, m) { if (c) { pass++; } else { fail++; print('FAIL: ' + m); } }
 function throwsTypeError(fn, m) {

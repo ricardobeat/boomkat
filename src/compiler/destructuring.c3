@@ -29,19 +29,17 @@ import std::io;
 // `await` is reserved only inside a module / async function ([Await] scope);
 // outside those it is a plain identifier and the shorthand is legal.
 //
-// `yield`, by contrast, is *always* rejected here: this engine is strict-only
-// (the lexer pins `strict_mode = true`), and in strict code `yield` is a
-// reserved word regardless of generator context, so `{ yield } = v` is an
-// early SyntaxError everywhere. The `!is_generator && !forbid_yield` idiom
-// used elsewhere in the compiler encodes the *sloppy*-mode allowance, which
-// this engine can never reach.
-//
+// A shorthand key doubles as a BindingIdentifier, so it must be usable
+// as an IdentifierReference in this context: a plain Identifier, `await`
+// where it is not reserved, or sloppy non-generator `yield` (§13.1.1).
 // This mirrors the object-*literal* shorthand gate in `object_literal`
 // (expressions.c3), which already rejects the reserved-word forms; the
 // pattern collectors below route reserved words through
 // `destructuring_property_key` and so need this check to match it.
 fn bool CompilerContext.shorthand_key_is_identifier_ref(&self, TokenType tt) {
-    return tt == TokenType.IDENTIFIER || self.await_is_identifier(tt);
+    if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt)) return true;
+    if ((tt == TokenType.LET || tt == TokenType.STATIC) && !self.is_strict) return true;
+    return tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield;
 }
 
 // Parse a property key in a destructuring binding pattern.
@@ -100,6 +98,34 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
         self.advance(true)!;
         return kw_str;
     }
+    // TypeScript accepts `#name` as a destructuring-pattern key (tsc passes
+    // it through verbatim even though private destructuring has no runtime
+    // semantics). In ts_mode lower it to the ordinary string key "#name" so
+    // conformant files compile; the read then behaves like any other absent
+    // property. Outside ts_mode it stays a SyntaxError, as does the
+    // shorthand form (shorthand_key_is_identifier_ref rejects HASH_IDENT,
+    // since `#foo` is not a BindingIdentifier).
+    if (tt == TokenType.HASH_IDENT && self.lexer.ts_mode) {
+        Token ht = self.advance()!;
+        Heap* hhp = (Heap*)self.heap;
+        usz hlen = ht.str_value.len + 1;
+        if (hlen <= 4097) {
+            char[4097] hbuf;
+            hbuf[0] = '#';
+            for (usz hi = 0; hi < ht.str_value.len; hi++) hbuf[hi + 1] = ht.str_value[hi];
+            HString* hhs = hhp.str_intern(hbuf[:hlen]);
+            if (hhs == null) return COMPILE_ERROR~;
+            return hhs.get_data();
+        }
+        char* hmem = (char*)alloc::malloc_try(mem, (sz)hlen) ?? null;
+        if (hmem == null) return COMPILE_ERROR~;
+        hmem[0] = '#';
+        for (usz hi = 0; hi < ht.str_value.len; hi++) hmem[hi + 1] = ht.str_value[hi];
+        HString* hhs2 = hhp.str_intern(hmem[:hlen]);
+        mem::free(hmem);
+        if (hhs2 == null) return COMPILE_ERROR~;
+        return hhs2.get_data();
+    }
     self.record_error("expected a property name in destructuring pattern");
     return COMPILE_ERROR~;
 }
@@ -112,6 +138,25 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
 // path uses. This makes statement-level destructuring work for any iterable
 // (generators, custom iterables), at arbitrary nesting depth, not just Arrays.
 // See plan 044; mirrors QuickJS's OP_for_of_start/OP_for_of_next lowering.
+//
+// A lexical (let/const) pattern must not repeat a bound name (ES2024 §13.3.1:
+// BoundNames of a LexicalDeclaration contains no duplicates) — `let [z, z]`
+// is an early error in any mode, while `var` patterns allow repeats.
+fn void? CompilerContext.check_destruct_no_dup(&self, DestructBind[] binds, uint count) {
+    for (uint i = 0; i < count; i++) {
+        if (binds[i].is_synthetic) continue;
+        HString* hi = (HString*)self.constants[binds[i].name_idx].get_heapptr();
+        char[] ni = hi.get_data();
+        for (uint j = i + 1; j < count; j++) {
+            if (binds[j].is_synthetic) continue;
+            HString* hj = (HString*)self.constants[binds[j].name_idx].get_heapptr();
+            if (str_eq(ni, hj.get_data())) {
+                return self.fail("duplicate binding in lexical declaration")~;
+            }
+        }
+    }
+    return;
+}
 fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexical, bool is_const,
                                             char[]* out_names = null, uint* out_count = null) {
     DestructBind[MAX_DESTRUCT_BINDS] binds;
@@ -134,6 +179,10 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     // once it is known (RHS is parsed after the pattern). Nested binds carry a
     // parent_idx instead and resolve their source from the parent group temp.
     self.collect_arr_param_binds(binds[..], &count, 0, 0xFFFF)!;
+
+    // Lexical patterns reject duplicate bound names before anything is
+    // declared, so a failure leaves no partial bindings behind.
+    if (is_lexical) self.check_destruct_no_dup(binds[..], count)!;
 
     ushort[MAX_DESTRUCT_BINDS] group_regs;
     ushort[MAX_DESTRUCT_BINDS] binding_regs;
@@ -160,9 +209,11 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     }
 
     // No initializer (`var [a, b];`): bind everything to undefined.
+    // A `const` pattern always requires one (ES2024 §13.3.1).
     if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
 
     if (!self.match(TokenType.ASSIGN)) {
+        if (is_const) return self.fail("const declaration requires an initializer")~;
         for (uint i = 0; i < count; i++) {
             if (binds[i].is_synthetic) continue;
             ushort dreg = binding_regs[i];
@@ -223,6 +274,10 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
     uint count = 0;
     self.collect_obj_param_binds(binds[..], &count, 0, 0xFFFF)!;
 
+    // Same duplicate-bound-names rule as array patterns (see
+    // check_destruct_no_dup): lexical only, `var` repeats stay legal.
+    if (is_lexical) self.check_destruct_no_dup(binds[..], count)!;
+
     ushort[MAX_DESTRUCT_BINDS] group_regs;
     ushort[MAX_DESTRUCT_BINDS] binding_regs;
     for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
@@ -247,10 +302,11 @@ fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexic
 
     // No initializer (`var {a};`, only valid via for-in/of heads, but keep the
     // path): bind everything to undefined. RequireObjectCoercible does not apply
-    // without a source value.
+    // without a source value. A `const` pattern always requires one.
     if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
 
     if (!self.match(TokenType.ASSIGN)) {
+        if (is_const) return self.fail("const declaration requires an initializer")~;
         for (uint i = 0; i < count; i++) {
             if (binds[i].is_synthetic) continue;
             self.emit_abc(Opcode.LDUNDEF, (uint)binding_regs[i], 0, 0);
@@ -378,7 +434,13 @@ fn AssignTarget? CompilerContext.parse_assign_target_lhs(&self) {
     // We only commit to the fast path when the very next token after the
     // identifier is NOT a property/call/index accessor, ensuring that
     // `a.b`, `a[i]`, `a()` etc. fall through to the full expression path.
-    if (self.peek_type() == TokenType.IDENTIFIER) {
+    // Sloppy non-generator `yield`, and `let`/`static` in sloppy code, are
+    // Identifiers here too (§13.1.1).
+    TokenType head_tt = self.peek_type();
+    bool head_is_ctx_ident = (head_tt == TokenType.YIELD
+            && !self.is_strict && !self.is_user_generator && !self.forbid_yield)
+        || ((head_tt == TokenType.LET || head_tt == TokenType.STATIC) && !self.is_strict);
+    if (head_tt == TokenType.IDENTIFIER || head_is_ctx_ident) {
         // Peek at the token after the identifier without consuming it.
         // Lexer state snapshot so we can look one token ahead.
         uint   snap_pos  = self.lexer.pos;
@@ -393,7 +455,7 @@ fn AssignTarget? CompilerContext.parse_assign_target_lhs(&self) {
         uint   snap_pbc  = self.pushback_count;
         Token[4] snap_pbs = self.pushback_stack;
 
-        Token ident_tok = self.advance()!;  // consume identifier
+        Token ident_tok = self.advance(true)!;  // consume identifier
 
         // Read the next token to check for member/call accessors.
         Token? next_opt = self.lexer.next_token();
@@ -992,7 +1054,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
-                                       self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
+                                       self.await_reserved_here(),
+                                       self.is_generator || self.forbid_yield,
+                                       strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
                 binds[*count].name_idx         = tgt_name;
@@ -1060,7 +1124,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!self.shorthand_key_is_identifier_ref(key_tt)) return COMPILE_ERROR~;
             HString* hs = (HString*)self.constants[key_idx].get_heapptr();
             if (is_restricted_name(hs.get_data(),
-                                   self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
+                                   self.await_reserved_here(),
+                                   self.is_generator || self.forbid_yield,
+                                   strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
             if (*count < binds.len) {
                 binds[*count].name_idx    = key_idx;
                 binds[*count].key_idx     = key_idx;
@@ -1129,7 +1195,9 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             if (!is_member) {
                 HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
-                                       self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
+                                       self.await_reserved_here(),
+                                       self.is_generator || self.forbid_yield,
+                                       strict: self.lexer.reserved_words_strict)) {
                     if (deferred_key != null) mem::free(deferred_key);
                     return COMPILE_ERROR~;
                 }

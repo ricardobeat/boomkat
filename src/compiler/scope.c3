@@ -92,6 +92,13 @@ fn void? CompilerContext.check_var_lex_conflict(&self, char[] name, ScopeKind ki
         if ((e.kind == ScopeKind.LET || e.kind == ScopeKind.CONST) && str_eq(e.name, name)) {
             return self.fail("lexical declaration cannot share a name with a var declaration")~;
         }
+        // A block-scope FunctionDeclaration's entry is VAR (the register is
+        // the B.3.3 hoisting target) but the binding is also lexical in its
+        // block, so a `var` in a nested block would collide with that lexical
+        // shadow. has_conflicting_lexical_name documents the matching read.
+        if (e.kind == ScopeKind.VAR && e.is_fn_decl && str_eq(e.name, name)) {
+            return self.fail("lexical declaration cannot share a name with a var declaration")~;
+        }
     }
 }
 
@@ -133,7 +140,11 @@ fn void? CompilerContext.check_lexical_redeclares_param(&self, char[] name) {
 // kind VAR (it shares `var`'s register and env treatment) but a body
 // `let`/`const` may not redeclare it, so the flag is what lets the
 // duplicate-lexical walk tell it apart from a real `var`.
-fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool is_param = false) {    ushort reg = self.alloc_reg();
+//
+// `is_fn_decl` marks a FunctionDeclaration inside a Block, which is BOTH
+// block-scoped lexical (PUTLEX) AND B.3.3-hoisted to function scope (the
+// register this entry holds). See ScopeEntry.is_fn_decl for the consumers.
+fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool is_param = false, bool is_fn_decl = false) {    ushort reg = self.alloc_reg();
     // Lexical bindings must survive env-elision when a closure can read them
     // through the env chain (see has_lexical_bindings in the elide/needs_env
     // gates).
@@ -170,6 +181,8 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         self.scope_stack[self.scope_depth].is_captured = captured;
         self.scope_stack[self.scope_depth].is_tdz = is_tdz;
         self.scope_stack[self.scope_depth].is_param = is_param;
+        self.scope_stack[self.scope_depth].is_catch_param = false;
+        self.scope_stack[self.scope_depth].is_fn_decl = is_fn_decl;
         self.scope_stack[self.scope_depth].is_slot_global =
             kind == VAR && self.is_slot_global_name(name);
         if (captured) { self.has_captured_local = true; }
@@ -182,7 +195,23 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
 // Returns SCOPE_ERROR if not found or if the variable is captured (must go
 // through the environment chain instead of using a register) or is in TDZ
 // (must go through the env so the runtime TDZ sentinel throws ReferenceError).
+// True when a with-env may be in scope for the code being compiled: either
+// this function pushes one (`with` in its own body) or it was compiled inside
+// an enclosing `with`, whose env record its closures capture. Every
+// with-aware decision (dynamic name resolution, the withheld register and
+// fused-op fast paths, SnapshotReference stores) reads this rather than the
+// raw cur_with_depth, which counts only this function's own with-envs.
+fn bool CompilerContext.in_with(&self) @inline {
+    return self.cur_with_depth > 0 || self.outer_with;
+}
+
 fn ushort? CompilerContext.resolve_var(&self, char[] name) {
+    // Inside `with`, every identifier is dynamically scoped: the with-object
+    // may own the name and shadow the static binding, so force the
+    // environment lookup (GETVAR walks the with-env chain at runtime).
+    if (self.in_with()) {
+        return SCOPE_ERROR~;
+    }
     // Search from top of scope stack backwards
     if (self.scope_depth == 0) {
         return SCOPE_ERROR~;
@@ -212,6 +241,11 @@ fn ushort? CompilerContext.resolve_var(&self, char[] name) {
 // block-shadowing `let`/`const`, which must keep resolving through the env.
 // Returns SCOPE_ERROR when shadowed or when the entry is captured/TDZ.
 fn ushort? CompilerContext.resolve_slot_global(&self, char[] name) {
+    // Same dynamic-scope rule as resolve_var: inside `with` the name may
+    // resolve to the with-object, so never use the home register.
+    if (self.in_with()) {
+        return SCOPE_ERROR~;
+    }
     uint i = self.scope_depth;
     while (i > 0) {
         i--;
@@ -289,14 +323,66 @@ fn bool CompilerContext.ts_name_is_runtime_binding(&self, char[] name) {
 // existing binding, never re-declare and clobber the env value). Normal
 // reads/writes must use resolve_var so captured locals stay env-resident.
 fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
+    // Resolve a variable name to its register REGARDLESS of capture status.
+    // Only for declaration-site checks (e.g. `var` redeclaration must reuse
+    // the existing binding, never re-declare and clobber the env value). Normal
+    // reads/writes must use resolve_var so captured locals stay env-resident.
+    //
+    // Restrict to VAR and param entries (skip LET/CONST/class): those live
+    // in a separate lex_env and B.3.3's `var` substitution never collides
+    // with them — Annex B.3.3.1 step ii treats the lex-vs-var conflict as
+    // the exemption signal that suppresses the second binding altogether.
+    // Returning a LET/CONST reg here would let emit_block_scoped_fn_decls
+    // emit DECLGLOBALFUNC against a register owned by the lexical binding,
+    // so the closure overwrites the lexical slot's register-resident value
+    // and a subsequent read returns the closure instead of the original
+    // lexical binding.
     uint i = self.scope_depth;
     while (i > 0) {
         i--;
-        if (str_eq(self.scope_stack[i].name, name)) {
-            return self.scope_stack[i].reg;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (!str_eq(e.name, name)) continue;
+        if (e.kind == ScopeKind.VAR || e.is_param) {
+            return e.reg;
         }
+        return SCOPE_ERROR~;
     }
     return SCOPE_ERROR~;
+}
+
+
+// True when an existing `name` binding was already declared and is
+// env-resident (its value lives in an EnvRecord, not in a register the
+// compiler owns). A re-`var` declaration over such a binding must walk the
+// env chain to update it (PUTVAR), not write through the register and
+// create a shadow DECLVAR in var_env: a sloppy catch body's `var x` that
+// reuses the catch parameter (B.3.5) is the canonical case, where the
+// binding lives in the catch's lex_env above the var_env; an is_captured
+// hoisted `var` from a function body is a second case (the env is the
+// authoritative store the moment any nested closure observes the name).
+//
+// The opposite case — register-resident: an uncaptured hoisted `var` or
+// uncaptured formal parameter. The compiler's register IS the binding's
+// storage; PUTVAR would write to var_env AND clear the source register
+// (post-store decref in vm_execute.c3), leaving the next register read
+// with `undefined` while var_env claims the new value. DECLVAR is correct
+// there.
+fn bool CompilerContext.is_existing_local_env_resident(&self, char[] name) {
+    uint j = self.scope_depth;
+    while (j > 0) {
+        j--;
+        if (!str_eq(self.scope_stack[j].name, name)) continue;
+        ScopeEntry* e = &self.scope_stack[j];
+        if (e.kind == SCOPEMARK) continue;
+        // A catch parameter's binding is published via PUTLEX into the
+        // catch's lex_env above var_env, so any re-declaration that reuses
+        // the existing register must walk the chain to update it (PUTVAR).
+        // is_captured alone misses the top-level case where the force-capture
+        // code is skipped — the binding is still in lex_env but is_captured
+        // stays false.
+        return e.is_captured || e.is_catch_param;
+    }
+    return false;
 }
 
 // Resolve `name` to its register only if it is bound in the scope a function
@@ -329,7 +415,111 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-// True when `name` is already bound as a formal or catch PARAMETER.
+// The var-or-parameter register for `name`, when the VAR binding already
+// exists: a VAR entry (hoisted `var`, including one an earlier B.3.3 scan
+// made) or a formal/catch parameter entry (which doubles as the var binding
+// per §9.2.10 step 27). A LET/CONST entry is block-scoped shadowing, never
+// the var binding, so it does not count — the caller must still declare.
+fn ushort? CompilerContext.find_var_or_param_reg(&self, char[] name) {
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            continue;
+        }
+        if (!str_eq(e.name, name)) {
+            continue;
+        }
+        if (e.kind == VAR || e.is_param) return e.reg;
+        return SCOPE_ERROR~;
+    }
+    return SCOPE_ERROR~;
+}
+
+// True when a same-named lexical binding sits anywhere in the CURRENT
+// function body OUTSIDE this block (B.3.3.1 step ii's "would produce an Early
+// Error" test, i.e. the §13.2.1 lex-vs-var conflict). A same-named `var`
+// merges (§13.2.5) and does not exempt; formal/catch parameters merge too
+// (§9.2.10 step 27), so neither vetoes. Only `let`/`const`/`class` count,
+// and classes declare as LET-kind in this engine, so testing LET and CONST
+// covers all three. Walks the whole stack: enclosing blocks, the body top
+// level, and already-declared siblings all veto. The block's OWN lex_spans
+// names are not yet on the stack (they declare as they parse below), so they
+// never self-veto; LATER siblings are invisible and do not veto (node treats
+// those as runtime shadowing, not an early error).
+fn bool CompilerContext.has_conflicting_lexical_name(&self, char[] name) {
+    // The scan runs when the block's own PUSH_LEX has NOT been emitted yet:
+    // entries for this block's OWN `let`/`const`/`class` names are absent, so
+    // every LET/CONST entry on the stack belongs to another block or the body
+    // top level. Sibling blocks included: none of this block's own names can
+    // collide with the scan's result.
+    uint i = self.scope_depth;
+    while (i > 0) {
+        i--;
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            continue;
+        }
+        if ((e.kind == LET || e.kind == CONST) && str_eq(e.name, name)) {
+            return true;
+        }
+        // A block-scope FunctionDeclaration's entry is VAR (the register is
+        // the B.3.3 hoisting target), so the LET/CONST arm above misses it.
+        // is_fn_decl marks the entry as a block-scope function declaration,
+        // distinguishing it from a top-level `function f` whose var-scope
+        // entry is benign (multiple vars at function scope are allowed).
+        // B.3.3 step (ii): "replacing the FunctionDeclaration f with a
+        // VariableStatement ... would not produce any Early Errors" — the
+        // outer block's lexical `function f` would conflict with the would-be
+        // `var f` from the inner block, so this declaration is not
+        // Annex-B-applicable and stays block-scoped.
+        if (e.kind == VAR && e.is_fn_decl && str_eq(e.name, name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when `name` is a FORMAL parameter of the enclosing function.
+//
+// Catch parameters do not count: the exemption covers BoundNames of formals,
+// never a catch binding, so `try{}catch(f){ {function f(){}} }` must still
+// publish the closure to var scope. Formals are declared before the body
+// marker is pushed while a catch parameter is declared after it, so only
+// entries below the first body mark (scanning up from the bottom) qualify.
+// Always false at global scope, which has no formals — a same-named catch
+// parameter there must not exempt.
+fn bool CompilerContext.is_formal_param_name(&self, char[] name) {
+    if (self.is_global) return false;
+    // "arguments" counts as a parameter name: FunctionDeclarationInstantiation
+    // step 22.f appends it to parameterNames when the arguments object is
+    // needed, so B.3.3 step ii exempts `function arguments(){}` in a block
+    // from the var-scope second binding (block-decl-func-skip-arguments.js).
+    if (str_eq(name, "arguments") && self.uses_arguments) return true;
+    uint i = 0;
+    while (i < self.scope_depth) {
+        ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            if (e.is_body_mark) break;
+            i++;
+            continue;
+        }
+        if (e.is_param && str_eq(e.name, name)) {
+            return true;
+        }
+        i++;
+    }
+    return false;
+}
+
+// True when `name` is already bound as a formal or catch PARAMETER while
+// scanning outward from the current position, stopping at the first body
+// mark. A catch parameter declared in an ENCLOSING catch does not count:
+// is_param_name answers "the nearest binding of this name", which is what
+// the var-hoist skip and the publish skip need. B.3.3.1's parameterNames
+// nuance (formals exempt, catch bindings do not) is handled at publish
+// time by is_formal_param_name, which walks from the formal region instead.
 //
 // The hoisting pass uses this for the one case where a hoisted `var` must not
 // create a binding: ES2015 §9.2.10 step 27 initializes a var-declared name to
@@ -343,10 +533,16 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
 // bindings in scope ARE the parameters (the body has not been parsed), but the
 // narrower test keeps this correct if that ever stops holding.
 fn bool CompilerContext.is_param_name(&self, char[] name) {
+    bool crossed_body_mark = false;
     uint i = self.scope_depth;
     while (i > 0) {
         i--;
         ScopeEntry* e = &self.scope_stack[i];
+        if (e.kind == SCOPEMARK) {
+            if (!e.is_body_mark || crossed_body_mark) return false;
+            crossed_body_mark = true;
+            continue;
+        }
         if (e.is_param && str_eq(e.name, name)) {
             return true;
         }
@@ -377,9 +573,35 @@ fn ushort CompilerContext.declare_binding_var(&self, char[] name, ScopeKind kind
     // Capture-blind lookup: a captured var is still the same binding.
     ushort? existing = self.find_local_reg(name);
     if (try er = existing) {
+        if (self.in_with()) self.mark_var_captured(name);
         return er;
     }
-    return self.declare_var(name, kind);
+    ushort reg = self.declare_var(name, kind);
+    if (self.in_with()) self.mark_var_captured(name);
+    return reg;
+}
+
+// Force every read of `name` in this function through the environment, by
+// marking its innermost scope entry captured. A `var` declared inside a `with`
+// needs this: the with-object may own the name and swallow the store, so the
+// write goes through the env (WTWR, SnapshotPutValue) and reads must do the
+// same or the register keeps a value the binding never received. The capture
+// scan cannot see it, a declarator at the top of a `with` body reads as a
+// binder. is_captured and has_captured_local flip together, or finish()'s
+// env-elision would NOP the declaration's env write (see the for-in head in
+// statements.c3 for the same pairing).
+fn void CompilerContext.mark_var_captured(&self, char[] name) {
+    for (uint j = self.scope_depth; j > 0; j--) {
+        uint idx = j - 1;
+        if (self.scope_stack[idx].kind == SCOPEMARK) continue;
+        if (str_eq(self.scope_stack[idx].name, name)) {
+            if (!self.scope_stack[idx].is_captured) {
+                self.scope_stack[idx].is_captured = true;
+                self.has_captured_local = true;
+            }
+            return;
+        }
+    }
 }
 
 // Return the constant-pool name index for `reg`'s binding when it is a CONST
@@ -454,6 +676,9 @@ fn ushort CompilerContext.shield_computed_key(&self, ushort key_reg) {
 // so an inner shadowing binding decides the answer, not an outer one.
 fn bool CompilerContext.is_statically_resolvable_local(&self, char[] name) {
     if (self.is_global) return false;
+    // Inside `with`, the with-object may own the name and shadow the static
+    // binding, so resolvability is dynamic (same rule as resolve_var).
+    if (self.in_with()) return false;
     uint i = self.scope_depth;
     while (i > 0) {
         i--;

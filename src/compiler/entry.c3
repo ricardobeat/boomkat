@@ -20,12 +20,13 @@ import std::io;
 // eval uses, but deliberately NOT `in_eval_code`: this is global Script code,
 // so declaration instantiation and the global-slot pre-scan must behave
 // exactly as they do for an ordinary script.
-// `non_strict_source` opts a compilation unit out of the engine's strict-only
-// default. It is ONLY for dynamic code whose strictness the spec decides by
-// its own directive prologue: a Function() body (ES2024 §20.2.1.1 step 22
-// compiles it as non-strict FunctionBody) and an indirect eval's Script.
-// Top-level scripts and modules never pass it, so the strict-only invariant
-// the rest of the compiler relies on is unchanged for ordinary code.
+// `non_strict_source` marks a compilation unit whose strictness the spec
+// decides by its own directive prologue: a Function() body (ES2024 §20.2.1.1
+// step 22 compiles it as a non-strict FunctionBody) and an indirect eval's
+// Script. It lowers the LEXER's strictness, so a body with no "use strict"
+// still scans the sloppy-only lexical forms; the parser's own strictness
+// default already covers those units. Top-level scripts take that default
+// directly and modules are strict, so neither passes this.
 fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = false,
                               bool non_strict_source = false) {
     // Reset error state for this top-level compilation.
@@ -36,6 +37,12 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ctx.init(lex, heap);
     ctx.is_global = true;
     ctx.eval_mode = want_completion;
+    // Phase 1 (plans/083): top-level scripts now default to sloppy
+    // (ES2024 §16.2.1.1 — script bodies are non-strict code unless a
+    // Directive Prologue says otherwise). The "use strict" directive in the
+    // prologue raises it back to true via parse_directives() below.
+    ctx.is_strict = false;
+    ctx.lexer.set_strict(false);
     if (want_completion) {
         ctx.eval_acc_reg = ctx.alloc_reg();
         // Seed the accumulator so an empty Script, or one whose only
@@ -48,8 +55,16 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
 
     // Check for "use strict" directive prologue at program level.
     // Scanned strict: the directive is a plain string literal, and nothing
-    // whose lexing differs between the modes can precede it.
+    // whose lexing differs between the two modes can precede it.
     ctx.parse_directives()!;
+
+    // Sync the lexer to ctx.is_strict after the directive prologue so the
+    // statement parse below runs in the right mode. The default is sloppy
+    // (line above); a "use strict" directive raises ctx.is_strict to true
+    // and now the lexer tracks it too. Without this sync, the lexer would
+    // stay sloppy and accept non-octal decimal escapes (`\8`, `\9`) that
+    // ES2017 §12.8.4.1 says are SyntaxErrors in strict code.
+    ctx.lexer.set_strict(ctx.is_strict);
 
     // Dynamic non-strict source stays non-strict unless it opted back in with
     // its own "use strict". The statement parse runs after the rewind below,
@@ -195,7 +210,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     char[] parent_static_super_name = {},
                                     char[] parent_home_object_name = {},
                                     bool  parent_super_home_is_object_literal = false,
-                                    bool  caller_is_strict = true) {
+                                    bool  caller_is_strict = false,
+                                    bool  var_env_is_global = false) {
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
@@ -204,6 +220,14 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.is_global = true;
     ctx.eval_mode = true;
     ctx.in_eval_code = true;
+    // Eval inherits the caller's strictness only when the call is direct
+    // (ES2024 §19.2.1.1 step 12: "Eval code is strict mode code if it
+    // begins with a Directive Prologue that contains a Use Strict Directive
+    // or if the call to eval is a direct eval that is contained in strict
+    // mode code"). An indirect eval always defaults to sloppy; its own
+    // prologue can flip strict via `saw_use_strict`. caller_is_strict is
+    // masked by is_direct_eval below to honor that.
+    ctx.is_strict = false;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
     // An object-literal caller's HomeObject binding is __super__ (unnumbered,
@@ -320,8 +344,14 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // strict". An indirect eval from strict code is therefore NON-strict, so
     // `(0,eval)('var eval;')` is legal. The statement parse below runs after
     // the rewind, so lowering the flag here governs the whole real parse.
-    bool eval_is_strict = caller_is_strict || ctx.saw_use_strict;
+    // ES2024 §19.2.1.1 step 12: indirect eval is sloppy unless its own
+    // prologue contains a Use Strict directive; direct eval additionally
+    // inherits strictness from its (strict) caller. The OR with is_direct_eval
+    // here is what flips caller_is_strict to true for direct calls and to
+    // false for indirect ones.
+    bool eval_is_strict = (caller_is_strict && is_direct_eval) || ctx.saw_use_strict;
     ctx.lexer.set_strict(eval_is_strict);
+    ctx.is_strict = eval_is_strict;
 
     // ES2024 §19.2.1.1: an eval's body is a Script, so its
     // LexicallyDeclaredNames must contain no duplicates. Checked here, before
@@ -330,11 +360,11 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 
     // EvalDeclarationInstantiation must validate every global function/var
     // declaration before creating any binding (ES2015 §18.2.1.2 steps 8/10).
-    // Only non-strict indirect eval uses the global Environment Record as its
-    // varEnv; direct eval and strict indirect eval get a fresh declarative env.
-    // Emit the CanDeclareGlobalFunction/Var checks as a prologue so a failure
-    // is atomic (no earlier declaration from the same eval has leaked yet).
-    if (!is_direct_eval && !ctx.saw_use_strict) {
+    // Only a sloppy eval whose variable environment is the global Environment
+    // Record runs those CanDeclare checks: indirect eval and direct eval from
+    // global code. A direct eval inside a function (or any strict eval, whose
+    // varEnv is a fresh declarative env) does not.
+    if (var_env_is_global && !eval_is_strict) {
         ctx.hoist_global_fn_decls(true)!;
         ctx.hoist_decls(true, true)!;
     }
@@ -358,26 +388,71 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
         ctx.statement()!;
     }
 
+    // Collect the eval source's var-declared names (var statements via
+    // record_eval_var_name, function declarations via the hoisted-name
+    // tables) for the §18.2.1.2 step 3.4 intermediate-binding collision
+    // check in builtin_eval. Dedup against the collected list (the hoisted
+    // tables were not hooked).
+    uint eval_var_count = ctx.eval_var_coll_count;
+    for (uint i = 0; i < ctx.hoisted_fn_count; i++) {
+        uint ni = ctx.add_string_constant(ctx.hoisted_fn_names[i]);
+        bool dup = false;
+        for (uint k = 0; k < eval_var_count; k++) {
+            if (ctx.eval_var_coll_idxs[k] == ni) { dup = true; break; }
+        }
+        if (!dup) {
+            if (eval_var_count >= ctx.eval_var_coll_cap) {
+                uint new_cap = ctx.eval_var_coll_cap == 0 ? 16 : ctx.eval_var_coll_cap * 2;
+                void* pn = ((Heap*)heap).realloc_func(((Heap*)heap).heap_udata,
+                    ctx.eval_var_coll_idxs, (usz)(new_cap * 4));
+                if (pn != null) {
+                    ctx.eval_var_coll_idxs = (uint*)pn;
+                    ctx.eval_var_coll_cap = new_cap;
+                }
+            }
+            if (eval_var_count < ctx.eval_var_coll_cap) {
+                ctx.eval_var_coll_idxs[eval_var_count++] = ni;
+            }
+        }
+    }
+
     // Free any remaining scope_stack entries (top-level lexical declarations)
     ctx.pop_scope_to(0);
 
     // Return the accumulated eval result (or undefined if no expression)
     ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0);
 
+    // Snapshot the collected names before finish(): ctx.cleanup() inside
+    // finish() frees eval_var_coll_idxs, so the attach below reads the
+    // snapshot copy instead.
+    uint* eval_var_snapshot = null;
+    if (eval_var_count > 0) {
+        Heap* h = (Heap*)heap;
+        eval_var_snapshot = (uint*)h.alloc_func(h.heap_udata, (usz)eval_var_count * 4);
+        if (eval_var_snapshot != null) {
+            for (uint i = 0; i < eval_var_count; i++) {
+                eval_var_snapshot[i] = ctx.eval_var_coll_idxs[i];
+            }
+        }
+    }
+
     CompiledFunction*? result = ctx.finish()!;
     if (try func = result) {
         // Eval code must NOT get its own scope, var declarations must go
         // to the enclosing scope (global env), not a fresh function scope.
         func.flags.needs_env = false;
+        if (eval_var_snapshot != null) {
+            func.eval_var_idxs = eval_var_snapshot;
+            func.eval_var_count = eval_var_count;
+        }
     }
     return result;
 }
 
 // Compile a function expression or declaration.
 // `is_expr` is true for function expressions, false for declarations.
-// `dynamic` marks a body built by the Function constructor, whose receiver
-// coerces to globalThis unless the body carries its own "use strict".
-// See FuncFlags.subst_global_this.
+// `dynamic` marks a body built by the Function constructor, which is
+// always sloppy unless the body carries its own "use strict" directive.
 fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, bool dynamic = false) {
     // Reset error state for this compilation; see `compile`'s matching
     // reset. Without it, a stale `err_msg` left by a PREVIOUS
@@ -391,13 +466,21 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
-    ctx.subst_global_this = dynamic;
-    // ES2024 §20.2.1.1 CreateDynamicFunction step 22: a Function() body is
-    // parsed as a NON-strict FunctionBody, so `Function('var eval;')` is legal.
-    // A "use strict" in the body raises it back in parse_directives, which runs
-    // after the FormalParameters -- matching the spec's separate productions,
-    // where a body directive cannot retroactively reject a parameter name.
-    if (dynamic) ctx.lexer.set_strict(false);
+    // Phase 1 (plans/083): both dynamic and non-dynamic function bodies
+    // default to sloppy (ES2024 §16.2.1.1/§20.2.1.1). Dynamic bodies are
+    // sloppy by spec; non-dynamic function bodies inherit strictness from
+    // their enclosing script (caller) per ES2024, but the engine does not
+    // thread the caller's strictness here, so a fresh ordinary function
+    // defaults to sloppy — same as the script it lives in unless that script
+    // declared "use strict" and the function itself carries a directive too.
+    // A "use strict" directive in the body raises is_strict back to true.
+    ctx.is_strict = false;
+    // Lower the lexer's strict_mode to match ctx.is_strict so sloppy function
+    // bodies accept legacy octal literals and octal escapes (ES2024 Annex B
+    // §B.1.1 / §B.1.2). A "use strict" directive in the body raises both back
+    // via parse_directives (ctx.is_strict) and parse_function_body
+    // (lexer.set_strict(true)). Dynamic bodies are also sloppy per spec.
+    ctx.lexer.set_strict(false);
 
     // Parse function body
     ctx.parse_function_body(is_expr)!;
@@ -421,7 +504,14 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
-    ctx.subst_global_this = dynamic;
+    // Phase 1 (plans/083): same default as compile_function() above:
+    // both dynamic and non-dynamic function bodies default to sloppy.
+    ctx.is_strict = false;
+    // Dynamic bodies: lower the lexer's strict_mode so octal literals,
+    // legacy octal escapes, and FutureReservedWord identifiers parse as
+    // non-strict. compile_function() does the same call below; we add it
+    // here so dynamic generators/async match.
+    if (dynamic) ctx.lexer.set_strict(false);
     ctx.is_generator = is_generator;
     // Dynamic functions: `is_generator` reflects a syntactic generator here
     // (GeneratorFunction / AsyncGeneratorFunction constructors), so it also
@@ -454,6 +544,10 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     ctx.is_global = true;
     ctx.is_module = true;
     ctx.module_goal = true;
+    // Modules are always strict by spec (ES2015 §16.2.1.1). Set the flag here
+    // so plans/083 plumbing reaches the module entry even though it never
+    // gets flipped.
+    ctx.is_strict = true;
     // A module body may contain top-level `await` (ES2022). Compiling the
     // module as async lets `await` emit AWAIT/LOAD_RESUME and suspend the
     // module activation, exactly like an async function body. Modules with no

@@ -99,6 +99,10 @@ fn ushort? CompilerContext.expression_inner(&self) {
         // operand `b` is itself a valid target. Drop the markers it set.
         self.clear_ref_markers();
     }
+    // `(a, eval)(...)` is indirect: the comma discards the direct-eval
+    // reference even when `eval` is the rightmost operand. clear_ref_markers
+    // in the loop above does that. Parentheses alone are transparent
+    // (§13.3.6.1), so `(eval)(x)` stays direct and nothing is cleared here.
 
     return result;
 }
@@ -389,15 +393,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     }
 
     // ES2024 §13.15.1: "It is a Syntax Error if the AssignmentTargetType of
-    // LeftHandSideExpression is invalid." A CallExpression target such as
-    // `f() = 1` reaches here with none of the reference markers set, so it is
-    // rejected at parse time, matching QuickJS. V8/node instead parse it and
-    // throw a ReferenceError at runtime; that leniency is NOT copied, and the
-    // reason is worth recording because — unlike the other node divergences —
-    // the spec does sanction a deferral here.
-    //
-    // AssignmentTargetType (ES2025 §8.6.4) returns simple, web-compat or
-    // invalid, and the CallExpression clause is a Normative Optional:
+    // LeftHandSideExpression is invalid." AssignmentTargetType (§8.6.4)
+    // returns simple, web-compat or invalid, and its CallExpression clause is
+    // a Normative Optional:
     //
     //     CallExpression : CoverCallExpressionAndAsyncArrowHead
     //     CallExpression : CallExpression Arguments
@@ -406,36 +404,26 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     //          IsStrict(this CallExpression) is false, then return web-compat.
     //       2. Return invalid.
     //
-    // Annex B.3.9 "Runtime Errors for Function Call Assignment Targets": "When
-    // a function call (13.3.6) is used as an assignment target in non-strict
-    // code, instead of producing an early error, a ReferenceError exception is
-    // thrown during evaluation of the assignment."
+    // Annex B.3.9 "Runtime Errors for Function Call Assignment Targets" makes
+    // this engine a host that supports the behaviour: a CallExpression target
+    // such as `f() = 1` in sloppy code is not an early error, the assignment
+    // throws a ReferenceError during evaluation instead. Strict code keeps the
+    // §13.15.1 early error, and so does any other invalid target.
     //
-    // The allowance is real but unreachable here: it is gated on
-    // IsStrict(this CallExpression) being false, and this engine is
-    // strict-only, so IsStrict is always true and step 1 never fires. Step 2
-    // returns invalid and §13.15.1's early error applies. The early
-    // SyntaxError is therefore the only spec-conforming outcome for this
-    // engine, not merely the stricter of two permitted readings.
-    //
-    // The early errors quoted above key off invalid specifically, so web-compat
-    // suppresses them; the corresponding runtime clauses (e.g. §13.4.2.1 step 2)
-    // throw the ReferenceError instead. B.3.9's Note further restricts the
-    // allowance to `=` and AssignmentOperator: it never applies to `&&=`, `||=`
-    // or `??=`, whose §13.15.1 clause tests "is not simple" rather than
-    // "is invalid" and so rejects web-compat too.
-    //
-    // test262 agrees and covers this directly: all ten
-    // language/expressions/assignmenttargettype/*callexpression* tests that
-    // cite the web-compat clause expect `phase: parse, type: SyntaxError`, and
-    // every one whose operator is deferrable is flagged onlyStrict. The two
-    // logical-assignment cases carry no strictness flag, exactly as B.3.9's
-    // Note requires. All ten pass. node fits the same shape — it defers for
-    // `=`, `+=` and `++` but keeps a SyntaxError for `&&=`/`??=` — so it is
-    // implementing B.3.9; it just also applies it to genuinely strict code
-    // (a `.mjs` module still yields ReferenceError), which B.3.9 does not
-    // permit.
+    // B.3.9's Note restricts the allowance to `=` and AssignmentOperator: it
+    // never applies to `&&=`, `||=`, or `??=`, whose §13.15.1 clause tests "is
+    // not simple" rather than "is invalid" and so rejects web-compat too.
+    // `is_assign`/`is_compound` carry that split.
     if (!self.last_was_assign_target()) {
+        // The LHS call has already run (its result is in `left`); throw before
+        // the RHS, which is still parsed so the token stream stays in sync.
+        if (self.last_ref == RefKind.REF_CALL && !self.is_strict && (is_assign || is_compound)) {
+            uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+            self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+            ushort rhs = self.assignment_expr()!;
+            self.free_reg(rhs);
+            return left;
+        }
         self.record_error("Invalid left-hand side in assignment");
         return COMPILE_ERROR~;
     }
@@ -451,7 +439,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // only engine), which is the helper's default.
     if (!self.last_was_member() && self.last_lhs_name_len > 0
         && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                              self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
+                              self.await_reserved_here(),
+                              self.is_user_generator || self.forbid_yield,
+                              strict: self.lexer.reserved_words_strict)) {
         return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
     }
 
@@ -460,6 +450,51 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
     bool lhs_was_getglobal_prim = lhs_was_getglobal && self.last_was_getglobal_prim;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
+    // Bytecode index of the GETVAR that read the LHS identifier, or
+    // 0xFFFFFFFF when the LHS was not a bare identifier read (member,
+    // local register, GETGLOBAL, or a call-shaped LHS). The emit_ident_read
+    // position is authoritative: code_count - 1 may point past it, and
+    // last_was_local_var marks a register home rather than a GETVAR.
+    uint lhs_getvar_code_pos = 0xFFFFFFFF;
+    if (lhs_was_getvar && !lhs_was_getglobal && !self.last_was_local_var
+        && self.last_getvar_code_pos < self.code_count
+        && self.code[self.last_getvar_code_pos].op == Opcode.GETVAR
+        && (ushort)self.code[self.last_getvar_code_pos].a == left) {
+        lhs_getvar_code_pos = self.last_getvar_code_pos;
+    }
+    // Inside `with`, a read-modify-write on a bare identifier must store to
+    // the SAME object the read saw (ES5 §11.13.2 step 4: PutValue uses the
+    // initial Reference, even when the value getter deleted the binding).
+    // Reserve the base register BEFORE the RHS compiles, so the RHS cannot
+    // reuse it; the LHS GETVAR is rewritten to WITHGET (same value register,
+    // plus the captured base) once the RHS is compiled.
+    ushort lhs_with_base_reg = REG_NONE;
+    bool lhs_in_with = self.in_with() && !lhs_was_getglobal
+        && lhs_getvar_name_idx <= bytecode::MAX_C
+        && lhs_getvar_code_pos != 0xFFFFFFFF
+        && (uint)left <= bytecode::MAX_A;
+    if (lhs_in_with) {
+        lhs_with_base_reg = self.alloc_reg();
+        // WITHBASE/WTWR encode the base in an 8-bit field; without WIDE
+        // support in the in-place rewrites below, fall back to the env walk.
+        if (lhs_with_base_reg > bytecode::MAX_A) {
+            lhs_in_with = false;
+        }
+    }
+    // For plain assignment, the SnapshotReference base is fixed by HasBinding
+    // before the RHS runs (ES2024 §9.1.1.2.5 steps 1-2: the store targets the
+    // bindings object even when an unscopables getter deletes the binding).
+    // WITHBASE runs before the RHS compiles while the register layout is
+    // stable; WTWR at the store reads it. Only for `=`; compound stores use
+    // WITHGET (rewritten over the LHS GETVAR after the RHS compiles).
+    // The LHS GETVAR's value is discarded on this path, so NOP it: leaving
+    // it live would run HasBinding (and its observable unscopables getter)
+    // twice, and a deleting getter would remove the binding before WITHBASE
+    // captures it.
+    if (is_assign && lhs_in_with) {
+        self.code[lhs_getvar_code_pos] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        self.emit_a_bc(Opcode.WITHBASE, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+    }
     // The opcode that writes back a bare-identifier LHS: PUTGLOBAL_PRIM for a
     // proven primitive-only global (guard-free), PUTGLOBAL at true global scope
     // (mirrors GETGLOBAL), else PUTVAR_ASSIGN.
@@ -497,14 +532,17 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // The `+= 1` optimization (INC) was removed because it bypasses ADD's
     // string-concatenation semantics: `"1" + 1` must yield `"11"`.
     // Saves a register + LDINT 1 instruction per occurrence (hot in counters).
-    if (is_compound && !lhs_was_member) {
+    // Skipped inside `with`: the fused DEC_VAR writes the cached env slot
+    // directly, bypassing the SnapshotReference the base capture provides.
+    if (is_compound && !lhs_was_member && !self.in_with()) {
         if (self.peek_type() == TokenType.NUMBER) {
             Token num_tok2 = self.lexer.peek()!;
             double nv = num_tok2.num_value;
             if (nv == 1.0 && compound_op == Opcode.SUB) {
                 self.advance()!;
                 if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
-                    && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                    && self.code[self.code_count - 1].op == Opcode.GETVAR
+                    && !self.in_with()) {
                     uint name_idx = self.code[self.code_count - 1].get_bc();
                     uint getvar_reg = self.code[self.code_count - 1].a;
                     self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
@@ -522,7 +560,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                         // (matters for eval completion value / chained use).
                         ushort tmp = self.alloc_reg();
                         self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-                        self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                        self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
                         self.free_reg(left);
                         left = tmp;
                     }
@@ -748,37 +786,51 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         }
     }
 
-    // For plain assignment to an identifier, preserve whether the identifier
-    // resolved before evaluating the RHS. Per ES2022 §13.15.2 step 1,
-    // evaluating the LHS IdentifierReference produces a Reference, not a
-    // value. Non-strict code keeps the old value-discarding path.
-    if (is_assign && lhs_was_getvar && self.code_count > 0) {
+    // For assignment to an identifier, capture the LHS Reference's environment
+    // BEFORE evaluating the RHS. Per ES2022 §13.15.2 the LHS
+    // IdentifierReference produces a Reference, and PutValue (step 5) uses
+    // that initially created Reference, so an RHS side effect that introduces
+    // a more local binding (a sloppy direct eval's `var x`) must not capture
+    // the store. RESOLVEVAR stores the owning EnvRecord* in a dedicated probe
+    // register; the store below upgrades to PUTVAR_SNAP for it.
+    // Inside `with`, the LHS GETVAR already resolves through the with-env
+    // chain at runtime, so skip the probe: the SnapshotReference path below
+    // (WITHBASE/WTWR) captures the base instead.
+    // A plain `=` discards the LHS value, so the GETVAR is replaced in place.
+    // A compound `op=` needs the GETVAR's value as the old operand, so the
+    // probe is appended after it.
+    if ((is_assign || is_compound) && lhs_was_getvar && self.code_count > 0
+        && !(self.in_with() && !lhs_was_getglobal)) {
         Instruction lhs_last = self.code[self.code_count - 1];
         if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL
              || lhs_last.op == Opcode.GETGLOBAL_PRIM)
             && (ushort)lhs_last.a == left) {
-            // A strict plain assignment must, per PutValue, capture LHS
-            // resolvability BEFORE the RHS runs, hence the RESOLVEVAR probe
-            // and IF_TRUE/THROW_REF guard emitted below. But when the LHS is a
-            // GETGLOBAL naming a global THIS unit hoisted (CHKGLOBALVAR /
-            // CHKGLOBALFUNC ran for it), resolvability is statically TRUE, so
-            // the guard is provably dead: strip the read (its value is
-            // discarded) and leave lhs_ref_reg unset. Undeclared globals keep
-            // the guard, e.g. `undeclared = (this.undeclared = 5)` must still
-            // throw even though the RHS would create the global. A GETGLOBAL_PRIM
-            // LHS is by construction a declared primitive-only global, so it is
-            // statically resolvable too, so strip its dead read.
-            if (lhs_last.op == Opcode.GETGLOBAL_PRIM
+            // A statically resolvable LHS (a global this unit hoisted via
+            // CHKGLOBALVAR/CHKGLOBALFUNC, a GETGLOBAL_PRIM, or a local of the
+            // current function) cannot be unresolvable at runtime, and no RHS
+            // can introduce a more local binding that shadows it: skip the
+            // probe. Undeclared globals keep it, e.g. `undeclared = (this.undeclared = 5)`
+            // must still throw even though the RHS would create the global.
+            bool statically_resolvable = lhs_last.op == Opcode.GETGLOBAL_PRIM
                 || (lhs_last.op == Opcode.GETGLOBAL
                     && self.is_declared_global(lhs_getvar_name_idx))
                 || (lhs_last.op == Opcode.GETVAR
                     && lhs_ident_name_len > 0
                     && self.is_statically_resolvable_local(
-                           lhs_ident_name_buf[:lhs_ident_name_len]))) {
-                self.code_count--;
-            } else {
-                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)left, lhs_getvar_name_idx);
-                lhs_ref_reg = left;
+                           lhs_ident_name_buf[:lhs_ident_name_len]));
+            if (is_assign) {
+                if (statically_resolvable) {
+                    self.code_count--;
+                } else {
+                    ushort probe = self.alloc_reg();
+                    self.code[self.code_count - 1] = bytecode::make_a_bc(
+                        Opcode.RESOLVEVAR, (uint)probe, lhs_getvar_name_idx);
+                    lhs_ref_reg = probe;
+                }
+            } else if (!statically_resolvable) {
+                ushort probe = self.alloc_reg();
+                self.emit_a_bc(Opcode.RESOLVEVAR, (uint)probe, lhs_getvar_name_idx);
+                lhs_ref_reg = probe;
             }
         }
     }
@@ -886,6 +938,16 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 self.emit_a_bc(Opcode.THROW_UNRESOLVED, (uint)lhs_ref_reg, lhs_getvar_name_idx);
             }
             if (void_ctx && lhs_was_getvar) {
+                // Inside `with`, store through the WITHBASE-captured base
+                // (see the lhs_in_with note above); WTWR keeps the value
+                // register live, and the result is discarded. WTWR only
+                // scrubs the base register, so free it on the same LIFO
+                // terms the plain path frees the stored value: only when it
+                // is the top of the stack.
+                if (lhs_in_with) {
+                    self.emit_abc(Opcode.WTWR, (uint)right, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+                    return right;
+                }
                 // Result is discarded: skip both the LHS-register copy and the
                 // result-preservation copy. PUTVAR/PUTGLOBAL clears its source
                 // register, which is harmless here since nothing else reads it,
@@ -909,12 +971,12 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                         self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
                         self.free_reg(right);
                     }
-                    self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                    self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
                     return left;
                 }
                 // `right` is a temp: store straight from it, no moves.
                 if (left != right) { self.free_reg(left); }
-                self.emit_a_bc(ident_store_op, (uint)right, lhs_getvar_name_idx);
+                self.emit_var_store_op(ident_store_op, right, lhs_getvar_name_idx, lhs_ref_reg);
                 return right;
             }
             if (void_ctx) {
@@ -938,11 +1000,29 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             }
             if (!right_is_local) { self.free_reg(right); }
             if (lhs_was_getvar) {
+                // Inside `with`, the store must hit the SAME object HasBinding
+                // saw before the RHS ran (ES2024 §9.1.1.2.5 steps 1-2: an
+                // unscopables getter that deletes the binding still routes
+                // the store to that bindings object). WITHBASE (emitted
+                // before the RHS ran) captured the base; WTWR stores through
+                // it, keeping the value register live for the result copy.
+                if (lhs_in_with) {
+                    if (left != right) {
+                        self.emit_abc(Opcode.LDREG, (uint)left, (uint)right, 0);
+                    }
+                    if (!right_is_local) { self.free_reg(right); }
+                    ushort tmp = self.alloc_reg();
+                    self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
+                    self.emit_abc(Opcode.WTWR, (uint)left, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+                    self.free_reg(left);
+                    left = tmp;
+                    return left;
+                }
                 // PUTVAR clears the source register, so save the value
                 // in a temp before writing back to the environment.
                 ushort tmp = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-                self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
                 self.free_reg(left);
                 left = tmp;
             } else {
@@ -965,6 +1045,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                     // copies it to a temp instead of using the variable's own
                     // slot as the result destination and clobbering it.
                     self.last_was_local_var = true;
+                    self.last_ref = RefKind.REF_SIMPLE;
                     self.last_local_var_reg = left;
                     return left;
                 }
@@ -1009,6 +1090,20 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             self.free_reg(lhs_member_prop);
             self.free_reg(lhs_member_obj);
         } else if (lhs_was_getvar) {
+            // Inside `with`, the LHS GETVAR already resolved the name through
+            // the with-env chain, but the store must hit the SAME object the
+            // read saw (ES5 §11.13.2 step 4: PutValue uses the initial
+            // Reference, even when the value getter deleted the binding).
+            // Rewrite it to WITHGET (same LHS value, plus the base reserved
+            // above) and store through WTWR. Return here: the shared tail
+            // below would emit a second PUTVAR store through the env walk,
+            // double-writing. Outside `with` the plain env store applies.
+            if (lhs_in_with) {
+                self.code[lhs_getvar_code_pos] = bytecode::make_abc(
+                    Opcode.WITHGET, (uint)left, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+                self.emit_abc(Opcode.WTWR, (uint)left, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
+                return left;
+            }
             if (void_ctx) {
                 // Putvar clears its source register, but the value is
                 // discarded: expression_statement only signals void context
@@ -1018,14 +1113,14 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 // in-place concat append requires for `acc += chunk` loops
                 // over globals; the preserve copy between them forces a full
                 // copy every iteration.
-                self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+                self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
                 return left;
             }
             // PUTVAR clears the source register, so copy to a temp first
             // so the result survives the clobber.
             ushort tmp = self.alloc_reg();
             self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-            self.emit_a_bc(ident_store_op, (uint)left, lhs_getvar_name_idx);
+            self.emit_var_store_op(ident_store_op, left, lhs_getvar_name_idx, lhs_ref_reg);
             self.free_reg(left);
             left = tmp;
         } else {
@@ -1045,6 +1140,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 // expression's value, so mark it for the enclosing
                 // operator's copy-to-temp guard (`(n *= 0.3) > 0`).
                 self.last_was_local_var = true;
+                self.last_ref = RefKind.REF_SIMPLE;
                 self.last_local_var_reg = left;
                 return left;
             }
@@ -1139,6 +1235,10 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
     // the consumed value where the yield case can find it; it travels with
     // yield_ok_here, since that marks the only position a yield can appear.
     self.yield_forbid_in = no_in && yield_ok;
+    // An ArrowFunction's ConciseBody inherits the enclosing `[In]` — see
+    // `arrow_forbid_in`'s doc — so the arrow head, detected in primary_expr,
+    // needs the pre-clear value. Park it alongside the yield version.
+    self.arrow_forbid_in = no_in;
 
     // ES2022 class-fields-private-in: `[+In] PrivateIdentifier in ShiftExpression`.
     // The grammar gives the PrivateIdentifier as a standalone LHS of the `in`
@@ -1234,11 +1334,12 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         }
         // `[~In]`: inside a C-style for head an unparenthesized `in` would be
         // ambiguous with a for-in head, so the grammar simply has no
-        // production for it (§14.7.4). Reject rather than break — unlike ASI
-        // there is no shorter parse to fall back to, the next token in the
-        // head must be `;`.
+        // production for it (§14.7.4). Break out of the binary loop and let
+        // the caller decide: a for-in head in sloppy mode consumes the `in`
+        // (Annex B.3.1), while every C-style continuation runs into the
+        // head's `expect(';')` and reports the SyntaxError that way.
         if (tt == TokenType.IN && no_in) {
-            return self.fail("'in' is not allowed in a for-statement head")~;
+            break;
         }
         // Record that at least one binary operator was consumed. The value of
         // this expression is then the operator's result — never a Reference —
@@ -1469,6 +1570,7 @@ fn void CompilerContext.clear_ref_markers(&self) {
     // (§13.3.6.1), so a construct that yields a value instead -- a comma, a
     // conditional -- makes `eval` there an indirect call.
     self.callee_is_eval = false;
+    self.last_ref = RefKind.REF_NONE;
     // Dropping every marker already makes the target check fail, so the
     // separate ~invalid~ verdict has done its job and must not linger: a stale
     // `true` would wrongly reject the NEXT target parsed before any marker is
@@ -1479,6 +1581,13 @@ fn void CompilerContext.clear_ref_markers(&self) {
 // Parse a unary expression.
 fn ushort? CompilerContext.unary_expr(&self) {
     TokenType tt = self.peek_type();
+
+    // Every operand is parsed through here, so this is where the previous
+    // operand's AssignmentTargetType verdict is retired. The producers below
+    // (primary_expr, member_expr, call_expr) set the real kind; a fast path
+    // that returns a plain value without touching them (typeof, a literal)
+    // therefore leaves REF_NONE rather than a stale verdict.
+    self.last_ref = RefKind.REF_NONE;
 
     // A unary operator's operand is a UnaryExpression, which does not derive
     // YieldExpression, so `!yield` / `void yield` / `typeof yield` are
@@ -1831,16 +1940,69 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
             } else if (self.last_was_getvar || self.last_was_local_var) {
-                // `delete IdentifierReference`, Annex B.3.1 (ES5 11.4.1 step 1):
-                // strict mode rejects this as a SyntaxError. Sloppy mode runs
-                // the deletion against the variable environment. Since this
-                // engine is strict-only, we always reject. Both operand shapes
-                // must be caught: a name that resolved to a register
-                // (last_was_local_var) is just as much an IdentifierReference
-                // as one that needs a runtime GETVAR/GETGLOBAL.
+                // Sloppy `delete <id>` emits DELVAR: the handler walks the env
+                // chain and reports false for a var or function binding (Annex
+                // B.3.1), true for a name that resolves nowhere. Strict code
+                // rejects the form outright (ES2024 §13.5.1.1).
+                if (self.is_strict) {
+                    self.last_was_getvar = false;
+                    self.last_was_local_var = false;
+                    return self.fail("delete of an unqualified identifier in strict mode")~;
+                }
                 self.last_was_getvar = false;
                 self.last_was_local_var = false;
-                return self.fail("delete of an unqualified identifier in strict mode")~;
+                // Allocate a fresh register for the DELVAR result. This
+                // (a) keeps the operand register live for any later `typeof x` /
+                // `x` read in the same statement, and (b) lets DELVAR's
+                // handler do its own env walk instead of relying on a GETVAR
+                // (which would throw ReferenceError on an unresolved binding
+                // before DELVAR could return its true Annex B.3.1 result).
+                ushort del_result = self.alloc_reg();
+                // Resolve the operand's name constant. Three cases:
+                //   * GETVAR/GETGLOBAL/GETGLOBAL_PRIM: read BC from that
+                //     instruction directly (and NOP it so its throw on an
+                //     unresolved binding doesn't pre-empt DELVAR).
+                //   * register-resident local (parameter / let / const / var):
+                //     walk the scope stack for the binding's name.
+                //   * otherwise: keep DELVAR's BC = 0 sentinel, which the VM
+                //     handler treats as "no name → trivially deleted".
+                uint name_idx = 0;
+                if (self.code_count > 0 && self.code[self.code_count - 1].a == (ushort)op_del) {
+                    Opcode prev = self.code[self.code_count - 1].op;
+                    if (prev == Opcode.GETVAR || prev == Opcode.GETGLOBAL || prev == Opcode.GETGLOBAL_PRIM) {
+                        name_idx = self.code[self.code_count - 1].get_bc();
+                        self.emit_a_bc(Opcode.DELVAR, (uint)del_result, name_idx);
+                        // NOP the operand load — DELVAR does its own env walk
+                        // and the load's only effect on the unresolvable case
+                        // was to throw before DELVAR ran.
+                        self.code[self.code_count - 2] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                        return del_result;
+                    }
+                }
+                // Register-resident local (parameter, let, const, var): the
+                // binding's home register is op_del. A present binding's
+                // delete is Annex B.3.2's plain `false`, known at compile
+                // time — no env walk needed, which also covers the
+                // register-resident case the runtime walk cannot see.
+                if (self.scope_depth > 0) {
+                    bool resolved_local = false;
+                    for (uint i = self.scope_depth; i > 0; i--) {
+                        ScopeEntry* e = &self.scope_stack[i - 1];
+                        if (e.reg == (ushort)op_del
+                            && (e.kind == ScopeKind.VAR
+                                || e.kind == ScopeKind.LET
+                                || e.kind == ScopeKind.CONST)) {
+                            resolved_local = true;
+                            break;
+                        }
+                    }
+                    if (resolved_local) {
+                        self.emit_abc(Opcode.LDFALSE, (uint)del_result, 0, 0);
+                        return del_result;
+                    }
+                }
+                self.emit_a_bc(Opcode.DELVAR, (uint)del_result, name_idx);
+                return del_result;
             } else {
                 // Delete of a non-reference (literal, expression result, etc.).
                 // ES6 §12.5.3.2 step 3: If Type(ref) is not Reference, return true.
@@ -1861,6 +2023,12 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 return COMPILE_ERROR~;
             }
             if (!self.last_was_assign_target()) {
+                // Annex B.3.9: `++f()` is a runtime ReferenceError in sloppy code.
+                if (self.last_ref == RefKind.REF_CALL && !self.is_strict) {
+                    uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+                    self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+                    return op_inc;
+                }
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.4 strict mode: ++eval / ++arguments is a SyntaxError.
@@ -1868,7 +2036,9 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member() && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                      self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
+                                      self.await_reserved_here(),
+                                      self.is_user_generator || self.forbid_yield,
+                                      strict: self.lexer.reserved_words_strict)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // postfix_expr leaves self.last_was_getvar / self.last_was_member()
@@ -1896,11 +2066,31 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 self.free_reg(inc_member_prop);
                 self.free_reg(inc_member_obj);
             } else if (inc_was_getvar && !inc_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
-                // Replace GETVAR with INC_VAR: 1 dispatch instead of 3
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && !self.in_with()) {
+                // Replace GETVAR with INC_VAR: 1 dispatch instead of 3.
+                // Skipped inside `with` (the fused op writes the cached env
+                // slot directly, bypassing the SnapshotReference); the
+                // WITHGET/WTWR path below handles it.
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_VAR, getvar_reg, name_idx);
+            } else if (inc_was_getvar && !inc_was_getglobal && self.in_with()
+                && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && inc_getvar_name_idx <= bytecode::MAX_C
+                && (ushort)self.code[self.code_count - 1].a <= bytecode::MAX_A
+                && (ushort)self.code[self.code_count - 1].a == op_inc) {
+                // Inside `with`, prefix ++ on a bare identifier stores to the
+                // SAME object the read saw (ES5 §11.13.2 step 4, via §11.4.4).
+                // Rewrite the GETVAR to WITHGET and store through WTWR,
+                // which keeps the value register live for the result.
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                ushort base_reg = self.alloc_reg();
+                self.code[self.code_count - 1] = bytecode::make_abc(
+                    Opcode.WITHGET, getvar_reg, (uint)base_reg, inc_getvar_name_idx);
+                self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
+                self.emit_abc(Opcode.WTWR, (uint)op_inc, (uint)base_reg, inc_getvar_name_idx);
             } else if (inc_was_getglobal && self.code_count > 0
                 && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
                     || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
@@ -1940,6 +2130,12 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 return COMPILE_ERROR~;
             }
             if (!self.last_was_assign_target()) {
+                // Annex B.3.9: `--f()` is a runtime ReferenceError in sloppy code.
+                if (self.last_ref == RefKind.REF_CALL && !self.is_strict) {
+                    uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+                    self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+                    return op_dec;
+                }
                 return COMPILE_ERROR~;
             }
             // ES5 §11.4.5 strict mode: --eval / --arguments is a SyntaxError.
@@ -1947,7 +2143,9 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // generator contexts; see the matching check in assignment_expr.
             if (!self.last_was_member() && self.last_lhs_name_len > 0
                 && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                      self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
+                                      self.await_reserved_here(),
+                                      self.is_user_generator || self.forbid_yield,
+                                      strict: self.lexer.reserved_words_strict)) {
                 return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
             }
             // See INC case above for why member takes priority over getvar.
@@ -1969,10 +2167,25 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 self.free_reg(dec_member_prop);
                 self.free_reg(dec_member_obj);
             } else if (dec_was_getvar && !dec_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && !self.in_with()) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
+            } else if (dec_was_getvar && !dec_was_getglobal && self.in_with()
+                && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && dec_getvar_name_idx <= bytecode::MAX_C
+                && (ushort)self.code[self.code_count - 1].a <= bytecode::MAX_A
+                && (ushort)self.code[self.code_count - 1].a == op_dec) {
+                // Inside `with`, prefix -- on a bare identifier: same
+                // SnapshotReference shape as prefix ++ above.
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                ushort base_reg = self.alloc_reg();
+                self.code[self.code_count - 1] = bytecode::make_abc(
+                    Opcode.WITHGET, getvar_reg, (uint)base_reg, dec_getvar_name_idx);
+                self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
+                self.emit_abc(Opcode.WTWR, (uint)op_dec, (uint)base_reg, dec_getvar_name_idx);
             } else if (dec_was_getglobal && self.code_count > 0
                 && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
                     || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
@@ -2124,6 +2337,15 @@ fn ushort? CompilerContext.postfix_expr(&self) {
     // node defers it to a runtime ReferenceError.
     if ((tt == TokenType.INC || tt == TokenType.DEC) && !nl_before_postfix_op) {
         if (self.last_target_invalid || (!self.last_was_member() && !lhs_was_getvar && !self.last_was_local_var)) {
+            // Annex B.3.9: `f()++` / `f()--` is a runtime ReferenceError in
+            // sloppy code. The operand call already ran; consume the update
+            // operator and throw.
+            if (self.last_ref == RefKind.REF_CALL && !self.is_strict) {
+                self.advance()!;
+                uint msg_idx = self.add_string_constant("Invalid left-hand side in assignment");
+                self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
+                return operand;
+            }
             return COMPILE_ERROR~;
         }
         // ES5 §11.3.1/§11.3.2 strict mode: eval++ / arguments-- is a SyntaxError.
@@ -2131,7 +2353,9 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // generator contexts; see the matching check in assignment_expr.
         if (!self.last_was_member() && self.last_lhs_name_len > 0
             && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
-                                  self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
+                                  self.await_reserved_here(),
+                                  self.is_user_generator || self.forbid_yield,
+                                  strict: self.lexer.reserved_words_strict)) {
             return self.fail("Assignment to eval or arguments is not allowed in strict mode")~;
         }
     }
@@ -2153,10 +2377,25 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 self.free_reg(prop_reg);
                 self.free_reg(obj_reg);
             } else if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && !self.in_with()) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_VAR, getvar_reg, name_idx);
+            } else if (lhs_was_getvar && !lhs_was_getglobal && self.in_with()
+                && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && lhs_getvar_name_idx <= bytecode::MAX_C
+                && (ushort)self.code[self.code_count - 1].a <= bytecode::MAX_A
+                && (ushort)self.code[self.code_count - 1].a == operand) {
+                // Inside `with`, discarded-result `x++`: SnapshotReference
+                // shape (WITHGET + INC + WTWR), no old-value copy.
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                ushort base_reg = self.alloc_reg();
+                self.code[self.code_count - 1] = bytecode::make_abc(
+                    Opcode.WITHGET, getvar_reg, (uint)base_reg, lhs_getvar_name_idx);
+                self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
             } else if (lhs_was_getglobal && self.code_count > 0
                 && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
                     || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
@@ -2214,6 +2453,36 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             if (lhs_was_getglobal) {
                 self.emit_a_bc(Opcode.INC_GLOBAL, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
+            } else if (lhs_was_getvar && self.in_with()
+                && !lhs_was_getglobal && lhs_getvar_name_idx <= bytecode::MAX_C
+                && (uint)operand <= bytecode::MAX_A) {
+                // Inside `with`, valued `x++`: rewrite the LHS GETVAR (still
+                // the last instruction: only LDREG/TONUMERIC for `saved`
+                // were emitted since) to WITHGET, then INC + WTWR. WTWR
+                // keeps the value register live; `saved` holds the result.
+                if (self.code_count > 0) {
+                    for (uint i = self.code_count; i > 0; i--) {
+                        if (self.code[i - 1].op == Opcode.GETVAR
+                            && (ushort)self.code[i - 1].a == operand) {
+                            ushort base_reg = self.alloc_reg();
+                            if (base_reg <= bytecode::MAX_A) {
+                                self.code[i - 1] = bytecode::make_abc(
+                                    Opcode.WITHGET, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
+                                self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                                self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
+                                handled = true;
+                            }
+                            break;
+                        }
+                        if (self.code[i - 1].op != Opcode.LDREG && self.code[i - 1].op != Opcode.TONUMERIC) { break; }
+                    }
+                }
+                if (!handled) {
+                    self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
+                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
+                }
             } else if (lhs_was_getvar) {
                 self.emit_a_bc(Opcode.INC_VAR, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
@@ -2242,10 +2511,25 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 self.free_reg(prop_reg);
                 self.free_reg(obj_reg);
             } else if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
-                && self.code[self.code_count - 1].op == Opcode.GETVAR) {
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && !self.in_with()) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getvar_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
+            } else if (lhs_was_getvar && !lhs_was_getglobal && self.in_with()
+                && self.code_count > 0
+                && self.code[self.code_count - 1].op == Opcode.GETVAR
+                && lhs_getvar_name_idx <= bytecode::MAX_C
+                && (ushort)self.code[self.code_count - 1].a <= bytecode::MAX_A
+                && (ushort)self.code[self.code_count - 1].a == operand) {
+                // Inside `with`, discarded-result `x--`: SnapshotReference
+                // shape (WITHGET + DEC + WTWR), no old-value copy.
+                uint getvar_reg = self.code[self.code_count - 1].a;
+                ushort base_reg = self.alloc_reg();
+                self.code[self.code_count - 1] = bytecode::make_abc(
+                    Opcode.WITHGET, getvar_reg, (uint)base_reg, lhs_getvar_name_idx);
+                self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
             } else if (lhs_was_getglobal && self.code_count > 0
                 && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
                     || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
@@ -2292,6 +2576,34 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             if (lhs_was_getglobal) {
                 self.emit_a_bc(Opcode.DEC_GLOBAL, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
+            } else if (lhs_was_getvar && self.in_with()
+                && !lhs_was_getglobal && lhs_getvar_name_idx <= bytecode::MAX_C
+                && (uint)operand <= bytecode::MAX_A) {
+                // Inside `with`, valued `x--`: same scan-back rewrite as the
+                // INC path above (LHS GETVAR, then only LDREG/TONUMERIC).
+                if (self.code_count > 0) {
+                    for (uint i = self.code_count; i > 0; i--) {
+                        if (self.code[i - 1].op == Opcode.GETVAR
+                            && (ushort)self.code[i - 1].a == operand) {
+                            ushort base_reg = self.alloc_reg();
+                            if (base_reg <= bytecode::MAX_A) {
+                                self.code[i - 1] = bytecode::make_abc(
+                                    Opcode.WITHGET, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
+                                self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                                self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
+                                handled = true;
+                            }
+                            break;
+                        }
+                        if (self.code[i - 1].op != Opcode.LDREG && self.code[i - 1].op != Opcode.TONUMERIC) { break; }
+                    }
+                }
+                if (!handled) {
+                    self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
+                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
+                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
+                }
             } else if (lhs_was_getvar) {
                 self.emit_a_bc(Opcode.DEC_VAR, (uint)operand, lhs_getvar_name_idx);
                 self.emit_abc(Opcode.NOP, 0, 0, 0);
@@ -2330,6 +2642,12 @@ fn void CompilerContext.drop_paren_receiver_unless_ref(&self) {
 // Parse call expressions: f(), f(a,b), obj.method(), obj[expr](), tag`...`.
 fn ushort? CompilerContext.call_expr(&self) {
     self.last_was_optional_chain = false;
+    // Annex B.3.9: track whether the operand this chain produces is itself a
+    // CallExpression (set by the LPAREN branch below, cleared by a member
+    // suffix or by the next operand's call_expr entry). assignment_expr and
+    // the update paths use it to defer `f() = 1` / `f()++` to a runtime
+    // ReferenceError in sloppy code.
+    self.last_ref = RefKind.REF_NONE;
     ushort callee = self.member_expr()!;
     if (self.last_was_bare_arrow) {
         // See member_expr: no call/member suffix attaches to a bare arrow.
@@ -2379,6 +2697,7 @@ fn ushort? CompilerContext.call_expr(&self) {
         if (self.check(TokenType.LPAREN)) {
             callee = self.emit_call(callee)!;
             callee_is_base_local = false;
+            self.last_ref = RefKind.REF_CALL;
             // The result of a call is not a member expression and not a
             // direct variable reference. member_expr may have set
             // last_was_member for the callee (e.g. obj.prop) and
@@ -2398,6 +2717,8 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.call_prop_obj_reg = REG_NONE;
             }
         } else if (self.is_next_template()) {
+            // A tagged template is not a CallExpression target.
+            self.last_ref = RefKind.REF_NONE;
             // Template literal after optional chain is a SyntaxError (early error)
             if (opt_jump_count > 0) {
                 self.fail("Template literal after optional chain is not supported");
@@ -2414,6 +2735,8 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.call_prop_obj_reg = REG_NONE;
             }
         } else if (self.match(TokenType.DOT)) {
+            // A member access on a call result is not itself a CallExpression.
+            self.last_ref = RefKind.REF_NONE;
             if (self.check(TokenType.HASH_IDENT)) {
                 // f().#name, private field access on a call result.
                 if (self.del_mode) {
@@ -2431,6 +2754,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 } else {
                     self.last_target_invalid = false;
                     self.member.set(MemberKind.PRIVATE, callee, priv_prop_reg, callee_is_base_local);
+                    self.last_ref = RefKind.REF_MEMBER;
                     self.call_prop_obj_reg = callee;
                 }
                 callee = priv_result;
@@ -2461,11 +2785,14 @@ fn ushort? CompilerContext.call_expr(&self) {
             } else {
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PLAIN, callee, prop_reg, callee_is_base_local);
+                self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = callee;
             }
             callee = result;
             callee_is_base_local = false;
         } else if (self.match(TokenType.LBRACKET)) {
+            // A computed member access on a call result is not a CallExpression.
+            self.last_ref = RefKind.REF_NONE;
             // Computed property access: callee[expr]
             ushort idx_reg = self.expression()!;
             self.expect(TokenType.RBRACKET)!;
@@ -2493,6 +2820,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             } else {
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PLAIN, callee, idx_reg, callee_is_base_local);
+                self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = callee;
             }
             callee = result;
@@ -2674,6 +3002,35 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
     }
     // Consume the flag so it doesn't leak to subsequent calls.
     self.callee_is_eval = false;
+
+    // Inside `with`, a bare-identifier callee's Reference is created by
+    // ResolveBinding through the env chain before the arguments evaluate, and
+    // a with-environment record's WithBaseObject() becomes the call's `this`
+    // (ES2024 §13.3.6.1 step 3.b). Rewrite the callee's GETVAR in place to
+    // WITHGET so one HasBinding/GetBindingValue pass yields both the function
+    // value (A) and the base (B); the base register doubles as the receiver
+    // consumed below. A with-env miss leaves B undefined, the env-record case:
+    // a sloppy callee still sees globalThis through the usual substitution and
+    // a strict one keeps undefined.
+    if (self.in_with() && self.last_was_getvar && !self.last_was_local_var
+        && self.call_prop_obj_reg == REG_NONE
+        && callee_reg <= bytecode::MAX_A
+        && self.last_getvar_code_pos + 1 == self.code_count
+        && self.code[self.last_getvar_code_pos].op == Opcode.GETVAR
+        && (ushort)self.code[self.last_getvar_code_pos].a == callee_reg
+        && self.last_getvar_name_idx <= bytecode::MAX_C) {
+        ushort with_base_reg = self.alloc_reg();
+        if (with_base_reg <= bytecode::MAX_B) {
+            self.code[self.last_getvar_code_pos] = bytecode::make_abc(
+                Opcode.WITHGET, (uint)callee_reg, (uint)with_base_reg,
+                self.last_getvar_name_idx);
+            getvar_callee = false;
+            getglobal_callee = false;
+            self.call_prop_obj_reg = with_base_reg;
+        } else {
+            self.free_reg(with_base_reg);
+        }
+    }
 
     // Layout: callee_reg = func, callee_reg+1 = this, callee_reg+2.. callee_reg+1+nargs = args
     ushort first_arg = callee_reg + 2;
@@ -3422,6 +3779,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 } else {
                     self.last_target_invalid = false;
                     self.member.set(MemberKind.PRIVATE, ctor_reg, priv_prop_reg, false);
+                    self.last_ref = RefKind.REF_MEMBER;
                     self.call_prop_obj_reg = ctor_reg;
                 }
                 // priv_result is the freshly-allocated top register; priv_prop_reg
@@ -3462,6 +3820,7 @@ fn ushort? CompilerContext.new_expr(&self) {
                 // them after emitting the store (mirrors member_expr's lhs path).
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PLAIN, ctor_reg, prop_reg, false);
+                self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = ctor_reg;
                 ctor_reg = result;
                 self.next_reg = ctor_reg + 1;
@@ -3489,6 +3848,7 @@ fn ushort? CompilerContext.new_expr(&self) {
             } else {
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PLAIN, ctor_reg, idx_reg, false);
+                self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = ctor_reg;
                 ctor_reg = result;
                 self.next_reg = ctor_reg + 1;
@@ -3553,6 +3913,7 @@ fn ushort? CompilerContext.member_expr(&self) {
 
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.PRIVATE, obj, prop_reg, obj_is_base_local);
+                self.last_ref = RefKind.REF_MEMBER;
 
                 if (self.lhs_mode) {
                     if (self.call_prop_obj_reg != REG_NONE) {
@@ -3607,6 +3968,7 @@ fn ushort? CompilerContext.member_expr(&self) {
             // no-op for registers below the top.
             self.last_target_invalid = false;
             self.member.set(MemberKind.PLAIN, obj, prop_reg, obj_is_base_local);
+            self.last_ref = RefKind.REF_MEMBER;
 
             if (self.del_mode || self.lhs_mode) {
                 // LHS / delete mode: keep obj/prop alive for possible PUTPROP/DELPROP
@@ -3680,6 +4042,7 @@ fn ushort? CompilerContext.member_expr(&self) {
             // See DOT branch above for why we always track the member.
             self.last_target_invalid = false;
             self.member.set(MemberKind.PLAIN, obj, idx_reg, obj_is_base_local);
+            self.last_ref = RefKind.REF_MEMBER;
 
             if (self.del_mode || self.lhs_mode) {
                 // LHS / delete mode: keep obj/idx alive for possible PUTPROP/DELPROP
@@ -3869,8 +4232,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             Token num_tok = self.advance()!;
 
             // ES2024 §12.9.3.1: both AnnexB decimal-integer forms that start
-            // with `0` are Syntax Errors in strict-mode code, and this engine
-            // is strict-only:
+            // with `0` are Syntax Errors in strict-mode code:
             //   LegacyOctalIntegerLiteral        `0` followed by 0-7 (`01`)
             //   NonOctalDecimalIntegerLiteral    `0` followed by 8-9 (`08`),
             //                                    and any digits after either
@@ -3878,8 +4240,10 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // so one test covers both — the previous 0-7 range accepted `08`
             // and `09` silently. `0x`/`0o`/`0b`/`0.`/`0e` are unaffected: the
             // second character is not a decimal digit.
+            // Phase 1 (plans/083): sloppy bodies accept legacy octals; the
+            // lexer produces the correct numeric value.
             char[] nsrc = num_tok.str_value;
-            if (nsrc.len >= 2 && nsrc[0] == '0' && nsrc[1] >= '0' && nsrc[1] <= '9') {
+            if (self.is_strict && nsrc.len >= 2 && nsrc[0] == '0' && nsrc[1] >= '0' && nsrc[1] <= '9') {
                 return self.fail("a legacy octal or non-octal decimal literal is not allowed")~;
             }
 
@@ -3908,8 +4272,14 @@ fn ushort? CompilerContext.primary_expr(&self) {
             Token str_tok = self.advance()!;
 
             // Legacy octal escape sequences in strings are SyntaxErrors
-            // per ES5 §7.8.4 + Annex B.1.2.
-            if (str_tok.has_octal_escape) {
+            // per ES5 §7.8.4 + Annex B.1.2. Phase 1 (plans/083): sloppy
+            // bodies accept them. The lexer flags the escape either way:
+            // has_octal_escape when it lexed the string strict,
+            // has_decoded_octal when a sloppy scan decoded it. A string
+            // reached here in a strict context must be rejected in both cases
+            // (the lexer was sloppy while the enclosing context had already
+            // flipped strict, e.g. a body after a "use strict" directive).
+            if (self.is_strict && (str_tok.has_octal_escape || str_tok.has_decoded_octal)) {
                 return COMPILE_ERROR~;
             }
             if (str_tok.is_template && str_tok.has_invalid_escape) {
@@ -4014,9 +4384,20 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     }
                 }
 
-                // When the identifier is 'eval', track it for direct eval detection.
-                // emit_call checks callee_is_eval to set has_direct_eval.
-                // This must be set BEFORE the early return for local variables.
+                // When the identifier is `eval`, mark the call site for
+                // direct-eval detection: emit_call reads callee_is_eval to set
+                // has_direct_eval and to record the site in
+                // direct_eval_offsets. The test is purely syntactic -- the
+                // callee is an IdentifierReference named `eval` (§13.3.6.1) --
+                // whatever that name happens to be bound to here. A call is
+                // really a direct eval only if the callee is also %eval% at
+                // run time, and builtin_eval settles that itself: it takes the
+                // direct path only when it is the function being called and
+                // caller_call_site_is_direct agrees about the site. So a
+                // shadowed `eval` holding some other function just makes an
+                // ordinary call, while `function f(eval, s) { var a = 1;
+                // return eval(s); }` handed the real %eval% stays direct and
+                // sees `a`.
                 self.callee_is_eval = str_eq(id_tok.str_value, "eval");
 
                 // Try to resolve as a local variable first (skip at global scope, use environment)
@@ -4024,6 +4405,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (try var_reg = self.resolve_var(id_tok.str_value)) {
                         self.last_was_getvar = false;
                         self.last_was_local_var = true;
+                        self.last_ref = RefKind.REF_SIMPLE;
                         self.last_local_var_reg = var_reg;
                         self.save_lhs_ident_name(id_tok.str_value);
                         return var_reg;
@@ -4038,6 +4420,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         self.last_was_getglobal = false;
                         self.last_was_getglobal_prim = false;
                         self.last_was_local_var = true;
+                        self.last_ref = RefKind.REF_SIMPLE;
                         self.last_local_var_reg = var_reg;
                         self.save_lhs_ident_name(id_tok.str_value);
                         return var_reg;
@@ -4050,10 +4433,47 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 ushort id_reg = self.alloc_reg();
                 self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx)!;
                 self.last_was_getvar = true;
+                self.last_ref = RefKind.REF_SIMPLE;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
                 return id_reg;
             }
+
+        // `let` and `static` are IdentifierReferences in sloppy code, so they
+        // can start an expression there (strict code reserves them). The
+        // reference bookkeeping mirrors the IDENTIFIER case so the token also
+        // works as an assignment target and as an arrow head.
+        case TokenType.LET:
+        case TokenType.STATIC:
+        {
+            if (self.is_strict) return self.literal_keyword()!;
+            Token id_tok = self.advance(true)!;
+            if (!reject_arrow_head && self.check_arrow()) {
+                char[][1] params_arr;
+                params_arr[0] = id_tok.str_value;
+                uint ident_arrow_src = self.lexer.token_start;
+                return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
+            }
+            self.callee_is_eval = false;
+            if (!self.is_global) {
+                if (try var_reg = self.resolve_var(id_tok.str_value)) {
+                    self.last_was_getvar = false;
+                    self.last_was_local_var = true;
+                    self.last_ref = RefKind.REF_SIMPLE;
+                    self.last_local_var_reg = var_reg;
+                    self.save_lhs_ident_name(id_tok.str_value);
+                    return var_reg;
+                }
+            }
+            uint name_idx = self.add_string_constant(id_tok.str_value);
+            ushort id_reg = self.alloc_reg();
+            self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx)!;
+            self.last_was_getvar = true;
+            self.last_ref = RefKind.REF_SIMPLE;
+            self.last_getvar_name_idx = name_idx;
+            self.save_lhs_ident_name(id_tok.str_value);
+            return id_reg;
+        }
 
         case TokenType.THIS:
             self.advance()!;
@@ -4155,18 +4575,30 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     // Check for rest parameter
                     if (self.check(TokenType.ELLIPSIS)) {
                         self.advance()!;  // consume '...'
-                        // `(...await) => 1` binds a rest param named "await"
-                        // wherever the word is not reserved.
-                        bool rest_is_ident = self.peek_is_binding_identifier();
-                        Token t = self.advance()!;
-                        if (!rest_is_ident) {
-                            break;  // not a valid rest param, can't be arrow
-                        }
-                        param_names[pc++] = t.str_value;
-                        has_rest = true;
+                        // A rest parameter may itself be a destructuring
+                        // pattern: `(...[a, b]) => ...` / `(...{a}) => ...`.
+                        // Skip over it (handling nesting) as the plain
+                        // pattern branch below does; the bindings are
+                        // re-parsed once is_arrow is confirmed.
+                        if (self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET)) {
+                            self.advance()!;
+                            self.skip_destructure_pattern();
+                            // TS: type annotation after the rest pattern.
+                            if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+                        } else {
+                            // `(...await) => 1` binds a rest param named "await"
+                            // wherever the word is not reserved.
+                            bool rest_is_ident = self.peek_is_binding_identifier();
+                            Token t = self.advance()!;
+                            if (!rest_is_ident) {
+                                break;  // not a valid rest param, can't be arrow
+                            }
+                            param_names[pc++] = t.str_value;
+                            has_rest = true;
 
-                        // TS: rest param may carry a type annotation.
-                        if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+                            // TS: rest param may carry a type annotation.
+                            if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
+                        }
 
                         if (self.check(TokenType.RPAREN)) {
                             self.advance()!;  // consume ')'
@@ -4409,12 +4841,48 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
         case TokenType.YIELD:
         {
+            bool yield_is_ident = !self.is_strict && !self.is_user_generator && !self.forbid_yield;
+            if (yield_is_ident) {
+                Token id_tok = self.advance(true)!;
+                // `yield` here is an operand, so the `/` that follows it in
+                // `yield /a` is division rather than a regexp literal. The
+                // lexer cannot tell from `yield` alone (as an operator it does
+                // expect a regexp), so hint it before anything peeks.
+                self.lexer.force_division_next = true;
+                if (!reject_arrow_head && self.check_arrow()) {
+                    char[][1] params_arr;
+                    params_arr[0] = id_tok.str_value;
+                    uint ident_arrow_src = self.lexer.token_start;
+                    return self.parse_arrow_function(&params_arr[0], 1, false, ident_arrow_src)!;
+                }
+                self.callee_is_eval = str_eq(id_tok.str_value, "eval");
+                if (!self.is_global) {
+                    if (try var_reg = self.resolve_var(id_tok.str_value)) {
+                        self.last_was_getvar = false;
+                        self.last_was_local_var = true;
+                        self.last_ref = RefKind.REF_SIMPLE;
+                        self.last_local_var_reg = var_reg;
+                        self.save_lhs_ident_name(id_tok.str_value);
+                        return var_reg;
+                    }
+                }
+                self.note_arguments_reference(id_tok.str_value)!;
+                uint name_idx = self.add_string_constant(id_tok.str_value);
+                ushort id_reg = self.alloc_reg();
+                self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx)!;
+                self.last_was_getvar = true;
+                self.last_ref = RefKind.REF_SIMPLE;
+                self.last_getvar_name_idx = name_idx;
+                self.save_lhs_ident_name(id_tok.str_value);
+                return id_reg;
+            }
             if (!self.is_user_generator) {
-                // `yield` is reserved in all strict-mode code (ES2024
-                // §13.1.1) and this engine is strict-only, so outside a
-                // generator it is never an IdentifierReference: it can only
-                // be the start of a YieldExpression, which is not available
-                // here. Either way a SyntaxError.
+                // Reached when the identifier reading above declined, so the
+                // code is strict or a parameter default's forbid_yield marks
+                // the enclosing YieldExpression production unavailable. `yield`
+                // is reserved in strict code (ES2024 §13.1.1) and outside a
+                // generator body it can only start a YieldExpression, which is
+                // not available here. Either way a SyntaxError.
                 //
                 // The gate is is_user_generator, not is_generator: a plain
                 // async function body is compiled as a coroutine and so has
@@ -4565,6 +5033,9 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // a plain name here. The [+Await] branch below keeps rejecting
                 // it, where `await` really is the terminal.
                 Token id_tok = self.advance(true)!;
+                // Same operand hint as the `yield` identifier branch above:
+                // `await /a` with `await` as a name is a division.
+                self.lexer.force_division_next = true;
                 if (!reject_arrow_head && self.check_arrow()) {
                     // `await => ...` could be an arrow function with one
                     // identifier parameter named "await".
@@ -4584,6 +5055,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (try var_reg = self.resolve_var(id_tok.str_value)) {
                         self.last_was_getvar = false;
                         self.last_was_local_var = true;
+                        self.last_ref = RefKind.REF_SIMPLE;
                         self.last_local_var_reg = var_reg;
                         self.save_lhs_ident_name(id_tok.str_value);
                         return var_reg;
@@ -4593,6 +5065,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 ushort id_reg = self.alloc_reg();
                 self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx)!;
                 self.last_was_getvar = true;
+                self.last_ref = RefKind.REF_SIMPLE;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
                 return id_reg;
@@ -4969,6 +5442,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                 self.last_target_invalid = false;
                 self.member.set(MemberKind.SUPER, super_proto_reg, super_key_reg, false);
+                self.last_ref = RefKind.REF_MEMBER;
 
                 // For super method calls (super.m() / super[s]()), the this-binding
                 // must be the current instance, not the prototype. Emit LDTHIS into a
@@ -5108,17 +5582,6 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
         default:
             // Check for literal keywords
-            if (tt == TokenType.LET) {
-                // 'let' used as identifier in non-strict mode
-                Token let_tok = self.advance()!;
-                if (try var_reg = self.resolve_var(let_tok.str_value)) {
-                    return var_reg;
-                }
-                uint name_idx = self.add_string_constant(let_tok.str_value);
-                ushort let_reg = self.alloc_reg();
-                self.emit_ident_read((uint)let_reg, name_idx)!;
-                return let_reg;
-            }
             return self.literal_keyword()!;
     }
 }
@@ -5344,10 +5807,9 @@ fn ushort? CompilerContext.object_literal(&self) {
                         && !str_eq(key_tok.str_value, "true")
                         && !str_eq(key_tok.str_value, "false")
                         && !str_eq(key_tok.str_value, "null"))
-                    || (key_tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await);
-                // `yield` is absent: it is reserved in all strict code, so
-                // `{ yield }` shorthand is a SyntaxError. `{ yield: v }` and
-                // `{ yield(){} }` use the property-name path, not this one.
+                    || (key_tt == TokenType.AWAIT && !self.is_module && !self.is_async && !self.forbid_await)
+                    || (key_tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield)
+                    || ((key_tt == TokenType.LET || key_tt == TokenType.STATIC) && !self.is_strict);
 
                 // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
                 // Generator-method shorthand forbids the getter/setter shape, `*get` / `*set`
@@ -5694,8 +6156,12 @@ fn ushort? CompilerContext.object_literal(&self) {
                 if (is_generator_method || is_async_method) return COMPILE_ERROR~;
                 self.expect(TokenType.COLON)!;
                 if (is_proto_key) {
-                    // ES2015 §12.2.6.1: a second `__proto__: value` is an early
-                    // SyntaxError.
+                    // ES2024 Annex B.3.1: duplicate `__proto__` keys obtained
+                    // from `PropertyDefinition : PropertyName : AssignmentExpression`
+                    // are a SyntaxError, regardless of strictness. Computed
+                    // keys / shorthand / method shorthand / accessor don't
+                    // count toward the duplicate, so only the colon-form path
+                    // we are on right now increments seen_proto_key.
                     if (seen_proto_key) return COMPILE_ERROR~;
                     seen_proto_key = true;
                     // `__proto__: fn` is a prototype-set, not a property
@@ -5914,6 +6380,22 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
     head.id_reg_resident = reg_resident;
     head.is_lexical = is_lexical;
     head.is_const = is_const;
+    // B.3.5: a sloppy catch body's `var x of ...` reuses the catch
+    // parameter's binding when the parameter is a BindingIdentifier, and the
+    // catch's lex_env sits above the var_env DECLVAR would write to. Same
+    // chain-walk case as a captured hoisted `var` (env-authoritative
+    // store). Only set the chain-walk bit when the existing binding is
+    // env-resident; an uncaptured hoisted `var` stays DECLVAR because its
+    // register-resident semantics would not survive PUTVAR's source-register
+    // clear.
+    head.id_walk_chain = false;
+    if (!is_bare && !is_lexical && !is_const) {
+        if (try _r = self.find_local_reg(var_name)) {
+            if (self.is_existing_local_env_resident(var_name)) {
+                head.id_walk_chain = true;
+            }
+        }
+    }
     self.emit_forof(head, iter_reg, saved_scope, saved_reg, is_await)!;
 }
 

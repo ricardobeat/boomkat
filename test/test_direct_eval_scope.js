@@ -26,12 +26,19 @@ ck("caller-block-const", e6(), 3);
 function e7() { var a = 2; let b = 3; return eval("a * b"); }
 ck("caller-mixed", e7(), 6);
 
-// eval-declared vars do not leak into the caller (strict eval scoping)
+// Sloppy direct eval declares vars in the caller's var env (§17.1.3);
+// a strict direct eval keeps them in the eval's own env (§18.2.1.3).
 function e8() {
     eval("var leaked = 1;");
     return typeof leaked;
 }
-ck("no-var-leak", e8(), "undefined");
+ck("sloppy-eval-var-reaches-caller", e8(), "number");
+function e8s() {
+    "use strict";
+    eval("var leaked_s = 1;");
+    return typeof leaked_s;
+}
+ck("strict-eval-no-var-leak", e8s(), "undefined");
 
 // indirect eval sees only globals
 var G = 11;

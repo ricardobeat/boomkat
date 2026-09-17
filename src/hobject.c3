@@ -313,6 +313,11 @@ bitstruct PropFlags : char {
     // When true the property is an accessor (getter/setter pair) rather
     // than a data property.
     bool is_accessor  : 3;
+    // Non-writable binding created with CreateImmutableBinding(N, false)
+    // (ES2024 §15.2.5): a named function expression's own name. Assignment
+    // from sloppy code silently no-ops; from strict code it throws. Ordinary
+    // object properties never set this.
+    bool immut_nonstrict : 4;
 }
 
 // The flags a plain assignment creates: writable, enumerable, configurable.
@@ -733,6 +738,18 @@ struct HObjectBufferView {
     bool     length_tracking; // auto-track backing resizable buffer length
 }
 
+// ARGUMENTS exotic extra fields. `nargs` aliases array_length at offset 0.
+// `mapped_bits` is the live [[ParameterMap]] for a sloppy mapped arguments
+// object (ES2024 §10.4.4.2): bit i set means index i still aliases formal
+// parameter i. Deletion, an accessor define, and a writable:false define each
+// clear the bit (§10.4.4.2 step 7). Only the low 64 indices can map; a formal
+// parameter list longer than that would leave the extra indices unmapped.
+struct HObjectArguments {
+    uint  nargs;
+    uint  pad;
+    ulong mapped_bits;
+}
+
 // The subtype fields, discriminated by flags.obj_class in the common header.
 union HObjectExtra {
     HObjectFunction              func;
@@ -752,6 +769,7 @@ union HObjectExtra {
     HObjectBufferView            view;
     HObjectTemporal              temporal;
     uint                         array_length;  // For ARRAY objects: dense-element count.
+    HObjectArguments             args;          // For ARGUMENTS objects (nargs aliases array_length).
 }
 
 // Temporal objects (Temporal.PlainDate, .PlainTime, .Instant, etc.). One
@@ -893,8 +911,8 @@ struct HObject {
 
 // Pool size classes, derived from the struct sizes plus the inline prop space.
 const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
-const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;                            // OBJECT, ERROR, ARGUMENTS
-const usz OBJ_SIZE_ARRAY = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // ARRAY, whose array_length is in the union
+const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;                            // OBJECT, the only class with no trailing data
+const usz OBJ_SIZE_ARRAY = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // ARRAY (array_length in the union) and ARGUMENTS (nargs in the union)
 const usz OBJ_SIZE_FUNC  = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // FUNCTION, REGEXP, etc.
 const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;               // GETTER_SETTER, which has no inline props
 
@@ -904,12 +922,13 @@ const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;       
 fn usz alloc_size_for_class(ObjClass cls) @inline {
     switch (cls) {
         case ObjClass.OBJECT:
-        case ObjClass.ARGUMENTS:
             return OBJ_SIZE_PLAIN;
-        // ERROR keeps captured_stack in the union, so it needs the trailing
-        // extra-data space that plain OBJECT and ARGUMENTS do not.
+        // ERROR keeps captured_stack in the union and ARGUMENTS stashes its
+        // argument count in array_length, so both need the trailing extra-data
+        // space that plain OBJECT does not.
         case ObjClass.ERROR:
         case ObjClass.PROXY:
+        case ObjClass.ARGUMENTS:
             return OBJ_SIZE_FUNC;
         case ObjClass.ARRAY:
             return OBJ_SIZE_ARRAY;
@@ -927,10 +946,16 @@ fn HObjectExtra* HObject.extra_ptr(&self) @inline {
     return (HObjectExtra*)((char*)self + HObjectBase::size);
 }
 
-// extra.array_length, the first 4 bytes of the union. ARRAY objects only,
-// meaning those with flags.exotic_array.
+// extra.array_length, the first 4 bytes of the union. ARRAY objects keep their
+// dense-element count here; ARGUMENTS objects stash the actual argument count.
 fn uint* HObject.array_len_ptr(&self) @inline {
     return &self.extra.array_length;
+}
+
+// extra.args.mapped_bits, the live [[ParameterMap]] of a mapped ARGUMENTS
+// object (see HObjectArguments).
+fn ulong* HObject.mapped_bits_ptr(&self) @inline {
+    return &self.extra.args.mapped_bits;
 }
 
 // ============================================================================
@@ -942,9 +967,9 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
     heap::Heap* h = (heap::Heap*)heap_ptr;
     switch (cls) {
         case ObjClass.OBJECT:
-        case ObjClass.ARGUMENTS:
             return &h.obj_pool_plain;
         case ObjClass.ARRAY:
+        case ObjClass.ARGUMENTS:
             return &h.obj_pool_array;
         case ObjClass.ERROR:
         case ObjClass.GETTER_SETTER:
@@ -1126,6 +1151,11 @@ fn void HObject.freeze(&self, heap::Heap* h) {
     // to become non-writable here, so that Set(O, "length", _, true) throws.
     if (self.flags.exotic_array) {
         self.flags.array_len_writable = false;
+    }
+    // A frozen ARGUMENTS object's data properties all become non-writable, and
+    // §10.4.4.2 step 7.2.2.1 drops each such index from the [[ParameterMap]].
+    if (self.get_class() == ObjClass.ARGUMENTS) {
+        *self.mapped_bits_ptr() = 0;
     }
 }
 
@@ -1471,10 +1501,8 @@ fn bool HObject.dense_arridx_lookup(&self, void* key, TVal* out) {
     HString* hkey = (HString*)key;
     if (!hkey.is_arridx()) return false;
     uint ai = (uint)hkey.array_index();
-    if (ai >= self.array_size) return false;
-    TVal v = self.array_part()[ai];
-    if (v.is_undefined()) return false;
-    *out = v;
+    if (!self.dense_idx_present(ai)) return false;
+    *out = self.array_part()[ai];
     return true;
 }
 
@@ -1501,6 +1529,23 @@ fn bool HObject.is_prop_writable(&self, void* key, heap::Heap* h) {
 // further away is treated as sparse and goes to the named-property table.
 const uint DENSE_GROW_FLOOR = 1024;        // below this index, always dense
 const uint DENSE_GROW_SLACK = 1u << 16;    // how far past array_size an index may jump
+// True when dense slot `idx` is an own indexed property of `self`.
+//
+// The dense part marks a hole with `undefined`, so a stored `undefined` is
+// indistinguishable from an absent index. Writers keep the dense part free of
+// `undefined` (those stores take the named-table path, which records presence
+// properly), so within the dense part the sentinel means "absent".
+//
+// ARGUMENTS objects are the exception and are still wrong here: their slots
+// are filled at call time from the actual arguments, `undefined` included, so
+// an `undefined` argument reads back as an absent index. Fixing that needs
+// per-index presence tracking, since `delete arguments[i]` must still produce
+// a real hole; see plans/084 §11.
+fn bool HObject.dense_idx_present(&self, uint idx) {
+    if (idx >= self.array_size) return false;
+    return !self.array_part()[idx].is_undefined();
+}
+
 fn bool dense_index_ok(uint cur_size, uint idx) {
     if (idx < DENSE_GROW_FLOOR) return true;
     return idx <= cur_size + DENSE_GROW_SLACK;
@@ -1561,8 +1606,15 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
             HString* ks = (HString*)key;
             if (ks.is_arridx()) {
                 uint ks_idx = ks.array_index();
-                if (ks_idx < self.array_size) {
+                // A dense `undefined` reads back as a hole, so the named entry
+                // written above is the only record of this index. Clear the
+                // stale dense value instead of mirroring the store: reads
+                // consult the named table when the dense slot is a hole.
+                if (ks_idx < self.array_size && !val.is_undefined()) {
                     self.set_array_idx(ks_idx, val, h);
+                } else if (ks_idx < self.array_size) {
+                    TVal hole; hole.set_undefined();
+                    self.set_array_idx(ks_idx, hole, h);
                 }
                 if (ks_idx >= *self.array_len_ptr()) {
                     *self.array_len_ptr() = ks_idx + 1;
@@ -2375,6 +2427,15 @@ fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
         if (idx >= 0) {
             return cur.prop_values()[idx];
         }
+        // ARRAY exotic: "length" lives in array_len_ptr, not the named table
+        // (mirrors has_prop_proto and the VM's GETPROP). Without this a
+        // `with`-env read of an inherited array length misses the binding.
+        if (cur.get_class() == ObjClass.ARRAY
+            && key == (void*)h.strs[heap::BuiltinStr.LENGTH]) {
+            TVal len;
+            len.set_fastint((long)*cur.array_len_ptr());
+            return len;
+        }
         // ARRAY / ARGUMENTS exotic: string-index keys may live only in the
         // dense array part (see get_prop).
         TVal dense;
@@ -2816,7 +2877,8 @@ fn bool force_deferred_ns_on_chain(HObject* cur, void* key, heap::Heap* h) @inli
     return h.force_deferred_ns_fn(h, h.vm_ptr, cur);
 }
 
-fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h) {
+fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h,
+                                                          TVal* recv_override = null) {
     HObject* cur = self;
     uint depth = 0;
 
@@ -2852,7 +2914,13 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
         // PROP_NOT_FOUND, since PUTPROP's own proxy check handles [[Set]].
         if (cur.flags.exotic_proxyobj && want_getter) {
             if (h.proxy_get_fn != null && h.vm_ptr != null) {
-                TVal recv = types::make_object(self);
+                // Pass the property access's receiver to the [[Get]] trap: for
+                // a primitive receiver the trap must see the primitive, not
+                // the wrapper prototype the walk started from (ES2024 §7.3.3
+                // GetV -> §10.1.6 OrdinaryGet). recv_override carries the
+                // primitive when the caller is primitive_getprop; otherwise
+                // (e.g. object.[[Get]]) self is the receiver.
+                TVal recv = recv_override != null ? *recv_override : types::make_object(self);
                 TVal out;
                 if (h.proxy_get_fn(h.vm_ptr, h, cur, key, recv, &out)) {
                     return { .kind = PropLookupKind.PROP_DATA, .data_val = out, .owner = null };
@@ -2956,6 +3024,72 @@ fn bool HObject.has_prop_proto(&self, void* key, heap::Heap* h) {
     }
 
     return false;
+}
+
+// Result of a prototype-chain property lookup, returned by
+// get_prop_proto_full. The caller must check `found` before reading
+// `value` / `is_accessor` / `owner`.
+struct PropProtoResult {
+    bool found;
+    TVal value;
+    bool is_accessor;
+    HObject* owner;
+}
+
+// Walk the prototype chain looking for a named property. Returns whether
+// the property exists anywhere, the slot value (or accessor boxed pair),
+// whether the slot is an accessor, and the object that owns the slot —
+// the latter is what `with`-env reads pass as `this` to a getter.
+fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) {
+    PropProtoResult result;
+    result.found = false;
+    result.value = types::make_undefined();
+    result.is_accessor = false;
+    result.owner = null;
+    HObject* cur = self;
+    uint depth = 0;
+
+    while (cur != null && depth < MAX_PROTO_DEPTH) {
+        if (cur.flags.exotic_proxyobj) {
+            // Proxy exotic anywhere on the chain: route [[Get]] through
+            // the trap machinery (receiver = the original object). The
+            // owner stays the with object so a getter sees it as `this`.
+            if (h.proxy_get_fn != null && h.vm_ptr != null) {
+                TVal recv = types::make_object(self);
+                TVal out;
+                if (h.proxy_get_fn(h.vm_ptr, h, cur, key, recv, &out)) {
+                    result.found = true;
+                    result.value = out;
+                    result.owner = self;
+                    return result;
+                }
+            }
+            return result;
+        }
+        int idx = cur.find_prop_idx(key, h);
+        if (idx >= 0) {
+            result.found = true;
+            result.value = cur.prop_values()[idx];
+            result.is_accessor = cur.get_prop_flags((uint)idx, h).is_accessor;
+            result.owner = cur;
+            return result;
+        }
+        // ARRAY exotic: "length" lives in array_len_ptr, not the named table
+        // (mirrors has_prop_proto and the VM's GETPROP). Without this a
+        // `with`-env read of an inherited array length misses the binding.
+        if (cur.get_class() == ObjClass.ARRAY
+            && key == (void*)h.strs[heap::BuiltinStr.LENGTH]) {
+            result.found = true;
+            result.value.set_fastint((long)*cur.array_len_ptr());
+            result.is_accessor = false;
+            result.owner = cur;
+            return result;
+        }
+        cur = cur.prototype;
+        depth++;
+    }
+
+    return result;
 }
 
 // Returns true if `probe` appears anywhere in the prototype chain of `self`.

@@ -154,11 +154,38 @@ fn Token? CompilerContext.expect(&self, TokenType tt) {
 // plain IDENTIFIER path is checked, an `await` accepted through
 // await_is_identifier has already had its enclosing-grammar decision made and
 // must not be re-rejected by the context-blind name test.
-fn Token? CompilerContext.expect_binding_identifier(&self) {
+fn Token? CompilerContext.expect_binding_identifier(&self, bool is_lexical_head = false) {
     TokenType next = self.peek_type();
     if (next == TokenType.IDENTIFIER) {
         Token tok = self.advance()!;
-        if (is_restricted_name(tok.str_value, strict: self.lexer.reserved_words_strict)) {
+        if (is_restricted_name(tok.str_value, strict: self.is_strict)) {
+            return self.fail("reserved word cannot be used as a binding identifier")~;
+        }
+        return tok;
+    }
+    // A `var` head may bind `let` in sloppy code (`var let`, `for (var let
+    // of …)`); a lexical head never may (§13.7.5.1: BoundNames of a
+    // ForDeclaration must not contain "let").
+    if (next == TokenType.LET && !is_lexical_head) {
+        Token tok = self.advance(true)!;
+        if (is_restricted_name(tok.str_value, strict: self.is_strict)) {
+            return self.fail("reserved word cannot be used as a binding identifier")~;
+        }
+        return tok;
+    }
+    // `yield` is an ordinary identifier outside strict code, outside a
+    // generator body, and outside a generator's parameter list ([Yield]
+    // grammar parameter, §13.1.1). `static` is a FutureReservedWord only in
+    // strict code. Both lex as keyword tokens, so they need this path. The
+    // yield test already made the context decision, so it must not be
+    // re-rejected by the context-blind name test (whose yield default
+    // assumes a generator context).
+    if (next == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield) {
+        return self.advance(true)!;
+    }
+    if (next == TokenType.STATIC && !self.is_strict) {
+        Token tok = self.advance(true)!;
+        if (is_restricted_name(tok.str_value, strict: self.is_strict)) {
             return self.fail("reserved word cannot be used as a binding identifier")~;
         }
         return tok;
@@ -224,9 +251,30 @@ fn bool CompilerContext.await_reserved_here(&self) {
 // (§14.13) and BindingIdentifier (§13.1) both reduce to Identifier, so the
 // label sites (`await: ;` defining it, `break await;` referencing it) and the
 // arrow-head detection scan share this one test and cannot drift apart.
+// ES2024 §12.9.4.1: a Use Strict Directive's StringLiteral must be the exact
+// code point sequence "use strict" or 'use strict' — it may not contain an
+// EscapeSequence or a LineContinuation, so `'use str\<newline>ict'` is an
+// ordinary string expression and does not make the code strict. The lexer
+// leaves raw_value empty exactly when the literal held no escapes, so that
+// is the test for the restriction.
+fn bool is_use_strict_directive(Token t) @inline {
+    if (t.type != TokenType.STRING || t.raw_value.len != 0) return false;
+    if (t.str_value.len != 10) return false;
+    char[] expected = "use strict";
+    for (usz i = 0; i < 10; i++) {
+        if (t.str_value[i] != expected[i]) return false;
+    }
+    return true;
+}
+
 fn bool CompilerContext.peek_is_binding_identifier(&self) {
     TokenType tt = self.peek_type();
-    return tt == TokenType.IDENTIFIER || self.await_is_identifier(tt);
+    if (tt == TokenType.IDENTIFIER || self.await_is_identifier(tt)) return true;
+    // The contextual keyword spellings are Identifiers wherever the enclosing
+    // grammar leaves them unreserved, which is what makes `let:` / `yield:`
+    // usable as label names in sloppy code.
+    if ((tt == TokenType.LET || tt == TokenType.STATIC) && !self.is_strict) return true;
+    return tt == TokenType.YIELD && !self.is_strict && !self.is_user_generator && !self.forbid_yield;
 }
 
 // If the next token matches `tt`, consume it and return true.
@@ -612,16 +660,28 @@ fn bool CompilerContext.is_async_arrow_lookahead(&self) {
         next_tok = peek_opt;
     }
     if (next_tok.type == TokenType.LPAREN) {
-        // [no LineTerminator here] before the `(`.  When satisfied we treat
-        // this as an `async ( ... ) => ...` cover call; when violated the
-        // spec's `async` is just an identifier expr statement and the `(`
-        // starts a separate expression.
+        // [no LineTerminator here] before the `(`.  When violated the spec's
+        // `async` is just an identifier expr statement and the `(` starts a
+        // separate expression.
         if (next_tok.line != cur.line) {
             self.pushback(cur);
             return false;
         }
+        // `async (params) => ...` and the call `async (args)` share the
+        // CoverCallExpressionAndAsyncArrowHead prefix (ES2024 §13.3.1.1), so
+        // confirm the `=>` before the caller commits by consuming `async`.
+        // Otherwise `async(x)` would lose its callee and parse as `(x)`.
+        ForLhsSnapshot snap = self.save_lhs_snapshot();
+        bool is_arrow = false;
+        Token? lp_opt = self.advance();
+        if (catch _e = lp_opt) {
+            is_arrow = false;
+        } else {
+            is_arrow = self.scan_destruct_param_to_arrow();
+        }
+        self.restore_lhs_snapshot(snap);
         self.pushback(cur);
-        return true;
+        return is_arrow;
     }
     if (next_tok.type == TokenType.LT && self.lexer.ts_mode) {
         // `async <T, U>(params) => ...`: a TypeScript generic type-parameter

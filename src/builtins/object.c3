@@ -330,7 +330,7 @@ fn bool own_has_enum_string_key(Heap* heap, HObject* obj) {
     if (is_typed_array_class(obj.get_class()) && ta_element_count(obj) > 0) return true;
     if (obj.flags.exotic_array || obj.flags.exotic_arguments) {
         for (uint i = 0; i < obj.array_size; i++) {
-            if (!obj.array_part()[i].is_undefined()) return true;
+            if (obj.dense_idx_present(i)) return true;
         }
     }
     for (uint i = 0; i < obj.prop_count; i++) {
@@ -384,7 +384,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
         bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
         if (obj.array_size > 0 && array_part_is_indexed) {
             for (uint i = 0; i < obj.array_size; i++) {
-                if (!obj.array_part()[i].is_undefined()) {
+                if (obj.dense_idx_present(i)) {
                     HString* ki = heap.int_to_hstring((long)i);
                     if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, heap) >= 0) continue;
                     dense_int_count++;
@@ -413,7 +413,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
                 }
                 // Add dense array indices (not already in named props)
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
-                    if (!obj.array_part()[i].is_undefined()) {
+                    if (obj.dense_idx_present(i)) {
                         HString* ki = heap.int_to_hstring((long)i);
                         if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, heap) >= 0) continue;
                         sort_buf[p * 3] = (uint)i;
@@ -713,7 +713,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
         if (obj.array_size > 0 && array_part_is_indexed) {
             for (uint i = 0; i < obj.array_size; i++) {
-                if (!obj.array_part()[i].is_undefined()) {
+                if (obj.dense_idx_present(i)) {
                     HString* ki = ctx.heap.int_to_hstring((long)i);
                     if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                     dense_int_count++;
@@ -740,7 +740,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
                 }
                 // Add dense array indices
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
-                    if (!obj.array_part()[i].is_undefined()) {
+                    if (obj.dense_idx_present(i)) {
                         HString* ki = ctx.heap.int_to_hstring((long)i);
                         if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                         sort_buf[p * 3] = (uint)i;
@@ -783,6 +783,16 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
             }
         }
     }
+    // An ARRAY exotic's "length" normally lives in array_len_ptr with no
+    // named-table entry (see HObject.sync_named_length), so the prop_count
+    // walk below cannot see it. It is still an own property and must be
+    // listed, ahead of any other non-index key: it exists from creation,
+    // before any property the program adds. Emit it here, and skip the
+    // materialised copy below so arrays that do have one are not listed twice.
+    if (obj.flags.exotic_array) {
+        key_buf[key_count++] = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
+    }
+
     // Phase 2: non-index named properties (insertion order)
     // ES5 §15.2.3.4: getOwnPropertyNames returns ONLY string keys (no symbols)
     for (uint i = 0; i < obj.prop_count; i++) {
@@ -790,6 +800,9 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
             HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key.is_arridx()) continue;
             if (key.is_symbol()) continue;  // Skip symbol keys
+            // Already emitted above from array_len_ptr.
+            if (obj.flags.exotic_array
+                && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
             key_buf[key_count++] = key;
         }
     }
@@ -973,7 +986,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
         bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
         if (obj.array_size > 0 && array_part_is_indexed) {
             for (uint i = 0; i < obj.array_size; i++) {
-                if (!obj.array_part()[i].is_undefined()) {
+                if (obj.dense_idx_present(i)) {
                     HString* ki = ctx.heap.int_to_hstring((long)i);
                     if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                     dense_int_count++;
@@ -998,7 +1011,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
                     }
                 }
                 for (uint i = 0; array_part_is_indexed && i < obj.array_size; i++) {
-                    if (!obj.array_part()[i].is_undefined()) {
+                    if (obj.dense_idx_present(i)) {
                         HString* ki = ctx.heap.int_to_hstring((long)i);
                         if (ki != null && ki.is_arridx() && obj.find_prop_idx(ki, ctx.heap) >= 0) continue;
                         sort_buf[p * 3] = i;
@@ -1040,11 +1053,21 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
         }
     }
 
+    // See the getOwnPropertyNames counterpart: an ARRAY exotic's "length"
+    // lives in array_len_ptr, not the named table, and must still be listed
+    // ahead of the other non-index keys.
+    if (obj.flags.exotic_array) {
+        key_buf[key_count++] = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
+    }
+
     // Phase 2: non-index string properties (insertion order).
     for (uint i = 0; i < obj.prop_count; i++) {
         if (obj.prop_key_at(i, ctx.heap) != null) {
             HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
             if (key.is_arridx() || key.is_symbol()) continue;
+            // Already emitted above from array_len_ptr.
+            if (obj.flags.exotic_array
+                && (void*)key == (void*)ctx.heap.strs[heap::BuiltinStr.LENGTH]) continue;
             key_buf[key_count++] = key;
         }
     }
@@ -1840,8 +1863,10 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             }
         }
         // Special case: ARRAY exotic "length" property (spec §22.1.3 / §10.4.2).
-        // The "length" property of an Array exotic is its `array_size` even when
-        // array_size > array_part capacity (e.g. Array.prototype.length === 0).
+        // Reached only when no "length" entry lives in the named table, so the
+        // shadow copy in array_len_ptr is authoritative for both value and
+        // writability (freeze and {writable:false} may never materialise one).
+        // The property is always {enumerable:false, configurable:false}.
         if (obj.get_class() == hobject::ObjClass.ARRAY) {
             HString* key_str = (HString*)key;
             if (key_str.equals("length")) {
@@ -1855,12 +1880,12 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
 
                 HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
                 TVal len_tv;
-                len_tv.set_fastint((long)obj.array_size);
+                len_tv.set_fastint((long)*obj.array_len_ptr());
                 desc.put_prop(value_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 HString* writable_key = builtin_intern_string(ctx.heap, "writable");
                 TVal w_tv;
-                w_tv.set_boolean(true);
+                w_tv.set_boolean(obj.flags.array_len_writable);
                 desc.put_prop(writable_key, w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
                 HString* enumerable_key = builtin_intern_string(ctx.heap, "enumerable");
@@ -1888,7 +1913,9 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             }
             arr_idx = arr_idx * 10 + (uint)(kd[i] - '0');
         }
-        if (is_numeric && kd.len > 0 && kd.len <= 10 && arr_idx < obj.array_size) {
+        if (is_numeric && kd.len > 0 && kd.len <= 10 && arr_idx < obj.array_size
+            && !(obj.get_class() == hobject::ObjClass.ARGUMENTS
+                 && obj.find_prop_idx(key, ctx.heap) >= 0)) {
             TVal av = obj.array_part()[arr_idx];
             if (av.is_undefined()) {
                 ctx.result.set_undefined();
@@ -1908,6 +1935,15 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             vt.set_string(key_str);
             // Actually set the array element value as the descriptor value
             TVal array_val = obj.array_part()[arr_idx];
+            // Sloppy mapped `arguments` (§10.4.4.2 [[GetOwnProperty]] step 2):
+            // a mapped index reports the parameter's current value, not the
+            // stored copy.
+            if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                TVal mapped_v;
+                if (vm::mapped_args_read(ctx.vm, obj, arr_idx, &mapped_v)) {
+                    array_val = mapped_v;
+                }
+            }
             desc.put_prop(value_key, array_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
             HString* writable_key = builtin_intern_string(ctx.heap, "writable");
@@ -1988,7 +2024,18 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     } else {
         // Data descriptor: { value, writable, enumerable, configurable }
         HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
-        desc.put_prop(value_key, *entry, hobject::PROP_FLAGS_WEC, ctx.heap);
+        TVal desc_val = *entry;
+        // Sloppy mapped `arguments` (§9.4.4.8): index properties alias the
+        // parameter register, which is authoritative. The named slot goes
+        // stale when the define path promotes a dense element (clearing the
+        // dense slot) and later writes update only the register.
+        if (obj.get_class() == hobject::ObjClass.ARGUMENTS && ((HString*)key).is_arridx()) {
+            TVal mapped_v;
+            if (vm::mapped_args_read(ctx.vm, obj, ((HString*)key).array_index(), &mapped_v)) {
+                desc_val = mapped_v;
+            }
+        }
+        desc.put_prop(value_key, desc_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* writable_key = builtin_intern_string(ctx.heap, "writable");
         TVal w_tv;
@@ -2122,7 +2169,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
     }
     if (obj.flags.exotic_array || obj.flags.exotic_arguments) {
         for (uint i = 0; i < obj.array_size && kn < cap; i++) {
-            if (!obj.array_part()[i].is_undefined()) {
+            if (obj.dense_idx_present(i)) {
                 HString* k = ctx.heap.int_to_hstring((long)i);
                 if (k != null) keys[kn++] = k;
             }
@@ -2696,6 +2743,16 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         if (ap != null && arr_idx < obj.array_size) {
             TVal arr_val = ap[arr_idx];
             if (!arr_val.is_undefined()) {
+                // Sloppy mapped `arguments`: the parameter register is
+                // authoritative while the index is mapped, so promote its
+                // current value rather than a dense copy that a plain
+                // `a = 5` write to the formal left stale.
+                if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                    TVal mapped_cur;
+                    if (vm::mapped_args_read(ctx.vm, obj, arr_idx, &mapped_cur)) {
+                        arr_val = mapped_cur;
+                    }
+                }
                 // PROP_FLAGS_WC has enumerable=false, put_prop routes to named table.
                 obj.put_prop((void*)key, arr_val, hobject::PROP_FLAGS_WC, ctx.heap);
                 existing_idx = obj.find_prop_idx(key, ctx.heap);
@@ -2722,7 +2779,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         uint arr_idx2 = key_hstr.array_index();
         uint cur_arr_len = array_get_length(obj, ctx.heap);
         if (arr_idx2 >= cur_arr_len) {
-            bool arr_len_writable = true;
+            bool arr_len_writable = obj.flags.array_len_writable;
             HString* len_key_i2 = ctx.heap.str(heap::BuiltinStr.LENGTH);
             if (len_key_i2 != null) {
                 int li2 = obj.find_prop_idx(len_key_i2, ctx.heap);
@@ -2771,7 +2828,23 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 }
             }
         } else {
-            obj.put_prop(key, desc_vals[0], desc_flags, ctx.heap);
+            // A mapped `arguments` index lives in the dense part as a plain
+            // {W,E,C} element until this define promotes it; absent
+            // descriptor fields keep the element's attributes
+            // (OrdinaryDefineOwnProperty via §10.4.4.2 step 5), so a
+            // `{configurable: false}` define must stay writable:true,
+            // enumerable:true.
+            hobject::PropFlags create_flags = desc_flags;
+            if (obj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
+                uint ai2 = key_hstr.array_index();
+                TVal* ap2 = obj.array_part();
+                if (ap2 != null && ai2 < obj.array_size && !ap2[ai2].is_undefined()) {
+                    if (!desc_fields.has_writable) create_flags.writable = true;
+                    if (!desc_fields.has_enumerable) create_flags.enumerable = true;
+                    if (!desc_fields.has_configurable) create_flags.configurable = false;
+                }
+            }
+            obj.put_prop(key, desc_vals[0], create_flags, ctx.heap);
         }
     } else {
         // Property exists, validate changes per ES5 §8.12.9
@@ -2875,14 +2948,21 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             if (has_enum_in_desc) cur_flags.enumerable   = desc_flags.enumerable;
             if (has_conf_in_desc) cur_flags.configurable = desc_flags.configurable;
             obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
-            // Clear the dense array slot so arr_get_elem_vm falls through to the
-            // named-property accessor rather than returning a stale data value.
+            // Clear the dense array slot so reads fall through to the
+            // named-property accessor rather than returning a stale data
+            // value. Decrement array_used to match set_array_idx's
+            // bookkeeping, and drop the parameter mapping (§10.4.4.2 step
+            // 7.1.1): the index no longer aliases the parameter.
             if (key_hstr.is_arridx()) {
                 uint ai = key_hstr.array_index();
+                if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+                    vm::mapped_args_unmap(obj, ai);
+                }
                 TVal* ap = obj.array_part();
-                if (ap != null && ai < obj.array_size) {
-                    TVal undef; undef.set_undefined();
-                    ap[ai] = undef;
+                if (ap != null && ai < obj.array_size && !ap[ai].is_undefined()) {
+                    ctx.heap.decref_tval(&ap[ai]);
+                    ap[ai].set_undefined();
+                    if (obj.array_used > 0) { obj.array_used--; }
                 }
             }
         } else {
@@ -2902,6 +2982,20 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 return;
             }
 
+            // Sloppy mapped `arguments` (§10.4.4.2): while the index is in the
+            // [[ParameterMap]] the stored slot is a copy and the parameter
+            // register stays authoritative.
+            bool args_mapped_idx = obj.get_class() == hobject::ObjClass.ARGUMENTS
+                && key_hstr.is_arridx();
+            // Step 4: a descriptor that omits [[Value]] preserves the CURRENT
+            // value, which for a mapped index is the parameter's, not the
+            // stale stored copy.
+            if (args_mapped_idx && !has_val_in_desc) {
+                TVal mapped_cur;
+                if (vm::mapped_args_read(ctx.vm, obj, key_hstr.array_index(), &mapped_cur)) {
+                    *current = mapped_cur;
+                }
+            }
             if (has_val_in_desc) {
                 // ES5 §8.12.9 step 9: If non-configurable and non-writable, reject only if
                 // the new value differs from the current value (SameValue check).
@@ -2911,7 +3005,69 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                         return;
                     }
                 }
-                *current = desc_vals[0];
+                // Sloppy mapped `arguments` (§9.4.4.8 steps 4-6): with a
+                // value field OrdinaryDefineOwnProperty writes the named
+                // slot; step 6 syncs the mapped parameter only while the map
+                // is still live (configurable, or still writable). A
+                // non-writable define unmaps first, so the parameter keeps
+                // its old value while the slot takes the new one.
+                bool arg_write_through = false;
+                if (obj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
+                    uint aidx = key_hstr.array_index();
+                    TVal new_v = desc_vals[0];
+                    hobject::PropFlags next_flags = cur_flags;
+                    if (has_wrt_in_desc)  next_flags.writable     = desc_flags.writable;
+                    if (has_enum_in_desc) next_flags.enumerable   = desc_flags.enumerable;
+                    if (has_conf_in_desc) next_flags.configurable = desc_flags.configurable;
+                    next_flags.is_accessor = false;
+                    if (next_flags.configurable || next_flags.writable) {
+                        int pidx_w = obj.find_prop_idx(key, ctx.heap);
+                        if (pidx_w >= 0) {
+                            ctx.heap.tval_copy_ref(&obj.prop_values()[pidx_w], &new_v);
+                        } else {
+                            *current = new_v;
+                        }
+                        obj.set_prop_flags((uint)existing_idx, next_flags, ctx.heap);
+                        // Step 7.2.1.2 syncs the parameter whenever the
+                        // descriptor carries a value. Step 7.2.2.1 then drops
+                        // the index from the map when the writable result is
+                        // false, even if the property stays configurable.
+                        if (has_val_in_desc) {
+                            vm::mapped_args_write(ctx.vm, obj, aidx, &new_v);
+                        }
+                        if (has_wrt_in_desc && !desc_flags.writable) {
+                            vm::mapped_args_unmap(obj, aidx);
+                        }
+                        arg_write_through = true;
+                    } else {
+                        // Step 7.2.1.2: sync the parameter from the descriptor
+                        // value while the map is still live, before the
+                        // non-writable result removes the mapping (step
+                        // 7.2.2.1). Without this a define such as
+                        // {value: v, writable: false} leaves the formal
+                        // parameter holding its previous value.
+                        if (has_val_in_desc) {
+                            vm::mapped_args_write(ctx.vm, obj, aidx, &new_v);
+                        }
+                        vm::mapped_args_unmap(obj, aidx);
+                        *current = desc_vals[0];
+                    }
+                } else {
+                    *current = desc_vals[0];
+                }
+                if (arg_write_through) {
+                    ctx.result.set_object(obj);
+                    return;
+                }
+            }
+
+            // Step 7.2.2.1: a writable:false result drops the index from the
+            // [[ParameterMap]] even when the descriptor carries no value; the
+            // parameter keeps its current value, which step 4 copied into the
+            // stored slot above. The write-through branch already unmapped the
+            // value-present cases, so this only fires for a bare {writable:false}.
+            if (args_mapped_idx && has_wrt_in_desc && !desc_flags.writable) {
+                vm::mapped_args_unmap(obj, key_hstr.array_index());
             }
 
             if (has_wrt_in_desc)  cur_flags.writable     = desc_flags.writable;
@@ -3243,7 +3399,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                 uint dp_idx = p_key.array_index();
                 if (dp_idx >= array_get_length(obj, ctx.heap)) {
                     HString* len_key_dp = ctx.heap.str(heap::BuiltinStr.LENGTH);
-                    bool dp_len_wr = true;
+                    bool dp_len_wr = obj.flags.array_len_writable;
                     if (len_key_dp != null) {
                         int li_dp = obj.find_prop_idx(len_key_dp, ctx.heap);
                         if (li_dp >= 0) dp_len_wr = obj.get_prop_flags((uint)li_dp, ctx.heap).writable;
@@ -3620,6 +3776,9 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
         }
         ctx.result.set_object(obj);
         return;
+    }
+    if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
+        vm::mapped_args_sync_all(ctx.vm, obj);
     }
     obj.freeze(ctx.heap);
     ctx.result.set_object(obj);
@@ -4078,7 +4237,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         if (src_obj.array_part() != null) {
             char[12] digit_buf;
             for (uint i = 0; i < src_obj.array_size; i++) {
-                if (!src_obj.array_part()[i].is_undefined()) {
+                if (src_obj.dense_idx_present(i)) {
                     int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
                     if (dlen > 0) {
                         HString* key = builtin_intern_string(ctx.heap, digit_buf[:(uint)dlen]);
@@ -4090,6 +4249,23 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                             }
                         }
                     }
+                }
+            }
+        }
+        // Integer-Indexed exotic: elements are enumerable own properties served
+        // lazily (§10.4.5.1), so they are absent from both walks above.
+        if (is_typed_array_class(src_obj.get_class())) {
+            uint ta_len = ta_element_count(src_obj);
+            for (uint ti = 0; ti < ta_len; ti++) {
+                HString* ik = ctx.heap.int_to_hstring((long)ti);
+                if (ik == null) continue;
+                // A [[Set]] on the downstream object can run user code that
+                // detaches or resizes the source, so re-check each index.
+                if (!ta_is_valid_integer_index(src_obj, (double)ti)) continue;
+                TVal tv = ta_read_element_checked(ctx.heap, src_obj, ti);
+                if (!obj_assign_set(ctx, downstream, ik, &tv)) {
+                    ctx.result.set_undefined();
+                    return;
                 }
             }
         }
@@ -4932,7 +5108,7 @@ fn bool object_has_own_property(BuiltinContext* ctx, HObject* obj, HString* key,
     if (obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) {
         if (key.is_arridx()) {
             uint ai = (uint)key.array_index();
-            if (ai < obj.array_size && !obj.array_part()[ai].is_undefined()) {
+            if (obj.dense_idx_present(ai)) {
                 *out = true;
                 return true;
             }
@@ -5221,7 +5397,7 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     if (obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) {
         if (key.is_arridx()) {
             uint ai = (uint)key.array_index();
-            if (ai < obj.array_size && !obj.array_part()[ai].is_undefined()) {
+            if (ai < obj.array_size && obj.dense_idx_present(ai)) {
                 ctx.result.set_boolean(true);
                 return;
             }
@@ -5231,6 +5407,12 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
             ctx.result.set_boolean(false);
             return;
         }
+    }
+    // Integer-Indexed exotic: elements are enumerable own properties served
+    // lazily (§10.4.5.1), so they never reach the property table.
+    if (is_typed_array_class(obj.get_class()) && key.is_arridx()) {
+        ctx.result.set_boolean(ta_is_valid_integer_index(obj, (double)key.array_index()));
+        return;
     }
     // STRING exotic: integer indices [0, clen) are enumerable own properties served lazily.
     if (obj.flags.exotic_stringobj && key.is_arridx() && (*obj.extra_ptr()).prim.primitive_value.is_string()) {

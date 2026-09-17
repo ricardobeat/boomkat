@@ -954,6 +954,11 @@ fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
         // Retained so String.prototype methods relying on the primitive
         // (e.g. the @@iterator returned here) see the right value.
         (*obj.extra_ptr()).prim.primitive_value = value;
+        // Symbols are string-tagged TVals whose HString carries the symbol
+        // flag; box them against symbol_proto, not string_proto.
+        if (((HString*)value.get_heapptr()).is_symbol()) {
+            wrap_proto = heap.symbol_proto;
+        }
     } else if (value.is_fastint() || value.is_number()) {
         wrap_proto = heap.number_proto;
     } else if (value.is_boolean()) {
@@ -963,6 +968,66 @@ fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
     }
     obj.prototype = wrap_proto;
     return obj;
+}
+
+// ToObject(value) as a proper exotic wrapper object (ES2015 §7.1.13), used for
+// the receiver a sloppy call binds to a primitive. Unlike to_object_for_lookup
+// this sets the wrapper's class and String-exotic flag, so String.prototype
+// .valueOf and Object.prototype.toString recognise it, the way the wrappers
+// Object()/Function.prototype.call build do. Objects are returned as-is,
+// undefined/null return null (the caller has already substituted the global).
+fn HObject* to_object_wrapper(Heap* heap, TVal value) {
+    if (value.is_object() && value.get_heapptr() != null) {
+        return (HObject*)value.get_heapptr();
+    }
+    if (value.is_undefined() || value.is_null()) return null;
+    if (value.is_boolean()) {
+        HObject*? raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
+        if (catch raw) return null;
+        HObject* obj = raw;
+        obj.prototype = heap.bool_proto;
+        (*obj.extra_ptr()).prim.primitive_value.set_boolean(value.get_boolean());
+        return obj;
+    }
+    if (value.is_number() || value.is_fastint()) {
+        HObject*? raw = heap.alloc_object(hobject::ObjClass.NUMBER);
+        if (catch raw) return null;
+        HObject* obj = raw;
+        obj.prototype = heap.number_proto;
+        (*obj.extra_ptr()).prim.primitive_value = value;
+        return obj;
+    }
+    if (value.is_bigint()) {
+        HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (catch raw) return null;
+        HObject* obj = raw;
+        obj.prototype = heap.bigint_proto;
+        (*obj.extra_ptr()).prim.primitive_value = value;
+        return obj;
+    }
+    if (value.is_string()) {
+        HString* prim_str = (HString*)value.get_heapptr();
+        if (prim_str != null && prim_str.is_symbol()) {
+            HObject*? raw = heap.alloc_object(hobject::ObjClass.SYMBOL);
+            if (catch raw) return null;
+            HObject* obj = raw;
+            obj.prototype = heap.symbol_proto;
+            (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
+            return obj;
+        }
+        HObject*? raw = heap.alloc_object(hobject::ObjClass.STRING);
+        if (catch raw) return null;
+        HObject* obj = raw;
+        obj.flags.exotic_stringobj = true;
+        obj.prototype = heap.string_proto;
+        (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
+        HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+        TVal len_tv;
+        len_tv.set_fastint((long)prim_str.char_length());
+        obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, heap);
+        return obj;
+    }
+    return null;
 }
 
 // Stdout byte sink for write_cesu8_as_utf8. A PutByteFn must accept a udata
@@ -3429,8 +3494,9 @@ fn TVal host_arg(BuiltinContext* ctx, uint i) {
     return out;
 }
 
-// The `this` receiver. Undefined stays undefined: the engine is strict-only,
-// so there is no coercion to the global object.
+// The `this` receiver, exactly as the activation holds it: the call path
+// already applied the callee's receiver rule, so a sloppy callee passed
+// undefined/null sees the global object and a primitive sees its wrapper.
 fn TVal host_this(BuiltinContext* ctx) {
     TVal out;
     out.set_undefined();

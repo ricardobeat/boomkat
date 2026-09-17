@@ -1005,8 +1005,9 @@ struct Heap {
 
     // Pooled HObject headers, avoiding a malloc per object. The three size
     // classes match alloc_size_for_class():
-    //   plain: OBJECT and ARGUMENTS, which need no HObjectExtra
-    //   array: ARRAY, whose array_length lives in the union
+    //   plain: OBJECT, which needs no HObjectExtra
+    //   array: ARRAY (array_length in the union) and ARGUMENTS (nargs in the
+    //          union)
     //   func:  everything else, including ERROR and PROXY
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
@@ -1625,6 +1626,7 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.eval_private_names != null) { self.free_func(self.heap_udata, cf.eval_private_names); }
         // Direct-eval call-site offsets from compiler/context.c3 finish().
         if (cf.direct_eval_offsets != null) { self.free_func(self.heap_udata, cf.direct_eval_offsets); }
+        if (cf.eval_var_idxs != null) { self.free_func(self.heap_udata, cf.eval_var_idxs); }
         // The function's name, source filename, and retained source text,
         // copied out of the compiler's scratch buffers so they outlive the
         // compile. All three come from `mem` rather than the heap allocator.
@@ -2924,6 +2926,13 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
     }
     if (gs.delegated_iter != null) {
         self.mark_hobject((HObject*)gs.delegated_iter);
+    }
+    // The function the body was created from. GEN_START and every resume read it
+    // to fill the activation's borrowed callee slot, and a suspended generator
+    // can outlive every other reference to the function: `.next()` keeps only
+    // the instance, and the instance holds no back-pointer to it.
+    if (gs.func_obj != null) {
+        self.mark_hobject((HObject*)gs.func_obj);
     }
     if (gs.async_promise != null) {
         self.mark_hobject((HObject*)gs.async_promise);

@@ -2,23 +2,32 @@
 
 ## Project Spec
 
-A C3-native, strict-only JavaScript engine. **Goal**: pass 100% of the targeted test262 subset (the ~29,500 executable tests left after the skip list; roadmap in `plans/040-test262-100-percent.md`), beat Duktape on performance, keep memory low, and run on low-powered devices across platforms.
+A C3-native JavaScript engine. **Goal**: pass 100% of the targeted test262 subset (the ~29,500 executable tests left after the skip list; roadmap in `plans/040-test262-100-percent.md`), beat Duktape on performance, keep memory low, and run on low-powered devices across platforms.
 
 - Uses Duktape v2.7.0 and QuickJS as architectural references; leverage C3's native features for memory safety and its stdlib. When a path is unclear, compare Duktape source against QuickJS. Check the stdlib reference for what is available when planning a new feature.
 - Focus on ES5/ES6 core; ignore *staging* features in the spec.
 - RegExp uses libregexp (from QuickJS).
-- **test262 skip list**: ~60% of test262 falls outside this engine's scope, which is ES5/ES6 core in a single strict mode (Annex B legacy, ECMA-402, Stage 3 proposals, host-specific and cross-realm behavior). Scope is documented in `docs/engine-scope.md`. The skip list (`SKIP_DIRS`/`SKIP_GLOBS`/`SKIP_FILES`/`UNSUPPORTED_PATTERN`) is embedded directly in `scripts/run_test262.py`: update it there when implementing new features. The skip list is the *only* place scope is expressed — test selection itself is exhaustive over test262's directory tree, so a feature is out of scope because a rule names it, never because nobody listed its directory. `intl402` (ECMA-402) is skipped per test262's own guidance; `staging` runs, as upstream `INTERPRETING.md` asks.
+- **BigInt** is arbitrary precision: a 32-bit limb vector with `BIGINT_MAX_LIMBS = 1 << 26` (~2 billion bits, `src/hbigint.c3`). Magnitude is not a limit.
+- **Strict vs sloppy**: scripts default to sloppy (matching ES2024); modules default to strict; per-function `is_strict` is recorded in `FuncFlags`.
+- **test262 skip list**: ~60% of test262 falls outside this engine's scope, which is ES5/ES6 core plus the sloppy-mode and Annex B behavior it needs (ECMA-402, Stage 3 proposals, host-specific and cross-realm behavior stay out). Scope is documented in `docs/engine-scope.md`. The skip list (`SKIP_DIRS`/`SKIP_GLOBS`/`SKIP_FILES`/`UNSUPPORTED_PATTERN`) is embedded directly in `scripts/run_test262.py`: update it there when implementing new features. The skip list is the *only* place scope is expressed — test selection itself is exhaustive over test262's directory tree, so a feature is out of scope because a rule names it, never because nobody listed its directory. `intl402` (ECMA-402) is skipped per test262's own guidance; `annexB` runs (896/1086 passing, 0 failures, 190 skipped: the Annex B String HTML wrappers and Date `getYear`/`setYear`, `legacy-regexp`, and `IsHTMLDDA` — see the sloppy-mode section); `staging` runs, as upstream `INTERPRETING.md` asks.
 
-## Strict-Only Mode
+## Strict and Sloppy Modes
 
-The engine is strict-only, a single execution mode. Non-strict / Annex B features (`with`, legacy octal literals/escapes, duplicate params, implicit globals, unqualified `delete`, `arguments.callee`/`caller`, two-way `arguments`↔param binding) are unsupported and rejected at parse time.
+Sloppy-mode execution is a peer to strict mode. `plans/083-sloppy-mode.md` records how it was built.
 
-**Guardrails:**
-- The engine is single-mode; there is no `is_strict` / `ACT_FLAG_STRICT` flag to branch on.
-- `"use strict"` is parsed and ignored (a no-op, accepted for source compatibility). The one exception: in a dynamic `Function`/`GeneratorFunction`/`AsyncFunction` body it clears `FuncFlags.subst_global_this` (below).
-- `this`-substitution is **not** a strictness distinction here. `FuncFlags.subst_global_this` is set only on bodies built by the dynamic function constructors, so `Function('return this')()` keeps returning the global object (a ubiquitous UMD idiom). Ordinary functions never substitute, and functions nested inside a dynamic body do not inherit the flag.
-- Direct vs. indirect `eval` is not a strict-mode distinction; both are fully supported. `ACT_FLAG_DIRECT_EVAL` / `has_direct_eval` / `callee_is_eval` are orthogonal to strict mode.
-- `noStrict`-flagged test262 tests fail to compile by design.
+**Current state:**
+- `FuncFlags.is_strict` bit 7, plumbed through `CompilerContext.is_strict`. The legacy `Lexer.strict_mode` (octal rules) and `Lexer.reserved_words_strict` (keyword reservation) flags still exist. `subst_global_this` is gone — the predicate is `!is_strict() && !is_arrow()` at every call / construct / generator-create site.
+- Top-level scripts default to sloppy (ES2024 §16.2.1.1); modules stay strict; ordinary functions and dynamic `Function` / `GeneratorFunction` / `AsyncFunction` bodies default to sloppy. `"use strict"` raises `is_strict`. Class code is strict throughout (ES2024 §11.2.2), so `class eval {}` is an early error even in a sloppy script.
+- Sloppy-only syntax accepted: `with`, legacy octal literals and octal escapes, `delete <id>`, plain duplicate params (Annex B.3.1), duplicate `__proto__:` keys (Annex B.3.1), `for (var x = 1 in y)` (Annex B.3.5: a `var` ForBinding only, its initializer evaluated once before the RHS), labelled function declarations (Annex B.3.2), function declarations as `if` bodies (Annex B.3.4), and `let`/`static`/`yield` as identifiers.
+- Still strict (unconditional): class / object method / arrow / named-export param duplicates (UniqueFormalParameters, no Annex B exemption), catch / lexical ForDeclaration duplicate BoundNames, `eval` / `arguments` as binding identifiers.
+- Runtime semantics: implicit globals; `this` substitution plus primitive-to-wrapper boxing for a sloppy callee; DELPROP and DELVAR failing silently in sloppy (Annex B.3.1 result rules); the `arguments.callee` / `caller` poison pill; mapped `arguments` (Annex B.3.1); Annex B.3.3 for function declarations in a block, extended by B.3.2 (labelled) and B.3.4 (`if` body); a CallExpression assignment target (`f() = 1`, `f()++`, `for (f() of x)`) deferring to a runtime ReferenceError (Annex B.3.9); `with`-env semantics including `@@unscopables`, SnapshotReference stores, and dynamic name resolution in closures created inside the body.
+- `annexB` passes 896 / 1086 with 0 failures and 190 skips. The legacy eval-code and global-code var-hoisting rules, and `catch (x) { for (var x …) }` redeclaration, are implemented. The 190 skips are scope exclusions, not gaps: the Annex B String HTML wrappers (111) and Date `getYear`/`setYear` (24), `legacy-regexp` (26: `RegExp.$1`, `lastMatch`, `.compile()`), and `IsHTMLDDA` (29). The first three are legacy browser surface and are implementable — see plans/084; `IsHTMLDDA` (the `document.all` slot) is host-provided, so there is nothing to implement.
+
+**What not to write:**
+- Do not add new strict-only parse rejections.
+- Do not assume any parser rejection is unconditional — every rejection in `src/compiler/{statements,expressions,functions,tokens,destructuring,class}.c3` that exists for sloppy-mode-only syntax is gated on `self.is_strict`. If you find an ungated one, gate it.
+- Do not read a name from a register when a `with` in scope could own it: `resolve_var` yields inside a `with`, and `mark_var_captured` covers a `var` declared inside one.
+- Do not touch the test262 skip list without reading plans/083 §5 (test262 strategy). Un-skipping the wrong tests pollutes the suite's signal.
 
 ## Running & Testing
 
@@ -54,7 +63,7 @@ Typical debug loop: minimize a failure to a single-line `.js` repro → `just ru
 - **Pass**: runtime PASS
 - **Fail**: runtime FAIL (harness assertion, timeout, VM_ERROR)
 - **Skip**: runner skip (noStrict, $DONOTEVALUATE, unsupported patterns, ES5-only)
-- **CE**: Compile Error (strict-only engine rejected the source). For `noStrict` tests this is the expected/correct outcome.
+- **CE**: Compile Error (the engine rejected the source). It is a pass when the test's `negative:` metadata asks for a parse-time rejection, and a real parser bug otherwise.
 
 ## Build Flags
 

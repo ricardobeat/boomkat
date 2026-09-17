@@ -12,7 +12,7 @@
 
 <br>
 
-**Boomkat** is a strict-only Javascript engine developed from scratch using the [C3](https://c3-lang.org/) language.
+**Boomkat** is a Javascript engine developed from scratch using the [C3](https://c3-lang.org/) language.
 
 It was heavily inspired by [Duktape](https://duktape.org) and [QuickJS](https://bellard.org/quickjs/), built for embedding and to potentially target embedded devices. In contrast to latest Duktape, *boomkat* supports 100% of the ES2025 specification plus most of ES2026; it also runs TypeScript files natively, while being significantly faster and only marginally larger in size.
 
@@ -20,7 +20,7 @@ It was heavily inspired by [Duktape](https://duktape.org) and [QuickJS](https://
 
 ## Features and compatibility
 
-- **Strict mode** only
+- **Strict and sloppy mode**, with per-function strictness
 - 100% pass rate on **50k** tests from the [test262 conformance suite](https://github.com/tc39/test262)
 - Built-in support for **ES modules**
 - **Natively runs TypeScript** code (including module support), including the TypeScript compiler itself

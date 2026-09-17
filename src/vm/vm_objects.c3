@@ -158,7 +158,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     if (source.array_part() != null) {
         char[12] digit_buf;
         for (uint i = 0; i < source.array_size; i++) {
-            if (!source.array_part()[i].is_undefined()) {
+            if (source.dense_idx_present(i)) {
                 int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
                 if (dlen > 0) {
                     HString* key = intern_string(vm, digit_buf[:(uint)dlen]);
@@ -169,6 +169,21 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Integer-Indexed exotic: elements are enumerable own properties served
+    // lazily (§10.4.5.1), absent from both the named table and array_part.
+    if (builtins::is_typed_array_class(source.get_class())) {
+        uint ta_len = builtins::ta_element_count(source);
+        for (uint ti = 0; ti < ta_len; ti++) {
+            HString* ik = vm.heap.int_to_hstring((long)ti);
+            if (ik == null || key_is_excluded((void*)ik, excluded)) continue;
+            if (!builtins::ta_is_valid_integer_index(source, (double)ti)) continue;
+            TVal tv = builtins::ta_read_element_checked(vm.heap, source, ti);
+            if (!target.put_prop((void*)ik, tv, hobject::PROP_FLAGS_WEC, vm.heap)) {
+                return VM_ERROR~;
             }
         }
     }
@@ -507,14 +522,18 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
         case Opcode.SETALEN: {
             // A = array register, BC = element count (high-water mark)
+            // An ARRAY exotic's "length" lives in array_len_ptr, never as a
+            // named table property (see the "ARRAY exotic" comments in
+            // hobject.c3 and object.c3). Writing it through put_prop here used
+            // to install a real "length" own property that then went stale the
+            // moment a later indexed write took the vm_property.c3 dense fast
+            // path, which patches array_len_ptr directly and never touches the
+            // named table: get_prop_proto (used by e.g. JSON.stringify) would
+            // then find the stale named entry before the live array_len_ptr
+            // value, silently truncating array length to whatever it was here.
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
-                uint count = insn.get_bc();
-                *hobj.array_len_ptr() = count;
-                HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                TVal len_val;
-                len_val.set_fastint((long)count);
-                hobj.put_prop(len_str, len_val, hobject::PROP_FLAGS_WENC, ds.vm.heap);
+                *hobj.array_len_ptr() = insn.get_bc();
             }
             return (TVal){};
         }

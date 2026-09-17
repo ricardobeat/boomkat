@@ -133,7 +133,11 @@ eq(innerRuns("outer"), "inner/outer", "the inner function's own var binding is i
 // ── A block-scoped function declaration is still lexical, not hoisted ────
 // The deeper-skip now also covers `function` DECLARATIONS below own_depth.
 // In strict mode those are lexically bound to their block, so skipping them in
-// the var pre-scan must not change what the enclosing scope sees.
+// the var pre-scan must not change what the enclosing scope sees. In sloppy
+// mode Annex B.3.3 hoists the name to the enclosing var scope instead.
+// NOTE: this file runs without "use strict" in a now-sloppy-by-default
+// engine, so the sloppy expectation applies here; the strict shape is covered
+// by test262's language/statements/block block-decl-onlystrict tests.
 function blockFnDecl() {
   var seen;
   if (true) {
@@ -142,7 +146,7 @@ function blockFnDecl() {
   }
   return seen + "/" + typeof g;
 }
-eq(blockFnDecl(), "function/undefined", "a block-scoped function declaration stays lexical");
+eq(blockFnDecl(), "function/function", "a sloppy block-scoped function declaration hoists (Annex B.3.3)");
 
 // ── A real var in the scanned body is still hoisted ──────────────────────
 // The skip must not swallow the enclosing scope's own declarations.

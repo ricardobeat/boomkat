@@ -132,6 +132,11 @@ struct Token {
     char[] str_value;
     char[] raw_value;
     bool has_octal_escape;
+    // A legacy octal escape that was DECODED (sloppy Annex B semantics).
+    // Strict-lexed strings only latch has_octal_escape; this flag lets the
+    // parser reject a prologue that was scanned sloppy but later flips
+    // strict via a following "use strict" (ES2024 §12.9.4.1).
+    bool has_decoded_octal;
     bool is_template;
     bool has_invalid_escape;
     // True when this identifier/keyword token was written with at least one
@@ -152,6 +157,7 @@ fn Token make_token(TokenType tt, uint line, uint col) {
     t.str_value = {};
     t.raw_value = {};
     t.has_octal_escape = false;
+    t.has_decoded_octal = false;
     t.is_template = false;
     t.has_invalid_escape = false;
     return t;
@@ -462,10 +468,10 @@ struct Lexer {
     bool strict_mode;
     // Identifier-reservation strictness, split out from `strict_mode`.
     //
-    // `strict_mode` also gates the lexical rules this engine rejects
-    // unconditionally (legacy octal literals and octal escapes -- see
-    // AGENTS.md "Strict-Only Mode"), so it stays pinned true. This flag
-    // governs ONLY whether the strict-mode reserved words (`eval`,
+    // `strict_mode` gates the lexical rules for legacy octal literals and
+    // octal escapes (sloppy accepts per Annex B, strict rejects). It starts
+    // true and each compilation entry lowers it to match ctx.is_strict.
+    // This flag governs ONLY whether the strict-mode reserved words (`eval`,
     // `arguments`, `implements`, `interface`, `package`, `private`,
     // `protected`, `public`) are restricted binding targets. Dynamic code
     // whose strictness the spec decides by its own directive prologue -- an
@@ -491,6 +497,14 @@ struct Lexer {
     // it from the token stream alone.
     bool await_is_operator;
     bool yield_is_operator;
+    // Set by the parser after consuming a `yield` or `await` token as an
+    // IdentifierReference instead of its operator form. The token after one of
+    // those is an operand position, so `/` there is division, not a regexp
+    // literal: `prev_was_operand` cannot tell the two apart from the previous
+    // token alone, and YIELD/AWAIT are not in its operand set because as
+    // operators they DO precede a regexp-legal operand. Cleared by the next
+    // `next_token()`, exactly like `force_regex_after_brace`.
+    bool force_division_next;
     // True when, since the start of source or the most recent real line
     // terminator, only whitespace and/or comments have been produced (i.e.
     // no real token has appeared yet on the current line). Persists across
@@ -702,6 +716,7 @@ fn void Lexer.reset(&self, char[] source) {
     self.lookahead_token_start = 0;
     self.has_pushed_back = false;
     self.force_regex_after_brace = false;
+    self.force_division_next = false;
 }
 
 // ============================================================================
@@ -1045,8 +1060,26 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
 }
 
 // ============================================================================
-// Lexer, scan numeric literal
+// Lexer, scan number literal
 // ============================================================================
+
+// Phase 1 (plans/083): interpret legacy-octal spans (e.g. "0777") as base-8
+// when the lexer is in sloppy mode.  Called only for spans that contain no
+// digit ≥ 8, no fractional dot, and no exponent marker.
+fn double parse_octal_double(char[] digits, usz len) {
+    double val = 0.0;
+    for (usz k = 0; k < len; k++) {
+        char ch = digits[k];
+        if (ch >= '0' && ch <= '7') {
+            val = val * 8.0 + (double)(ch - '0');
+        } else if (ch == '_') {
+            continue;
+        } else {
+            break;
+        }
+    }
+    return val;
+}
 
 // Parse a numeric literal token.
 // Supports: decimal, hex (0x/0X), octal (0o/0O), binary (0b/0B),
@@ -1181,6 +1214,7 @@ fn Token? Lexer.scan_number(&self) {
     // Decimal: scan digits (integer + optional fraction + optional exponent)
     // to advance pos, then use strtod for precise parsing.
     bool dec_prev_was_digit = false;
+    bool is_legacy_octal_like = false;
 
     // Handle numbers starting with '.' (e.g., .5, .5e3)
     if (c == '.') {
@@ -1191,7 +1225,7 @@ fn Token? Lexer.scan_number(&self) {
         // or a NonOctalDecimalIntegerLiteral (e.g. 08, 09), neither
         // production admits NumericLiteralSeparator, so separators are
         // rejected outright rather than just checked for placement.
-        bool is_legacy_octal_like = c == '0' && self.remaining() >= 2 &&
+        is_legacy_octal_like = c == '0' && self.remaining() >= 2 &&
             (is_digit(self.peek_char_at(1)) || self.peek_char_at(1) == '_');
         while (!self.at_end()) {
             c = self.peek_char();
@@ -1272,11 +1306,29 @@ fn Token? Lexer.scan_number(&self) {
         if (!exp_prev_was_digit) return LEX_ERROR~;
     }
 
-    // Use js_atod for precise parsing (handles subnormals, avoids frac*=0.1 rounding).
-    // QuickJS' js_atod is a David-Gay-style parser that matches V8/SpiderMonkey,
-    // so "8.3 - 1 === 7.3" is true and literals round-trip consistently with
-    // parseFloat().
-    {
+    // Legacy octal — 0777 is 511 in sloppy code (ES2024 §B.1.1). When the span
+    // is a pure legacy octal (digits 0-7 only, no fractional dot, no exponent),
+    // the value is base-8 and js_atod does not see it at all.
+    bool octal_resolved = false;
+    if (is_legacy_octal_like && !self.strict_mode) {
+        bool has_non_octal = false;
+        bool has_frac_or_exp = false;
+        for (usz i = start_pos; i < self.pos; i++) {
+            char ch = self.source[i];
+            if (ch >= '8' && ch <= '9') { has_non_octal = true; break; }
+            if (ch == '.' || ch == 'e' || ch == 'E') { has_frac_or_exp = true; break; }
+        }
+        if (!has_non_octal && !has_frac_or_exp) {
+            value = parse_octal_double(self.source[start_pos..self.pos], (usz)(self.pos - start_pos));
+            octal_resolved = true;
+        }
+    }
+
+    if (!octal_resolved) {
+        // Use js_atod for precise parsing (handles subnormals, avoids frac*=0.1 rounding).
+        // QuickJS' js_atod is a David-Gay-style parser that matches V8/SpiderMonkey,
+        // so "8.3 - 1 === 7.3" is true and literals round-trip consistently with
+        // parseFloat().
         uint len = self.pos - start_pos;
         // A numeric literal has no length limit, so anything past the stack
         // buffer gets arena storage rather than being read as zero. Both the
@@ -1409,6 +1461,13 @@ fn Token? Lexer.scan_string(&self) {
     char[STRING_BUF_SIZE] buf;
     uint buf_len = 0;
     bool found_octal = false;
+    bool decoded_octal = false;
+    // Raw source bytes consumed between the quotes (escapes unexpanded).
+    // Every branch below accounts its own consumed bytes: the `\\` prologue
+    // adds 2 up front, multi-byte escapes (extra octal digits, \xHH,
+    // \uHHHH, line continuations) add the remainder as they consume.
+    // String.raw and template raw parts read this through raw_value.
+    uint raw_len = 0;
 
     while (!self.at_end()) {
         char ch = self.peek_char();
@@ -1422,6 +1481,15 @@ fn Token? Lexer.scan_string(&self) {
                 tok.str_value = {};
             }
             tok.has_octal_escape = found_octal;
+            tok.has_decoded_octal = decoded_octal;
+            // Raw span between the quotes: raw_len counts every source byte
+            // consumed, buf_len the decoded length. Sliced from the
+            // arena-backed source (stable for the token's lifetime); empty
+            // when the literal held no escapes at all.
+            if (raw_len > 0) {
+                usz raw_start = (usz)self.pos - raw_len - 1;
+                tok.raw_value = self.source[raw_start..raw_start + raw_len - 1];
+            }
             return tok;
         }
 
@@ -1432,6 +1500,7 @@ fn Token? Lexer.scan_string(&self) {
         if (ch == '\\') {
             self.advance_char(); // consume backslash
             if (self.at_end()) return LEX_ERROR~;
+            raw_len += 2;
 
             char esc = self.advance_char();
             switch (esc) {
@@ -1442,8 +1511,26 @@ fn Token? Lexer.scan_string(&self) {
                 case 'f':  buf[buf_len] = 0x0C; buf_len++;
                 case 'v':  buf[buf_len] = 0x0B; buf_len++;
                 case '0':
-                    buf[buf_len] = 0;
-                    buf_len++;
+                    // Sloppy Annex B: \0 followed by an octal digit is an
+                    // octal escape (\01 === \x01). Strict latches found_octal
+                    // for the parser to reject instead.
+                    if (!self.strict_mode && !self.at_end()
+                        && self.peek_char() >= '0' && self.peek_char() <= '7') {
+                        decoded_octal = true;
+                        uint oval = 0;
+                        for (int oi = 0; oi < 2; oi++) {
+                            if (self.at_end()) break;
+                            char od = self.peek_char();
+                            if (od < '0' || od > '7') break;
+                            self.advance_char();
+                            raw_len++;
+                            oval = oval * 8 + (uint)(od - '0');
+                        }
+                        buf_len = encode_utf8_to_buf(&buf, buf_len, oval);
+                    } else {
+                        buf[buf_len] = 0;
+                        buf_len++;
+                    }
                     if (self.strict_mode && !self.at_end() && self.peek_char() >= '0' && self.peek_char() <= '9') {
                         found_octal = true;
                     }
@@ -1459,6 +1546,7 @@ fn Token? Lexer.scan_string(&self) {
                     if (self.remaining() < 2) return LEX_ERROR~;
                     char h1 = self.advance_char();
                     char h2 = self.advance_char();
+                    raw_len += 2;
                     if (!is_hex_digit(h1) || !is_hex_digit(h2)) return LEX_ERROR~;
                     uint hval = hex_value(h1) * 16 + hex_value(h2);
                     buf_len = encode_utf8_to_buf(&buf, buf_len, hval);
@@ -1468,17 +1556,20 @@ fn Token? Lexer.scan_string(&self) {
                     if (self.peek_char() == '{') {
                         // \u{H..H}, variable length Unicode escape
                         self.advance_char(); // consume {
+                        raw_len++;
                         uint ucp = 0;
                         uint udigits = 0;
                         while (!self.at_end() && self.peek_char() != '}') {
                             if (!is_hex_digit(self.peek_char())) return LEX_ERROR~;
                             ucp = ucp * 16 + hex_value(self.peek_char());
                             self.advance_char();
+                            raw_len++;
                             udigits++;
                             if (ucp > 0x10FFFF) return LEX_ERROR~;
                         }
                         if (self.at_end() || udigits == 0) return LEX_ERROR~;
                         self.advance_char(); // consume }
+                        raw_len++;
                         buf_len = encode_utf8_to_buf(&buf, buf_len, ucp);
                     } else {
                         // \uHHHH, exactly 4 hex digits
@@ -1486,6 +1577,7 @@ fn Token? Lexer.scan_string(&self) {
                         uint ucp4 = 0;
                         for (int i = 0; i < 4; i++) {
                             char hc = self.advance_char();
+                            raw_len++;
                             if (!is_hex_digit(hc)) return LEX_ERROR~;
                             ucp4 = ucp4 * 16 + hex_value(hc);
                         }
@@ -1494,11 +1586,14 @@ fn Token? Lexer.scan_string(&self) {
 
                 case '\n':
                     // Line continuation, just skip the newline
+                    raw_len++;
                     break;
                 case '\r':
                     // Line continuation, also skip following \n if present
+                    raw_len++;
                     if (!self.at_end() && self.peek_char() == '\n') {
                         self.advance_char();
+                        raw_len++;
                     }
 
                 case 0xE2:
@@ -1513,6 +1608,7 @@ fn Token? Lexer.scan_string(&self) {
                         && (self.peek_char_at(1) == 0xA8 || self.peek_char_at(1) == 0xA9)) {
                         self.advance_char(); // consume 0x80
                         self.advance_char(); // consume 0xA8 or 0xA9
+                        raw_len += 2;
                     } else {
                         buf[buf_len] = esc;
                         buf_len++;
@@ -1520,8 +1616,26 @@ fn Token? Lexer.scan_string(&self) {
 
                 default:
                     // Unknown escape: emit the escaped character itself.
-                    // \1-\9 are SyntaxErrors in strict mode, so latch
-                    // found_octal for the parser to reject.
+                    // \1-\7 are sloppy Annex B octal escapes (\101 === 'A').
+                    // Strict latches found_octal for the parser to reject.
+                    if (esc >= '1' && esc <= '7' && !self.strict_mode) {
+                        decoded_octal = true;
+                        uint oval2 = (uint)(esc - '0');
+                        // ES2024 §B.1.2 LegacyOctalEscapeSequence: a leading
+                        // 4-7 admits at most ONE more octal digit (\400 is
+                        // \40 followed by "0"), a leading 0-3 admits two.
+                        int max_more = (esc <= '3') ? 2 : 1;
+                        for (int oi2 = 0; oi2 < max_more; oi2++) {
+                            if (self.at_end()) break;
+                            char od2 = self.peek_char();
+                            if (od2 < '0' || od2 > '7') break;
+                            self.advance_char();
+                            raw_len++;
+                            oval2 = oval2 * 8 + (uint)(od2 - '0');
+                        }
+                        buf_len = encode_utf8_to_buf(&buf, buf_len, oval2);
+                        break;
+                    }
                     if (self.strict_mode && esc >= '1' && esc <= '9') {
                         found_octal = true;
                     }
@@ -1532,6 +1646,7 @@ fn Token? Lexer.scan_string(&self) {
             // Regular character
             buf[buf_len] = ch;
             buf_len++;
+            raw_len++;
             self.advance_char();
         }
 
@@ -2484,6 +2599,8 @@ fn Token? Lexer.next_token(&self) {
     // following token's `/` disambiguation, so clear it now.
     bool force_regex = self.force_regex_after_brace;
     self.force_regex_after_brace = false;
+    bool force_division = self.force_division_next;
+    self.force_division_next = false;
 
     if (self.at_end()) {
         Token tok = make_token(TokenType.EOF_TOKEN, self.line, self.col);
@@ -2527,7 +2644,7 @@ fn Token? Lexer.next_token(&self) {
     // whose body is "=". Only treat `/=` as the division-assign punctuator
     // when a regexp is not syntactically expected at this position.
     if (c == '/') {
-        if (force_regex || !self.prev_was_operand()) {
+        if (!force_division && (force_regex || !self.prev_was_operand())) {
             Token tok = self.scan_regexp()!;
             self.current = tok;
             return tok;
@@ -2645,8 +2762,11 @@ fn void Lexer.pushback(&self, Token tok) {
 // Enable or disable strict-mode keyword recognition.
 // When enabled, FutureReservedWords (implements, interface, package,
 // private, protected, public) are recognised as keywords.
-// Set identifier-reservation strictness. Deliberately does NOT touch
-// `strict_mode`: the octal rules it gates are unconditional in this engine.
+// Set identifier-reservation strictness and octal-literal strictness.
+// Phase 1 (plans/083): also flip `strict_mode` so sloppy bodies accept
+// legacy octal literals/escapes. The strict-mode lexer reads this on
+// every number/string scan, so the cost is the same boolean store.
 fn void Lexer.set_strict(&self, bool s) {
     self.reserved_words_strict = s;
+    self.strict_mode = s;
 }

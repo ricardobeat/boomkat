@@ -110,6 +110,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     bool param_buf_active = false;    // true while inside a non-control `(`
     int param_buf_base_paren = -1;    // paren_depth of the opening `(`
     bool param_buf_pending = false;   // `)` seen, waiting for `{` or discard
+    bool param_buf_is_catch = false;  // the buffered paren is a catch pattern
 
     // --- Shadow set: parameter names bound by the innermost callable ---
     // A name a nested callable binds as its own parameter cannot refer to the
@@ -322,7 +323,28 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                     param_buf_base_paren = (int)paren_depth;
                     param_buf_count = 0;
                     param_buf_pending = false;
+                    param_buf_is_catch = false;
                     // Start collecting simple binder names for this list.
+                    cand_count = 0;
+                    cand_ok = true;
+                    cand_paren = (int)paren_depth + 1;
+                    cand_cdepth = combined_depth + 1;
+                } else if (prev_tt == TokenType.CATCH && !param_buf_active && region_depth < 0) {
+                    // A catch pattern's defaults compile to thunks that read
+                    // free variables through the env chain
+                    // (compile_default_expr), exactly like function-parameter
+                    // defaults — but `catch (` is a control paren, so the
+                    // param-list buffer above never activates and a default's
+                    // store to an outer local goes stale (the local stays
+                    // register-resident while the thunk writes the env copy).
+                    // Buffer the pattern's identifiers and capture them all
+                    // when the paren closes: the contents are binders
+                    // (harmless over-capture) or default references (needed).
+                    param_buf_active = true;
+                    param_buf_base_paren = (int)paren_depth;
+                    param_buf_count = 0;
+                    param_buf_pending = false;
+                    param_buf_is_catch = true;
                     cand_count = 0;
                     cand_ok = true;
                     cand_paren = (int)paren_depth + 1;
@@ -339,7 +361,18 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                 if (!paren_ctrl[paren_depth]) pending_body_brace = true;
                 if (param_buf_active && (int)paren_depth == param_buf_base_paren) {
                     param_buf_active = false;
-                    param_buf_pending = true;
+                    if (param_buf_is_catch) {
+                        // A catch pattern needs no `{` confirmation and has
+                        // no binder set to subtract: flush everything now.
+                        for (uint pi = 0; pi < param_buf_count; pi++) {
+                            char[] pn = param_buf_names[pi][:param_buf_lens[pi]];
+                            self.add_captured_name(pn);
+                        }
+                        param_buf_count = 0;
+                        param_buf_is_catch = false;
+                    } else {
+                        param_buf_pending = true;
+                    }
                 }
             }
             combined_depth--;

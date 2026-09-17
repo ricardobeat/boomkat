@@ -1,5 +1,7 @@
 module boomkat::vm;
 
+import std::io;
+
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::heap;
@@ -38,20 +40,215 @@ fn TVal? not_constructor_throw(Vm* vm, Dispatch* ds, TVal* val) @noinline @local
     return (TVal){};
 }
 
+// Mapped-index helpers for sloppy parameter-mapped `arguments`
+// (ES2015 §9.4.4.8, plans/083 Phase 3.1). A mapped index i aliases parameter
+// slot i of the owning activation: reads fall back to the parameter
+// registers, writes update them, so the two stay in sync in both directions.
+// The map is consulted OUTSIDE finish_arguments_object, because every lookup
+// must see the parameter's CURRENT value, not a snapshot taken when the
+// object was created or last written.
+fn Activation* mapped_args_owner(Vm* vm, HObject* args_obj) @inline {
+    HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
+    if (args_name == null) return null;
+    for (uint i = 0; i < vm.activation_count; i++) {
+        Activation* a = &vm.activations[i];
+        if (a.func == null || a.bottom == null || a.var_env == null) continue;
+        CompiledFunction* cf = (CompiledFunction*)a.func;
+        if (!cf.mapped_arguments()) continue;
+        // The owning frame's var_env holds the `arguments` binding created at
+        // call time (see the two finish_arguments_object call sites). Matching
+        // that binding is what identifies the owner: scanning the frame's
+        // registers would also match any frame that merely received this
+        // arguments object as an argument, aliasing its reads and writes to
+        // the callee's parameter slots.
+        int bidx = a.var_env.bindings.find_prop_idx(args_name, vm.heap);
+        if (bidx < 0) continue;
+        TVal bval = a.var_env.bindings.prop_values()[bidx];
+        if (bval.is_object() && bval.get_heapptr() == (void*)args_obj) return a;
+    }
+    return null;
+}
+
+// Whether index `idx` is still in the arguments object's [[ParameterMap]].
+fn bool args_is_mapped(HObject* args_obj, uint idx) @inline {
+    if (idx >= 64) return false;
+    return (*args_obj.mapped_bits_ptr() & (1UL << idx)) != 0;
+}
+
+// Drop index `idx` from the [[ParameterMap]] (ES2024 §10.4.4.2 step 7.1.1 /
+// 7.2.2.1). After this the parameter and the property are independent.
+fn void mapped_args_unmap(HObject* args_obj, uint idx) @inline {
+    if (idx >= 64) return;
+    *args_obj.mapped_bits_ptr() = *args_obj.mapped_bits_ptr() & ~(1UL << idx);
+}
+
+// Copy every still-mapped parameter into its property slot. Object.freeze
+// clears the map, so without this a property would keep the stale value
+// captured at creation instead of the parameter's current value.
+fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
+    Activation* owner = mapped_args_owner(vm, args_obj);
+    if (owner == null) return;
+    ulong bits = *args_obj.mapped_bits_ptr();
+    uint i = 0;
+    while (bits != 0) {
+        if ((bits & 1UL) != 0) {
+            TVal v = owner.bottom[i];
+            int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
+            if (pidx >= 0) {
+                vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], &v);
+            } else if (i < args_obj.array_size) {
+                args_obj.set_array_idx(i, v, vm.heap);
+            }
+        }
+        bits >>= 1;
+        i++;
+    }
+}
+
+// Read the current value of mapped index `idx` from the owning activation's
+// parameter registers. Returns false when the read must take the ordinary
+// dense/named path instead (index not in the map, owning frame gone, or the
+// index beyond the formal parameter list).
+fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline {
+    Activation* owner = mapped_args_owner(vm, args_obj);
+    if (owner == null) return false;
+    CompiledFunction* cf = (CompiledFunction*)owner.func;
+    if (cf == null || idx >= (uint)cf.num_args) return false;
+    if (!args_is_mapped(args_obj, idx)) return false;
+    // The parameter register is the source of truth while the mapping is live,
+    // so an assignment to the formal parameter (`a = 1`) is observable through
+    // `arguments[0]`.
+    *out = owner.bottom[idx];
+    return true;
+}
+
+// Write `val` through a mapped index into the owning activation's parameter
+// slot, mirroring it into the object's own slot so the alias holds. Returns
+// false when the write must take the ordinary path instead.
+fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inline {
+    Activation* owner = mapped_args_owner(vm, args_obj);
+    if (owner == null) return false;
+    CompiledFunction* cf = (CompiledFunction*)owner.func;
+    if (cf == null || idx >= (uint)cf.num_args) return false;
+    if (!args_is_mapped(args_obj, idx)) return false;
+    int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
+    if (pidx >= 0 && args_obj.get_prop_flags((uint)pidx, vm.heap).is_accessor) return false;
+    TVal* slot = &owner.bottom[idx];
+    if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
+    *slot = *val;
+    if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+    if (pidx >= 0) {
+        vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], val);
+    } else if (idx < args_obj.array_size) {
+        // Keep the dense slot in step with the parameter: when the mapping is
+        // later dropped (freeze, delete), the property must already hold the
+        // parameter's current value.
+        args_obj.set_array_idx(idx, *val, vm.heap);
+    }
+    return true;
+}
+
+// Sever the mapping for index `idx` (§10.4.4.2 step 7 / §10.2.1.3.2
+// RemoveMappedBinding): drop it from the [[ParameterMap]] and clear the dense
+// slot, but leave the parameter local untouched — delete breaks the alias,
+// it does not clear the local. Returns true when the index was mapped.
+fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
+    Activation* owner = mapped_args_owner(vm, args_obj);
+    if (owner == null) return false;
+    CompiledFunction* cf = (CompiledFunction*)owner.func;
+    if (cf == null || idx >= (uint)cf.num_args) return false;
+    if (!args_is_mapped(args_obj, idx)) return false;
+    int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
+    if (pidx >= 0) {
+        hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
+        if (!fl.configurable) return false;
+    }
+    mapped_args_unmap(args_obj, idx);
+    if (idx < args_obj.array_size) {
+        TVal cur = args_obj.array_part()[idx];
+        if (!cur.is_undefined()) {
+            TVal undef; undef.set_undefined();
+            args_obj.set_array_idx(idx, undef, vm.heap);
+        }
+    }
+    if (pidx >= 0) {
+        args_obj.delete_prop(vm.heap.int_to_hstring((long)idx), vm.heap);
+    }
+    return true;
+}
+
 // Finish initializing a strict `arguments` exotic object: set .length,
 // .callee, and @@iterator (ES2017+ §9.4.4.7 CreateUnmappedArgumentsObject).
 // Per spec, @@iterator must be the *same function object* as
 // %Array.prototype.values%, so callers must go through this helper rather
 // than re-deriving the value property-by-property at each call site.
+// Store argument `idx` as a named own property.
+//
+// ARGUMENTS objects keep their elements in the named table rather than the
+// dense part: the dense part marks a hole with `undefined`, so an `undefined`
+// argument stored there would read back as an absent index, while
+// `delete arguments[i]` must still be able to produce a real hole. The named
+// table records presence and absence exactly.
+fn void args_store_elem(Vm* vm, HObject* args_obj, uint idx, TVal val) {
+    HString* key = vm.heap.int_to_hstring((long)idx);
+    if (key == null) return;
+    args_obj.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC, vm.heap);
+}
+
 fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint nargs) {
-    // ES2017 §9.4.4.7 step 6: callee is a non-configurable accessor whose
-    // getter and setter are both %ThrowTypeError% (the same frozen intrinsic
-    // Function.prototype's caller/arguments poison pills use), and it is
-    // enumerable: false, configurable: false. Reads and writes through the
-    // property system both throw TypeError; the descriptor reflects the
-    // accessor shape (test262 10.6-13-c-3-s, 10.6-14-c-4-s).
     HString* callee_key = (HString*)vm.heap.strs[heap::BuiltinStr.CALLEE];
-    if (callee_key != null && vm.heap.throw_type_error != null) {
+    if (callee_key == null) return;
+    // Stash `nargs` in the otherwise-unused array_len_ptr slot for ARGUMENTS.
+    // The iterator and the length lookup both consult it, so neither has to
+    // count own indices to recover the original argument count, which `delete
+    // arguments[i]` would otherwise change. Only safe because no ARGUMENTS
+    // codepath uses array_len_ptr.
+    *args_obj.array_len_ptr() = nargs;
+    // Sloppy + simple params: mapped arguments (§9.4.4.8 CreateMapped-
+    // ArgumentsObject step 5). `callee` here is the caller HObject passed by
+    // every call site (the Function value the call was made through). A
+    // mapped callee is an ordinary writable data property ({W,E,C} =
+    // {true,false,true}); unmapped (strict or non-simple params) keeps the
+    // §9.4.4.7 poison-pill accessor.
+    bool mapped = false;
+    uint mapped_formals = 0;
+    if (callee != null && callee.callable_kind() == hobject::CallableKind.COMPILED_FN) {
+        CompiledFunction* ccf = (*callee.extra_ptr()).func.comp_func;
+        if (ccf != null && ccf.mapped_arguments()) {
+            mapped = true;
+            mapped_formals = (uint)ccf.num_args;
+        }
+    }
+    // Seed the [[ParameterMap]]: each provided argument that matches a formal
+    // parameter is mapped (ES2024 §10.4.4.2 step 14). Capped at 64 indices.
+    *args_obj.mapped_bits_ptr() = 0;
+    if (mapped) {
+        uint map_count = nargs < mapped_formals ? nargs : mapped_formals;
+        if (map_count > 64) map_count = 64;
+        *args_obj.mapped_bits_ptr() = map_count == 64 ? 0xFFFFFFFFFFFFFFFFUL
+                                                      : ((1UL << map_count) - 1UL);
+    }
+    if (mapped) {
+        TVal callee_tv;
+        callee_tv.set_object(callee);
+        hobject::PropFlags callee_flags;
+        callee_flags.writable = true;
+        callee_flags.enumerable = false;
+        callee_flags.configurable = true;
+        callee_flags.is_accessor = false;
+        args_obj.put_prop(callee_key, callee_tv, callee_flags, vm.heap);
+        // The put above anchored callee_tv as the slot value with its own
+        // incref; the TVal copy below would double-count without a release.
+        // (mirrors the accessor path's GS-cell handling, which owns its copy
+        // through hobject_create_accessors instead).
+        vm.heap.decref_tval(&callee_tv);
+    } else if (vm.heap.throw_type_error != null) {
+        // ES2017 §9.4.4.7 step 6: callee is a non-configurable accessor whose
+        // getter and setter are both %ThrowTypeError% (the same frozen intrinsic
+        // Function.prototype's caller/arguments poison pills use), and it is
+        // enumerable: false, configurable: false. Reads and writes through the
+        // property system both throw TypeError; the descriptor reflects the
+        // accessor shape (test262 10.6-13-c-3-s, 10.6-14-c-4-s).
         TVal thrower; thrower.set_object(vm.heap.throw_type_error);
         TVal gs_callee = hobject::hobject_create_accessors(vm.heap, thrower, thrower);
         PropFlags callee_flags;
@@ -404,6 +601,98 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
 
     EnvRecord* cur = ds.act.lex_env;
     while (cur != null) {
+        if (cur.is_with) {
+            // Object env (§9.1.1.2): HasBinding first via OrdinaryHasProperty
+            // (which fires the Proxy `has` trap), then @@unscopables, then
+            // GetBindingValue's own HasProperty + Get. Matches GETVAR's
+            // with-block walk in vm_execute.c3 so the Proxy traps fire in
+            // the same order (HasBinding step 2, step 5; GetBindingValue
+            // step 2, step 4) — call and reference paths look identical to
+            // the proxy.
+            bool with_hit = false;
+            if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &with_hit)
+                || !with_hit) {
+                if (vm.heap.has_error) {
+                    if (!vm_throw_pending(vm, (Dispatch*)&ds)) return VM_ERROR~;
+                }
+                cur = cur.parent;
+                continue;
+            }
+            // §9.1.1.2.1 HasBinding step 5-9: @@unscopables gate.
+            if (vm_with_unscopables_blocks(vm, cur, key)) {
+                cur = cur.parent;
+                continue;
+            }
+            // §9.1.1.2.6 GetBindingValue step 2: re-check HasProperty after
+            // the observable @@unscopables getter ran (which may have
+            // deleted the binding as a side effect). A Proxy `has` trap fires
+            // again here, matching the expected sequence.
+            bool still_hit = false;
+            if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &still_hit)) {
+                if (vm.heap.has_error) {
+                    if (!vm_throw_pending(vm, (Dispatch*)&ds)) return VM_ERROR~;
+                }
+                cur = cur.parent;
+                continue;
+            }
+            if (!still_hit) {
+                if (((CompiledFunction*)ds.act.func).is_strict()) {
+                    HString* name_hstr = (HString*)key;
+                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                            "%s is not defined", name_hstr.get_cstr(),
+                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    found = true;
+                    break;
+                }
+                ra.set_undefined();
+                track_heap_store(ds.act, ra, callee_reg);
+                found = true;
+                break;
+            }
+            // §9.1.1.2.6 GetBindingValue step 4: read the value through
+            // ordinary own-desc, matching GETVAR.
+            hobject::PropProtoResult proto =
+                cur.bindings.get_prop_proto_full(key, ds.vm.heap);
+            if (proto.found) {
+                if (proto.is_accessor) {
+                    TVal getter = hobject::hobject_access_getter(proto.value);
+                    if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
+                        TVal this_tv;
+                        this_tv.set_object(proto.owner != null ? proto.owner : cur.bindings);
+                        TVal getter_val = vm.heap.call_fn(vm, getter, null, 0, this_tv);
+                        if (vm.heap.has_error) {
+                            vm.heap.has_error = false;
+                            TVal err_val = vm.heap.error_value;
+                            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                vm.has_error = true;
+                                vm.heap.has_error = true;
+                                return VM_ERROR~;
+                            }
+                            found = true;
+                            break;
+                        }
+                        vm.heap.tval_copy_ref(ra, &getter_val);
+                        track_heap_store(ds.act, ra, callee_reg);
+                        found = true;
+                        break;
+                    }
+                    ra.set_undefined();
+                    track_heap_store(ds.act, ra, callee_reg);
+                    found = true;
+                    break;
+                }
+                vm.heap.tval_copy_ref(ra, &proto.value);
+                track_heap_store(ds.act, ra, callee_reg);
+                found = true;
+                break;
+            }
+            ra.set_undefined();
+            track_heap_store(ds.act, ra, callee_reg);
+            found = true;
+            break;
+        }
         int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
         if (idx >= 0) {
             TVal v_raw = cur.bindings.prop_values()[idx];
@@ -427,7 +716,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                             vm.heap.has_error = true;
                             return VM_ERROR~;
                         }
-                        found = true; // prevent duplicate error
+                        found = true;
                     } else {
                         vm.heap.tval_copy_ref(ra, &getter_val);
                         track_heap_store(ds.act, ra, callee_reg);
@@ -978,7 +1267,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             return (TVal){};
                         }
                         fast_var_env = arrow_lex;
-                    } else if (target_fast.needs_env()) {
+                    } else if (target_fast.needs_env() && !target_fast.is_eval_fn()) {
                         // needs_env=true → the function actually accesses its scope at
                         // runtime (closures / eval / arguments / default-or-rest params /
                         // captured locals), so allocate a fresh scope object.
@@ -989,6 +1278,11 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // in registers and cannot clobber the parent env.
                         // They reuse func.var_env (the parent) directly,
                         // skipping the per-call scope HObject allocation.
+                        // Eval never gets a fresh scope: builtin_eval has
+                        // already attached the eval body's var_env (global
+                        // for indirect, caller's var_env for direct) to the
+                        // func object, so DECLVAR in sloppy eval must leak
+                        // straight into that env per ES2024 §19.2.1.2.
                         fast_var_env = (*hobj_fast.extra_ptr()).func.var_env;
                         if (try fv_f = env::env_create_function_scope(vm.heap, (*hobj_fast.extra_ptr()).func.var_env)) { fast_var_env = fv_f; }
                     } else {
@@ -1027,6 +1321,29 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     EnvRecord* cap_lex_fast = (*hobj_fast.extra_ptr()).func.lex_env;
                     if (target_fast.is_namebinding()) {
                         new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
+                    } else if (cap_lex_fast != null && cap_lex_fast.is_with
+                            && fast_var_env != (*hobj_fast.extra_ptr()).func.var_env) {
+                        // `with`-splice (ES2024 §13.11.1): chain the closure's
+                        // own fresh scope above the captured with-env so reads
+                        // inside the closure walk own bindings, then
+                        // with-properties (prototype walk), then the enclosing
+                        // lexical chain the with-env recorded at WITH_START
+                        // time. Only safe to mutate when fast_var_env is the
+                        // freshly allocated scope (needs_env=true); needs_env=
+                        // false callees reuse the captured var_env directly and
+                        // would corrupt sibling closures if rewritten.
+                        fast_var_env.parent = cap_lex_fast;
+                        new_act.lex_env = fast_var_env;
+                    } else if (cap_lex_fast != null && cap_lex_fast.is_with) {
+                        // needs_env=false callee reused the captured var_env
+                        // directly (would corrupt siblings if rewritten), so
+                        // point lex_env straight at the with-env. The
+                        // closure's body has no own params/locals to lookup
+                        // (those would have forced needs_env=true), so the
+                        // with-env's lookup — bindings, then prototype, then
+                        // the lexical chain it captured at WITH_START time —
+                        // is exactly the chain the closure needs.
+                        new_act.lex_env = cap_lex_fast;
                     } else if (cap_lex_fast == null || cap_lex_fast == fast_var_env
                             || !cap_lex_fast.is_declarative) {
                         new_act.lex_env = fast_var_env;
@@ -1060,6 +1377,17 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;
                     new_act.flags = 0;
+                    // Sloppy `arguments.callee` mirrors the Function value the
+                    // call was made through; fast paths skipped the callee TV
+                    // extraction above so we re-derive it from the callable
+                    // bracket. hobj_fast is the wrapping Function HObject
+                    // (lightfuncs carry their own TV via the slow path's
+                    // gate above, so this branch handles heap functions only).
+                    if (hobj_fast != null) {
+                        TVal fast_callee_tv;
+                        fast_callee_tv.set_object(hobj_fast);
+                        new_act.tv_func = fast_callee_tv;
+                    }
                     if (callee_borrowed) {
                         new_act.flags |= ACT_FLAG_BORROWED_CALLEE;
                     }
@@ -1104,46 +1432,61 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // to mutate it, and a stale TDZ snapshot would never observe
                     // that later mutation.
                     // Undefined-this calls (CALL_UNDEF_THIS / CALL_VAR /
-                    // CALL_GLOBAL) into a NON-arrow, non-substituting function: the
-                    // receiver is undefined by construction and this engine
-                    // performs no this-coercion, so skip the arrow/coercion/
-                    // this-src resolution below and set it directly. Arrows use
-                    // lexical captured_this and must take the full path. Bodies
-                    // created through the Function constructor carry
-                    // subst_global_this and must take the coercion path so an
-                    // undefined receiver becomes the global object (ES5 §10.4.3),
-                    // observable as `Function('return this;')()`.
-                    if (undef_this && !target_fast.is_arrow() && !target_fast.subst_global_this()) {
+                    // CALL_GLOBAL) into a NON-arrow, strict function: the receiver is
+                    // undefined by construction and no this-coercion applies, so
+                    // skip the arrow/coercion/this-src resolution below and set
+                    // it directly. Arrows use lexical captured_this and must take
+                    // the full path. Sloppy non-arrow calls take the coercion path
+                    // so an undefined receiver becomes the global object
+                    // (ES5 §10.4.3), observable as `Function('return this;')()`
+                    // for dynamic bodies and as the script top-level `this` for
+                    // ordinary sloppy functions.
+                    if (undef_this && !target_fast.is_arrow() && target_fast.is_strict()) {
                         new_act.this_binding.set_undefined();
                     } else {
                     TVal arrow_live_this;
                     if (target_fast.is_arrow() && env::is_tdz_sentinel(&(*hobj_fast.extra_ptr()).func.captured_this)) {
                         arrow_live_this = super_walk_live_this(vm, ds.act);
                     }
-                    // ES5 §10.4.3: for subst_global_this (non-arrow) compiled
-                    // functions, coerce null/undefined thisArg → global object.
+                    // ES5 §10.4.3: for non-arrow compiled functions whose
+                    // body is sloppy, coerce null/undefined thisArg → global
+                    // object. Replaces the legacy FuncFlags.subst_global_this;
+                    // plans/083 phase 2 derives the predicate from is_strict.
                     {
                         TVal* this_src = target_fast.is_arrow()
                             ? (env::is_tdz_sentinel(&(*hobj_fast.extra_ptr()).func.captured_this) ? &arrow_live_this : &(*hobj_fast.extra_ptr()).func.captured_this)
                             : &saved_this;
                         TVal coerced_this;
-                        bool used_coerced = false;
-                        if (!target_fast.is_arrow() && target_fast.subst_global_this() && (this_src.is_undefined() || this_src.is_null())) {
-                            if (vm.global_env != null && vm.global_env.bindings != null) {
-                                coerced_this.set_object(vm.global_env.bindings);
-                                this_src = &coerced_this;
-                                used_coerced = true;
+                        bool used_boxed = false;
+                        if (!target_fast.is_arrow() && !target_fast.is_strict()) {
+                            if (this_src.is_undefined() || this_src.is_null()) {
+                                if (vm.global_env != null && vm.global_env.bindings != null) {
+                                    coerced_this.set_object(vm.global_env.bindings);
+                                    this_src = &coerced_this;
+                                }
+                            } else if (!this_src.is_object()) {
+                                // ES2024 §10.4.1.2: a sloppy callee boxes a
+                                // primitive thisArg (ToObject). The box's
+                                // alloc ref transfers to this_binding; the
+                                // generic tail below would copy_ref and leak.
+                                HObject* boxed = builtins::to_object_wrapper(vm.heap, *this_src);
+                                if (boxed != null) {
+                                    new_act.this_binding.set_object(boxed);
+                                    new_act.flags |= ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+                                    used_boxed = true;
+                                }
                             }
                         }
-                        if (!this_src.is_heap_allocated()) {
-                            // this_binding for the previous use of this activation slot
-                            // was already decreffed by handle_return (ACT_FLAG_THIS_OWNED).
-                            // A plain overwrite takes no ownership, so handle_return will not decref.
-                            new_act.this_binding = *this_src;
-                        } else {
-                            new_act.set_this_owned(vm.heap, *this_src);
+                        if (!used_boxed) {
+                            if (!this_src.is_heap_allocated()) {
+                                // this_binding for the previous use of this activation slot
+                                // was already decreffed by handle_return (ACT_FLAG_THIS_OWNED).
+                                // A plain overwrite takes no ownership, so handle_return will not decref.
+                                new_act.this_binding = *this_src;
+                            } else {
+                                new_act.set_this_owned(vm.heap, *this_src);
+                            }
                         }
-                        (void)used_coerced;
                     }
                     }
 
@@ -1173,8 +1516,6 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     //   ACT_FLAG_CONSTRUCT / DERIVED / SUPER_CTOR
                     //                      constructor frames own the new
                     //                      object and super() bookkeeping
-                    //   ACT_FLAG_DIRECT_EVAL  the frame's locals are visible
-                    //                      to an eval that may still run
                     // heap_reg_count is deliberately NOT a disqualifier: the
                     // caller's owned register values are released below, before
                     // the slide overwrites their slots. That is the whole point
@@ -1192,7 +1533,19 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         Activation* ca = ds.act;
                         const uint TAIL_BLOCKING_FLAGS =
                             ACT_FLAG_CONSTRUCT | ACT_FLAG_DERIVED | ACT_FLAG_SUPER_CTOR
-                            | ACT_FLAG_ASYNC | ACT_FLAG_DIRECT_EVAL;
+                            | ACT_FLAG_ASYNC;
+                        // ACT_FLAG_DIRECT_EVAL says the caller's body holds a
+                        // direct eval call site. That keeps the frame only
+                        // while the eval can still run, and a tail call is the
+                        // caller's last act, so nothing runs after it. The flag
+                        // is also set for every call written `eval(...)`,
+                        // including one whose `eval` is a shadowing binding: a
+                        // `var eval` in an enclosing scope, a property of a
+                        // `with` object, or a binding an earlier eval
+                        // installed. §14.8 makes those proper tail calls, so
+                        // this flag cannot stand in for the callee being
+                        // %eval%.
+                        //
                         // A live catcher normally forbids the tail call: the
                         // handler or finally block still has to run, so the
                         // frame is not the caller's to give away. The exception
@@ -1207,11 +1560,15 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // it does not) and none may hold a pending completion
                         // that ENDFINALLY still has to replay.
                         bool cat_ok = tailcall_catchers_discardable(ca);
+                        // The callee having its own direct eval is not a
+                        // disqualifier either: an eval in the callee's body
+                        // reads the callee's frame, which this call builds in
+                        // full above, before the takeover below copies it into
+                        // the caller's slot.
                         if (cat_ok && ca.forin == null
                             && (ca.flags & TAIL_BLOCKING_FLAGS) == 0
                             && ca.retval != null
-                            && !target_fast.is_eval_fn()
-                            && !target_fast.has_direct_eval()) {
+                            && !target_fast.is_eval_fn()) {
                             do_tail = true;
                         }
                     }
@@ -1235,7 +1592,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                         if (try args_obj = args_obj_raw) {
                             for (uint ai = 0; ai < nargs; ai++) {
-                                args_obj.set_array_idx(ai, new_regs[ai], ds.vm.heap);
+                                args_store_elem(vm, args_obj, ai, new_regs[ai]);
                             }
                             args_obj.prototype = vm.heap.object_proto;
                             finish_arguments_object(vm, args_obj, hobj_fast, nargs);
@@ -1243,7 +1600,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             if (args_name != null) {
                                 TVal args_tv;
                                 args_tv.set_object(args_obj);
-                                env::env_declare(new_act.var_env, args_name, args_tv);
+                                env::env_declare_nondeletable(new_act.var_env, args_name, args_tv);
                             }
                         }
                     }
@@ -1471,16 +1828,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
         case Opcode.CALL_UNDEF_THIS:
         case Opcode.CALL_VAR:
         case Opcode.CALL_GLOBAL: {
-            bool fast_handled = false;
-            TVal? fast_result = try_fast_compiled_call(ds, op, insn, &fast_handled);
-            if (fast_handled) {
-                return fast_result;
-            }
-            // Slow path: re-derive result_reg/callee_reg/nargs/func_val (the
-            // fast-path helper already applied CALL_UNDEF_THIS's this-slot
-            // clear, which is idempotent to repeat here, and for CALL_VAR and
-            // CALL_GLOBAL, already resolved the callee-by-name into
-            // ds.regs_base[callee_reg]).
+            // vm_execute.c3 already tried try_fast_compiled_call at the
+            // opcode handler — we land here only when it returned
+            // handled=false. That call already ran CALL_VAR/CALL_GLOBAL's
+            // callee resolution, so the slow path can pick the slot up
+            // without another resolve. Going through try_fast_compiled_call
+            // again would re-fire Proxy `has`/`get` traps on with-binding
+            // lookups (test262 get-binding-value-*-with-proxy-env).
             bool is_fused_var = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
             uint result_reg = insn.a;
             uint callee_reg = is_fused_var ? insn.a : insn.b;
@@ -1957,8 +2311,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         return (TVal){};
                     }
 
-                    // Push activation
-                    Activation* new_act_r = activation_begin(vm);
+                    // Push activation; gs.func_obj is the Function value the call was
+                    // made through, which sloppy `arguments.callee` mirrors.
+                    TVal gs_callee_tv;
+                    gs_callee_tv.set_object(gs.func_obj);
+                    Activation* new_act_r = activation_begin(vm, gs_callee_tv);
 
                     new_act_r.parent = ds.act;
                     new_act_r.func = target;
@@ -2214,9 +2571,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         gen_var_env = fv_g;
                     }
                 }
+                // arguments.callee in sloppy mode wants the callee HObject.
+                // hobj here is the Function value the call was made through;
+                // wrap it into a TVal and pass into the activation.
+                TVal gen_callee_tv;
+                gen_callee_tv.set_object(hobj);
 
                 // Push activation frame (same pattern as non-generator compiled calls)
-                Activation* new_act_g = activation_begin(vm);
+                Activation* new_act_g = activation_begin(vm, gen_callee_tv);
                 new_act_g.parent = ds.act;
                 new_act_g.func = target;
                 new_act_g.var_env = gen_var_env;
@@ -2239,19 +2601,32 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     new_act_g.flags |= ACT_FLAG_DIRECT_EVAL;
                 }
                 {
-                    // ES5 §10.4.3: for subst_global_this (non-arrow) compiled
-                    // functions, coerce null/undefined this → global object.
-                    // Applied here, at generator CREATION: GEN_START snapshots
-                    // this activation's this_binding into gs.this_binding, and
-                    // every later resume restores that snapshot verbatim, so a
-                    // substitution missed here is missed by the whole generator.
+                    // ES2024 §10.4.1.2: for non-arrow sloppy calls, coerce
+                    // null/undefined this → global object and any other
+                    // primitive → ToObject wrapper. Applied here at generator
+                    // CREATION; GEN_START snapshots this binding and later
+                    // resumes restore it.
                     TVal raw_this_g = ds.regs_base[callee_reg + 1];
-                    if (target.subst_global_this()
-                        && (raw_this_g.is_undefined() || raw_this_g.is_null())
-                        && vm.global_env != null && vm.global_env.bindings != null) {
-                        raw_this_g.set_object(vm.global_env.bindings);
+                    bool boxed_this_g = false;
+                    if (!target.is_arrow() && !target.is_strict()) {
+                        if (raw_this_g.is_undefined() || raw_this_g.is_null()) {
+                            if (vm.global_env != null && vm.global_env.bindings != null) {
+                                raw_this_g.set_object(vm.global_env.bindings);
+                            }
+                        } else if (!raw_this_g.is_object()) {
+                            HObject* boxed_g = builtins::to_object_wrapper(vm.heap, raw_this_g);
+                            if (boxed_g != null) {
+                                raw_this_g.set_object(boxed_g);
+                                boxed_this_g = true;
+                            }
+                        }
                     }
-                    vm.heap.tval_copy_ref(&new_act_g.this_binding, &raw_this_g);
+                    if (boxed_this_g) {
+                        // Transfer the box's alloc ref; handle_return releases it.
+                        new_act_g.this_binding = raw_this_g;
+                    } else {
+                        vm.heap.tval_copy_ref(&new_act_g.this_binding, &raw_this_g);
+                    }
                     new_act_g.flags |= ACT_FLAG_THIS_OWNED;
                 }
 
@@ -2306,7 +2681,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     HObject*? args_obj_raw_g = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                     if (try args_obj_g = args_obj_raw_g) {
                         for (uint ai = 0; ai < nargs; ai++) {
-                            args_obj_g.set_array_idx(ai, new_regs_g[ai], ds.vm.heap);
+                            args_store_elem(vm, args_obj_g, ai, new_regs_g[ai]);
                         }
                         args_obj_g.prototype = vm.heap.object_proto;
                         finish_arguments_object(vm, args_obj_g, hobj, nargs);
@@ -2314,7 +2689,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         if (args_name_g != null) {
                             TVal args_tv_g;
                             args_tv_g.set_object(args_obj_g);
-                            env::env_declare(new_act_g.var_env, args_name_g, args_tv_g);
+                            env::env_declare_nondeletable(new_act_g.var_env, args_name_g, args_tv_g);
                         }
                     }
                 }
@@ -2362,12 +2737,22 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            Activation* new_act = activation_begin(vm);
+            // caller_regs[callee_reg] is the callee TVal written by the
+            // CALL/NEW_OBJ opcode (a HObject for a compiled function or a
+            // lightfunc for a built-in). activation_begin borrows it as
+            // sloppy `arguments.callee`.
+            Activation* new_act = activation_begin(vm, ds.regs_base[callee_reg]);
 
             EnvRecord* call_var_env2 = (*hobj.extra_ptr()).func.var_env;
             // Only allocate a fresh scope when the function actually uses its env
             // (see the fast-call path above and the register-resident-locals pass).
-            if (target.needs_env()) {
+            // Eval functions never do: builtin_eval has already attached the
+            // eval body's var_env (global env for indirect eval, the caller's
+            // var_env for direct eval) directly to the func object — a fresh
+            // child scope would shadow that, so DECLVAR in `var x = ...` would
+            // bind a local instead of leaking to the enclosing env as
+            // ES2024 §19.2.1.2 EvalDeclarationInstantiation requires.
+            if (target.needs_env() && !target.is_eval_fn()) {
                 if (try fv_c2 = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) { call_var_env2 = fv_c2; }
             }
             new_act.parent = ds.act;
@@ -2427,7 +2812,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // calling activation's this_binding. Exception: a still-TDZ
             // captured value (arrow defined before super() ran) must be
             // re-resolved live; see super_walk_live_this().
-            // ES5 §10.4.3: for non-arrow compiled functions, coerce null/undefined → global.
+            // ES5 §10.4.3: for non-arrow sloppy calls, coerce null/undefined
+            // this → global object.
             if (target.is_arrow()) {
                 TVal arrow_this2 = (*hobj.extra_ptr()).func.captured_this;
                 if (env::is_tdz_sentinel(&arrow_this2)) {
@@ -2436,10 +2822,28 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 vm.heap.tval_copy_ref(&new_act.this_binding, &arrow_this2);
             } else {
                 TVal raw_this = ds.regs_base[callee_reg + 1];
-                if (target.subst_global_this() && (raw_this.is_undefined() || raw_this.is_null()) && vm.global_env != null && vm.global_env.bindings != null) {
-                    raw_this.set_object(vm.global_env.bindings);
+                bool boxed_this = false;
+                if (!target.is_arrow() && !target.is_strict()) {
+                    // ES2024 §10.4.1.2: sloppy callee coerces undefined/null
+                    // this → global object, any other primitive → ToObject.
+                    if (raw_this.is_undefined() || raw_this.is_null()) {
+                        if (vm.global_env != null && vm.global_env.bindings != null) {
+                            raw_this.set_object(vm.global_env.bindings);
+                        }
+                    } else if (!raw_this.is_object()) {
+                        HObject* boxed = builtins::to_object_wrapper(vm.heap, raw_this);
+                        if (boxed != null) {
+                            raw_this.set_object(boxed);
+                            boxed_this = true;
+                        }
+                    }
                 }
-                vm.heap.tval_copy_ref(&new_act.this_binding, &raw_this);
+                if (boxed_this) {
+                    // Transfer the box's alloc ref; handle_return releases it.
+                    new_act.this_binding = raw_this;
+                } else {
+                    vm.heap.tval_copy_ref(&new_act.this_binding, &raw_this);
+                }
             }
             new_act.flags |= ACT_FLAG_THIS_OWNED;
 
@@ -2532,7 +2936,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj = args_obj_raw) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj.set_array_idx(ai, new_regs[ai], ds.vm.heap);
+                        args_store_elem(vm, args_obj, ai, new_regs[ai]);
                     }
                     args_obj.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj, hobj, nargs);
@@ -2540,7 +2944,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (args_name != null) {
                         TVal args_tv;
                         args_tv.set_object(args_obj);
-                        env::env_declare(new_act.var_env, args_name, args_tv);
+                        env::env_declare_nondeletable(new_act.var_env, args_name, args_tv);
                     }
                 }
             }
@@ -2964,7 +3368,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            Activation* new_act = activation_begin(vm);
+            // caller_regs[callee_reg] is the callee TVal written by the
+            // CALL/NEW_OBJ opcode (a HObject for a compiled function or a
+            // lightfunc for a built-in). activation_begin borrows it as
+            // sloppy `arguments.callee`.
+            Activation* new_act = activation_begin(vm, ds.regs_base[callee_reg]);
 
             EnvRecord* super_var_env = (*super_hobj.extra_ptr()).func.var_env;
             if (try fv_su = env::env_create_function_scope(vm.heap, (*super_hobj.extra_ptr()).func.var_env)) { super_var_env = fv_su; }
@@ -2998,14 +3406,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 HObject*? args_obj_raw_su = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj_su = args_obj_raw_su) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj_su.set_array_idx(ai, old_args[ai], ds.vm.heap);
+                        args_store_elem(vm, args_obj_su, ai, old_args[ai]);
                     }
                     args_obj_su.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj_su, super_hobj, nargs);
                     HString* args_name_su = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name_su != null) {
                         TVal args_tv_su; args_tv_su.set_object(args_obj_su);
-                        env::env_declare(super_var_env, args_name_su, args_tv_su);
+                        env::env_declare_nondeletable(super_var_env, args_name_su, args_tv_su);
                     }
                 }
             }
@@ -3373,7 +3781,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            Activation* new_act = activation_begin(vm);
+            // caller_regs[callee_reg] is the callee TVal written by the
+            // CALL/NEW_OBJ opcode (a HObject for a compiled function or a
+            // lightfunc for a built-in). activation_begin borrows it as
+            // sloppy `arguments.callee`.
+            Activation* new_act = activation_begin(vm, ds.regs_base[callee_reg]);
 
             EnvRecord* ctor_var_env = (*hobj.extra_ptr()).func.var_env;
             if (try fv_ct = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) { ctor_var_env = fv_ct; }
@@ -3402,8 +3814,21 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // cannot see the classScope's `__super__` binding, so the
                 // constructor's CLOSURE captures func.lex_env = classScope but
                 // NEW_OBJ was unconditionally resetting it to ctor_var_env.
+                //
+                // `with` splice (ES2024 §13.11.1): when the closure was created
+                // inside a `with`, the captured lex_env is a with-env. Read
+                // accesses inside the constructor must walk that with-env
+                // ABOVE the fresh function scope: own var bindings live in
+                // ctor_var_env, then with-properties (prototype walk), then
+                // the enclosing chain the with-env recorded at WITH_START
+                // time. Chain (not replace) so `var value` declared in the
+                // constructor resolves to the own scope, not the object.
                 EnvRecord* cap_lex_noname = (*hobj.extra_ptr()).func.lex_env;
-                if (cap_lex_noname != null
+                if (cap_lex_noname != null && cap_lex_noname.is_with
+                    && cap_lex_noname != ctor_var_env) {
+                    ctor_var_env.parent = cap_lex_noname;
+                    new_act.lex_env = ctor_var_env;
+                } else if (cap_lex_noname != null
                     && cap_lex_noname != ctor_var_env
                     && cap_lex_noname.is_declarative) {
                     new_act.lex_env = cap_lex_noname;
@@ -3437,14 +3862,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 HObject*? args_obj_raw2 = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
                 if (try args_obj2 = args_obj_raw2) {
                     for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj2.set_array_idx(ai, old_args2[ai], ds.vm.heap);
+                        args_store_elem(vm, args_obj2, ai, old_args2[ai]);
                     }
                     args_obj2.prototype = vm.heap.object_proto;
                     finish_arguments_object(vm, args_obj2, hobj, nargs);
                     HString* args_name2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name2 != null) {
                         TVal args_tv2; args_tv2.set_object(args_obj2);
-                        env::env_declare(ctor_var_env, args_name2, args_tv2);
+                        env::env_declare_nondeletable(ctor_var_env, args_name2, args_tv2);
                     }
                 }
             }

@@ -8,6 +8,8 @@
 // `(0, eval)(x)` and `(c ? eval : null)(x)` are indirect and run in global
 // scope, whichever branch of the conditional supplies the function.
 
+'use strict';
+
 var pass = 0, fail = 0;
 function ok(c, m) { if (c) { pass++; } else { fail++; print('FAIL: ' + m); } }
 function eq(a, b, m) { ok(a === b, m + ' (got ' + a + ', want ' + b + ')'); }

@@ -568,6 +568,47 @@ fn void? CompilerContext.ts_interface_declaration(&self) {
     self.match(TokenType.SEMICOLON);
 }
 
+// Try to parse a TypeScript `interface Foo { ... }` declaration whose
+// keyword arrived as a plain IDENTIFIER.
+//
+// `interface` is a FutureReservedWord only in strict code, so the lexer's
+// keyword table (gated on `reserved_words_strict`) yields INTERFACE in a
+// strict body but a bare IDENTIFIER in a sloppy one. TS declarations must
+// not depend on the strictness of the file, so recognise the identifier
+// form here the same way `type` / `namespace` / `declare` are recognised.
+// Gated on `ts_mode`, so a sloppy .js file still parses `interface` as an
+// ordinary identifier expression.
+//
+// Returns true if an interface declaration was consumed; false (input
+// untouched) if `interface` was used as an ordinary identifier.
+fn bool CompilerContext.ts_try_interface_declaration(&self) {
+    if (!self.lexer.ts_mode) return false;
+    if (self.peek_type() != TokenType.IDENTIFIER) return false;
+
+    Token? kw_opt = self.peek();
+    if (catch _e = kw_opt) return false;
+    if (!ident_is(kw_opt.str_value, "interface")) return false;
+
+    Token? kw_adv = self.advance();
+    if (catch _e2 = kw_adv) return false;
+    Token kw = kw_adv;
+
+    // A declaration head only when a name follows on the same line: an
+    // ASI'd `interface\nx` is two expression statements. peek_type() must
+    // come first — it is the peek that makes `seen_line_term` describe the
+    // gap between `interface` and the name rather than the one before it.
+    if (self.peek_type() != TokenType.IDENTIFIER || self.lexer.seen_line_term) {
+        self.pushback(kw);
+        return false;
+    }
+
+    // Re-enter the shared skipper, which expects to consume the keyword
+    // itself.
+    self.pushback(kw);
+    if (catch _e3 = self.ts_interface_declaration()) return false;
+    return true;
+}
+
 // Try to parse a TypeScript `type X = ...;` alias.
 // Precondition: peek is the IDENTIFIER `type`.
 // Returns true if a type alias was consumed. Returns false if `type` was
@@ -754,6 +795,10 @@ fn bool CompilerContext.ts_try_type_only_namespace(&self) {
                 if (nt == TokenType.INTERFACE) {
                     if (catch _e = self.ts_interface_declaration()) return false;
                 } else if (nt == TokenType.IDENTIFIER) {
+                    // `export interface` arrives identifier-spelled in sloppy
+                    // code; recognise it before the type-alias/namespace
+                    // probes the same way the statement path does.
+                    if (self.ts_try_interface_declaration()) break;
                     if (self.ts_try_type_alias()) break;
                     if (self.ts_try_type_only_namespace()) break;
                     return false;
@@ -762,6 +807,9 @@ fn bool CompilerContext.ts_try_type_only_namespace(&self) {
                 }
                 break;
             case TokenType.IDENTIFIER:
+                // Sloppy-lexed `interface` (see ts_try_interface_declaration):
+                // the INTERFACE arm above only fires in strict bodies.
+                if (self.ts_try_interface_declaration()) break;
                 if (self.ts_try_declare_namespace()) break;
                 if (self.ts_try_type_alias()) break;
                 if (self.ts_try_type_only_namespace()) break;
@@ -878,6 +926,10 @@ fn bool? CompilerContext.ts_try_skip_type_only_export_decl(&self) {
         return true;
     }
     if (nt == TokenType.IDENTIFIER && !self.lexer.seen_line_term) {
+        // An `export` body is always strict, so `interface` normally lexes
+        // as INTERFACE above; accept the identifier spelling too so this
+        // path does not depend on that coupling.
+        if (self.ts_try_interface_declaration()) return true;
         if (self.ts_try_declare_statement()) return true;
         if (self.ts_try_type_only_namespace()) return true;
     }

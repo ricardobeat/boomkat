@@ -56,6 +56,7 @@ fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
         // lex_env. Any nested block with a PUSH_LEX adds to cur_lex_depth;
         // the break/continue must pop those extras before jumping.
         self.loop_stack[self.loop_depth].saved_lex_depth = self.cur_lex_depth;
+        self.loop_stack[self.loop_depth].saved_with_depth = self.cur_with_depth;
         self.loop_stack[self.loop_depth].iter_close_reg = -1;
         self.loop_stack[self.loop_depth].saved_try_depth = self.try_depth;
         self.loop_depth++;

@@ -18,6 +18,45 @@ import std::math;
 // inlined directly in Vm.run (src/vm/vm_execute.c3) to avoid per-instruction
 // call overhead; only the loop-bearing unary handlers live out-of-line here.
 // ============================================================================
+
+// Computes old ± 1 into *out without writing any binding slot, for the sloppy
+// silent-drop of non-writable bindings (a named fnexpr's own name, the
+// built-in global immutables). The write is dropped but the expression still
+// evaluates to the incremented value (ES2024 §9.1.1.1.5 step 5.2).
+fn TVal? incdec_compute_no_write(Dispatch* ds, TVal old_val, bool is_inc, TVal* out) {
+    Vm* vm = ds.vm;
+    if (old_val.is_fastint()) {
+        long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
+        if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+            out.set_fastint(v);
+        } else {
+            out.set_number((double)v);
+        }
+    } else if (old_val.is_bigint()) {
+        hbigint::HBigInt*? nr = bigint_step(vm.heap, old_val.get_bigint(), is_inc);
+        if (catch nr) {
+            vm_set_range_error(vm, "BigInt is too large to allocate");
+            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return vm_uncaught_error(vm, &vm.throw_value);
+            }
+            return (TVal){};
+        }
+        if (!vm_set_reg_bigint(vm, out, nr)) {
+            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return vm_uncaught_error(vm, &vm.throw_value);
+            }
+            return (TVal){};
+        }
+    } else {
+        double d = vm_to_number(vm, &old_val);
+        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return vm_uncaught_error(vm, &vm.throw_value);
+        }
+        out.set_number(d + (is_inc ? 1.0 : -1.0));
+    }
+    return (TVal){};
+}
+
 fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) @inline {
     Vm* vm = ds.vm;
     switch (op) {
@@ -276,12 +315,168 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             int ic_prop_idx = -1;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
+                if (cur.is_with) {
+                    // @@unscopables gate (§9.1.1.2.1 HasBinding step 6-9):
+                    // a true @@unscopables entry hides the property from this
+                    // with-scope, so it must not be updated. HasBinding already
+                    // consulted @@unscopables on the read path; here we reapply
+                    // it so an unscopables'd name falls through to the parent
+                    // env (which may resolve to the actual binding).
+                    if (cur.bindings.has_prop_proto(key, ds.vm.heap)
+                        && env::with_unscopables_blocks(ds.vm.heap, cur, key)) {
+                        cur = cur.parent;
+                        continue;
+                    }
+                    int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
+                    if (idx >= 0 && !cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
+                        TVal old_val = cur.bindings.prop_values()[idx];
+                        if (env::is_tdz_sentinel(&old_val)) {
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            return (TVal){};
+                        }
+                        if (!cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).writable) {
+                            hobject::PropFlags nfl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
+                            bool act_strict = ds.act.func != null
+                                && ((CompiledFunction*)ds.act.func).is_strict();
+                            if (nfl.immut_nonstrict && !act_strict) {
+                                if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
+                                    return e~;
+                                }
+                                return (TVal){};
+                            }
+                            HString* name_hstr = (HString*)key;
+                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return VM_ERROR~;
+                            }
+                            return (TVal){};
+                        }
+                        TVal new_val = old_val;
+                        if (old_val.is_fastint()) {
+                            long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
+                            if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                                new_val.set_fastint(v);
+                            } else {
+                                new_val.set_number((double)v);
+                            }
+                        } else if (old_val.is_bigint()) {
+                            hbigint::HBigInt*? nr = bigint_step(vm.heap, old_val.get_bigint(), is_inc);
+                            if (catch nr) {
+                                vm_set_range_error(vm, "BigInt is too large to allocate");
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
+                            if (!vm_set_reg_bigint(vm, &cur.bindings.prop_values()[idx], nr)) {
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
+                            vm.heap.tval_copy_ref(&new_val, &cur.bindings.prop_values()[idx]);
+                        } else {
+                            double d = vm_to_number(vm,&old_val);
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            new_val.set_number(d + (is_inc ? 1.0 : -1.0));
+                        }
+                        cur.bindings.prop_values()[idx] = new_val;
+                        *ra = new_val;
+                        track_heap_store(ds.act, ra, (uint)insn.a);
+                        found = true;
+                        ic_env = cur;
+                        ic_prop_idx = idx;
+                        return (TVal){};
+                    }
+                    // Not an own data property on the with-env (could be on its
+                    // prototype, or accessor); fall through to var_env fall-through
+                    // at the end of the slow path. Per spec, INC_VAR uses the
+                    // IDENTICAL logic to a PutValue, so the unscopables-blocked
+                    // case must skip this env entirely, which the gate at the top
+                    // of this branch already handled.
+                    cur = cur.parent;
+                    continue;
+                }
                 int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
+                if (idx >= 0 && cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
+                    // §13.4.4: x++ is GetValue(lref), ToNumeric, then
+                    // PutValue(lref, n). An accessor binding must run its
+                    // getter and its setter (or throw per SetMutableBinding);
+                    // the in-place data-slot update below would misread the
+                    // getter/setter pair as a non-writable value.
+                    TVal old_acc;
+                    if (!builtins::js_get(vm, vm.heap, cur.bindings, (HString*)key, &old_acc)) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    TVal new_acc;
+                    new_acc.set_undefined();
+                    if (catch e = incdec_compute_no_write(ds, old_acc, is_inc, &new_acc)) {
+                        return e~;
+                    }
+                    if (ds.needs_restart) { return (TVal){}; }
+                    bool act_strict_acc = ds.act.func != null
+                        && ((CompiledFunction*)ds.act.func).is_strict();
+                    bool still_exists = false;
+                    if (!builtins::js_has_property(vm, vm.heap, cur.bindings, (HString*)key, &still_exists)) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    // §9.1.1.2.5 SetMutableBinding steps 3-4: a strict
+                    // Reference whose binding a deleting getter removed throws
+                    // ReferenceError; a sloppy one falls through to [[Set]],
+                    // which recreates the property.
+                    if (!still_exists && act_strict_acc) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                                "%s is not defined", name_hstr.get_cstr(),
+                                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    TVal recv_acc; recv_acc.set_object(cur.bindings);
+                    bool sres_acc = false;
+                    if (!builtins::js_set_with_receiver(vm, vm.heap, cur.bindings, (HString*)key, new_acc, recv_acc, &sres_acc)) {
+                        vm.heap.has_error = false;
+                        TVal err_val = vm.heap.error_value;
+                        if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            vm.has_error = true;
+                            vm.heap.has_error = true;
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    if (!sres_acc && act_strict_acc) {
+                        HString* name_hstr = (HString*)key;
+                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
+                                "Cannot assign to read only property '%s'",
+                                name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return VM_ERROR~;
+                        }
+                        return (TVal){};
+                    }
+                    vm.heap.tval_copy_ref(ra, &new_acc);
+                    vm.heap.decref_tval(&new_acc);
+                    return (TVal){};
+                }
                 if (idx >= 0) {
                     // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
                     // lex_env == parent env, so a hit here is a legitimate parent
-                    // lookup, not own-local. Own-local leaks surface as 'not defined'
-                    // throws and are caught by test/test_register_locals.js.
+                    // lookup, not an own-local. Own-local leaks instead surface as
+                    // a "not defined" throw (its DECLVAR was elided and nothing
+                    // else defines it), caught by the corpus.
+
 
                     TVal old_val = cur.bindings.prop_values()[idx];
                     if (env::is_tdz_sentinel(&old_val)) {
@@ -292,6 +487,15 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         return (TVal){};
                     }
                     if (!cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).writable) {
+                        hobject::PropFlags nfl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
+                        bool act_strict = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (nfl.immut_nonstrict && !act_strict) {
+                            if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
+                                return e~;
+                            }
+                            return (TVal){};
+                        }
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
@@ -445,6 +649,18 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             bool ic_store_ok = false;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
+                if (cur.is_with) {
+                    // @@unscopables gate (§9.1.1.2.1 HasBinding step 6-9):
+                    // a true @@unscopables entry on the binding object hides
+                    // the property from this with-scope, so inc/dec must not
+                    // touch it. HasBinding on the read side already saw it as
+                    // blocked; keep that decision on the write side too.
+                    if (cur.bindings.has_prop_proto(key, ds.vm.heap)
+                        && env::with_unscopables_blocks(ds.vm.heap, cur, key)) {
+                        cur = cur.parent;
+                        continue;
+                    }
+                }
                 int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
                 if (idx >= 0) {
                     TVal old_val = cur.bindings.prop_values()[idx];
@@ -457,6 +673,14 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                     hobject::PropFlags fl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
                     if (!fl.writable) {
+                        bool act_strict = ds.act.func != null
+                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        if (fl.immut_nonstrict && !act_strict) {
+                            if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
+                                return e~;
+                            }
+                            return (TVal){};
+                        }
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;

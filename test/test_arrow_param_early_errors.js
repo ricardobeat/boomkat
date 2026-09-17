@@ -39,6 +39,22 @@ function accepts(src) {
     }
 }
 
+// `eval`/`arguments`/`let`/`yield` as arrow parameter names are SyntaxErrors
+// only in strict code; sloppy arrows admit them. Compile the source as the body
+// of a strict function so those checks run in the mode they target.
+function throwsStrict(src) {
+    try {
+        Function('"use strict";\n' + src);
+    } catch (e) {
+        if (e instanceof SyntaxError) { pass++; return; }
+        fail++;
+        print('FAIL (wrong error): ' + src + ' -> ' + e.constructor.name + ': ' + e);
+        return;
+    }
+    fail++;
+    print('FAIL (no throw): ' + src);
+}
+
 // --- Duplicate BoundNames in arrow parameters ---
 throws('var f = (a, a) => a;');
 throws('var f = (a, b, a) => 1;');
@@ -56,36 +72,47 @@ throws('var f = ([a, b, a]) => 1;');
 throws('var f = ({x: a, y: a}) => 1;');
 throws('var f = (a, ...{a}) => 1;');
 
-// --- Restricted names as arrow parameters ---
-throws('var f = (eval) => 1;');
-throws('var f = (arguments) => 1;');
-throws('var f = (a, eval) => 1;');
-throws('var f = (...eval) => 1;');
-throws('var f = (...arguments) => 1;');
-throws('var f = ({eval}) => 1;');
-throws('var f = ([eval]) => 1;');
-throws('var f = ({x: arguments}) => 1;');
-throws('var f = (eval = 1) => 1;');
-throws('var f = (let) => 1;');
-throws('var f = (yield) => 1;');
+// --- Restricted names as arrow parameters (strict only) ---
+throwsStrict('var f = (eval) => 1;');
+throwsStrict('var f = (arguments) => 1;');
+throwsStrict('var f = (a, eval) => 1;');
+throwsStrict('var f = (...eval) => 1;');
+throwsStrict('var f = (...arguments) => 1;');
+throwsStrict('var f = ({eval}) => 1;');
+throwsStrict('var f = ([eval]) => 1;');
+throwsStrict('var f = ({x: arguments}) => 1;');
+throwsStrict('var f = (eval = 1) => 1;');
+throwsStrict('var f = (let) => 1;');
+throwsStrict('var f = (yield) => 1;');
+// Sloppy arrows admit those same names.
+accepts('var f = (eval) => 1;');
+accepts('var f = (arguments) => 1;');
+accepts('var f = ({eval}) => 1;');
+accepts('var f = (let) => 1;');
 
 // --- Async arrows get the same checks ---
 throws('var f = async (a, a) => 1;');
-throws('var f = async (eval) => 1;');
-throws('var f = async (arguments) => 1;');
+throwsStrict('var f = async (eval) => 1;');
+throwsStrict('var f = async (arguments) => 1;');
 throws('var f = async (a, ...a) => 1;');
 throws('var f = async ([a], {a}) => 1;');
+accepts('var f = async (eval) => 1;');
 
 // --- Nested arrows and arrows in class bodies ---
 throws('var f = (a) => (b, b) => 1;');
-throws('var f = (a) => (eval) => 1;');
+throwsStrict('var f = (a) => (eval) => 1;');
 throws('class C { m() { return (a, a) => 1; } }');
 throws('class C { m() { return (eval) => 1; } }');
 throws('class C { f = (a, a) => 1; }');
 
 // --- The same checks still hold for functions and methods ---
-throws('function g(a, a) {}');
-throws('function g(eval) {}');
+// Ordinary functions in sloppy code admit duplicate plain params and
+// restricted names (Annex B.3.1); only the strict forms reject, so the
+// strict body is what the checks target here.
+throws('function g(a, a) { "use strict"; }');
+throws('function g(eval) { "use strict"; }');
+accepts('function g(a, a) {}');
+accepts('function g(eval) {}');
 throws('function g([a], {a}) {}');
 throws('var o = { m(a, a) {} };');
 throws('class C { m(a, a) {} }');

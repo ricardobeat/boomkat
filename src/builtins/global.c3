@@ -874,6 +874,14 @@ fn void builtin_eval(BuiltinContext* ctx) {
     vm::Vm* precheck_vm = (vm::Vm*)ctx.vm;
     usz precheck_act_count = precheck_vm.activation_count;
     vm::Activation* precheck_caller = null;
+    // The activation a direct eval's environment/this are taken from. A direct
+    // eval inside a formal-parameter default runs while the default's 0-arg
+    // thunk is on top, but that thunk is an engine artifact: in the spec the
+    // running execution context during parameter evaluation is the function
+    // being initialized, so the eval's `var` bindings must land in its
+    // parameter environment, visible to the body (ES2024 §10.2.11 steps
+    // 27-29). eval_caller therefore skips a default thunk to its parent.
+    vm::Activation* eval_caller = null;
     bool caller_has_direct_eval = false;
     // ES2015 Annex B: `new.target` is a permitted syntax inside an eval
     // source ONLY when the eval is being processed by direct eval from
@@ -900,6 +908,12 @@ fn void builtin_eval(BuiltinContext* ctx) {
         precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
         caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0
                                  && caller_call_site_is_direct(precheck_caller);
+        eval_caller = precheck_caller;
+        if (precheck_caller.func != null
+            && ((CompiledFunction*)precheck_caller.func).flags.needs_lex_bridge
+            && precheck_caller.parent != null) {
+            eval_caller = precheck_caller.parent;
+        }
         if (caller_has_direct_eval) {
             // precheck_caller.func is the caller's CompiledFunction template
             // (for natfunc frames, like this builtin itself, the func slot
@@ -975,6 +989,14 @@ fn void builtin_eval(BuiltinContext* ctx) {
         }
     }
 
+    // EvalDeclarationInstantiation's global CanDeclare checks run only when
+    // the eval's variable environment is the global object record: always for
+    // indirect eval, and for direct eval only when the caller is global code.
+    bool eval_var_env_is_global = true;
+    if (caller_has_direct_eval && eval_caller != null) {
+        eval_var_env_is_global = eval_caller.var_env == ctx.global_env;
+    }
+
     // Compile the source string as eval code
     Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
     defer lex.free_arena();
@@ -992,13 +1014,14 @@ fn void builtin_eval(BuiltinContext* ctx) {
                                                     parent_super_home_is_object_literal,
                                                     // ES2024 §19.2.1.1 step 12:
                                                     // direct eval inherits the
-                                                    // caller's strictness (every
-                                                    // activation here is strict);
+                                                    // caller's strictness;
                                                     // an INDIRECT eval is
                                                     // non-strict unless its own
                                                     // prologue says otherwise.
                                                     caller_has_direct_eval &&
-                                                        precheck_caller != null);
+                                                        precheck_caller != null &&
+                                                        ((CompiledFunction*)precheck_caller.func).is_strict(),
+                                                    eval_var_env_is_global);
     CompiledFunction* func;
     if (try f = cf) {
         func = f;
@@ -1056,11 +1079,11 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // block because builtin_eval runs to completion on this thread before
     // any subsequent VM dispatch). The direct-eval decision below is
     // therefore guaranteed consistent with `caller_has_direct_eval`.
-    if (caller_has_direct_eval && precheck_caller != null) {
+    if (caller_has_direct_eval && eval_caller != null) {
         is_direct_eval = true;
-        lex_env_for_eval = precheck_caller.lex_env;
-        var_env_for_eval = precheck_caller.var_env;
-        caller_this = precheck_caller.this_binding;
+        lex_env_for_eval = eval_caller.lex_env;
+        var_env_for_eval = eval_caller.var_env;
+        caller_this = eval_caller.this_binding;
     }
     // Declaration-instantiation leak semantics follow the eval SOURCE's own
     // strictness (ES2015 §18.2.1.1 PerformEval step 12), independent of the
@@ -1076,11 +1099,16 @@ fn void builtin_eval(BuiltinContext* ctx) {
     //     EvalDeclarationInstantiation; lex_env is a fresh declarative child
     //     of the call-site's lex_env (chaining through var_env so DECLVAR
     //     writes stay visible to same-eval reads), isolating let/const/class.
-    // A direct eval inherits the calling code's strictness (§18.2.1.1 step 12:
-    // strictCaller). Every activation in this engine runs strict, so a direct
-    // eval is always strict regardless of the eval string's own prologue; an
-    // indirect eval's strictness is decided solely by that prologue.
-    bool eval_strict = is_direct_eval || func.eval_source_is_strict();
+    // A direct eval inherits the calling code's strictness (ES2024 §19.2.1.1
+    // step 12: "Eval code is strict mode code if it begins with a Directive
+    // Prologue that contains a Use Strict Directive OR if the call to eval
+    // is a direct eval that is contained in strict mode code"). An indirect
+    // eval's strictness is decided solely by its own prologue.
+    bool caller_is_strict_eval = is_direct_eval
+        && precheck_caller != null
+        && ((CompiledFunction*)precheck_caller.func != null
+            && ((CompiledFunction*)precheck_caller.func).is_strict());
+    bool eval_strict = caller_is_strict_eval || func.eval_source_is_strict();
     if (eval_strict) {
         EnvRecord*? eval_env_raw = env::env_create_declarative(ctx.heap, lex_env_for_eval);
         if (catch err = eval_env_raw) {
@@ -1091,12 +1119,104 @@ fn void builtin_eval(BuiltinContext* ctx) {
             (*func_obj.extra_ptr()).func.lex_env = eval_env_raw;
         }
     } else {
+        // Sloppy eval: `var`/`function` bindings go in the enclosing variable
+        // environment (ES2015 §18.2.1.2 EvalDeclarationInstantiation), so the
+        // eval body must run with var_env = the caller's var_env (direct) or
+        // the global env (indirect). The temp lex_env above holds only the
+        // eval's own let/const/class declarations.
         (*func_obj.extra_ptr()).func.var_env = var_env_for_eval;
         EnvRecord*? lex_env_raw = env::env_create_declarative(ctx.heap, lex_env_for_eval);
         if (catch err = lex_env_raw) {
             (*func_obj.extra_ptr()).func.lex_env = lex_env_for_eval;
         } else {
             (*func_obj.extra_ptr()).func.lex_env = lex_env_raw;
+        }
+
+        // ES2024 §18.2.1.2 step 5.4: a sloppy eval's var-declared name that
+        // already has a binding in any enclosing declarative or function-
+        // scope environment between the eval's lexical environment and its
+        // variable environment is a SyntaxError. The chain holds, e.g., a
+        // non-simple parameter list's parameter scope (a following
+        // parameter named `arguments` colliding with `eval("var
+        // arguments")`) or an enclosing block's `let`. Object environment
+        // records (the global object) are exempt: step 5.4 only flags
+        // declarative/function-scope bindings, not properties of the global
+        // object. So are with envs: their bindings object is user-controlled,
+        // and a `var` colliding with one of its properties (e.g.
+        // `with (o) eval('var x')` where o.x is set) is not a SyntaxError.
+        //
+        // The walk stops BEFORE the variable environment. A var name that
+        // already exists there is re-declared by the SetMutableBinding step
+        // (step 16), not rejected (var-env-var-init-local-exstng.js,
+        // var-env-func-init-local-update.js, global-env-rec-eval.js).
+        // Catch-parameter environments are likewise skipped:
+        // sec-variablestatements-in-catch-blocks replaces step 5.d.ii.2.a.i
+        // with "If thisEnvRec is not the Environment Record for a Catch
+        // clause, throw", so eval("var x") inside catch (x) binds in the
+        // var env instead of throwing.
+        if (func.eval_var_count > 0) {
+            EnvRecord* walker = lex_env_for_eval;
+            bool collision = false;
+            while (walker != null) {
+                if (walker == var_env_for_eval) break;
+                bool is_global_obj = walker == ctx.global_env;
+                if (!walker.is_with && !walker.is_catch && walker.bindings != null && !is_global_obj) {
+                    for (uint vi = 0; vi < func.eval_var_count; vi++) {
+                        TVal nv = func.constants[func.eval_var_idxs[vi]];
+                        if (nv.is_string()
+                            && walker.bindings.has_prop(nv.get_heapptr(), ctx.heap)) {
+                            collision = true;
+                            break;
+                        }
+                    }
+                }
+                if (collision) break;
+                walker = walker.parent;
+            }
+            // A direct eval in a formal parameter list runs against the
+            // enclosing function's parameter scope. A non-arrow function with
+            // a non-simple parameter list binds `arguments` there (ES2024
+            // §10.2.11 step 22.d, the unmapped arguments object), so
+            // `eval("var arguments")` collides (step 5.4). Arrow functions
+            // never bind `arguments`, so theirs does not. The engine keeps its
+            // `arguments` in the parameter thunk's own variable environment,
+            // which is off the lexical chain walked above, so the collision is
+            // detected from the thunk (needs_lex_bridge) plus the enclosing
+            // function's arrow-ness.
+            if (!collision && is_direct_eval && precheck_caller != null
+                && ((CompiledFunction*)precheck_caller.func).flags.needs_lex_bridge
+                && precheck_act_count >= 2) {
+                vm::Activation* enclosing = &precheck_vm.activations[precheck_act_count - 2];
+                if (enclosing.func != null && !((CompiledFunction*)enclosing.func).is_arrow()) {
+                    for (uint vi = 0; vi < func.eval_var_count; vi++) {
+                        TVal nv = func.constants[func.eval_var_idxs[vi]];
+                        if (nv.is_string()
+                            && ((HString*)nv.get_heapptr()).equals("arguments")) {
+                            collision = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (collision) {
+                HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
+                if (try err = err_raw) {
+                    err.prototype = ctx.heap.syntax_err_proto;
+                    HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
+                    HString* msg_str = builtin_intern_string(ctx.heap,
+                        "Lexical declaration conflicts with a var declaration in eval code");
+                    TVal msg_tv;
+                    msg_tv.set_string(msg_str);
+                    err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
+                    TVal err_tv;
+                    err_tv.set_object(err);
+                    ctx.throw_value.set_object(err_tv.get_heapptr());
+                } else {
+                    ctx.throw_value.set_undefined();
+                }
+                ctx.should_throw = true;
+                return;
+            }
         }
     }
 

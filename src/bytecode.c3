@@ -261,6 +261,16 @@ enum Opcode : char {
     // a let/const binding still in its temporal dead zone (assignment before
     // initialization). Emitted only for genuine assignment expressions.
     PUTVAR_ASSIGN,
+    // `variable[constants[C]] = A`: user ASSIGNMENT through a Reference whose
+    // environment record was captured before the right-hand side ran (ABC
+    // format: A = value register, B = env-pointer register, C = name
+    // constant). Pairs with RESOLVEVAR, which stores the owning EnvRecord* in
+    // B's register: SetMutableBinding walks from THAT env, so an RHS side
+    // effect that introduced a more local binding (a sloppy direct eval's
+    // `var x`) cannot capture the store — ES2022 §13.15.2 PutValue uses the
+    // initially created Reference. Falls back to PUTVAR_ASSIGN's resolver when
+    // B holds null (the Reference was unresolvable).
+    PUTVAR_SNAP,
     // `declare variable[constants[BC]] = A`: declare+initialize a `var` in
     // the immediate var_env only (does not walk the scope chain).
     DECLVAR,
@@ -284,6 +294,16 @@ enum Opcode : char {
     // this: CreateGlobalVarBinding must leave an existing property entirely
     // untouched, so the two declaration kinds need distinct opcodes.
     DECLGLOBALFUNC,
+    // `global[constants[BC]] = A` preserving attributes (A-BC): the
+    // per-evaluation publish of a block-nested function declaration at
+    // global scope (Annex B.3.2 rule: genvRec.SetMutableBinding). Unlike
+    // DECLGLOBALFUNC (CreateGlobalFunctionBinding: redefine the property) it
+    // never touches attributes: an existing non-enumerable global stays
+    // non-enumerable (Annex B.3.3.3), a missing binding is created
+    // { writable: true, enumerable: true, configurable: true }. Emitted only
+    // under the is_global gate in function_declaration, so like DECLB33HOIST
+    // it never meets the elide pass.
+    DECLB33GLOBAL,
     // `A = global[constants[BC]]`: read a top-level global binding by name
     // (A-BC). Emitted only at true global scope (no nested lexical env), where
     // lex_env == global_lex_env and var_env == global_env are both permanent
@@ -325,6 +345,44 @@ enum Opcode : char {
     TYPEOFIDENT,
     // `A = delete variable[constants[BC]]`: delete a variable (A-BC).
     DELVAR,
+    // `with (expr) { ... }` body entry (A-BC format). A holds the operand:
+    // a primitive is ToObject-wrapped, null/undefined throws TypeError
+    // (ES2024 §14.12.3 step 2). The resulting object becomes a with-env
+    // pushed onto `act.lex_env` for the body, which WITH_END pops.
+    WITH_START,
+    // End of a `with` body (ABC, no operands used). Companion to WITH_START;
+    // pops the env record it pushed.
+    WITH_END,
+    // `with-get A = B, variable[constants[C]]`: SnapshotReference read for
+    // a read-modify-write on an identifier inside `with` (ES5 §11.13.2
+    // step 4: PutValue uses the initially-created Reference even when the
+    // getter deletes the binding). Replaces the LHS GETVAR in place (same
+    // value register), so no instruction insertion is needed. Resolves the
+    // name per HasBinding, then reads the value: on a with-env hit B holds
+    // the bindings object and A the HasProperty-checked current value (the
+    // base is captured before the getter runs, so a getter that deletes
+    // the binding still routes the store to this object). Otherwise B is
+    // left undefined (a declarative hit, or an unresolvable name) and the
+    // paired WTWR falls back to the env walk.
+    WITHGET,
+    // `with-base A = variable[constants[C]]`: SnapshotReference base for a
+    // plain assignment inside `with` (ES2024 §9.1.1.2.5 SetMutableBinding
+    // steps 1-2: the base is fixed by HasBinding before the RHS runs, so an
+    // unscopables getter that deletes the binding still routes the store to
+    // this object). Captures only the base per HasBinding: on a with-env hit
+    // A holds the bindings object; on a declarative or global hit A holds the
+    // owning EnvRecord*; an unresolvable name leaves A undefined. Runs no
+    // value getter, unlike WITHGET.
+    WITHBASE,
+    // `with-write A = B, variable[constants[C]]`: SnapshotPutValue, the
+    // store half of a read-modify-write inside `with`. When B holds a
+    // bindings object captured by WITHGET, writes A through [[Set]] on that
+    // object (creating the property when the binding was deleted); when B
+    // holds an EnvRecord* it writes through SetMutableBinding from that env,
+    // so an RHS that re-shaped the chain cannot capture the store; otherwise
+    // it walks the env chain. A rejected write throws in strict code and is
+    // dropped in sloppy code. Releases the references held by A and B.
+    WTWR,
 
     // ---- Closures --------------------------------------------------------
 
@@ -438,8 +496,6 @@ enum Opcode : char {
     CLASS_INITPROP,
     // Create the `arguments` exotic object for the current activation.
     CSVARI,
-
-    // ---- with statement REMOVED in strict-only mode -----------------------
 
     // ---- Lexical scoping (let/const) ----------------------------------
 
@@ -1004,12 +1060,18 @@ fn OpFormat get_op_format(Opcode op) {
         case DECLVAR:   return A_BC;
         case DECLVAR_HOIST: return A_BC;
         case DECLGLOBALFUNC: return A_BC;
+        case DECLB33GLOBAL: return A_BC;
         case GETGLOBAL: return A_BC;
         case PUTGLOBAL: return A_BC;
         case GETGLOBAL_PRIM: return A_BC;
         case PUTGLOBAL_PRIM: return A_BC;
         case MOVE_GG: return A_BC;
         case DELVAR:    return A_BC;
+        case WITH_START: return A_BC;
+        case WITH_END:   return ABC;
+        case WITHGET:   return ABC;
+        case WITHBASE:  return A_BC;
+        case WTWR:      return ABC;
         case CLOSURE:   return A_BC;
         case GETBOUND:  return A_BC;
         case TRY:       return A_BC;
@@ -1310,12 +1372,22 @@ bitstruct FuncFlags : uint {
 
     // ---- Function-specific flags (bits 7+) ----
 
+    // Per-function strict mode. Set from CompilerContext.is_strict at
+    // finish() time. Initial compiler default for top-level scripts is
+    // sloppy under plans/083; modules stay strict; "use strict" raises it.
+    bool  is_strict    : 7;
     // Function is a named function expression.
     bool  is_namebinding: 8;
     // Function has a `...rest` parameter.
     bool  has_rest      : 9;
     // Function uses `arguments` (needs Arguments exotic object).
     bool  uses_arguments: 10;
+    // Sloppy function with a simple parameter list that references
+    // `arguments`: the object is mapped (ES2015 §9.4.4.8), so index reads
+    // and writes alias the parameter registers. Set at finish() time from
+    // `!is_strict && uses_arguments && params_are_simple`; the VM consults
+    // it at every ARGUMENTS creation site instead of re-deriving simplicity.
+    bool  mapped_arguments: 22;
     // Function uses `eval` (may create dynamic bindings).
     bool  uses_eval     : 11;
     // Function is an arrow function (lexical `this`).
@@ -1349,17 +1421,6 @@ bitstruct FuncFlags : uint {
     // §14.5.14 step 25, so `class.prototype = ...` must throw a TypeError.
     // Other functions get a configurable .prototype.
     bool  is_class_ctor    : 21;
-    // Substitute the global object for an undefined or null `this` receiver
-    // (ES5 §10.4.3 OrdinaryCallBindThis with [[ThisMode]] of global).
-    //
-    // This engine is strict-only, so the flag is not derived from strictness.
-    // It is set only on bodies built by the dynamic Function,
-    // GeneratorFunction, and AsyncFunction constructors, whose [[ThisMode]] the
-    // spec derives from a sloppy enclosing realm rather than from the caller's
-    // scope. That keeps the common UMD idiom `Function('return this')()`
-    // yielding globalThis. A `"use strict"` directive in the dynamic body
-    // clears it.
-    bool  subst_global_this: 22;
     // A derived class constructor. ES2015 §9.2.2 step 13.c makes returning a
     // non-object from one a TypeError unless the value is undefined. Set when
     // has_super_binding held at compile time.
@@ -1570,6 +1631,14 @@ struct CompiledFunction {
     // frees it alongside the other sub-arrays.
     uint*           direct_eval_offsets;
     uint            direct_eval_offset_count;
+    // Sloppy-eval var-declaration names, as constant-pool indices into this
+    // function's own pool. builtin_eval walks the eval's lexical-parent
+    // chain with them to enforce ES2024 §18.2.1.2 step 3.4: a `var` name
+    // that already has a binding in an intermediate declarative environment
+    // (a `let`, a parameter of a non-simple parameter list, ...) is a
+    // SyntaxError. Null for non-eval functions.
+    uint*           eval_var_idxs;
+    uint            eval_var_count;
     // HString* of this function's enclosing class's `__super__ binding name
     // (e.g. "__super__0"; each class in a scope gets a unique number).
     // Two readers: builtin_eval re-interns it into the eval context's
@@ -1688,15 +1757,24 @@ macro bool CompiledFunction.needs_lex_bridge(&self) {
     return self.flags.needs_lex_bridge;
 }
 
-// Returns `true` when an undefined/null `this` receiver must be replaced by
-// the global object. See FuncFlags.subst_global_this.
-macro bool CompiledFunction.subst_global_this(&self) {
-    return self.flags.subst_global_this;
+// Returns `true` when the function body runs in strict mode. Set from the
+// source's directive prologue (or the enclosing module/script default) by
+// CompilerContext.is_strict at finish() time. Sloppy callers can substitute
+// undefined/null `this` to globalThis; strict callers cannot.
+macro bool CompiledFunction.is_strict(&self) {
+    return self.flags.is_strict;
 }
 
 // Returns `true` when the function uses `arguments`.
 macro bool CompiledFunction.uses_arguments(&self) {
     return self.flags.uses_arguments;
+}
+
+// Returns `true` when the function's `arguments` object is parameter-mapped
+// (sloppy + simple parameter list, ES2015 §9.4.4.8). Index reads fall back
+// to the parameter registers; index writes update them.
+macro bool CompiledFunction.mapped_arguments(&self) {
+    return self.flags.mapped_arguments;
 }
 
 // Returns `true` when the function contains direct `eval()` calls.

@@ -400,8 +400,30 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     func_obj.flags.callable = true;
     func_obj.flags.constructable = template.is_constructable();
     (*func_obj.extra_ptr()).func.comp_func = template;
-    (*func_obj.extra_ptr()).func.var_env = var_env;
-    (*func_obj.extra_ptr()).func.lex_env = lex_env;
+    // ES2024 §13.11: a closure created inside `with` captures the with-env on
+    // its PARENT chain, so calls made after WITH_END popped it still walk the
+    // object (S12.10_A1.8_T4: `var f = function(){...}; new f()` inside with
+    // must see with-properties at call time). Bindings declared OUTSIDE the
+    // with stay reachable: the with-env's parent is the enclosing chain, and
+    // entry uses lex_env = the with-env itself (with-splice in vm_calls.c3),
+    // whose walk falls through to that parent.
+    EnvRecord* cap_var_env = var_env;
+    EnvRecord* cap_lex_env = lex_env;
+    if (lex_env != null && lex_env != var_env) {
+        EnvRecord* w = lex_env;
+        uint wdepth = 0;
+        while (w != null && wdepth < 64) {
+            if (w.is_with) {
+                cap_var_env = lex_env;
+                cap_lex_env = lex_env;
+                break;
+            }
+            w = w.parent;
+            wdepth++;
+        }
+    }
+    (*func_obj.extra_ptr()).func.var_env = cap_var_env;
+    (*func_obj.extra_ptr()).func.lex_env = cap_lex_env;
     // ES2015 §9.2.1 [[ThisMode]]=lexical: capture the enclosing activation's
     // `this` once, at closure-creation time, so it survives being called from
     // any later call site (bare call, .call/.apply/.bind, builtin callback
@@ -607,10 +629,19 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 ds.curr_pc += 1;   // -> the done JUMP
                 break;
             }
-            if (target.flags.obj_class != hobject::ObjClass.ARRAY) break;
+            if (target.flags.obj_class != hobject::ObjClass.ARRAY
+                && target.flags.obj_class != hobject::ObjClass.ARGUMENTS) break;
 
             uint idx = (*it.extra_ptr()).iter.index;
-            ulong len = (ulong)*target.array_len_ptr();
+            ulong len;
+            if (target.flags.obj_class == hobject::ObjClass.ARGUMENTS) {
+                // See finish_arguments_object: arguments objects store the
+                // actual argument count in array_len_ptr, since array_used
+                // only counts non-undefined slots.
+                len = (ulong)*target.array_len_ptr();
+            } else {
+                len = (ulong)*target.array_len_ptr();
+            }
             if ((ulong)idx >= len) {
                 // Done: release the target exactly as the built-in next does,
                 // so a later step sees an exhausted iterator either way.
@@ -623,6 +654,19 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // get_array_idx fails for a hole or anything outside the dense
             // part, and an accessor never lives there, so a success here is a
             // plain data element whose read has no observable side effect.
+            // A mapped ARGUMENTS object aliases its indices to parameter
+            // registers: route through mapped_args_read so param writes made
+            // since the last step are observed (ES2015 §9.4.4.4).
+            if (target.flags.obj_class == hobject::ObjClass.ARGUMENTS) {
+                TVal mapped_v;
+                if (mapped_args_read(vm, target, idx, &mapped_v)) {
+                    (*it.extra_ptr()).iter.index = idx + 1;
+                    vm.heap.tval_copy_ref(ra, &mapped_v);
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    ds.curr_pc += 2;
+                    break;
+                }
+            }
             TVal? elem = target.get_array_idx(idx);
             if (catch elem) break;
             (*it.extra_ptr()).iter.index = idx + 1;
@@ -1250,8 +1294,12 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
 
         case Opcode.PUSH_LEX: {
             // Push a new declarative environment record onto ds.act.lex_env.
+            // A nonzero A operand marks a catch-parameter environment
+            // (is_catch), which the sloppy-eval var-collision gate exempts
+            // per sec-variablestatements-in-catch-blocks.
             EnvRecord*? env_raw = env::env_create_declarative(vm.heap, ds.act.lex_env);
             if (try new_env = env_raw) {
+                if (insn.a != 0) new_env.is_catch = true;
                 ds.act.lex_env = new_env;
             } else {
                 return VM_ERROR~;

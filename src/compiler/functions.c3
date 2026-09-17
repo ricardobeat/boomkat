@@ -101,9 +101,15 @@ struct DestructBind {
     // and registers discarded) and stores a lexer snapshot here;
     // emit_destruct_bindings re-parses it at the point of use via
     // emit_deferred_computed_key, landing the value in computed_key_reg.
-    // Heap-allocated; null = not deferred (param/declare paths still evaluate
-    // the key eagerly at collect time via computed_key_reg directly).
+    // Heap-allocated; null = not deferred (formal-parameter lists still
+    // evaluate the key eagerly at collect time via computed_key_reg directly).
     DeferredTarget* deferred_computed_key;
+    // Persistent register holding the EnvRecord* RESOLVEVAR captured for this
+    // binding's Reference, 0xFFFF when the store needs no captured env. Only a
+    // by-name `var` inside a `with` sets it: the declaration's binding resolves
+    // through the with-env, so ResolveBinding must run its `has` trap before the
+    // value is read. Allocated in the emit pre-scan below every callee window.
+    ushort resolve_probe_reg;
     // Private field target: the member target is a private field (this.#field).
     // Used by emit_destruct_bindings to defer the CHK_BRAND until after the
     // source property is read (GetV), per ES2022 §13.15.5.6 evaluation order.
@@ -167,6 +173,22 @@ struct SeenParams {
     // caller that forgets is permissive rather than wrongly rejecting -- the
     // duplicate-name check below is unconditional either way.
     bool strict;
+    // Strictness used for the restricted-name check (eval/arguments/let/static).
+    // Tracks the surrounding strictness, NOT the is_method_body override
+    // that flips `strict` to true for object/class methods and named-export
+    // methods: those grammars forbid duplicate BoundNames (UniqueFormalParameters)
+    // but otherwise inherit the surrounding scope's strictness, so a sloppy
+    // object method still accepts `arguments` as a parameter name.
+    bool restricted_strict;
+    // True once any parameter is non-simple: default value (`a = 1`), rest
+    // (`...a`), or destructuring (`{a}` / `[a]`). Annex B.3.1 lets sloppy mode
+    // accept duplicate simple parameter names, but ES2017 §14.1.2 (and earlier
+    // §10.2.1 / §13.1) makes the same `hasDuplicates` check a SyntaxError in
+    // BOTH sloppy and strict when at least one parameter is non-simple --
+    // FunctionDeclarationInstantiation would otherwise build a parameter map
+    // that disagrees with the iterator-binding walk. Set by the prologue the
+    // way `strict` is; defaults to false.
+    bool has_complex_params;
 }
 
 // True if `name` is already a BoundName of this parameter list.
@@ -188,20 +210,26 @@ fn bool SeenParams.contains(&self, char[] name) {
 
 // Apply the FormalParameters early errors to one bound name and record it.
 //
-// Rejects ES5 §13.1 restricted names (`eval`, `arguments`, `let`, ...) and
-// ES2015 §14.1.2 duplicate BoundNames. This engine is strict-only, so both
-// are unconditional SyntaxErrors. `allow_restricted` is set when the token
-// was a contextual keyword (`await`/`yield` accepted as an identifier by
-// `expect_binding_identifier`), where the enclosing-grammar check has already
-// decided the name is legal here.
+// Rejects ES5 §13.1 restricted names (`eval`, `arguments`, `let`, ...) for
+// code the caller marks strict, and ES2015 §14.1.2 duplicate BoundNames.
+// `allow_restricted` is set when the token was a contextual keyword
+// (`await`/`yield` accepted as an identifier by `expect_binding_identifier`),
+// where the enclosing-grammar check has already decided the name is legal
+// here.
 //
 // Names longer than 63 chars or beyond MAX_PARAMS entries are checked but
 // not recorded: the table is a fixed-size fast path, and overflow only
 // weakens duplicate detection for pathological parameter lists; it never
 // accepts a restricted name.
 fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
-    if (!allow_restricted && is_restricted_name(name, strict: self.strict)) return COMPILE_ERROR~;
-    if (self.contains(name)) return COMPILE_ERROR~;
+    if (!allow_restricted && is_restricted_name(name, strict: self.restricted_strict)) return COMPILE_ERROR~;
+    // Phase 1 (plans/083): sloppy mode allows duplicate simple parameter
+    // names (Annex B.3.1). But ES2017 §14.1.2 forbids duplicates in BOTH
+    // sloppy and strict when any parameter is non-simple (default, rest,
+    // destructuring); otherwise FunctionDeclarationInstantiation's parameter
+    // map disagrees with the iterator-binding walk. The parser keeps the
+    // last binding; the VM honours it.
+    if ((self.strict || self.has_complex_params) && self.contains(name)) return COMPILE_ERROR~;
     if (self.count < MAX_PARAMS && name.len < 64) {
         for (usz k = 0; k < name.len; k++) {
             self.names[self.count][k] = name[k];
@@ -282,31 +310,45 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             break;
         }
 
-        // Computed property key: {[expr]: target}. Per ES2015 §13.3.3, the
-        // key is an AssignmentExpression; the runtime evaluates it at
-        // extract time. (No destructuring on the key itself.)
+        // Computed property key: {[expr]: target}. Per ES2024 §14.3.3.1 the
+        // key is an AssignmentExpression evaluated during binding
+        // initialization, which is AFTER the declaration's initializer (and
+        // per iteration for a for-in/for-of head), so only a formal parameter
+        // list may evaluate it here: that list has no RHS to defer past. All
+        // other callers advance the lexer past `[expr]` with the emitted code
+        // discarded and snapshot the position, which
+        // emit_deferred_computed_key replays at the point of use. (No
+        // destructuring on the key itself.)
         if (self.check(TokenType.LBRACKET)) {
             self.advance()!; // consume '['
-            // The key is evaluated in pattern order at extract time, so a key
-            // may read a binding an earlier element of the same pattern just
-            // introduced (`{[5]: x, [x]: y}`). Defer via lexer snapshot and
-            // re-parse at emission, discarding the code and registers this
-            // parse produces; emit_deferred_computed_key replays it at the
-            // point of use.
-            DeferredTarget* ck_snap = (DeferredTarget*)alloc::malloc_try(mem, (sz)(DeferredTarget::size)) ?? null;
-            ck_snap.lexer = *self.lexer;
-            ck_snap.pushback = self.pushback_stack;
-            ck_snap.pushback_count = self.pushback_count;
-            uint ck_pre_code = self.code_count;
-            ushort ck_pre_reg = self.next_reg;
-            ushort? ck_res = self.assignment_expr();
-            if (catch err = ck_res) {
-                mem::free(ck_snap);
-                return err~;
-            }
-            self.code_count = ck_pre_code;
-            self.free_regs_to(ck_pre_reg);
+            DeferredTarget* deferred_ck = null;
             ushort ck_reg = 0xFFFF;
+            if (self.in_formal_params) {
+                // Evaluate the key expression NOW into a persistent register;
+                // the emitter reads the property via GETPROP with it.
+                ck_reg = self.assignment_expr()!;
+            } else {
+                // The key is evaluated in pattern order at extract time, so a
+                // key may read a binding an earlier element of the same pattern
+                // just introduced (`{[5]: x, [x]: y}`). Defer via lexer
+                // snapshot and re-parse at emission, discarding the code and
+                // registers this parse produces; emit_deferred_computed_key
+                // replays it at the point of use.
+                DeferredTarget* snap = (DeferredTarget*)alloc::malloc_try(mem, (sz)(DeferredTarget::size)) ?? null;
+                snap.lexer = *self.lexer;
+                snap.pushback = self.pushback_stack;
+                snap.pushback_count = self.pushback_count;
+                uint pre_code = self.code_count;
+                ushort pre_reg = self.next_reg;
+                ushort? key_expr_res = self.assignment_expr();
+                if (catch err = key_expr_res) {
+                    mem::free(snap);
+                    return err~;
+                }
+                self.code_count = pre_code;
+                self.free_regs_to(pre_reg);
+                deferred_ck = snap;
+            }
             self.expect(TokenType.RBRACKET)!;
             self.expect(TokenType.COLON)!;
 
@@ -316,14 +358,14 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 if (*count < binds.len) {
                     binds[*count].is_computed_key = true;
                     binds[*count].computed_key_reg = ck_reg;
-                    binds[*count].deferred_computed_key = ck_snap;
+                    binds[*count].deferred_computed_key = deferred_ck;
                     binds[*count].is_object = true;
                     binds[*count].arg_idx = src_reg;
                     binds[*count].parent_idx = parent_idx;
                     binds[*count].is_synthetic = true;
                     (*count)++;
                 } else {
-                    mem::free(ck_snap);
+                    if (deferred_ck != null) { mem::free(deferred_ck); }
                 }
                 ushort synth_idx = (ushort)(*count - 1);
                 outer_synth_idx = synth_idx;
@@ -351,7 +393,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                     binds[*count].name_idx = self.add_string_constant(bind.str_value);
                     binds[*count].is_computed_key = true;
                     binds[*count].computed_key_reg = ck_reg;
-                    binds[*count].deferred_computed_key = ck_snap;
+                    binds[*count].deferred_computed_key = deferred_ck;
                     binds[*count].is_object = true;
                     binds[*count].arg_idx = src_reg;
                     binds[*count].parent_idx = parent_idx;
@@ -362,7 +404,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                     }
                     (*count)++;
                 } else {
-                    mem::free(ck_snap);
+                    if (deferred_ck != null) { mem::free(deferred_ck); }
                 }
                 last_was_synth = false;
             }
@@ -437,7 +479,7 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             // AWAIT/YIELD key that reached this point was already cleared as a
             // legal identifier by shorthand_key_is_identifier_ref, and the
             // context-blind is_restricted_name would wrongly reject it.
-            if (prop_key_tt == TokenType.IDENTIFIER && is_restricted_name(prop_key, strict: self.lexer.reserved_words_strict)) {
+            if (prop_key_tt == TokenType.IDENTIFIER && is_restricted_name(prop_key, strict: self.is_strict)) {
                 return COMPILE_ERROR~;
             }
             if (*count < binds.len) {
@@ -951,7 +993,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     // can decide whether to emit a TRY guard for IteratorClose on abrupt completion.
     bool has_array_binds = false;
     for (uint di = 0; di < count; di++) {
-        binds[di].rest_array_reg = 0xFFFF;
+        binds[di].resolve_probe_reg = 0xFFFF;
+        binds[di].rest_array_reg    = 0xFFFF;
         if (binds[di].is_synthetic && !binds[di].is_object && binds[di].key_idx == 0xFFFF) {
             group_regs[di] = self.alloc_persistent_reg();
         }
@@ -982,6 +1025,24 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             // allocated below every callee window so it survives the GETPROP
             // reads and any nested-pattern CALLs up to point of use.
             binds[di].computed_key_reg = self.alloc_persistent_reg();
+        }
+        // A by-name `var` bound inside a `with` needs its Reference's env
+        // captured before the value is read, and the store happens after the
+        // default thunk's CALL, so the probe must sit below that call's callee
+        // window. PUTVAR_SNAP packs the env register into a single byte, so a
+        // probe that does not fit falls back to the plain DECLVAR store and
+        // loses only the `has` trap ordering, never the store itself. Object
+        // leaves only: the array branch extracts straight into bind_reg, which
+        // the probe's shadowing temporary would then clobber.
+        if (store_mode == DECLARE && !is_lexical && self.in_with()
+            && binds[di].is_object && !binds[di].is_synthetic
+            && binds[di].name_idx <= bytecode::MAX_C) {
+            ushort probe = self.alloc_persistent_reg();
+            if (probe <= bytecode::MAX_B) {
+                binds[di].resolve_probe_reg = probe;
+            } else {
+                self.free_reg(probe);
+            }
         }
         if (!binds[di].is_object) has_array_binds = true;
     }
@@ -1228,10 +1289,34 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             }
             uint ni = binds[di].name_idx;
 
+            // A by-name `var` bound inside a `with` stores through the
+            // Reference ResolveBinding created: GetIdentifierReference runs the
+            // with object's `has` trap before GetV reads the source property,
+            // and the store below re-enters that same env
+            // (ES2024 §14.3.3.3 steps 2-3, then InitializeReferencedBinding).
+            // RESOLVEVAR captures the owning EnvRecord* into a persistent
+            // register allocated below every callee window (see the pre-scan);
+            // the store becomes PUTVAR_SNAP. It is emitted per-branch, after
+            // the property name has been evaluated (PropertyBindingInitialization
+            // step 1 runs before KeyedBindingInitialization's ResolveBinding).
+            // The value is then extracted into a register ABOVE the probe:
+            // GETPROP's accessor frame sits at its result register and reuses
+            // everything above it, so binding_regs[di] (declared before any of
+            // this, hence below the probe) would let the getter destroy the
+            // probe before the store reads it. The register must stay high for
+            // the whole bind: retargeting the GETPROP down to a low register
+            // (moveelim's producer retarget) would move the getter's frame back
+            // over the probe.
+            bool needs_probe = (binds[di].resolve_probe_reg != 0xFFFF);
+
             // Extract value from source into bind_reg
             if (binds[di].is_object) {
                 if (binds[di].key_idx == 0xFFFF) {
                     // Object rest: `{...rest}` → CopyDataProperties(src, siblings).
+                    if (needs_probe) {
+                        self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
+                        bind_reg = self.alloc_reg();
+                    }
                     self.emit_object_rest(bind_reg, src_reg, binds, count, di);
                 } else if (binds[di].is_computed_key) {
                     if (binds[di].deferred_computed_key != null) {
@@ -1250,6 +1335,10 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     if (binds[di].deferred_target != null) {
                         self.emit_deferred_target(&binds[di]);
                     }
+                    if (needs_probe) {
+                        self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
+                        bind_reg = self.alloc_reg();
+                    }
                     self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)binds[di].computed_key_reg);
                 } else {
                     if (binds[di].deferred_target != null) {
@@ -1257,6 +1346,10 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     }
                     ushort key_reg = self.alloc_reg();
                     self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, binds[di].key_idx);
+                    if (needs_probe) {
+                        self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
+                        bind_reg = self.alloc_reg();
+                    }
                     self.emit_abc(Opcode.GETPROP, (uint)bind_reg, (uint)src_reg, (uint)key_reg);
                     self.free_reg(key_reg);
                     // See the computed-key branch above: the CHK_BRAND for a
@@ -1403,7 +1496,14 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     self.emit_a_bc(Opcode.PUTVAR, (uint)bind_reg, ni);
                     self.emit_a_bc(Opcode.GETVAR, (uint)bind_reg, ni);
                 case DECLARE:
-                    self.emit_var_store(bind_reg, ni, is_lexical, is_const);
+                    if (binds[di].resolve_probe_reg != 0xFFFF) {
+                        // Store through the captured Reference (see the
+                        // RESOLVEVAR note at the leaf's extraction).
+                        self.emit_abc(Opcode.PUTVAR_SNAP, (uint)bind_reg,
+                                      (uint)binds[di].resolve_probe_reg, ni);
+                    } else {
+                        self.emit_var_store(bind_reg, ni, is_lexical, is_const);
+                    }
                 case ASSIGN_TARGET:
                     // Member-expression targets (e.g. [obj.x] = v) use PUTPROP
                     // rather than PUTVAR. The deferred target evaluation code was
@@ -1500,6 +1600,28 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     // Free iterator registers. IteratorClose already ran in the finally above.
     for (uint i = 0; i < iter_count; i++) {
         self.free_destruct_iter(&iter_states[i]);
+    }
+}
+
+// Skip a parenthesised `if` condition, from just after the `if` keyword
+// through the matching `)`. Used by the hoist scan so it can resume exactly at
+// the clause, which Annex B.3.4 makes a Statement position. A condition is an
+// Expression, so parens nest and nothing inside declares a name in this scope.
+fn void CompilerContext.skip_paren_condition(&self) {
+    Token? lp_opt = self.lexer.next_token();
+    if (catch _e = lp_opt) return;
+    if (lp_opt.type != TokenType.LPAREN) return;
+    uint depth = 1;
+    while (depth > 0) {
+        Token? tok_opt = self.lexer.next_token();
+        if (catch _e2 = tok_opt) return;
+        TokenType tt = tok_opt.type;
+        if (tt == TokenType.EOF_TOKEN) return;
+        if (tt == TokenType.LPAREN) {
+            depth++;
+        } else if (tt == TokenType.RPAREN) {
+            depth--;
+        }
     }
 }
 
@@ -1784,7 +1906,30 @@ fn void CompilerContext.skip_expression(&self) {
 // a register slot, an `undefined` initial value, and the env declaration.
 // Shared by the plain-identifier declarator path and the binding-pattern
 // walker, which must produce byte-identical bindings for their leaf names.
-fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global) {
+//
+// Eval code only: record the var name in eval_var_coll_idxs so the body-side
+// var_declaration can recognise a re-declared `var x;` as already-instantiated
+// and skip the redundant DECLVAR_HOIST (which would otherwise re-create a
+// binding the body's `delete x;` just removed, see §18.2.1.2 step 16).
+fn void CompilerContext.record_eval_var_name(&self, char[] raw_name) {
+    HString* hs = ((Heap*)self.heap).str_intern(raw_name);
+    uint ni = self.add_string_constant(hs.get_data());
+    for (uint k = 0; k < self.eval_var_coll_count; k++) {
+        if (self.eval_var_coll_idxs[k] == ni) return;
+    }
+    if (self.eval_var_coll_count >= self.eval_var_coll_cap) {
+        uint new_cap = self.eval_var_coll_cap == 0 ? 16 : self.eval_var_coll_cap * 2;
+        void* pn = ((Heap*)self.heap).realloc_func(((Heap*)self.heap).heap_udata,
+            self.eval_var_coll_idxs, (usz)(new_cap * 4));
+        if (pn == null) return;
+        self.eval_var_coll_idxs = (uint*)pn;
+        self.eval_var_coll_cap = new_cap;
+    }
+    self.eval_var_coll_idxs[self.eval_var_coll_count++] = ni;
+}
+
+fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global, bool b33_record = false) {
+    if (self.eval_mode) { self.record_eval_var_name(raw_name); }
     // Intern now: raw_name may borrow the lexer's shared ident_buf scratch
     // (escaped identifier), which the next declarator in this statement (or a
     // later var statement in the same hoisting pass) will overwrite.
@@ -1816,11 +1961,52 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
             return;
         }
     }
+    // `var arguments` in an ordinary (non-arrow) function declares no binding
+    // of its own: §10.2.11 binds "arguments" to the arguments object created
+    // at call entry, and `var arguments = v` is only an assignment to it. The
+    // name must therefore make the function need that object, exactly as a
+    // reference to `arguments` would. The hoist stub below is still emitted
+    // (reads resolve through the environment, not through its register), and
+    // the VM skips the stub for this name once the object exists.
+    bool uses_args_object = !is_global && !self.is_arrow && str_eq(var_name, "arguments");
+    if (uses_args_object) {
+        self.uses_arguments = true;
+    }
+    // One binding per name: when the B.3.3 scan reaches a block FIRST a later
+    // `var f` reuses the entry made here (var_declaration's find_local_reg),
+    // but when `var f` comes first its entry is already in place. Declaring
+    // afresh then allocates a SECOND register for the same binding: the
+    // capture-marking loop marks the first entry while the block's
+    // DECLGLOBALFUNC writes the second, so env-resident reads see undefined.
+    // A formal parameter's own entry likewise doubles as the var binding
+    // (§9.2.10 step 27 leaves it alone), so reuse it instead of allocating.
+    // A BLOCK-scoped entry (the scan's own declaration, or a `let` in an
+    // enclosing/earlier block) is NOT the var binding — an exempt block must
+    // still create it; keep declaring. Only a VAR entry (or a formal/catch
+    // parameter entry) proves the var binding already exists.
+    if (try _existing_b33 = self.find_var_or_param_reg(var_name)) {
+        self.has_local_bindings = true;
+        return;
+    }
     ushort var_reg = self.declare_var(var_name, VAR);
     self.has_local_bindings = true;
+    // `arguments` is bound by the VM at call entry (see the uses_arguments
+    // note above), so the register must not become the live home slot: force
+    // every read through the environment, as the catch parameter does.
+    if (uses_args_object) {
+        self.scope_stack[self.scope_depth - 1].is_captured = true;
+        self.has_captured_local = true;
+    }
     self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
     uint var_name_idx = self.add_string_constant(var_name);
-    self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
+    uint hoist_pc = self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)var_reg, var_name_idx);
+    // A B.3.3 entry init may be withdrawn by block(): when the block proves
+    // exempt (same-named `let` visible, formal, arguments) it NOPs this
+    // DECLVAR_HOIST and erases the scope entry, leaving no var binding at
+    // all. Stash the instruction index keyed by name for that withdrawal.
+    if (b33_record) {
+        self.record_b33_hoist(var_name, (uint)var_reg, hoist_pc);
+    }
     // At global scope, var bindings are normally env-resident (accessed via
     // GETGLOBAL/PUTGLOBAL); the register is only a temporary DECLVAR source.
     // Free it immediately so 500+ var declarations don't exhaust the register
@@ -2013,11 +2199,25 @@ fn void CompilerContext.emit_hoisted_fn_decls(&self) {
     // runs. A flag marks the emission instead, so a nested block cannot repeat
     // it.
     self.hoisted_defer_emitted = true;
-    for (ushort di = 0; di < self.hoisted_defer_count; di++) {
-        self.emit_a_bc(Opcode.CLOSURE, (uint)self.hoisted_defer_regs[di],
-                       self.hoisted_defer_inner_idxs[di]);
-        self.emit_a_bc(Opcode.DECLVAR, (uint)self.hoisted_defer_regs[di],
-                       self.hoisted_defer_name_idxs[di]);
+    // Emit in REVERSE order. ES2024 §19.2.1.2 EvalDeclarationInstantiation
+    // step 8 walks varDeclarations in reverse list order for the
+    // CanDeclareGlobalFunction check that throws TypeError on a
+    // non-definable name (e.g. `function NaN(){}` when NaN is the
+    // non-configurable built-in). Doing it at runtime means a failing
+    // check aborts the eval before any earlier declarations leak into
+    // the global env; forward order would create them and then throw.
+    for (ushort di = (ushort)(self.hoisted_defer_count); di > 0; di--) {
+        ushort idx = (ushort)(di - 1);
+        self.emit_a_bc(Opcode.CLOSURE, (uint)self.hoisted_defer_regs[idx],
+                       self.hoisted_defer_inner_idxs[idx]);
+        // Use DECLGLOBALFUNC (not DECLVAR) so the binding carries the
+        // function-declaration attributes: inside a function body the
+        // binding is non-configurable (Annex B.3.3 / §10.2.1.1.6, so
+        // sloppy `delete f` returns false), and on the global object the
+        // descriptor reflects CreateGlobalFunctionBinding's non-enumerable
+        // rule for global-script declarations.
+        self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)self.hoisted_defer_regs[idx],
+                       self.hoisted_defer_name_idxs[idx]);
     }
 }
 
@@ -2074,10 +2274,11 @@ fn bool stmt_start_after(TokenType tt) {
 // legal in non-async/non-module code (BindingIdentifier reuses the contextual
 // await_is_identifier decision), so it must be recognized here too: missing it
 // skipped the class-body skip and the body's `var`s leaked into the enclosing
-// scope's hoist list. `yield` is always reserved in this strict-only engine,
-// as are `static`, `let`, `package`, `implements`, etc., so they fall through
-// to the parser's SyntaxError before this pre-scan's output matters. The lexer
-// is restored either way, this is pure lookahead.
+// scope's hoist list. `yield`, `static`, `let`, `package`, `implements` and
+// the other strict-mode reserved words cannot be a class name either, but they
+// lex as their own token types and the parser rejects them, so this pre-scan
+// only has to place `class` correctly for the names that can be legal.
+// The lexer is restored either way, this is pure lookahead.
 fn bool CompilerContext.class_kw_starts_class(&self) {
     TokenType nt = self.peek_type();
     return nt == TokenType.IDENTIFIER || self.await_is_identifier(nt)
@@ -2133,6 +2334,30 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
     // `;`, after a block/statement brace, or after a label colon; every
     // other token means an expression is in progress.
     bool at_stmt_start = true;
+    // Most-recently consumed token type that isn't consumed by the case
+    // labels of `stmt_start_after` (which themselves are statement-start
+    // sentinels). Used to detect a label colon: IDENTIFIER followed by
+    // COLON at statement-start position. Initialised to SEMICOLON so the
+    // first token starts a statement.
+    TokenType prev_significant_tt = TokenType.SEMICOLON;
+    bool prev_tok_at_stmt_start = true;  // initial sentinel: SEMICOLON resets to true
+    // Annex B.3.2: a `function` that immediately follows a label colon
+    // (`l: function f() {}` or `l0: l: function f() {}` at a
+    // StatementListItem position) is a labelled FunctionDeclaration and the
+    // B.3.3 second binding applies even at own_depth. Set to true on the
+    // iteration that consumes the COLON (preceded by an IDENTIFIER at
+    // statement-start position), reset by every other token. Only
+    // statement-start colons count — a `case 1:` or ternary/object literal
+    // `:` is excluded by the at_stmt_start check below.
+    bool function_after_label = false;
+
+    // Annex B.3.4: a plain FunctionDeclaration is a legal if clause body in
+    // sloppy code, and hoists into the enclosing scope like a block-nested
+    // one. The scan is flat, so it keeps one flag: `if` skips its condition
+    // and `else` opens a clause directly, so the token that follows either is
+    // the clause. Only a plain `function` matters, the parser rejects a
+    // generator or async declaration in this position.
+    bool if_clause_pending = false;
 
     while (true) {
         // Save lexer state before consuming this token (so we can restore
@@ -2159,9 +2384,59 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         bool tok_at_stmt_start = at_stmt_start;
         at_stmt_start = stmt_start_after(tt);
 
+        // Track the previous significant token's tok_at_stmt_start for the
+        // Annex B.3.2 label-colon check above. stmt_start_after returns true
+        // for COLON, so a `:` always has tok_at_stmt_start true (the next
+        // `function` after a label colon is at statement-start position),
+        // but the *previous* token's tok_at_stmt_start is what tells us
+        // whether the IDENTIFIER was itself at stmt-start — i.e., a real
+        // label pattern rather than a property-key / case-label colon.
+        prev_tok_at_stmt_start = tok_at_stmt_start;
+        prev_significant_tt = tt;
+
+        // Whether THIS token is the direct FunctionDeclaration body of an if
+        // (Annex B.3.4). The flag is single-use: it describes only the token
+        // that immediately follows the condition or `else`.
+        bool b34_clause = if_clause_pending && tt == TokenType.FUNCTION;
+        if_clause_pending = false;
+
+        // Whether THIS token is the `:` of a label (Annex B.3.2). The label
+        // grammar is `LabelIdentifier : Statement`, where LabelIdentifier is
+        // an Identifier at statement-start position. tok_at_stmt_start for
+        // this `:` itself is false (the preceding IDENTIFIER is not in
+        // stmt_start_after, so at_stmt_start resets before this iteration);
+        // we instead check prev_significant_tt == IDENTIFIER AND that the
+        // preceding IDENTIFIER was at stmt-start. case/default colon and
+        // ternary/object-literal colons do not satisfy both — case/default
+        // sit at clause positions (the case-expression precedes), and
+        // object-literal colons follow a property key that sits at a stmt-
+        // start position only after `{`/`;` (still followed by a `:` whose
+        // label-viability is a real concern below). Distinguishing the two
+        // via the brace depth at the COLON is more robust: a label colon
+        // only occurs at the boundary of an enclosing block or program,
+        // never inside an object literal's key/value run.
+        if (tt == TokenType.COLON && !self.is_strict
+            && prev_significant_tt == TokenType.IDENTIFIER
+            && prev_tok_at_stmt_start) {
+            function_after_label = true;
+        }
+
+        if (tt == TokenType.IF) {
+            // Skip the parenthesised condition so the loop resumes at the
+            // clause, which Annex B.3.4 makes a Statement position.
+            self.skip_paren_condition();
+            if_clause_pending = true;
+            at_stmt_start = true;
+            continue;
+        }
+        if (tt == TokenType.ELSE) {
+            if_clause_pending = true;
+        }
+
         if (tt == TokenType.LBRACE) {
             tscan.on_lbrace();
             brace_depth++;
+            function_after_label = false;
             continue;
         }
         // TEMPLATE_HEAD opens a template substitution: the lexer already
@@ -2177,9 +2452,56 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             if (tb == TemplateBrace.SUBST) continue;
             if (!is_global && brace_depth == 0) break;
             if (brace_depth > 0) brace_depth--;
+            function_after_label = false;
             // For function-level hoisting, stop when the function body's
             // closing '}' returns brace_depth to 0 (end of scanned scope).
             if (!is_global && brace_depth == 0) break;
+            continue;
+        }
+
+        // A lexical declaration hoists no names into this scope, and its
+        // initializer is an expression whose nested object-literal method
+        // bodies are their own VarDeclaredNames scopes. Skip the declarator
+        // list (initializers included) wholesale so a method-local `var`
+        // never leaks here (`let o = { f() { var x; } }` must not declare a
+        // global `x`). `skip_expression` stops at the comma or semicolon that
+        // separates declarators.
+        if (tt == TokenType.LET || tt == TokenType.CONST) {
+            for (;;) {
+                Token? nm_opt = self.lexer.next_token();
+                if (catch _nmerr = nm_opt) break;
+                TokenType nt = nm_opt.type;
+                if (nt == TokenType.LBRACKET || nt == TokenType.LBRACE) {
+                    // Binding pattern: consume the pattern and any default
+                    // initializers wholesale (they declare nothing here).
+                    {
+                        Token pat_tok = nm_opt;
+                        self.lexer.pushback(pat_tok);
+                    }
+                    self.skip_expression();
+                } else if (nt == TokenType.IDENTIFIER) {
+                    Token? sep_opt = self.lexer.next_token();
+                    if (catch _seperr = sep_opt) break;
+                    if (sep_opt.type == TokenType.ASSIGN) {
+                        self.skip_expression();
+                    } else if (sep_opt.type == TokenType.COMMA) {
+                        continue;
+                    } else {
+                        self.lexer.pushback(sep_opt);
+                        break;
+                    }
+                } else {
+                    self.lexer.pushback(nm_opt);
+                    break;
+                }
+                Token? after_opt = self.lexer.next_token();
+                if (catch _aftererr = after_opt) break;
+                if (after_opt.type != TokenType.COMMA) {
+                    self.lexer.pushback(after_opt);
+                    break;
+                }
+            }
+            at_stmt_start = true;
             continue;
         }
 
@@ -2273,6 +2595,17 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         // scanned. (At own_depth the handler below does the hoist-aware skip;
         // deeper functions only need to be skipped.)
         //
+        // Sloppy Annex B.3.3 (plan 083 Phase 3.2): a block-nested function
+        // declaration also creates a `var` binding in the ENCLOSING scope,
+        // initialized to undefined at function entry (ES2015 §B.3.3 step 3 /
+        // B.3.3.1 instantiatedVarNames). hoist_one_var_name applies the same
+        // skip rules as a plain var hoist (parameter names and
+        // function-declared names keep their value), and DECLVAR_HOIST skips
+        // existing globals per CanDeclareGlobalVar. Generator/async
+        // declarations share the VarDeclaredNames exemption question with
+        // plain ones; hoist them too, the textual declaration still wins at
+        // block-evaluation time via the DECLGLOBALFUNC second binding.
+        //
         // This applies to a function-body scan exactly as it does to the
         // Program's: the enclosing brace is not what makes an inner function a
         // hoisting boundary. Gating it on `is_global` left the function-local
@@ -2286,15 +2619,66 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
         // `!function f(){}()`, `[function f(){}]`) is skipped by the same path:
         // it declares nothing here, and hoisting its name would bind it in this
         // scope instead of only inside its own body (§15.2.5).
-        if ((brace_depth > own_depth || !tok_at_stmt_start) && tt == TokenType.FUNCTION) {
+        if ((brace_depth > own_depth || !tok_at_stmt_start || b34_clause)
+            && tt == TokenType.FUNCTION) {
+            bool b33_is_async = self.is_async;
             self.is_async = false;
             Token? nstar = self.lexer.next_token();
             if (catch _errn = nstar) continue;
-            if (nstar.type != TokenType.STAR) { self.lexer.pushback(nstar); }
+            bool b33_is_gen = nstar.type == TokenType.STAR;
+            if (!b33_is_gen) { self.lexer.pushback(nstar); }
             Token? nname = self.lexer.next_token();
             if (catch _errn2 = nname) continue;
-            if (nname.type != TokenType.IDENTIFIER) { self.lexer.pushback(nname); }
+            bool b33_named = nname.type == TokenType.IDENTIFIER;
+            if (!b33_named) { self.lexer.pushback(nname); }
+            // B.3.3 entry-time var init: a NAMED block-nested function
+            // declaration (not a function expression — those sit in
+            // non-statement position, tok_at_stmt_start false — and not an
+            // anonymous default-export shape) declares its name as a var in
+            // the enclosing scope. checks_only prologues skip bindings (they
+            // only emit CanDeclare checks for top-level names). hoist_one
+            // skips names that already have a binding: when `var f` ran first
+            // its entry doubles as this declaration's, and when the block
+            // ran first the later `var f` reuses the entry made here. The
+            // full parameterNames exemption (B.3.3.1 step ii) needs the formal
+            // list, undeclared at scan time, so the scan exempts only
+            // "arguments" itself; formals are handled at publish time (which
+            // skips) and the var path's own is_param skip. The lex-vs-var
+            // early-error half ("replacing with a var would error") cannot be
+            // tested here either: `let` bindings declare as they parse, after
+            // this scan runs. Instead the scan records every B.3.3 name it
+            // hoists in b33_hoisted_names; block() consults that list at
+            // block-entry time (when the enclosing `let`s are visible) and
+            // gates entry init + publish on it.
+            // B.3.3 covers a plain FunctionDeclaration only, so a generator
+            // or async function declaration stays strictly block-scoped: no
+            // var binding is created for it at all. An if clause body
+            // (b34_clause) has no `{` of its own, so its declaration is at
+            // own_depth and its `function` sits after the condition's `)`.
+            //
+            // Annex B.3.2 extends B.3.3 to a labelled FunctionDeclaration at
+            // a StatementListItem position (DECL_FUNC_LABEL mask). The
+            // parser's labeled_statement() passes DECL_FUNC | DECL_FUNC_LABEL
+            // through to statement() so the function compiles normally. The
+            // second-binding hoist therefore fires when the `function` token
+            // follows a label colon (IDENTIFIER `l` then COLON `:`), tracked
+            // by `function_after_label` below. Without it,
+            // `eval("fe(); l: function fe() {}")` and the StatementListItem
+            // shapes `l: function f() {}` / `l0: l: function f() {}` leave
+            // the pre-call `fe()` reference unresolvable.
+            if (!checks_only && !self.is_strict && b33_named
+                && (brace_depth > own_depth || b34_clause || function_after_label)
+                && (tok_at_stmt_start || b34_clause || function_after_label)
+                && !b33_is_gen && !b33_is_async && nname.str_value.len > 0
+                && str_eq(nname.str_value, "arguments") == false) {
+                self.hoist_one_var_name(nname.str_value, is_global, true);
+            }
             self.skip_function_body();
+            // The skipped body's closing `}` ends the statement, even when
+            // this was an if clause body with no braces of its own. Without
+            // this, a top-level declaration immediately after an if-body
+            // function inherits tok_at_stmt_start false and is not hoisted.
+            at_stmt_start = true;
             continue;
         }
 
@@ -2361,7 +2745,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             // recorded as hoisted, the statement pass skips the declaration
             // outright and never reaches expect_binding_identifier's own
             // check.
-            if (is_restricted_name(name_opt.str_value, strict: self.lexer.reserved_words_strict)) {
+            if (is_restricted_name(name_opt.str_value, strict: self.is_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
 
@@ -2459,7 +2843,19 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 self.is_user_generator = true;
             }
 
-            Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
+            // A function name is a BindingIdentifier, so the contextual
+            // keyword spellings (`yield`, `static`, `let`) are valid names
+            // wherever the ENCLOSING context allows them: a generator's own
+            // name takes [Yield] from the enclosing grammar, so
+            // `function* yield(){}` is legal at the top level. saved_gen /
+            // saved_user_gen hold those enclosing values.
+            bool gen_here = self.is_generator;
+            bool user_gen_here = self.is_user_generator;
+            self.is_generator = saved_gen;
+            self.is_user_generator = saved_user_gen;
+            Token name_tok2 = self.expect_binding_identifier()!;
+            self.is_generator = gen_here;
+            self.is_user_generator = user_gen_here;
             // Intern the name now: name_tok2.str_value may be a borrow into
             // the lexer's shared ident_buf scratch (escaped identifiers like
             // `a` decode through the slow path, see scan_identifier),
@@ -2811,6 +3207,19 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             continue;
         }
 
+        // Annex B.3.2: a `function` after a label colon at top-level is a
+        // labelled FunctionDeclaration and B.3.3 hoists it. Mirror the
+        // prev_toplevel tracking in hoist_global_fn_decls so the in_stmt_pos
+        // check below accepts the function: a label colon resets prev_toplevel
+        // to a statement-terminator (SEMICOLON), putting the `function`
+        // immediately following into a statement position.
+        if (tt == TokenType.COLON && brace_depth == 0
+            && prev_toplevel == TokenType.IDENTIFIER) {
+            prev_toplevel = TokenType.SEMICOLON;
+            has_prev = true;
+            continue;
+        }
+
         // An arrow function's block body is its own scope, skip it whole so
         // a `function` declaration inside it is never hoisted to global (same
         // boundary rule as hoist_decls; see the ARROW case there).
@@ -2933,7 +3342,14 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                 // leak into later declarations in the scan.
                 self.is_async = false;
                 self.skip_function_body();
-                prev_toplevel = TokenType.FUNCTION;
+                // A skipped body ends at its `}`, a statement terminator:
+                // `if (c) function f() {} function g() {}` puts g in
+                // statement position (B.3.4 if-body followed by a top-level
+                // declaration). Recording FUNCTION instead left g
+                // misclassified as expression-position, so it was never
+                // hoisted and a same-named B.3.3 entry init clobbered the
+                // binding with undefined.
+                prev_toplevel = TokenType.RBRACE;
                 has_prev = true;
                 continue;
             }
@@ -2956,7 +3372,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             // name is recorded as hoisted, the statement pass skips the
             // declaration outright and never reaches
             // expect_binding_identifier's own check.
-            if (is_restricted_name(name_opt.str_value, strict: self.lexer.reserved_words_strict)) {
+            if (is_restricted_name(name_opt.str_value, strict: self.is_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
 
@@ -3056,7 +3472,19 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
                 self.is_user_generator = true;
             }
 
-            Token name_tok2 = self.expect(TokenType.IDENTIFIER)!;
+            // A function name is a BindingIdentifier, so the contextual
+            // keyword spellings (`yield`, `static`, `let`) are valid names
+            // wherever the ENCLOSING context allows them: a generator's own
+            // name takes [Yield] from the enclosing grammar, so
+            // `function* yield(){}` is legal at the top level. saved_gen /
+            // saved_user_gen hold those enclosing values.
+            bool gen_here = self.is_generator;
+            bool user_gen_here = self.is_user_generator;
+            self.is_generator = saved_gen;
+            self.is_user_generator = saved_user_gen;
+            Token name_tok2 = self.expect_binding_identifier()!;
+            self.is_generator = gen_here;
+            self.is_user_generator = user_gen_here;
             // Intern the name now: name_tok2.str_value may be a borrow into
             // the lexer's shared ident_buf scratch (escaped identifiers like
             // `a` decode through the slow path, see scan_identifier),
@@ -3285,7 +3713,8 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams seen_params;
-    seen_params.strict = self.lexer.reserved_words_strict;
+    seen_params.strict = self.is_strict;
+    seen_params.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] destruct_binds;
@@ -3320,6 +3749,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
             }
             // Check for rest parameter
             if (self.match(TokenType.ELLIPSIS)) {
+                seen_params.has_complex_params = true;
                 Token rest_param;
 
                 // Check for destructured rest: ...[]
@@ -3334,13 +3764,18 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                     self.collect_arr_param_binds(destruct_binds[..], &destruct_count, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else {
-                    rest_param = self.expect(TokenType.IDENTIFIER)!;
+                    rest_param = self.expect_binding_identifier()!;
                 }
                 // TypeScript: optional `: T` after rest parameter.
                 self.try_skip_ts_type_annotation()!;
 
                 if (rest_param.str_value.len > 0) {
-                    seen_params.declare(rest_param.str_value)!;
+                    // A contextual-keyword spelling already had its
+                    // enclosing-grammar decision made by
+                    // expect_binding_identifier, so the context-blind
+                    // restricted-name test must not re-reject it.
+                    seen_params.declare(rest_param.str_value,
+                                        rest_param.type != TokenType.IDENTIFIER)!;
                     // Intern now: rest_param.str_value may borrow the lexer's
                     // shared ident_buf scratch (escaped identifier), which the
                     // body parsed below will overwrite. declare_var stores this
@@ -3362,6 +3797,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
             // Check for destructuring pattern as parameter: {a, b} or [a, b]
             if (self.check(TokenType.LBRACE)) {
+                seen_params.has_complex_params = true;
                 self.advance()!;
                 // Reserve the formal parameter register slot so the incoming
                 // argument stays live through all destructuring extractions.
@@ -3376,6 +3812,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 if (self.check(TokenType.RPAREN)) break;
                 continue;
             } else if (self.check(TokenType.LBRACKET)) {
+                seen_params.has_complex_params = true;
                 self.advance()!;
                 // Reserve the formal parameter register slot.
                 self.alloc_reg();
@@ -3407,6 +3844,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
             // Check for default value
             if (self.check(TokenType.ASSIGN)) {
+                seen_params.has_complex_params = true;
                 self.advance()!; // consume '='
 
                 // Compile the default expression as an inner function. Pass
@@ -3507,6 +3945,68 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // code is emitted, so declare_var can make them env-resident.
     self.pre_scan_captures();
 
+    // The body's directive prologue can flip is_strict, and hoist_decls
+    // compiles nested function declarations via compile_inner_function, which
+    // propagates self.is_strict. A "use strict" would otherwise flip the flag
+    // AFTER those declarations were already compiled sloppy, missing every
+    // strict-code early error inside them. Peek the prologue now (a dynamic
+    // Function body reaches this path; source functions go through
+    // compile_inner_function, which has the same treatment), restore the lexer
+    // to just before the body's `{`, and let block() consume the directives for
+    // real (it owns prologue_dir_count for the legacy-escape check).
+    {
+        uint pr_pos = self.lexer.pos;
+        uint pr_line = self.lexer.line;
+        uint pr_col = self.lexer.col;
+        Token pr_cur = self.lexer.current;
+        Token pr_lk = self.lexer.lookahead;
+        bool pr_has_lk = self.lexer.has_lookahead;
+        Token pr_pb = self.lexer.pushed_back;
+        bool pr_has_pb = self.lexer.has_pushed_back;
+        bool pr_slt = self.lexer.seen_line_term;
+
+        Token[8] pr_buf;
+        uint pr_count = 0;
+        Token lbrace = self.advance()!;
+        if (lbrace.type != TokenType.LBRACE) {
+            return self.fail("expected '{' to start function body")~;
+        }
+        pr_buf[pr_count++] = lbrace;
+        while (pr_count < pr_buf.len && self.check(TokenType.STRING)) {
+            Token str_tok = self.advance()!;
+            pr_buf[pr_count++] = str_tok;
+            if (!self.check(TokenType.SEMICOLON)
+                && !self.lexer.seen_line_term
+                && !self.check(TokenType.RBRACE)) {
+                break;
+            }
+            if (self.check(TokenType.SEMICOLON)) {
+                pr_buf[pr_count++] = self.advance()!;
+            }
+        }
+        self.lexer.pos = pr_pos;
+        self.lexer.line = pr_line;
+        self.lexer.col = pr_col;
+        self.lexer.current = pr_cur;
+        self.lexer.lookahead = pr_lk;
+        self.lexer.has_lookahead = pr_has_lk;
+        self.lexer.pushed_back = pr_pb;
+        self.lexer.has_pushed_back = pr_has_pb;
+        self.lexer.seen_line_term = pr_slt;
+
+        for (uint i = 1; i < pr_count; i++) {
+            if (!is_use_strict_directive(pr_buf[i])) continue;
+            // A non-simple parameter list keeps the outer mode here; block()'s
+            // parse_directives then reports the Illegal 'use strict' error.
+            if (!self.params_are_simple()) break;
+            self.is_strict = true;
+            self.lexer.set_strict(true);
+            if (self.current_func != null) self.current_func.flags.is_strict = true;
+            self.saw_use_strict = true;
+            break;
+        }
+    }
+
     // Hoist var and function declarations to the top of the function scope.
     self.hoist_decls(false)!;
 
@@ -3519,6 +4019,34 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // expression as division, not a RegularExpressionLiteral. Suppress the
     // block-close regex hint in that case (see Lexer.note_block_close doc).
     self.block(true, is_expr)!;
+
+    // A "use strict" prologue makes the whole body strict, which
+    // retroactively forbids duplicate parameter names and `eval`/`arguments`
+    // as parameter names (ES2024 §15.2.1 / §15.2.2). The list was parsed
+    // under the outer strictness, so re-apply the strict early errors now.
+    // Only reachable for a simple list: parse_directives rejects "use strict"
+    // outright when the list is non-simple (ES2024 §14.1.2). The same
+    // re-validation runs for source functions in compile_inner_function.
+    if (!seen_params.strict && self.is_strict) {
+        for (uint pi = 0; pi < seen_params.count; pi++) {
+            char[] pname = seen_params.names[pi][:seen_params.lens[pi]];
+            if (pname.len == 4 && pname[0] == 'e' && pname[1] == 'v'
+                && pname[2] == 'a' && pname[3] == 'l') {
+                return self.fail("'eval' is not a valid parameter name in strict mode")~;
+            }
+            if (pname.len == 9 && pname[0] == 'a' && pname[1] == 'r' && pname[2] == 'g'
+                && pname[3] == 'u' && pname[4] == 'm' && pname[5] == 'e'
+                && pname[6] == 'n' && pname[7] == 't' && pname[8] == 's') {
+                return self.fail("'arguments' is not a valid parameter name in strict mode")~;
+            }
+            for (uint pj = pi + 1; pj < seen_params.count; pj++) {
+                char[] other = seen_params.names[pj][:seen_params.lens[pj]];
+                if (seen_params.lens[pi] == other.len && str_eq(pname, other)) {
+                    return self.fail("duplicate parameter names in strict mode")~;
+                }
+            }
+        }
+    }
 
     // Pop the function-level lexical scope.
     // NOTE: for functions with explicit return, this POP_LEX won't execute,
@@ -3599,10 +4127,17 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // Create a new CompilerContext for the default expression
     CompilerContext def_ctx;
     def_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    def_ctx.outer_with = self.in_with();
     def_ctx.module_goal = self.module_goal;
 
-    // Strict-only engine: always strict
-    def_ctx.lexer.set_strict(true);
+    // The thunk is part of the enclosing code, so it carries that code's
+    // strictness. The lexer is shared with the caller, so setting it to
+    // anything else here would outlive this parse and change how the rest of
+    // the enclosing pattern is tokenized.
+    def_ctx.is_strict = self.is_strict;
+    def_ctx.lexer.set_strict(self.is_strict);
 
     // Propagate generator context so yield is accepted inside default
     // expressions of generator functions (e.g. [x = yield] = []).
@@ -3718,6 +4253,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // VM creates the parent's arguments object.
     if (def_ctx.uses_arguments) {
         func.flags.uses_arguments = false;
+        func.flags.mapped_arguments = false;
         self.uses_arguments = true;
     }
 
@@ -3785,8 +4321,16 @@ fn void CompilerContext.mark_default_expr_captures(&self, CompiledFunction* func
 fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     CompilerContext key_ctx;
     key_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    key_ctx.outer_with = self.in_with();
     key_ctx.module_goal = self.module_goal;
-    key_ctx.lexer.set_strict(true);
+    // A computed key is part of the enclosing code, so it carries that code's
+    // strictness -- inside a class body self.is_strict is already true. The
+    // lexer is shared with the caller, so setting it to anything else here
+    // would outlive this parse.
+    key_ctx.is_strict = self.is_strict;
+    key_ctx.lexer.set_strict(self.is_strict);
     key_ctx.in_class_body = self.in_class_body;
     key_ctx.has_super_binding = self.has_super_binding;
     key_ctx.super_is_home_object = self.super_is_home_object;
@@ -3850,8 +4394,18 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
 fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     CompilerContext block_ctx;
     block_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    block_ctx.outer_with = self.in_with();
     block_ctx.module_goal = self.module_goal;
+    // A static block is class code, which is strict throughout (ES2024
+    // §11.2.2) whatever the enclosing script's mode.
+    block_ctx.is_strict = true;
     block_ctx.lexer.set_strict(true);
+    // The lexer is shared with the caller, so put its strictness back on every
+    // exit; a class in a sloppy script must not leave the rest of that script
+    // tokenized as strict.
+    defer self.lexer.set_strict(self.is_strict);
     block_ctx.in_class_body = self.in_class_body;
     block_ctx.has_super_binding = self.has_super_binding;
     block_ctx.super_is_home_object = self.super_is_home_object;
@@ -3916,22 +4470,37 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
 // If `is_named_expr` is true and `name` is non-empty, tag the result with
 // `is_namebinding`, so the VM binds `name` to the function object in a
 // fresh lexical environment at call time (ES2015 §14.1.20 NamedEvaluation).
+// `is_method_body` says the caller is compiling an object-literal or class
+// MethodDefinition. That has two effects: the class/super/HomeObject context
+// propagates into the body (see below), and the parameter list is checked as
+// UniqueFormalParameters (ES2024 §14.3 / §15.4.5), which forbids duplicate
+// names whatever the surrounding strictness.
 fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false, bool is_method_body = false) {
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
     inner_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    inner_ctx.outer_with = self.in_with();
     inner_ctx.module_goal = self.module_goal;
 
-    inner_ctx.lexer.set_strict(true);
+    inner_ctx.is_strict = self.is_strict;
+    inner_ctx.lexer.set_strict(self.is_strict);
+    // The lexer is shared with the caller, and a "use strict" prologue in this
+    // body raises its strictness partway through. Put it back on every exit,
+    // errors included, or the rest of an enclosing sloppy script is tokenized
+    // as strict: `function f(){ "use strict"; } eval = 1;` would reject the
+    // assignment.
+    defer self.lexer.set_strict(self.is_strict);
 
     // Named function expression: the compiled function will be tagged
     // is_namebinding, so it must not take the needs_env=false fast path
     // (see is_named_func_expr doc in context.c3).
     inner_ctx.is_named_func_expr = is_named_expr && name.len > 0;
 
-    // subst_global_this is deliberately NOT propagated: a function nested
-    // inside a dynamic Function body is an ordinary function whose
-    // [[ThisMode]] is strict, so its undefined receiver stays undefined.
+    // subst_global_this is gone (plans/083 phase 2); is_strict now carries
+    // the dynamic-Function-or-not distinction implicitly through the same
+    // directive mechanism as ordinary sloppy code.
 
     // Propagate generator flag: if the caller is compiling a generator,
     // the inner context (which parses the body) needs to know it's in a generator.
@@ -4031,7 +4600,19 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams inner_seen;
-    inner_seen.strict = self.lexer.reserved_words_strict;
+    // Phase 1 (plans/083): object-literal MethodDefinitions and class
+    // MethodDefinitions use the UniqueFormalParameters grammar (ES2024 §14.3 /
+    // §15.4.5), which forbids duplicate names regardless of strictness.
+    // `is_method_body` is true when the caller is compiling one of
+    // those grammars (object method, class method, getter/setter, named-export
+    // method), so reject duplicates even in a sloppy outer context. Plain
+    // FunctionExpression bodies keep Annex B.3.1's sloppy exemption.
+    inner_seen.strict = is_method_body || self.is_strict;
+    // Object/class methods and named-export methods use UniqueFormalParameters
+    // (is_method_body=true) for duplicate detection, but their
+    // restricted-name check tracks only the surrounding scope's strictness:
+    // a sloppy object method still accepts `arguments` as a parameter name.
+    inner_seen.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] inner_destruct_binds;
@@ -4064,6 +4645,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             }
             // Check for rest parameter
             if (inner_ctx.match(TokenType.ELLIPSIS)) {
+                inner_seen.has_complex_params = true;
                 Token rest_param;
 
                 // Check for destructured rest: ...{a, b} or ...[a, b]
@@ -4078,13 +4660,14 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                     inner_ctx.collect_arr_param_binds(inner_destruct_binds[..], &inner_destruct_count, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else {
-                    rest_param = inner_ctx.expect(TokenType.IDENTIFIER)!;
+                    rest_param = inner_ctx.expect_binding_identifier()!;
                 }
                 // TypeScript: optional `: T` after rest parameter.
                 inner_ctx.try_skip_ts_type_annotation()!;
 
                 if (rest_param.str_value.len > 0) {
-                    inner_seen.declare(rest_param.str_value)!;
+                    inner_seen.declare(rest_param.str_value,
+                                       rest_param.type != TokenType.IDENTIFIER)!;
                     // Intern now: rest_param.str_value may borrow the lexer's
                     // shared ident_buf scratch (escaped identifier), which the
                     // body parsed below will overwrite. declare_var stores this
@@ -4106,6 +4689,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
             // Check for destructuring pattern as parameter: {a, b} or [a, b]
             if (inner_ctx.check(TokenType.LBRACE)) {
+                inner_seen.has_complex_params = true;
                 inner_ctx.advance()!;
                 // Reserve the formal parameter register slot so the incoming
                 // argument stays live through all destructuring extractions
@@ -4132,6 +4716,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 if (inner_ctx.check(TokenType.RPAREN)) break;
                 continue;
             } else if (inner_ctx.check(TokenType.LBRACKET)) {
+                inner_seen.has_complex_params = true;
                 inner_ctx.advance()!;
                 // Reserve the formal parameter register slot (see LBRACE above).
                 inner_ctx.alloc_reg();
@@ -4175,6 +4760,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
             // Check for default value
             if (inner_ctx.check(TokenType.ASSIGN)) {
+                inner_seen.has_complex_params = true;
                 inner_ctx.advance()!; // consume '='
 
                 // Pass param name for NamedEvaluation tagging.
@@ -4270,6 +4856,110 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // var_env, isolating body vars from the parameter scope.
     if (inner_has_func_lex) {
         inner_ctx.emit_simple(Opcode.PUSH_VAR);
+    }
+
+    // The directive prologue may flip is_strict; hoist_decls compiles nested
+    // function declarations via compile_inner_function, which propagates
+    // self.is_strict. A "use strict" inside the body would otherwise flip the
+    // flag AFTER nested functions were already compiled as sloppy, and a
+    // `with` inside that nested function would be accepted (ES2024 §13.11.1).
+    //
+    // Peek the prologue here: read `{` plus the directive strings, restore the
+    // lexer position to before the `{` so hoist_decls (which calls
+    // lexer.next_token() directly, NOT via advance()) still sees the body's
+    // opening brace and increments its brace_depth. block() then re-consumes
+    // the `{` via its own expect() and runs its own parse_directives (which
+    // owns prologue_dir_count for the legacy-escape shrink check). Only the
+    // strictness flag is set early here.
+    uint prologue_pos = inner_ctx.lexer.pos;
+    uint prologue_line = inner_ctx.lexer.line;
+    uint prologue_col = inner_ctx.lexer.col;
+    Token prologue_current = inner_ctx.lexer.current;
+    Token prologue_lookahead = inner_ctx.lexer.lookahead;
+    bool prologue_has_lk = inner_ctx.lexer.has_lookahead;
+    Token prologue_pb = inner_ctx.lexer.pushed_back;
+    bool prologue_has_pb = inner_ctx.lexer.has_pushed_back;
+    bool prologue_slt = inner_ctx.lexer.seen_line_term;
+
+    Token[8] prologue_buf;
+    uint prologue_count = 0;
+    Token lbrace = inner_ctx.advance()!;
+    if (lbrace.type != TokenType.LBRACE) {
+        return self.fail("expected '{' to start function body")~;
+    }
+    prologue_buf[0] = lbrace;
+    prologue_count = 1;
+    while (prologue_count < prologue_buf.len && inner_ctx.check(TokenType.STRING)) {
+        Token str_tok = inner_ctx.advance()!;
+        prologue_buf[prologue_count++] = str_tok;
+        if (!inner_ctx.check(TokenType.SEMICOLON)
+            && !inner_ctx.lexer.seen_line_term
+            && !inner_ctx.check(TokenType.RBRACE)) {
+            break;
+        }
+        if (inner_ctx.check(TokenType.SEMICOLON)) {
+            prologue_buf[prologue_count++] = inner_ctx.advance()!;
+        }
+    }
+    // Restore lexer state to before the `{` so hoist_decls's lexer.next_token()
+    // (which doesn't read CompilerContext.pushback_stack) still sees the `{`.
+    inner_ctx.lexer.pos = prologue_pos;
+    inner_ctx.lexer.line = prologue_line;
+    inner_ctx.lexer.col = prologue_col;
+    inner_ctx.lexer.current = prologue_current;
+    inner_ctx.lexer.lookahead = prologue_lookahead;
+    inner_ctx.lexer.has_lookahead = prologue_has_lk;
+    inner_ctx.lexer.pushed_back = prologue_pb;
+    inner_ctx.lexer.has_pushed_back = prologue_has_pb;
+    inner_ctx.lexer.seen_line_term = prologue_slt;
+    // Set is_strict if any directive was "use strict" on a simple parameter
+    // list. The check mirrors parse_directives().
+    bool prologue_made_strict = false;
+    for (uint i = 1; i < prologue_count; i++) {
+        Token t = prologue_buf[i];
+        if (!is_use_strict_directive(t)) continue;
+        if (inner_ctx.params_are_simple()) {
+            inner_ctx.is_strict = true;
+            inner_ctx.lexer.set_strict(true);
+            if (inner_ctx.current_func != null) inner_ctx.current_func.flags.is_strict = true;
+            inner_ctx.saw_use_strict = true;
+            prologue_made_strict = true;
+        }
+    }
+    // ES2024 §15.2.1 / §15.2.2 strict early errors that the param/name parser
+    // couldn't enforce when it ran (it only knew the OUTER strictness). A
+    // 'use strict' prologue can retroactively promote the body to strict,
+    // which makes the function name 'eval'/'arguments' a SyntaxError, forbids
+    // duplicate BoundNames in a non-simple list, and forbids 'eval'/'arguments'
+    // as FormalParameterList BoundNames.
+    if (prologue_made_strict) {
+        if (name.len == 4 && name[0] == 'e' && name[1] == 'v' && name[2] == 'a' && name[3] == 'l') {
+            return self.fail("'eval' is not a valid function name in strict mode")~;
+        }
+        if (name.len == 9 && name[0] == 'a' && name[1] == 'r' && name[2] == 'g' &&
+            name[3] == 'u' && name[4] == 'm' && name[5] == 'e' && name[6] == 'n' &&
+            name[7] == 't' && name[8] == 's') {
+            return self.fail("'arguments' is not a valid function name in strict mode")~;
+        }
+        // Strict re-validation of params: forbidden names and duplicate
+        // BoundNames in a non-simple list.
+        for (ushort pi = 0; pi < inner_seen.count; pi++) {
+            char[] pname = inner_seen.names[pi][:inner_seen.lens[pi]];
+            if (pname.len == 4 && pname[0] == 'e' && pname[1] == 'v' && pname[2] == 'a' && pname[3] == 'l') {
+                return self.fail("'eval' is not a valid parameter name in strict mode")~;
+            }
+            if (pname.len == 9 && pname[0] == 'a' && pname[1] == 'r' && pname[2] == 'g' &&
+                pname[3] == 'u' && pname[4] == 'm' && pname[5] == 'e' && pname[6] == 'n' &&
+                pname[7] == 't' && pname[8] == 's') {
+                return self.fail("'arguments' is not a valid parameter name in strict mode")~;
+            }
+            for (ushort pj = pi + 1; pj < inner_seen.count; pj++) {
+                char[] other = inner_seen.names[pj][:inner_seen.lens[pj]];
+                if (inner_seen.lens[pi] == other.len && str_eq(pname, other)) {
+                    return self.fail("duplicate parameter names in strict mode")~;
+                }
+            }
+        }
     }
 
     // Hoist var and function declarations to the top of the inner function scope.
@@ -4428,6 +5118,10 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
         self.is_user_generator = true;
         self.is_constructable = false;
     }
+    // Whether THIS expression is a generator decides its name's [Yield]
+    // parameter: a GeneratorExpression's BindingIdentifier is [+Yield],
+    // unlike a plain FunctionExpression's [~Yield].
+    bool fexpr_is_generator = self.is_user_generator;
 
     // Async function expressions are not constructors (ES2017 §14.7.5).
     if (is_async_expr) {
@@ -4460,18 +5154,46 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
     // an async function, but `(async function await(){})` is not. `yield` is
     // reserved in all strict code and this engine is strict-only, so it is
     // never a function name.
-    if (self.check(TokenType.IDENTIFIER) ||
-        (self.check(TokenType.AWAIT) && !self.is_module && !is_async_expr)) {
-        // BindingIdentifier position: an escaped `await` is a plain name, not
-        // the terminal, so it is consumed as an IdentifierName (§5.1.5).
-        Token name_tok = self.advance(true)!;
-        // The name is a BindingIdentifier, so §13.1.1's restricted names are
-        // rejected. Checked here rather than via expect_binding_identifier
-        // because the name is optional and the `await` branch above has
-        // already made its own enclosing-grammar decision.
-        if (name_tok.type == TokenType.IDENTIFIER && is_restricted_name(name_tok.str_value, strict: self.lexer.reserved_words_strict)) {
-            return self.fail("reserved word cannot be used as a binding identifier")~;
-        }
+    // A FunctionExpression's own grammar parameters are [~Yield, ~Await]
+    // (§15.5.1), so its name is an Identifier in ANY non-strict context, even
+    // inside a generator body or an async function: `(function yield(){})` in
+    // a generator body is legal. A GeneratorExpression is the exception — its
+    // name is [+Yield], so `function* yield(){}` is a SyntaxError as an
+    // expression but legal as a declaration, whose name inherits the
+    // enclosing grammar. Only strict code reserves `yield` (and makes
+    // `let`/`static` names SyntaxErrors through is_restricted_name).
+    bool name_is_yield_ident = self.check(TokenType.YIELD) && !self.is_strict
+        && !fexpr_is_generator;
+    bool name_is_sloppy_ctx_kw = (self.check(TokenType.LET) || self.check(TokenType.STATIC))
+        && !self.is_strict;
+    Token name_tok;
+    bool have_name_tok = false;
+    if (self.check(TokenType.IDENTIFIER) || name_is_yield_ident || name_is_sloppy_ctx_kw) {
+        // BindingIdentifier position. The name is [~Yield, ~Await], so no
+        // enclosing generator/async state may decide the spelling: clear the
+        // [Yield] flags (and a generator parameter list's blocked-yield mark)
+        // for the parse, then put the function's own back.
+        bool gen_here = self.is_generator;
+        bool user_gen_here = self.is_user_generator;
+        bool forbid_yield_here = self.forbid_yield;
+        self.is_generator = false;
+        self.is_user_generator = false;
+        self.forbid_yield = false;
+        name_tok = self.expect_binding_identifier()!;
+        self.is_generator = gen_here;
+        self.is_user_generator = user_gen_here;
+        self.forbid_yield = forbid_yield_here;
+        have_name_tok = true;
+    } else if (self.check(TokenType.AWAIT) && !self.is_module && !is_async_expr) {
+        // The name's [Await] decision is made above from the expression kind,
+        // so expect_binding_identifier must not re-apply the enclosing
+        // context's await_reserved_here (a static block reserves `await`,
+        // yet `(function await(){})` inside one is valid). An escaped `await`
+        // is consumed as an IdentifierName (§5.1.5), hence advance(true).
+        name_tok = self.advance(true)!;
+        have_name_tok = true;
+    }
+    if (have_name_tok) {
         // Intern now: an escaped function-expression name borrows the
         // lexer's shared ident_buf scratch. compile_inner_function below
         // copies `name` into the CompiledFunction only AFTER compiling the
@@ -4623,10 +5345,18 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // Create a new CompilerContext for the arrow function
     CompilerContext arrow_ctx;
     arrow_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    arrow_ctx.outer_with = self.in_with();
     arrow_ctx.module_goal = self.module_goal;
 
-    // Strict-only engine: always strict
-    arrow_ctx.lexer.set_strict(true);
+    // An arrow body is part of the enclosing code, so it carries that code's
+    // strictness (a "use strict" prologue in the body raises it later). The
+    // lexer is shared with the caller, so setting it to anything else here
+    // would outlive this parse and change how the rest of the enclosing
+    // expression is tokenized.
+    arrow_ctx.is_strict = self.is_strict;
+    arrow_ctx.lexer.set_strict(self.is_strict);
 
     // Arrow functions use the parent scope, no fresh env needed.
     arrow_ctx.is_arrow = true;
@@ -4734,7 +5464,15 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // FormalParameters (ES2015 §14.2.1): `(a, a) => a` and `(eval) => 1` are
     // SyntaxErrors here too.
     SeenParams arrow_seen;
-    arrow_seen.strict = self.lexer.reserved_words_strict;
+    // ES2015 §14.2.1: ArrowParameters have no Annex B.3.1 sloppy-duplicates
+    // exemption, so even a plain `(a, a) => 1` is a SyntaxError regardless of
+    // enclosing strictness. Set strict=true so SeenParams enforces the
+    // duplicate-name check on every arrow parameter list, in sloppy and strict
+    // alike.
+    arrow_seen.strict = true;
+    // ArrowParameters also accept `arguments`/`eval` in sloppy contexts
+    // (ES2024 §13.3.1); only the duplicate-name check stays strict.
+    arrow_seen.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
     DestructBind[MAX_DESTRUCT_BINDS] arrow_destruct_binds;
@@ -4746,6 +5484,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         for (;;) {
             // Check for rest parameter
             if (arrow_ctx.match(TokenType.ELLIPSIS)) {
+                arrow_seen.has_complex_params = true;
                 Token rest_param;
 
                 // Check for destructured rest: ...{a, b} or ...[a, b]
@@ -4798,6 +5537,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
             // Check for destructuring pattern as parameter: {a, b} or [a, b]
             if (arrow_ctx.check(TokenType.LBRACE)) {
+                arrow_seen.has_complex_params = true;
                 arrow_ctx.advance()!;
                 arrow_ctx.alloc_reg();
                 arrow_ctx.collect_obj_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
@@ -4815,6 +5555,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 if (arrow_ctx.check(TokenType.RPAREN)) break;
                 continue;
             } else if (arrow_ctx.check(TokenType.LBRACKET)) {
+                arrow_seen.has_complex_params = true;
                 arrow_ctx.advance()!;
                 arrow_ctx.alloc_reg();
                 arrow_ctx.collect_arr_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
@@ -4858,6 +5599,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
             // Check for default value
             if (arrow_ctx.check(TokenType.ASSIGN)) {
+                arrow_seen.has_complex_params = true;
                 arrow_ctx.advance()!; // consume '='
 
                 // Pass param name for NamedEvaluation tagging.
@@ -4953,6 +5695,15 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         arrow_ctx.emit_simple(Opcode.PUSH_VAR);
     }
 
+    // Push a function-level lexical scope, mirroring compile_arrow_inner. An
+    // arrow ConciseBody never goes through block(), so without this the body's
+    // top-level let/const land in the variable environment and are
+    // indistinguishable from `var`s. That distinction is what a sloppy direct
+    // eval needs: ES2024 §18.2.1.2 step 3.4 walks the lexical chain up to the
+    // variable environment and throws when a `var` name already has a lexical
+    // binding (`() => { let x; eval("var x"); }`).
+    arrow_ctx.emit_simple(Opcode.PUSH_LEX);
+
     // Determine if body is block or expression. Capture `body_end_pos` right
     // after the last body token (before any trailing whitespace or comment) so
     // Function.prototype.toString returns the exact source span.
@@ -4968,14 +5719,21 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         // Block body: { ... }
         arrow_ctx.advance()!;
         // An arrow's ConciseBody has a directive prologue like any other
-        // function body. The engine is strict-only so the directive is a
-        // no-op, but it must be consumed here for its ES §15.3.1 early error:
-        // `(a = 1) => { "use strict"; }` is a SyntaxError because the arrow's
-        // parameters are not a simple list.
+        // function body. `parse_directives` applies it (a sloppy arrow becomes
+        // strict) and raises its ES §15.3.1 early error: `(a = 1) => { "use
+        // strict"; }` is a SyntaxError because the arrow's parameters are not a
+        // simple list.
         arrow_ctx.parse_directives()!;
         // An arrow ConciseBody never goes through block(), so emit the
         // deferred declarations here instead.
         arrow_ctx.emit_hoisted_fn_decls();
+        // block() would also TDZ-initialise the body's own let/const/class
+        // bindings; without that pass an arrow's lexical binding has no
+        // sentinel in its lex_env, so a read inside the dead zone walks out
+        // to an enclosing binding of the same name instead of throwing
+        // (`var y = 99; (() => { let y = y; })()` read 99). Same INITTZ pass,
+        // run after the prologue so it agrees with the body's strictness.
+        arrow_ctx.hoist_lexical_tdz();
         while (!arrow_ctx.check(TokenType.RBRACE) && !arrow_ctx.is_at_end()) {
             arrow_ctx.statement()!;
         }
@@ -5001,17 +5759,28 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         // Pre-scan in expression mode: nested arrows/functions inside the
         // expression can capture this arrow's params (plan 045).
         arrow_ctx.pre_scan_captures(true);
+        // An ArrowFunction's ConciseBody is `AssignmentExpression[?In]`:
+        // inherit the enclosing `[In]` so an arrow inside a C-style for
+        // head (`for (x => 0 in 1;;)`) rejects the `in` in its body.
+        // Read from `arrow_forbid_in` rather than `self.forbid_in`, which
+        // binary_expr has already cleared by the time primary_expr detects
+        // the arrow. ArrowParameters carry no `[In]`, so defaults remain
+        // `[+In]`.
+        arrow_ctx.forbid_in = self.arrow_forbid_in;
         ushort expr_reg = arrow_ctx.assignment_expr()!;
         arrow_ctx.emit_a_bc(Opcode.RET, (uint)expr_reg, 0);
         body_end_pos = arrow_ctx.lexer.pos;
     }
+
+    // Pop the function-level lexical scope (the PUSH_LEX above).
+    arrow_ctx.emit_simple(Opcode.POP_LEX);
 
     // Pop the body's variable scope (undo PUSH_VAR)
     if (has_func_lex) {
         arrow_ctx.emit_simple(Opcode.POP_VAR);
     }
 
-    // Pop the function-level lexical scope
+    // Pop a parameter list's lexical scope (undo the param PUSH_LEX)
     if (has_func_lex) {
         arrow_ctx.emit_simple(Opcode.POP_LEX);
     }
@@ -5035,6 +5804,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // and env-declares the object the arrow's GETVAR "arguments" resolves to.
     if (arrow_ctx.uses_arguments) {
         func.flags.uses_arguments = false;
+        func.flags.mapped_arguments = false;
         self.uses_arguments = true;
     }
     // A direct eval inside the arrow body may reference `arguments` even
@@ -5102,7 +5872,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
             break;
         }
         if (src_end > (uint)arrow_ctx.lexer.source.len) src_end = (uint)arrow_ctx.lexer.source.len;
-        uint slen = src_end - src_start;
+        // A speculative for-in/for-of LHS probe that re-parses the arrow
+        // (see the body in statements.c3) can leave `body_end_pos` before
+        // `src_start` when the lexer's `lookahead_token_start` was stale on
+        // restore. Guard against the underflow so Function.prototype.toString
+        // never reads past the source.
+        uint slen = src_end > src_start ? src_end - src_start : 0;
         if (slen > 0) {
             char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)slen + 1)) ?? null;
             if (src_heap != null) {
@@ -5174,10 +5949,18 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // Create a new CompilerContext for the arrow function
     CompilerContext arrow_ctx;
     arrow_ctx.init(self.lexer, self.heap);
+    // A with-env from the enclosing body is captured by this closure's scope
+    // chain, so its name resolution stays dynamic (see in_with).
+    arrow_ctx.outer_with = self.in_with();
     arrow_ctx.module_goal = self.module_goal;
 
-    // Strict-only engine: always strict
-    arrow_ctx.lexer.set_strict(true);
+    // An arrow body is part of the enclosing code, so it carries that code's
+    // strictness (a "use strict" prologue in the body raises it later). The
+    // lexer is shared with the caller, so setting it to anything else here
+    // would outlive this parse and change how the rest of the enclosing
+    // expression is tokenized.
+    arrow_ctx.is_strict = self.is_strict;
+    arrow_ctx.lexer.set_strict(self.is_strict);
 
     // Arrow functions use the parent scope, no fresh env needed.
     arrow_ctx.is_arrow = true;
@@ -5257,13 +6040,16 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // the current token.
         HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(params[i]);
         char[] name = param_hstr.get_data();
-        // ArrowParameters inherit the ENCLOSING [Await], so the reservation is
-        // read off `self`, not the fresh arrow_ctx (whose is_async is the
-        // arrow's own flag). `await => 1` in script code binds a parameter
-        // named "await"; `async function g(){ await => 1 }` still rejects.
+        // ArrowParameters inherit the ENCLOSING [Await]/[Yield], so both
+        // reservations are read off `self`, not the fresh arrow_ctx (whose
+        // is_async is the arrow's own flag). `await => 1` in script code binds
+        // a parameter named "await", and `yield => 1` does the same outside a
+        // generator; `async function g(){ await => 1 }` still rejects.
         // The reparse path reaches the same answer via
-        // expect_binding_identifier and arrow_ctx.forbid_await.
-        if (is_restricted_name(name, self.await_reserved_here(), strict: self.lexer.reserved_words_strict)) {
+        // expect_binding_identifier and arrow_ctx.forbid_await/forbid_yield.
+        if (is_restricted_name(name, self.await_reserved_here(),
+                               self.is_user_generator || self.forbid_yield,
+                               strict: self.is_strict)) {
             return COMPILE_ERROR~;
         }
         for (ushort j = 0; j < i; j++) {
@@ -5305,14 +6091,21 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // Block body: { ... }
         arrow_ctx.advance()!;
         // An arrow's ConciseBody has a directive prologue like any other
-        // function body. The engine is strict-only so the directive is a
-        // no-op, but it must be consumed here for its ES §15.3.1 early error:
-        // `(a = 1) => { "use strict"; }` is a SyntaxError because the arrow's
-        // parameters are not a simple list.
+        // function body. `parse_directives` applies it (a sloppy arrow becomes
+        // strict) and raises its ES §15.3.1 early error: `(a = 1) => { "use
+        // strict"; }` is a SyntaxError because the arrow's parameters are not a
+        // simple list.
         arrow_ctx.parse_directives()!;
         // An arrow ConciseBody never goes through block(), so emit the
         // deferred declarations here instead.
         arrow_ctx.emit_hoisted_fn_decls();
+        // block() would also TDZ-initialise the body's own let/const/class
+        // bindings; without that pass an arrow's lexical binding has no
+        // sentinel in its lex_env, so a read inside the dead zone walks out
+        // to an enclosing binding of the same name instead of throwing
+        // (`var y = 99; (() => { let y = y; })()` read 99). Same INITTZ pass,
+        // run after the prologue so it agrees with the body's strictness.
+        arrow_ctx.hoist_lexical_tdz();
         while (!arrow_ctx.check(TokenType.RBRACE) && !arrow_ctx.is_at_end()) {
             arrow_ctx.statement()!;
         }
@@ -5340,6 +6133,14 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         // No hoist here: an AssignmentExpression ConciseBody has no
         // statement-level declarations, so its VarDeclaredNames is empty.
         arrow_ctx.pre_scan_captures(true);
+        // An ArrowFunction's ConciseBody is `AssignmentExpression[?In]`:
+        // inherit the enclosing `[In]` so an arrow inside a C-style for
+        // head (`for (x => 0 in 1;;)`) rejects the `in` in its body.
+        // Read from `arrow_forbid_in` rather than `self.forbid_in`, which
+        // binary_expr has already cleared by the time primary_expr detects
+        // the arrow. ArrowParameters carry no `[In]`, so defaults remain
+        // `[+In]`.
+        arrow_ctx.forbid_in = self.arrow_forbid_in;
         ushort expr_reg = arrow_ctx.assignment_expr()!;
         arrow_ctx.emit_a_bc(Opcode.RET, (uint)expr_reg, 0);
         body_end_pos = arrow_ctx.lexer.pos;
@@ -5364,6 +6165,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // and env-declares the object the arrow's GETVAR "arguments" resolves to.
     if (arrow_ctx.uses_arguments) {
         func.flags.uses_arguments = false;
+        func.flags.mapped_arguments = false;
         self.uses_arguments = true;
     }
     // A direct eval inside the arrow body may reference `arguments` even
@@ -5431,7 +6233,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
             break;
         }
         if (src_end > (uint)arrow_ctx.lexer.source.len) src_end = (uint)arrow_ctx.lexer.source.len;
-        uint slen = src_end - src_start;
+        // A speculative for-in/for-of LHS probe that re-parses the arrow
+        // (see the body in statements.c3) can leave `body_end_pos` before
+        // `src_start` when the lexer's `lookahead_token_start` was stale on
+        // restore. Guard against the underflow so Function.prototype.toString
+        // never reads past the source.
+        uint slen = src_end > src_start ? src_end - src_start : 0;
         if (slen > 0) {
             char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)slen + 1)) ?? null;
             if (src_heap != null) {

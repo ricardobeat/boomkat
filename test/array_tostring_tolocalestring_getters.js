@@ -8,6 +8,8 @@
 //       calling it on the boxed wrapper object instead of the original
 //       primitive element would give the getter the wrong `this`.
 
+'use strict';
+
 var failures = 0;
 function check(name, actual, expected) {
     if (actual !== expected) {

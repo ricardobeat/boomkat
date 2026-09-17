@@ -428,6 +428,10 @@ fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
 
     // §27.1.4.2 steps 5-6: pass `value` only when it is present (IteratorNext
     // with an argument), otherwise call `next` with no arguments at all.
+    // The two test clusters that pin the inner iterator's arguments.length
+    // do not actually disagree: yield-star-* always resumes with a received
+    // value, so those calls carry one argument, while `for await`'s first
+    // step supplies none and must forward none.
     TVal arg;
     arg.set_undefined();
     bool has_arg = ctx.argc >= 1;

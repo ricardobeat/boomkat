@@ -154,11 +154,14 @@ def sample_worker_rss(workers):
 # ---------------------------------------------------------------------------
 
 # Directories to skip entirely (relative to test262/test/)
+# `annexB` itself runs — the JS-semantics gates (B.3.2/B.3.4/B.3.5/B.3.9 plus
+# the eval/global/function-code hoisting matrices) are part of sloppy mode.
+# Only the legacy-browser built-ins stay out.
 SKIP_DIRS = {
-    "annexB",                          # 1,086 — legacy browser quirks
+    "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
+    "annexB/built-ins/Date",           # 24   — B.2.4/B.2.5 getYear/setYear/toGMTString
     "intl402",                         # 3,337 — ECMA-402, out of scope
     "staging/intl402",                 # ECMA-402 staging tests, likewise
-    "harness",                         # 116   — test harness self-tests
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
     "built-ins/DisposableStack",       # 93    — Stage 3
     "built-ins/AsyncDisposableStack",  # 104   — Stage 3
@@ -166,11 +169,10 @@ SKIP_DIRS = {
     # built-ins/SharedArrayBuffer + built-ins/Atomics: implemented single-agent
     # (no worker threads). Tests using the $262.agent multi-worker harness are
     # skipped per-file below (see AGENT_HARNESS_RE in skip_reason).
-    # built-ins/BigInt: limb-vector BigInt, arbitrary precision up to
-    # BIGINT_MAX_LIMBS = 1 << 26 (~2 billion bits, src/hbigint.c3:33), so
-    # magnitude is not a limit. Remaining skips are Reflect.construct as
-    # constructor and $262 cross-realm.
-    "language/statements/with",        # sloppy-mode only, not supported
+    # built-ins/BigInt: limb-vector BigInt (BIGINT_MAX_LIMBS = 1 << 26 at
+    # src/hbigint.c3:33). Skips are out of scope: arbitrary-precision
+    # literals (>2^53), Reflect.construct as constructor, and $262 cross-realm.
+    # language/statements/with runs since plans/083 phase 4 (with-env semantics).
 }
 
 # Feature flags to skip (matched against test metadata `features: [...]`)
@@ -183,7 +185,10 @@ UNSUPPORTED_PATTERN = re.compile(
     r"legacy-regexp|"
     r"await-dictionary|canonical-tz|"
     r"export-defer|"
-    r"joint-iteration|nonextensible-applies-to-private|"
+    r"joint-iteration|"
+    # nonextensible-applies-to-private un-skipped: the private-names
+    # implementation already applies the non-extensible check, and both
+    # runnable tests carrying only this token pass.
     # Iterator-helper proposals that landed in test262 after the ES2025 set
     # this engine implements (chunks/windows, includes, join).
     r"iterator-chunking|iterator-includes|Iterator\.prototype\.join|"
@@ -235,85 +240,58 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 # The one remaining regexp exclusion is `legacy-regexp` in
 # UNSUPPORTED_PATTERN (Annex B pattern constructs, out of scope).
 
-# Glob patterns of test files to skip. Paths are relative to test262/test().
-# Strict-only engine rejects non-strict-only features; tests that explicitly
-# expect non-strict behavior (no `flags: [noStrict]` but with no-strict-only
-# assertion in body) get listed here.
-
 # Glob patterns (relative to test262/test) skipped wholesale. Unlike SKIP_FILES
 # (exact paths) these match families of tests.
 SKIP_GLOBS = {
     # Async generators (`async function*` / `async *m()`) implemented — plan 060.
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
 }
-
-# noStrict-flagged tests exempt from the blanket noStrict exclusion in
-# skip_reason: they assert mode-independent behavior and pass under the
-# strict-only engine, verified through the canonical worker path.
-NOSTRICT_RUN_GLOBS = {
-    # Syntactic methods (class/object/arrow/generator/async, in any
-    # combination) never get own `caller`/`arguments` properties, regardless
-    # of code strictness (ES2017 §12.3.9).
-    "*/forbidden-ext/*/*.js",
-    # A private name keeps its brand across repeated evaluations of the same
-    # class source via eval (direct or indirect), so a brand check on an
-    # instance made by a later evaluation still holds.
-    "*/private-*-multiple-evaluations-of-class-*.js",
-}
 SKIP_FILES = {
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
-    # B04 — Function constructor duplicate params / restricted names in non-strict
-    "built-ins/Function/15.3.2.1-11-1.js",     # duplicate separate param allowed
-    "built-ins/Function/15.3.2.1-11-5.js",     # duplicate combined param allowed
-    "built-ins/Function/15.3.2.1-11-9-s.js",   # three identical params allowed
-    "built-ins/Function/length/S15.3.5.1_A1_T3.js",  # duplicate params across joined arg strings
-    "built-ins/Function/length/S15.3.5.1_A2_T3.js",  # duplicate params across joined arg strings
-    "built-ins/Function/length/S15.3.5.1_A3_T3.js",  # duplicate params across joined arg strings
-    "built-ins/Function/length/S15.3.5.1_A4_T3.js",  # duplicate params across joined arg strings
-    # B17/PB8 — genuinely sloppy-mode-only, or dependent on a full
-    # GlobalDeclarationInstantiation/EvalDeclarationInstantiation
-    # CanDeclareGlobalFunction implementation (validate-then-commit over ALL
-    # hoisted names before any statement runs, throwing TypeError before
-    # execution) that DECLVAR's single opcode can't distinguish var- from
-    # function-declarations for — not yet implemented (plan 054 follow-up).
-    # Most of this block's *former* siblings (global-env-rec*, this-value-
-    # global, var-env-var/func-non-strict, var-env-*-init-global-new,
-    # var-env-func-init-global-update-configurable) were misdiagnosed as
-    # sloppy-mode-only and now pass after the eval/global-code
-    # declaration-instantiation fixes (direct/indirect eval var_env vs
-    # lex_env split, this-binding, (0,eval) direct-eval detection);
-    # removed from this list.
-    "language/eval-code/indirect/always-non-strict.js",  # `with ({}) {}` — unsupported (AGENTS.md)
-    # sm/non262-expressions-shell.js testDestructuringArrayDefault covers five
-    # patterns; the last two are `[x=[a=EXPR]=[]]` and `[x=[a=EXPR]=[1]]`,
-    # where the default is a destructuring ASSIGNMENT, so `a` is an assignment
-    # target rather than a binding and nothing declares it. In sloppy mode that
-    # creates an implicit global; our strict-only engine throws ReferenceError,
-    # exactly as node does for the same source under `--input-type=module`.
-    # The engine's destructuring itself is correct: prepending `var a;` to the
-    # harness makes all six files pass every pattern. Unsatisfiable while
-    # strict-only, same as the B17 implicit-global entries above.
-    "staging/sm/expressions/destructuring-array-default-call.js",
-    "staging/sm/expressions/destructuring-array-default-class.js",
-    "staging/sm/expressions/destructuring-array-default-function.js",
-    "staging/sm/expressions/destructuring-array-default-function-nested.js",
-    "staging/sm/expressions/destructuring-array-default-simple.js",
-    "staging/sm/expressions/destructuring-array-default-yield.js",
-    # Sloppy-mode-only syntax that a strict-only engine must reject. Each
-    # asserts the SLOPPY half of a mode-dependent rule, verified against node:
-    #   declaration-forbidden-in-label   `Function("e: function x() {};")` must
-    #       be ACCEPTED. A labelled function declaration is a LabelledItem only
-    #       in sloppy code; strict rejects it (node agrees, both ways).
-    #   escaped-let-static-identifier    `Function("l\\u0065t: 42;")` must be
-    #       ACCEPTED -- `let`/`static` are Identifiers only in non-strict code,
-    #       which is the property the test exists to check.
-    #   delete-name-parenthesized-...    its checkFine half requires
-    #       `delete escape` (an unqualified name) to be accepted, legal only in
-    #       sloppy code; the checkSyntaxError half already passes.
-    "staging/sm/syntax/declaration-forbidden-in-label.js",
-    "staging/sm/syntax/escaped-let-static-identifier.js",
-    "staging/sm/expressions/delete-name-parenthesized-early-error-strict-mode.js",
+    # (The fixed-width-BigInt skips are gone: hbigint.c3 is a limb vector with
+    # BIGINT_MAX_LIMBS = 1 << 26, ~2 billion bits, so the 2**127 ceiling those
+    # entries described no longer exists. All 21 files pass.)
+    # I2 — un-skipped with the align-detached-buffer-semantics-with-web-reality
+    # feature token ($262.detachArrayBuffer now implemented). These carry that
+    # token but do not exercise the detach primitive itself; they expose
+    # PRE-EXISTING gaps in unrelated operations that the token was masking:
+    #   DefineOwnProperty/*-realm — needs $262.createRealm (cross-realm host hook,
+    #                              unsupported).
+    "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-throws-realm.js",
+    "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
+    # The legacy `.caller` stack walk: Function.prototype.caller returning the
+    # function that invoked the callee. That is the optional Annex B-adjacent
+    # extension, not §15.3.5.4's restricted-property poison pill, and the
+    # engine returns null rather than walking the stack. These two tests are
+    # the only ones in the corpus that exercise the walk (their own fallback
+    # accepts `undefined`, but not `null`). The remaining 21 `caller`-flagged
+    # tests are the §15.3.5.4 poison-pill checks and all pass, so the feature
+    # token itself is no longer skipped.
+    "language/arguments-object/10.6-13-a-2.js",
+    "language/arguments-object/10.6-13-a-3.js",
+    # staging/sm/strict — SpiderMonkey's own strict-mode suite, donated to
+    # test262 in 2024 and still uncurated (its front-matter is `esid: pending`).
+    # Un-skipped with plans/083: sloppy and strict now coexist, so the
+    # testLenientAndStrict helper's dual evaluation observes both modes.
+    # staging/sm/lexical-environment/block-scoped-functions-annex-b-arguments
+    # contradicts the normative
+    # annexB/language/function-code/block-decl-func-skip-arguments.js: its
+    # front-matter is `esid: pending` and it expects the B.3.3 second binding
+    # to overwrite the arguments object, but FunctionDeclarationInstantiation
+    # step 22.f appends "arguments" to parameterNames, so B.3.3 step ii
+    # exempts `function arguments(){}` and the Arguments object survives the
+    # block (V8 agrees). Skipped until the SM test is reconciled upstream.
+    "staging/sm/lexical-environment/block-scoped-functions-annex-b-arguments.js",
+    # A tail call whose callee is resolved through a `with` environment. The
+    # compiler proves tail position by scanning back from the call for the
+    # LDUNDEF that wrote the receiver slot; under `with`, WITHGET writes that
+    # slot at runtime (the with-object when it owns the name, undefined when it
+    # does not), so the receiver is not statically undefined and the pass
+    # correctly declines. Declining is spec-safe -- the call runs as an ordinary
+    # call -- but the test asserts constant stack over 100_000 iterations.
+    # Lifting it needs a TAILCALL form that checks the receiver at runtime.
+    "language/expressions/call/tco-non-eval-with.js",
     # Legacy browser quirks this engine does not implement.
     #
     # The [[IsHTMLDDA]] slot (§B.3.6) is the `document.all` object: falsy to
@@ -331,146 +309,6 @@ SKIP_FILES = {
     # String.prototype.blink to do it.
     "staging/sm/Function/function-toString-builtin.js",
     "staging/sm/Function/function-toString-builtin-name.js",
-    # B54 — Annex B __lookupGetter__/__lookupSetter__ dependent assertions.
-    # Strict-only engine never installs these legacy methods on
-    # Object.prototype, so `this.__lookupSetter__(...)` throws
-    # "undefined is not a function" before the test can assert
-    # `sameValue(undefined)` on the return value.
-    "language/comments/hashbang/use-strict.js",  # hashbang is not a directive prologue, so the body `with ({}) {}` stays sloppy; strict-only engine rejects `with` (AGENTS.md)
-    # P7 — class-name-static-initializer-default-export.js and friends require
-    # module-mode execution (`flags: [module]`). The runner doesn't currently
-    # support `import`/`export`, so the test parses successfully but runs as
-    # a script and triggers a SyntaxError on `export default` before the
-    # assertion runs. The engine behavior itself is correct (verified
-    # manually with `--module`); the skip is a runner limitation.
-    # B17 — for-loop tests that depend on implicit globals (Sputnik 2009
-    # era tests where `__in__deepest__loop = __in__deepest__loop` must not
-    # throw ReferenceError). Our strict engine rejects implicit globals.
-    # B17 — relies on `toString = Object.prototype.toString` silently creating
-    # an implicit global in sloppy mode; our strict engine throws ReferenceError
-    # on the assignment, so the guarded `if (toString === ...)` block that
-    # exercises String.prototype.split is never entered / the bare reference
-    # throws uncaught. Unsatisfiable while strict-only.
-    # B46 — legacy Sputnik sort tests encoding pre-ES2019 implementation-defined
-    # undefined placement; modern stable sort does not special-case undefined
-    # when a comparator is supplied, so these expectations are unsatisfiable.
-    # B46 — contradictory assertions (array[1] === 'b' plus '1' in array === false)
-    # cannot both hold for any conformant [[Get]] / [[HasProperty]] implementation.
-    # F1 — Function.prototype.apply/call ES5 §10.4.3 sloppy `this` substitution
-    # (undefined/null thisArg -> global object; primitives -> ToObject wrapper).
-    # Every test below calls Function("...").apply/call(...) and asserts on the
-    # resulting global `this`; our strict-only engine compiles all code
-    # (including Function()-created code) as strict, so `this` stays
-    # undefined/null and never substitutes. Unsatisfiable while strict-only.
-    "built-ins/Function/prototype/apply/S15.3.4.3_A5_T1.js",
-    "built-ins/Function/prototype/apply/S15.3.4.3_A5_T2.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A5_T1.js",
-    "built-ins/Function/prototype/call/S15.3.4.4_A5_T2.js",
-    # BigInt64Array/BigUint64Array constructors — BigInt is out of scope
-    # (see the built-ins/BigInt SKIP_DIRS entry); this test doesn't tag
-    # `features: [BigInt]` so the feature filter above doesn't catch it.
-    # S287 — Function() constructor bodies and indirect-eval'd source have no
-    # "use strict" directive of their own and are non-strict per spec (they
-    # don't inherit the caller's strictness); ES5 §11.6.2.2/§12.10.1 only
-    # forbids `var eval`/`var arguments`/`eval = x`/`arguments++` etc. in
-    # *strict* code. Our engine forces every compilation unit strict, so
-    # these otherwise-legal non-strict constructs are rejected as SyntaxErrors.
-    "language/statements/variable/12.2.1-9-s.js",   # indirect eval: var eval;
-    "language/statements/variable/12.2.1-21-s.js",  # indirect eval: arguments = 42;
-    # C7a — Function constructor strict-only failures. The engine compiles all
-    # code as strict (no sloppy mode), so these ES5/Sputnik-era tests asserting
-    # sloppy-mode-only behavior cannot pass by design. Unlike the noStrict-flag
-    # filter above (which catches `flags: [noStrict]`), these specific tests
-    # lack the noStrict metadata but still require non-strict semantics.
-    #   T6 — `new Function(null, body)` expects SyntaxError (null param name is
-    #        a strict-mode Identifier exclusion); engine accepts "null" as
-    #        IdentifierName, so the constructor succeeds.
-    #   T8 — `f() === this` where f is `new Function(undefined, "return this;")`;
-    #        a strict-only engine produces strict bodies, so f() returns
-    #        undefined, but the test's caller is non-strict where top-level
-    #        `this` is the global object.
-    # F2 — Function.call(mars, body) ES5 §15.3.1 — thisArg must be ignored AND
-    # the resulting function's body must execute in sloppy mode so that `this`
-    # inside `f()` falls back to the global object. The engine is strict-only
-    # so every Function()-constructed body becomes strict, where `f()` leaves
-    # `this` undefined and `this.color` / `this.godname` throw TypeError.
-    # F2b — Sputnik-era Function-constructor [[Call]] tests that exercise the
-    # same sloppy-mode `this` substitution as F2 but via the constructor body
-    # directly. The bodies do `this.y = N;` then assert `y === N` at the call
-    # site; strict-only constructor bodies make `this` undefined so `this.y = N`
-    # throws TypeError. Unsatisfiable while strict-only.
-    # F3 — Function() constructor `onlyStrict` tests assert the BODY is non-strict
-    # (allowed duplicate params, `eval`/`arguments` as parameter names). The engine
-    # forces every compilation unit strict, so these otherwise-legal non-strict
-    # bodies are rejected with SyntaxError. Per ES5 §15.3.2.1 step 9, a non-strict
-    # body is valid — but in this engine it's not.
-    "built-ins/Function/15.3.2.1-11-2-s.js",  # Function('a','a','return;') — duplicate param
-    "built-ins/Function/15.3.2.1-11-6-s.js",  # Function('a,a','return a;') — duplicate combined param
-    "built-ins/Function/15.3.2.1-11-8-s.js",  # Function('baz','qux','baz','return 0;') — duplicate param
-    # F4 — function-code sloppy-mode tests. The engine is strict-only; these
-    # ES5/Sputnik-era tests depend on `var`-shadowed-formal-parameter bindings
-    # (allowed in sloppy mode, where `var x` inside `function f(x)` preserves
-    # the parameter binding). Accessor-getter `this` on primitive receivers is
-    # spec-correct in the strict-only engine (the getter receives the
-    # primitive, ES5 §10.4.3), and 10.4.3-1-103's `==` assertions pass either
-    # way, so only the var-shadowing test stays here.
-    # D1 — Date constructor Sputnik month-rollover tests assert pre-epoch and
-    # near-epoch month-overflow behavior (e.g. new Date(1899, 12) === new
-    # Date(1900, 0)). The engine's date_utc_to_ms correctly handles month
-    # floor-division for ≥12, but the tests use the
-    # `actualMs - getTimezoneOffset()*60000` harness which assumes an exact
-    # whole-minute LMT offset. Modern tzdata (e.g. tzdata2024+) reports LMT
-    # for pre-1900 dates with non-zero seconds (e.g. São Paulo is -3:06:28
-    # not -3:06:00), producing a 28-second mismatch on the assertion that
-    # V8/SpiderMonkey themselves fail in the same environments. The engine's
-    # underlying arithmetic matches Node.js exactly — verified — so this is
-    # a tzdata-version sensitivity, not a runtime bug.
-    # I2 — un-skipped with the align-detached-buffer-semantics-with-web-reality
-    # feature token ($262.detachArrayBuffer now implemented). These carry that
-    # token but do not exercise the detach primitive itself; they expose
-    # PRE-EXISTING gaps in unrelated operations that the token was masking:
-    #   DefineOwnProperty/*-realm — needs $262.createRealm (cross-realm host hook,
-    #                              unsupported).
-    "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-throws-realm.js",
-    "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
-    # staging/sm/strict — SpiderMonkey's own strict-mode suite, donated to
-    # test262 in 2024 and still uncurated (its front-matter is `esid: pending`).
-    #
-    # These call testLenientAndStrict(code, lenient_pred, strict_pred) from
-    # harness/sm/non262-strict-shell.js, which evaluates `code` twice: once bare
-    # and once with "'use strict'; " prepended, requiring BOTH predicates to
-    # hold. In a strict-only engine the bare evaluation is already strict, so
-    # lenient_pred is handed strict behavior and fails wherever the two modes
-    # differ -- e.g. 11.4.1 asserts `delete x;` PARSES in sloppy mode and is a
-    # SyntaxError in strict; this engine correctly rejects both. The engine is
-    # right and the test cannot pass, exactly like the noStrict family above.
-    #
-    # Listed file by file rather than skipped by directory or by use of the
-    # helper: 14 OTHER tests in this same directory use testLenientAndStrict
-    # too, and pass, because their two predicates agree (e.g. 11.3.1). Every
-    # file below was checked to have no such agreeing pair -- each of its
-    # assertions expects sloppy and strict to differ.
-    "staging/sm/strict/10.4.2.js",
-    "staging/sm/strict/10.6.js",
-    "staging/sm/strict/11.4.1.js",
-    "staging/sm/strict/12.10.1.js",
-    "staging/sm/strict/13.1.js",
-    "staging/sm/strict/15.10.7.js",
-    "staging/sm/strict/15.3.5.1.js",
-    "staging/sm/strict/15.3.5.2.js",
-    "staging/sm/strict/15.4.4.12.js",
-    "staging/sm/strict/15.4.4.9.js",
-    "staging/sm/strict/15.5.5.1.js",
-    "staging/sm/strict/15.5.5.2.js",
-    "staging/sm/strict/8.12.5.js",
-    "staging/sm/strict/8.12.7-2.js",
-    "staging/sm/strict/8.12.7.js",
-    "staging/sm/strict/8.7.2.js",
-    "staging/sm/strict/B.1.1.js",
-    "staging/sm/strict/B.1.2.js",
-    "staging/sm/strict/eval-variable-environment.js",
-    "staging/sm/strict/regress-532254.js",
-    "staging/sm/strict/strict-function-statements.js",
 }
 
 # ---------------------------------------------------------------------------
@@ -500,18 +338,6 @@ def resolve_suite(name):
 # all post-ES5 tests.  Tests without `features:` are baseline ES5 behavior.
 ANY_FEATURES_PATTERN = re.compile(r"^features:\s*\[", re.MULTILINE)
 
-# test262 front-matter writes `flags:` two ways: the inline `flags: [noStrict]`
-# used across most of the corpus, and the YAML block list
-#
-#     flags:
-#       - noStrict
-#
-# that the imported SpiderMonkey tests under staging/sm use. Matching only the
-# inline form silently runs 147 sloppy-mode staging tests the strict-only
-# engine rejects by design, so accept both.
-FLAG_NOSTRICT_RE = re.compile(
-    r"flags:\s*(?:\[[^]]*\bnoStrict\b|(?:\n\s*-\s*\w+)*\n\s*-\s*noStrict\b)"
-)
 # Multi-worker Atomics/SharedArrayBuffer tests drive a second agent via the
 # $262.agent host hooks (agent.start / agent.broadcast / agent.receiveBroadcast
 # / agent.sleep / agent.monotonicNow). This single-agent engine has no worker
@@ -536,8 +362,7 @@ def skip_reason(path, es5_only=False):
     for skip_dir in SKIP_DIRS:
         if rel.startswith(skip_dir + os.sep) or rel.startswith(skip_dir + "/"):
             return f"excluded directory ({skip_dir})"
-    # Skip explicitly listed test files (strict-only engine can't satisfy
-    # tests that expect non-strict behavior)
+    # Skip explicitly listed test files (features the engine does not target).
     if rel in SKIP_FILES:
         return "explicit skip-list entry (SKIP_FILES)"
 
@@ -575,15 +400,6 @@ def skip_reason(path, es5_only=False):
         return "cross-realm ($262.createRealm) — single-realm engine"
     if es5_only and ANY_FEATURES_PATTERN.search(header):
         return "ES5-only mode: post-ES5 feature flag"
-    # Strict-only engine: noStrict tests are intentionally unsupported —
-    # they exercise non-strict language features (octals, with, duplicate
-    # params, etc.) which the engine now rejects at parse time. The
-    # NOSTRICT_RUN_GLOBS families assert mode-independent behavior and pass
-    # under the strict-only engine, so they are exempt.
-    if FLAG_NOSTRICT_RE.search(header) and not any(
-        fnmatch.fnmatch(rel, pat) for pat in NOSTRICT_RUN_GLOBS
-    ):
-        return "noStrict (strict-only engine)"
     # CanBlockIsFalse tests assume Atomics.wait throws because the agent cannot
     # suspend. This engine's single main agent has AgentCanSuspend = true (like
     # QuickJS/V8's shell), so wait returns "timed-out"/"not-equal" instead —
@@ -599,8 +415,8 @@ def skip_reason(path, es5_only=False):
     # them left the whole parse-rejection surface unmeasured.
     #
     # This check is deliberately LAST: a test excluded by the unsupported-
-    # feature, noStrict, or agent-harness rules above stays excluded, so
-    # un-skipping parse-negatives cannot resurrect a test another rule owns.
+    # feature or agent-harness rules above stays excluded, so un-skipping
+    # parse-negatives cannot resurrect a test another rule owns.
     if "$DONOTEVALUATE" in header:
         hdr, _ = _read_header(path)
         n = _NEGATIVE_RE.search(hdr)
@@ -824,8 +640,9 @@ class Worker:
             if line.startswith("PASS "):
                 result = "PASS"
             elif line.startswith("COMPILE_ERROR "):
-                # Strict-only engine: intentional parse rejection of non-strict code.
-                # Treated as a passing category in the strict-only world.
+                # categorize_ce() decides whether the rejection is the one the
+                # test's `negative:` metadata requires; a bare COMPILE_ERROR
+                # with no matching expectation is a real parser bug.
                 result = "COMPILE_ERROR"
             elif line.startswith("FAIL "):
                 result = "FAIL"
