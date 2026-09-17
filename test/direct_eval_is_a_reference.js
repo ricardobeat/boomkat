@@ -67,6 +67,40 @@ function indirectCannotSee() {
 }
 eq(indirectCannotSee(), 'hidden', 'an indirect eval cannot see a block binding');
 
+// Directness is a property of the call site, not of the body. One function can
+// hold both kinds, in either order, and each keeps its own scope.
+function directThenIndirect() {
+    var t = 'local';
+    return eval('t') + '/' + (0, eval)('t');
+}
+function indirectThenDirect() {
+    var t = 'local';
+    var i = (0, eval)('t');
+    return eval('t') + '/' + i;
+}
+function manyMixed() {
+    var t = 'local';
+    return [(0, eval)('t'), eval('t'), (eval)('t'), (0, eval)('t'), eval('t')].join(',');
+}
+eq(directThenIndirect(), 'local/global', 'direct then indirect in one body');
+eq(indirectThenDirect(), 'local/global', 'indirect then direct in one body');
+eq(manyMixed(), 'global,local,local,global,local', 'five mixed calls in one body');
+
+// The same holds for a call with spread arguments, which compiles to a
+// different call instruction.
+function spreadDirect() { var t = 'local'; var a = ['t']; return eval(...a); }
+function spreadIndirect() { var t = 'local'; var a = ['t']; return (0, eval)(...a); }
+eq(spreadDirect(), 'local', 'a spread direct eval sees the calling scope');
+eq(spreadIndirect(), 'global', 'a spread indirect eval does not');
+
+// A direct eval in a loop stays direct on every iteration.
+function inLoop() {
+    var t = 'local', out = [];
+    for (var i = 0; i < 3; i++) { out.push(eval('t')); out.push((0, eval)('t')); }
+    return out.join(',');
+}
+eq(inLoop(), 'local,global,local,global,local,global', 'a loop keeps each call site');
+
 // Both forms still evaluate their argument and return its value.
 eq((0, eval)('1 + 1'), 2, 'an indirect eval still evaluates');
 eq((eval)('1 + 1'), 2, 'a grouped eval still evaluates');

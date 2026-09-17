@@ -984,6 +984,13 @@ struct CompilerContext {
     // Set by primary_expr when the identifier "eval" is resolved; checked and
     // cleared by emit_call to detect direct eval calls (eval(...) by name).
     bool callee_is_eval;
+    // Code offsets of this function's direct-eval call instructions, ascending
+    // (emit_call appends them as it emits each call). has_direct_eval is a
+    // property of the whole body and cannot answer which call is which, so
+    // `eval(x)` and `(0, eval)(x)` in one function need this to be told apart:
+    // builtin_eval looks up the call site it was reached through. finish()
+    // copies the list into CompiledFunction.direct_eval_offsets.
+    List{uint} direct_eval_offsets;
 
     // Arrow/async tracking, needed for needs_env computation in finish().
     bool is_arrow;
@@ -1287,6 +1294,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.prim_only_name_idxs.allocator = mem;
     self.slot_global_name_idxs.allocator = mem;
     self.slot_global_synced_name_idxs.allocator = mem;
+    self.direct_eval_offsets.allocator = mem;
 
     // The engine is strict-only for Script and Module code, so the lexer starts
     // strict (affects FutureReservedWord recognition, legacy octal literals and
@@ -1322,6 +1330,7 @@ fn void CompilerContext.cleanup(&self) {
     self.prim_only_name_idxs.free();
     self.slot_global_name_idxs.free();
     self.slot_global_synced_name_idxs.free();
+    self.direct_eval_offsets.free();
 }
 
 // Borrow the private-names table from an enclosing context (a method,
@@ -2217,6 +2226,27 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.code = dst_code;
     func.line_table = dst_line;
     func.code_count = final_count;
+
+    // Direct-eval call sites: copy the offsets emit_call collected, so
+    // builtin_eval can tell a direct call from an indirect one made from the
+    // same body. The offsets index the pre-compaction stream, so they go
+    // through pc_map alongside the jump targets.
+    if (self.direct_eval_offsets.len() > 0) {
+        uint de_count = (uint)self.direct_eval_offsets.len();
+        uint* de_buf = (uint*)h.alloc_func(h.heap_udata, (usz)de_count * uint::size);
+        if (de_buf != null) {
+            for (uint i = 0; i < de_count; i++) {
+                uint off = self.direct_eval_offsets[i];
+                de_buf[i] = self.disable_optimize ? off : pc_map[off];
+            }
+            func.direct_eval_offsets = de_buf;
+            func.direct_eval_offset_count = de_count;
+        }
+        // On alloc failure the array stays null and builtin_eval falls back to
+        // treating every eval from this body as direct, which is what the
+        // has_direct_eval flag alone says.
+    }
+
     if (!self.disable_optimize) {
         h.free_func(h.heap_udata, pc_map);
         h.free_func(h.heap_udata, nop_keep);

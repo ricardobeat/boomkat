@@ -2655,7 +2655,8 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
 
     // Detect direct eval: callee was the identifier `eval` (set by primary_expr)
     // and this is not a property call (obj.eval()).
-    if (self.callee_is_eval && self.call_prop_obj_reg == REG_NONE) {
+    bool is_direct_eval_call = self.callee_is_eval && self.call_prop_obj_reg == REG_NONE;
+    if (is_direct_eval_call) {
         self.has_direct_eval = true;
     }
     // Consume the flag so it doesn't leak to subsequent calls.
@@ -2824,6 +2825,7 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
             self.emit_a_bc(Opcode.GETGLOBAL, (uint)callee_reg, getvar_name_idx);
         }
         // CALL_S: A=result, B=callee_reg, C=nargs_reg, reuse callee_reg for result
+        if (is_direct_eval_call) { self.direct_eval_offsets.push(self.code_count); }
         self.emit_abc(Opcode.CALL_S, (uint)callee_reg, (uint)callee_reg, (uint)total_count_reg);
     } else if (undef_this && getvar_callee) {
         // Fuse the callee's GETVAR into this call: the GETVAR instruction
@@ -2831,17 +2833,21 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         // stream up front, before arg compilation), so CALL_VAR here is
         // the only dispatch that loads AND calls the callee. One dispatch
         // instead of two.
+        if (is_direct_eval_call) { self.direct_eval_offsets.push(self.code_count); }
         self.emit_abc(Opcode.CALL_VAR, (uint)callee_reg, (uint)arg_count, getvar_name_idx);
     } else if (undef_this && getglobal_callee) {
         // Global-scope analog: the callee's GETGLOBAL was stripped above, so
         // CALL_GLOBAL is the only dispatch that loads (via GETGLOBAL's varref
         // IC) AND calls the global callee. One dispatch instead of two.
+        if (is_direct_eval_call) { self.direct_eval_offsets.push(self.code_count); }
         self.emit_abc(Opcode.CALL_GLOBAL, (uint)callee_reg, (uint)arg_count, getvar_name_idx);
     } else if (undef_this) {
         // Plain non-method call: receiver is undefined, materialized by the VM
         // (no per-call LDUNDEF dispatch). A=result, B=callee_reg, C=nargs.
+        if (is_direct_eval_call) { self.direct_eval_offsets.push(self.code_count); }
         self.emit_abc(Opcode.CALL_UNDEF_THIS, (uint)callee_reg, (uint)callee_reg, (uint)arg_count);
     } else {
+        if (is_direct_eval_call) { self.direct_eval_offsets.push(self.code_count); }
         self.emit_abc(Opcode.CALL, (uint)callee_reg, (uint)callee_reg, (uint)arg_count);
     }
 

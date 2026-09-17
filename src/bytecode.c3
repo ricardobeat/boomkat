@@ -1551,6 +1551,25 @@ struct CompiledFunction {
     // bytecode.c3 does not import. The compiler and builtin_eval both cast.
     void*           eval_private_names;
     uint            eval_private_name_count;
+
+    // ---- Direct-eval call sites -------------------------------------------
+    //
+    // Code offsets of this function's direct `eval(...)` calls, ascending.
+    // Directness is a property of the call site (§13.3.6.1), not of the body:
+    // one function can contain both `eval(x)` and `(0, eval)(x)`, and only the
+    // first sees the calling scope. has_direct_eval answers "does this body
+    // contain one", which is what the frame's locals-reachability needs; this
+    // answers "was THIS call one", which is what builtin_eval needs. It reads
+    // the caller's resume pc, backs up one instruction to the call, and looks
+    // the offset up here.
+    //
+    // Fusion and the other peephole passes rewrite in place and pad with NOP,
+    // so a call keeps the offset it was emitted at.
+    //
+    // Null when the function contains no direct eval. Heap.free_compiled_funcs
+    // frees it alongside the other sub-arrays.
+    uint*           direct_eval_offsets;
+    uint            direct_eval_offset_count;
     // HString* of this function's enclosing class's `__super__ binding name
     // (e.g. "__super__0"; each class in a scope gets a unique number).
     // Two readers: builtin_eval re-interns it into the eval context's

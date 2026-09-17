@@ -794,6 +794,33 @@ fn void builtin_is_finite(BuiltinContext* ctx) {
     ctx.result.set_boolean(!math::is_nan(d) && !math::is_inf(d));
 }
 
+// Whether the call that reached this builtin was written as a direct eval.
+//
+// ACT_FLAG_DIRECT_EVAL says only that the caller's body contains at least one
+// direct eval, which is the right question for keeping the frame's locals
+// reachable but the wrong one here: a body holding both `eval(x)` and
+// `(0, eval)(x)` sets the flag once, and reading it per call would make the
+// indirect call direct too.
+//
+// The caller's resume pc was synced before this builtin was dispatched and
+// points just past the call instruction, so backing up one gives the call's
+// own offset, which the compiler recorded for each direct call site.
+//
+// A caller with no recorded offsets is one whose compile could not allocate
+// the array; the flag alone is then the best answer available, so every eval
+// from it stays direct.
+fn bool caller_call_site_is_direct(vm::Activation* act) {
+    CompiledFunction* cf = (CompiledFunction*)act.func;
+    if (cf == null || cf.direct_eval_offsets == null) return true;
+    if (cf.code == null || act.curr_pc == null) return true;
+    if (act.curr_pc <= cf.code) return false;
+    uint off = (uint)(act.curr_pc - cf.code) - 1;
+    for (uint i = 0; i < cf.direct_eval_offset_count; i++) {
+        if (cf.direct_eval_offsets[i] == off) return true;
+    }
+    return false;
+}
+
 fn void builtin_eval(BuiltinContext* ctx) {
     // ES5 §15.1.2.1: eval(x)
     if (ctx.argc < 1) {
@@ -871,7 +898,8 @@ fn void builtin_eval(BuiltinContext* ctx) {
     bool parent_super_home_is_object_literal = false;
     if (precheck_act_count > 0) {
         precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
-        caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0;
+        caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0
+                                 && caller_call_site_is_direct(precheck_caller);
         if (caller_has_direct_eval) {
             // precheck_caller.func is the caller's CompiledFunction template
             // (for natfunc frames, like this builtin itself, the func slot
