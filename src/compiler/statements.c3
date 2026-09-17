@@ -2338,7 +2338,7 @@ fn void? CompilerContext.while_statement(&self) {
             }
         } else {
             uint name_idx2 = self.add_string_constant(ident_tok.str_value);
-            self.emit_ident_read((uint)lhs_reg, name_idx2);
+            self.emit_ident_read((uint)lhs_reg, name_idx2)!;
         }
         ushort cmp_res = self.alloc_reg();
         self.emit_abc(simple_cond_op, (uint)cmp_res, (uint)lhs_reg, (uint)pinned_rhs_reg);
@@ -3734,7 +3734,7 @@ fn void? CompilerContext.for_statement(&self) {
                 }
             } else {
                 uint name_idx2 = self.add_string_constant(ident_tok.str_value);
-                self.emit_ident_read((uint)lhs_reg, name_idx2);
+                self.emit_ident_read((uint)lhs_reg, name_idx2)!;
             }
             ushort cmp_res = self.alloc_reg();
             self.emit_abc(simple_cond_op, (uint)cmp_res, (uint)lhs_reg, (uint)pinned_rhs_reg);

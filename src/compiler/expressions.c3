@@ -123,8 +123,8 @@ fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
 }
 
 // Bookkeeping for a resolved-by-name identifier that turned out to be
-// `arguments`. Two effects, both required at every site that reads an
-// identifier without going through `primary_expr`:
+// `arguments`. emit_ident_read calls this for every bare-identifier read;
+// TYPEOFIDENT is emitted directly and calls it itself. Two effects:
 //
 //  - ES2022 §15.7.1 forbids `arguments` anywhere in a class field
 //    initializer, including under `typeof`.
@@ -132,6 +132,17 @@ fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
 //    an arguments object, which the VM only builds when `uses_arguments` is
 //    set at call entry. Missing this is silent: the name simply doesn't
 //    resolve, so `typeof arguments` reads back `"undefined"`.
+// The same rule for a name held as a constant-pool index, which is the form
+// emit_ident_read has.
+fn void? CompilerContext.note_arguments_reference_by_index(&self, uint name_idx) {
+    if (name_idx >= self.const_count) return;
+    TVal kv = self.constants[name_idx];
+    if (!kv.is_string()) return;
+    HString* hs = (HString*)kv.get_heapptr();
+    if (hs == null) return;
+    return self.note_arguments_reference(hs.get_data());
+}
+
 fn void? CompilerContext.note_arguments_reference(&self, char[] name) {
     if (!str_eq(name, "arguments")) return;
     if (self.forbid_arguments) {
@@ -1642,8 +1653,9 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                     if (try ushort res_typeof = self.try_emit_typeof_register(idTok2.str_value)) {
                         return res_typeof;
                     }
-                    // The bare-identifier fast paths here bypass primary_expr,
-                    // so they must repeat its `arguments` bookkeeping.
+                    // TYPEOFIDENT reads the binding by name without going
+                    // through emit_ident_read, so the `arguments` bookkeeping
+                    // is done here instead.
                     self.note_arguments_reference(idTok2.str_value)!;
                     uint name_idx = self.add_string_constant(idTok2.str_value);
                     ushort res_typeof = self.alloc_reg();
@@ -1700,8 +1712,9 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                             if (try ushort res_typeof = self.try_emit_typeof_register(idTok.str_value)) {
                                 return res_typeof;
                             }
-                            // This fast path bypasses primary_expr, so it must
-                            // repeat its `arguments` bookkeeping.
+                            // TYPEOFIDENT reads the binding by name without
+                            // going through emit_ident_read; see the sibling
+                            // fast path above.
                             self.note_arguments_reference(idTok.str_value)!;
                             uint name_idx = self.add_string_constant(idTok.str_value);
                             ushort res_typeof = self.alloc_reg();
@@ -4031,12 +4044,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     }
                 }
 
-                self.note_arguments_reference(id_tok.str_value)!;
-
-                // Not found locally: emit GETVAR/GETGLOBAL to look up by name at runtime
+                // Not found locally: emit GETVAR/GETGLOBAL to look up by name
+                // at runtime. emit_ident_read notes the `arguments` reference.
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
+                self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx)!;
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
@@ -4577,10 +4589,9 @@ fn ushort? CompilerContext.primary_expr(&self) {
                         return var_reg;
                     }
                 }
-                self.note_arguments_reference(id_tok.str_value)!;
                 uint name_idx = self.add_string_constant(id_tok.str_value);
                 ushort id_reg = self.alloc_reg();
-                self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx);
+                self.last_getvar_code_pos = self.emit_ident_read((uint)id_reg, name_idx)!;
                 self.last_was_getvar = true;
                 self.last_getvar_name_idx = name_idx;
                 self.save_lhs_ident_name(id_tok.str_value);
@@ -5105,7 +5116,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 }
                 uint name_idx = self.add_string_constant(let_tok.str_value);
                 ushort let_reg = self.alloc_reg();
-                self.emit_ident_read((uint)let_reg, name_idx);
+                self.emit_ident_read((uint)let_reg, name_idx)!;
                 return let_reg;
             }
             return self.literal_keyword()!;
@@ -5669,7 +5680,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 }
                 if (!resolved_local) {
                     ushort val_reg = self.alloc_reg();
-                    self.emit_ident_read((uint)val_reg, shorthand_name_idx);
+                    self.emit_ident_read((uint)val_reg, shorthand_name_idx)!;
                     self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
                     self.free_reg(val_reg);
                 }

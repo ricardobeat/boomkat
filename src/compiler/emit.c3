@@ -87,7 +87,13 @@ fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
 
 // Emit a bare-identifier read: GETGLOBAL at global slot scope, else GETVAR.
 // Records last_was_getglobal so the assignment write-back picks PUTGLOBAL.
-fn uint CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
+//
+// This is the one place a bare identifier is read by name, so it is also where
+// a reference to `arguments` is noted: the callers that resolve the name to a
+// local register return before reaching here, which is right, because only the
+// implicit binding needs the function to build an arguments object.
+fn uint? CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
+    self.note_arguments_reference_by_index(name_idx)!;
     // A REGISTER-RESIDENT top-level var reads its home register instead of the
     // global-object property (which only holds the end-of-script mirror).
     if (self.is_slot_global_name_index(name_idx)) {
