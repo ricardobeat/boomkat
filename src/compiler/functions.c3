@@ -25,6 +25,12 @@ struct DestructIterState {
     ushort save_reg;      // holds the iterator while method_reg is latched
                           // undefined across .next()/.done/.value (throws there
                           // must skip IteratorClose per §7.4.6/§7.4.7)
+    // The synthetic bind whose extracted value this iterator was opened on, so
+    // the nested ArrayBindingPattern it belongs to. 0xFFFF for the outermost
+    // pattern's iterator, whose source is the destructuring's own input.
+    // §8.6.2 closes a pattern's iterator when that pattern finishes, which is
+    // when the last bind naming this owner as its parent has been emitted.
+    ushort owner_bind;
 }
 
 // How emit_destruct_bindings syncs each leaf binding to the environment.
@@ -788,12 +794,74 @@ fn void CompilerContext.free_destruct_iter(&self, DestructIterState* state) {
     self.free_reg(state.method_reg);
 }
 
-// Find or create iterator state for a source register.
+// The iterator already open on a source register, or 0xFFFF for none.
 fn ushort find_destruct_iter(ushort src_reg, DestructIterState[] states, uint* count) {
     for (uint i = 0; i < *count; i++) {
         if (states[i].src_reg == src_reg) return (ushort)i;
     }
     return 0xFFFF;
+}
+
+// The iterator for a source register, opening it (GetIterator) on first use.
+//
+// `owner` is the synthetic bind whose extracted value `src_reg` holds, which
+// is the nested ArrayBindingPattern this iterator belongs to; 0xFFFF means the
+// outermost pattern, reading the destructuring's own input. close_finished_iter
+// uses it to close each pattern's iterator when that pattern ends.
+fn ushort CompilerContext.open_destruct_iter(&self, ushort src_reg, ushort owner,
+                                             DestructIterState[] states, uint* count) {
+    ushort idx = find_destruct_iter(src_reg, states, count);
+    if (idx != 0xFFFF) return idx;
+    idx = (ushort)*count;
+    (*count)++;
+    self.emit_destruct_iter_setup(src_reg, &states[idx]);
+    states[idx].owner_bind = owner;
+    return idx;
+}
+
+// Is `anc` an ancestor of bind `di`, or `di` itself? Walks the parent_idx
+// chain, which is a tree rooted at 0xFFFF.
+fn bool destruct_bind_within(DestructBind[] binds, uint di, ushort anc) {
+    uint cur = di;
+    while (cur != 0xFFFF) {
+        if (cur == (uint)anc) return true;
+        cur = (uint)binds[cur].parent_idx;
+    }
+    return false;
+}
+
+// §8.6.2: an ArrayBindingPattern closes its own iterator as soon as that
+// pattern is finished, before the enclosing pattern takes its next step.
+//
+// Emitting bind `di` finishes every pattern whose subtree `di` is the last
+// bind of, which is more than one when a pattern ends with a nested pattern:
+// `[[[a]]]` finishes the inner, the middle and the outer at `a`. So this walks
+// the ancestor chain outwards from `di`, closing each iterator in turn --
+// innermost first, which is the order the patterns end in.
+//
+// The outermost pattern's iterator is left to the shared finally: closing it
+// here would place the close before whatever follows the destructuring, and
+// the finally is what covers the abrupt completions anyway.
+//
+// Clearing method_reg afterwards makes the finally's second close a no-op, the
+// same encoding of [[done]] that exhausting the iterator uses.
+fn void CompilerContext.close_finished_iter(&self, DestructBind[] binds, uint count, uint di,
+                                            DestructIterState[] states, uint* iter_count) {
+    for (ushort owner = binds[di].parent_idx; owner != 0xFFFF;
+         owner = binds[owner].parent_idx) {
+        // A later bind still inside this pattern means it has not finished.
+        bool finished = true;
+        for (uint dj = di + 1; dj < count; dj++) {
+            if (destruct_bind_within(binds, dj, owner)) { finished = false; break; }
+        }
+        if (!finished) return;
+        for (uint i = 0; i < *iter_count; i++) {
+            if (states[i].owner_bind != owner) continue;
+            self.emit_abc(Opcode.ITER_CLOSE, (uint)states[i].method_reg, 0, 0);
+            self.emit_abc(Opcode.LDUNDEF, (uint)states[i].method_reg, 0, 0);
+            break;
+        }
+    }
 }
 
 // Shared emission helper for function-parameter destructuring bindings.
@@ -958,12 +1026,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             }
             ushort target = binds[di].index;
             while (ei < target) {
-                ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
-                if (iter_idx == 0xFFFF) {
-                    iter_idx = (ushort)iter_count;
-                    iter_count++;
-                    self.emit_destruct_iter_setup(src_reg, &iter_states[iter_idx]);
-                }
+                ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
+                                                          iter_states[..], &iter_count);
                 ushort hole_reg = self.alloc_reg();
                 self.emit_destruct_iter_next(&iter_states[iter_idx], hole_reg);
                 self.free_reg(hole_reg);
@@ -971,36 +1035,23 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             }
         }
 
-        // Empty pattern: open the iterator and stop. The shared close pass
-        // below emits the ITER_CLOSE, so this is GetIterator + IteratorClose,
-        // which is exactly what an empty ArrayBindingPattern performs.
+        // Empty pattern: open the iterator and nothing more. The close pass
+        // at the end of this iteration emits the ITER_CLOSE, so this is
+        // GetIterator + IteratorClose, exactly what an empty
+        // ArrayBindingPattern performs.
         if (binds[di].is_empty_pattern) {
-            ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
-            if (iter_idx == 0xFFFF) {
-                iter_idx = (ushort)iter_count;
-                iter_count++;
-                self.emit_destruct_iter_setup(src_reg, &iter_states[iter_idx]);
-            }
-            continue;
-        }
-
-        // Hole / elision entry: advance iterator once and continue.
-        // Per IteratorBindingInitialization §13.3.3, each elision must call
-        // IteratorStep and propagate abrupt completions.
-        if (binds[di].is_hole) {
-            ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
-            if (iter_idx == 0xFFFF) {
-                iter_idx = (ushort)iter_count;
-                iter_count++;
-                self.emit_destruct_iter_setup(src_reg, &iter_states[iter_idx]);
-            }
+            self.open_destruct_iter(src_reg, binds[di].parent_idx,
+                                    iter_states[..], &iter_count);
+        } else if (binds[di].is_hole) {
+            // Elision: advance the iterator once and bind nothing. Per
+            // IteratorBindingInitialization §13.3.3 each elision calls
+            // IteratorStep and propagates abrupt completions.
+            ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
+                                                      iter_states[..], &iter_count);
             ushort hole_reg = self.alloc_reg();
             self.emit_destruct_iter_next(&iter_states[iter_idx], hole_reg);
             self.free_reg(hole_reg);
-            continue;
-        }
-
-        if (binds[di].is_synthetic) {
+        } else if (binds[di].is_synthetic) {
             // Use pre-allocated group_reg for rest synthetics, allocate now for others.
             ushort group_reg;
             if (binds[di].key_idx == 0xFFFF) {
@@ -1027,12 +1078,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 // Synthetic rest: collect remaining iterator values into an array.
                 self.emit_abc(Opcode.NEWARR, (uint)group_reg, 0, 0);
 
-                ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
-                if (iter_idx == 0xFFFF) {
-                    iter_idx = (ushort)iter_count;
-                    iter_count++;
-                    self.emit_destruct_iter_setup(src_reg, &iter_states[iter_idx]);
-                }
+                ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
+                                                          iter_states[..], &iter_count);
                 DestructIterState* state = &iter_states[iter_idx];
 
                 // [[Done]] may already be latched by an earlier element that
@@ -1113,12 +1160,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.free_reg(result_reg);
             } else {
                 // Array pattern element: single iterator advance.
-                ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
-                if (iter_idx == 0xFFFF) {
-                    iter_idx = (ushort)iter_count;
-                    iter_count++;
-                    self.emit_destruct_iter_setup(src_reg, &iter_states[iter_idx]);
-                }
+                ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
+                                                          iter_states[..], &iter_count);
                 self.emit_destruct_iter_next(&iter_states[iter_idx], group_reg);
             }
 
@@ -1223,12 +1266,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     // clobber a freshly allocated register).
                     self.emit_abc(Opcode.NEWARR, (uint)bind_reg, 0, 0);
 
-                    ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
-                    if (iter_idx == 0xFFFF) {
-                        iter_idx = (ushort)iter_count;
-                        iter_count++;
-                        self.emit_destruct_iter_setup(src_reg, &iter_states[iter_idx]);
-                    }
+                    ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
+                                                              iter_states[..], &iter_count);
                     DestructIterState* state = &iter_states[iter_idx];
 
                     // Emit the deferred rest member-target evaluation now, AFTER
@@ -1313,12 +1352,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     self.free_reg(result_reg);
                 } else {
                     // Array pattern: use iterator protocol
-                    ushort iter_idx = find_destruct_iter(src_reg, iter_states[..], &iter_count);
-                    if (iter_idx == 0xFFFF) {
-                        iter_idx = (ushort)iter_count;
-                        iter_count++;
-                        self.emit_destruct_iter_setup(src_reg, &iter_states[iter_idx]);
-                    }
+                    ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
+                                                              iter_states[..], &iter_count);
                     // Emit the deferred member-target evaluation BEFORE
                     // IteratorStep, per ES2022 §13.15.5.6: the target lref is
                     // evaluated before IteratorStep, so any throw here triggers
@@ -1400,6 +1435,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     }
             }
         }
+
+        self.close_finished_iter(binds, count, di, iter_states[..], &iter_count);
     }
 
     // Close the TRY guard and emit the IteratorClose finally block.
