@@ -108,6 +108,15 @@ struct DestructBind {
     ushort private_brand_reg;
     // Constant-pool index for the private name in the deferred CHK_BRAND.
     uint private_brand_name_c;
+    // Array rest into a member target (`[...o.r] = it`): the array the
+    // collection loop pushes into. The generic leaf path allocates bind_reg at
+    // the current watermark, which for an array rest lands inside the
+    // iterator's `next()` callee window (a CALL writes callee, `this` and the
+    // arguments starting at its result register), so the array is clobbered on
+    // the first step. This one is allocated in the pre-scan, below every such
+    // window, the same way the rest synthetics' group_regs are. 0xFFFF when
+    // the bind is not an array rest with a deferred target.
+    ushort rest_array_reg;
     // The deferred CHK_BRAND's object operand is member_obj_reg (below), NOT
     // a separate field, member_obj_reg is the persistent, pre-scan-allocated
     // copy of `this`, safe across the source property's GETPROP (which may
@@ -868,8 +877,14 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     // can decide whether to emit a TRY guard for IteratorClose on abrupt completion.
     bool has_array_binds = false;
     for (uint di = 0; di < count; di++) {
+        binds[di].rest_array_reg = 0xFFFF;
         if (binds[di].is_synthetic && !binds[di].is_object && binds[di].key_idx == 0xFFFF) {
             group_regs[di] = self.alloc_persistent_reg();
+        }
+        if (binds[di].deferred_target != null && !binds[di].is_object
+            && binds[di].key_idx == 0xFFFF && !binds[di].is_synthetic) {
+            // The rest array itself, for the reason on rest_array_reg.
+            binds[di].rest_array_reg = self.alloc_persistent_reg();
         }
         if (binds[di].deferred_target != null) {
             // Stable pair for a deferred member target's evaluated object/key:
@@ -1154,7 +1169,12 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             // the getter call would clobber it. Allocate it fresh here instead.
             ushort bind_reg = binding_regs[di];
             if (bind_reg == 0xFFFF) {
-                bind_reg = self.alloc_reg();
+                // An array rest into a member target uses the pre-scan
+                // register instead, which sits below the iterator's callee
+                // window; see rest_array_reg.
+                bind_reg = binds[di].rest_array_reg != 0xFFFF
+                         ? binds[di].rest_array_reg
+                         : self.alloc_reg();
                 binding_regs[di] = bind_reg;
             }
             uint ni = binds[di].name_idx;
