@@ -1454,6 +1454,10 @@ fn void CompilerContext.clear_ref_markers(&self) {
     self.last_was_getvar = false;
     self.member.clear();
     self.last_was_local_var = false;
+    // Direct eval is keyed on the callee being a Reference named "eval"
+    // (§13.3.6.1), so a construct that yields a value instead -- a comma, a
+    // conditional -- makes `eval` there an indirect call.
+    self.callee_is_eval = false;
     // Dropping every marker already makes the target check fail, so the
     // separate ~invalid~ verdict has done its job and must not linger: a stale
     // `true` would wrongly reject the NEXT target parsed before any marker is
@@ -4081,11 +4085,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // Not an arrow: restore lexer and parse as grouping expression
                 self.restore_lhs_snapshot(lparen_snap);
                 ushort inner2 = self.expression()!;
-                // A parenthesized expression is never a bare IdentifierReference,
-                // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
-                // eval even though the innermost operand's name is "eval" (ES2015
-                // §12.3.4.1 step 3: IsIdentifierRef must hold syntactically).
-                self.callee_is_eval = false;
+                // Parentheses are transparent to direct eval. EvaluateCall
+                // (§13.3.6.1) asks whether the callee evaluated to a Reference
+                // named "eval", and CoverParenthesizedExpression evaluates to
+                // the inner expression's own Reference, so `(eval)(x)` is
+                // direct. A comma or a conditional produces a value rather
+                // than a Reference, and those clear the flag where they parse
+                // their operands, so `(0, eval)(x)` stays indirect.
                 self.expect(TokenType.RPAREN)!;
                 self.drop_paren_receiver_unless_ref();
                 self.inside_parens = saved_inside_parens;
@@ -4238,11 +4244,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // Not an arrow: restore lexer state and parse as grouping expression
                 self.restore_lhs_snapshot(lparen_snap);
                 ushort inner2 = self.expression()!;
-                // A parenthesized expression is never a bare IdentifierReference,
-                // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
-                // eval even though the innermost operand's name is "eval" (ES2015
-                // §12.3.4.1 step 3: IsIdentifierRef must hold syntactically).
-                self.callee_is_eval = false;
+                // Parentheses are transparent to direct eval. EvaluateCall
+                // (§13.3.6.1) asks whether the callee evaluated to a Reference
+                // named "eval", and CoverParenthesizedExpression evaluates to
+                // the inner expression's own Reference, so `(eval)(x)` is
+                // direct. A comma or a conditional produces a value rather
+                // than a Reference, and those clear the flag where they parse
+                // their operands, so `(0, eval)(x)` stays indirect.
                 self.expect(TokenType.RPAREN)!;
                 self.drop_paren_receiver_unless_ref();
                 self.inside_parens = saved_inside_parens;
@@ -4300,11 +4308,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // Not an arrow: restore lexer and parse as grouping expression
                 self.restore_lhs_snapshot(lparen_snap);
                 ushort inner2 = self.expression()!;
-                // A parenthesized expression is never a bare IdentifierReference,
-                // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
-                // eval even though the innermost operand's name is "eval" (ES2015
-                // §12.3.4.1 step 3: IsIdentifierRef must hold syntactically).
-                self.callee_is_eval = false;
+                // Parentheses are transparent to direct eval. EvaluateCall
+                // (§13.3.6.1) asks whether the callee evaluated to a Reference
+                // named "eval", and CoverParenthesizedExpression evaluates to
+                // the inner expression's own Reference, so `(eval)(x)` is
+                // direct. A comma or a conditional produces a value rather
+                // than a Reference, and those clear the flag where they parse
+                // their operands, so `(0, eval)(x)` stays indirect.
                 self.expect(TokenType.RPAREN)!;
                 self.drop_paren_receiver_unless_ref();
                 self.inside_parens = saved_inside_parens;
@@ -4334,11 +4344,13 @@ fn ushort? CompilerContext.primary_expr(&self) {
             } else {
                 // Not arrow: parse as grouping expression
                 ushort inner2 = self.expression()!;
-                // A parenthesized expression is never a bare IdentifierReference,
-                // so `(eval)(...)`/`(0, eval)(...)` must NOT be treated as direct
-                // eval even though the innermost operand's name is "eval" (ES2015
-                // §12.3.4.1 step 3: IsIdentifierRef must hold syntactically).
-                self.callee_is_eval = false;
+                // Parentheses are transparent to direct eval. EvaluateCall
+                // (§13.3.6.1) asks whether the callee evaluated to a Reference
+                // named "eval", and CoverParenthesizedExpression evaluates to
+                // the inner expression's own Reference, so `(eval)(x)` is
+                // direct. A comma or a conditional produces a value rather
+                // than a Reference, and those clear the flag where they parse
+                // their operands, so `(0, eval)(x)` stays indirect.
                 self.expect(TokenType.RPAREN)!;
                 self.drop_paren_receiver_unless_ref();
                 self.inside_parens = saved_inside_parens;
