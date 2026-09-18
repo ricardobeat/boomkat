@@ -171,8 +171,8 @@ Not implemented: `Date.prototype.getYear` / `setYear`, the
 | Proper tail calls | 35 | Not implemented |
 
 Also excluded as still-moving proposals: `import-defer` (229),
-`source-phase-imports` (222), `joint-iteration` (82), `immutable-arraybuffer`
-(66), `await-dictionary` (63), `import-text` (6).
+`source-phase-imports` (222), `immutable-arraybuffer` (66),
+`await-dictionary` (63), `import-text` (6).
 
 ## Engine internals
 
