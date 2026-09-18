@@ -648,6 +648,10 @@ macro chains_restore_from_gen(Activation* act, gs) {
 // count 1 and is swept rather than mistaken for the empty case.
 fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
     if (callee_act.func == null) return;
+    // Before the early-outs below: a frame whose arguments object escaped must
+    // copy its mapped parameters into that object while its registers are
+    // still readable, even when it holds no heap references.
+    mapped_args_freeze_on_pop(vm, callee_act);
     if (callee_act.heap_reg_count == 0) return;  // fast path: no heap refs
     CompiledFunction* callee_func = (CompiledFunction*)callee_act.func;
     uint nregs = callee_func.num_regs;

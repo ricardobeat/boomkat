@@ -105,6 +105,63 @@ fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
     }
 }
 
+// Freeze an escaping arguments object's [[ParameterMap]] into its own storage.
+//
+// The map here is an activation-scoped alias: mapped_args_owner finds the live
+// frame whose `arguments` binding names this object, and every read and write
+// goes through the frame's parameter registers. Once the frame pops there is no
+// owner to find, so a mapped index would fall back to the value array_part
+// captured at call entry and lose every assignment the body made
+// (`function f(a){ a = 17; return arguments; }`). The spec keeps the alias
+// alive through closures over the environment record; this engine keeps the
+// values instead, copying them in at the one point every frame passes through
+// on its way out.
+//
+// Called from decref_callee_regs, which is the shared teardown for a normal
+// return, an exception unwind, and a generator's final pop, and called before
+// its early-outs, which a mapped frame holding no heap registers would
+// otherwise take.
+fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
+    if (act == null || act.func == null || act.bottom == null || act.var_env == null) return;
+    CompiledFunction* cf = (CompiledFunction*)act.func;
+    if (!cf.mapped_arguments()) return;
+    // A generator or async function reaches decref_callee_regs on every
+    // SUSPENSION, not only when it finishes: creating the generator object,
+    // each `yield`, each `await`. Freezing there would end the alias while the
+    // body can still run, so `function* g(a){ arguments[0] = 32; yield a; }`
+    // would yield the original argument. These frames keep the live-activation
+    // alias for as long as they can resume.
+    if (cf.flags.is_user_generator || cf.flags.is_async) return;
+    HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
+    if (args_name == null) return;
+    int bidx = act.var_env.bindings.find_prop_idx(args_name, vm.heap);
+    if (bidx < 0) return;
+    TVal bval = act.var_env.bindings.prop_values()[bidx];
+    if (!bval.is_object() || bval.get_heapptr() == null) return;
+    HObject* args_obj = (HObject*)bval.get_heapptr();
+    if (args_obj.get_class() != hobject::ObjClass.ARGUMENTS) return;
+
+    ulong bits = *args_obj.mapped_bits_ptr();
+    uint nformals = (uint)cf.num_args;
+    uint i = 0;
+    while (bits != 0) {
+        if ((bits & 1UL) != 0 && i < nformals) {
+            TVal v = act.bottom[i];
+            int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
+            if (pidx >= 0) {
+                vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], &v);
+            } else if (i < args_obj.array_size) {
+                args_obj.set_array_idx(i, v, vm.heap);
+            }
+        }
+        bits >>= 1;
+        i++;
+    }
+    // The alias is over: without clearing the bits a later frame reusing this
+    // activation slot could be mistaken for the owner.
+    *args_obj.mapped_bits_ptr() = 0;
+}
+
 // Read the current value of mapped index `idx` from the owning activation's
 // parameter registers. Returns false when the read must take the ordinary
 // dense/named path instead (index not in the map, owning frame gone, or the

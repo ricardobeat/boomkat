@@ -4454,6 +4454,16 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     if (key <= 0xFFFFFFFFUL
         && (obj.get_class() == hobject::ObjClass.ARRAY
             || obj.get_class() == hobject::ObjClass.ARGUMENTS)) {
+        // A sloppy arguments object's [[ParameterMap]] (§10.4.4) aliases a
+        // mapped index to the owning frame's parameter register, and array_part
+        // still holds the value captured at call entry. Reading it directly
+        // misses a later `a = 17`, which every in-VM read path avoids by
+        // consulting the map first; do the same here so a builtin handed the
+        // object (`[].slice.call(arguments)`) agrees with `arguments[0]`.
+        if (obj.get_class() == hobject::ObjClass.ARGUMENTS
+            && ctx != null && ctx.vm != null) {
+            if (vm::mapped_args_read(ctx.vm, obj, (uint)key, out)) return true;
+        }
         if (try v = obj.get_array_idx((uint)key)) {
             *out = v;
             return true;
