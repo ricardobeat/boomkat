@@ -276,6 +276,30 @@ fn void? SeenParams.declare_destructured(&self, DestructBind[] binds, uint count
     }
 }
 
+// ES2017 §14.1.2: duplicate BoundNames are a SyntaxError in both sloppy and
+// strict code once IsSimpleParameterList is false. `declare` applies that rule
+// as each name arrives, but a non-simple parameter can come AFTER the duplicate
+// pair -- `function f(a, a, ...b)` -- and at that point the two `a`s have
+// already been accepted. Run the pairwise scan once here, where the whole list
+// has been seen and has_complex_params is final.
+//
+// Names the table could not record (over MAX_PARAMS, or 64+ chars) were never
+// checked by `declare` either; the scan inherits that same weakening rather
+// than introducing a new one.
+fn void? SeenParams.check_no_duplicates(&self) {
+    if (!self.strict && !self.has_complex_params) return;
+    for (uint i = 0; i < self.count; i++) {
+        for (uint j = i + 1; j < self.count; j++) {
+            if (self.lens[i] != self.lens[j]) continue;
+            bool match = true;
+            for (usz k = 0; k < self.lens[i]; k++) {
+                if (self.names[i][k] != self.names[j][k]) { match = false; break; }
+            }
+            if (match) return COMPILE_ERROR~;
+        }
+    }
+}
+
 // Parse an object destructuring pattern within a function parameter list.
 // The '{' token has already been consumed.
 // Collects all leaf-level binding names into the provided arrays.
@@ -3936,6 +3960,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // duplicate-parameter SyntaxError. Checked here, once the whole list is
     // known, so a pattern can collide with a simple param in either order.
     seen_params.declare_destructured(destruct_binds[..], destruct_count)!;
+    seen_params.check_no_duplicates()!;
 
     // Declare destructured bindings as variables.
     // Synthetics don't get variables, they're intermediate extraction points.
@@ -4847,6 +4872,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     // Destructured leaves are BoundNames too (see parse_function_body).
     inner_seen.declare_destructured(inner_destruct_binds[..], inner_destruct_count)!;
+    inner_seen.check_no_duplicates()!;
 
     // Declare destructured bindings as variables (skip synthetics).
     for (uint i = 0; i < inner_destruct_count; i++) {
@@ -5690,6 +5716,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
 
     // Destructured leaves are BoundNames too (see parse_function_body).
     arrow_seen.declare_destructured(arrow_destruct_binds[..], arrow_destruct_count)!;
+    arrow_seen.check_no_duplicates()!;
 
     // Declare destructured bindings as variables (skip synthetics).
     for (uint i = 0; i < arrow_destruct_count; i++) {
