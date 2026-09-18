@@ -730,6 +730,12 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     ITERATOR_PROTO_EVERY {"every", 1, false, &builtin_iterator_proto_every},
     ITERATOR_PROTO_FIND {"find", 1, false, &builtin_iterator_proto_find},
     ITERATOR_CONCAT {"concat", -1, false, &builtin_iterator_concat},
+    ITERATOR_ZIP {"zip", 1, false, &builtin_iterator_zip}, // Iterator.zip(iterables[, options]) (joint-iteration)
+    ITERATOR_ZIPKEYED {"zipKeyed", 1, false, &builtin_iterator_zipkeyed}, // Iterator.zipKeyed(iterables[, options])
+    ITERATOR_PROTO_INCLUDES {"includes", 1, false, &builtin_iterator_proto_includes}, // Iterator.prototype.includes(searchElement[, skippedElements])
+    ITERATOR_PROTO_JOIN {"join", 1, false, &builtin_iterator_proto_join}, // Iterator.prototype.join([separator])
+    ITERATOR_PROTO_CHUNKS {"chunks", 1, false, &builtin_iterator_proto_chunks}, // Iterator.prototype.chunks(chunkSize)
+    ITERATOR_PROTO_WINDOWS {"windows", 1, false, &builtin_iterator_proto_windows}, // Iterator.prototype.windows(windowSize[, undersized])
     WRAP_FOR_VALID_ITERATOR_NEXT {"next", 0, false, &builtin_wrap_for_valid_iterator_next},
     WRAP_FOR_VALID_ITERATOR_RETURN {"return", 0, false, &builtin_wrap_for_valid_iterator_return},
     ITERATOR_HELPER_NEXT {"next", 0, false, &builtin_iterator_helper_next},

@@ -3187,6 +3187,9 @@ fn void Heap.drain_gray(&self) {
                     self.mark_hobject((*obj.extra_ptr()).iter_helper.inner_iter);
                 }
                 self.mark_tval(&(*obj.extra_ptr()).iter_helper.inner_next);
+                if ((*obj.extra_ptr()).iter_helper.buffer != null) {
+                    self.mark_hobject((*obj.extra_ptr()).iter_helper.buffer);
+                }
                 break;
             case ObjClass.GETTER_SETTER:
                 self.mark_tval(&(*obj.extra_ptr()).gs.getter);

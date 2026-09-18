@@ -712,6 +712,10 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "some", Builtin.ITERATOR_PROTO_SOME.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "every", Builtin.ITERATOR_PROTO_EVERY.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "find", Builtin.ITERATOR_PROTO_FIND.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "includes", Builtin.ITERATOR_PROTO_INCLUDES.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "join", Builtin.ITERATOR_PROTO_JOIN.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "chunks", Builtin.ITERATOR_PROTO_CHUNKS.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "windows", Builtin.ITERATOR_PROTO_WINDOWS.ordinal)) return false;
 
     // Iterator.prototype.constructor, accessor pair (ES2025 §27.1.3.3.1).
     HString* ctor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
@@ -753,6 +757,10 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
 
     // Iterator.concat(...iterables).
     if (!register_string_proto_method(ctor, heap, "concat", Builtin.ITERATOR_CONCAT.ordinal)) return false;
+
+    // Iterator.zip / Iterator.zipKeyed (joint iteration).
+    if (!register_string_proto_method(ctor, heap, "zip", Builtin.ITERATOR_ZIP.ordinal)) return false;
+    if (!register_string_proto_method(ctor, heap, "zipKeyed", Builtin.ITERATOR_ZIPKEYED.ordinal)) return false;
 
     // Register the Iterator global binding.
     {
@@ -919,8 +927,13 @@ fn void iterhelper_iterator_close(BuiltinContext* ctx, HObject* iterator, bool h
     }
     TVal? return_opt = builtins_generic_get(iterator, return_key, ctx);
     if (ctx.should_throw) {
-        // GetMethod(iterator, "return") itself threw, this replaces the
-        // original completion regardless of whether it was normal or abrupt.
+        // GetMethod(iterator, "return") itself threw: with an original abrupt
+        // completion the getter's throw is discarded (IteratorClose step 4a),
+        // with a normal completion it becomes the new completion.
+        if (had_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = saved_throw_value;
+        }
         return;
     }
     TVal return_method;
@@ -1281,9 +1294,10 @@ fn void builtin_wrap_for_valid_iterator_return(BuiltinContext* ctx) {
 // Iterator Helper object state machine (backs %IteratorHelperPrototype%).
 // ----------------------------------------------------------------------------
 
-const uint IH_STATE_SUSPENDED = 0;  /// Not yet exhausted, safe to resume.
+const uint IH_STATE_SUSPENDED = 0;  /// Not yet started; safe to resume.
 const uint IH_STATE_EXECUTING = 1;  /// Re-entered from within its own step (throws).
 const uint IH_STATE_COMPLETED = 2;  /// Exhausted or closed; next() always returns done.
+const uint IH_STATE_YIELDED    = 3;  /// Suspended at a yield point; return() must re-close.
 
 const uint IH_KIND_MAP     = 0;
 const uint IH_KIND_FILTER  = 1;
@@ -1291,6 +1305,13 @@ const uint IH_KIND_TAKE    = 2;
 const uint IH_KIND_DROP    = 3;
 const uint IH_KIND_FLATMAP = 4;
 const uint IH_KIND_CONCAT  = 5;
+const uint IH_KIND_CHUNKS  = 6;
+const uint IH_KIND_WINDOWS = 7;
+const uint IH_KIND_ZIP     = 8;
+
+const uint ZIP_MODE_SHORTEST = 0;
+const uint ZIP_MODE_LONGEST  = 1;
+const uint ZIP_MODE_STRICT   = 2;
 
 // Shared constructor for every lazy Iterator Helper object.
 fn HObject* iterhelper_create(Heap* heap, HObject* underlying, TVal next_method, TVal callback, uint kind, double remaining) {
@@ -1353,7 +1374,7 @@ fn void builtin_iterator_helper_next(BuiltinContext* ctx) {
         if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
         return;
     }
-    ih.state = IH_STATE_SUSPENDED;
+    ih.state = IH_STATE_YIELDED;
     HObject* result = iterhelper_make_result(heap, out_value, false);
     if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
 }
@@ -1652,6 +1673,269 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 // Note: counter will be incremented when this iterator is exhausted
             }
         }
+        case IH_KIND_CHUNKS: {
+            // Each external next() fills a fresh array with up to chunkSize
+            // underlying values and yields it, so no state persists between
+            // calls; a final smaller chunk is yielded at exhaustion.
+            uint chunk_size = (uint)ih.remaining;
+            HObject*? chunk_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+            if (catch err = chunk_raw) { *out_done = true; return true; }
+            HObject* chunk = chunk_raw;
+            chunk.prototype = heap.array_proto;
+            uint count = 0;
+            while (true) {
+                TVal value;
+                bool step_done;
+                if (!iterhelper_step_value(ctx, ih.underlying, ih.next_method, &value, &step_done)) {
+                    if (step_done) {
+                        if (count > 0) {
+                            *chunk.array_len_ptr() = count;
+                            *out_value = types::make_object(chunk);
+                            return true;
+                        }
+                        *out_done = true;
+                        return true;
+                    }
+                    return false;
+                }
+                chunk.set_array_idx(count, value, heap);
+                count++;
+                if (count == chunk_size) {
+                    *chunk.array_len_ptr() = count;
+                    *out_value = types::make_object(chunk);
+                    return true;
+                }
+            }
+        }
+        case IH_KIND_WINDOWS: {
+            // Sliding window: a persistent ring buffer (ih.buffer) of logical
+            // capacity windowSize holds the current window at
+            // [(head + i) % windowSize]; every full window is yielded as a
+            // fresh array. With "allow-partial" a smaller final window is
+            // yielded at exhaustion.
+            uint window_size = (uint)ih.remaining;
+            HObject* buf = ih.buffer;
+            uint count = (uint)ih.counter;
+            uint head = ih.buffer_head;
+            while (true) {
+                TVal value;
+                bool step_done;
+                if (!iterhelper_step_value(ctx, ih.underlying, ih.next_method, &value, &step_done)) {
+                    if (step_done) {
+                        if (ih.window_mode != 0 && count > 0 && buf != null) {
+                            HObject* win = iterhelper_copy_window(heap, buf, head, count, window_size);
+                            // The partial window is a one-shot yield: clear the
+                            // buffer so the next call reports done.
+                            ih.buffer = null;
+                            ih.counter = 0.0;
+                            ih.buffer_head = 0;
+                            if (win != null) {
+                                *out_value = types::make_object(win);
+                                return true;
+                            }
+                        }
+                        *out_done = true;
+                        return true;
+                    }
+                    return false;
+                }
+                if (buf == null) {
+                    HObject*? buf_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+                    if (catch err = buf_raw) { *out_done = true; return true; }
+                    buf = buf_raw;
+                    buf.prototype = heap.array_proto;
+                    ih.buffer = buf;
+                    head = 0;
+                    count = 0;
+                }
+                if (count == window_size) {
+                    // The buffer is full: drop the oldest element to make room.
+                    head = (uint)(((ulong)head + 1) % (ulong)window_size);
+                    count--;
+                }
+                ulong slot = ((ulong)head + (ulong)count) % (ulong)window_size;
+                buf.set_array_idx((uint)slot, value, heap);
+                count++;
+                ih.counter = (double)count;
+                ih.buffer_head = head;
+                if (count == window_size) {
+                    HObject* win = iterhelper_copy_window(heap, buf, head, count, window_size);
+                    if (win != null) {
+                        *out_value = types::make_object(win);
+                        return true;
+                    }
+                    *out_done = true;
+                    return true;
+                }
+            }
+        }
+        case IH_KIND_ZIP: {
+            // IteratorZip(iters, mode, padding, finishResults): step every
+            // iterator in order, one result per slot, then finishResults into
+            // an array (zip) or null-prototype object (zipKeyed). The wrapper
+            // holds the slot arrays and the mode; ih.counter/ih.remaining
+            // mirror the iterator count and the count of still-open slots.
+            HObject* wrapper = ih.underlying;
+            if (wrapper == null) { *out_done = true; return true; }
+            long iter_count = (long)ih.counter;
+            if (iter_count == 0) { *out_done = true; return true; }
+            HObject* iters_arr = iterhelper_zip_wrapper_arr(ctx, wrapper, "iters");
+            if (iters_arr == null) { *out_done = true; return true; }
+            HObject* methods_arr = iterhelper_zip_wrapper_arr(ctx, wrapper, "methods");
+            HObject* padding_arr = iterhelper_zip_wrapper_arr(ctx, wrapper, "padding");
+            HObject* keys_arr = iterhelper_zip_wrapper_arr(ctx, wrapper, "keys");
+            uint mode = ZIP_MODE_SHORTEST;
+            {
+                TVal mode_tv;
+                if (iterhelper_zip_wrapper_get(ctx, wrapper, "mode", &mode_tv) && mode_tv.is_fastint()) {
+                    mode = (uint)mode_tv.get_fastint();
+                }
+            }
+
+            HObject*? results_raw = keys_arr != null
+                ? heap.alloc_object(hobject::ObjClass.OBJECT)
+                : heap.alloc_object(hobject::ObjClass.ARRAY);
+            HObject* results;
+            if (try r = results_raw) { results = r; } else { *out_done = true; return true; }
+            if (keys_arr != null) {
+                results.prototype = null;
+            } else {
+                results.prototype = heap.array_proto;
+            }
+            // Non-keyed zip results ARE the value array (finishResults =
+        // CreateArrayFromList), so no separate copy is needed.
+            HObject* vals = results;
+            if (keys_arr != null) {
+                HObject*? vals_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+                if (catch err = vals_raw) { *out_done = true; return true; }
+                vals = vals_raw;
+                vals.prototype = heap.array_proto;
+            }
+
+            for (long i = 0; i < iter_count; i++) {
+                TVal result;
+                bool exhausted = false;
+                TVal? slot = iters_arr.get_array_idx((uint)i);
+                if (try sv = slot) {
+                    if (sv.is_null()) {
+                        exhausted = true;
+                    } else {
+                        bool done = false;
+                        TVal? mv = methods_arr.get_array_idx((uint)i);
+                        TVal method;
+                        if (try mm = mv) { method = mm; } else { method.set_undefined(); }
+                        TVal value;
+                        if (!iterhelper_step_value(ctx, (HObject*)sv.get_heapptr(), method, &value, &done)) {
+                            if (!done) {
+                                // Abrupt step: this iterator drops out of the
+                                // open set before the rest close in reverse.
+                                TVal nullv; nullv.set_null();
+                                iters_arr.set_array_idx((uint)i, nullv, heap);
+                                ih.remaining -= 1.0;
+                                iterhelper_zip_close_all(ctx, wrapper, true);
+                                return false;
+                            }
+                        } else {
+                            result = value;
+                            vals.set_array_idx((uint)i, value, heap);
+                            continue;
+                        }
+                        // Done: this slot is closed for good.
+                        TVal nullv; nullv.set_null();
+                        iters_arr.set_array_idx((uint)i, nullv, heap);
+                        ih.remaining -= 1.0;
+                        if (mode == ZIP_MODE_SHORTEST) {
+                            iterhelper_zip_close_all(ctx, wrapper, ctx.should_throw);
+                            if (ctx.should_throw) return false;
+                            *out_done = true;
+                            return true;
+                        }
+                        if (mode == ZIP_MODE_STRICT) {
+                            if (i != 0) {
+                                // Length mismatch: close everything, then
+                                // reject with TypeError.
+                                builtin_throw(ctx, heap.type_err_proto, "iterators have different lengths");
+                                iterhelper_zip_close_all(ctx, wrapper, true);
+                                return false;
+                            }
+                            // The first iterator is done first: every other
+                            // slot must also be at its end (stepped once more,
+                            // value never read).
+                            for (long k = 1; k < iter_count; k++) {
+                                TVal? os = iters_arr.get_array_idx((uint)k);
+                                if (try okv = os) {
+                                    if (okv.is_null()) continue;
+                                    TVal? kmv = methods_arr.get_array_idx((uint)k);
+                                    TVal kmethod;
+                                    if (try kk = kmv) { kmethod = kk; } else { kmethod.set_undefined(); }
+                                    bool kdone;
+                                    if (!iterhelper_step_only(ctx, (HObject*)okv.get_heapptr(), kmethod, &kdone)) {
+                                        if (kdone) {
+                                            TVal nullv2; nullv2.set_null();
+                                            iters_arr.set_array_idx((uint)k, nullv2, heap);
+                                            ih.remaining -= 1.0;
+                                            continue;
+                                        }
+                                        // Abrupt step from this iterator: it
+                                        // leaves the open set before the rest
+                                        // close in reverse order.
+                                        TVal nullv3; nullv3.set_null();
+                                        iters_arr.set_array_idx((uint)k, nullv3, heap);
+                                        ih.remaining -= 1.0;
+                                        iterhelper_zip_close_all(ctx, wrapper, true);
+                                        return false;
+                                    }
+                                    builtin_throw(ctx, heap.type_err_proto, "iterators have different lengths");
+                                    iterhelper_zip_close_all(ctx, wrapper, true);
+                                    return false;
+                                }
+                            }
+                            *out_done = true;
+                            return true;
+                        }
+                        // longest: exhausted slot is padded from now on.
+                        if (ih.remaining == 0.0) {
+                            *out_done = true;
+                            return true;
+                        }
+                        exhausted = true;
+                    }
+                } else {
+                    exhausted = true;
+                }
+                if (exhausted) {
+                    TVal? pad = padding_arr.get_array_idx((uint)i);
+                    if (try pv = pad) {
+                        result = pv;
+                    } else {
+                        result.set_undefined();
+                    }
+                    vals.set_array_idx((uint)i, result, heap);
+                }
+            }
+
+            *vals.array_len_ptr() = (uint)iter_count;
+            if (keys_arr != null) {
+                // finishResults (zipKeyed): null-prototype object with one
+                // own enumerable property per key, in key order.
+                for (long i = 0; i < iter_count; i++) {
+                    TVal? kv = keys_arr.get_array_idx((uint)i);
+                    TVal? vv = vals.get_array_idx((uint)i);
+                    TVal val;
+                    if (try v = vv) { val = v; } else { val.set_undefined(); }
+                    if (try k = kv) {
+                        if (k.is_string()) {
+                            results.put_prop((void*)k.get_heapptr(), val, hobject::PROP_FLAGS_WEC, heap);
+                        }
+                    }
+                }
+                *out_value = types::make_object(results);
+                return true;
+            }
+            *results.array_len_ptr() = (uint)iter_count;
+            *out_value = types::make_object(results);
+            return true;
+        }
         default:
             *out_done = true;
             return true;
@@ -1659,6 +1943,11 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
 }
 
 // %IteratorHelperPrototype%.return(), ES2025 §27.1.2.1.2.
+//
+// The suspended-start and suspended-yield paths differ in how a return()
+// re-entered from inside an underlying return() behaves: from suspended-start
+// the generator state is already completed, so the nested call succeeds;
+// from suspended-yield it is executing, so the nested call throws TypeError.
 fn void builtin_iterator_helper_return(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal this_val = ctx.this_val;
@@ -1674,24 +1963,38 @@ fn void builtin_iterator_helper_return(BuiltinContext* ctx) {
         builtin_throw(ctx, heap.type_err_proto, "Iterator Helper is already executing");
         return;
     }
-
-    if (ih.state != IH_STATE_COMPLETED) {
-        ih.state = IH_STATE_EXECUTING;
-        if (ih.inner_iter != null) {
-            iterhelper_iterator_close(ctx, ih.inner_iter, false);
-            ih.inner_iter = null;
-            // A throw here still must close the outer/underlying iterator
-            // before propagating (IteratorCloseAll closes in reverse order).
-            bool had_error = ctx.should_throw;
-            iterhelper_iterator_close(ctx, ih.underlying, had_error);
-            ih.state = IH_STATE_COMPLETED;
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        } else {
-            iterhelper_iterator_close(ctx, ih.underlying, false);
-            ih.state = IH_STATE_COMPLETED;
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        }
+    if (ih.state == IH_STATE_COMPLETED) {
+        TVal undef; undef.set_undefined();
+        HObject* result = iterhelper_make_result(heap, undef, true);
+        if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
+        return;
     }
+
+    // Never-started helpers flip straight to completed before closing, so a
+    // return() called from inside an underlying return() sees a completed
+    // generator. Helpers suspended at a yield point instead resume as
+    // executing, which makes such a nested return() throw a TypeError.
+    if (ih.state == IH_STATE_SUSPENDED) {
+        ih.state = IH_STATE_COMPLETED;
+    } else {
+        ih.state = IH_STATE_EXECUTING;
+    }
+
+    if (ih.kind == IH_KIND_ZIP) {
+        // IteratorCloseAll over the still-open zip slots, in reverse order.
+        iterhelper_zip_close_all(ctx, ih.underlying, false);
+    } else if (ih.inner_iter != null) {
+        iterhelper_iterator_close(ctx, ih.inner_iter, false);
+        ih.inner_iter = null;
+        bool had_error = ctx.should_throw;
+        iterhelper_iterator_close(ctx, ih.underlying, had_error);
+    } else {
+        iterhelper_iterator_close(ctx, ih.underlying, false);
+    }
+    if (ih.state != IH_STATE_COMPLETED) {
+        ih.state = IH_STATE_COMPLETED;
+    }
+    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     TVal undef; undef.set_undefined();
     HObject* result = iterhelper_make_result(heap, undef, true);
@@ -2239,5 +2542,812 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
     // remaining: 0 (unused for concat)
     TVal undef; undef.set_undefined();
     HObject* helper = iterhelper_create(heap, wrapper, undef, undef, IH_KIND_CONCAT, 0.0);
+    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+}
+
+// ============================================================================
+// Iterator.prototype.includes / join (eager), chunks / windows (lazy), and
+// Iterator.zip / Iterator.zipKeyed (joint iteration).
+// ============================================================================
+
+// IteratorStep (ES2025 §7.4.9): next() plus a read of `done` only, never
+// touching `value`, used by the zip strict-mode length check.
+fn bool iterhelper_step_only(BuiltinContext* ctx, HObject* iterator, TVal next_method, bool* out_done) {
+    Heap* heap = ctx.heap;
+    *out_done = false;
+    bool callable = next_method.is_lightfunc() ||
+        (next_method.is_object() && next_method.get_heapptr() != null &&
+         ((HObject*)next_method.get_heapptr()).is_callable());
+    if (!callable) {
+        builtin_throw(ctx, heap.type_err_proto, "next is not a function");
+        return false;
+    }
+    if (heap.call_fn == null || ctx.vm == null) return false;
+    TVal iterator_tv; iterator_tv.set_object(iterator);
+    TVal step = heap.call_fn(ctx.vm, next_method, null, 0, iterator_tv);
+    if (heap.has_error) {
+        ctx.should_throw = true;
+        ctx.throw_value = heap.error_value;
+        heap.has_error = false;
+        return false;
+    }
+    if (!step.is_object() || step.get_heapptr() == null) {
+        builtin_throw(ctx, heap.type_err_proto, "Iterator result is not an object");
+        return false;
+    }
+    HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
+    TVal? done_opt = builtins_generic_get((HObject*)step.get_heapptr(), done_key, ctx);
+    if (ctx.should_throw) return false;
+    if (try dv = done_opt) { *out_done = builtin_to_boolean(&dv); }
+    return !*out_done;
+}
+
+// Copy the current window out of the ring buffer into a fresh array (each
+// yield must be a distinct array; the caller keeps the buffer untouched).
+fn HObject* iterhelper_copy_window(Heap* heap, HObject* buf, uint head, uint count, uint window_size) {
+    HObject*? win_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = win_raw) return null;
+    HObject* win = win_raw;
+    win.prototype = heap.array_proto;
+    for (uint i = 0; i < count; i++) {
+        uint src = (uint)(((ulong)head + (ulong)i) % (ulong)window_size);
+        TVal? v = buf.get_array_idx(src);
+        TVal tv;
+        if (try vv = v) { tv = vv; } else { tv.set_undefined(); }
+        win.set_array_idx(i, tv, heap);
+    }
+    *win.array_len_ptr() = count;
+    return win;
+}
+
+// A shared validation for chunks/windows: the size argument must already be
+// an integral Number in [1, 2^32 - 1]; ToNumber is never applied. Any
+// failure closes `obj` (IteratorClose on the not-yet-directly-iterated
+// record, so `next` is never read) and sets ctx.should_throw.
+fn bool iterhelper_validate_size_arg(BuiltinContext* ctx, HObject* obj, TVal arg, double* out_size) {
+    Heap* heap = ctx.heap;
+    if (!arg.is_number() && !arg.is_fastint()) {
+        builtin_throw(ctx, heap.type_err_proto, "size must be a Number");
+        iterhelper_iterator_close(ctx, obj, true);
+        return false;
+    }
+    double d = arg.get_number_or_fastint();
+    if (math::is_nan(d) || math::is_inf(d) || math::trunc(d) != d) {
+        builtin_throw(ctx, heap.type_err_proto, "size must be an integral Number");
+        iterhelper_iterator_close(ctx, obj, true);
+        return false;
+    }
+    if (d < 1.0 || d > 4294967295.0) {
+        builtin_throw(ctx, heap.range_err_proto, "size out of range");
+        iterhelper_iterator_close(ctx, obj, true);
+        return false;
+    }
+    *out_size = d;
+    return true;
+}
+
+// Iterator.prototype.includes(searchElement[, skippedElements]),
+// proposal-iterator-includes: SameValueZero search, with an optional
+// non-negative integral skip count; the iterator is closed on both a match
+// and any argument-validation error.
+fn void builtin_iterator_proto_includes(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    TVal this_val = ctx.this_val;
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        builtin_throw(ctx, heap.type_err_proto, "Iterator.prototype.includes called on non-object");
+        return;
+    }
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    TVal search_element = builtin_arg(ctx, 0);
+
+    // skippedElements is validated before GetIteratorDirect, so a bad value
+    // closes the iterator without ever reading its `next` method.
+    double to_skip = 0.0;
+    TVal skipped = builtin_arg(ctx, 1);
+    if (!skipped.is_undefined()) {
+        if (!skipped.is_number() && !skipped.is_fastint()) {
+            builtin_throw(ctx, heap.type_err_proto, "skippedElements must be a Number");
+            iterhelper_iterator_close(ctx, obj, true);
+            ctx.result.set_undefined();
+            return;
+        }
+        double sh = skipped.get_number_or_fastint();
+        if (math::is_nan(sh) || math::trunc(sh) != sh) {
+            // NaN and non-integral values are rejected; +-Infinity passes.
+            builtin_throw(ctx, heap.type_err_proto, "skippedElements must be an integral Number");
+            iterhelper_iterator_close(ctx, obj, true);
+            ctx.result.set_undefined();
+            return;
+        }
+        if (sh < 0.0) {
+            builtin_throw(ctx, heap.range_err_proto, "skippedElements must not be negative");
+            iterhelper_iterator_close(ctx, obj, true);
+            ctx.result.set_undefined();
+            return;
+        }
+        if (sh != double::inf && sh > 9007199254740991.0) {
+            builtin_throw(ctx, heap.range_err_proto, "skippedElements is too large");
+            iterhelper_iterator_close(ctx, obj, true);
+            ctx.result.set_undefined();
+            return;
+        }
+        to_skip = sh;
+    }
+
+    TVal next_method;
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+
+    double skipped_count = 0.0;
+    while (true) {
+        TVal value;
+        bool step_done;
+        if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
+            if (step_done) { ctx.result.set_boolean(false); return; }
+            ctx.result.set_undefined();
+            return;
+        }
+        if (skipped_count < to_skip) {
+            skipped_count += 1.0;
+            continue;
+        }
+        if (same_value_zero(value, search_element)) {
+            iterhelper_iterator_close(ctx, obj, false);
+            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            ctx.result.set_boolean(true);
+            return;
+        }
+    }
+}
+
+// Iterator.prototype.join([separator]), proposal-iterator-join: ToString of
+// the separator happens before GetIteratorDirect; null/undefined values
+// contribute no text but still take a separator slot.
+fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    TVal this_val = ctx.this_val;
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        builtin_throw(ctx, heap.type_err_proto, "Iterator.prototype.join called on non-object");
+        return;
+    }
+    HObject* obj = (HObject*)this_val.get_heapptr();
+
+    // Default separator is a single comma; an explicit undefined argument
+    // means the same thing.
+    HString* sep_str = builtin_intern_string(heap, ",");
+    if (ctx.argc > 0 && !ctx.regs[ctx.base_reg].is_undefined()) {
+        TVal sep_arg = builtin_arg(ctx, 0);
+        sep_str = builtin_to_string_vm(ctx, &sep_arg);
+        if (ctx.should_throw) {
+            // IfAbruptCloseIterator: the coercion error closes the iterator.
+            iterhelper_iterator_close(ctx, obj, true);
+            ctx.result.set_undefined();
+            return;
+        }
+    }
+
+    TVal next_method;
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+
+    // Grow one byte buffer as pieces arrive, then intern once at the end.
+    const usz INIT_CAP = 64;
+    char* buf = (char*)heap.alloc_func(heap.heap_udata, INIT_CAP);
+    if (buf == null) { ctx.result.set_undefined(); return; }
+    defer heap.free_func(heap.heap_udata, buf);
+    usz used = 0;
+    usz cap = INIT_CAP;
+    ulong total64 = 0;
+
+    bool first = true;
+    while (true) {
+        TVal value;
+        bool step_done;
+        if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
+            if (step_done) break;
+            ctx.result.set_undefined();
+            return;
+        }
+        if (!first) {
+            // Append the separator between every pair of iterated values,
+            // even when the value itself contributes no text.
+            if (sep_str != null) {
+                uint slen = sep_str.blen;
+                if (used + (usz)slen > cap) {
+                    usz new_cap = cap;
+                    while (new_cap < used + (usz)slen) new_cap *= 2;
+                    char* nb = (char*)heap.realloc_func(heap.heap_udata, buf, new_cap);
+                    if (nb == null) return;
+                    buf = nb;
+                    cap = new_cap;
+                }
+                char* sep_data = sep_str.get_cstr();
+                for (usz i = 0; i < (usz)slen; i++) buf[used + i] = sep_data[i];
+                used += (usz)slen;
+            }
+        }
+        first = false;
+        if (!value.is_undefined() && !value.is_null()) {
+            HString* vs = builtin_to_string_vm(ctx, &value);
+            if (ctx.should_throw) {
+                iterhelper_iterator_close(ctx, obj, true);
+                ctx.result.set_undefined();
+                return;
+            }
+            if (vs != null) {
+                uint vlen = vs.blen;
+                if (used + (usz)vlen > cap) {
+                    usz new_cap = cap;
+                    while (new_cap < used + (usz)vlen) new_cap *= 2;
+                    char* nb = (char*)heap.realloc_func(heap.heap_udata, buf, new_cap);
+                    if (nb == null) return;
+                    buf = nb;
+                    cap = new_cap;
+                }
+                char* vdata = vs.get_cstr();
+                for (usz i = 0; i < (usz)vlen; i++) buf[used + i] = vdata[i];
+                used += (usz)vlen;
+            }
+        }
+        total64 = (ulong)used;
+        if (hstring::length_exceeds_max(total64)) {
+            builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
+            ctx.result.set_undefined();
+            return;
+        }
+    }
+    HString* result = builtin_intern_string(heap, buf[:used]);
+    ctx.result.set_string(result);
+}
+
+// Iterator.prototype.chunks(chunkSize), proposal-iterator-chunking: a lazy
+// Iterator Helper yielding arrays of chunkSize values; the final chunk may
+// be smaller.
+fn void builtin_iterator_proto_chunks(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    TVal this_val = ctx.this_val;
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        builtin_throw(ctx, heap.type_err_proto, "Iterator.prototype.chunks called on non-object");
+        return;
+    }
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    double chunk_size;
+    if (!iterhelper_validate_size_arg(ctx, obj, builtin_arg(ctx, 0), &chunk_size)) { ctx.result.set_undefined(); return; }
+    TVal next_method;
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    TVal unused; unused.set_undefined();
+    HObject* helper = iterhelper_create(heap, obj, next_method, unused, IH_KIND_CHUNKS, chunk_size);
+    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+}
+
+// Iterator.prototype.windows(windowSize[, undersized]),
+// proposal-iterator-chunking: a lazy Iterator Helper yielding each sliding
+// window of windowSize values as a fresh array. undersized is "only-full"
+// (default, no final partial window) or "allow-partial".
+fn void builtin_iterator_proto_windows(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    TVal this_val = ctx.this_val;
+    if (!this_val.is_object() || this_val.get_heapptr() == null) {
+        builtin_throw(ctx, heap.type_err_proto, "Iterator.prototype.windows called on non-object");
+        return;
+    }
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    double window_size;
+    if (!iterhelper_validate_size_arg(ctx, obj, builtin_arg(ctx, 0), &window_size)) { ctx.result.set_undefined(); return; }
+
+    uint window_mode = 0;
+    TVal undersized = builtin_arg(ctx, 1);
+    if (!undersized.is_undefined()) {
+        if (!undersized.is_string() ||
+            (undersized.get_heapptr() != null && ((HString*)undersized.get_heapptr()).is_symbol())) {
+            builtin_throw(ctx, heap.type_err_proto, "undersized must be a string");
+            iterhelper_iterator_close(ctx, obj, true);
+            ctx.result.set_undefined();
+            return;
+        }
+        HString* u = (HString*)undersized.get_heapptr();
+        if (u.equals("allow-partial")) {
+            window_mode = 1;
+        } else if (!u.equals("only-full")) {
+            builtin_throw(ctx, heap.type_err_proto, "undersized must be \"only-full\" or \"allow-partial\"");
+            iterhelper_iterator_close(ctx, obj, true);
+            ctx.result.set_undefined();
+            return;
+        }
+    }
+
+    TVal next_method;
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    TVal unused; unused.set_undefined();
+    HObject* helper = iterhelper_create(heap, obj, next_method, unused, IH_KIND_WINDOWS, window_size);
+    if (helper != null) {
+        (*helper.extra_ptr()).iter_helper.window_mode = window_mode;
+        ctx.result.set_object(helper);
+    } else {
+        ctx.result.set_undefined();
+    }
+}
+
+// --- joint iteration (Iterator.zip / Iterator.zipKeyed) ---
+
+// Read + validate the options argument: GetOptionsObject, then "mode"
+// (undefined -> "shortest"; string primitives "shortest"/"longest"/"strict"
+// only, no coercion) and, for "longest" only, "padding" (undefined or an
+// Object). Returns false with ctx.should_throw set on any failure.
+fn bool iterhelper_zip_options(BuiltinContext* ctx, TVal options_val, uint* out_mode, TVal* out_padding_option) {
+    Heap* heap = ctx.heap;
+    uint mode = ZIP_MODE_SHORTEST;
+    TVal padding; padding.set_undefined();
+    if (!options_val.is_undefined()) {
+        if (!options_val.is_object() || options_val.get_heapptr() == null) {
+            builtin_throw(ctx, heap.type_err_proto, "options must be an object or undefined");
+            return false;
+        }
+        HObject* opts = (HObject*)options_val.get_heapptr();
+        HString* mode_key = builtin_intern_string(heap, "mode");
+        TVal mode_val;
+        if (mode_key != null) {
+            TVal? mv = builtins_generic_get(opts, mode_key, ctx);
+            if (ctx.should_throw) return false;
+            if (try v = mv) { mode_val = v; } else { mode_val.set_undefined(); }
+        } else {
+            mode_val.set_undefined();
+        }
+        if (!mode_val.is_undefined()) {
+            if (!mode_val.is_string() ||
+                (mode_val.get_heapptr() != null && ((HString*)mode_val.get_heapptr()).is_symbol())) {
+                builtin_throw(ctx, heap.type_err_proto, "mode must be one of \"shortest\", \"longest\", or \"strict\"");
+                return false;
+            }
+            HString* ms = (HString*)mode_val.get_heapptr();
+            if (ms.equals("shortest")) {
+                mode = ZIP_MODE_SHORTEST;
+            } else if (ms.equals("longest")) {
+                mode = ZIP_MODE_LONGEST;
+            } else if (ms.equals("strict")) {
+                mode = ZIP_MODE_STRICT;
+            } else {
+                builtin_throw(ctx, heap.type_err_proto, "mode must be one of \"shortest\", \"longest\", or \"strict\"");
+                return false;
+            }
+        }
+        if (mode == ZIP_MODE_LONGEST) {
+            HString* pad_key = builtin_intern_string(heap, "padding");
+            if (pad_key != null) {
+                TVal? pv = builtins_generic_get(opts, pad_key, ctx);
+                if (ctx.should_throw) return false;
+                if (try v = pv) { padding = v; } else { padding.set_undefined(); }
+            }
+            if (!padding.is_undefined() && (!padding.is_object() || padding.get_heapptr() == null)) {
+                builtin_throw(ctx, heap.type_err_proto, "padding must be an object or undefined");
+                return false;
+            }
+        }
+    }
+    *out_mode = mode;
+    *out_padding_option = padding;
+    return true;
+}
+
+// GetIterator(obj, sync): obj must carry a callable @@iterator (unlike
+// GetIteratorFlattenable, a bare iterator object without @@iterator fails).
+fn bool iterhelper_get_iterator(BuiltinContext* ctx, HObject* obj, HObject** out_iter, TVal* out_next) {
+    Heap* heap = ctx.heap;
+    HString* iter_sym = ensure_iterator_symbol(heap);
+    if (iter_sym == null) { out_iter[0] = null; return false; }
+    TVal method;
+    TVal? m = builtins_generic_get(obj, iter_sym, ctx);
+    if (ctx.should_throw) return false;
+    if (try v = m) { method = v; } else { method.set_undefined(); }
+    if (!(method.is_lightfunc() ||
+          (method.is_object() && method.get_heapptr() != null &&
+           ((HObject*)method.get_heapptr()).is_callable()))) {
+        builtin_throw(ctx, heap.type_err_proto, "not iterable");
+        return false;
+    }
+    if (heap.call_fn == null || ctx.vm == null) { out_iter[0] = null; return false; }
+    TVal obj_tv; obj_tv.set_object(obj);
+    TVal itv = heap.call_fn(ctx.vm, method, null, 0, obj_tv);
+    if (heap.has_error) {
+        ctx.should_throw = true;
+        ctx.throw_value = heap.error_value;
+        heap.has_error = false;
+        return false;
+    }
+    if (!itv.is_object() || itv.get_heapptr() == null) {
+        builtin_throw(ctx, heap.type_err_proto, "result of Symbol.iterator is not an object");
+        return false;
+    }
+    HObject* iter = (HObject*)itv.get_heapptr();
+    TVal next;
+    if (!iterhelper_get_iterator_direct(ctx, iter, &next)) return false;
+    *out_iter = iter;
+    *out_next = next;
+    return true;
+}
+
+// Read one array-valued wrapper property (used for the zip state blob).
+fn HObject* iterhelper_zip_wrapper_arr(BuiltinContext* ctx, HObject* wrapper, char[] key) {
+    HString* k = builtin_intern_string(ctx.heap, key);
+    if (k == null) return null;
+    TVal? v = wrapper.get_prop_proto(k, ctx.heap);
+    if (try tv = v) {
+        if (tv.is_object() && tv.get_heapptr() != null) return (HObject*)tv.get_heapptr();
+    }
+    return null;
+}
+
+fn bool iterhelper_zip_wrapper_get(BuiltinContext* ctx, HObject* wrapper, char[] key, TVal* out) {
+    HString* k = builtin_intern_string(ctx.heap, key);
+    if (k == null) return false;
+    TVal? v = wrapper.get_prop_proto(k, ctx.heap);
+    if (try tv = v) { *out = tv; return true; }
+    out.set_undefined();
+    return true;
+}
+
+// IteratorCloseAll(iterators, completion): close every non-null slot of the
+// zip wrapper's "iters" array, in reverse order. A throw from one return()
+// becomes the new completion; later closes then ignore their own throws.
+fn void iterhelper_zip_close_all(BuiltinContext* ctx, HObject* wrapper, bool had_error) {
+    HObject* iters_arr = iterhelper_zip_wrapper_arr(ctx, wrapper, "iters");
+    if (iters_arr == null) return;
+    for (ulong i = (ulong)iters_arr.array_used; i > 0; i--) {
+        TVal? slot = iters_arr.get_array_idx((uint)(i - 1));
+        if (try sv = slot) {
+            if (sv.is_object() && sv.get_heapptr() != null) {
+                iterhelper_iterator_close(ctx, (HObject*)sv.get_heapptr(), had_error);
+                if (ctx.should_throw) had_error = true;
+            }
+        }
+    }
+}
+
+// Close every iterator stored in an array of HObjects, in reverse order,
+// with a throw completion as the original error already parked in ctx.
+fn void iterhelper_close_array(BuiltinContext* ctx, HObject* arr, bool had_error) {
+    if (arr == null) return;
+    for (ulong i = (ulong)arr.array_used; i > 0; i--) {
+        TVal? slot = arr.get_array_idx((uint)(i - 1));
+        if (try sv = slot) {
+            if (sv.is_object() && sv.get_heapptr() != null) {
+                iterhelper_iterator_close(ctx, (HObject*)sv.get_heapptr(), had_error);
+                if (ctx.should_throw) had_error = true;
+            }
+        }
+    }
+}
+
+// Store the joint-iteration structure (iterators, next methods, padding,
+// keys, mode) on the wrapper, and hand back the Iterator Helper that
+// sequences through it.
+fn HObject* iterhelper_zip_finish(BuiltinContext* ctx, HObject* iters_arr, HObject* methods_arr,
+                                   HObject* padding_arr, HObject* keys_arr, uint mode) {
+    Heap* heap = ctx.heap;
+    HObject*? wrapper_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = wrapper_raw) return null;
+    HObject* wrapper = wrapper_raw;
+    wrapper.prototype = null;
+
+    TVal iters_tv; iters_tv.set_object(iters_arr);
+    TVal methods_tv; methods_tv.set_object(methods_arr);
+    TVal padding_tv; padding_tv.set_object(padding_arr);
+    TVal mode_tv; mode_tv.set_fastint((long)mode);
+    HString* keys_key = builtin_intern_string(heap, "keys");
+    if (keys_key == null) return null;
+    TVal keys_tv;
+    if (keys_arr != null) { keys_tv.set_object(keys_arr); } else { keys_tv.set_undefined(); }
+
+    HString* iters_key = builtin_intern_string(heap, "iters");
+    HString* methods_key = builtin_intern_string(heap, "methods");
+    HString* padding_key = builtin_intern_string(heap, "padding");
+    HString* mode_key = builtin_intern_string(heap, "mode");
+    if (iters_key == null || methods_key == null || padding_key == null || mode_key == null) return null;
+    wrapper.put_prop(iters_key, iters_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    wrapper.put_prop(methods_key, methods_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    wrapper.put_prop(padding_key, padding_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    wrapper.put_prop(mode_key, mode_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    wrapper.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+
+    TVal undef; undef.set_undefined();
+    HObject* helper = iterhelper_create(heap, wrapper, undef, undef, IH_KIND_ZIP, 0.0);
+    if (helper == null) return null;
+    long count = (long)iters_arr.array_used;
+    (*helper.extra_ptr()).iter_helper.counter = (double)count;
+    (*helper.extra_ptr()).iter_helper.remaining = (double)count;
+    return helper;
+}
+
+// Collect the "iterables" argument of Iterator.zip: iterate it with
+// GetIterator, GetIteratorFlattenable each element into iters/methods.
+// On any abrupt completion the already-collected iterators are closed in
+// reverse (plus the input iterator where the spec's needClosing says so),
+// and false is returned with ctx.should_throw set.
+fn bool iterhelper_zip_collect_iterable(BuiltinContext* ctx, HObject* iterables_obj, HObject** out_iters, HObject** out_methods) {
+    Heap* heap = ctx.heap;
+    HObject* input_iter;
+    TVal input_next;
+    if (!iterhelper_get_iterator(ctx, iterables_obj, &input_iter, &input_next)) return false;
+
+    HObject*? iters_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = iters_raw) return false;
+    HObject* iters_arr = iters_raw;
+    iters_arr.prototype = heap.array_proto;
+    HObject*? methods_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = methods_raw) return false;
+    HObject* methods_arr = methods_raw;
+    methods_arr.prototype = heap.array_proto;
+
+    long count = 0;
+    while (true) {
+        TVal value;
+        bool step_done;
+        if (!iterhelper_step_value(ctx, input_iter, input_next, &value, &step_done)) {
+            if (!step_done) {
+                // IfAbruptCloseIterators(next, iters): the input iterator is
+                // not part of iters, so it stays open (it has already been
+                // drained anyway).
+                iterhelper_close_array(ctx, iters_arr, true);
+                return false;
+            }
+            break;
+        }
+        HObject* iter;
+        TVal next_m;
+        if (!iterhelper_get_iterator_flattenable(ctx, value, false, &iter, &next_m)) {
+            // needClosing = inputIter ++ iters: reverse order, input last.
+            iterhelper_close_array(ctx, iters_arr, true);
+            iterhelper_iterator_close(ctx, input_iter, true);
+            return false;
+        }
+        TVal itv; itv.set_object(iter);
+        iters_arr.set_array_idx((uint)count, itv, heap);
+        methods_arr.set_array_idx((uint)count, next_m, heap);
+        count++;
+    }
+    *iters_arr.array_len_ptr() = (uint)count;
+    *methods_arr.array_len_ptr() = (uint)count;
+    *out_iters = iters_arr;
+    *out_methods = methods_arr;
+    return true;
+}
+
+// Build the "longest"-mode padding list: iterCount undefineds when the
+// padding option is absent, otherwise iterate the padding option up to
+// iterCount values (exhausting it ends the stream and leaves undefineds).
+// Non-longest modes return a (zero-length) empty array. Returns null with
+// ctx.should_throw set on any failure.
+fn HObject* iterhelper_zip_build_padding(BuiltinContext* ctx, uint mode, TVal padding_option,
+                                          HObject* iters_arr, ulong iter_count) {
+    Heap* heap = ctx.heap;
+    HObject*? pad_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = pad_raw) return null;
+    HObject* padding_arr = pad_raw;
+    padding_arr.prototype = heap.array_proto;
+    if (mode != ZIP_MODE_LONGEST) {
+        *padding_arr.array_len_ptr() = 0;
+        return padding_arr;
+    }
+    if (padding_option.is_undefined()) {
+        // undefineds all the way down: holes read back as undefined.
+        *padding_arr.array_len_ptr() = (uint)iter_count;
+        return padding_arr;
+    }
+    // GetIterator runs even with zero iterables, so a non-iterable padding
+    // option is rejected up front.
+    HObject* piter;
+    TVal pnext;
+    if (!iterhelper_get_iterator(ctx, (HObject*)padding_option.get_heapptr(), &piter, &pnext)) {
+        iterhelper_close_array(ctx, iters_arr, true);
+        return null;
+    }
+    bool using_iter = true;
+    for (ulong i = 0; i < iter_count; i++) {
+        if (using_iter) {
+            TVal pv;
+            bool pdone;
+            if (!iterhelper_step_value(ctx, piter, pnext, &pv, &pdone)) {
+                if (pdone) {
+                    using_iter = false;
+                } else {
+                    // The padding step threw: close the collected iterators.
+                    iterhelper_close_array(ctx, iters_arr, true);
+                    return null;
+                }
+            } else {
+                padding_arr.set_array_idx((uint)i, pv, heap);
+                continue;
+            }
+        }
+        // Falls through when the padding stream ended: leave a hole.
+    }
+    *padding_arr.array_len_ptr() = (uint)iter_count;
+    if (using_iter) {
+        // The padding stream had more values than slots: close it normally,
+        // and a throw from its return() closes the zip's iterators too.
+        bool had_error = false;
+        iterhelper_iterator_close(ctx, piter, false);
+        had_error = ctx.should_throw;
+        if (had_error) {
+            iterhelper_close_array(ctx, iters_arr, true);
+            return null;
+        }
+    }
+    return padding_arr;
+}
+
+// Iterator.zip(iterables[, options]), §27.1.3.2.4.
+fn void builtin_iterator_zip(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    TVal iterables = builtin_arg(ctx, 0);
+    TVal options = builtin_arg(ctx, 1);
+    if (!iterables.is_object() || iterables.get_heapptr() == null) {
+        builtin_throw(ctx, heap.type_err_proto, "iterables must be an object");
+        return;
+    }
+    HObject* iterables_obj = (HObject*)iterables.get_heapptr();
+    uint mode;
+    TVal padding_option;
+    if (!iterhelper_zip_options(ctx, options, &mode, &padding_option)) { ctx.result.set_undefined(); return; }
+
+    HObject* iters_arr;
+    HObject* methods_arr;
+    if (!iterhelper_zip_collect_iterable(ctx, iterables_obj, &iters_arr, &methods_arr)) { ctx.result.set_undefined(); return; }
+    ulong iter_count = (ulong)iters_arr.array_used;
+    HObject* padding_arr = iterhelper_zip_build_padding(ctx, mode, padding_option, iters_arr, iter_count);
+    if (padding_arr == null) { ctx.result.set_undefined(); return; }
+    HObject* helper = iterhelper_zip_finish(ctx, iters_arr, methods_arr, padding_arr, null, mode);
+    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+}
+
+// Append one [key, value] iterable slot to the zipKeyed collection, closing
+// the already-collected iterators (and, per needClosing, the keys holder)
+// on any abrupt completion. Returns false with ctx.should_throw set on error.
+fn bool iterhelper_zipkeyed_add(BuiltinContext* ctx, HObject* iterables_obj, HString* key,
+                                 HObject* keys_arr, HObject* iters_arr, HObject* methods_arr, long count) {
+    Heap* heap = ctx.heap;
+    TVal? gv = builtins_generic_get(iterables_obj, key, ctx);
+    if (ctx.should_throw) {
+        iterhelper_close_array(ctx, iters_arr, true);
+        return false;
+    }
+    if (try v = gv) {
+        if (v.is_undefined()) return true;
+        HObject* iter;
+        TVal next_m;
+        if (!iterhelper_get_iterator_flattenable(ctx, v, false, &iter, &next_m)) {
+            iterhelper_close_array(ctx, iters_arr, true);
+            return false;
+        }
+        TVal kt; kt.set_string(key);
+        TVal itv; itv.set_object(iter);
+        keys_arr.set_array_idx((uint)count, kt, heap);
+        iters_arr.set_array_idx((uint)count, itv, heap);
+        methods_arr.set_array_idx((uint)count, next_m, heap);
+    }
+    return true;
+}
+
+// Walk the enumerable own properties of the zipKeyed "iterables" object via
+// [[OwnPropertyKeys]] + [[GetOwnProperty]] + [[Get]], collecting every
+// non-undefined value with GetIteratorFlattenable (primitive keys included).
+// Returns false with ctx.should_throw set on failure.
+fn bool iterhelper_zip_collect_keyed(BuiltinContext* ctx, HObject* iterables_obj,
+                                      HObject** out_keys, HObject** out_iters, HObject** out_methods) {
+    Heap* heap = ctx.heap;
+    HObject*? keys_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = keys_raw) return false;
+    HObject* keys_arr = keys_raw;
+    keys_arr.prototype = heap.array_proto;
+    HObject*? iters_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = iters_raw) return false;
+    HObject* iters_arr = iters_raw;
+    iters_arr.prototype = heap.array_proto;
+    HObject*? methods_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = methods_raw) return false;
+    HObject* methods_arr = methods_raw;
+    methods_arr.prototype = heap.array_proto;
+
+    long count = 0;
+
+    // [[OwnPropertyKeys]]: proxy trap for proxies, ordinary walk otherwise.
+    if (iterables_obj.flags.exotic_proxyobj) {
+        HObject* key_arr;
+        if (!proxy_mop_own_keys(ctx.vm, heap, iterables_obj, &key_arr)) {
+            proxy_ctx_ok(ctx);
+            return false;
+        }
+        ulong n = (ulong)*key_arr.array_len_ptr();
+        for (ulong i = 0; i < n; i++) {
+            TVal? kv = key_arr.get_array_idx((uint)i);
+            if (try ktv = kv) {
+                if (!ktv.is_string()) continue;
+                HString* key = (HString*)ktv.get_heapptr();
+                ProxyDesc pd;
+                // [[GetOwnProperty]]: through the trap for proxy holders.
+                if (!proxy_mop_get_own(ctx.vm, heap, iterables_obj, key, &pd)) {
+                    proxy_ctx_ok(ctx);
+                    iterhelper_close_array(ctx, iters_arr, true);
+                    return false;
+                }
+                if (!pd.found || !pd.enumerable) continue;
+                if (!iterhelper_zipkeyed_add(ctx, iterables_obj, key, keys_arr, iters_arr, methods_arr, count)) return false;
+                count = (long)keys_arr.array_used;
+            }
+        }
+    } else {
+        HString** key_buf;
+        uint n = ordinary_own_keys(heap, iterables_obj, &key_buf);
+        if (key_buf == null && n > 0) return false;
+        defer if (key_buf != null) heap.free_func(heap.heap_udata, key_buf);
+        for (uint i = 0; i < n; i++) {
+            HString* key = key_buf[i];
+            ProxyDesc pd;
+            ordinary_own_desc(heap, iterables_obj, key, &pd);
+            if (!pd.found || !pd.enumerable) continue;
+            if (!iterhelper_zipkeyed_add(ctx, iterables_obj, key, keys_arr, iters_arr, methods_arr, count)) return false;
+            count = (long)keys_arr.array_used;
+        }
+    }
+    *keys_arr.array_len_ptr() = (uint)count;
+    *iters_arr.array_len_ptr() = (uint)count;
+    *methods_arr.array_len_ptr() = (uint)count;
+    *out_keys = keys_arr;
+    *out_iters = iters_arr;
+    *out_methods = methods_arr;
+    return true;
+}
+
+// Iterator.zipKeyed(iterables[, options]), §27.1.3.2.5.
+fn void builtin_iterator_zipkeyed(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    TVal iterables = builtin_arg(ctx, 0);
+    TVal options = builtin_arg(ctx, 1);
+    if (!iterables.is_object() || iterables.get_heapptr() == null) {
+        builtin_throw(ctx, heap.type_err_proto, "iterables must be an object");
+        return;
+    }
+    HObject* iterables_obj = (HObject*)iterables.get_heapptr();
+    uint mode;
+    TVal padding_option;
+    if (!iterhelper_zip_options(ctx, options, &mode, &padding_option)) { ctx.result.set_undefined(); return; }
+
+    HObject* keys_arr;
+    HObject* iters_arr;
+    HObject* methods_arr;
+    if (!iterhelper_zip_collect_keyed(ctx, iterables_obj, &keys_arr, &iters_arr, &methods_arr)) { ctx.result.set_undefined(); return; }
+    ulong iter_count = (ulong)iters_arr.array_used;
+
+    // longest-mode padding is read per key from the padding option object.
+    HObject*? pad_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = pad_raw) { ctx.result.set_undefined(); return; }
+    HObject* padding_arr = pad_raw;
+    padding_arr.prototype = heap.array_proto;
+    if (mode == ZIP_MODE_LONGEST) {
+        if (padding_option.is_undefined()) {
+            *padding_arr.array_len_ptr() = (uint)iter_count;
+        } else {
+            HObject* popts = (HObject*)padding_option.get_heapptr();
+            for (ulong i = 0; i < iter_count; i++) {
+                TVal? kv = keys_arr.get_array_idx((uint)i);
+                if (try ktv = kv) {
+                    if (ktv.is_string()) {
+                        TVal? gv = builtins_generic_get(popts, (HString*)ktv.get_heapptr(), ctx);
+                        if (ctx.should_throw) {
+                            iterhelper_close_array(ctx, iters_arr, true);
+                            ctx.result.set_undefined();
+                            return;
+                        }
+                        if (try v = gv) {
+                            padding_arr.set_array_idx((uint)i, v, heap);
+                        }
+                    }
+                }
+            }
+            *padding_arr.array_len_ptr() = (uint)iter_count;
+        }
+    } else {
+        *padding_arr.array_len_ptr() = 0;
+    }
+
+    HObject* helper = iterhelper_zip_finish(ctx, iters_arr, methods_arr, padding_arr, keys_arr, mode);
     if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
 }

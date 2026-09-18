@@ -678,6 +678,12 @@ struct HObjectIteratorHelper {
     // when not currently flattening one.
     HObject* inner_iter;
     TVal     inner_next;
+    // windows only: the persistent ring buffer (values live at
+    // [(head + i) % windowSize] for i < count), plus the "allow-partial"
+    // mode bit for the undersized argument.
+    HObject* buffer;
+    uint     buffer_head;
+    uint     window_mode;
 }
 
 // Proxy exotic object holding [[ProxyTarget]] and [[ProxyHandler]], both null
