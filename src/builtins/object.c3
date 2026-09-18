@@ -2497,25 +2497,20 @@ fn bool to_property_descriptor(BuiltinContext* ctx, HObject* desc_obj,
     }
 
     // Validate getter/setter are callable or undefined
-    if (has_get && !get_val.is_undefined()) {
-        if (!get_val.is_object() && !get_val.is_lightfunc()) {
+    // A LIGHTFUNC is a compact built-in function that carries its index in
+    // place of a heap pointer, so it is callable by definition and must not
+    // be dereferenced as an HObject.
+    if (has_get && !get_val.is_undefined() && !get_val.is_lightfunc()) {
+        HObject* fn_obj = get_val.is_object() ? (HObject*)get_val.get_heapptr() : null;
+        if (fn_obj == null || !fn_obj.is_callable()) {
             builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Getter must be callable or undefined");
             return false;
         }
-        HObject* fn_obj = (HObject*)get_val.get_heapptr();
-        if (!fn_obj.is_callable()) {
-            builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Getter must be callable");
-            return false;
-        }
     }
-    if (has_set && !set_val.is_undefined()) {
-        if (!set_val.is_object() && !set_val.is_lightfunc()) {
+    if (has_set && !set_val.is_undefined() && !set_val.is_lightfunc()) {
+        HObject* fn_obj = set_val.is_object() ? (HObject*)set_val.get_heapptr() : null;
+        if (fn_obj == null || !fn_obj.is_callable()) {
             builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Setter must be callable or undefined");
-            return false;
-        }
-        HObject* fn_obj = (HObject*)set_val.get_heapptr();
-        if (!fn_obj.is_callable()) {
-            builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Setter must be callable");
             return false;
         }
     }
