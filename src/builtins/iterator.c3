@@ -2762,7 +2762,14 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
                     usz new_cap = cap;
                     while (new_cap < used + (usz)slen) new_cap *= 2;
                     char* nb = (char*)heap.realloc_func(heap.heap_udata, buf, new_cap);
-                    if (nb == null) return;
+                    // OOM is an abrupt completion: close the open iterator and
+                    // seed the result, never leave the callee slot in place.
+                    if (nb == null) {
+                        builtin_throw(ctx, heap.range_err_proto, "Out of memory");
+                        iterhelper_iterator_close(ctx, obj, true);
+                        ctx.result.set_undefined();
+                        return;
+                    }
                     buf = nb;
                     cap = new_cap;
                 }
@@ -2785,7 +2792,14 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
                     usz new_cap = cap;
                     while (new_cap < used + (usz)vlen) new_cap *= 2;
                     char* nb = (char*)heap.realloc_func(heap.heap_udata, buf, new_cap);
-                    if (nb == null) return;
+                    // OOM is an abrupt completion: close the open iterator and
+                    // seed the result, never leave the callee slot in place.
+                    if (nb == null) {
+                        builtin_throw(ctx, heap.range_err_proto, "Out of memory");
+                        iterhelper_iterator_close(ctx, obj, true);
+                        ctx.result.set_undefined();
+                        return;
+                    }
                     buf = nb;
                     cap = new_cap;
                 }
