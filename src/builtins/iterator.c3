@@ -3009,17 +3009,7 @@ fn bool iterhelper_zip_wrapper_get(BuiltinContext* ctx, HObject* wrapper, char[]
 // zip wrapper's "iters" array, in reverse order. A throw from one return()
 // becomes the new completion; later closes then ignore their own throws.
 fn void iterhelper_zip_close_all(BuiltinContext* ctx, HObject* wrapper, bool had_error) {
-    HObject* iters_arr = iterhelper_zip_wrapper_arr(ctx, wrapper, "iters");
-    if (iters_arr == null) return;
-    for (ulong i = (ulong)iters_arr.array_used; i > 0; i--) {
-        TVal? slot = iters_arr.get_array_idx((uint)(i - 1));
-        if (try sv = slot) {
-            if (sv.is_object() && sv.get_heapptr() != null) {
-                iterhelper_iterator_close(ctx, (HObject*)sv.get_heapptr(), had_error);
-                if (ctx.should_throw) had_error = true;
-            }
-        }
-    }
+    iterhelper_close_array(ctx, iterhelper_zip_wrapper_arr(ctx, wrapper, "iters"), had_error);
 }
 
 // Close every iterator stored in an array of HObjects, in reverse order,
