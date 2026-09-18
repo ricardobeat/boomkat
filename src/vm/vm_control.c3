@@ -1435,8 +1435,9 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // is leaving rather than be caught by one of them. A counts those
             // regions; disarm their catch clauses while leaving their finally
             // blocks armed (an escaped finally still runs, it just may not
-            // swallow the exception).
-            vm_disarm_escaped_catchers(vm, ds.act, insn.a);
+            // swallow the exception). Also retires the for-of guard closing B,
+            // so the iterator is not closed twice for one exit.
+            vm_disarm_escaped_catchers(vm, ds.act, insn.a, insn.b);
             return (TVal){};
         }
 

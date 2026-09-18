@@ -5568,7 +5568,7 @@ fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     if (skip == 0) {
         self.emit_simple(Opcode.ENDTRY);
     } else {
-        self.emit_abc(Opcode.ITER_CLOSE_ESCAPE, skip, 0, 0);
+        self.emit_abc(Opcode.ITER_CLOSE_ESCAPE, skip, reg, 0);
     }
     if (self.loop_stack[li].is_await_loop) {
         self.emit_abc(Opcode.ITER_CLOSE_ASYNC, reg, 0, 0);

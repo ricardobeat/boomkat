@@ -919,7 +919,14 @@ enum Opcode : char {
     // escaped `finally` still runs during the unwind -- it just may not swallow
     // the exception. Codegen emits this immediately before the unwind
     // ITER_CLOSE/ITER_CLOSE_ASYNC with A = try_depth - loop.saved_try_depth,
-    // and skips it entirely when that count is zero. A is the count; B and C unused.
+    // with A = try_depth - loop.saved_try_depth and B = the iterator register.
+    //
+    // It also retires the for-of body's own IteratorClose-on-throw guard, which
+    // would otherwise close the iterator a second time (the ENDTRY at the jump
+    // site pops the innermost catcher, a user `try` when the jump is nested
+    // inside one). The guard is matched by shape -- a catch-only catcher whose
+    // handler is CATCH + ITER_CLOSE of B -- because A is a lexical depth delta
+    // that a `return` inside a `finally` does not line up with. C unused.
     ITER_CLOSE_ESCAPE,
 
     // `A ← GetIterator(reg B, async)` (ES2018 §7.4.2 for-await). Reads

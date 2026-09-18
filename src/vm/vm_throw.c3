@@ -38,24 +38,50 @@ fn void vm_complete_gen_on_unwind(Vm* vm, Activation* act) {
 // CATCH_ENABLED on each so its catch clause cannot intercept the throw, while
 // leaving FINALLY_ENABLED set -- an escaped `finally` still runs during the
 // unwind, it just may not swallow the exception.
-// Sitting just beyond those regions is the for-of body's own
-// IteratorClose-on-throw guard (a catch-only catcher). The unwind close already
-// closes the iterator, so that guard must not fire too or `.return()` runs
-// twice. It cannot be retired by the ENDTRY at the jump site, which pops only
-// the innermost catcher -- a user `try` when the jump is nested inside one --
-// so drop it from the chain here, once the regions above it are accounted for.
-fn void vm_disarm_escaped_catchers(Vm* vm, Activation* act, uint count) {
-    Catcher* cat = (Catcher*)act.cat;
-    for (uint i = 0; i < count && cat != null; i++) {
-        cat.flags &= ~CATCHER_FLAG_CATCH_ENABLED;
-        cat = (Catcher*)cat.parent;
-    }
-    // Unlink the for-of guard. It owns no finally, so nothing later reads it.
-    if (cat == null || cat.finally_pc != null) return;
+// Somewhere beyond those regions is the for-of body's own IteratorClose-on-throw
+// guard. The unwind close already closes the iterator, so that guard must not
+// fire too or `.return()` runs twice for one exit. The ENDTRY at the jump site
+// cannot retire it -- ENDTRY pops the innermost catcher, which is a user `try`
+// whenever the jump is nested inside one -- so it is dropped here.
+//
+// The guard is found by its shape rather than by counting, because `count` is a
+// lexical try_depth delta and the runtime chain does not always match it: a
+// `return` inside a `finally` runs with that try's catcher still linked (and
+// IN_FINALLY), so a positional walk would unlink the guard's parent instead.
+// Codegen is the only thing that emits this pair, so the signature is exact:
+// a catch-only catcher whose handler is CATCH followed by ITER_CLOSE of
+// `iter_reg`, the very register this unwind is about to close.
+fn bool vm_catcher_is_iter_guard(Catcher* cat, uint iter_reg) {
+    if (cat.finally_pc != null || cat.catch_pc == null) return false;
+    Instruction* p = cat.catch_pc;
+    if (p.op != Opcode.CATCH) return false;
+    Instruction* q = p + 1;
+    if (q.op != Opcode.ITER_CLOSE) return false;
+    return q.a == iter_reg;
+}
+
+fn void vm_disarm_escaped_catchers(Vm* vm, Activation* act, uint count, uint iter_reg) {
     Catcher** slot = (Catcher**)&act.cat;
-    for (uint i = 0; i < count; i++) slot = (Catcher**)&((*slot).parent);
-    *slot = (Catcher*)cat.parent;
-    vm.heap.free_func(vm.heap.heap_udata, cat);
+    for (uint i = 0; i < count && *slot != null; i++) {
+        (*slot).flags &= ~CATCHER_FLAG_CATCH_ENABLED;
+        slot = (Catcher**)&((*slot).parent);
+    }
+    // Retire this loop's guard wherever it sits: an outer loop's guard, or a
+    // user try, may be interleaved, so walk to the one that closes iter_reg.
+    // Disarm it in place rather than unlinking. The chain is shared with the
+    // finally machinery -- a `return` inside a `finally` leaves that try's
+    // catcher linked and IN_FINALLY -- and with nested for-of loops each
+    // closing on the same return, so removing links out from under it risks
+    // skipping a later guard or re-matching one already handled. Clearing
+    // CATCH_ENABLED is idempotent and leaves every other walker's view intact.
+    while (*slot != null) {
+        Catcher* cat = *slot;
+        if (vm_catcher_is_iter_guard(cat, iter_reg)) {
+            cat.flags &= ~CATCHER_FLAG_CATCH_ENABLED;
+            return;
+        }
+        slot = (Catcher**)&(cat.parent);
+    }
 }
 
 // Walk the catcher chain and throw a value.
