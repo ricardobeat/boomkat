@@ -6,6 +6,7 @@ import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
+import std::collections::list;
 import std::io;
 
 // ============================================================================
@@ -14,6 +15,25 @@ import std::io;
 
 // Maximum number of bindings collected from destructuring function parameters.
 const uint MAX_DESTRUCT_BINDS = 64;
+
+// A parameter slot that records no name: destructuring patterns bind their
+// own leaves, so they never contribute a string constant. Out of constant-
+// pool range, so emit_param_prologue can skip these slots.
+const uint NO_PARAM_NAME = 0xFFFFFFFF;
+
+// Record `idx`'s name index, filling any skipped (destructured) slots with
+// NO_PARAM_NAME so the list stays addressable by arg index.
+fn void param_name_set(List{uint}* names, uint idx, uint name_idx) {
+    while (names.len() <= idx) names.push(NO_PARAM_NAME);
+    names.set(idx, name_idx);
+}
+
+// A slice covering every arg index, including trailing destructured params
+// that never recorded a name.
+fn uint[] param_name_view(List{uint}* names, uint arg_count) {
+    while (names.len() < arg_count) names.push(NO_PARAM_NAME);
+    return names.array_view();
+}
 
 // Iterator state for a source register used in array destructuring.
 struct DestructIterState {
@@ -3594,6 +3614,9 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
         // completes (for default params) or until it becomes visible (non-default).
         for (ushort ai = 0; ai < arg_count; ai++) {
             uint ni = param_name_indices[ai];
+            // A destructured param binds its leaves itself, so it has no
+            // name of its own to put in the TDZ.
+            if (ni == NO_PARAM_NAME) continue;
             self.emit_a_bc(Opcode.INITTZ, 0, ni);
         }
 
@@ -3605,7 +3628,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
             // Source register is the param's own slot (params occupy r0..rN in
             // declaration order); using r0 unconditionally would copy the first
             // param's value into every lex binding.
-            self.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
+            if (ni != NO_PARAM_NAME) self.emit_a_bc(Opcode.PUTLEX, (uint)ai, ni);
             ai++;
         }
     }
@@ -3665,6 +3688,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
         ushort ai = first_default_idx;
         while (ai < arg_count) {
             uint ni = param_name_indices[ai];
+            if (ni == NO_PARAM_NAME) { ai++; continue; }
             // Check if this param has a default (was already handled above).
             bool is_default_param = false;
             for (ushort di = 0; di < self.default_count; di++) {
@@ -3707,8 +3731,14 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     ushort arg_count = 0;
     ushort formal_count = 0;  // params that count toward function.length
 
-    // Track all param name indices for TDZ (needed when defaults exist).
-    uint[MAX_PARAMS] param_name_indices;
+    // Each param's string-constant index, addressed by arg index for
+    // emit_param_prologue. Grows with the list: a fixed buffer here overran
+    // the frame (see test/test_compiler_fixed_buffer_bounds.js). Destructured
+    // params never record a name, so slots hold NO_PARAM_NAME rather than
+    // whatever the stack left there.
+    List{uint} param_name_indices;
+    param_name_indices.init(mem, initial_capacity: MAX_PARAMS);
+    defer param_name_indices.free();
     ushort first_default_idx = 0xFFFF;
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
@@ -3878,7 +3908,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
             self.emit_a_bc(Opcode.DECLVAR, (uint)param_reg, param_name_idx);
 
             // Store name index for TDZ (all params when defaults exist).
-            param_name_indices[arg_count - 1] = param_name_idx;
+            param_name_set(&param_name_indices, arg_count - 1, param_name_idx);
 
             if (!self.match(TokenType.COMMA)) {
                 break;
@@ -3925,7 +3955,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // Mirrors the prologue's own condition: the matching POP_LEX (and the
     // body's PUSH_VAR/POP_VAR) are emitted downstream by each caller.
     bool has_func_lex = self.default_count > 0;
-    self.emit_param_prologue(arg_count, first_default_idx, param_name_indices[..])!;
+    self.emit_param_prologue(arg_count, first_default_idx, param_name_view(&param_name_indices, arg_count))!;
 
     // Emit destructuring code for destructured function parameters.
     self.emit_destruct_bindings(destruct_binds[..], destruct_count,
@@ -4594,8 +4624,14 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     ushort arg_count = 0;
     ushort formal_count = 0;  // params that count toward function.length
 
-    // Track all param name indices for TDZ (needed when defaults exist).
-    uint[MAX_PARAMS] param_name_indices;
+    // Each param's string-constant index, addressed by arg index for
+    // emit_param_prologue. Grows with the list: a fixed buffer here overran
+    // the frame (see test/test_compiler_fixed_buffer_bounds.js). Destructured
+    // params never record a name, so slots hold NO_PARAM_NAME rather than
+    // whatever the stack left there.
+    List{uint} param_name_indices;
+    param_name_indices.init(mem, initial_capacity: MAX_PARAMS);
+    defer param_name_indices.free();
     ushort first_default_idx = 0xFFFF;
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
@@ -4787,7 +4823,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             if (first_default_idx == 0xFFFF) { formal_count++; }
 
             // Store name index for TDZ (all params when defaults exist).
-            param_name_indices[arg_count - 1] = param_name_idx;
+            param_name_set(&param_name_indices, arg_count - 1, param_name_idx);
 
             if (!inner_ctx.match(TokenType.COMMA)) {
                 break;
@@ -4826,7 +4862,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     }
 
     bool inner_has_func_lex = inner_ctx.default_count > 0;
-    inner_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_indices[..])!;
+    inner_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_view(&param_name_indices, arg_count))!;
 
     // Emit deferred outer-default checks for destructured parameters, now
     // that every parameter's arg slot is finalised (see
@@ -5455,8 +5491,14 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     ushort arg_count = 0;
     ushort formal_count = 0;  // params that count toward function.length
 
-    // Track all param name indices for TDZ (needed when defaults exist).
-    uint[MAX_PARAMS] param_name_indices;
+    // Each param's string-constant index, addressed by arg index for
+    // emit_param_prologue. Grows with the list: a fixed buffer here overran
+    // the frame (see test/test_compiler_fixed_buffer_bounds.js). Destructured
+    // params never record a name, so slots hold NO_PARAM_NAME rather than
+    // whatever the stack left there.
+    List{uint} param_name_indices;
+    param_name_indices.init(mem, initial_capacity: MAX_PARAMS);
+    defer param_name_indices.free();
     ushort first_default_idx = 0xFFFF;
 
     // BoundNames of this parameter list, with the FormalParameters early
@@ -5626,7 +5668,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
             if (first_default_idx == 0xFFFF) { formal_count++; }
 
             // Store name index for TDZ (all params when defaults exist).
-            param_name_indices[arg_count - 1] = param_name_idx;
+            param_name_set(&param_name_indices, arg_count - 1, param_name_idx);
 
             if (!arrow_ctx.match(TokenType.COMMA)) {
                 break;
@@ -5674,7 +5716,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.forbid_yield = false;
 
     bool has_func_lex = arrow_ctx.default_count > 0;
-    arrow_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_indices[..])!;
+    arrow_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_view(&param_name_indices, arg_count))!;
 
     // Emit deferred outer-default checks for destructured parameters, now
     // that every parameter's arg slot is finalised (see
