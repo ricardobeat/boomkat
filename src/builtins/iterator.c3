@@ -1328,6 +1328,7 @@ fn HObject* iterhelper_create(Heap* heap, HObject* underlying, TVal next_method,
     (*obj.extra_ptr()).iter_helper.state = IH_STATE_SUSPENDED;
     (*obj.extra_ptr()).iter_helper.inner_iter = null;
     (*obj.extra_ptr()).iter_helper.inner_next.set_undefined();
+    (*obj.extra_ptr()).iter_helper.final_yield = false;
     return obj;
 }
 
@@ -1374,7 +1375,9 @@ fn void builtin_iterator_helper_next(BuiltinContext* ctx) {
         if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
         return;
     }
-    ih.state = IH_STATE_YIELDED;
+    // A closure that yielded its last value is finished: resuming it would
+    // step an already-exhausted underlying iterator.
+    ih.state = ih.final_yield ? IH_STATE_COMPLETED : IH_STATE_YIELDED;
     HObject* result = iterhelper_make_result(heap, out_value, false);
     if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
 }
@@ -1691,6 +1694,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                         if (count > 0) {
                             *chunk.array_len_ptr() = count;
                             *out_value = types::make_object(chunk);
+                            ih.final_yield = true;
                             return true;
                         }
                         *out_done = true;
@@ -1722,7 +1726,9 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 bool step_done;
                 if (!iterhelper_step_value(ctx, ih.underlying, ih.next_method, &value, &step_done)) {
                     if (step_done) {
-                        if (ih.window_mode != 0 && count > 0 && buf != null) {
+                        // Only an *undersized* buffer is still owed a yield; a
+                        // full one was already yielded when it filled.
+                        if (ih.window_mode != 0 && count > 0 && count < window_size && buf != null) {
                             HObject* win = iterhelper_copy_window(heap, buf, head, count, window_size);
                             // The partial window is a one-shot yield: clear the
                             // buffer so the next call reports done.
@@ -1731,6 +1737,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                             ih.buffer_head = 0;
                             if (win != null) {
                                 *out_value = types::make_object(win);
+                                ih.final_yield = true;
                                 return true;
                             }
                         }

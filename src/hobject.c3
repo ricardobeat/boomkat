@@ -684,6 +684,10 @@ struct HObjectIteratorHelper {
     HObject* buffer;
     uint     buffer_head;
     uint     window_mode;
+    // Set by a step that yields its closure's last value (the final partial
+    // chunk/window): the yield still reports done=false, but the helper is
+    // finished, so the next call must not step the underlying iterator again.
+    bool     final_yield;
 }
 
 // Proxy exotic object holding [[ProxyTarget]] and [[ProxyHandler]], both null
