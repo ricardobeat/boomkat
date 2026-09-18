@@ -6418,16 +6418,33 @@ fn TVal? Vm.run(Vm* vm) {
                 if (name_val.is_string()) {
                     void* key = name_val.get_heapptr();
                     // `var arguments` in a function with an arguments object
-                    // is not a fresh binding: §10.2.11 binds "arguments" to
-                    // the object created at call entry and only initializes
-                    // var names that are not already bound. Stubbing it here
-                    // would clobber the object with undefined, so leave the
-                    // call-entry binding alone. The declaration site's DECLVAR
-                    // still performs the write for `var arguments = v`, and an
-                    // arrow (no own arguments object) keeps the normal stub.
+                    // is not a fresh binding when the body shares the
+                    // parameter environment: §10.2.11 step 28.f only
+                    // initializes var names that are not already bound, so
+                    // stubbing would clobber the call-entry object with
+                    // undefined. The declaration site's DECLVAR still performs
+                    // the write for `var arguments = v`, and an arrow (no own
+                    // arguments object) keeps the normal stub.
+                    //
+                    // A parameter expression splits the body into its own
+                    // varEnv (PUSH_VAR), and that env does NOT have the
+                    // binding. Step 28.f.ii then creates it there, seeded with
+                    // the value the enclosing chain resolves to — the
+                    // parameter scope's arguments object. Skipping the
+                    // declaration instead would leave the body's assignments
+                    // resolving up into the parameter scope, visible to the
+                    // closures a default expression created.
                     HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (((CompiledFunction*)ds.act.func).uses_arguments()
                         && args_name != null && key == (void*)args_name) {
+                        if (ds.act.var_env == null
+                            || ds.act.var_env.bindings.has_prop(key, vm.heap)) {
+                            break;
+                        }
+                        TVal seed = env::env_get(ds.act.var_env, key) ?? *ra;
+                        env::env_declare_var(ds.act.var_env, key, seed,
+                            ds.act.var_env == vm.global_env,
+                            ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
                         break;
                     }
                     env::env_declare_var(ds.act.var_env, key, *ra,
