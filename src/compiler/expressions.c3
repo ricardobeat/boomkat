@@ -1165,6 +1165,12 @@ fn ushort? CompilerContext.conditional_expr(&self) {
     ushort result = self.binary_expr(PREC_NULLISH)!;
 
     if (self.match(TokenType.QUESTION)) {
+        // A ConditionalExpression is not an anonymous function definition, so
+        // neither branch may take the enclosing assignment's inferred name
+        // (§14.1.20): `var c = x ? function(){} : 1` leaves the name "".
+        self.has_inferred_name = false;
+        self.inferred_name_len = 0;
+
         // Allocate result register
         ushort result_reg = self.alloc_reg();
 
@@ -1349,6 +1355,14 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         // operand afterwards, and that parse sets the flags again from its own
         // last operand (`a + b = 1` would inherit `b`'s getvar state).
         saw_binary_op = true;
+
+        // ES2015 §14.1.20 NamedEvaluation applies only when the whole
+        // AssignmentExpression IS the anonymous function definition. An
+        // operator makes the function a mere operand, so `var a = true &&
+        // function(){}` leaves the name "". The enclosing seed site's
+        // save/restore bracket puts the hint back for anything that follows.
+        self.has_inferred_name = false;
+        self.inferred_name_len = 0;
 
         // ES2024 §13.6:
         //   ExponentiationExpression :
