@@ -337,6 +337,9 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         uint fn_idx = (uint)(usz)downstream.get_heapptr();
         builtins::BuiltinContext inner_ctx;
         inner_ctx.vm = ctx.vm;
+        // eval() reads global_env for an indirect eval's variable environment,
+        // and BuiltinContext is an uninitialised stack local.
+        inner_ctx.global_env = ctx.global_env;
         inner_ctx.regs = ctx.regs;
         inner_ctx.base_reg = ctx.base_reg;
         inner_ctx.argc = remaining;
@@ -486,6 +489,9 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             uint fn_idx = (uint)(usz)target.get_heapptr();
             builtins::BuiltinContext inner_ctx;
             inner_ctx.vm = ctx.vm;
+            // eval() reads global_env for an indirect eval's variable environment,
+            // and BuiltinContext is an uninitialised stack local.
+            inner_ctx.global_env = ctx.global_env;
             inner_ctx.regs = ctx.regs;
             inner_ctx.base_reg = ctx.base_reg;
             inner_ctx.argc = 0;
@@ -666,6 +672,9 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         uint fn_idx = (uint)(usz)target.get_heapptr();
         builtins::BuiltinContext inner_ctx;
         inner_ctx.vm = ctx.vm;
+        // eval() reads global_env for an indirect eval's variable environment,
+        // and BuiltinContext is an uninitialised stack local.
+        inner_ctx.global_env = ctx.global_env;
         inner_ctx.regs = ctx.regs;
         inner_ctx.base_reg = ctx.base_reg;
         inner_ctx.argc = (ushort)actual_count;
@@ -1331,6 +1340,9 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
         uint fn_idx = (uint)(usz)downstream.get_heapptr();
         builtins::BuiltinContext inner_ctx;
         inner_ctx.vm = ctx.vm;
+        // eval() reads global_env for an indirect eval's variable environment,
+        // and BuiltinContext is an uninitialised stack local.
+        inner_ctx.global_env = ctx.global_env;
         inner_ctx.regs = ctx.regs;
         inner_ctx.base_reg = ctx.base_reg;
         inner_ctx.argc = (ushort)total_argc;
