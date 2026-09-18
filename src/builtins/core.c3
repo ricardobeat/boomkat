@@ -4267,6 +4267,22 @@ fn HObject* promote_builtin_fn(Heap* heap, uint fn_idx) {
     // GC, and until the cache slot names the object the only thing keeping it
     // alive is its temproot flag.
     heap.promoted_builtins[fn_idx] = fobj;
+
+    // A `delete` that ran while this builtin was still a LIGHTFUNC only set a
+    // bit in lf_deleted_props; alloc_builtin_fn rebuilds .name/.length from the
+    // metadata table and knows nothing of it. The promoted object becomes the
+    // authority for every later read, so carry the deletions across or the
+    // property comes back to life the first time anything promotes the builtin
+    // (`"length" in fn` after `delete fn.length`). .prototype is minted lazily
+    // and consults the bit on its own.
+    if (heap::lf_is_deleted(&heap.lf_deleted_props[0], fn_idx, 0)) {
+        HString* k = builtin_intern_string(heap, "name");
+        if (k != null) fobj.delete_prop((void*)k, heap);
+    }
+    if (heap::lf_is_deleted(&heap.lf_deleted_props[0], fn_idx, 1)) {
+        HString* k = builtin_intern_string(heap, "length");
+        if (k != null) fobj.delete_prop((void*)k, heap);
+    }
     return fobj;
 }
 
