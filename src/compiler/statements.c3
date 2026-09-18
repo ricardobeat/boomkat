@@ -4063,7 +4063,26 @@ fn void? CompilerContext.for_statement(&self) {
                     // The loop then overwrites the binding per iteration.
                     self.advance()!;  // consume '='
                     self.forbid_in = true;
-                    ushort init_val = self.assignment_expr()!;
+                    ushort init_val;
+                    {
+                        // The B.3.5 head is a NamedEvaluation seed point like
+                        // any other var initializer: `for (var f = function(){}
+                        // in o)` names the function "f". Same save/defer-restore
+                        // bracket as the plain var-decl site.
+                        NameEvalFrame _nef = self.save_name_eval();
+                        defer self.restore_name_eval(_nef);
+                        self.has_inferred_name = true;
+                        ushort nlen = (ushort)name_tok.str_value.len;
+                        if (nlen < 128) {
+                            for (ushort i = 0; i < nlen; i++) {
+                                self.inferred_name_buf[i] = name_tok.str_value[i];
+                            }
+                            self.inferred_name_len = nlen;
+                        } else {
+                            self.has_inferred_name = false;
+                        }
+                        init_val = self.assignment_expr()!;
+                    }
                     self.forbid_in = false;
                     self.emit_abc(Opcode.LDREG, (uint)iter_var, (uint)init_val, 0);
                     self.free_reg(init_val);
