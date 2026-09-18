@@ -1189,11 +1189,16 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     if (!callable) { ctx.result.set_boolean(false); return; }
 
     // Step 2: If C has a [[BoundTargetFunction]] slot, recurse on the target.
-    if (c_val.is_object() && c_val.get_heapptr() != null) {
+    // The recursion re-enters at step 2, so a target that is itself bound
+    // unwraps again: `f.bind(o).bind(o)` must reach f, which is the only
+    // object in the chain carrying a "prototype". Bounded to keep a cyclic
+    // bound chain from spinning; such a chain cannot be built through
+    // Function.prototype.bind, but the depth guard costs nothing.
+    for (uint bdepth = 0; bdepth < 256; bdepth++) {
+        if (!c_val.is_object() || c_val.get_heapptr() == null) break;
         HObject* c_obj = (HObject*)c_val.get_heapptr();
-        if (c_obj.flags.is_bound) {
-            c_val = (*c_obj.extra_ptr()).func.bound_target;
-        }
+        if (!c_obj.flags.is_bound) break;
+        c_val = (*c_obj.extra_ptr()).func.bound_target;
     }
 
     // Step 3: If Type(V) is not Object, return false.
