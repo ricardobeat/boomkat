@@ -20,6 +20,7 @@ module boomkat::hbigint;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::lib::bigmath;
+import std::bits;
 
 alias Limb = bigmath::Limb;
 const int LIMB_BITS = bigmath::LIMB_BITS;
@@ -259,7 +260,7 @@ fn void? hbigint_divrem(Heap* hp, HBigInt* a, HBigInt* b,
     // Knuth D needs the divisor's top bit set, so shift both left by the
     // divisor's leading-zero count; the quotient is unaffected and the
     // remainder is shifted back afterwards.
-    int shift = (int)$$clz(mb[lb - 1]);
+    int shift = mb[lb - 1].clz();
     Limb* wa = (Limb*)hp.alloc((usz)(la + 2) * Limb::size)!;
     defer hp.free((void*)wa);
     Limb* wb = (Limb*)hp.alloc((usz)lb * Limb::size)!;

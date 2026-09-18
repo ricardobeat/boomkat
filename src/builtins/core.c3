@@ -2878,7 +2878,7 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         Builtin b = (Builtin)idx;
         return { b.js_name, b.js_arity };
     }
-    $if $feature(NO_TEMPORAL):
+    $if $feat(NO_TEMPORAL):
         return { "", -1 };
     $else
         return temporal_get_metadata(idx);
@@ -3317,7 +3317,7 @@ const uint TEMPORAL_BASE = Builtin.LAST.ordinal;
 // TemporalBuiltin does not exist in a NO_TEMPORAL build; $if inside a macro
 // body defers that lookup to the taken branch.
 macro uint temporal_slot_count() {
-    $if $feature(NO_TEMPORAL):
+    $if $feat(NO_TEMPORAL):
         return 0;
     $else
         return TEMPORAL_COUNT;
@@ -3361,8 +3361,8 @@ alias HostFunc = fn void(BuiltinContext*, void*);
 // profile: an unoptimised sanitizer build spends roughly 500 KB of stack per
 // level (measured: 16 levels overflow an 8 MB stack, 8 levels survive), while
 // an optimised build spends a small fraction of that.
-const uint MAX_HOST_DEPTH @if($feature(GC_STRESS)) = 8;
-const uint MAX_HOST_DEPTH @if(!$feature(GC_STRESS)) = 32;
+const uint MAX_HOST_DEPTH @feat(GC_STRESS) = 8;
+const uint MAX_HOST_DEPTH @feat(!GC_STRESS) = 32;
 
 // Invoke the host function registered in `slot`.
 //
@@ -3730,7 +3730,7 @@ fn void init_builtin_dispatch_table() @init
             builtin_dispatch_table[$b.ordinal] = $b.handler;
         $endif
     $endforeach
-    $if !$feature(NO_TEMPORAL):
+    $if !$feat(NO_TEMPORAL):
         init_temporal_dispatch_table();
     $endif
 }
@@ -4101,7 +4101,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_dataview(global_env, heap)) return false;
 
     // Register Temporal namespace
-    $if !$feature(NO_TEMPORAL):
+    $if !$feat(NO_TEMPORAL):
         if (!setUpTemporalCalendar(heap)) return false;
         if (!setUpTemporalDuration(heap)) return false;
         if (!setUpTemporalPlainDate(heap)) return false;

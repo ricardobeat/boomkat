@@ -375,7 +375,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // resume value. Also handles throw/return injection: for THROW,
             // call vm_throw_value to find the nearest catcher; for RETURN,
             // mark the generator complete and return to the caller.
-            $if $feature(HEAP_VERIFY):
+            $if $feat(HEAP_VERIFY):
                 vm.heap.verify_roots("before_load_resume");
                 if (vm.heap.resume_gen != null) {
                     GeneratorState* gs_chk = vm.heap.resume_gen;
@@ -655,7 +655,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.tval_copy_ref(&gs.saved_regs[i], &regs_src[i]);
                 }
 
-                $if $feature(HEAP_VERIFY):
+                $if $feat(HEAP_VERIFY):
                     vm.heap.verify_roots("after_await_save");
                     vm.heap.verify_tval_array(gs.saved_regs, gs.num_regs, "await_saved_regs");
                 $endif
@@ -861,7 +861,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 vm.heap.tval_copy_ref(&gs.this_binding, &gen_act.this_binding);
                 gs.state = GEN_SUSPENDED_YIELD;
 
-                $if $feature(HEAP_VERIFY):
+                $if $feat(HEAP_VERIFY):
                     vm.heap.verify_roots("after_yield");
                     vm.heap.verify_tval_array(gs.saved_regs, gs.num_regs, "yield_saved_regs");
                 $endif
@@ -1650,7 +1650,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 gs.var_env = ds.act.var_env; gs.lex_env = ds.act.lex_env; chains_save_to_gen(ds.act, gs);
                 vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
                 gs.state = GEN_SUSPENDED_YIELD;
-                $if $feature(HEAP_VERIFY):
+                $if $feat(HEAP_VERIFY):
                     vm.heap.verify_roots("after_yield_star");
                     vm.heap.verify_tval_array(gs.saved_regs, gs.num_regs, "yield_star_saved_regs");
                 $endif

@@ -40,10 +40,10 @@ fn void print_usage(String argv0) {
 
 fn int main(String[] args) {
     vm::test262_host_enabled = true;
-    $if $feature(OP_PROFILE):
+    $if $feat(OP_PROFILE):
         defer vm::opprof_dump();
     $endif
-    $if $feature(GC_PROFILE):
+    $if $feat(GC_PROFILE):
         defer gcprofile::gcprof_dump();
     $endif
     if (args.len < 2) {
@@ -209,7 +209,7 @@ fn int main(String[] args) {
     }
     if (debug) io::printfn("  compile:     %d us", (int)(time::now() - t3));
 
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     // Disassembly and trace flags are active.
 $else
     // In release builds, disassembly and tracing helpers are no-ops.
@@ -299,7 +299,7 @@ fn void dump_inner_tree(bytecode::CompiledFunction* f, uint idx, String path, bo
 }
 
 fn void dump_function(bytecode::CompiledFunction f) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     char[200] line_buf;
     for (uint i = 0; i < f.code_count; i++) {
         // MOVE_GG is a two-word instruction: word 1 BC is destination, word 2 BC is source.
@@ -342,7 +342,7 @@ $endif
 // ============================================================================
 
 fn void dump_function_json(bytecode::CompiledFunction f, uint idx) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     char[200] line_buf;
     for (uint i = 0; i < f.code_count; i++) {
         bytecode::Instruction ins = f.code[i];
@@ -425,7 +425,7 @@ fn void dump_vm_state(Vm* v) {
             // Dump current instruction.
             if (pc != null && pc >= f.code && pc < f.code + f.code_count) {
                 char[200] buf;
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
                 usz written = pc.disassemble(buf[..]);
                 uint end = written < (usz)buf.len ? (uint)written : buf.len;
                 io::eprintf("  instruction: [0x%04X] %s\n",

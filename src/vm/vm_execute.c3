@@ -695,7 +695,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     act.lex_env = (EnvRecord*)gs_r.lex_env;
                     chains_restore_from_gen(act, gs_r);
                     // Restore saved registers instead of initializing fresh
-                    $if $feature(HEAP_VERIFY):
+                    $if $feat(HEAP_VERIFY):
                         vm.heap.verify_roots("before_resume_restore");
                         if (gs_r.saved_regs != null) {
                             vm.heap.verify_tval_array(gs_r.saved_regs, gs_r.num_regs, "resume_saved_regs");
@@ -737,7 +737,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // determined (the restore is conditional on cfn_is_gen_initial=false
                     // and only applied for generators that use 'this' inside their body).
                     // [Restored below in the this_binding section]
-                    $if $feature(HEAP_VERIFY):
+                    $if $feat(HEAP_VERIFY):
                         vm.heap.verify_roots("after_resume_restore");
                     $endif
                 }
@@ -2188,7 +2188,7 @@ fn TVal? Vm.run(Vm* vm) {
         // sub-dispatch helpers in vm_control.c3 and vm_generators.c3, so it is
         // checked right after those call sites instead.
         for (; !ds.needs_restart; ) {
-        $if $feature(THREADED_DISPATCH):
+        $if $feat(THREADED_DISPATCH):
             ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
         $endif
 
@@ -2221,14 +2221,14 @@ fn TVal? Vm.run(Vm* vm) {
             TVal* rb = ds.regs_base + insn.b;
             TVal* rc = ds.regs_base + insn.c;
 
-        $if $feature(TRACE_VM):
+        $if $feat(TRACE_VM):
         if (@unlikely(vm.trace)) {
             trace_instruction(vm, ds.curr_pc - 1, (uint)((ds.curr_pc - 1) - ds.code_base), &insn,
                               ra, rb, rc, ds.regs_base, ds.act);
         }
         $endif
 
-        $if $feature(OP_PROFILE):
+        $if $feat(OP_PROFILE):
             opprof_record(op);
         $endif
 

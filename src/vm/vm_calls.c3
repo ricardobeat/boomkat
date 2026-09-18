@@ -2352,7 +2352,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // objects no [[Construct]].
 
                     // Copy saved registers to valstack
-                    $if $feature(HEAP_VERIFY):
+                    $if $feat(HEAP_VERIFY):
                         vm.heap.verify_roots("before_call_resume_restore");
                         vm.heap.verify_tval_array(gs.saved_regs, gs.num_regs, "call_resume_saved_regs");
                     $endif
@@ -2370,7 +2370,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         gs.pending_resume_reg = 0xFFFF;
                     }
                     track_restored_regs(new_act_r, new_regs_r, new_nregs_r);
-                    $if $feature(HEAP_VERIFY):
+                    $if $feat(HEAP_VERIFY):
                         vm.heap.verify_roots("after_call_resume_restore");
                     $endif
 

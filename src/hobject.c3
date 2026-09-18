@@ -2097,7 +2097,7 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
     // Try pool allocation first
     void* raw = null;
     bool from_pool = false;
-$if $feature(POOL_BYPASS):
+$if $feat(POOL_BYPASS):
     // Debug builds route every object through the heap allocator instead of a
     // FixedBlockPool, because a pooled free is invisible to AddressSanitizer.
     // hobject_free returns a pooled object to its pool's freelist and never

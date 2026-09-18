@@ -248,8 +248,10 @@ fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
             if (math::floor(qb / 2) * 2 == qb) return r1;
             return r2;
         }
+        // Every mode above returns, so this only catches a value cast in from
+        // outside the enum: leave it unrounded rather than pick a direction.
+        default: return x;
     }
-    return x;
 }
 
 // Mirror a rounding mode about zero, so rounding a negated difference lands on

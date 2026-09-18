@@ -18,7 +18,7 @@ ulong gcprof_marked;
 ulong gcprof_swept;
 
 macro void gcprof_alloc() @builtin {
-    $if $feature(GC_PROFILE):
+    $if $feat(GC_PROFILE):
     gcprof_allocations++;
     $endif
 }
@@ -26,19 +26,19 @@ macro void gcprof_alloc() @builtin {
 // Reallocations decrement the heap GC trigger like allocations do,
 // contributing to collection pressure.
 macro void gcprof_realloc() @builtin {
-    $if $feature(GC_PROFILE):
+    $if $feat(GC_PROFILE):
     gcprof_reallocs++;
     $endif
 }
 
 macro void gcprof_mark() @builtin {
-    $if $feature(GC_PROFILE):
+    $if $feat(GC_PROFILE):
     gcprof_marked++;
     $endif
 }
 
 macro void gcprof_cycle(ulong swept) @builtin {
-    $if $feature(GC_PROFILE):
+    $if $feat(GC_PROFILE):
     gcprof_cycles++;
     gcprof_swept += swept;
     gcprof_last_live = swept;
@@ -47,7 +47,7 @@ macro void gcprof_cycle(ulong swept) @builtin {
 
 // Dump collection pressure to stderr. Call once at interpreter shutdown.
 fn void gcprof_dump() {
-$if $feature(GC_PROFILE):
+$if $feat(GC_PROFILE):
     io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",
                  gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
     io::eprintfn("#   live_obj_count_at_last_cycle=%d", gcprof_last_live);

@@ -2095,7 +2095,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // Date.prototype.toTemporalInstant is the one Temporal entry point that
     // hangs off a core prototype, so it is gated here rather than with the
     // rest of Temporal.
-    $if !$feature(NO_TEMPORAL):
+    $if !$feat(NO_TEMPORAL):
         if (!register_string_proto_method(proto, heap, "toTemporalInstant", Builtin.DATE_PROTO_TOTEMPORALINSTANT.ordinal)) return false;
     $endif
 

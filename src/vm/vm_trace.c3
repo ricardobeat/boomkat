@@ -9,7 +9,7 @@ import std::io;
 // ============================================================================
 // VM trace helpers (for --trace-vm)
 //
-// All bodies are gated on $feature(TRACE_VM). The CLI's `-t`/`--trace-vm`
+// All bodies are gated on $feat(TRACE_VM). The CLI's `-t`/`--trace-vm`
 // flag is recognised in the release build but does nothing (the
 // runtime check `if (@unlikely(vm.trace))` in vm_execute.c3 is also
 // gated), so users hitting `-t` on a release build silently get no
@@ -19,7 +19,7 @@ import std::io;
 
 // Print a TVal to stderr (for --trace-vm debugging).
 fn void trace_print_tval(TVal* v) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     switch (v.get_tag()) {
         case types::TValTag.UNDEFINED:  io::eprintf("undef");    break;
         case types::TValTag.NULL_VAL:   io::eprintf("null");     break;
@@ -55,7 +55,7 @@ $endif
 fn void trace_instruction(Vm* vm, Instruction* ip, uint offset, DecodedInsn* di,
                           TVal* ra, TVal* rb, TVal* rc,
                           TVal* regs_base, Activation* act) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     char[160] line_buf;
     usz written = ip.disassemble(line_buf[..]);
     uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;

@@ -513,7 +513,7 @@ const usz[POOL_CLASS_COUNT] POOL_CLASS_SIZES = {
 // The pool that holds a request of `size` bytes, or -1 when it exceeds the
 // largest class and must go to the heap allocator.
 fn int pool_class_index(usz size) @inline {
-$if $feature(POOL_BYPASS):
+$if $feat(POOL_BYPASS):
     // Debug builds send every block to the heap allocator rather than a size
     // class. A pooled block is recycled through its pool's freelist and never
     // reaches free(), so AddressSanitizer cannot poison it and a
@@ -3486,7 +3486,7 @@ fn void Heap.mark_roots(&self) {
 // symbols included, are checked by htype alone, since not all of them are in
 // str_table. Returns false and writes a diagnostic to stderr on failure.
 fn bool Heap.validate_hobject(&self, HeapHeader* hdr, ZString where) {
-$if $feature(HEAP_VERIFY):
+$if $feat(HEAP_VERIFY):
     if (hdr == null) {
         io::eprintf("[HEAP_VERIFY]   ERROR at %s: null pointer\n", where);
         return false;
@@ -3522,7 +3522,7 @@ $endif
 // Validate every heap pointer in a TVal array such as saved_regs, returning
 // the number of errors found.
 fn uint Heap.verify_tval_array(&self, TVal* arr, uint count, ZString context) {
-$if $feature(HEAP_VERIFY):
+$if $feat(HEAP_VERIFY):
     uint errors = 0;
     for (uint i = 0; i < count; i++) {
         TVal* tv = &arr[i];
@@ -3552,7 +3552,7 @@ $endif
 // Check that every GC root set points at a live heap object, returning true
 // when all of them do. Built only with `-D HEAP_VERIFY`.
 fn bool Heap.verify_roots(&self, ZString context) {
-$if $feature(HEAP_VERIFY):
+$if $feat(HEAP_VERIFY):
     io::eprintf("[HEAP_VERIFY] %s: checking roots...\n", context);
 
     uint live_count = 0;
@@ -3732,7 +3732,7 @@ $endif
 // which would make freeing it leave a dangling pointer. The sweep calls this
 // before freeing an object.
 fn bool Heap.is_in_generator_saved_regs(&self, HeapHeader* ptr) {
-$if $feature(HEAP_VERIFY):
+$if $feat(HEAP_VERIFY):
     HeapHeader* walk = self.heap_allocated;
     while (walk != null) {
         if (walk.is_object()) {
@@ -3798,7 +3798,7 @@ fn void Heap.sweep(&self) {
             if (next != null) {
                 next.prev = prev;
             }
-            $if $feature(HEAP_VERIFY):
+            $if $feat(HEAP_VERIFY):
                 if (self.is_in_generator_saved_regs(cur)) {
                     io::eprintf("[HEAP_VERIFY]   SWEEP WARNING: freeing %p (htype=%d) which is in a generator's saved_regs!\n",
                                 cur, (int)cur.get_type());
@@ -3992,7 +3992,7 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
     // trigger stops scaling, so the next allocation collects again and every
     // value that survives an allocating call has to be a real GC root rather
     // than merely lucky. See the gc-stress target and `just test-gc-stress`.
-$if $feature(GC_STRESS):
+$if $feat(GC_STRESS):
     long new_trigger = 1;
 $else
     // Budget the next cycle against the work the mark phase actually did, not

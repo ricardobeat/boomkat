@@ -30,7 +30,7 @@ fn Vm*? vm_create(Heap* heap) {
     Vm* vm = (Vm*)raw;
     vm.heap = heap;
 
-$if $feature(THREADED_DISPATCH):
+$if $feat(THREADED_DISPATCH):
     init_threaded_handlers();
 $endif
 

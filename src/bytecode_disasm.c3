@@ -21,7 +21,7 @@ module boomkat::bytecode;
 //   `LDCONST   r0 = K[42]`
 //   `JUMP      +17`
 fn usz Instruction.disassemble(&self, char[] buf) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     if (buf.len == 0) { return 0; }
 
     Opcode op = self.op;
@@ -122,7 +122,7 @@ $endif
 // effective 16-bit operand values, so a WIDE-prefixed instruction renders
 // the registers the VM will actually use.
 fn usz DecodedInsn.disassemble(&self, char[] buf) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     if (buf.len == 0) { return 0; }
 
     Opcode op = self.op;
@@ -424,7 +424,7 @@ fn char* get_opcode_name(Opcode op) {
 
 // Write an opcode name into `buf` starting at `pos`.  Returns new pos.
 fn usz write_opcode_name(Opcode op, char[] buf, usz pos) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     char* name = get_opcode_name(op);
     usz i = 0;
     while (name[i] != 0 && pos < buf.len) {
@@ -443,7 +443,7 @@ $endif
 
 // Write a C string into `buf` starting at `pos`.  Returns new pos.
 fn usz write_str(char[] buf, usz pos, char* s) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     usz i = 0;
     while (s[i] != 0 && pos < buf.len) {
         buf[pos] = s[i];
@@ -459,7 +459,7 @@ $endif
 
 // Write an unsigned integer (decimal) into `buf` starting at `pos`.
 fn usz write_uint(char[] buf, usz pos, uint val) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     // Small stack buffer for decimal digits (max 10 digits for uint).
     char[12] tmp;
     usz len = 0;
@@ -494,7 +494,7 @@ $endif
 
 // Write a signed integer (decimal) into `buf` starting at `pos`.
 fn usz write_int(char[] buf, usz pos, int val) {
-$if $feature(TRACE_VM):
+$if $feat(TRACE_VM):
     if (val < 0) {
         if (pos < buf.len) {
             buf[pos] = '-';

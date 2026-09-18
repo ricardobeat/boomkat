@@ -47,7 +47,7 @@ fn int opprof_row_cmp(OpprofRow a, OpprofRow b) {
 
 // Dump the hottest executed singles and pairs to stderr.
 fn void opprof_dump() {
-$if $feature(OP_PROFILE):
+$if $feat(OP_PROFILE):
     ulong total = 0;
     for (uint i = 0; i < OPPROF_N; i++) { total += opprof_singles[i]; }
     io::eprintfn("# OP_PROFILE total_dispatches=%d", total);

@@ -87,12 +87,12 @@ const long FASTINT_MAX =  140737488355327L;  //  2^47 - 1
 // Toggle for NaN-boxing representation. When true, TVal is an 8-byte
 // NaN-boxed ulong. When false, TVal is the 16-byte tagged union.
 // Default is true. Pass `-D NONANBOX` to c3c to disable.
-const bool USE_NANBOX = !$feature(NONANBOX);
+const bool USE_NANBOX = !$feat(NONANBOX);
 
 // When true, the VM traps if a function with needs_env=false touches its own
 // environment bindings, which catches bugs in the register-local optimization.
 // Default is false. Pass `-D ENV_STRICT` to c3c to enable.
-const bool ENV_STRICT = $feature(ENV_STRICT);
+const bool ENV_STRICT = $feat(ENV_STRICT);
 
 // When true, the compiler traps if the recorded member-expression operands
 // (CompilerContext.member) are read while no member is recorded, or while the
@@ -100,7 +100,7 @@ const bool ENV_STRICT = $feature(ENV_STRICT);
 // stale-lookback bugs in the member tracking at the read site instead of via a
 // miscompile far downstream.
 // Default is false. Pass `-D MEMBER_STRICT` to c3c to enable.
-const bool MEMBER_STRICT = $feature(MEMBER_STRICT);
+const bool MEMBER_STRICT = $feat(MEMBER_STRICT);
 
 // Maximum length of a formatted error-message string (160 bytes).
 const int ERROR_MSG_BUF = 160;
