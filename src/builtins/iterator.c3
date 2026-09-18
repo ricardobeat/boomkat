@@ -3240,6 +3240,9 @@ fn bool iterhelper_zipkeyed_add(BuiltinContext* ctx, HObject* iterables_obj, HSt
 // Walk the enumerable own properties of the zipKeyed "iterables" object via
 // [[OwnPropertyKeys]] + [[GetOwnProperty]] + [[Get]], collecting every
 // non-undefined value with GetIteratorFlattenable (primitive keys included).
+// Symbol keys participate like any other: IteratorZipKeyed filters on
+// enumerability, not key type, and [[OwnPropertyKeys]] order (strings before
+// symbols) carries through to the result objects.
 // Returns false with ctx.should_throw set on failure.
 fn bool iterhelper_zip_collect_keyed(BuiltinContext* ctx, HObject* iterables_obj,
                                       HObject** out_keys, HObject** out_iters, HObject** out_methods) {
@@ -3272,9 +3275,7 @@ fn bool iterhelper_zip_collect_keyed(BuiltinContext* ctx, HObject* iterables_obj
             if (try ktv = kv) {
                 if (!ktv.is_string()) continue;
                 HString* key = (HString*)ktv.get_heapptr();
-                // Symbols are TAG_STRING here: IteratorZipKeyed walks only the
-                // String keys, so skip them explicitly.
-                if (key == null || key.is_symbol()) continue;
+                if (key == null) continue;
                 ProxyDesc pd;
                 // [[GetOwnProperty]]: through the trap for proxy holders.
                 if (!proxy_mop_get_own(ctx.vm, heap, iterables_obj, key, &pd)) {
@@ -3294,7 +3295,7 @@ fn bool iterhelper_zip_collect_keyed(BuiltinContext* ctx, HObject* iterables_obj
         defer if (key_buf != null) heap.free_func(heap.heap_udata, key_buf);
         for (uint i = 0; i < n; i++) {
             HString* key = key_buf[i];
-            if (key == null || key.is_symbol()) continue;
+            if (key == null) continue;
             ProxyDesc pd;
             ordinary_own_desc(heap, iterables_obj, key, &pd);
             if (!pd.found || !pd.enumerable) continue;
