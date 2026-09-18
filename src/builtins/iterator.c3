@@ -3268,6 +3268,9 @@ fn bool iterhelper_zip_collect_keyed(BuiltinContext* ctx, HObject* iterables_obj
             if (try ktv = kv) {
                 if (!ktv.is_string()) continue;
                 HString* key = (HString*)ktv.get_heapptr();
+                // Symbols are TAG_STRING here: IteratorZipKeyed walks only the
+                // String keys, so skip them explicitly.
+                if (key == null || key.is_symbol()) continue;
                 ProxyDesc pd;
                 // [[GetOwnProperty]]: through the trap for proxy holders.
                 if (!proxy_mop_get_own(ctx.vm, heap, iterables_obj, key, &pd)) {
@@ -3287,6 +3290,7 @@ fn bool iterhelper_zip_collect_keyed(BuiltinContext* ctx, HObject* iterables_obj
         defer if (key_buf != null) heap.free_func(heap.heap_udata, key_buf);
         for (uint i = 0; i < n; i++) {
             HString* key = key_buf[i];
+            if (key == null || key.is_symbol()) continue;
             ProxyDesc pd;
             ordinary_own_desc(heap, iterables_obj, key, &pd);
             if (!pd.found || !pd.enumerable) continue;
