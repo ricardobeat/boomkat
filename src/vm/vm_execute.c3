@@ -466,23 +466,24 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
     if (func.is_lightfunc()) {
         uint fn_idx = (uint)(usz)func.get_heapptr();
 
-        // Temporary register layout: [this, arg0, arg1, ...]
-        // Use stack-allocated array for up to 8 args
-        uint total = 1 + nargs;
-        if (total > 16) total = 16;
-
-        TVal[16] temp_regs;
-        temp_regs[0] = this_val;
-        // Cap at 15 args: this_val occupies slot 0, so a 16th arg would land
-        // one past the end of temp_regs.
+        // Layout: [callee, this, arg0, arg1, ...], as in Case 2. The slots
+        // below base_reg let a builtin that re-targets the call rewrite the
+        // callee and `this`: eval swaps in the function it just compiled and
+        // asks for a re-dispatch. With base_reg = 1 and no callee slot those
+        // writes landed one before the array.
+        TVal[17] temp_regs;
+        temp_regs[0] = func;       // callee at index 0 (base_reg - 2)
+        temp_regs[1] = this_val;   // this at index 1   (base_reg - 1)
+        // Cap at 15 args: slots 0 and 1 are the callee and this_val, so a
+        // 16th arg would land one past the end of temp_regs.
         for (uint i = 0; i < nargs && i < 15; i++) {
-            temp_regs[1 + i] = args[i];
+            temp_regs[2 + i] = args[i];
         }
 
         builtins::BuiltinContext ctx;
         ctx.vm = vm;
         ctx.regs = &temp_regs;
-        ctx.base_reg = 1;
+        ctx.base_reg = 2;          // base_reg - 2 = 0 = callee, base_reg - 1 = 1 = this
         ctx.argc = (ushort)(nargs > 15 ? 15 : nargs);
         ctx.result = &temp_regs[0];
         ctx.heap = vm.heap;
@@ -507,6 +508,15 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             vm.throw_pending = true;
             vm.heap.tval_copy_ref(&vm.throw_value, &ctx.throw_value);
             return undef;
+        }
+        if (ctx.needs_re_dispatch) {
+            // The builtin re-targeted the call, so run the new callee rather
+            // than returning the result slot, which still holds the seeded
+            // callee value.
+            uint re_nargs = ctx.re_nargs;
+            if (re_nargs > 15) re_nargs = 15;
+            return vm_call_fn_impl(vm_ptr, temp_regs[0], &temp_regs[2], re_nargs,
+                                   temp_regs[1]);
         }
         return *ctx.result;
     }
