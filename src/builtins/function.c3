@@ -108,6 +108,25 @@ fn void builtin_function(BuiltinContext* ctx) {
 
     param_buf[param_pos] = 0;
 
+    // §20.2.1.1.1 step 16: the parameter text must parse as FormalParameters
+    // ON ITS OWN. The combined parse below cannot enforce that -- a parameter
+    // string carrying its own `)` and `{` (`"*/) {"`, `"x = function ("`)
+    // simply relocates the boundary, and the result still parses, yielding a
+    // function whose body came partly from the caller's parameter argument.
+    // Compile the parameters against an empty body first and reject on
+    // failure; the same text is then re-parsed as part of the real source.
+    {
+        char[16384] pcheck_buf;
+        int pcheck_pos = (int)(io::bprintf(pcheck_buf[..], "(%s\n){\n}", (ZString)&param_buf) ?? pcheck_buf[:0]).len;
+        Lexer pcheck_lex = lexer::lexer_init(pcheck_buf[:pcheck_pos], ctx.heap);
+        defer pcheck_lex.free_arena();
+        if (catch _e = compiler::compile_function(&pcheck_lex, ctx.heap, true, true)) {
+            builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto,
+                "SyntaxError in Function constructor parameter list");
+            return;
+        }
+    }
+
     // Build source string for compilation.  The params string may contain
     // `//` line comments, so we must separate params from `)` with a newline
     // (per ES2019 §19.2.1.1.1 CreateDynamicFunction step 14).  We compile as
