@@ -390,6 +390,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CHKITER.ordinal]     = "CHKITER",
     [Opcode.ITER_NEXT_FAST.ordinal] = "ITER_NEXT_FAST",
     [Opcode.ITER_CLOSE.ordinal]  = "ITER_CLOSE",
+    [Opcode.ITER_CLOSE_ESCAPE.ordinal] = "ITER_CLOSE_ESCAPE",
     [Opcode.GET_ITER_ASYNC.ordinal]   = "GET_ITER_ASYNC",
     [Opcode.ITER_CLOSE_ASYNC.ordinal] = "ITER_CLOSE_ASYNC",
     [Opcode.CHKCTOR.ordinal]     = "CHKCTOR",

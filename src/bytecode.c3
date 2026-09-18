@@ -908,6 +908,20 @@ enum Opcode : char {
     // .return method (allocated by the VM); B = C on exit.
     ITER_CLOSE,
 
+    // Disarm the catch clauses of the A innermost active catchers, so an
+    // IteratorClose emitted for an abrupt loop exit cannot be caught by a
+    // `try` that the break/continue/return is itself in the middle of leaving.
+    // §7.4.9 runs IteratorClose only after the loop's completion is already
+    // established, so a throw from `.return()` belongs to whatever encloses the
+    // loop:
+    //     for (x of it) { try { return; } catch (e) { /* must NOT run */ } }
+    // Only CATCH_ENABLED is cleared; FINALLY_ENABLED is left set, since an
+    // escaped `finally` still runs during the unwind -- it just may not swallow
+    // the exception. Codegen emits this immediately before the unwind
+    // ITER_CLOSE/ITER_CLOSE_ASYNC with A = try_depth - loop.saved_try_depth,
+    // and skips it entirely when that count is zero. A is the count; B and C unused.
+    ITER_CLOSE_ESCAPE,
+
     // `A ← GetIterator(reg B, async)` (ES2018 §7.4.2 for-await). Reads
     // B[@@asyncIterator]; if absent, reads B[@@iterator], calls it, and wraps
     // the sync iterator in an %AsyncFromSyncIterator% adapter so a plain sync
@@ -1154,6 +1168,7 @@ case PUTLEX:     return A_BC;
         case REQUIRE_OBJ: return ABC;
         case ITER_NEXT_FAST: return ABC;
         case ITER_CLOSE: return ABC;
+        case ITER_CLOSE_ESCAPE: return ABC;
         case GET_ITER_ASYNC:   return ABC;
         case ITER_CLOSE_ASYNC: return ABC;
         case CHKOBJ:     return ABC;

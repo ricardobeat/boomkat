@@ -28,6 +28,36 @@ fn void vm_complete_gen_on_unwind(Vm* vm, Activation* act) {
     act.async_gen_state = null;
 }
 
+// §7.4.9: IteratorClose runs after the loop's abrupt completion is already
+// established, so a throw from `.return()` belongs to whatever encloses the
+// loop, not to a `try` the break/return is in the middle of leaving:
+//
+//     for (x of it) { try { return; } catch (e) { /* must NOT run */ } }
+//
+// Codegen counts those escaped try regions into the ITER_CLOSE C field. Clear
+// CATCH_ENABLED on each so its catch clause cannot intercept the throw, while
+// leaving FINALLY_ENABLED set -- an escaped `finally` still runs during the
+// unwind, it just may not swallow the exception.
+// Sitting just beyond those regions is the for-of body's own
+// IteratorClose-on-throw guard (a catch-only catcher). The unwind close already
+// closes the iterator, so that guard must not fire too or `.return()` runs
+// twice. It cannot be retired by the ENDTRY at the jump site, which pops only
+// the innermost catcher -- a user `try` when the jump is nested inside one --
+// so drop it from the chain here, once the regions above it are accounted for.
+fn void vm_disarm_escaped_catchers(Vm* vm, Activation* act, uint count) {
+    Catcher* cat = (Catcher*)act.cat;
+    for (uint i = 0; i < count && cat != null; i++) {
+        cat.flags &= ~CATCHER_FLAG_CATCH_ENABLED;
+        cat = (Catcher*)cat.parent;
+    }
+    // Unlink the for-of guard. It owns no finally, so nothing later reads it.
+    if (cat == null || cat.finally_pc != null) return;
+    Catcher** slot = (Catcher**)&act.cat;
+    for (uint i = 0; i < count; i++) slot = (Catcher**)&((*slot).parent);
+    *slot = (Catcher*)cat.parent;
+    vm.heap.free_func(vm.heap.heap_udata, cat);
+}
+
 // Walk the catcher chain and throw a value.
 // Searches the full activation chain, unwinding intermediate activations
 // when a catcher is found in a parent activation.

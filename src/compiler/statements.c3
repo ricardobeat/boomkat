@@ -5542,8 +5542,18 @@ fn void? CompilerContext.do_while_statement(&self) {
 // AsyncIteratorClose (§7.4.11): the .return() result must be awaited. Clobbering
 // the iterator register with the awaited result is safe here, the loop is being
 // abandoned. Assumes loop_stack[li].iter_close_reg >= 0.
+// How many try regions an unwind IteratorClose for loop_stack[li] is escaping:
+// every `try` entered between the loop header and this jump site. §7.4.9 runs
+// IteratorClose only after the abrupt completion is established, so a throw
+// from `.return()` must not be caught by any of them (ITER_CLOSE_ESCAPE).
+fn uint CompilerContext.iter_close_catcher_skip(&self, uint li) {
+    uint entered = self.loop_stack[li].saved_try_depth;
+    return self.try_depth > entered ? self.try_depth - entered : 0;
+}
+
 fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     uint reg = (uint)self.loop_stack[li].iter_close_reg;
+    uint skip = self.iter_close_catcher_skip(li);
     // Pop the loop body's IteratorClose-on-throw catcher (the TRY emitted
     // around bind+body). Jumping out of the body bypasses its ENDTRY, which
     // left that catcher on act.cat: harmless where the next pop happens to
@@ -5551,7 +5561,15 @@ fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     // for-of catcher instead of the finally's own and drops the completion it
     // was carrying -- `try { throw e } finally { for (v of it) break; }` lost
     // `e` entirely.
-    self.emit_simple(Opcode.ENDTRY);
+    // With no user try in between, a plain ENDTRY retires the for-of guard.
+    // Otherwise ENDTRY would pop that user catcher instead, so ITER_CLOSE_ESCAPE
+    // does both jobs: disarm the catch clauses of the regions being escaped
+    // (§7.4.9 -- their finally blocks stay armed) and retire the guard beneath.
+    if (skip == 0) {
+        self.emit_simple(Opcode.ENDTRY);
+    } else {
+        self.emit_abc(Opcode.ITER_CLOSE_ESCAPE, skip, 0, 0);
+    }
     if (self.loop_stack[li].is_await_loop) {
         self.emit_abc(Opcode.ITER_CLOSE_ASYNC, reg, 0, 0);
         self.emit_abc(Opcode.AWAIT, reg, 0, 0);

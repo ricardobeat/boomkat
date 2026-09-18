@@ -7472,6 +7472,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.CHKOBJ:
         case Opcode.CHKITER:
         case Opcode.ITER_CLOSE:
+        case Opcode.ITER_CLOSE_ESCAPE:
         case Opcode.GET_ITER_ASYNC:
         case Opcode.ITER_CLOSE_ASYNC:
         case Opcode.CHKCTOR:

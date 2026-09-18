@@ -1428,6 +1428,18 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             return (TVal){};
         }
 
+        case Opcode.ITER_CLOSE_ESCAPE: {
+            // §7.4.9: the IteratorClose that follows runs after the loop's
+            // abrupt completion is already established, so a throw from
+            // `.return()` must escape the try regions the break/continue/return
+            // is leaving rather than be caught by one of them. A counts those
+            // regions; disarm their catch clauses while leaving their finally
+            // blocks armed (an escaped finally still runs, it just may not
+            // swallow the exception).
+            vm_disarm_escaped_catchers(vm, ds.act, insn.a);
+            return (TVal){};
+        }
+
         case Opcode.ITER_CLOSE: {
             // IteratorClose (ES2022 §7.4.6): if the value in A is an
             // object with a callable `.return` method, call it with
