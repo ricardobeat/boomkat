@@ -153,6 +153,30 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
 // [[GetPrototypeOf]] trap when a Proxy appears on the chain.
 // Sets ra to true on match. Returns false when an uncaught error unwinds
 // (caller must `return VM_ERROR~`).
+// ES2024 §9.1.1.4.5 SetMutableBinding on the global object environment record,
+// step 5: when the binding is not an own property, the store is
+// `Set(bindings, N, V, S)`, an ordinary [[Set]] with the global object as the
+// receiver. That walks the global's PROTOTYPE CHAIN, so a setter or a Proxy
+// `set` trap installed there runs and sees the global as its receiver
+// (staging/sm/Proxy/global-receiver.js). A direct env_put would define an own
+// property and skip the chain entirely.
+//
+// Returns false only when a trap threw; the caller then propagates. A falsish
+// trap result is a silent drop in sloppy code, which is the only mode that
+// reaches here (a strict unresolvable reference has already thrown
+// ReferenceError above).
+fn bool vm_global_bareword_store(Vm* vm, void* key, TVal val) {
+    if (vm.global_env == null) return true;
+    HObject* gobj = vm.global_env.bindings;
+    if (gobj == null) { env::env_put(vm.global_env, key, val); return true; }
+    TVal recv; recv.set_object(gobj);
+    bool sres;
+    if (!builtins::js_set_with_receiver(vm, vm.heap, gobj, (HString*)key, val, recv, &sres)) {
+        return false;
+    }
+    return true;
+}
+
 fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* probe, TVal* ra) {
     HObject* cur = start;
     uint depth = 0;
@@ -5666,8 +5690,13 @@ fn TVal? Vm.run(Vm* vm) {
                             }
                             break;
                         }
-                        if (vm.global_env != null) {
-                            env::env_put(vm.global_env, key, *ra);
+                        if (!vm_global_bareword_store(vm, key, *ra)) {
+                            TVal gerrv = vm.heap.error_value;
+                            vm.heap.has_error = false;
+                            if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return vm_uncaught_error(vm, &gerrv);
+                            }
+                            break;
                         }
                     }
                     vm.heap.decref_tval(ra);
@@ -6142,8 +6171,13 @@ fn TVal? Vm.run(Vm* vm) {
                             }
                             break;
                         }
-                        if (vm.global_env != null) {
-                            env::env_put(vm.global_env, key, *ra);
+                        if (!vm_global_bareword_store(vm, key, *ra)) {
+                            TVal gerrv = vm.heap.error_value;
+                            vm.heap.has_error = false;
+                            if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return vm_uncaught_error(vm, &gerrv);
+                            }
+                            break;
                         }
                     }
                     vm.heap.decref_tval(ra);
@@ -6266,8 +6300,13 @@ fn TVal? Vm.run(Vm* vm) {
                             }
                             continue;
                         }
-                        if (vm.global_env != null) {
-                            env::env_put(vm.global_env, key, *ra);
+                        if (!vm_global_bareword_store(vm, key, *ra)) {
+                            TVal gerrv = vm.heap.error_value;
+                            vm.heap.has_error = false;
+                            if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return vm_uncaught_error(vm, &gerrv);
+                            }
+                            break;
                         }
                     }
                     vm.heap.decref_tval(ra);
@@ -7324,8 +7363,13 @@ fn TVal? Vm.run(Vm* vm) {
                                 return VM_ERROR~;
                             }
                             threw = true;
-                        } else if (vm.global_env != null) {
-                            env::env_put(vm.global_env, key, *ra);
+                        } else if (!vm_global_bareword_store(vm, key, *ra)) {
+                            TVal gerrv = vm.heap.error_value;
+                            vm.heap.has_error = false;
+                            if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                return vm_uncaught_error(vm, &gerrv);
+                            }
+                            threw = true;
                         }
                     }
                 }
@@ -7366,8 +7410,13 @@ fn TVal? Vm.run(Vm* vm) {
                             return VM_ERROR~;
                         }
                         threw = true;
-                    } else if (vm.global_env != null) {
-                        env::env_put(vm.global_env, key, *ra);
+                    } else if (!vm_global_bareword_store(vm, key, *ra)) {
+                        TVal gerrv = vm.heap.error_value;
+                        vm.heap.has_error = false;
+                        if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            return vm_uncaught_error(vm, &gerrv);
+                        }
+                        threw = true;
                     }
                 }
                 vm.heap.decref_tval(ra);
