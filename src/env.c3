@@ -25,6 +25,8 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
         EnvRecord* env = (EnvRecord*)h.env_freelist;
         h.env_freelist = env.parent;
         mem::clear(env, (sz)(EnvRecord::size));
+        h.env_alloc_count++;
+        h.env_live_cells++;
         return env;
     }
 
@@ -36,6 +38,11 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     EnvPoolBlock* block = (EnvPoolBlock*)raw;
     block.next = h.env_pool_blocks;
     h.env_pool_blocks = block;
+    h.env_block_count++;
+    h.env_bytes_reserved += block_sz;
+    if (h.env_bytes_reserved > h.env_peak_bytes_reserved) {
+        h.env_peak_bytes_reserved = h.env_bytes_reserved;
+    }
 
     char* base = (char*)raw + EnvPoolBlock::size;
     for (uint i = 1; i < ENV_POOL_BLOCK_SIZE; i++) {
@@ -44,6 +51,8 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
         h.env_freelist = e;
     }
 
+    h.env_alloc_count++;
+    h.env_live_cells++;
     return (EnvRecord*)base;
 }
 
@@ -53,6 +62,7 @@ fn void env_pool_free(Heap* h, EnvRecord* env) {
     mem::clear(env, (sz)(EnvRecord::size));
     env.parent = (EnvRecord*)h.env_freelist;
     h.env_freelist = env;
+    if (h.env_live_cells > 0) { h.env_live_cells--; }
 }
 
 // ============================================================================

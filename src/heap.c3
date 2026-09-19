@@ -822,6 +822,18 @@ struct Heap {
     void*     env_freelist;     /// EnvRecord* freelist, chained through .parent
     void*     env_pool_blocks;  /// EnvPoolBlock* list, walked at cleanup
 
+    // Environment pool accounting. Environments are never reclaimed in normal
+    // execution, so live_cells tracks every record created since reset rather
+    // than the reachable set; block_count and bytes_reserved measure what the
+    // pool holds back from the allocator. These are the reclamation oracle for
+    // plans/085: after reclamation lands, a bounded live scope graph must have
+    // bounded live_cells and bytes_reserved after a quiescent collection.
+    uint      env_alloc_count;      /// Total records handed out since reset
+    uint      env_live_cells;       /// Records allocated and not yet returned
+    uint      env_block_count;      /// Pool blocks currently reserved
+    usz       env_bytes_reserved;   /// Bytes held by env_pool_blocks
+    usz       env_peak_bytes_reserved; /// High-water mark for env_bytes_reserved
+
     // Every CompiledFunction the compiler allocates. Freed in Heap.destroy.
     void**    compiled_funcs;
     uint      compiled_func_cap;
@@ -1670,6 +1682,11 @@ fn void Heap.destroy(&self) {
         }
         self.env_pool_blocks = null;
         self.env_freelist = null;
+        self.env_alloc_count = 0;
+        self.env_live_cells = 0;
+        self.env_block_count = 0;
+        self.env_bytes_reserved = 0;
+        self.env_peak_bytes_reserved = 0;
     }
 
     if (self.compiled_funcs != null) {
@@ -1908,6 +1925,11 @@ fn void Heap.reset(&self) {
         self.env_pool_blocks = null;
     }
     self.env_freelist = null;
+    self.env_alloc_count = 0;
+    self.env_live_cells = 0;
+    self.env_block_count = 0;
+    self.env_bytes_reserved = 0;
+    self.env_peak_bytes_reserved = 0;
 
     if (self.checkpoint_keys != null) {
         self.free_func(self.heap_udata, self.checkpoint_keys);
