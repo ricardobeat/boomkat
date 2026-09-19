@@ -298,3 +298,25 @@ and its module/error/robustness/TypeScript fixtures; and 888 test262 cases
 across language/statements/{let,const,block,for,try}, all passing.
 The new empty_lexical_environments.js fixture checks nested break/continue,
 return/throw through finally, and retained const, TDZ, capture, and eval scopes.
+
+## Experiment 2: literal destructuring defaults
+
+The shared destructuring emitter recognizes a default thunk containing only
+a literal load and a matching return. It emits the load into the binding
+register behind the existing undefined check, copying constant-pool entries
+to the enclosing function where needed. Other expressions keep their thunk
+call. The withDefaults benchmark body contains direct loads for 1 and 2,
+with no CLOSURE or CALL for either default.
+
+Five interleaved runs, rotating engine order, compare against an immutable
+binary containing experiment 1. Median whole-process destructuring times:
+baseline 1.1851s, candidate 1.0667s, QuickJS 0.2398s. The candidate takes
+10% less time. Synthetic function templates and the parent's conservative
+has_closures classification remain; this experiment removes execution cost,
+not their compilation or metadata cost.
+
+Validation: 42 Rosetta cases, the local suite including 436 plain scripts,
+and 1,013 test262 cases across assignment/dstr, function/dstr, let, const,
+and variable declarations, all passing. The focused fixture covers primitive
+literals, present values, parameters, member and identifier assignments,
+nested patterns, lazy side effects, function names, and fresh mutable defaults.

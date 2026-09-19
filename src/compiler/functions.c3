@@ -956,6 +956,46 @@ fn void CompilerContext.close_finished_iter(&self, DestructBind[] binds, uint co
     }
 }
 
+// Only a literal load followed by a return can bypass the thunk: no name
+// resolution, allocation of mutable values, or evaluation side effects move
+// across the caller's undefined check. Constants belong to the caller's pool.
+fn void CompilerContext.emit_destruct_default(&self, uint func_idx, ushort dest_reg) {
+    CompiledFunction* func = self.inner_funcs[func_idx];
+    if (!self.disable_optimize && func.code_count == 2
+        && func.code[1].op == Opcode.RET
+        && func.code[0].a == func.code[1].a) {
+        Instruction load = func.code[0];
+        switch (load.op) {
+            case Opcode.LDINT:
+                self.emit_a_sbx(Opcode.LDINT, (uint)dest_reg, load.get_sbc());
+                return;
+            case Opcode.LDCONST:
+                TVal value = func.constants[load.get_bc()];
+                if (!value.is_object()) {
+                    self.emit_a_bc(Opcode.LDCONST, (uint)dest_reg, self.add_constant(value));
+                    return;
+                }
+            case Opcode.LDUNDEF:
+            case Opcode.LDNULL:
+            case Opcode.LDTRUE:
+            case Opcode.LDFALSE:
+                self.emit_abc(load.op, (uint)dest_reg, 0, 0);
+                return;
+            default:
+        }
+    }
+
+    ushort closure_reg = self.alloc_reg();
+    self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
+    ushort call_base = self.alloc_reg();
+    if (self.next_reg <= call_base + 1) { self.next_reg = call_base + 2; }
+    self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
+    self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
+    self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
+    self.emit_abc(Opcode.LDREG, (uint)dest_reg, (uint)call_base, 0);
+    self.free_regs_to(call_base);
+}
+
 // Shared emission helper for function-parameter destructuring bindings.
 // Emit object-rest collection into dest_reg: `dest = CopyDataProperties(src,
 // excludedNames)` where excludedNames names every sibling explicit key (own
@@ -1291,16 +1331,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
                 self.free_reg(cmp_reg);
 
-                ushort closure_reg = self.alloc_reg();
-                self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, binds[di].default_func_idx);
-
-                ushort call_base = self.alloc_reg();
-                if (self.next_reg <= call_base + 1) { self.next_reg = call_base + 2; }
-                self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-                self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
-                self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
-                self.emit_abc(Opcode.LDREG, (uint)group_reg, (uint)call_base, 0);
-                self.free_regs_to(call_base);
+                self.emit_destruct_default(binds[di].default_func_idx, group_reg);
 
                 int skip_off = (int)self.code_count - (int)skip_addr - 1;
                 self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
@@ -1519,16 +1550,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
                 self.free_reg(cmp_reg);
 
-                ushort closure_reg = self.alloc_reg();
-                self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, binds[di].default_func_idx);
-
-                ushort call_base = self.alloc_reg();
-                if (self.next_reg <= call_base + 1) { self.next_reg = call_base + 2; }
-                self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-                self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
-                self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
-                self.emit_abc(Opcode.LDREG, (uint)bind_reg, (uint)call_base, 0);
-                self.free_regs_to(call_base);
+                self.emit_destruct_default(binds[di].default_func_idx, bind_reg);
 
                 int skip_off = (int)self.code_count - (int)skip_addr - 1;
                 self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
