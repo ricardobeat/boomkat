@@ -613,6 +613,16 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
                 return -2;
             }
             if (!cur.bindings.get_prop_flags((uint)idx, h).writable) {
+                // -1 means an immutable BINDING (a `const`), which throws in
+                // sloppy code too. A non-writable property on an OBJECT
+                // environment record -- the global object -- is not that: it is
+                // an ordinary [[Set]] failure, so §9.1.1.4.5 SetMutableBinding
+                // step 5 hands it to Set(bindings, N, V, S) and only a strict
+                // assignment throws (`foo = 1` after
+                // `Object.defineProperty(this, "foo", {writable: false})` is
+                // silently dropped). -4 already carries exactly that
+                // strict-throws/sloppy-drops rule.
+                if (!cur.is_declarative) return -4;
                 return cur.bindings.get_prop_flags((uint)idx, h).immut_nonstrict ? -4 : -1;
             }
             if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
