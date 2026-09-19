@@ -2533,11 +2533,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // find_accessor_proto sets found=true for any accessor property on
                         // the chain, even a get-only one (accessor_fn left as undefined in
                         // that case). ES2024 §10.1.9.2 OrdinarySet step 2 returns false for
-                        // an inherited accessor with no [[Set]], which PutValue turns into a
-                        // TypeError (§13.15.2) rather than creating an own property.
+                        // an inherited accessor with no [[Set]], rather than creating an own
+                        // property. Only a STRICT PutValue turns that false into a TypeError
+                        // (§13.15.2); sloppy code drops the write silently, exactly as the
+                        // own-property getter-only path above already does. The write is
+                        // skipped either way, so the two modes differ only in the throw.
                         if (acc.found && (!acc.accessor_fn.is_object() || acc.accessor_fn.get_heapptr() == null)) {
-                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot set property which has only a getter", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
+                            if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot set property which has only a getter", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
                             }
                             return (TVal){};
                         }
