@@ -333,11 +333,29 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
 // Write `constructed` into the captured_this of every arrow registered against
 // activation `act`, then unlink and free those entries. Arrows belonging to
 // other frames are left in place. See Vm.pending_this_arrows.
-fn void flush_pending_this_arrows(Vm* vm, Activation* act, TVal* constructed) {
+fn void flush_pending_this_arrows(Vm* vm, Activation* act, TVal* constructed, HObject* fn_obj = null) {
+    // `act` identifies the creating frame, but vm.activations[] is a pool: by
+    // the time an ESCAPED arrow runs its super(), the constructor slot it was
+    // registered against may hold an unrelated frame, or the walk may never
+    // reach it at all. When the caller names the running arrow, recover the
+    // creating frame from that arrow's own entry and flush every SIBLING
+    // registered against it: `()=>super()` and `()=>this` come from the same
+    // constructor and must both see the binding the super() just produced.
+    Activation* target_act = act;
+    if (fn_obj != null) {
+        PendingThisArrow* probe = (PendingThisArrow*)vm.pending_this_arrows;
+        while (probe != null) {
+            if (probe.fn_obj == fn_obj) { target_act = probe.act; break; }
+            probe = (PendingThisArrow*)probe.next;
+        }
+    }
     PendingThisArrow** link = (PendingThisArrow**)&vm.pending_this_arrows;
     while (*link != null) {
         PendingThisArrow* entry = *link;
-        if (entry.act != act) { link = (PendingThisArrow**)&entry.next; continue; }
+        if (entry.act != act && entry.act != target_act) {
+            link = (PendingThisArrow**)&entry.next;
+            continue;
+        }
         // The slot still holds the TDZ sentinel, which owns nothing, so the
         // copy_ref below is the arrow's first owning reference to the object.
         if (entry.fn_obj != null) {
@@ -362,6 +380,14 @@ fn void flush_pending_this_arrows(Vm* vm, Activation* act, TVal* constructed) {
 // Construct-before-BindThisValue) still happened; only the this-binding is
 // left untouched here so the caller can throw.
 fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activation** bound_act = null) {
+    // The arrow closure currently executing super(), if any. An escaped arrow's
+    // pending entry is keyed on a constructor frame this walk can no longer
+    // reach, so the flush needs the closure itself to find it.
+    HObject* running_arrow = null;
+    if (act != null && act.func != null && ((CompiledFunction*)act.func).is_arrow()
+            && act.tv_func.is_object() && act.tv_func.get_heapptr() != null) {
+        running_arrow = (HObject*)act.tv_func.get_heapptr();
+    }
     // Intermediate frames with a real this (e.g. an object method that
     // invoked the super-capturing arrow) are skipped, not a stop condition;
     // the walk ends at the first derived-constructor frame, the one whose
@@ -388,7 +414,7 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
             // to those arrows: one that escapes the constructor outlives this
             // frame, so super_walk_live_this() will have nothing to re-resolve
             // against by the time it is called. See Vm.pending_this_arrows.
-            flush_pending_this_arrows(vm, a, constructed);
+            flush_pending_this_arrows(vm, a, constructed, running_arrow);
         }
         if ((a.flags & ACT_FLAG_DERIVED) != 0) {
             if (bound_act != null) *bound_act = a;
@@ -396,6 +422,10 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
         }
         a = a.parent;
     }
+    // No derived-constructor frame on the chain. The caller decides; see
+    // super_call_needs_bind() and the `already_bound` handling at each super()
+    // dispatch site, which latch the arrow's state BEFORE this walk runs (the
+    // flush above can change it).
     return false;
 }
 
@@ -511,6 +541,24 @@ fn TVal super_walk_live_this(Vm* vm, Activation* caller_act) {
         a = a.parent;
     }
     return env::tdz_sentinel();
+}
+
+// True when the frame running super() still has to bind `this`, OR is an arrow
+// whose `this` is already bound.
+//
+// The first case is the ordinary one: a derived constructor frame holding the
+// TDZ sentinel. The second is a repeat super() reached through an arrow -- the
+// arrow either outlived its constructor (its captured_this was filled in by the
+// first super(); see Vm.pending_this_arrows) or was created after super() ran.
+// Either way the frame's this_binding is a real object, and without this the
+// super-binding branch is skipped entirely and the repeat call succeeds
+// silently. Entering the branch lets super_init_this_chain() find the target
+// already initialized and report it, which is the ReferenceError §8.1.1.3.1
+// BindThisValue step 3 requires -- raised AFTER the superclass constructor has
+// run, per §13.3.7.1 (Construct is step 7, BindThisValue step 10).
+fn bool super_call_needs_bind(Activation* act) {
+    if (env::is_tdz_sentinel(&act.this_binding)) return true;
+    return act.func != null && ((CompiledFunction*)act.func).is_arrow();
 }
 
 // Same boundary-crossing walk for reading: find the nearest enclosing
@@ -3129,6 +3177,24 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 nargs = insn.c;
             }
 
+            // Latch, BEFORE the superclass constructor runs, whether this
+            // super() is a repeat reached through an arrow that outlived its
+            // derived constructor. The verdict comes from the arrow CLOSURE's
+            // captured_this, not the activation's this_binding: the closure is
+            // what the first call's flush writes into (see
+            // Vm.pending_this_arrows), and the frame's this_binding depends on
+            // how the arrow was invoked, so it reads as the sentinel when the
+            // arrow is called indirectly (`f()` inside a helper). Still the TDZ
+            // sentinel means the first super(); a real object means a repeat.
+            // Reading it after dispatch would see the flush's own write and
+            // mistake the first call for a repeat, so it has to be taken here.
+            bool super_arrow_repeat = false;
+            if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_arrow()
+                    && ds.act.tv_func.is_object() && ds.act.tv_func.get_heapptr() != null) {
+                HObject* sc_arrow_obj = (HObject*)ds.act.tv_func.get_heapptr();
+                super_arrow_repeat = !env::is_tdz_sentinel(&(*sc_arrow_obj.extra_ptr()).func.captured_this);
+            }
+
             TVal* super_slot = ds.regs_base + callee_reg;
             TVal super_val = *super_slot;
 
@@ -3162,14 +3228,17 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (!vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return vm_uncaught_error(vm, &ctx.throw_value);
                     }
-                } else if (env::is_tdz_sentinel(&ds.act.this_binding)) {
+                } else if (super_call_needs_bind(ds.act)) {
                     // Initialize the derived constructor's this_binding with the
                     // object returned by the builtin super constructor (§9.2.2).
                     TVal* sc_result_lf = ds.regs_base + result_reg;
-                    bool sc_already_bound = false;
+                    // Seeded with the pre-dispatch verdict: a repeat super() through an
+                    // escaped arrow has no live derived frame left for the walk to
+                    // find, so the walk alone would report "not yet bound".
+                    bool sc_already_bound = super_arrow_repeat;
                     Activation* sc_bound_act_lf = null;
                     if (sc_result_lf.is_object()) {
-                        sc_already_bound = super_init_this_chain(vm, ds.act, sc_result_lf, &sc_bound_act_lf);
+                        sc_already_bound = super_arrow_repeat || super_init_this_chain(vm, ds.act, sc_result_lf, &sc_bound_act_lf);
                     }
                     if (sc_already_bound) {
                         // §8.1.1.3.1 BindThisValue step 3: the derived-ctor
@@ -3261,12 +3330,15 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         // Fall through to lightfunc / BUILTIN_FN / CompiledFunction handling below
                     } else {
                         // Bound target was a builtin that returned directly
-                        if (env::is_tdz_sentinel(&ds.act.this_binding)) {
+                        if (super_call_needs_bind(ds.act)) {
                             TVal* sc_bound_result = ds.regs_base + result_reg;
-                            bool sc_bound_already_bound = false;
+                            // Seeded with the pre-dispatch verdict: a repeat super() through an
+                    // escaped arrow has no live derived frame left for the walk to
+                    // find, so the walk alone would report "not yet bound".
+                    bool sc_bound_already_bound = super_arrow_repeat;
                             Activation* sc_bound_act_bd = null;
                             if (sc_bound_result.is_object()) {
-                                sc_bound_already_bound = super_init_this_chain(vm, ds.act, sc_bound_result, &sc_bound_act_bd);
+                                sc_bound_already_bound = super_arrow_repeat || super_init_this_chain(vm, ds.act, sc_bound_result, &sc_bound_act_bd);
                             }
                             if (sc_bound_already_bound) {
                                 // §8.1.1.3.1 BindThisValue step 3: already initialized.
@@ -3315,12 +3387,15 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (!vm_throw_value(vm, sc_lf_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return vm_uncaught_error(vm, &sc_lf_ctx.throw_value);
                     }
-                } else if (env::is_tdz_sentinel(&ds.act.this_binding)) {
+                } else if (super_call_needs_bind(ds.act)) {
                     TVal* sc_lf_result = ds.regs_base + result_reg;
-                    bool sc_lf_already_bound = false;
+                    // Seeded with the pre-dispatch verdict: a repeat super() through an
+                    // escaped arrow has no live derived frame left for the walk to
+                    // find, so the walk alone would report "not yet bound".
+                    bool sc_lf_already_bound = super_arrow_repeat;
                     Activation* sc_lf_bound_act = null;
                     if (sc_lf_result.is_object()) {
-                        sc_lf_already_bound = super_init_this_chain(vm, ds.act, sc_lf_result, &sc_lf_bound_act);
+                        sc_lf_already_bound = super_arrow_repeat || super_init_this_chain(vm, ds.act, sc_lf_result, &sc_lf_bound_act);
                     }
                     if (sc_lf_already_bound) {
                         // §8.1.1.3.1 BindThisValue step 3: already initialized.
@@ -3361,14 +3436,17 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         if (!vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return vm_uncaught_error(vm, &ctx.throw_value);
                         }
-                    } else if (env::is_tdz_sentinel(&ds.act.this_binding)) {
+                    } else if (super_call_needs_bind(ds.act)) {
                         // Initialize the derived constructor's this_binding with the
                         // object returned by the builtin super constructor (§9.2.2).
                         TVal* sc_result_bi = ds.regs_base + result_reg;
-                        bool sc_bi_already_bound = false;
+                        // Seeded with the pre-dispatch verdict: a repeat super() through an
+                    // escaped arrow has no live derived frame left for the walk to
+                    // find, so the walk alone would report "not yet bound".
+                    bool sc_bi_already_bound = super_arrow_repeat;
                         Activation* sc_bi_bound_act = null;
                         if (sc_result_bi.is_object()) {
-                            sc_bi_already_bound = super_init_this_chain(vm, ds.act, sc_result_bi, &sc_bi_bound_act);
+                            sc_bi_already_bound = super_arrow_repeat || super_init_this_chain(vm, ds.act, sc_result_bi, &sc_bi_bound_act);
                         }
                         if (sc_bi_already_bound) {
                             // §8.1.1.3.1 BindThisValue step 3: already initialized.
@@ -3486,6 +3564,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             new_act.retval = ds.regs_base + result_reg;
             new_act.flags = ACT_FLAG_CONSTRUCT | ACT_FLAG_SUPER_CTOR
                           | (super_is_derived ? ACT_FLAG_DERIVED : 0)
+                          | (super_arrow_repeat ? ACT_FLAG_SUPER_REBIND : 0)
                           | (super_target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0);
             vm.heap.tval_copy_ref(&new_act.this_binding, &ds.regs_base[callee_reg + 1]);
             new_act.flags |= ACT_FLAG_THIS_OWNED;

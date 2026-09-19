@@ -246,6 +246,14 @@ const uint ACT_FLAG_BORROWED_CALLEE = 1u << 8;
 // nonzero refcount, so the two must be flagged independently of
 // ACT_FLAG_THIS_OWNED, whose only job is to schedule the matching decref.
 const uint ACT_FLAG_THIS_VALID     = 1u << 9;
+// SUPER_CALL dispatched this super-constructor from an ARROW whose captured
+// `this` was already a real object, i.e. a repeat super() reached through an
+// arrow that outlived its derived constructor. The derived frame is long gone,
+// so the RET-side live-frame walk cannot see that `this` was already bound;
+// the verdict has to be taken before dispatch (the arrow's own frame is
+// overwritten by the first call's flush) and carried here. §8.1.1.3.1
+// BindThisValue step 3 then throws once the superclass constructor has run.
+const uint ACT_FLAG_SUPER_REBIND   = 1u << 10;
 
 // Write this_binding as a BORROWED value: the caller holds the owning
 // reference for the whole call, so nothing is incref'd here and nothing is
