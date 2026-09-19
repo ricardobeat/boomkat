@@ -220,17 +220,47 @@ fn bool has_flag(char[] src, char[] word) {
 // Helper: compile and execute JS source in a VM
 // ============================================================================
 
+// The `message` of the value currently in hp.error_value, or an empty slice
+// when there is none. The thrown value is the only record of a runtime error:
+// lx.err_msg is the lexer's buffer and holds compile errors only, so reading
+// it after execute() returns 512 zero bytes rather than the error.
+fn char[] thrown_message(Heap* hp) {
+    if (!hp.error_value.is_object()) return "";
+    HObject* eo = (HObject*)hp.error_value.get_heapptr();
+    if (eo == null) return "";
+    HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
+    hobject::Shape* sh = eo.get_shape(hp);
+    TVal* vals = eo.prop_values();
+    uint val_idx = 0;
+    while (sh != null) {
+        hobject::ShapeProperty* sp = sh.props();
+        for (uint i = 0; i < sh.own_count; i++) {
+            if (val_idx >= eo.prop_count) break;
+            TVal* mv = &vals[val_idx];
+            if (sp[i].key == (void*)msg_key && mv.is_string()) {
+                HString* str = (HString*)mv.get_heapptr();
+                return str.get_data();
+            }
+            val_idx++;
+        }
+        sh = sh.parent_shape;
+    }
+    return "";
+}
+
 fn int exec_js(Vm* v, Heap* hp, char[] src) {
     Lexer lx = lexer::lexer_init(src, hp);
     defer lx.free_arena();
     lx.skip_hashbang();
     CompiledFunction*? f = compiler::compile(&lx, hp);
     if (catch err = f) {
-        io::eprintfn("  COMPILE ERROR: %s", (String)lx.err_msg[..]);
+        usz mlen = 0;
+        while (mlen < lx.err_msg.len && lx.err_msg[mlen] != 0) { mlen++; }
+        io::eprintfn("  COMPILE ERROR: %s", (String)lx.err_msg[:mlen]);
         return 2;
     }
     if (catch err = v.execute(f)) {
-        io::eprintfn("  RUNTIME ERROR (compiled ok, %d insns): %s", f.code_count, (String)lx.err_msg[..]);
+        io::eprintfn("  RUNTIME ERROR (compiled ok, %d insns): %s", f.code_count, (String)thrown_message(hp));
         return 1;
     }
     return 0;
@@ -595,29 +625,8 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     if (src_rc == 2) { io::eprintfn("  FAIL: compile error in test source %d bytes", src.len); return 2; }
     if (src_rc != 0) {
         io::eprintfn("  FAIL: test source %d bytes", src.len);
-        if (hp.error_value.is_object()) {
-            HObject* eo = (HObject*)hp.error_value.get_heapptr();
-            if (eo != null) {
-                HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
-                hobject::Shape* sh = eo.get_shape(hp);
-                TVal* vals = eo.prop_values();
-                uint val_idx = 0;
-                while (sh != null) {
-                    hobject::ShapeProperty* sp = sh.props();
-                    for (uint i = 0; i < sh.own_count; i++) {
-                        if (val_idx >= eo.prop_count) break;
-                        TVal* mv = &vals[val_idx];
-                        if (sp[i].key == (void*)msg_key && mv.is_string()) {
-                            HString* s = (HString*)mv.get_heapptr();
-                            char[] d = s.get_data();
-                            io::eprintfn("  DEBUG_ERR: %s", (String)d);
-                        }
-                        val_idx++;
-                    }
-                    sh = sh.parent_shape;
-                }
-            }
-        }
+        char[] em = thrown_message(hp);
+        if (em.len > 0) { io::eprintfn("  DEBUG_ERR: %s", (String)em); }
         return 1;
     }
 
