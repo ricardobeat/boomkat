@@ -717,7 +717,7 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
 // Compiled out unless built with -D HEAP_VERIFY. asan::address_is_poisoned is
 // itself a compile-time `false` without ASAN, so a HEAP_VERIFY build without
 // ASAN still checks the cheap half (a non-null heap slot above the watermark).
-fn void assert_frame_clear(Vm* vm, Activation* act, ZString where) {
+fn void assert_frame_clear(Vm* vm, Activation* act, ZString where, bool already_cleared = false) {
 $if $feat(HEAP_VERIFY):
     if (act.func == null || act.bottom == null) return;
     CompiledFunction* cf = (CompiledFunction*)act.func;
@@ -732,9 +732,24 @@ $if $feat(HEAP_VERIFY):
         if (!regs[i].is_heap_allocated()) continue;
         void* ptr = regs[i].get_heapptr();
         if (ptr == null) continue;
-        if (!sanitizer::asan::address_is_poisoned(ptr)) continue;
-        io::eprintfn("[vm] pop at %s left slot r%d pointing at freed memory (%p)",
-            where.str_view(), i, ptr);
+        if (sanitizer::asan::address_is_poisoned(ptr)) {
+            io::eprintfn("[vm] pop at %s left slot r%d pointing at freed memory (%p)",
+                where.str_view(), i, ptr);
+            continue;
+        }
+        // A heap value above the watermark is outside decref_callee_regs'
+        // [0..heap_reg_count] sweep: its reference leaks AND the slot keeps
+        // stale pointer bits that a later frame at this address reads as one of
+        // its own registers (see track_restored_regs).
+        //
+        // Only frames that swept themselves are held to this. An unwinding
+        // frame deliberately leaves its registers for the surviving caller,
+        // whose window overlaps them, so occupied slots there are the design
+        // and not a fault (see vm_pop_activation's already_cleared).
+        if (!already_cleared && i >= act.heap_reg_count) {
+            io::eprintfn("[vm] pop at %s left slot r%d (%p) above heap_reg_count %d: unswept",
+                where.str_view(), i, ptr, act.heap_reg_count);
+        }
     }
 $endif
 }
@@ -769,7 +784,7 @@ fn void vm_pop_activation(Vm* vm, Activation* act, ZString where, bool already_c
         free_catcher_chain(vm, act);
         decref_callee_regs(vm, act);
     }
-    assert_frame_clear(vm, act, where);
+    assert_frame_clear(vm, act, where, already_cleared);
     vm.activation_count--;
 }
 

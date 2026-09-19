@@ -7,6 +7,7 @@ import boomkat::hobject;
 import boomkat::bytecode;
 import boomkat::re_bindings;
 import boomkat::esm;
+import boomkat::vm;
 import std::io;
 import std::collections::list;
 import std::core::mem::mempool;
@@ -2589,6 +2590,21 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
                 hdr.refcount = 1;
                 return;
             }
+        $if $feat(HEAP_VERIFY):
+            // A node whose count reaches zero while a live register still holds
+            // it means some opcode dropped a reference it did not own. Report it
+            // here, at the release, rather than in whichever opcode later reads
+            // the recycled block. This is how the GETGLOBAL_PRIM bare-decref bug
+            // was found.
+            {
+                uint bad_frame;
+                uint bad_slot;
+                if (self.is_in_activation_regs(hdr, &bad_frame, &bad_slot)) {
+                    io::eprintfn("[vm] decref-to-zero freeing %p while live frame %d slot r%d still holds it",
+                        hdr, bad_frame, bad_slot);
+                }
+            }
+        $endif
             hdr.unlink(&self.heap_allocated);
             if (hdr.is_object()) {
                 hobject::hobject_free((HObject*)hdr, (void*)self, true);
@@ -3731,6 +3747,52 @@ $else
 $endif
 }
 
+// Report whether any live activation register still references `ptr`, naming
+// the first frame and slot that does.
+//
+// Freeing a node a register still holds is a fault whichever path gets there:
+// the sweep frees whatever the mark phase did not reach at any refcount, and
+// decref frees whatever reaches zero. Either way the frame reads freed memory
+// the moment it touches that slot again, and by then the opcode at fault is
+// long gone -- so both callers report here, at the release, rather than
+// leaving a use-after-poison for whatever opcode reads the slot next.
+const uint NATIVE_FRAME_SCAN_SLOTS = 64;
+
+fn bool Heap.is_in_activation_regs(&self, HeapHeader* ptr, uint* out_frame, uint* out_slot) {
+$if $feat(HEAP_VERIFY):
+    if (self.curr_thread == null) return false;
+    vm::Vm* vm = (vm::Vm*)self.curr_thread;
+    for (uint f = 0; f < vm.activation_count; f++) {
+        vm::Activation* a = &vm.activations[f];
+        if (a.bottom == null) continue;
+        // A native/builtin frame has func == null and so no declared num_regs,
+        // but it still owns valstack slots -- exactly the ones the mark phase
+        // skips. Scan a conservative window for those, clamped to the allocated
+        // valstack so the scan itself never reads past the end.
+        uint nregs = NATIVE_FRAME_SCAN_SLOTS;
+        if (a.func != null) { nregs = ((CompiledFunction*)a.func).num_regs; }
+        if (vm.valstack_end > a.bottom) {
+            usz avail = (usz)(vm.valstack_end - a.bottom);
+            if ((usz)nregs > avail) { nregs = (uint)avail; }
+        } else {
+            continue;
+        }
+        for (uint i = 0; i < nregs; i++) {
+            TVal* tv = &a.bottom[i];
+            if (!tv.is_heap_allocated()) continue;
+            if (tv.get_heapptr() == (void*)ptr) {
+                if (out_frame != null) *out_frame = f;
+                if (out_slot != null) *out_slot = i;
+                return true;
+            }
+        }
+    }
+    return false;
+$else
+    return false;
+$endif
+}
+
 // Report whether any suspended generator's saved_regs still references `ptr`,
 // which would make freeing it leave a dangling pointer. The sweep calls this
 // before freeing an object.
@@ -3805,6 +3867,12 @@ fn void Heap.sweep(&self) {
                 if (self.is_in_generator_saved_regs(cur)) {
                     io::eprintf("[HEAP_VERIFY]   SWEEP WARNING: freeing %p (htype=%d) which is in a generator's saved_regs!\n",
                                 cur, (int)cur.get_type());
+                }
+                uint bad_frame;
+                uint bad_slot;
+                if (self.is_in_activation_regs(cur, &bad_frame, &bad_slot)) {
+                    io::eprintfn("[vm] sweep freeing %p (htype=%d) still held by live frame %d slot r%d: mark phase missed a root",
+                                cur, (int)cur.get_type(), bad_frame, bad_slot);
                 }
             $endif
             // The node is off the live list, so .next can thread the dying list.

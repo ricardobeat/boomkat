@@ -153,14 +153,14 @@ build-asan:
     @make out/test262_runner_asan
 
 # Build the heap-verifying test262 runner (out/test262_runner_verify).
-# HEAP_VERIFY + ASan: reports a pop that leaves a heap slot in a frame, at the
-# pop rather than in the later frame that reads the stale bits.
-build-verify:
+# HEAP_VERIFY + ASan. Distinct from `build-verify`, which builds out/boomkat
+# with the same feature but no sanitizer and no test262 driver.
+build-test262-verify:
     @make out/test262_runner_verify
 
 # Run a suite under the heap verifier and fail on any [vm] report.
 # Slow (ASan + O0): scope it to a directory while iterating.
-test262-verify dir="staging/sm/Number": build-verify
+test262-verify dir="staging/sm/Number": build-test262-verify
     @bash scripts/test262_verify.sh "{{dir}}"
 
 # Build with NaN-boxing disabled (-D NONANBOX)
