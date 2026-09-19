@@ -962,6 +962,18 @@ fn void builtin_eval(BuiltinContext* ctx) {
                 // compile_eval's allow_super_call parameter.
                 if (caller_cf.is_derived_ctor()) {
                     caller_allows_super_call = true;
+                } else if (caller_cf.is_eval_fn() || caller_cf.is_arrow()) {
+                    // An eval body or an arrow is never is_derived_ctor(): it
+                    // has no [[ConstructorKind]] of its own and borrows the
+                    // enclosing derived constructor's super binding. The pair
+                    // the compiler gates `super()` on -- a super binding in
+                    // scope plus is_constructable -- was recorded on this body
+                    // when it was compiled, so re-reading it lets both
+                    // ctor > arrow > eval("super()") and a nested
+                    // eval("eval('super()')") inherit the permission instead of
+                    // being rejected for not being constructors themselves.
+                    caller_allows_super_call = caller_cf.is_constructable()
+                        && caller_cf.super_binding_name != null;
                 }
                 caller_super_is_home_object = caller_cf.super_is_home_object();
                 parent_priv_names = caller_cf.eval_private_names;
