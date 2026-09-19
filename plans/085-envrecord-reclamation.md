@@ -1,6 +1,14 @@
 # 085 — EnvRecord reclamation
 
-Status: PLANNED. Source audit: 2026-09-19, based on `48e3db4f`.
+Status: DONE. Source audit: 2026-09-19, based on `48e3db4f`.
+
+Landed in six commits (pool accounting, typed pool cells, epoch tracing and
+roots, weak variable caches, the pool sweep, and this write-up). The reclamation
+oracle `out/env_pool_stats test/env_retention_baseline.js` shows a 100k-capture
+loop holding 3 live cells in 3 blocks (6.1 KB reserved) instead of 100k cells
+across 1563 blocks (3.2 MB). Deferred work from §13 — trimming unused captured
+bindings, reducing unnecessary parent capture, pool compaction, and page-local
+marking — remains open and out of scope for this plan.
 
 ## 1. Decision and scope
 

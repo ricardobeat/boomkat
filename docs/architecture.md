@@ -470,9 +470,22 @@ environment.
 
 ### Environments
 
-A scope is an `EnvRecord`: a parent pointer, a bindings object, and two booleans
-marking whether it is declarative and whether it is a function boundary. Records
-come from a pool, since they are created and discarded constantly.
+A scope is an `EnvRecord`: a parent pointer, a bindings object, a heap pointer,
+and a one-byte flag bitstruct marking whether it is declarative, a function
+boundary, a `with` scope, a catch scope, and its GC state (allocated,
+mark epoch, temporary-root pin). Records come from a fixed-size pool of typed
+64-cell blocks.
+
+Unlike ordinary objects, an `EnvRecord` carries no reference count. The pool is
+traced by the full collector: at the start of each collection the heap flips a
+one-bit epoch, and `mark_env_chain` does a first-visit walk that stamps each
+reachable record with the current epoch and marks its bindings object. A record
+whose epoch is stale after marking is reclaimed by the pool sweep, which clears
+the cell's bytes (without touching its now-dead bindings) and relinks it onto
+the freelist; a block with no survivors is returned to the allocator, except for
+one spare kept to avoid churn. Environment allocations decrement a separate
+budget so a bounded live scope graph keeps bounded storage. A 100k-capture loop
+now holds three cells across three blocks rather than every record it created.
 
 Uninitialized `let` and `const` bindings hold a **TDZ sentinel**, encoded as
 `undefined` with a non-zero payload so it is distinguishable from real
@@ -554,7 +567,12 @@ Much of what stays alive sits outside the object graph:
 - the microtask queue, whose handler, argument, and downstream promise are held
   nowhere else until the job runs
 - constant pools and inline-cache entries of every `CompiledFunction`, which live
-  in their own tracking array rather than the GC heap
+  in their own tracking array rather than the GC heap. Property IC entries root
+  their proto object; variable IC entries hold only their key strongly, and are
+  pruned after marking reaches a fixed point rather than rooted
+- environment records, reached through each activation's scope chains, the VM's
+  global records, every cached module's environment, a catcher's saved lexical
+  scope, native scoped roots, and the internal `ENVREF` register snapshots
 - the symbol registry, the built-in string cache, and the cached well-known
   symbols
 - generator state, including the in-flight async-generator request
@@ -688,8 +706,9 @@ Reset has one extra obligation: it decrefs string and bigint values held by live
 objects *before* entering teardown mode, since bigint boxes have no list of their
 own to drain later. It then clears every pointer that could outlive the freed
 memory, including cached symbols, the megamorphic cache, generator init state,
-and the environment freelist, whose nodes hold bindings pointing into the heap
-that was just released.
+and the environment pool, whose cells hold bindings pointing into the heap that
+was just released. Pool teardown lives in `env.c3` so destroy and reset share one
+block walk.
 
 ## Builtins and modules
 

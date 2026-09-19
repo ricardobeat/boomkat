@@ -217,6 +217,12 @@ test-temproot-rss:
     @just build boomkat
     python3 scripts/check_temproot_rss.py
 
+# Check that environment records are reclaimed: a bounded capture loop must keep
+# bounded pool storage, measured through the counter harness (plans/085).
+test-env-reclaim:
+    @c3c build env_pool_stats
+    bash scripts/check_env_reclaim.sh
+
 # Run multiple Heap.reset() cycles under ASAN to verify reset boundary cleanup and cache teardown
 test-heap-reset:
     @make out/test262_runner_asan
