@@ -1217,7 +1217,7 @@ fn Heap*? create(
     h.gc_pending            = false;
     h.gc_quiescent_pending  = false;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
-    h.env_alloc_budget      = 64;
+    h.env_alloc_budget      = 1024;
     h.capi_interrupt_fn     = null;
     h.capi_interrupt_opaque = null;
     h.interrupt_budget      = INTERRUPT_BUDGET_INIT;
@@ -4240,8 +4240,11 @@ $endif
 $if $feat(GC_STRESS):
     self.env_alloc_budget = 1;
 $else
-    // The floor is one pool block (64 cells), a floor not a tuned threshold.
-    long env_floor = 64;
+    // The floor bounds floating `with`-env garbage; a cell is 32 bytes, so
+    // 1024 cells is ~32 KB. Higher than one pool block because the env budget
+    // is often the sole trigger for `with`-heavy code, and collecting per
+    // block was too aggressive (see plans/085 §13).
+    long env_floor = 1024;
     long env_by_live = (long)self.env_live_cells;
     long env_by_work = (long)self.mark_work_last / GC_MARK_WORK_DIVISOR;
     long env_budget = env_floor > env_by_live ? env_floor : env_by_live;

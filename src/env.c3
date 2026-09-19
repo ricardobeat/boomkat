@@ -86,12 +86,6 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     env.flags.mark_epoch = h.env_mark_epoch;
     h.env_alloc_count++;
     h.env_live_cells++;
-    // Every allocation, even a freelist hit, creates potential garbage. Expiry
-    // only schedules a collection; it does not collect synchronously here.
-    h.env_alloc_budget--;
-    if (h.env_alloc_budget <= 0) {
-        h.gc_pending = true;
-    }
     return env;
 }
 
@@ -287,6 +281,13 @@ fn EnvRecord*? env_create_with_object(Heap* heap, EnvRecord* parent, HObject* bi
         env.heap = heap;
         env.flags.is_declarative = false;
         env.flags.is_with = true;
+        // A `with` env allocates no bindings object, so the object budget does
+        // not see it. Charge the environment budget so repeated `with` scopes
+        // still request collections.
+        heap.env_alloc_budget--;
+        if (heap.env_alloc_budget <= 0) {
+            heap.gc_pending = true;
+        }
         return env;
     }
     return types::ALLOC_ERROR~;
