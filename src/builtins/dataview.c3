@@ -232,8 +232,15 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
     // then the detach check (step 6-7). Do NOT check detach before ToIndex.
     TVal pos_arg; pos_arg.set_undefined();
     if (ctx.argc >= 1) pos_arg = ctx.regs[ctx.base_reg];
-    uint pos = 0;
-    if (!arraybuffer_to_index(ctx, &pos_arg, &pos)) return;
+    // ToIndex's range is [0, 2^53-1] (§7.1.22), NOT the uint32 cap that
+    // arraybuffer_to_index applies for allocation sizes. A DataView index of
+    // 2^53-1 is a perfectly well-formed ToIndex result: it is the BOUNDS check
+    // below that must reject it, and on a detached buffer the step 6-7 detach
+    // check must reject it first, with a TypeError. Using the narrow variant
+    // turned any index above 2^31-1 into a RangeError during ToIndex itself,
+    // pre-empting both.
+    double pos = 0.0;
+    if (!arraybuffer_to_index_wide(ctx, &pos_arg, &pos)) return;
 
     // Detach / out-of-bounds check after ToIndex per spec step 6-7.
     if (view_is_out_of_bounds(obj)) {
@@ -248,10 +255,13 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
 
     uint elem_size = dv_elem_size(elem_class);
     uint view_len = view_effective_byte_length(obj);
-    if ((ulong)pos + (ulong)elem_size > (ulong)view_len) {
+    if (pos + (double)elem_size > (double)view_len) {
         arraybuffer_throw_range_error(ctx, "DataView getter: offset out of bounds");
         return;
     }
+    // Narrowing is safe only now: the bounds check above proved pos + elem_size
+    // fits the view, so pos is well inside uint range.
+    uint pos_u = (uint)pos;
 
     // Re-check detach: ToIndex(pos)/ToBoolean above cannot run user code that
     // detaches, but keep the check for defense-in-depth and future symmetry
@@ -261,7 +271,7 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
         return;
     }
 
-    char* p = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset + pos;
+    char* p = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset + pos_u;
     ulong raw = dv_load_raw(p, elem_size, little_endian);
 
     switch (elem_class) {
@@ -348,8 +358,9 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
 
     TVal pos_arg; pos_arg.set_undefined();
     if (ctx.argc >= 1) pos_arg = ctx.regs[ctx.base_reg];
-    uint pos = 0;
-    if (!arraybuffer_to_index(ctx, &pos_arg, &pos)) return;
+    // ToIndex range is [0, 2^53-1]; see the getter above.
+    double pos = 0.0;
+    if (!arraybuffer_to_index_wide(ctx, &pos_arg, &pos)) return;
 
     TVal val_arg; val_arg.set_undefined();
     if (ctx.argc >= 2) val_arg = ctx.regs[ctx.base_reg + 1];
@@ -417,12 +428,14 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
         return;
     }
     uint view_len = view_effective_byte_length(obj);
-    if ((ulong)pos + (ulong)elem_size > (ulong)view_len) {
+    if (pos + (double)elem_size > (double)view_len) {
         arraybuffer_throw_range_error(ctx, "DataView setter: offset out of bounds");
         return;
     }
 
-    char* p = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset + pos;
+    // Narrowing is safe only now: the bounds check above proved pos + elem_size
+    // fits the view, so pos is well inside uint range.
+    char* p = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset + (uint)pos;
     dv_store_raw(p, elem_size, raw, little_endian);
     ctx.result.set_undefined();
 }
