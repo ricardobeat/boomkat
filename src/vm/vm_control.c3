@@ -368,7 +368,10 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
         if (!hobj.is_extensible()) {
             return INITPROP_TYPE_ERROR;
         }
-        hobj.put_prop(key, *val, hobject::PROP_FLAGS_WEC, vm.heap);
+        // find_prop_idx above already proved the key absent, so enter the
+        // append path directly rather than paying for the same miss twice.
+        // get_prop_key returns an interned key, which put_prop_new requires.
+        hobj.put_prop_new(key, *val, hobject::PROP_FLAGS_WEC, vm.heap);
     }
     return INITPROP_OK;
 }

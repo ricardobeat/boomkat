@@ -1684,6 +1684,20 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
         return true;
     }
 
+    return self.put_prop_new(key, val, pflags, h);
+}
+
+// The append half of put_prop, for a key already established to be absent.
+//
+// Callers that have just run find_prop_idx() and seen a miss enter here to
+// skip a second identical lookup: on a fresh object literal every key is new,
+// so that lookup misses every time and its cost is pure repetition. The key
+// must be interned and genuinely absent; passing a present key appends a
+// duplicate the shape chain cannot describe.
+fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
+    void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
+    if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
+
     // A new integer-indexed element on an exotic array grows the dense part
     // rather than the named table. That table counts entries in a ushort, so
     // large indexed writes would silently truncate a long array past 2^16.
