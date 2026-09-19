@@ -932,7 +932,18 @@ fn void builtin_eval(BuiltinContext* ctx) {
                     // enclosing eval, inherit that recorded permission rather
                     // than mis-classifying the eval CF as global code.
                     caller_direct_eval_in_function = caller_cf.eval_allows_new_target();
-                } else if (!caller_cf.is_arrow() && !caller_cf.is_global_fn()) {
+                } else if (caller_cf.is_arrow()) {
+                    // An arrow has no [[NewTarget]] of its own and inherits the
+                    // enclosing code's, so a direct eval called from inside one
+                    // may reference new.target exactly when the arrow itself
+                    // could -- true for an arrow inside an ordinary function,
+                    // false for one written in global/module code. The compiler
+                    // recorded that verdict in eval_allows_new_target. Rejecting
+                    // every arrow caller outright, as this did before, broke the
+                    // legal function > arrow > eval("new.target") (V8 returns
+                    // the enclosing function's new.target there).
+                    caller_direct_eval_in_function = caller_cf.eval_allows_new_target();
+                } else if (!caller_cf.is_global_fn()) {
                     caller_direct_eval_in_function = true;
                 }
                 // super.x/super[x] in eval is only allowed when the calling

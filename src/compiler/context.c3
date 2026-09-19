@@ -2615,10 +2615,23 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // argument) -- is in_eval_code.
     func.flags.is_eval = self.in_eval_code;
     func.flags.eval_src_strict = self.saw_use_strict;
-    // Record whether this eval body may itself reference new.target, so a
-    // nested direct eval inside it can inherit the permission (see
+    // Record whether this body may reference new.target, so a direct eval
+    // called from it can inherit the permission (see
     // FuncFlags.eval_allows_new_target).
-    func.flags.eval_allows_new_target = self.in_eval_code && self.eval_direct_in_function;
+    //
+    // Two kinds of body need it. An EVAL body: legal exactly when the eval was
+    // direct and its call site sat in a non-arrow function. An ARROW: it has no
+    // [[NewTarget]] of its own and inherits the enclosing code's, so it may
+    // reference new.target precisely when that enclosing code could -- which is
+    // what no_new_target already tracks (true for an arrow in global/module
+    // code, false for one inside a function). Without this, the runtime saw
+    // only is_arrow() on the caller and rejected every direct eval from inside
+    // an arrow, including the legal function > arrow > eval("new.target").
+    if (self.in_eval_code) {
+        func.flags.eval_allows_new_target = self.eval_direct_in_function;
+    } else if (self.is_arrow) {
+        func.flags.eval_allows_new_target = !self.no_new_target;
+    }
     func.num_args = self.num_args;
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;
