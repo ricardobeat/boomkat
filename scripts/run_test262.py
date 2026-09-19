@@ -266,6 +266,28 @@ SKIP_FILES = {
     # token itself is no longer skipped.
     "language/arguments-object/10.6-13-a-2.js",
     "language/arguments-object/10.6-13-a-3.js",
+    # The same legacy stack walk, reached through SpiderMonkey's own suite.
+    # `Function.prototype.caller` is the function that invoked the callee and
+    # `Function.prototype.arguments` is that invocation's Arguments object;
+    # both are the optional Annex B-adjacent extension, not §15.3.5.4's
+    # restricted-property poison pill, which the engine does implement (the 21
+    # poison-pill tests pass). Implementing the walk is a decided non-goal, so
+    # these are excluded by rule rather than left failing.
+    #
+    # `.caller` — the calling function:
+    "staging/sm/regress/regress-577648-1.js",
+    "staging/sm/regress/regress-577648-2.js",
+    "staging/sm/regress/regress-584355.js",
+    "staging/sm/regress/regress-586482-1.js",
+    "staging/sm/regress/regress-586482-2.js",
+    "staging/sm/regress/regress-586482-3.js",
+    "staging/sm/regress/regress-586482-4.js",
+    "staging/sm/extensions/function-caller-skips-eval-frames.js",
+    # `.arguments` — the live Arguments object of the active invocation. Both
+    # also assert the null-outside-a-call and strict-throws halves, which the
+    # engine already gets right; only the in-call walk is missing.
+    "staging/sm/extensions/arguments-property-access-in-function.js",
+    "staging/sm/extensions/function-properties.js",
     # staging/sm/strict — SpiderMonkey's own strict-mode suite, donated to
     # test262 in 2024 and still uncurated (its front-matter is `esid: pending`).
     # Un-skipped with plans/083: sloppy and strict now coexist, so the
