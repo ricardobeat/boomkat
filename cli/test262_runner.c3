@@ -666,15 +666,24 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
         io::eprintfn("  NOTE: %d unhandled promise rejection(s)", unhandled_rejection_count);
     }
 
+    // $ERROR/$FAIL bump this counter instead of throwing. The test has already
+    // run to completion without an exception by this point, so a counter that
+    // cannot be read is a runner fault, not a test failure: say so rather than
+    // returning a bare FAIL that reads exactly like a real one.
     char[] kn = "__test262_fail";
     uint hh = hp.hash_string(kn);
     HString*? ks = hp.str_table_lookup(kn, hh);
-    if (try k = ks) {
-        TVal? tv = env::env_get(v.global_env, k);
-        if (try val = tv) {
-            return (val.get_fastint() == 0) ? 0 : 1;
-        }
+    if (catch ks) {
+        io::eprintfn("  FAIL: runner could not read %s (harness did not load)", (String)kn);
+        return 1;
     }
+    TVal? tv = env::env_get(v.global_env, ks);
+    if (catch tv) {
+        io::eprintfn("  FAIL: runner could not read %s (binding missing)", (String)kn);
+        return 1;
+    }
+    if (tv.get_fastint() == 0) return 0;
+    io::eprintfn("  FAIL: test called $ERROR/$FAIL %d time(s)", tv.get_fastint());
     return 1;
 }
 
