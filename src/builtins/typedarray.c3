@@ -1863,12 +1863,17 @@ fn HObject* ta_species_create(BuiltinContext* ctx, HObject* exemplar, uint count
         return ta_alloc_same_class_from(ctx, exemplar, count);
     }
 
-    // Step 3: constructor must be an Object.
-    if (!ctor_val.is_object() || ctor_val.get_heapptr() == null) {
+    // Step 3: constructor must be an Object (§7.3.22 SpeciesConstructor step 2).
+    // A builtin function is a LIGHTFUNC rather than a heap object, but it is
+    // still an Object to the language (`typeof` says "function", and it answers
+    // `instanceof Object`), so it satisfies this step and its @@species -- which
+    // is simply absent, sending step 5 down the default path -- must be read
+    // rather than rejected here. Only a genuine non-object throws.
+    bool ctor_is_lightfunc = ctor_val.is_lightfunc();
+    if (!ctor_is_lightfunc && (!ctor_val.is_object() || ctor_val.get_heapptr() == null)) {
         arraybuffer_throw_type_error(ctx, "TypedArray species: constructor is not an object");
         return null;
     }
-    HObject* c_obj = (HObject*)ctor_val.get_heapptr();
 
     // Step 4: Get constructor[@@species].
     HString* species_sym = ensure_species_symbol(heap);
@@ -1878,11 +1883,19 @@ fn HObject* ta_species_create(BuiltinContext* ctx, HObject* exemplar, uint count
     }
 
     TVal species_val;
-    if (try s = builtins_generic_get(c_obj, species_sym, ctx)) {
-        species_val = s;
-        if (ctx.should_throw) return null;
+    if (ctor_is_lightfunc) {
+        // A lightfunc carries no own properties and its prototype chain
+        // (Function.prototype) defines no @@species, so the Get is undefined by
+        // construction and step 5 takes the default path.
+        species_val.set_undefined();
     } else {
-        return null;
+        HObject* c_obj = (HObject*)ctor_val.get_heapptr();
+        if (try s = builtins_generic_get(c_obj, species_sym, ctx)) {
+            species_val = s;
+            if (ctx.should_throw) return null;
+        } else {
+            return null;
+        }
     }
 
     // Step 5: If species is null or undefined, use default.
