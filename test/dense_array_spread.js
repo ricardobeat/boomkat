@@ -9,6 +9,8 @@ var source = [1, 'dynamic' + 2, object, symbol, null, true];
 same([0, ...source, 9], [0, 1, 'dynamic2', object, symbol, null, true, 9], 'array');
 same(args(0, ...source, 9, ...source), [0].concat(source, [9], source), 'arguments');
 same([...[], 1, ...[]], [1], 'empty');
+same(args(...[object, 2, 3, symbol, 5, 6, 7, 8]),
+    [object, 2, 3, symbol, 5, 6, 7, 8], 'temporary array source');
 var many = [];
 for (var i = 0; i < 3000; i++) many.push({value: i});
 var copied = args(...many);

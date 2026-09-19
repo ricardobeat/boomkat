@@ -461,3 +461,26 @@ not implemented gains:
   order relative to later substitutions.
 
 Disassembly is in /tmp/boomkat-spread2{,-template,-destructuring}.bytecode.
+
+## Experiment 6: elide intrinsic spread iterator creation
+
+After resolving Symbol.iterator, dense arrays whose factory and iterator
+prototype next method are intrinsic copy directly without creating an iterator.
+Custom factories and observable next lookups retain iterator creation. Both
+paths share the destination-copy helpers. Argument copies retain their source
+explicitly because the bytecode's argument range can overwrite its register.
+
+Five interleaved diagnostic runs against af94b9b7 give median array-spread
+subcase times of 75ms baseline, 68ms candidate, and 60ms QuickJS. Call spread
+measures 27ms, 21ms, and 32ms respectively: another 22% reduction in call-spread
+time, with the candidate taking 66% of QuickJS's time in that subcase.
+
+A separate five-run whole-process comparison gives 0.3110s baseline and
+0.3001s candidate for spread/rest (3.5% lower). A three-run ES6 sweep suggested
+a 3.7% class regression; five additional interleaved class runs narrowed it to
+1.0376s versus 1.0441s (0.6%). No aggregate gain is claimed from the noisy sweep.
+
+Validation: 439 local scripts and fixture groups, 42 Rosetta cases, and 306
+passing targeted test262 cases with three scope skips. Fresh ASAN GC-stress
+builds pass dense_array_spread, including an inline temporary source array,
+and temproot_gc_lifetime.

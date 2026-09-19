@@ -15,39 +15,59 @@ import std::math;
 // Object and array creation, spreads, and iterators
 // ============================================================================
 
-// A completed iterator lookup may still expose a custom next method or a
-// sparse/accessor-backed array. Only a dense intrinsic values iterator can
-// drain without executing user code between elements.
-fn HObject* dense_spread_source(Vm* vm, TVal iterator, HObject** iter_out) {
-    HObject* it = (HObject*)iterator.get_heapptr();
-    if (it.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR
-        || it.flags.exotic_proxyobj || (*it.extra_ptr()).iter.kind != 0) return null;
+fn bool spread_builtin(TVal method, builtins::Builtin expected) {
+    if (!method.is_object()) return false;
+    HObject* fn_obj = (HObject*)method.get_heapptr();
+    return fn_obj != null && fn_obj.is_callable()
+        && fn_obj.callable_kind() == hobject::CallableKind.BUILTIN_FN
+        && (*fn_obj.extra_ptr()).func.builtin_fn_index == (int)expected.ordinal;
+}
+
+// Reading a data descriptor is unobservable. Accessors and proxy prototypes
+// require a real iterator receiver and the generic protocol.
+fn bool spread_intrinsic_next(Vm* vm, HObject* it) {
+    if (it == null) return false;
     HObject* cur = it;
     uint depth = 0;
     while (cur != null) {
-        if (cur.flags.exotic_proxyobj || depth++ >= hobject::MAX_PROTO_DEPTH) return null;
+        if (cur.flags.exotic_proxyobj || depth++ >= hobject::MAX_PROTO_DEPTH) return false;
         cur = cur.prototype;
     }
     HString* key = intern_string(vm, "next");
     hobject::PropLookupResult next = it.get_prop_or_accessor_proto(key, true, vm.heap);
-    if (next.kind != hobject::PropLookupKind.PROP_DATA || !next.data_val.is_object()) return null;
-    HObject* fn_obj = (HObject*)next.data_val.get_heapptr();
-    if (fn_obj == null || !fn_obj.is_callable()
-        || fn_obj.callable_kind() != hobject::CallableKind.BUILTIN_FN
-        || (*fn_obj.extra_ptr()).func.builtin_fn_index
-           != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal) return null;
-    HObject* source = (*it.extra_ptr()).iter.target;
+    return next.kind == hobject::PropLookupKind.PROP_DATA
+        && spread_builtin(next.data_val, builtins::Builtin.ARRAY_ITERATOR_NEXT);
+}
+
+fn bool spread_dense_range(HObject* source, uint start) {
     if (source == null || source.flags.obj_class != hobject::ObjClass.ARRAY
-        || source.flags.exotic_proxyobj) return null;
+        || source.flags.exotic_proxyobj) return false;
     uint len = *source.array_len_ptr();
-    uint start = (*it.extra_ptr()).iter.index;
-    if (start > len || len > source.array_size) return null;
+    if (start > len || len > source.array_size) return false;
     TVal* values = source.array_part();
     for (uint i = start; i < len; i++) {
-        // Undefined is also the dense-hole sentinel; the generic path resolves
-        // its own descriptor or an inherited indexed property.
-        if (values[i].is_undefined()) return null;
+        // Undefined also denotes a dense hole, whose read may invoke a getter.
+        if (values[i].is_undefined()) return false;
     }
+    return true;
+}
+
+fn HObject* direct_spread_source(Vm* vm, TVal source, TVal method) {
+    if (!source.is_object() || !spread_builtin(method, builtins::Builtin.ARRAY_PROTO_VALUES)) return null;
+    HObject* obj = (HObject*)source.get_heapptr();
+    if (!spread_dense_range(obj, 0) || !spread_intrinsic_next(vm, vm.heap.array_iterator_proto)) return null;
+    return obj;
+}
+
+// Custom factories can expose a partially consumed iterator. It must retain
+// the same index and exhaustion state as repeated intrinsic next calls.
+fn HObject* dense_spread_source(Vm* vm, TVal iterator, HObject** iter_out) {
+    HObject* it = (HObject*)iterator.get_heapptr();
+    if (it.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR
+        || it.flags.exotic_proxyobj || (*it.extra_ptr()).iter.kind != 0
+        || !spread_intrinsic_next(vm, it)) return null;
+    HObject* source = (*it.extra_ptr()).iter.target;
+    if (!spread_dense_range(source, (*it.extra_ptr()).iter.index)) return null;
     *iter_out = it;
     return source;
 }
@@ -56,6 +76,52 @@ fn void finish_dense_spread(Vm* vm, HObject* it, uint end) {
     (*it.extra_ptr()).iter.index = end;
     vm.heap.decref((HeapHeader*)(*it.extra_ptr()).iter.target);
     (*it.extra_ptr()).iter.target = null;
+}
+
+fn bool copy_spread_array(Dispatch* ds, HObject* target, long index,
+                          HObject* source, uint start, uint count_reg) {
+    uint count = *source.array_len_ptr() - start;
+    ulong needed = (ulong)index + count;
+    if (source == target || index < 0 || needed >= 0x80000000) return false;
+    if (needed > target.array_size) target.grow_array((uint)needed, ds.vm.heap);
+    if (needed > target.array_size) return false;
+    for (uint i = 0; i < count; i++) {
+        target.set_array_idx((uint)index + i, source.array_part()[start + i], ds.vm.heap);
+    }
+    if (needed > *target.array_len_ptr()) {
+        *target.array_len_ptr() = (uint)needed;
+        target.sync_named_length(ds.vm.heap);
+    }
+    ds.regs_base = ds.act.bottom;
+    (ds.regs_base + count_reg).set_fastint((long)needed);
+    return true;
+}
+
+fn bool copy_spread_args(Dispatch* ds, HObject* source, uint start,
+                         uint first_arg, uint count_reg) {
+    Vm* vm = ds.vm;
+    ds.regs_base = ds.act.bottom;
+    TVal* count_slot = ds.regs_base + count_reg;
+    uint base_off = count_slot.is_fastint() ? (uint)count_slot.get_fastint()
+        : (count_slot.is_number() ? (uint)count_slot.get_number() : 0);
+    uint dest_start = first_arg + base_off;
+    uint count = *source.array_len_ptr() - start;
+    ulong needed = (ulong)(ds.regs_base - vm.valstack) + dest_start + count;
+    if (needed >= 0x80000000 || !ensure_valstack(vm, (uint)needed)) return false;
+    // The argument range can overwrite the register holding the source.
+    // Retain it until every element has acquired its destination reference.
+    ((HeapHeader*)source).incref();
+    defer vm.heap.decref((HeapHeader*)source);
+    ds.regs_base = ds.act.bottom;
+    for (uint i = 0; i < count; i++) {
+        TVal* dest = ds.regs_base + dest_start + i;
+        vm.heap.tval_copy_ref(dest, &source.array_part()[start + i]);
+        track_heap_store(ds.act, dest, dest_start + i);
+    }
+    TVal* top = ds.regs_base + dest_start + count;
+    if (top > vm.valstack_top) vm.valstack_top = top;
+    (ds.regs_base + count_reg).set_fastint((long)base_off + count);
+    return true;
 }
 
 // Result of copy_data_property: whether the caller's enumeration loop
@@ -663,6 +729,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 return (TVal){};
             }
 
+            if (HObject* source = direct_spread_source(vm, src_tv, iter_method)) {
+                if (copy_spread_array(ds, target, idx, source, 0, insn.b)) return (TVal){};
+            }
+
             // Call @@iterator() with this = source
             TVal iterator = vm.heap.call_fn(vm, iter_method, null, 0, src_tv);
             if (vm.has_error) {
@@ -685,25 +755,9 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
             HObject* dense_iter;
             if (HObject* source = dense_spread_source(vm, iterator, &dense_iter)) {
-                uint end = *source.array_len_ptr();
-                uint start = (*dense_iter.extra_ptr()).iter.index;
-                uint count = end - start;
-                ulong needed = (ulong)idx + (ulong)count;
-                if (source != target && idx >= 0 && needed < 0x80000000) {
-                    if (needed > target.array_size) target.grow_array((uint)needed, vm.heap);
-                    if (needed <= target.array_size) {
-                        for (uint i = 0; i < count; i++) {
-                            target.set_array_idx((uint)idx + i, source.array_part()[start + i], vm.heap);
-                        }
-                        if (needed > *target.array_len_ptr()) {
-                            *target.array_len_ptr() = (uint)needed;
-                            target.sync_named_length(vm.heap);
-                        }
-                        finish_dense_spread(vm, dense_iter, end);
-                        ds.regs_base = ds.act.bottom;
-                        (ds.regs_base + (uint)insn.b).set_fastint((long)needed);
-                        return (TVal){};
-                    }
+                if (copy_spread_array(ds, target, idx, source, (*dense_iter.extra_ptr()).iter.index, insn.b)) {
+                    finish_dense_spread(vm, dense_iter, *source.array_len_ptr());
+                    return (TVal){};
                 }
             }
 
@@ -894,6 +948,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 return (TVal){};
             }
 
+            if (HObject* source = direct_spread_source(vm, src_tv, iter_method)) {
+                if (copy_spread_args(ds, source, 0, insn.a, insn.b)) return (TVal){};
+            }
+
             // Call @@iterator() with this = source
             TVal iterator = vm.heap.call_fn(vm, iter_method, null, 0, src_tv);
             ds.regs_base = ds.act.bottom;
@@ -926,21 +984,8 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
             HObject* dense_iter;
             if (HObject* source = dense_spread_source(vm, iterator, &dense_iter)) {
-                uint end = *source.array_len_ptr();
-                uint start = (*dense_iter.extra_ptr()).iter.index;
-                uint count = end - start;
-                ulong needed = (ulong)(ds.regs_base - vm.valstack) + dest_start + count;
-                if (needed < 0x80000000 && ensure_valstack(vm, (uint)needed)) {
-                    ds.regs_base = ds.act.bottom;
-                    for (uint i = 0; i < count; i++) {
-                        TVal* dest = ds.regs_base + dest_start + i;
-                        vm.heap.tval_copy_ref(dest, &source.array_part()[start + i]);
-                        track_heap_store(ds.act, dest, dest_start + i);
-                    }
-                    TVal* top = ds.regs_base + dest_start + count;
-                    if (top > vm.valstack_top) vm.valstack_top = top;
-                    finish_dense_spread(vm, dense_iter, end);
-                    (ds.regs_base + count_reg).set_fastint((long)base_off + count);
+                if (copy_spread_args(ds, source, (*dense_iter.extra_ptr()).iter.index, insn.a, insn.b)) {
+                    finish_dense_spread(vm, dense_iter, *source.array_len_ptr());
                     return (TVal){};
                 }
             }

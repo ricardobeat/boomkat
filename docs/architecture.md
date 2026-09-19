@@ -252,12 +252,16 @@ afterwards.
 
 ### Array and call spread
 
-`ARRSPRD` and `SPREAD_ARG` invoke `Symbol.iterator` before selecting a fast
-path. An intrinsic array-values iterator with an ordinary data `next` method
-and a dense remaining range can drain without per-element calls or iterator
-result objects. Destination storage is reserved once, and each copied value
+`ARRSPRD` and `SPREAD_ARG` resolve `Symbol.iterator` before selecting a fast
+path. Dense arrays with the intrinsic values factory and an ordinary intrinsic
+`next` method on the array iterator prototype copy directly without creating
+an iterator. Custom factories run normally; an intrinsic array-values iterator
+they return can also drain its dense remaining range without per-element calls
+or iterator result objects. Destination storage is reserved once, and each copied value
 acquires the reference its destination owns. Call spread refreshes register
 pointers after stack growth and extends the stack watermark over its arguments.
+It retains the source while copying because argument slots can overwrite the
+register that owns the source array.
 
 The guard rejects proxy iterator prototypes, custom next methods, and dense
 holes, including the undefined sentinel. These take the generic iterator path,
