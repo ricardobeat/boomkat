@@ -148,7 +148,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                         vm_complete_gen_on_unwind(vm, popping);
                         clear_borrowed_callee_slot(popping);
                         free_catcher_chain(vm, popping);
-                        vm.activation_count--;
+                        vm_pop_activation(vm, popping, "throw_unwind", true);
                     }
                     // Restore the valstack_bottom for the target activation
                     vm.valstack_bottom = search_act.bottom;
@@ -179,7 +179,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                         vm_complete_gen_on_unwind(vm, popping);
                         clear_borrowed_callee_slot(popping);
                         free_catcher_chain(vm, popping);
-                        vm.activation_count--;
+                        vm_pop_activation(vm, popping, "throw_unwind", true);
                     }
                     vm.valstack_bottom = search_act.bottom;
                     if (search_act.func != null) {
@@ -218,14 +218,17 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                 vm_complete_gen_on_unwind(vm, popping);
                 clear_borrowed_callee_slot(popping);
                 free_catcher_chain(vm, popping);
-                vm.activation_count--;
+                vm_pop_activation(vm, popping, "throw_unwind_async", true);
             }
             if (search_act.async_gen_state != null
                 && vm.heap.resume_gen == search_act.async_gen_state) {
                 vm.heap.resume_gen = null;
             }
             decref_callee_regs(vm, search_act);
-            if (vm.activation_count > 0) vm.activation_count--;  // pop the async frame
+            // Registers already released just above; pop the async frame itself.
+            if (vm.activation_count > 0) {
+                vm_pop_activation(vm, search_act, "throw_async_frame", true);
+            }
 
             builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &thrown_val, vm.heap);
             builtins::promise_trigger_reactions(prom, vm.heap, (void*)vm);

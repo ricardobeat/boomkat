@@ -7,6 +7,8 @@ import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::env;
 import boomkat::builtins;
+import std::io;
+import std::core::sanitizer;
 
 // ============================================================================
 // GC activation marking
@@ -700,6 +702,69 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
         vm.heap.decref_tval(&regs[i]);
         regs[i].set_undefined();
     }
+}
+
+// Verify that a frame about to be popped leaves no heap bits behind.
+//
+// vm_mark_activations deliberately over-scans past a frame's registers (see
+// the comment there), which is sound only while every pop clears what it
+// owned. A pop that forgets is not a leak: the next frame that lands on this
+// valstack address hands the mark phase a pointer into reclaimed memory and
+// reads the stale bits as one of its own registers. The visible symptom is a
+// register dispatched as a callee -- "<typeof> is not a function" -- three
+// frames away from the pop that caused it.
+//
+// Compiled out unless built with -D HEAP_VERIFY. asan::address_is_poisoned is
+// itself a compile-time `false` without ASAN, so a HEAP_VERIFY build without
+// ASAN still checks the cheap half (a non-null heap slot above the watermark).
+fn void assert_frame_clear(Vm* vm, Activation* act, ZString where) {
+$if $feat(HEAP_VERIFY):
+    if (act.func == null || act.bottom == null) return;
+    CompiledFunction* cf = (CompiledFunction*)act.func;
+    uint nregs = cf.num_regs;
+    TVal* regs = act.bottom;
+    for (uint i = 0; i < nregs; i++) {
+        if (!regs[i].is_heap_allocated()) continue;
+        void* ptr = regs[i].get_heapptr();
+        if (ptr == null) continue;
+        io::eprintfn("[vm] pop at %s left heap slot r%d (%p)%s", where.str_view(), i, ptr,
+            sanitizer::asan::address_is_poisoned(ptr) ? " POISONED" : "");
+    }
+$endif
+}
+
+// The one way to pop an activation.
+//
+// Clearing a frame's registers and popping it are a single operation: they are
+// separate statements at 26 sites today, and the ones that drift are the
+// unwind paths, which are exactly the paths least covered by tests.
+//
+// `already_cleared` marks the two cases where a frame must NOT sweep its own
+// registers:
+//   - the RET fast path, which proves heap_reg_count == 0 first;
+//   - a frame unwound by a throw. Callee frames overlap the caller's register
+//     window (sliding-window calls), so the surviving catcher frame's own
+//     later sweep owns that shared region. That is why
+//     clear_borrowed_callee_slot neutralizes the borrowed slot for "a later
+//     decref_callee_regs sweep of that caller frame" instead of releasing it
+//     during the unwind. Sweeping per-unwound-frame double-releases the
+//     overlap: it costs 1-2 intermittent failures in built-ins/Iterator's
+//     iterator-close tests, visible only under parallel workers because the
+//     refcount underflow lands in a later test in the same worker.
+//
+// The contract is the invariant vm_mark_activations relies on, and it is live
+// in the shipping build: these targets compile at -O2 without --safe=no, where
+// C3 keeps @require as a runtime assert.
+<*
+ @require vm.activation_count > 0 : "pop with no activation on the stack"
+*>
+fn void vm_pop_activation(Vm* vm, Activation* act, ZString where, bool already_cleared = false) @inline {
+    if (!already_cleared) {
+        free_catcher_chain(vm, act);
+        decref_callee_regs(vm, act);
+    }
+    assert_frame_clear(vm, act, where);
+    vm.activation_count--;
 }
 
 // val: the return value (or undefined for RETUNDEF)
