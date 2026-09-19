@@ -1259,8 +1259,19 @@ fn bool ta_reject_immutable(BuiltinContext* ctx, HObject* view, char[] method) {
 }
 
 fn void builtin_ta_proto_set(BuiltinContext* ctx) {
-    HObject* dst = ta_validate(ctx);
-    if (dst == null) return;
+    // §23.2.3.26 step 2 is RequireInternalSlot([[TypedArrayName]]), NOT
+    // ValidateTypedArray: `set` does not reject a detached or out-of-bounds
+    // target on entry. The buffer check belongs after ToIntegerOrInfinity on
+    // the offset (step 5, below), because the offset's valueOf runs first and
+    // may itself throw, or detach the buffer. Calling ta_validate here reported
+    // that detached buffer before the offset was ever coerced, so a throwing
+    // valueOf never ran. QuickJS orders it the same way: js_typed_array_set
+    // skips validate_typed_array, unlike the iterator methods beside it.
+    HObject* dst = ta_this_receiver(ctx);
+    if (dst == null) {
+        arraybuffer_throw_type_error(ctx, "TypedArray method called on incompatible receiver");
+        return;
+    }
     if (ta_reject_immutable(ctx, dst, "%TypedArray%.prototype.set")) return;
     Heap* heap = ctx.heap;
 
