@@ -13,50 +13,85 @@ import boomkat::heap;
 // EnvRecord pool
 // ============================================================================
 
-// Header of an EnvPoolBlock. Blocks link through `next` so Heap teardown
-// can free all blocks.
-struct EnvPoolBlock { void* next; }
-
 const uint ENV_POOL_BLOCK_SIZE = 64;
 
-// Allocates an EnvRecord from the heap pool.
-fn EnvRecord*? env_pool_alloc(Heap* h) {
-    if (h.env_freelist != null) {
-        EnvRecord* env = (EnvRecord*)h.env_freelist;
-        h.env_freelist = env.parent;
-        mem::clear(env, (sz)(EnvRecord::size));
-        h.env_alloc_count++;
-        h.env_live_cells++;
-        return env;
-    }
-
-    usz block_sz = EnvPoolBlock::size + EnvRecord::size * ENV_POOL_BLOCK_SIZE;
-    void* raw = h.alloc_func(h.heap_udata, block_sz);
-    if (raw == null) return null;
-    mem::clear(raw, (sz)(block_sz));
-
-    EnvPoolBlock* block = (EnvPoolBlock*)raw;
-    block.next = h.env_pool_blocks;
-    h.env_pool_blocks = block;
-    h.env_block_count++;
-    h.env_bytes_reserved += block_sz;
-    if (h.env_bytes_reserved > h.env_peak_bytes_reserved) {
-        h.env_peak_bytes_reserved = h.env_bytes_reserved;
-    }
-
-    char* base = (char*)raw + EnvPoolBlock::size;
-    for (uint i = 1; i < ENV_POOL_BLOCK_SIZE; i++) {
-        EnvRecord* e = (EnvRecord*)(base + i * EnvRecord::size);
-        e.parent = (EnvRecord*)h.env_freelist;
-        h.env_freelist = e;
-    }
-
-    h.env_alloc_count++;
-    h.env_live_cells++;
-    return (EnvRecord*)base;
+// Semantic and GC state packed into one byte. `allocated` separates a live
+// cell from a freelist link (only `parent` is meaningful on a free cell);
+// `mark_epoch` records the collection epoch that last traced the cell; and
+// `temproot` pins a freshly allocated cell until a quiescent safepoint, the
+// same contract as the object temproot flag.
+bitstruct EnvFlags : char {
+    bool is_declarative    : 0;
+    bool is_function_scope : 1;
+    bool is_with           : 2;
+    bool is_catch          : 3;
+    bool allocated         : 4;
+    bool mark_epoch        : 5;
+    bool temproot          : 6;
 }
 
-// Returns an EnvRecord to the heap pool freelist.
+// One link in the scope chain. `bindings` holds the binding key-value pairs;
+// `parent` links the enclosing scope, or doubles as the pool freelist link on
+// an unallocated cell.
+struct EnvRecord {
+    // Parent scope (null for the global scope).
+    EnvRecord* parent;
+    // Object holding binding key-value pairs.
+    HObject* bindings;
+    EnvFlags flags;
+    // Owning heap for bindings and property operations.
+    Heap* heap;
+}
+
+// A pool block holds ENV_POOL_BLOCK_SIZE records plus a link to the next
+// block, so Heap teardown can walk and free every block from the head.
+struct EnvPoolBlock {
+    EnvPoolBlock* next;
+    EnvRecord[ENV_POOL_BLOCK_SIZE] cells;
+}
+
+// Allocates an EnvRecord from the heap pool. The returned cell is zeroed,
+// marked allocated, pinned as a temporary root, and stamped with the heap's
+// current epoch; callers set parent, bindings, heap, and semantic flags.
+fn EnvRecord*? env_pool_alloc(Heap* h) {
+    EnvRecord* env;
+    if (h.env_freelist != null) {
+        env = (EnvRecord*)h.env_freelist;
+        h.env_freelist = env.parent;
+        mem::clear(env, (sz)(EnvRecord::size));
+    } else {
+        usz block_sz = EnvPoolBlock::size;
+        void* raw = h.alloc_func(h.heap_udata, block_sz);
+        if (raw == null) return null;
+        mem::clear(raw, (sz)(block_sz));
+
+        EnvPoolBlock* block = (EnvPoolBlock*)raw;
+        block.next = h.env_pool_blocks;
+        h.env_pool_blocks = block;
+        h.env_block_count++;
+        h.env_bytes_reserved += block_sz;
+        if (h.env_bytes_reserved > h.env_peak_bytes_reserved) {
+            h.env_peak_bytes_reserved = h.env_bytes_reserved;
+        }
+
+        for (uint i = 1; i < ENV_POOL_BLOCK_SIZE; i++) {
+            EnvRecord* e = &block.cells[i];
+            e.parent = (EnvRecord*)h.env_freelist;
+            h.env_freelist = e;
+        }
+        env = &block.cells[0];
+    }
+    env.flags.allocated = true;
+    env.flags.temproot = true;
+    env.flags.mark_epoch = h.env_mark_epoch;
+    h.env_alloc_count++;
+    h.env_live_cells++;
+    return env;
+}
+
+// Returns an unpublished EnvRecord to the pool freelist. Only usable for a cell
+// no caller has published; a published cell is reclaimed only by the
+// environment sweep. Clearing the cell also clears its allocated bit.
 fn void env_pool_free(Heap* h, EnvRecord* env) {
     if (env == null) return;
     mem::clear(env, (sz)(EnvRecord::size));
@@ -65,31 +100,22 @@ fn void env_pool_free(Heap* h, EnvRecord* env) {
     if (h.env_live_cells > 0) { h.env_live_cells--; }
 }
 
-// ============================================================================
-// EnvRecord, one link in the scope chain
-// ============================================================================
-
-struct EnvRecord {
-    // Parent scope (null for the global scope).
-    EnvRecord* parent;
-    // Object holding binding key-value pairs.
-    HObject* bindings;
-    // True for declarative environments, false for object environments.
-    bool is_declarative;
-    // Function call boundary: var-scope writes do not propagate past this link.
-    bool is_function_scope;
-    // `with`-statement environment: lookups walk the bindings object's
-    // prototype chain (ES5 §10.2.1.2.1), and unresolved assignments fall
-    // through to the enclosing scope rather than landing on the with object.
-    bool is_with;
-    // Catch-parameter environment: holds a Catch clause's parameter bindings
-    // (plain or destructured). Only the sloppy-eval var-collision gate reads
-    // it: sec-variablestatements-in-catch-blocks exempts a colliding catch
-    // env from the §18.2.1.2 step 5.4 SyntaxError, so eval("var x") inside
-    // catch (x) binds in the var env instead of throwing.
-    bool is_catch;
-    // Owning heap for bindings and property operations.
-    Heap* heap;
+// Frees every pool block and resets the pool accounting. Shared by Heap
+// destroy and reset so block layout knowledge lives here alone.
+fn void env_pool_teardown(Heap* h) {
+    EnvPoolBlock* b = (EnvPoolBlock*)h.env_pool_blocks;
+    while (b != null) {
+        EnvPoolBlock* next = b.next;
+        h.free_func(h.heap_udata, (void*)b);
+        b = next;
+    }
+    h.env_pool_blocks = null;
+    h.env_freelist = null;
+    h.env_alloc_count = 0;
+    h.env_live_cells = 0;
+    h.env_block_count = 0;
+    h.env_bytes_reserved = 0;
+    h.env_peak_bytes_reserved = 0;
 }
 
 // ============================================================================
@@ -102,8 +128,8 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
     if (try env = raw) {
         env.parent = parent;
         env.heap = heap;
-        env.is_declarative = false;
-        env.is_function_scope = true;
+        env.flags.is_declarative = false;
+        env.flags.is_function_scope = true;
         HObject*? bindings = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = bindings) {
             env_pool_free(heap, env);
@@ -121,7 +147,7 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
     if (try env = raw) {
         env.parent = parent;
         env.heap = heap;
-        env.is_declarative = false;
+        env.flags.is_declarative = false;
 
         HObject*? bindings = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = bindings) {
@@ -140,7 +166,7 @@ fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
     if (try env = raw) {
         env.parent = parent;
         env.heap = heap;
-        env.is_declarative = true;
+        env.flags.is_declarative = true;
 
         HObject*? bindings = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = bindings) {
@@ -166,21 +192,11 @@ fn EnvRecord*? env_create_with_object(Heap* heap, EnvRecord* parent, HObject* bi
         env.parent = parent;
         env.bindings = bindings;
         env.heap = heap;
-        env.is_declarative = false;
-        env.is_with = true;
+        env.flags.is_declarative = false;
+        env.flags.is_with = true;
         return env;
     }
     return types::ALLOC_ERROR~;
-}
-
-// Iteratively returns an environment record and its parent chain to the pool.
-fn void env_destroy(Heap* heap, EnvRecord* env) {
-    EnvRecord* cur = env;
-    while (cur != null) {
-        EnvRecord* next = cur.parent;
-        env_pool_free(heap, cur);
-        cur = next;
-    }
 }
 
 // ============================================================================
@@ -275,7 +291,7 @@ fn TVal? env_get(EnvRecord* env, void* key) {
     Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        if (cur.is_with) {
+        if (cur.flags.is_with) {
             TVal? result = cur.bindings.get_prop_proto(key, h);
             if (try v = result) {
                 // HasBinding step 6-9: a true @@unscopables entry hides it.
@@ -301,7 +317,7 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
     Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        bool found = cur.is_with
+        bool found = cur.flags.is_with
                      ? (cur.bindings.has_prop_proto(key, h)
                         && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.has_prop(key, h);
@@ -330,14 +346,14 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
     EnvRecord* cur = env;
     EnvRecord* first_non_with = null;
     while (cur != null) {
-        bool found = cur.is_with
+        bool found = cur.flags.is_with
                      ? (cur.bindings.has_prop_proto(key, h)
                         && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.find_prop_idx(key, h) >= 0;
         if (found) {
             return cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
         }
-        if (!cur.is_with && first_non_with == null) {
+        if (!cur.flags.is_with && first_non_with == null) {
             first_non_with = cur;
         }
         cur = cur.parent;
@@ -518,7 +534,7 @@ fn bool env_has_lex(EnvRecord* lex_env, void* key) @inline {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
-        bool found = cur.is_with
+        bool found = cur.flags.is_with
                      ? (cur.bindings.has_prop_proto(key, h)
                         && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.has_prop(key, h);
@@ -584,7 +600,7 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
-        if (cur.is_with) {
+        if (cur.flags.is_with) {
             bool first_has = cur.bindings.has_prop_proto(key, h);
             if (h.has_error) return 0;
             if (!first_has) {
@@ -632,7 +648,7 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
                 // `Object.defineProperty(this, "foo", {writable: false})` is
                 // silently dropped). -4 already carries exactly that
                 // strict-throws/sloppy-drops rule.
-                if (!cur.is_declarative) return -4;
+                if (!cur.flags.is_declarative) return -4;
                 return cur.bindings.get_prop_flags((uint)idx, h).immut_nonstrict ? -4 : -1;
             }
             if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }

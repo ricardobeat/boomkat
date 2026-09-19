@@ -1183,7 +1183,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
             while (walker != null) {
                 if (walker == var_env_for_eval) break;
                 bool is_global_obj = walker == ctx.global_env;
-                if (!walker.is_with && !walker.is_catch && walker.bindings != null && !is_global_obj) {
+                if (!walker.flags.is_with && !walker.flags.is_catch && walker.bindings != null && !is_global_obj) {
                     for (uint vi = 0; vi < func.eval_var_count; vi++) {
                         TVal nv = func.constants[func.eval_var_idxs[vi]];
                         if (nv.is_string()

@@ -44,6 +44,13 @@ fn void* env_record_parent(void* env_ptr) {
     return (void*)((env::EnvRecord*)env_ptr).parent;
 }
 
+// Free every environment pool block and reset the pool accounting. heap.c3
+// owns the pool but cannot see EnvPoolBlock, so destroy and reset route the
+// teardown through here.
+fn void env_pool_teardown(heap::Heap* h) {
+    env::env_pool_teardown(h);
+}
+
 // ============================================================================
 // Constants
 // ============================================================================

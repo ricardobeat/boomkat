@@ -72,7 +72,7 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
                                    CompiledFunction* target, EnvRecord* var_env) {
     EnvRecord* base = var_env;
     EnvRecord* cap_lex = (*func_obj.extra_ptr()).func.lex_env;
-    if (cap_lex != null && cap_lex != var_env && cap_lex.is_declarative) {
+    if (cap_lex != null && cap_lex != var_env && cap_lex.flags.is_declarative) {
         // The closure was created inside a PUSH_LEX block (or a class body), so
         // its lexical bindings live in `cap_lex`. When the callee owns a fresh
         // function scope of its own, since needs_env is set: it declares `arguments`,
@@ -101,7 +101,7 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
         // first and falls back to var_env (`var_env` → `own_var_env`), so both
         // the block/class lexicals and the captured parameters remain visible.
         EnvRecord* own_var_env = (*func_obj.extra_ptr()).func.var_env;
-        bool splice = var_env.is_function_scope
+        bool splice = var_env.flags.is_function_scope
             && var_env != own_var_env
             && !target.needs_lex_bridge();
         bool cap_reaches_own = false;
@@ -4501,7 +4501,7 @@ fn TVal? Vm.run(Vm* vm) {
                     int owner_idx = -1;
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
-                        if (cur.is_with) {
+                        if (cur.flags.is_with) {
                             if (cur.bindings.has_prop_proto(key, vm.heap)) {
                                 // Mark found but do not populate IC (the
                                 // prototype-chain hit is too dynamic to cache
@@ -4521,7 +4521,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (owner == null && ds.act.lex_env != ds.act.var_env) {
                         cur = ds.act.var_env;
                         while (cur != null) {
-                            if (cur.is_with) {
+                            if (cur.flags.is_with) {
                                 if (cur.bindings.has_prop_proto(key, vm.heap)) {
                                     owner = cur;
                                     owner_idx = 0;
@@ -4537,7 +4537,7 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     // Only populate the IC for an own-property hit, never for
                     // a with-env prototype walk.
-                    bool owner_is_own = owner != null && !owner.is_with;
+                    bool owner_is_own = owner != null && !owner.flags.is_with;
                     found = owner != null;
                     if (found && owner_is_own && ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
@@ -4634,7 +4634,7 @@ fn TVal? Vm.run(Vm* vm) {
                     EnvRecord* cur = ds.act.lex_env;
                     bool threw_pending = false;
                     while (cur != null) {
-                        if (cur.is_with) {
+                        if (cur.flags.is_with) {
                             // HasProperty first (§9.1.1.2.1 step 2): only read
                             // @@unscopables on a hit, otherwise the getter is
                             // observable for missing bindings
@@ -4811,7 +4811,7 @@ fn TVal? Vm.run(Vm* vm) {
                         // Not in lex_env, so search var_env, which only `with` blocks need.
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
-                            if (vcur.is_with) {
+                            if (vcur.flags.is_with) {
                                 if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
                                     vcur = vcur.parent;
                                     continue;
@@ -5375,7 +5375,7 @@ fn TVal? Vm.run(Vm* vm) {
                     EnvRecord* cur = ds.act.lex_env;
                     bool threw_pending = false;
                     while (cur != null) {
-                        if (cur.is_with) {
+                        if (cur.flags.is_with) {
                             if (!cur.bindings.has_prop_proto(key, vm.heap)) {
                                 cur = cur.parent;
                                 continue;
@@ -5501,7 +5501,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (!found && ds.act.lex_env != ds.act.var_env) {
                         EnvRecord* vcur = ds.act.var_env;
                         while (vcur != null) {
-                            if (vcur.is_with) {
+                            if (vcur.flags.is_with) {
                                 if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
                                     vcur = vcur.parent;
                                     continue;
@@ -5802,7 +5802,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // Search lexical environment first (for let/const bindings)
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
-                        if (cur.is_with) {
+                        if (cur.flags.is_with) {
                             // A with-env intercepts with HasBinding (which
                             // consults @@unscopables, §9.1.1.2.1) then
                             // GetBindingValue over the prototype chain —
@@ -6103,7 +6103,7 @@ fn TVal? Vm.run(Vm* vm) {
                         TVal bv = ds.regs_base[(uint)insn.b];
                         if (bv.is_pointer()) resolved_env = (EnvRecord*)bv.get_heapptr();
                     }
-                    if (resolved_env != null && resolved_env.is_with
+                    if (resolved_env != null && resolved_env.flags.is_with
                         && !resolved_env.bindings.has_prop_proto(key, vm.heap)) {
                         HString* name_hstr = (HString*)key;
                         bool is_strict_act = ds.act.func != null
@@ -6259,7 +6259,7 @@ fn TVal? Vm.run(Vm* vm) {
                     bool is_strict_act = ds.act.func != null
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     bool unresolvable = snap_env == null;
-                    if (snap_env != null && snap_env.is_with
+                    if (snap_env != null && snap_env.flags.is_with
                         && !snap_env.bindings.has_prop_proto(key, vm.heap)) {
                         // The Reference's with-env lost the binding (a deleting
                         // RHS side effect, or an unscopables getter):
@@ -6737,7 +6737,7 @@ fn TVal? Vm.run(Vm* vm) {
             bool found = false;
             int found_idx = -1;
             while (cur != null) {
-                if (cur.is_with) {
+                if (cur.flags.is_with) {
                     if (cur.bindings.has_prop_proto(key, vm.heap)) {
                         // @@unscopables hides the binding (ES2024 §9.1.1.2.5
                         // HasBinding): skip to the enclosing scope instead of
@@ -6775,7 +6775,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (!found && cur == null && ds.act.lex_env != ds.act.var_env) {
                 EnvRecord* vcur = ds.act.var_env;
                 while (vcur != null) {
-                    if (vcur.is_with) {
+                    if (vcur.flags.is_with) {
                         if (vcur.bindings.has_prop_proto(key, vm.heap)) {
                             // Same @@unscopables skip as the lex walk above.
                             if (vm_with_unscopables_blocks(vm, vcur, key)) {
@@ -6813,7 +6813,7 @@ fn TVal? Vm.run(Vm* vm) {
                     vcur = vcur.parent;
                 }
             }
-            if (found && cur != null && cur.is_with) {
+            if (found && cur != null && cur.flags.is_with) {
                 continue;
             }
             if (!found && !is_strict_d) {
@@ -6839,10 +6839,10 @@ fn TVal? Vm.run(Vm* vm) {
             // [[Configurable]]: a configurable global (e.g. a built-in like
             // JSON whose declaration flags include C: true) returns true and
             // the property is removed; a non-configurable one (built-ins like
-            // undefined, Infinity) returns false. cur.is_with is false here
+            // undefined, Infinity) returns false. cur.flags.is_with is false here
             // because the with branch above breaks first; the global env is
             // the only object env a script activation sees in Phase 5.
-            if (cur != null && !cur.is_declarative && found_idx >= 0) {
+            if (cur != null && !cur.flags.is_declarative && found_idx >= 0) {
                 hobject::PropFlags flags = cur.bindings.get_prop_flags((uint)found_idx, vm.heap);
                 if (flags.configurable) {
                     ra.set_boolean(cur.bindings.es_delete_prop(key, vm.heap));
@@ -7011,7 +7011,7 @@ fn TVal? Vm.run(Vm* vm) {
             bool threw_pending = false;
             bool resolved = false;
             while (cur != null) {
-                if (cur.is_with) {
+                if (cur.flags.is_with) {
                     // §9.1.1.2.1 HasBinding step 2: HasProperty through the
                     // Proxy-aware OrdinaryHasProperty path so the proxy's
                     // `has` trap fires. has_prop_proto walks the prototype
@@ -7149,7 +7149,7 @@ fn TVal? Vm.run(Vm* vm) {
                 bool done = false;
                 EnvRecord* vcur = ds.act.lex_env;
                 while (vcur != null) {
-                    if (vcur.is_with) { vcur = vcur.parent; continue; }
+                    if (vcur.flags.is_with) { vcur = vcur.parent; continue; }
                     int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                     if (vidx < 0) { vcur = vcur.parent; continue; }
                     TVal v_raw = vcur.bindings.prop_values()[vidx];
@@ -7229,7 +7229,7 @@ fn TVal? Vm.run(Vm* vm) {
                     void* key = name_val.get_heapptr();
                     EnvRecord* cur = ds.act.lex_env;
                     while (cur != null) {
-                        if (cur.is_with) {
+                        if (cur.flags.is_with) {
                             // HasBinding order (§9.1.1.2.1 steps 2-9): the
                             // HasProperty check runs first, and the
                             // @@unscopables getter is read only on a hit. A

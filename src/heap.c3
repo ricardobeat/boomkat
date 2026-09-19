@@ -833,6 +833,10 @@ struct Heap {
     uint      env_block_count;      /// Pool blocks currently reserved
     usz       env_bytes_reserved;   /// Bytes held by env_pool_blocks
     usz       env_peak_bytes_reserved; /// High-water mark for env_bytes_reserved
+    // Current environment-marking epoch, flipped at the start of each accepted
+    // collection. A cell whose EnvRecord.flags.mark_epoch equals this value was
+    // traced by the current cycle.
+    bool      env_mark_epoch;
 
     // Every CompiledFunction the compiler allocates. Freed in Heap.destroy.
     void**    compiled_funcs;
@@ -1673,21 +1677,7 @@ fn void Heap.destroy(&self) {
     }
     self.heap_allocated = null;
 
-    {
-        void* b = self.env_pool_blocks;
-        while (b != null) {
-            void* next = *(void**)b;  // the next pointer is the block's first field
-            self.free_func(self.heap_udata, b);
-            b = next;
-        }
-        self.env_pool_blocks = null;
-        self.env_freelist = null;
-        self.env_alloc_count = 0;
-        self.env_live_cells = 0;
-        self.env_block_count = 0;
-        self.env_bytes_reserved = 0;
-        self.env_peak_bytes_reserved = 0;
-    }
+    hobject::env_pool_teardown(self);
 
     if (self.compiled_funcs != null) {
         self.free_compiled_funcs();
@@ -1915,21 +1905,7 @@ fn void Heap.reset(&self) {
     // Env nodes hold TVal bindings pointing into the heap that was just freed,
     // so a stale freelist node reused in the next run would make tval_copy_ref
     // decref through dangling memory.
-    {
-        void* b = self.env_pool_blocks;
-        while (b != null) {
-            void* next = *(void**)b;
-            self.free_func(self.heap_udata, b);
-            b = next;
-        }
-        self.env_pool_blocks = null;
-    }
-    self.env_freelist = null;
-    self.env_alloc_count = 0;
-    self.env_live_cells = 0;
-    self.env_block_count = 0;
-    self.env_bytes_reserved = 0;
-    self.env_peak_bytes_reserved = 0;
+    hobject::env_pool_teardown(self);
 
     if (self.checkpoint_keys != null) {
         self.free_func(self.heap_udata, self.checkpoint_keys);

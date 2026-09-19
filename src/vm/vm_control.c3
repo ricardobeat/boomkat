@@ -413,7 +413,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
         EnvRecord* w = lex_env;
         uint wdepth = 0;
         while (w != null && wdepth < 64) {
-            if (w.is_with) {
+            if (w.flags.is_with) {
                 cap_var_env = lex_env;
                 cap_lex_env = lex_env;
                 break;
@@ -1322,7 +1322,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // per sec-variablestatements-in-catch-blocks.
             EnvRecord*? env_raw = env::env_create_declarative(vm.heap, ds.act.lex_env);
             if (try new_env = env_raw) {
-                if (insn.a != 0) new_env.is_catch = true;
+                if (insn.a != 0) new_env.flags.is_catch = true;
                 ds.act.lex_env = new_env;
             } else {
                 return VM_ERROR~;

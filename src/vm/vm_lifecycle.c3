@@ -84,7 +84,8 @@ $endif
 
     // Register built-ins
     if (!builtins::register_builtins(global, heap)) {
-        env::env_destroy(heap, global);
+        env::env_pool_free(heap, global);
+        env::env_pool_free(heap, global_lex);
         heap.free_func(heap.heap_udata, vs_raw);
         heap.free_func(heap.heap_udata, raw);
         return VM_ERROR~;
