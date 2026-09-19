@@ -5361,38 +5361,52 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     return COMPILE_ERROR~;
                 }
 
-                // `delete super.x` / `delete super[x]`, ES2022 §13.5.1.2 step 5.b
-                // (and the test262 super-property-* tests): the IsSuperReference
-                // check throws ReferenceError for ANY delete of a super property,
-                // regardless of the super base's value. This check must run BEFORE
-                // ToPropertyKey (for super[expr]) and BEFORE RequireObjectCoercible
-                // on the super base (for super.x with null/undefined base). Emit
-                // THROW_REF upfront; the rest of the super-resolution parsing
-                // produces unreachable dead code that the runtime never executes.
+                // `delete super.x` / `delete super[x]`, ES2022 §13.5.1.2 step 5.b:
+                // the IsSuperReference check throws ReferenceError for ANY delete
+                // of a super property, regardless of the super base's value. It
+                // must run BEFORE ToPropertyKey (for super[expr]) and BEFORE
+                // RequireObjectCoercible on the super base (for super.x with a
+                // null/undefined base), so neither of those is emitted here.
+                //
+                // The computed KEY EXPRESSION is a different matter: `delete
+                // super[expr]` is a UnaryExpression whose operand is evaluated
+                // first (§13.5.1.1 step 1 Evaluation of UnaryExpression), so
+                // `expr` and its side effects run and only then does the delete
+                // throw. THROW_REF is therefore emitted AFTER the key's code,
+                // not before it -- emitting it upfront made the key dead code
+                // and lost the side effect (test262 superPropDelete.js asserts
+                // `delete super[sideEffect = 1]` still leaves sideEffect === 1).
                 if (self.del_mode) {
-                    uint msg_idx = self.add_string_constant("Cannot delete a super property");
-                    ushort throw_reg = self.alloc_reg();
-                    self.emit_a_bc(Opcode.THROW_REF, (uint)throw_reg, msg_idx);
-                    // Consume the property-name / computed-key tokens so the
-                    // surrounding parser sees a clean state. We still parse
-                    // `super[expr]` correctly for syntax errors, but the emitted
-                    // bytecode is dead code (unreachable after THROW_REF).
                     if (self.match(TokenType.DOT)) {
                         // `super.#x` is not a SuperProperty (see below), so the
-                        // grammar error outranks the delete ReferenceError.
+                        // grammar error outranks the delete ReferenceError. A
+                        // static key evaluates to nothing observable, so there
+                        // is no code to emit before the throw.
                         if (self.check(TokenType.HASH_IDENT)) return COMPILE_ERROR~;
                         char[] prop_str = self.read_property_name()!;
                     } else if (self.match(TokenType.LBRACKET)) {
-                        // Save register state, the inner expression's emitted
-                        // code is unreachable, so its register allocations
-                        // must not leak into the surrounding scope.
-                        ushort saved_next_reg = self.next_reg;
-                        ushort saved_max_reg = self.max_reg;
-                        self.expression()!;
+                        // §13.3.7.1 SuperProperty : super [ Expression ] runs
+                        // GetThisBinding (step 2) BEFORE evaluating Expression
+                        // (step 3), so an uninitialized `this` in a derived
+                        // constructor throws before the key runs at all.
+                        // LDTHIS performs exactly that check (§9.1.1.3.4), and
+                        // its value is unused here. Without it
+                        // `delete super[(super(), 0)]` would run the inner
+                        // super() instead of throwing (test262
+                        // delete/super-property-uninitialized-this.js).
+                        ushort this_reg = self.alloc_reg();
+                        self.emit_abc(Opcode.LDTHIS, (uint)this_reg, 0, 0);
+                        self.free_reg(this_reg);
+                        // The key's value is discarded (ToPropertyKey never
+                        // runs), but its code is live and must keep its
+                        // registers until it has executed.
+                        ushort key_reg = self.expression()!;
                         self.expect(TokenType.RBRACKET)!;
-                        self.next_reg = saved_next_reg;
-                        self.max_reg = saved_max_reg;
+                        self.free_reg(key_reg);
                     }
+                    uint msg_idx = self.add_string_constant("Cannot delete a super property");
+                    ushort throw_reg = self.alloc_reg();
+                    self.emit_a_bc(Opcode.THROW_REF, (uint)throw_reg, msg_idx);
                     // Reset the member/getvar tracking so the enclosing DELETE
                     // handler doesn't double-emit THROW_REF or try to patch a
                     // non-existent GETPROP into DELPROP.
