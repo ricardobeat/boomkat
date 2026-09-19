@@ -111,6 +111,112 @@ fn int run_manifest_loop(char[] mpath) {
 }
 
 // ============================================================================
+// test262 frontmatter
+// ============================================================================
+
+// The YAML block between `/*---` and `---*/`. Every flag lookup below is
+// confined to it. Scanning the whole file instead lets a test's own prose or
+// code supply a flag it never declared, and the flags are what decide how the
+// test is run at all: a stray `async` makes the runner wait for a $DONE that
+// never comes, a stray `module` sends a script down the ESM pipeline.
+// Returns an empty slice when there is no frontmatter.
+fn char[] frontmatter(char[] src) {
+    usz open_at = src.len;
+    for (usz i = 0; i + 5 <= src.len; i++) {
+        if (src[i] == '/' && src[i+1] == '*' && src[i+2] == '-' && src[i+3] == '-'
+            && src[i+4] == '-') { open_at = i + 5; break; }
+    }
+    if (open_at >= src.len) return src[:0];
+    for (usz i = open_at; i + 5 <= src.len; i++) {
+        if (src[i] == '-' && src[i+1] == '-' && src[i+2] == '-' && src[i+3] == '*'
+            && src[i+4] == '/') { return src[open_at:i - open_at]; }
+    }
+    return src[:0];
+}
+
+// Byte offset just past `key` in `hay`, or hay.len when absent. `key` carries
+// its own trailing ':' so `flags:` cannot match `noFlags:`.
+fn usz find_key(char[] hay, char[] key) {
+    if (key.len > hay.len) return hay.len;
+    usz max_i = hay.len - key.len;
+    for (usz i = 0; i <= max_i; i++) {
+        // A key starts a line, so only match at column 0. This keeps `type:`
+        // inside a `negative:` block from matching a `type:` in a description.
+        if (i != 0 && hay[i-1] != '\n') continue;
+        bool match = true;
+        for (usz j = 0; j < key.len; j++) {
+            if (hay[i + j] != key[j]) { match = false; break; }
+        }
+        if (match) return i + key.len;
+    }
+    return hay.len;
+}
+
+// True when the frontmatter's `flags:` declares `word`. Both YAML spellings
+// are accepted: the inline `flags: [async, module]` and the block form
+//     flags:
+//       - async
+// The inline form ends at ']'; the block form ends at the next line that is
+// neither blank nor indented, which is what bounds the scan for the block
+// spelling — a forward search for ']' would run past the frontmatter entirely.
+fn bool has_flag(char[] src, char[] word) {
+    char[] fm = frontmatter(src);
+    if (fm.len == 0) return false;
+    usz i = find_key(fm, "flags:");
+    if (i >= fm.len) return false;
+    while (i < fm.len && (fm[i] == ' ' || fm[i] == '\t')) { i++; }
+
+    usz end = fm.len;
+    if (i < fm.len && fm[i] == '[') {
+        for (usz k = i; k < fm.len; k++) {
+            if (fm[k] == ']') { end = k; break; }
+        }
+    } else {
+        // Block form: stop at the first line that starts a new key.
+        usz k = i;
+        while (k < fm.len) {
+            if (fm[k] == '\n') {
+                usz ls = k + 1;
+                if (ls >= fm.len) { end = fm.len; break; }
+                if (fm[ls] != ' ' && fm[ls] != '\t' && fm[ls] != '\n' && fm[ls] != '\r') {
+                    end = ls;
+                    break;
+                }
+            }
+            k++;
+        }
+        if (k >= fm.len) end = fm.len;
+    }
+    if (end > fm.len) end = fm.len;
+
+    // Match `word` as a whole token so `module` does not match `module-code`
+    // and `async` does not match `asyncIterator`.
+    char[] seg = fm[i:end - i];
+    if (word.len > seg.len) return false;
+    usz max_i = seg.len - word.len;
+    for (usz s = 0; s <= max_i; s++) {
+        bool match = true;
+        for (usz j = 0; j < word.len; j++) {
+            if (seg[s + j] != word[j]) { match = false; break; }
+        }
+        if (!match) continue;
+        if (s > 0) {
+            char b = seg[s-1];
+            if ((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+                || b == '-' || b == '_') { continue; }
+        }
+        usz a_at = s + word.len;
+        if (a_at < seg.len) {
+            char a = seg[a_at];
+            if ((a >= 'a' && a <= 'z') || (a >= 'A' && a <= 'Z') || (a >= '0' && a <= '9')
+                || a == '-' || a == '_') { continue; }
+        }
+        return true;
+    }
+    return false;
+}
+
+// ============================================================================
 // Helper: compile and execute JS source in a VM
 // ============================================================================
 
@@ -146,75 +252,79 @@ const char[] HOST262_HARNESS = "var $262={detachArrayBuffer:function(b){return _
 
 // Parse test262 frontmatter for `includes:` and load required harness files.
 fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
-    usz scan_end = src.len < 4096 ? src.len : (usz)4096;
-    usz i = 0;
-    while (i + 9 < scan_end) {
-        if (src[i] == 'i' && src[i+1] == 'n' && src[i+2] == 'c' && src[i+3] == 'l'
-            && src[i+4] == 'u' && src[i+5] == 'd' && src[i+6] == 'e' && src[i+7] == 's'
-            && src[i+8] == ':') {
-            i += 9;
-            break;
-        }
+    char[] fm = frontmatter(src);
+    usz i = find_key(fm, "includes:");
+    if (i >= fm.len) return;
+    while (i < fm.len && (fm[i] == ' ' || fm[i] == '\t')) { i++; }
+
+    // Inline `includes: [a.js, b.js]`, or the block form
+    //     includes:
+    //       - a.js
+    // The block ends at the first line that is neither blank nor indented.
+    usz end = fm.len;
+    bool inline_form = i < fm.len && fm[i] == '[';
+    if (inline_form) {
         i++;
+        for (usz k = i; k < fm.len; k++) {
+            if (fm[k] == ']') { end = k; break; }
+        }
+    } else {
+        usz k = i;
+        while (k < fm.len) {
+            if (fm[k] == '\n') {
+                usz ls = k + 1;
+                if (ls >= fm.len) break;
+                if (fm[ls] != ' ' && fm[ls] != '\t' && fm[ls] != '\n' && fm[ls] != '\r') {
+                    end = ls;
+                    break;
+                }
+            }
+            k++;
+        }
     }
-    if (i + 9 >= scan_end) return;
-    while (i < scan_end && (src[i] == ' ' || src[i] == '\t')) { i++; }
-    if (i >= scan_end || src[i] != '[') return;
-    i++;
-    while (i < scan_end && src[i] != ']') {
-        while (i < scan_end && (src[i] == ' ' || src[i] == '\t' || src[i] == ',' || src[i] == '\n' || src[i] == '\r')) { i++; }
-        if (i >= scan_end || src[i] == ']') break;
+    if (end > fm.len) end = fm.len;
+
+    while (i < end) {
+        while (i < end && (fm[i] == ' ' || fm[i] == '\t' || fm[i] == ',' || fm[i] == '\n'
+            || fm[i] == '\r' || fm[i] == '-')) { i++; }
+        if (i >= end) break;
         usz start = i;
-        while (i < scan_end && src[i] != ',' && src[i] != ']' && src[i] != ' ' && src[i] != '\t' && src[i] != '\n' && src[i] != '\r') { i++; }
-        usz end = i;
-        if (end <= start) break;
+        while (i < end && fm[i] != ',' && fm[i] != ' ' && fm[i] != '\t' && fm[i] != '\n'
+            && fm[i] != '\r') { i++; }
+        usz stop = i;
+        if (stop <= start) break;
+
         char[128] path_buf;
         char[] prefix = "test262/harness/";
-        usz p = 0;
-        for (usz k = 0; k < prefix.len && p < 127; k++) { path_buf[p++] = prefix[k]; }
-        for (usz k = start; k < end && p < 127; k++) { path_buf[p++] = src[k]; }
-        path_buf[p] = 0;
-        char[] path = path_buf[:p];
-        // Skip loading on-disk nativeFunctionMatcher.js because NFM_HARNESS is preloaded.
+        usz pn = 0;
+        for (usz k = 0; k < prefix.len && pn < 127; k++) { path_buf[pn++] = prefix[k]; }
+        for (usz k = start; k < stop && pn < 127; k++) { path_buf[pn++] = fm[k]; }
+        path_buf[pn] = 0;
+
+        // nativeFunctionMatcher.js is preloaded as NFM_HARNESS; the on-disk
+        // copy uses unicode regex escapes the engine does not accept yet.
         {
             char[] want = "nativeFunctionMatcher.js";
-            usz flen = end - start;
+            usz flen = stop - start;
             if (flen == want.len) {
                 bool same = true;
                 for (usz k = 0; k < flen; k++) {
-                    if (src[start + k] != want[k]) { same = false; break; }
+                    if (fm[start + k] != want[k]) { same = false; break; }
                 }
                 if (same) continue;
             }
         }
 
-        char[]? h_opt = file::load_temp((String)path);
+        char[]? h_opt = file::load_temp((String)path_buf[:pn]);
         if (try h = h_opt) {
             exec_js(v, hp, h);
         }
     }
 }
 
-// Check for `flags: [async]` in frontmatter.
+// Check for the `async` flag in frontmatter.
 fn bool is_async_test(char[] src) {
-    usz scan_end = src.len < 4096 ? src.len : (usz)4096;
-    usz i = 0;
-    while (i + 6 < scan_end) {
-        if (src[i] == 'f' && src[i+1] == 'l' && src[i+2] == 'a' && src[i+3] == 'g'
-            && src[i+4] == 's' && src[i+5] == ':') {
-            i += 6;
-            break;
-        }
-        i++;
-    }
-    if (i + 6 >= scan_end) return false;
-    while (i < scan_end && src[i] != ']') {
-        if (src[i] == 'a' && src[i+1] == 's' && src[i+2] == 'y' && src[i+3] == 'n' && src[i+4] == 'c') {
-            return true;
-        }
-        i++;
-    }
-    return false;
+    return has_flag(src, "async");
 }
 
 fn bool contains_substr(char[] haystack, char[] needle) {
@@ -230,35 +340,15 @@ fn bool contains_substr(char[] haystack, char[] needle) {
     return false;
 }
 
-// Check for `flags: [module]` in frontmatter or top-level module statements.
+// Check for the `module` flag in frontmatter, or top-level module syntax in
+// the module-only areas of the tree for tests that omit the flag.
 fn bool is_module_test(char[] path, char[] src) {
-    usz scan_end = src.len < 4096 ? src.len : (usz)4096;
-    usz i = 0;
-    while (i + 6 < scan_end) {
-        if (src[i] == 'f' && src[i+1] == 'l' && src[i+2] == 'a' && src[i+3] == 'g'
-            && src[i+4] == 's' && src[i+5] == ':') {
-            i += 6;
-            break;
-        }
-        i++;
-    }
-    // If no flags block exists, fall back to keyword scan for import/export in module paths.
-    if (i + 6 >= scan_end) {
-        return contains_substr(path, "language/module-code/") ||
-            contains_substr(path, "language/import/") ||
-            contains_substr(path, "language/export/")
-            ? (contains_substr(src, "import") || contains_substr(src, "export"))
-            : false;
-    }
-    // When flags block exists, rely on presence of "module".
-    while (i + 6 < scan_end && src[i] != ']') {
-        if (src[i] == 'm' && src[i+1] == 'o' && src[i+2] == 'd' && src[i+3] == 'u'
-            && src[i+4] == 'l' && src[i+5] == 'e') {
-            return true;
-        }
-        i++;
-    }
-    return false;
+    if (has_flag(src, "module")) return true;
+    if (frontmatter(src).len != 0 && contains_substr(frontmatter(src), "flags:")) return false;
+    return (contains_substr(path, "language/module-code/") ||
+        contains_substr(path, "language/import/") ||
+        contains_substr(path, "language/export/"))
+        && (contains_substr(src, "import") || contains_substr(src, "export"));
 }
 
 // Negative test phase from frontmatter.
@@ -271,34 +361,27 @@ enum NegPhase : int {
 
 // Extract expected error constructor name from negative frontmatter.
 fn usz negative_type(char[] src, char[] out) {
-    usz scan_end = src.len < 8192 ? src.len : (usz)8192;
-    usz i = 0;
-    bool found = false;
-    while (i + 9 < scan_end) {
-        if (src[i] == 'n' && src[i+1] == 'e' && src[i+2] == 'g' && src[i+3] == 'a'
-            && src[i+4] == 't' && src[i+5] == 'i' && src[i+6] == 'v' && src[i+7] == 'e'
-            && src[i+8] == ':') { i += 9; found = true; break; }
-        i++;
+    char[] fm = frontmatter(src);
+    usz i = find_key(fm, "negative:");
+    if (i >= fm.len) return 0;
+    // `type:` is indented under `negative:`, so find_key's column-0 rule does
+    // not apply here; search the remainder of the block directly.
+    char[] rest = fm[i:fm.len - i];
+    usz t = rest.len;
+    for (usz k = 0; k + 5 <= rest.len; k++) {
+        if (rest[k] == 't' && rest[k+1] == 'y' && rest[k+2] == 'p' && rest[k+3] == 'e'
+            && rest[k+4] == ':') { t = k + 5; break; }
     }
-    if (!found) return 0;
-    usz block_end = i + 256 < scan_end ? i + 256 : scan_end;
-    while (i + 5 < block_end) {
-        if (src[i] == 't' && src[i+1] == 'y' && src[i+2] == 'p' && src[i+3] == 'e'
-            && src[i+4] == ':') {
-            i += 5;
-            while (i < block_end && (src[i] == ' ' || src[i] == '\t')) { i++; }
-            usz start = i;
-            while (i < block_end && (
-                (src[i] >= 'A' && src[i] <= 'Z') || (src[i] >= 'a' && src[i] <= 'z')
-                || (src[i] >= '0' && src[i] <= '9') || src[i] == '_')) { i++; }
-            usz n = i - start;
-            if (n == 0 || n > out.len) return 0;
-            for (usz k = 0; k < n; k++) { out[k] = src[start + k]; }
-            return n;
-        }
-        i++;
-    }
-    return 0;
+    if (t >= rest.len) return 0;
+    while (t < rest.len && (rest[t] == ' ' || rest[t] == '\t')) { t++; }
+    usz st = t;
+    while (t < rest.len && (
+        (rest[t] >= 'A' && rest[t] <= 'Z') || (rest[t] >= 'a' && rest[t] <= 'z')
+        || (rest[t] >= '0' && rest[t] <= '9') || rest[t] == '_')) { t++; }
+    usz n = t - st;
+    if (n == 0 || n > out.len) return 0;
+    for (usz k = 0; k < n; k++) { out[k] = rest[st + k]; }
+    return n;
 }
 
 // Match thrown value constructor name against expected type.
@@ -366,43 +449,25 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
 
 // Parse the `negative:` frontmatter block and return its declared phase.
 fn NegPhase negative_phase(char[] src) {
-    usz scan_end = src.len < 8192 ? src.len : (usz)8192;
-    usz i = 0;
-    bool found = false;
-    while (i + 9 < scan_end) {
-        if (src[i] == 'n' && src[i+1] == 'e' && src[i+2] == 'g' && src[i+3] == 'a'
-            && src[i+4] == 't' && src[i+5] == 'i' && src[i+6] == 'v' && src[i+7] == 'e'
-            && src[i+8] == ':') {
-            i += 9;
-            found = true;
-            break;
-        }
-        i++;
+    char[] fm = frontmatter(src);
+    usz i = find_key(fm, "negative:");
+    if (i >= fm.len) return NegPhase.NONE;
+    char[] rest = fm[i:fm.len - i];
+    usz ph = rest.len;
+    for (usz k = 0; k + 6 <= rest.len; k++) {
+        if (rest[k] == 'p' && rest[k+1] == 'h' && rest[k+2] == 'a' && rest[k+3] == 's'
+            && rest[k+4] == 'e' && rest[k+5] == ':') { ph = k + 6; break; }
     }
-    if (!found) return NegPhase.NONE;
-    usz block_end = i + 256 < scan_end ? i + 256 : scan_end;
-    while (i + 6 < block_end) {
-        if (src[i] == 'p' && src[i+1] == 'h' && src[i+2] == 'a' && src[i+3] == 's'
-            && src[i+4] == 'e' && src[i+5] == ':') {
-            i += 6;
-            while (i < block_end && (src[i] == ' ' || src[i] == '\t')) { i++; }
-            if (i + 5 <= block_end && src[i] == 'p' && src[i+1] == 'a' && src[i+2] == 'r'
-                && src[i+3] == 's' && src[i+4] == 'e') {
-                return NegPhase.PARSE;
-            }
-            if (i + 10 <= block_end && src[i] == 'r' && src[i+1] == 'e' && src[i+2] == 's'
-                && src[i+3] == 'o' && src[i+4] == 'l' && src[i+5] == 'u' && src[i+6] == 't'
-                && src[i+7] == 'i' && src[i+8] == 'o' && src[i+9] == 'n') {
-                return NegPhase.RESOLUTION;
-            }
-            if (i + 7 <= block_end && src[i] == 'r' && src[i+1] == 'u' && src[i+2] == 'n'
-                && src[i+3] == 't' && src[i+4] == 'i' && src[i+5] == 'm' && src[i+6] == 'e') {
-                return NegPhase.RUNTIME;
-            }
-            return NegPhase.NONE;
-        }
-        i++;
-    }
+    if (ph >= rest.len) return NegPhase.NONE;
+    while (ph < rest.len && (rest[ph] == ' ' || rest[ph] == '\t')) { ph++; }
+    char[] tail = rest[ph:rest.len - ph];
+    if (tail.len >= 5 && tail[0] == 'p' && tail[1] == 'a' && tail[2] == 'r'
+        && tail[3] == 's' && tail[4] == 'e') { return NegPhase.PARSE; }
+    if (tail.len >= 10 && tail[0] == 'r' && tail[1] == 'e' && tail[2] == 's'
+        && tail[3] == 'o' && tail[4] == 'l' && tail[5] == 'u' && tail[6] == 't'
+        && tail[7] == 'i' && tail[8] == 'o' && tail[9] == 'n') { return NegPhase.RESOLUTION; }
+    if (tail.len >= 7 && tail[0] == 'r' && tail[1] == 'u' && tail[2] == 'n'
+        && tail[3] == 't' && tail[4] == 'i' && tail[5] == 'm' && tail[6] == 'e') { return NegPhase.RUNTIME; }
     return NegPhase.NONE;
 }
 
@@ -453,19 +518,8 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
 
     load_test_includes(v, hp, src);
 
-    // Prepend strict directive when onlyStrict flag is set.
-    bool only_strict = false;
-    {
-        usz scan = src.len < 4096 ? src.len : (usz)4096;
-        for (usz oi = 0; oi + 10 < scan; oi++) {
-            if (src[oi] == 'o' && src[oi+1] == 'n' && src[oi+2] == 'l' && src[oi+3] == 'y'
-                && src[oi+4] == 'S' && src[oi+5] == 't' && src[oi+6] == 'r' && src[oi+7] == 'i'
-                && src[oi+8] == 'c' && src[oi+9] == 't') {
-                only_strict = true;
-                break;
-            }
-        }
-    }
+    // Prepend strict directive when the onlyStrict flag is set.
+    bool only_strict = has_flag(src, "onlyStrict");
     char[] exec_src = src;
     char* strict_buf = null;
     if (only_strict) {
