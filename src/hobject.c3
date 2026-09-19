@@ -57,6 +57,19 @@ fn bool env_pool_contains(heap::Heap* h, void* env_ptr) {
     return env_ptr != null && env::env_pool_contains(h, (env::EnvRecord*)env_ptr);
 }
 
+// Scan the pool's cells at collection start, clearing temporary-root pins at a
+// quiescent safepoint or tracing every pinned cell's chain otherwise.
+fn void env_pool_seed_or_clear_pins(heap::Heap* h, bool clear_pins) {
+    env::env_pool_seed_or_clear_pins(h, clear_pins);
+}
+
+// Reclaim dead pool cells after a collection, releasing empty blocks and
+// rebuilding the freelist. Runs after object sweep so bindings may already be
+// freed; the sweep clears cell bytes without dereferencing them.
+fn void env_pool_sweep(heap::Heap* h) {
+    env::env_pool_sweep(h);
+}
+
 // Flag/epoch accessors for heap.c3's first-visit mark and the pool sweep. Each
 // reads or writes one EnvFlags bit through the opaque EnvRecord* so heap.c3
 // never sees the record layout.

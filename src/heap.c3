@@ -849,6 +849,10 @@ struct Heap {
     // Stack of native scoped environment roots. Each link protects one
     // EnvRecord held only in a C3 local; the GC traces it as a root.
     EnvRoot*  env_roots;
+    // Countdown of environment allocations until the next collection request.
+    // Decremented per allocation (a freelist hit still creates potential
+    // garbage); expiry sets gc_pending. Reset after each completed cycle.
+    long      env_alloc_budget;
 
     // Every CompiledFunction the compiler allocates. Freed in Heap.destroy.
     void**    compiled_funcs;
@@ -1213,6 +1217,7 @@ fn Heap*? create(
     h.gc_pending            = false;
     h.gc_quiescent_pending  = false;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
+    h.env_alloc_budget      = 64;
     h.capi_interrupt_fn     = null;
     h.capi_interrupt_opaque = null;
     h.interrupt_budget      = INTERRUPT_BUDGET_INIT;
@@ -4164,6 +4169,12 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
         }
     }
 
+    // Phase 1b: clear or seed environment pins, mirroring the object-temproot
+    // pass above. Clearing happens only at a quiescent safepoint; otherwise a
+    // pinned cell's chain is traced so a freshly allocated scope survives while
+    // a native frame holds only its raw local reference.
+    hobject::env_pool_seed_or_clear_pins(self, clear_temproots);
+
     // Phase 2: mark from the roots.
     self.mark_roots();
 
@@ -4176,7 +4187,12 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
     // Phase 3: sweep objects.
     self.sweep();
 
-    // Phase 3b: sweep unreachable strings, only where the caller guarantees no
+    // Phase 3b: reclaim dead environment cells, after object teardown so the
+    // cells' bindings pointers may already be freed. Runs before the string
+    // sweep; it dereferences no outgoing pointer, only cell bytes.
+    hobject::env_pool_sweep(self);
+
+    // Phase 3c: sweep unreachable strings, only where the caller guarantees no
     // raw interned-string pointer is live. Any allocation can trigger a GC,
     // including one made while builtin init or an opcode holds a freshly
     // interned HString* in a local that nothing roots, such as between
@@ -4217,6 +4233,21 @@ $else
     }
 $endif
     self.gc_trigger_counter = new_trigger;
+    // Environment allocation debt is separate from object debt: environments
+    // create no bindings-object allocation pressure of their own (a `with`
+    // env allocates none), so the object budget does not track them. The floor
+    // is one pool block; scale to the measured live set and mark work.
+$if $feat(GC_STRESS):
+    self.env_alloc_budget = 1;
+$else
+    // The floor is one pool block (64 cells), a floor not a tuned threshold.
+    long env_floor = 64;
+    long env_by_live = (long)self.env_live_cells;
+    long env_by_work = (long)self.mark_work_last / GC_MARK_WORK_DIVISOR;
+    long env_budget = env_floor > env_by_live ? env_floor : env_by_live;
+    if (env_by_work > env_budget) { env_budget = env_by_work; }
+    self.env_alloc_budget = env_budget;
+$endif
     // A callback collection can consume every allocation-triggered request.
     // Keep a separate request to unpin after native return, without forcing
     // another collection at each callback safepoint.

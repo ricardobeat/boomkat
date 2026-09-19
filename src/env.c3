@@ -86,6 +86,12 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     env.flags.mark_epoch = h.env_mark_epoch;
     h.env_alloc_count++;
     h.env_live_cells++;
+    // Every allocation, even a freelist hit, creates potential garbage. Expiry
+    // only schedules a collection; it does not collect synchronously here.
+    h.env_alloc_budget--;
+    if (h.env_alloc_budget <= 0) {
+        h.gc_pending = true;
+    }
     return env;
 }
 
@@ -132,6 +138,77 @@ fn bool env_pool_contains(Heap* h, EnvRecord* env) {
         b = b.next;
     }
     return false;
+}
+
+// Scan every allocated cell at collection start. At a quiescent safepoint
+// (`clear_pins`) each temporary-root pin is cleared so an otherwise-unreachable
+// cell becomes collectable. Otherwise every pinned cell has its chain traced,
+// keeping a freshly allocated scope and its parent alive while a native frame
+// still holds only a raw local reference.
+fn void env_pool_seed_or_clear_pins(Heap* h, bool clear_pins) {
+    EnvPoolBlock* b = (EnvPoolBlock*)h.env_pool_blocks;
+    while (b != null) {
+        for (uint i = 0; i < ENV_POOL_BLOCK_SIZE; i++) {
+            EnvRecord* e = &b.cells[i];
+            if (!e.flags.allocated) continue;
+            if (clear_pins) {
+                e.flags.temproot = false;
+            } else if (e.flags.temproot) {
+                h.mark_env_chain((void*)e);
+            }
+        }
+        b = b.next;
+    }
+}
+
+// Reclaim every dead cell after a collection: a cell whose mark_epoch does not
+// match the heap's current epoch was not reached this cycle. Recycling clears
+// the cell's bytes without dereferencing its outgoing pointers (the bindings
+// object may already be freed). Blocks with no surviving cell are returned to
+// the allocator, except one empty spare kept to avoid churn; the freelist is
+// rebuilt from the free cells of every retained block.
+fn void env_pool_sweep(Heap* h) {
+    h.env_freelist = null;
+    uint total_live = 0;
+    bool spare_kept = false;
+    EnvPoolBlock* prev = null;
+    EnvPoolBlock* b = (EnvPoolBlock*)h.env_pool_blocks;
+
+    while (b != null) {
+        EnvPoolBlock* next = b.next;
+        uint block_live = 0;
+
+        for (uint i = 0; i < ENV_POOL_BLOCK_SIZE; i++) {
+            EnvRecord* e = &b.cells[i];
+            if (!e.flags.allocated) continue;
+            if (e.flags.mark_epoch == h.env_mark_epoch) {
+                block_live++;
+            } else {
+                mem::clear(e, (sz)(EnvRecord::size));
+            }
+        }
+
+        if (block_live == 0 && spare_kept) {
+            // A spare empty block is already retained; release this one.
+            if (prev != null) { prev.next = next; } else { h.env_pool_blocks = next; }
+            h.free_func(h.heap_udata, (void*)b);
+            h.env_block_count--;
+            h.env_bytes_reserved -= EnvPoolBlock::size;
+        } else {
+            if (block_live == 0) { spare_kept = true; }
+            for (uint i = 0; i < ENV_POOL_BLOCK_SIZE; i++) {
+                EnvRecord* e = &b.cells[i];
+                if (!e.flags.allocated) {
+                    e.parent = (EnvRecord*)h.env_freelist;
+                    h.env_freelist = e;
+                }
+            }
+            prev = b;
+        }
+        total_live += block_live;
+        b = next;
+    }
+    h.env_live_cells = total_live;
 }
 
 // ============================================================================
