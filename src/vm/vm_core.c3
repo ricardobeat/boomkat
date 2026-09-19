@@ -571,18 +571,11 @@ fn void vm_catcher_chain_bridge(void* heap_ptr, void* cat_head, int mode) {
     catcher_chain_walk((heap::Heap*)heap_ptr, cat_head, mode);
 }
 
-// Release one for-in state: drop the target's temproot pin, free the key
-// array, free the struct. The pin and `keys` are released together because the
-// keys are raw HString* with no incref of their own, rooted for an ordinary
-// target by the pinned target's own property table, so unpinning earlier than
-// the free would leave `keys` pointing at collectable strings. Interning is not
-// what protects them; see heap::ForInState for why, and for the separate
-// argument that covers a Proxy's virtual keys.
+// The activation or suspended generator roots the target while this state is
+// live. Its temporary pin is shared with native locals and expires at the next
+// quiescent safepoint, so releasing an enumeration must not clear it.
 fn void forin_state_free(Vm* vm, ForInState* state) @inline {
     if (state == null) return;
-    if (state.target != null) {
-        state.target.as_header().clear_temproot();
-    }
     if (state.keys != null) {
         vm.heap.free_func(vm.heap.heap_udata, state.keys);
     }

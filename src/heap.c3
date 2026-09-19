@@ -229,11 +229,10 @@ enum GenSuspendKind : char {
 // the struct itself are plain-malloc'd; forin_state_free releases both.
 //
 // `target` is the original for-in target (a borrowed pointer to the
-// heap-allocated HObject). It is temproot-pinned for the lifetime of the
-// enumeration so the target stays reachable even when the loop body
-// doesn't reference it, and so NEXTFOR can re-check property existence
-// at yield time per EnumerateObjectProperties, so a property deleted from
-// the target before its turn is skipped (plan 062 group N).
+// heap-allocated HObject). The activation or suspended generator traces it,
+// even when the loop body does not reference it. NEXTFOR re-checks property
+// existence at yield time per EnumerateObjectProperties, so a property deleted
+// before its turn is skipped (plan 062 group N).
 //
 // `keys` holds raw HString* with no incref of its own, and NEXTFOR
 // dereferences them long after collection. Two things could root them, and
@@ -242,8 +241,8 @@ enum GenSuspendKind : char {
 //  - Interning does NOT. sweep_strings frees any table entry whose refcount is
 //    1 and which the mark phase did not reach, so the string table is a weak
 //    reference. "The keys are interned" is not a lifetime argument.
-//  - The target's property table DOES, for an ordinary object: the pin keeps
-//    the target alive, the target's live property keys are marked through it,
+//  - The target's property table DOES, for an ordinary object: the frame or
+//    generator roots the target, whose live property keys are marked through it,
 //    and every key in the snapshot came from some level of that prototype
 //    chain. This is the real guarantee.
 //
@@ -405,12 +404,11 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
     // A generator abandoned mid-for-in (never resumed to exhaustion, then
     // collected) still owns the states its body was enumerating, which were
     // MOVED here when the body suspended. Nothing else can reach them now, so
-    // this is their last chance to be freed. In teardown mode the target
-    // HObjects are already gone, so the pin must not be touched through them.
+    // this is their last chance to be freed. The target's temporary pin belongs
+    // to the safepoint lifetime and may also protect native locals.
     ForInState* fi = (ForInState*)gs.forin;
     while (fi != null) {
         ForInState* fi_parent = fi.parent;
-        if (run_decref && fi.target != null) { ((HeapHeader*)fi.target).clear_temproot(); }
         if (fi.keys != null) { h.free_func(h.heap_udata, fi.keys); }
         h.free_func(h.heap_udata, fi);
         fi = fi_parent;
@@ -571,6 +569,7 @@ struct Heap {
     // GC state
     long  gc_trigger_counter;
     bool  gc_pending;            /// Deferred GC requested by alloc/realloc
+    bool  gc_quiescent_pending;  /// A collection retained native temporary roots
     uint  bwd_gc_budget;         /// Countdown to the next backward-jump GC safepoint
     // Nesting depth of native builtin frames on the C3 stack. Non-zero means a
     // builtin may hold a fresh object in a raw local that no GC root can see,
@@ -1184,6 +1183,7 @@ fn Heap*? create(
     // GC tunables
     h.gc_trigger_counter    = GC_INITIAL_TRIGGER;
     h.gc_pending            = false;
+    h.gc_quiescent_pending  = false;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
     h.capi_interrupt_fn     = null;
     h.capi_interrupt_opaque = null;
@@ -1959,6 +1959,7 @@ fn void Heap.reset(&self) {
     self.gc_running       = false;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
     self.gc_pending       = false;
+    self.gc_quiescent_pending = false;
     self.bwd_gc_budget    = BWD_GC_INTERVAL;
     self.native_frame_depth = 0;
     self.gray_count       = 0;
@@ -3802,7 +3803,9 @@ $if $feat(HEAP_VERIFY):
     while (walk != null) {
         if (walk.is_object()) {
             HObject* obj = (HObject*)walk;
-            if (obj.flags.obj_class == ObjClass.GENERATOR) {
+            // Dying generators may hold children collected in the same sweep.
+            if (obj.flags.obj_class == ObjClass.GENERATOR
+                && (walk.is_reachable() || walk.is_temproot())) {
                 GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
                 if (gs != null && gs.saved_regs != null) {
                     for (uint i = 0; i < gs.num_regs; i++) {
@@ -3912,14 +3915,10 @@ fn void Heap.sweep(&self) {
         d = dnext;
     }
 
-    // With the free pass over, reset the survivors for the next cycle. Reachable
-    // ones clear both bits. Nodes kept only by their temproot flag hold onto it
-    // and stay protected until something anchors them.
+    // Pins last until mark_and_sweep's quiescent safepoint, even when a node
+    // is also reachable through a callback's registers during this collection.
     for (HeapHeader* s = self.heap_allocated; s != null; s = s.next) {
-        if (s.is_reachable()) {
-            s.clear_reachable();
-            s.clear_temproot();
-        }
+        s.clear_reachable();
     }
 
     self.sweeping = false;
@@ -4019,13 +4018,18 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
 
     bool clear_temproots = safepoint && self.native_frame_depth == 0;
 
-    // Phase 1: clear reachable flags, and temproots when allowed.
+    // Phase 1: reset marks and seed temporary roots in the same heap walk.
+    // Only enqueue here: tracing an edge before its target's mark is reset
+    // would lose that mark. mark_roots drains the gray stack after this pass.
     {
         HeapHeader* cur = self.heap_allocated;
         while (cur != null) {
             cur.clear_reachable();
             if (clear_temproots) {
                 cur.clear_temproot();
+            } else if (cur.is_temproot()) {
+                cur.set_reachable();
+                if (cur.is_object()) { self.gray_push((HObject*)cur); }
             }
             cur = cur.next;
         }
@@ -4090,8 +4094,24 @@ $else
     }
 $endif
     self.gc_trigger_counter = new_trigger;
+    // A callback collection can consume every allocation-triggered request.
+    // Keep a separate request to unpin after native return, without forcing
+    // another collection at each callback safepoint.
+    self.gc_quiescent_pending = !clear_temproots;
+    if (self.gc_quiescent_pending && self.native_frame_depth == 0) {
+        self.gc_pending = true;
+    }
     gcprofile::gcprof_cycle((ulong)self.live_obj_count);
     self.gc_running = false;
+}
+
+// Schedule rather than collect here: the native return value must first be
+// anchored by the VM. Only the outermost return ends the temporary-root window.
+fn void Heap.leave_native_frame(&self) @inline {
+    self.native_frame_depth--;
+    if (self.native_frame_depth == 0 && self.gc_quiescent_pending) {
+        self.gc_pending = true;
+    }
 }
 
 /**

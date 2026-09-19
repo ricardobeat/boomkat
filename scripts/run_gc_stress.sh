@@ -34,6 +34,7 @@ TESTS=(
   test/proxy_ownkeys_gc_lifetime.js
   test/class_fields_gc_lifetime.js
   test/callback_gc_lifetime.js
+  test/temproot_gc_lifetime.js
 )
 
 # Generous per-test budget: a collection per allocation is slow enough that a

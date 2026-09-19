@@ -1586,7 +1586,7 @@ fn bool proxy_partitioned_own_keys(void* vm, Heap* heap, HObject* proxy, int mod
         if (mode == 0) {
             ProxyDesc d;
             if (!proxy_mop_get_own(vm, heap, proxy, k, &d)) {
-                heap.native_frame_depth--;
+                heap.leave_native_frame();
                 heap.free_func(heap.heap_udata, buf);
                 return false;
             }
@@ -1595,7 +1595,7 @@ fn bool proxy_partitioned_own_keys(void* vm, Heap* heap, HObject* proxy, int mod
         }
         buf[out_n++] = k;
     }
-    heap.native_frame_depth--;
+    heap.leave_native_frame();
     // Close the gap between the two groups so the rejected keys sit directly
     // after the enumerable ones.
     uint total = out_n;

@@ -564,14 +564,22 @@ Much of what stays alive sits outside the object graph:
 
 A freshly allocated object is anchored only in a C3 local, where the mark phase
 cannot see it. `alloc_object()` therefore sets a *temproot* flag, and a
-collection that happens outside a safepoint keeps temproots set so in-flight
-allocations survive.
+collection that happens outside a safepoint marks these roots and traces their
+outgoing edges so in-flight allocations and their children survive. The mark
+reset pass queues pinned objects on the gray stack; traversal starts after all
+marks have been reset. This uses the existing heap walk.
 
 Clearing them is safe only at a genuine safepoint with no native builtin frame on
 the stack. A builtin that allocates a result and then re-enters the VM, to call a
 user callback or a getter, holds that result in a raw local while the nested
 execution reaches safepoints of its own. `native_frame_depth` tracks this and
-vetoes both the temproot clear and the string sweeps.
+vetoes both the temproot clear and the string sweeps. Sweep clears reachability
+marks but preserves pins: appearing in a callback's registers does not end a
+native local's lifetime. Pins expire in the next quiescent safepoint's mark reset
+pass. A collection that retains pins records a separate quiescent request;
+leaving the outermost native frame schedules it for the next VM safepoint, after
+the return value is anchored. Callback collections can reset the allocation
+budget without postponing pin expiry across successive native calls.
 
 The sweep itself runs in three phases so that no teardown can touch memory
 another teardown already freed:

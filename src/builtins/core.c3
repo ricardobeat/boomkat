@@ -3408,7 +3408,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     if (ctx.is_constructor && !ctx.this_val.is_object()) {
         HObject*? inst_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch inst_raw) {
-            heap.native_frame_depth--;
+            heap.leave_native_frame();
             ctx.should_throw = true;
             ctx.throw_value.set_undefined();
             return;
@@ -3439,7 +3439,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     // cannot).
     long scope = heap.host_scope_push();
     if (scope < 0) {
-        heap.native_frame_depth--;
+        heap.leave_native_frame();
         ctx.should_throw = true;
         ctx.throw_value.set_undefined();
         return;
@@ -3469,7 +3469,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
 
     heap.host_scope_pop();
     ctx.host_scope_slot = 0;
-    heap.native_frame_depth--;
+    heap.leave_native_frame();
 }
 
 // ----------------------------------------------------------------------------
@@ -3774,7 +3774,7 @@ fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
     // clearing its temproot at a safepoint inside that nested execution.
     ctx.heap.native_frame_depth++;
     handler(ctx);
-    ctx.heap.native_frame_depth--;
+    ctx.heap.leave_native_frame();
 }
 
 // ============================================================================

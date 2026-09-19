@@ -4247,7 +4247,7 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
     // resume_gen and restore the saved PC + registers.
     TVal resume_arg;
     resume_arg = gs.resume_value;
-    ctx.heap.native_frame_depth--;
+    ctx.heap.leave_native_frame();
     TVal result = ctx.heap.call_fn(ctx.vm, func_tv, &resume_arg, 1, gs.this_binding);
     ctx.heap.native_frame_depth++;
 
@@ -4292,7 +4292,7 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
     // resume_gen and restore the saved PC + registers.
     TVal throw_arg;
     throw_arg = gs.throw_value;
-    ctx.heap.native_frame_depth--;
+    ctx.heap.leave_native_frame();
     TVal result = ctx.heap.call_fn(ctx.vm, func_tv, &throw_arg, 1, gs.this_binding);
     ctx.heap.native_frame_depth++;
 

@@ -212,6 +212,11 @@ test-gc-stress:
     @make out/boomkat_gc_stress
     bash scripts/run_gc_stress.sh
 
+# Check that callback collections release temporary roots after native return
+test-temproot-rss:
+    @just build boomkat
+    python3 scripts/check_temproot_rss.py
+
 # Run multiple Heap.reset() cycles under ASAN to verify reset boundary cleanup and cache teardown
 test-heap-reset:
     @make out/test262_runner_asan
