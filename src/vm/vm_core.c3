@@ -723,12 +723,18 @@ $if $feat(HEAP_VERIFY):
     CompiledFunction* cf = (CompiledFunction*)act.func;
     uint nregs = cf.num_regs;
     TVal* regs = act.bottom;
+    // A frame unwound by a throw legitimately leaves heap values for the
+    // surviving caller's sweep (see vm_pop_activation), so an occupied slot is
+    // not itself a fault. What is always a fault is a slot pointing at memory
+    // that has already been reclaimed: that is the pointer vm_mark_activations
+    // would follow, and the one a later frame reads as its own register.
     for (uint i = 0; i < nregs; i++) {
         if (!regs[i].is_heap_allocated()) continue;
         void* ptr = regs[i].get_heapptr();
         if (ptr == null) continue;
-        io::eprintfn("[vm] pop at %s left heap slot r%d (%p)%s", where.str_view(), i, ptr,
-            sanitizer::asan::address_is_poisoned(ptr) ? " POISONED" : "");
+        if (!sanitizer::asan::address_is_poisoned(ptr)) continue;
+        io::eprintfn("[vm] pop at %s left slot r%d pointing at freed memory (%p)",
+            where.str_view(), i, ptr);
     }
 $endif
 }

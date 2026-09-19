@@ -152,6 +152,17 @@ lldb file="test/simple.js":
 build-asan:
     @make out/test262_runner_asan
 
+# Build the heap-verifying test262 runner (out/test262_runner_verify).
+# HEAP_VERIFY + ASan: reports a pop that leaves a heap slot in a frame, at the
+# pop rather than in the later frame that reads the stale bits.
+build-verify:
+    @make out/test262_runner_verify
+
+# Run a suite under the heap verifier and fail on any [vm] report.
+# Slow (ASan + O0): scope it to a directory while iterating.
+test262-verify dir="staging/sm/Number": build-verify
+    @bash scripts/test262_verify.sh "{{dir}}"
+
 # Build with NaN-boxing disabled (-D NONANBOX)
 build-nonanbox t="boomkat":
     c3c -D NONANBOX build "{{t}}"

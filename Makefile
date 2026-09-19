@@ -73,7 +73,7 @@ C3C_BUILDFLAGS = --build-dir "$$d" $(SDK_MIN_FLAG)
 
 PREFIX ?= /usr/local
 
-.PHONY: all lib lib-full test262_runner test262_runner_asan boomkat boomkat_debug boomkat_gc_stress clean \
+.PHONY: all lib lib-full test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_debug boomkat_gc_stress clean \
         shared boomkat-stress install
 
 all: lib-full test262_runner boomkat
@@ -102,6 +102,12 @@ out/test262_runner: project.json $(call target_sources,test262_runner)
 
 out/test262_runner_asan: project.json $(call target_sources,test262_runner_asan)
 	$(C3C_BUILD) test262_runner_asan $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+
+# The HEAP_VERIFY + ASan runner. HEAP_VERIFY's $feat blocks are compiled out of
+# every other target, so nothing else catches them rotting: they last broke on a
+# ZString/String cast that no ordinary build could see.
+out/test262_runner_verify: project.json $(call target_sources,test262_runner_verify)
+	$(C3C_BUILD) test262_runner_verify $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
 
 out/boomkat: project.json $(call target_sources,boomkat)
 	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)

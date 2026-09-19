@@ -269,6 +269,19 @@
       "single-module": true,
       "sanitize": "address"
     },
+    "test262_runner_verify": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/test262_runner.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "HEAP_VERIFY"
+      ]
+    },
     "test_prop": {
       "type": "executable",
       "sources": [
