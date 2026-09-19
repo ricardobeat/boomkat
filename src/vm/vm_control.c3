@@ -453,7 +453,14 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     // captured_this, since the enclosing construct frame may have returned by the
     // time the arrow runs). Borrowed reference kept reachable through the GC
     // mark path (objects are mark-and-swept, not refcount-freed).
-    (*func_obj.extra_ptr()).func.captured_new_target = template.is_arrow() ? enclosing_new_target : null;
+    // A parameter-default thunk is not an arrow but is likewise part of its
+    // enclosing function's definition site, so it captures new.target too; it
+    // is flagged with eval_allows_new_target, which is otherwise meaningless
+    // on a body that is neither eval code nor an arrow. See
+    // compile_default_expr.
+    bool captures_new_target = template.is_arrow()
+        || (!template.is_eval_fn() && template.eval_allows_new_target());
+    (*func_obj.extra_ptr()).func.captured_new_target = captures_new_target ? enclosing_new_target : null;
 
     // Set .length property (ES5 §15.3.5.1: non-writable, non-enumerable, configurable).
     // Must be defined before .name, matching the SetFunctionLength and SetFunctionName ordering

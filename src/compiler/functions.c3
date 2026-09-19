@@ -4294,6 +4294,14 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     def_ctx.emit_simple(Opcode.POP_LEX);
 
     CompiledFunction* func = def_ctx.finish()!;
+    // A parameter default value is evaluated in the enclosing function's own
+    // FormalParameters (ES2015 §9.2.12 FunctionDeclarationInstantiation step
+    // 24), so `new.target` there is the enclosing function's. The thunk is a
+    // real closure invoked by CALL, whose activation has no new.target of its
+    // own, so it has to capture the creating frame's the way an arrow does.
+    // eval_allows_new_target is unused on a body that is neither eval code nor
+    // an arrow, and instantiate_closure reads it for exactly that purpose.
+    func.flags.eval_allows_new_target = true;
 
     // The default expression thunk is NOT a generator function itself, it's
     // a regular zero-arg function that may contain yield expressions which

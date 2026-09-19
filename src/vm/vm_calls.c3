@@ -1546,7 +1546,10 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // inside a non-arrow function body; we just propagate
                     // the caller's new_target into the eval activation so
                     // the opcode reads the right value.
-                    new_act.new_target = target_fast.is_arrow()
+                    // A parameter-default thunk captures new.target like an
+                    // arrow; see compile_default_expr and instantiate_closure.
+                    new_act.new_target = (target_fast.is_arrow()
+                            || (!target_fast.is_eval_fn() && target_fast.eval_allows_new_target()))
                         ? (*hobj_fast.extra_ptr()).func.captured_new_target
                         : (target_fast.is_eval_fn() ? ds.act.new_target : null);
                     new_act.heap_reg_count = 0;
@@ -2928,7 +2931,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // inside a non-arrow function body, but the runtime still has
             // to actually copy the new_target through to the activation,
             // because NEWTARGET reads it directly from `act.new_target`.
-            new_act.new_target = target.is_arrow()
+            // Same for a parameter-default thunk; see compile_default_expr.
+            new_act.new_target = (target.is_arrow()
+                    || (!target.is_eval_fn() && target.eval_allows_new_target()))
                 ? (*hobj.extra_ptr()).func.captured_new_target
                 : (target.is_eval_fn() ? ds.act.new_target : null);
             if (async_prom != null) {
