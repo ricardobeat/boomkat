@@ -139,15 +139,14 @@ struct HString {
     // terminator. Equal to `blen` for every ordinary string; only an
     // over-allocated concat accumulator has `capacity > blen`.
     uint capacity;
+    // One-based weak registry slot; zero means unregistered.
+    uint registry_slot;
 
     // --- String-specific fields ---
 
-    // FNV-1a hash of the raw bytes, or `HASH_DEFERRED` when it has not been
-    // computed yet. Interned strings always carry the real hash, since the
-    // string table indexes on it. A large non-interned string, such as the
-    // running result of a `+=` loop, defers it: hashing is O(blen), and the
-    // only consumers are the `equals_hstring` fast reject and a later
-    // `ensure_interned`, both of which go through `content_hash`.
+    // FNV-1a content hash, or HASH_DEFERRED. Concatenation skips hashing until
+    // a collection or property-key lookup calls Heap.content_hash. Equality
+    // can reject unequal materialized hashes before comparing bytes.
     uint hash;
     // Byte length of the UTF-8 data (excluding the NUL terminator).
     uint blen;

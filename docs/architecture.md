@@ -353,24 +353,16 @@ Strings are immutable, and their bytes live in the same allocation as the
 header, so `get_data()` is pointer arithmetic. A NUL always follows the last
 byte, letting the data pointer go straight to a C API.
 
-The invariant that matters most: **string equality is pointer identity**.
-Interning is what makes that true, so any path that produces an `HString` which
-escapes without interning will silently break strict equality, `indexOf`, and
-property-key lookup. There is one deliberate exception: strings over
-`MAX_INTERN_BYTES` are left un-interned. `equals_hstring` covers that case by
-falling back to a content compare when either side is not interned, so `===`
-and `indexOf` stay correct.
+String equality uses pointer identity when both strings are interned and
+compares content otherwise. Strict equality, SameValue, and collection lookups
+share that rule. Map and Set materialize a deferred content hash when needed.
+Property tables use canonical keys: property-key conversion and insertion call
+`Heap.ensure_interned` before relying on pointer identity.
 
-The fallback is *not* universal, though, and the gap is a live correctness bug
-rather than a design choice. `HObject.find_prop_idx` matches property keys with
-a bare `e.key == key`, and `same_value_impl` compares strings with a bare
-`a.get_heapptr() == b.get_heapptr()`. Both are wrong for a pair of equal strings
-over the cap: `Map.get`, `Set.has`, `Array.prototype.includes`, `Object.is` and
-a JSON round-trip of such a key all report a mismatch where QuickJS reports a
-match. `get_prop_key` calls `Heap.ensure_interned` to close the hole for direct
-property access, and it is the only caller; the collection and SameValue paths
-have no equivalent. Interning cannot be relaxed any further until every one of
-these sites either interns its operands or falls back to content.
+Concatenation results defer hashing and interning. A uniquely owned accumulator
+can append into spare capacity; other results allocate exactly their content.
+The weak string registry tracks both kinds, including short results, for GC
+and heap teardown.
 
 Internally the bytes are **CESU-8**, not standard UTF-8. An ECMAScript string is
 a sequence of UTF-16 code units, so every astral codepoint is split into its two
@@ -615,18 +607,19 @@ The string table is open-addressed with linear probing and tombstones, hashed
 with FNV-1a seeded per heap. Taking a slot makes the table an owner: the string
 is marked interned and increfed for the table's reference.
 
-Strings longer than `MAX_INTERN_BYTES` (256) are deliberately *not* interned.
-They are almost never property keys, and interning them piles dead strings into
-the table until the next GC, which gives O(n^2) growth in loops like `s += chunk`.
-Because such a string is in neither the string table nor `heap_allocated`, a
-separate **large-string registry** tracks it so the collector and teardown can
-still find it. Each string records its own slot index, so removal is an O(1) swap
-with the last element.
+Strings longer than `MAX_INTERN_BYTES` (256) and concatenation results bypass
+interning until used as property keys. A uniquely owned concatenation result
+can grow geometrically, keeping repeated appends linear. Because non-interned
+strings are in neither the string table nor `heap_allocated`, a separate
+**large-string registry** tracks them for collection and teardown. Each string
+records a one-based slot index, so removal is an O(1) swap with the last element. Zero denotes an unregistered string; GC compaction
+updates the surviving entries’ indices. Registry scans count toward the work
+used to budget the next GC cycle.
 
 That difference shapes how each is swept. An interned string can be freed when
 only the table still holds it, but a refcount of 1 is not enough on its own,
 because property tables and IC entries hold keys without taking a reference:
-reachability decides. The registry holds no reference at all, so for large
+reachability decides. The registry holds no reference at all, so for non-interned
 strings reachability is the whole test, which makes that pass a backstop for a
 refcount that was never decremented.
 

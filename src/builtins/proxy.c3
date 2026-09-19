@@ -1421,7 +1421,8 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
             proxy_throw_type(heap, "'ownKeys' on proxy: trap result must contain only strings and symbols");
             return false;
         }
-        keys[i] = (HString*)kv.get_heapptr();
+        // Duplicate and target-key checks below compare canonical identities.
+        keys[i] = heap.ensure_interned((HString*)kv.get_heapptr());
     }
     // Duplicate check (O(n^2); trap results are small in practice).
     for (uint i = 0; i < n; i++) {

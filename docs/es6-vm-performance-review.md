@@ -345,3 +345,44 @@ in both the baseline and candidate: `function Capture(value) { this.read =
 of printing 7. A direct eval of a class-constructor parameter also fails in
 both binaries. These cases are not counted among the passing checks and need
 a separate correctness fix.
+
+## Experiment 4: defer concatenation interning
+
+ADD and ADDI allocate concatenation results without hashing or interning them.
+Property-key consumers canonicalize on demand; collection hashing materializes
+the hash, and equality compares content when either operand is not interned.
+Accumulator alias guards and geometric capacity growth remain in place.
+
+The weak string registry uses a one-based header slot for constant-time
+removal. Swapping entries and GC compaction update that slot; registry scans
+contribute to the next GC budget. Proxy ownKeys canonicalizes its returned keys
+before duplicate and target-invariant checks, preserving the identity contract
+of property-key consumers and enumeration snapshots.
+
+Five interleaved runs, rotating engine order, compare against an immutable
+binary containing experiments 1–3. Times are whole-process medians:
+
+| Workload | Baseline | Candidate | QuickJS | Speedup |
+|---|---:|---:|---:|---:|
+| ES6 template/concatenation | 0.9355s | 0.4252s | 0.1174s | 2.20× |
+| ES5 string | 0.0495s | 0.0330s | 0.0223s | 1.50× |
+| ES6 sum of per-workload medians | 5.3011s | 4.8091s | 1.4704s | 1.10× |
+
+Other ES6 workloads differ by less than 2%. The string workload still takes
+3.62× QuickJS's time; the aggregate takes 3.27×.
+
+Three `/usr/bin/time -l` runs give median template peak RSS of 135,512,064 bytes
+for the baseline and 54,214,656 for the candidate, a 60% reduction. Retained
+repeated content trades memory for avoiding interning: an array containing
+100,000 results of `'item ' + (i % 100)` raises peak RSS from 6,979,584 to
+13,189,120 bytes. The registry slot also adds a uint to every string header;
+allocator size classes determine the resulting allocation cost.
+
+Validation: 42 Rosetta cases; all 438 local scripts and their module, error,
+robustness, console, Temporal, and TypeScript fixture groups; and 878 passing
+test262 cases with six scope skips across addition, template literals,
+Proxy/ownKeys, Map, Set, and JSON. A freshly rebuilt ASAN GC-stress runner passes
+the new concatenation identity fixture, proxy_ownkeys_gc_lifetime, and
+engine/test_concat_accumulate_aliasing. The new fixture checks retained strings,
+collection keys, property descriptors, JSON, Proxy key invariants, surrogate
+pairs, lone surrogates, NULs, and accumulator aliases.

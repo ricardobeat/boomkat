@@ -563,11 +563,8 @@ struct Heap {
     uint         str_table_size;
     uint         str_table_used;
 
-    // Registry of strings over MAX_INTERN_BYTES, which are absent from str_table
-    // and so invisible to the table sweep and to reset(). Each is appended at
-    // allocation and removed at free. Entries store their own slot index in
-    // HString.hash, unused for non-interned strings, so removal is an O(1) swap
-    // with the last element.
+    // Weak registry for non-interned strings. The one-based header slot lets
+    // removal swap in the final entry without scanning the live strings.
     HString**    large_strings;
     uint         large_string_count;
     uint         large_string_capacity;
@@ -4092,6 +4089,7 @@ fn void Heap.sweep_strings(&self) {
  * raw HString* is live in a C3 local. See mark_and_sweep phase 3b.
  */
 fn void Heap.sweep_large_strings(&self) {
+    self.mark_work_last += (ulong)self.large_string_count;
     uint kept = 0;
     for (uint i = 0; i < self.large_string_count; i++) {
         HString* s = self.large_strings[i];
@@ -4099,6 +4097,7 @@ fn void Heap.sweep_large_strings(&self) {
             // Survivors compact downward.
             self.large_strings[kept] = s;
             kept++;
+            s.registry_slot = kept;
         } else {
             self.free_string(s);
         }
@@ -4531,33 +4530,26 @@ fn void Heap.large_string_register(&self, HString* s) {
     }
     self.large_strings[self.large_string_count] = s;
     self.large_string_count++;
+    s.registry_slot = self.large_string_count;
 }
 
 /**
- * Remove a non-interned string from the registry, moving the last entry into
- * the vacated slot. The registry holds few strings, so finding the entry by
- * pointer beats carrying a slot index in every string header.
+ * Remove a non-interned string by swapping the final registry entry into its slot.
  */
 fn void Heap.large_string_unregister(&self, HString* s) {
-    for (uint i = 0; i < self.large_string_count; i++) {
-        if (self.large_strings[i] == s) {
-            self.large_string_count--;
-            self.large_strings[i] = self.large_strings[self.large_string_count];
-            return;
-        }
-    }
+    if (s.registry_slot == 0) return;
+    uint slot = s.registry_slot - 1;
+    self.large_string_count--;
+    HString* moved = self.large_strings[self.large_string_count];
+    self.large_strings[slot] = moved;
+    moved.registry_slot = slot + 1;
+    s.registry_slot = 0;
 }
 
-// Allocate a non-interned concat accumulator holding `data` but with room to
-// grow to `cap` bytes, so subsequent appends land in place instead of copying
-// the whole accumulator again.
-//
-// Used for `acc = acc + chunk` results at or over the VM's CONCAT_ACCUM_MIN,
-// which is below `MAX_INTERN_BYTES`, so this does add un-interned strings in
-// that range. They follow the same contract as the large ones: refcounted,
-// registered here, and canonicalized by `ensure_interned` where identity
-// matters. Returns null if allocation fails.
-fn HString* Heap.alloc_concat_accumulator(&self, char[] data, uint cap) {
+// Concatenation results defer hashing and interning until a consumer needs
+// them. Accumulators reserve spare capacity for subsequent in-place appends.
+// Returns null if allocation fails.
+fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
     HString*? new_s = hstring::hstring_alloc_cap(self, data, hstring::HASH_DEFERRED, cap);
     if (try s = new_s) {
         // Same registry contract as any other large non-interned string: the

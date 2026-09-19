@@ -307,7 +307,7 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     if (hstring::length_exceeds_max(want)) { want = need; }
     if (hstring::length_exceeds_max(want)) return false;
 
-    HString* grown = vm.heap.alloc_concat_accumulator(ls.get_data(), (uint)want);
+    HString* grown = vm.heap.alloc_concat_string(ls.get_data(), (uint)want);
     if (grown == null) return false;
     if (!grown.try_append_in_place(tail)) {
         // Cannot happen: the capacity was sized for exactly this append. Drop
@@ -325,20 +325,16 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     return true;
 }
 
-// Birth a concat result as a non-interned accumulator with spare capacity,
-// so the next iteration of an `acc = acc + chunk` loop can append in place
-// via vm_concat_accumulate. Qualifies only on that exact shape (ra == rb)
-// with a result of at least CONCAT_ACCUM_MIN bytes; anything else returns
-// null and the caller interns the result as usual. Birthing only allocates:
-// nothing shared is mutated, so none of vm_concat_accumulate's aliasing
-// guards apply. Capacity starts at twice the content so a growing loop
-// reaches its final size in O(log n) reallocations.
+// Concatenation values need no canonical identity until used as property keys.
+// Reserve growth space only for the accumulator shape; other results hold
+// exactly their content and defer hashing until a consumer needs it.
 fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data) {
-    if (ra != rb) return null;
-    if (data.len < CONCAT_ACCUM_MIN) return null;
-    ulong cap = (ulong)data.len * 2;
-    if (hstring::length_exceeds_max(cap)) { cap = (ulong)data.len; }
-    return vm.heap.alloc_concat_accumulator(data, (uint)cap);
+    ulong cap = (ulong)data.len;
+    if (ra == rb && data.len >= CONCAT_ACCUM_MIN) {
+        cap *= 2;
+        if (hstring::length_exceeds_max(cap)) { cap = (ulong)data.len; }
+    }
+    return vm.heap.alloc_concat_string(data, (uint)cap);
 }
 
 // Raise `message` as an error of class `proto` on every channel a host call
@@ -2441,9 +2437,6 @@ fn TVal? Vm.run(Vm* vm) {
                             mem::copy(buf, &int_buf, (sz)((usz)int_len));
                             mem::copy(buf + int_len, str.get_cstr(), (sz)(s_len));
                         }
-                        // In the `acc = acc + chunk` shape the result is born
-                        // as a non-interned accumulator; anything else is
-                        // interned so string equality stays pointer identity.
                         HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
                         if (result == null) { result = intern_string(vm, buf[:total]); }
                         if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
@@ -2527,9 +2520,6 @@ fn TVal? Vm.run(Vm* vm) {
                         mem::copy(buf + a_len, rs.get_cstr(), (sz)(b_len));
                     }
 
-                    // In the `acc = acc + chunk` shape the result is born
-                    // as a non-interned accumulator; anything else is
-                    // interned so string equality stays pointer identity.
                     HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
                     if (result == null) { result = intern_string(vm, buf[:total]); }
                     if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
@@ -2652,9 +2642,6 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         mem::copy(buf, str.get_cstr(), (sz)(s_len));
                         mem::copy(buf + s_len, &int_buf, (sz)((usz)int_len));
-                        // In the `acc = acc + chunk` shape the result is born
-                        // as a non-interned accumulator; anything else is
-                        // interned so string equality stays pointer identity.
                         HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
                         if (result == null) { result = intern_string(vm, buf[:total]); }
                         if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
