@@ -3552,7 +3552,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             Activation* new_act = activation_begin(vm, ds.regs_base[callee_reg]);
 
             EnvRecord* super_var_env = (*super_hobj.extra_ptr()).func.var_env;
-            if (try fv_su = env::env_create_function_scope(vm.heap, (*super_hobj.extra_ptr()).func.var_env)) { super_var_env = fv_su; }
+            if (super_target.needs_env()) {
+                if (try fv_su = env::env_create_function_scope(vm.heap, super_var_env)) { super_var_env = fv_su; }
+            }
             new_act.parent = ds.act;
             new_act.func = super_target;
             new_act.var_env = super_var_env;
@@ -3966,7 +3968,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             Activation* new_act = activation_begin(vm, ds.regs_base[callee_reg]);
 
             EnvRecord* ctor_var_env = (*hobj.extra_ptr()).func.var_env;
-            if (try fv_ct = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) { ctor_var_env = fv_ct; }
+            if (target.needs_env()) {
+                if (try fv_ct = env::env_create_function_scope(vm.heap, ctor_var_env)) { ctor_var_env = fv_ct; }
+            }
             new_act.parent = ds.act;
             new_act.func = target;
             new_act.var_env = ctor_var_env;

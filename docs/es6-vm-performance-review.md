@@ -320,3 +320,28 @@ and 1,013 test262 cases across assignment/dstr, function/dstr, let, const,
 and variable declarations, all passing. The focused fixture covers primitive
 literals, present values, parameters, member and identifier assignments,
 nested patterns, lazy side effects, function names, and fresh mutable defaults.
+
+## Experiment 3: constructor environment eligibility
+
+NEW_OBJ and SUPER_CALL consult the compiled function's needs_env flag before
+allocating a function environment. Parameter/default/rest handling and the
+lexical-chain setup keep their existing paths. This applies the ordinary-call
+eligibility decision to these two constructor entry paths.
+
+Five interleaved runs, rotating engine order, compare against an immutable
+binary containing experiments 1 and 2. Median class benchmark times:
+baseline 1.1556s, candidate 1.0316s, QuickJS 0.2780s. The candidate takes
+11% less time.
+
+Validation: 42 Rosetta cases; the local suite including 437 plain scripts;
+and 4,518 passing test262 cases with 16 scope skips across class statements,
+new, super, and new.target expressions. The focused fixture covers base and
+derived parameters, new.target, defaults/rest, mapped arguments, captured
+with scopes, named constructors, and preservation of enclosing bindings.
+
+An additional exploratory check exposes an existing constructor-capture issue
+in both the baseline and candidate: `function Capture(value) { this.read =
+() => value; } print(new Capture(7).read());` throws ReferenceError instead
+of printing 7. A direct eval of a class-constructor parameter also fails in
+both binaries. These cases are not counted among the passing checks and need
+a separate correctness fix.
