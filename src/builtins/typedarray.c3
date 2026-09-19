@@ -687,15 +687,13 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
             // --- Overload 4: from another TypedArray ---
             hobject::ObjClass src_cls = arg_obj.flags.obj_class;
             HObject* src_buf = (*arg_obj.extra_ptr()).view.buffer;
-            if (src_buf == null || ((*src_buf.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-                // Detached source: treat as zero-length.
-                buf = typedarray_alloc_buffer(ctx, 0);
-                if (buf == null) { ctx.result.set_undefined(); return; }
-                byte_offset = 0;
-                byte_length = 0;
-            } else if (view_is_out_of_bounds(arg_obj)) {
+            if (view_is_out_of_bounds(arg_obj)) {
                 // §23.2.5.1.2 InitializeTypedArrayFromTypedArray: an
-                // out-of-bounds source view throws TypeError.
+                // out-of-bounds source view throws TypeError. A DETACHED source
+                // is out of bounds (view_is_out_of_bounds reports a detached or
+                // absent buffer as such), so it throws here too rather than
+                // yielding an empty array -- which is what a preceding detached
+                // special case used to do, shadowing this check.
                 arraybuffer_throw_type_error(ctx, "TypedArray constructor: source is out of bounds");
                 return;
             } else {
