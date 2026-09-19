@@ -15,6 +15,49 @@ import std::math;
 // Object and array creation, spreads, and iterators
 // ============================================================================
 
+// A completed iterator lookup may still expose a custom next method or a
+// sparse/accessor-backed array. Only a dense intrinsic values iterator can
+// drain without executing user code between elements.
+fn HObject* dense_spread_source(Vm* vm, TVal iterator, HObject** iter_out) {
+    HObject* it = (HObject*)iterator.get_heapptr();
+    if (it.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR
+        || it.flags.exotic_proxyobj || (*it.extra_ptr()).iter.kind != 0) return null;
+    HObject* cur = it;
+    uint depth = 0;
+    while (cur != null) {
+        if (cur.flags.exotic_proxyobj || depth++ >= hobject::MAX_PROTO_DEPTH) return null;
+        cur = cur.prototype;
+    }
+    HString* key = intern_string(vm, "next");
+    hobject::PropLookupResult next = it.get_prop_or_accessor_proto(key, true, vm.heap);
+    if (next.kind != hobject::PropLookupKind.PROP_DATA || !next.data_val.is_object()) return null;
+    HObject* fn_obj = (HObject*)next.data_val.get_heapptr();
+    if (fn_obj == null || !fn_obj.is_callable()
+        || fn_obj.callable_kind() != hobject::CallableKind.BUILTIN_FN
+        || (*fn_obj.extra_ptr()).func.builtin_fn_index
+           != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal) return null;
+    HObject* source = (*it.extra_ptr()).iter.target;
+    if (source == null || source.flags.obj_class != hobject::ObjClass.ARRAY
+        || source.flags.exotic_proxyobj) return null;
+    uint len = *source.array_len_ptr();
+    uint start = (*it.extra_ptr()).iter.index;
+    if (start > len || len > source.array_size) return null;
+    TVal* values = source.array_part();
+    for (uint i = start; i < len; i++) {
+        // Undefined is also the dense-hole sentinel; the generic path resolves
+        // its own descriptor or an inherited indexed property.
+        if (values[i].is_undefined()) return null;
+    }
+    *iter_out = it;
+    return source;
+}
+
+fn void finish_dense_spread(Vm* vm, HObject* it, uint end) {
+    (*it.extra_ptr()).iter.index = end;
+    vm.heap.decref((HeapHeader*)(*it.extra_ptr()).iter.target);
+    (*it.extra_ptr()).iter.target = null;
+}
+
 // Result of copy_data_property: whether the caller's enumeration loop
 // should keep going, and (independently) whether a hard VM_ERROR occurred
 // or the getter threw a catchable value the caller must propagate.
@@ -640,6 +683,30 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 return (TVal){};
             }
 
+            HObject* dense_iter;
+            if (HObject* source = dense_spread_source(vm, iterator, &dense_iter)) {
+                uint end = *source.array_len_ptr();
+                uint start = (*dense_iter.extra_ptr()).iter.index;
+                uint count = end - start;
+                ulong needed = (ulong)idx + (ulong)count;
+                if (source != target && idx >= 0 && needed < 0x80000000) {
+                    if (needed > target.array_size) target.grow_array((uint)needed, vm.heap);
+                    if (needed <= target.array_size) {
+                        for (uint i = 0; i < count; i++) {
+                            target.set_array_idx((uint)idx + i, source.array_part()[start + i], vm.heap);
+                        }
+                        if (needed > *target.array_len_ptr()) {
+                            *target.array_len_ptr() = (uint)needed;
+                            target.sync_named_length(vm.heap);
+                        }
+                        finish_dense_spread(vm, dense_iter, end);
+                        ds.regs_base = ds.act.bottom;
+                        (ds.regs_base + (uint)insn.b).set_fastint((long)needed);
+                        return (TVal){};
+                    }
+                }
+            }
+
             // Loop: next() → {value, done}
             HString* next_key = intern_string(vm, "next");
             HString* done_key = intern_string(vm, "done");
@@ -856,6 +923,27 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 ? (uint)base_count_slot.get_fastint()
                 : (base_count_slot.is_number() ? (uint)base_count_slot.get_number() : 0);
             uint dest_start = first_arg_reg + base_off;
+
+            HObject* dense_iter;
+            if (HObject* source = dense_spread_source(vm, iterator, &dense_iter)) {
+                uint end = *source.array_len_ptr();
+                uint start = (*dense_iter.extra_ptr()).iter.index;
+                uint count = end - start;
+                ulong needed = (ulong)(ds.regs_base - vm.valstack) + dest_start + count;
+                if (needed < 0x80000000 && ensure_valstack(vm, (uint)needed)) {
+                    ds.regs_base = ds.act.bottom;
+                    for (uint i = 0; i < count; i++) {
+                        TVal* dest = ds.regs_base + dest_start + i;
+                        vm.heap.tval_copy_ref(dest, &source.array_part()[start + i]);
+                        track_heap_store(ds.act, dest, dest_start + i);
+                    }
+                    TVal* top = ds.regs_base + dest_start + count;
+                    if (top > vm.valstack_top) vm.valstack_top = top;
+                    finish_dense_spread(vm, dense_iter, end);
+                    (ds.regs_base + count_reg).set_fastint((long)base_off + count);
+                    return (TVal){};
+                }
+            }
 
             // Loop: next() → {value, done}
             HString* next_key = intern_string(vm, "next");

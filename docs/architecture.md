@@ -250,6 +250,21 @@ truncates. A typed-array write coerces the value first, and that coercion can ru
 user code that resizes or detaches the buffer, so the bounds are rechecked
 afterwards.
 
+### Array and call spread
+
+`ARRSPRD` and `SPREAD_ARG` invoke `Symbol.iterator` before selecting a fast
+path. An intrinsic array-values iterator with an ordinary data `next` method
+and a dense remaining range can drain without per-element calls or iterator
+result objects. Destination storage is reserved once, and each copied value
+acquires the reference its destination owns. Call spread refreshes register
+pointers after stack growth and extends the stack watermark over its arguments.
+
+The guard rejects proxy iterator prototypes, custom next methods, and dense
+holes, including the undefined sentinel. These take the generic iterator path,
+which can observe indexed getters and inherited properties. A bulk drain
+updates the iterator's index and releases its target on exhaustion, including
+when a custom iterator factory exposes that iterator elsewhere.
+
 ### Exceptions
 
 `TRY` pushes a `Catcher` onto a chain rooted in the activation; `THROW` walks it

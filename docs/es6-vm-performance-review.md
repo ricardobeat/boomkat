@@ -386,3 +386,49 @@ the new concatenation identity fixture, proxy_ownkeys_gc_lifetime, and
 engine/test_concat_accumulate_aliasing. The new fixture checks retained strings,
 collection keys, property descriptors, JSON, Proxy key invariants, surrogate
 pairs, lone surrogates, NULs, and accumulator aliases.
+
+
+## Experiment 5: drain dense array iterators for spread
+
+ARRSPRD and SPREAD_ARG invoke Symbol.iterator, then recognize an intrinsic
+array-values iterator whose remaining range contains only dense data slots.
+They reserve destination storage once and copy values with owned references.
+The iterator is exhausted and releases its source, including when a custom
+factory returns an externally visible or partially consumed iterator.
+
+The shared guard checks the resolved next method, rejects proxy iterator
+prototype chains, and refuses the undefined/hole sentinel. Custom methods,
+indexed accessors, sparse arrays, and other iterator kinds use the generic
+protocol. No user code executes between validation and the bulk copy.
+
+Validation: 42 Rosetta cases, all 439 local scripts and fixture groups, and
+306 passing test262 cases with three scope skips across array, call, new,
+super, and Array.prototype.values. The new dense_array_spread fixture passes
+in Boomkat and Node and covers custom factories, partially consumed iterators,
+iterator getters, patched next methods, inherited indices, indexed accessors,
+undefined, thrown factories, constructor spread, stack growth, and heap-valued
+arguments. Fresh ASAN GC-stress builds pass that fixture, concatenation string
+identity, and temproot_gc_lifetime.
+
+Five interleaved runs, rotating engine order, compare against the immutable
+4ed38276 binary. Whole-process spread/rest medians are 0.8104s baseline,
+0.3262s candidate, and 0.1986s QuickJS: a 2.48× speedup. The ES6 sum of
+per-workload medians falls from 4.8388s to 4.3929s (9.2%); QuickJS takes
+1.5030s. Other ES6 workloads differ by less than 2.6%.
+
+A separate five-run diagnostic times each spread/rest function with Date.now,
+retaining setup and call order. Median subcase times:
+
+| Operation | Baseline | Candidate | QuickJS | Speedup |
+|---|---:|---:|---:|---:|
+| Array spread | 410 ms | 79 ms | 65 ms | 5.19× |
+| Call spread | 237 ms | 29 ms | 35 ms | 8.17× |
+| Object spread | 97 ms | 95 ms | 75 ms | 1.02× |
+| Rest parameters | 124 ms | 126 ms | 20 ms | 0.98× |
+
+These instrumented subcases come from separate runs and must not be summed
+with the whole-process table. Call spread beats QuickJS in this measurement;
+array spread and the aggregate still trail it.
+
+Three `/usr/bin/time -l` runs give median spread/rest peak RSS of 8,355,840
+bytes for the baseline and 6,225,920 for the candidate, a 25% reduction.
