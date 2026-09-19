@@ -2076,7 +2076,11 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             if (inc_was_member) {
                 // INC + PUTPROP for member access (e.g. ++obj.prop).
                 self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
-                self.emit_abc(Opcode.PUTPROP, (uint)inc_member_obj, (uint)inc_member_prop, (uint)op_inc);
+                // `++super.x` writes back through PUTPROP_SUPER so the setter
+                // runs with `this` as the receiver, not the super base
+                // (§13.15.2 PutValue); see member_store_op.
+                self.emit_abc(self.member_is_super() ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP,
+                              (uint)inc_member_obj, (uint)inc_member_prop, (uint)op_inc);
                 self.free_reg(inc_member_prop);
                 self.free_reg(inc_member_obj);
             } else if (inc_was_getvar && !inc_was_getglobal && self.code_count > 0
@@ -2177,7 +2181,10 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             if (dec_was_member) {
                 // DEC + PUTPROP for member access (e.g. --obj.prop).
                 self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
-                self.emit_abc(Opcode.PUTPROP, (uint)dec_member_obj, (uint)dec_member_prop, (uint)op_dec);
+                // See the INC case: a super member write-back needs the
+                // receiver-preserving store.
+                self.emit_abc(self.member_is_super() ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP,
+                              (uint)dec_member_obj, (uint)dec_member_prop, (uint)op_dec);
                 self.free_reg(dec_member_prop);
                 self.free_reg(dec_member_obj);
             } else if (dec_was_getvar && !dec_was_getglobal && self.code_count > 0
@@ -2387,7 +2394,8 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 ushort obj_reg = self.member_obj();
                 ushort prop_reg = self.member_prop();
                 self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
-                self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
+                self.emit_abc(self.member_is_super() ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP,
+                              (uint)obj_reg, (uint)prop_reg, (uint)operand);
                 self.free_reg(prop_reg);
                 self.free_reg(obj_reg);
             } else if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
@@ -2458,7 +2466,8 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             // INC the operand (the property value already in the register).
             self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
             // Write back to the property.
-            self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
+            self.emit_abc(self.member_is_super() ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP,
+                          (uint)obj_reg, (uint)prop_reg, (uint)operand);
             self.free_reg(prop_reg);
             self.free_reg(obj_reg);
             handled = true;
@@ -2521,7 +2530,8 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 ushort obj_reg = self.member_obj();
                 ushort prop_reg = self.member_prop();
                 self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
-                self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
+                self.emit_abc(self.member_is_super() ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP,
+                              (uint)obj_reg, (uint)prop_reg, (uint)operand);
                 self.free_reg(prop_reg);
                 self.free_reg(obj_reg);
             } else if (lhs_was_getvar && !lhs_was_getglobal && self.code_count > 0
@@ -2581,7 +2591,8 @@ fn ushort? CompilerContext.postfix_expr(&self) {
             ushort obj_reg = self.member_obj();
             ushort prop_reg = self.member_prop();
             self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
-            self.emit_abc(Opcode.PUTPROP, (uint)obj_reg, (uint)prop_reg, (uint)operand);
+            self.emit_abc(self.member_is_super() ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP,
+                          (uint)obj_reg, (uint)prop_reg, (uint)operand);
             self.free_reg(prop_reg);
             self.free_reg(obj_reg);
             handled = true;
