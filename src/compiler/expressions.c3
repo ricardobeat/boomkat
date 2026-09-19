@@ -5509,6 +5509,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 return COMPILE_ERROR~;
             }
             uint head_idx = self.add_string_constant(head_tok.str_value);
+            // The accumulator is one register, reused as both destination and
+            // first operand of every concat in the chain. That is the
+            // `acc += chunk` shape vm_concat_accumulate grows in place; a chain
+            // of ADDs across fresh temporaries would allocate and copy the
+            // whole prefix on every step instead of extending it.
             ushort result_reg = self.alloc_reg();
             self.emit_a_bc(Opcode.LDCONST, (uint)result_reg, head_idx);
 
@@ -5533,13 +5538,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
             expr_reg = self.tostr_into_temp(expr_reg);
 
             // Concatenate: result = result + expr  (ADD handles string coercion)
-            {
-                ushort concat_reg = self.alloc_reg();
-                self.emit_abc(Opcode.ADD, (uint)concat_reg, (uint)result_reg, (uint)expr_reg);
-                self.free_reg(expr_reg);
-                self.free_reg(result_reg);
-                result_reg = concat_reg;
-            }
+            self.emit_abc(Opcode.ADD, (uint)result_reg, (uint)result_reg, (uint)expr_reg);
+            self.free_reg(expr_reg);
 
             // Handle TEMPLATE_MIDDLE / TEMPLATE_TAIL chain
             while (next_tok.type == TokenType.TEMPLATE_MIDDLE) {
@@ -5547,15 +5547,14 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     return COMPILE_ERROR~;
                 }
                 uint mid_idx = self.add_string_constant(next_tok.str_value);
-                ushort mid_reg = self.alloc_reg();
-                self.emit_a_bc(Opcode.LDCONST, (uint)mid_reg, mid_idx);
+                if (next_tok.str_value.len > 0) {
+                    ushort mid_reg = self.alloc_reg();
+                    self.emit_a_bc(Opcode.LDCONST, (uint)mid_reg, mid_idx);
 
-                // Concatenate the middle text
-                ushort concat_reg2 = self.alloc_reg();
-                self.emit_abc(Opcode.ADD, (uint)concat_reg2, (uint)result_reg, (uint)mid_reg);
-                self.free_reg(result_reg);
-                self.free_reg(mid_reg);
-                result_reg = concat_reg2;
+                    // Concatenate the middle text
+                    self.emit_abc(Opcode.ADD, (uint)result_reg, (uint)result_reg, (uint)mid_reg);
+                    self.free_reg(mid_reg);
+                }
 
                 // Parse the next expression; consume its closing `}` and
                 // scan the following template part.
@@ -5567,11 +5566,8 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 next_expr_reg = self.tostr_into_temp(next_expr_reg);
 
                 // Concatenate expression
-                ushort concat_reg3 = self.alloc_reg();
-                self.emit_abc(Opcode.ADD, (uint)concat_reg3, (uint)result_reg, (uint)next_expr_reg);
+                self.emit_abc(Opcode.ADD, (uint)result_reg, (uint)result_reg, (uint)next_expr_reg);
                 self.free_reg(next_expr_reg);
-                self.free_reg(result_reg);
-                result_reg = concat_reg3;
             }
 
             if (next_tok.type != TokenType.TEMPLATE_TAIL) {
@@ -5583,15 +5579,14 @@ fn ushort? CompilerContext.primary_expr(&self) {
             }
 
             uint tail_idx = self.add_string_constant(next_tok.str_value);
-            ushort tail_reg = self.alloc_reg();
-            self.emit_a_bc(Opcode.LDCONST, (uint)tail_reg, tail_idx);
+            if (next_tok.str_value.len > 0) {
+                ushort tail_reg = self.alloc_reg();
+                self.emit_a_bc(Opcode.LDCONST, (uint)tail_reg, tail_idx);
 
-            // Concatenate the tail text
-            ushort concat_reg4 = self.alloc_reg();
-            self.emit_abc(Opcode.ADD, (uint)concat_reg4, (uint)result_reg, (uint)tail_reg);
-            self.free_reg(result_reg);
-            self.free_reg(tail_reg);
-            result_reg = concat_reg4;
+                // Concatenate the tail text
+                self.emit_abc(Opcode.ADD, (uint)result_reg, (uint)result_reg, (uint)tail_reg);
+                self.free_reg(tail_reg);
+            }
 
             return result_reg;
         }
