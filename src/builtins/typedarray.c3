@@ -2814,43 +2814,65 @@ fn int ta_default_compare(TVal* a, TVal* b) {
     return ta_numeric_compare(ad, bd);
 }
 
-// Insertion sort on a TVal[] slice, O(n²) but correct and stable for small n.
-// Elements are element TVals (BigInt kinds already boxed), so the algorithm is
-// element-type agnostic; only the leaf comparators know numeric vs BigInt.
-fn void ta_insertion_sort(TVal[] arr, BuiltinContext* ctx, TVal comparefn, bool has_comparefn) {
-    uint n = (uint)arr.len;
-    for (uint i = 1; i < n; i++) {
-        TVal key = arr[i];
-        long j = (long)i - 1;
-        while (j >= 0) {
-            int cmp;
-            if (has_comparefn && ctx.heap.call_fn != null && ctx.vm != null) {
-                TVal[2] args; args[0] = arr[(uint)j]; args[1] = key;
-                TVal this_val; this_val.set_undefined();
-                TVal res = ctx.heap.call_fn(ctx.vm, comparefn, &args[0], 2, this_val);
-                if (ctx.heap.has_error) {
-                    ctx.should_throw = true;
-                    ctx.throw_value = ctx.heap.error_value;
-                    ctx.heap.has_error = false;
-                    return;
-                }
-                double rd;
-                if (res.is_fastint()) { rd = (double)res.get_fastint(); }
-                else if (res.is_number()) { rd = res.get_number(); }
-                else {
-                    // ToNumber on the comparefn result (may call Symbol.toPrimitive).
-                    rd = ta_val_to_number(&res, ctx);
-                    if (ctx.should_throw) return;
-                }
-                cmp = rd < 0.0 ? -1 : (rd > 0.0 ? 1 : 0);
-            } else {
-                cmp = ta_default_compare(&arr[(uint)j], &key);
+// One comparison step for a TA sort: the user comparefn when supplied,
+// otherwise the default numeric/BigInt comparator. Errors are surfaced through
+// ctx.should_throw, and the caller must stop the sort as soon as it is set.
+fn int ta_sort_compare(TVal* a, TVal* b, BuiltinContext* ctx, TVal comparefn, bool has_comparefn) {
+    if (!has_comparefn || ctx.heap.call_fn == null || ctx.vm == null) {
+        return ta_default_compare(a, b);
+    }
+    TVal[2] args; args[0] = *a; args[1] = *b;
+    TVal this_val; this_val.set_undefined();
+    TVal res = ctx.heap.call_fn(ctx.vm, comparefn, &args[0], 2, this_val);
+    if (ctx.heap.has_error) {
+        ctx.should_throw = true;
+        ctx.throw_value = ctx.heap.error_value;
+        ctx.heap.has_error = false;
+        return 0;
+    }
+    double rd;
+    if (res.is_fastint()) { rd = (double)res.get_fastint(); }
+    else if (res.is_number()) { rd = res.get_number(); }
+    else {
+        // ToNumber on the comparefn result (may call Symbol.toPrimitive).
+        rd = ta_val_to_number(&res, ctx);
+        if (ctx.should_throw) return 0;
+    }
+    // A NaN comparefn result is treated as 0 (§23.2.3.29.1 step 4).
+    return rd < 0.0 ? -1 : (rd > 0.0 ? 1 : 0);
+}
+
+// Stable bottom-up merge sort on a TVal[] slice, O(n log n). Elements are
+// element TVals (BigInt kinds already boxed), so the algorithm is element-type
+// agnostic; only the leaf comparators know numeric vs BigInt. `temp` is caller-
+// provided scratch of the same length, which keeps the allocation next to the
+// element scratch rather than buried one call deeper.
+fn void ta_merge_sort(TVal[] arr, TVal[] temp, BuiltinContext* ctx, TVal comparefn, bool has_comparefn) {
+    usz n = arr.len;
+    for (usz width = 1; width < n; width *= 2) {
+        for (usz i = 0; i < n; i += 2 * width) {
+            usz left = i;
+            usz mid = i + width < n ? i + width : n;
+            usz right = i + 2 * width < n ? i + 2 * width : n;
+            if (mid >= right) continue;
+
+            // Copy the left run aside so the merge can write back into `arr`.
+            for (usz j = left; j < mid; j++) temp[j] = arr[j];
+
+            usz l = left;
+            usz r = mid;
+            usz k = left;
+            while (l < mid && r < right) {
+                int cmp = ta_sort_compare(&temp[l], &arr[r], ctx, comparefn, has_comparefn);
+                if (ctx.should_throw) return;
+                // `<=` keeps equal elements in their original order (stable).
+                if (cmp <= 0) { arr[k] = temp[l]; l++; }
+                else          { arr[k] = arr[r];  r++; }
+                k++;
             }
-            if (cmp <= 0) break;
-            arr[(uint)(j + 1)] = arr[(uint)j];
-            j--;
+            while (l < mid) { arr[k] = temp[l]; l++; k++; }
+            // A remaining right-hand run is already in place in `arr`.
         }
-        arr[(uint)(j + 1)] = key;
     }
 }
 
@@ -2885,25 +2907,32 @@ fn void builtin_ta_proto_sort(BuiltinContext* ctx) {
 
     // Copy elements into a scratch TVal array, sort, write back. Element TVals
     // (BigInt kinds already boxed) make the sort element-type agnostic.
+    // Two equal-length buffers: the elements themselves and the merge scratch.
+    // One allocation covers both so there is a single failure path and a single
+    // free on every exit.
     TVal[512] stack_scratch;
+    TVal[512] stack_temp;
     TVal[] scratch;
+    TVal[] temp;
     TVal* heap_scratch = null;
     if (len <= 512) {
         scratch = stack_scratch[:len];
+        temp = stack_temp[:len];
     } else {
-        heap_scratch = (TVal*)heap.alloc_func(heap.heap_udata, (usz)len * TVal::size);
+        heap_scratch = (TVal*)heap.alloc_func(heap.heap_udata, (usz)len * 2 * TVal::size);
         if (heap_scratch == null) {
             arraybuffer_throw_range_error(ctx, "TypedArray.sort: out of memory");
             return;
         }
         scratch = heap_scratch[:len];
+        temp = heap_scratch[len:len];
     }
 
     for (uint i = 0; i < len; i++) {
         scratch[i] = ta_load_element(ctx.heap, base, cls, i);
     }
 
-    ta_insertion_sort(scratch, ctx, comparefn, has_comparefn);
+    ta_merge_sort(scratch, temp, ctx, comparefn, has_comparefn);
 
     if (!ctx.should_throw && !ta_is_detached(obj)) {
         // Re-fetch base pointer: comparefn may have realloc'd if buffer grew, but
@@ -2964,25 +2993,32 @@ fn void builtin_ta_proto_toSorted(BuiltinContext* ctx) {
 
     if (len <= 1) { ctx.result.set_object(result); return; }
 
+    // Two equal-length buffers: the elements themselves and the merge scratch.
+    // One allocation covers both so there is a single failure path and a single
+    // free on every exit.
     TVal[512] stack_scratch;
+    TVal[512] stack_temp;
     TVal[] scratch;
+    TVal[] temp;
     TVal* heap_scratch = null;
     if (len <= 512) {
         scratch = stack_scratch[:len];
+        temp = stack_temp[:len];
     } else {
-        heap_scratch = (TVal*)heap.alloc_func(heap.heap_udata, (usz)len * TVal::size);
+        heap_scratch = (TVal*)heap.alloc_func(heap.heap_udata, (usz)len * 2 * TVal::size);
         if (heap_scratch == null) {
             arraybuffer_throw_range_error(ctx, "TypedArray.toSorted: out of memory");
             return;
         }
         scratch = heap_scratch[:len];
+        temp = heap_scratch[len:len];
     }
 
     for (uint i = 0; i < len; i++) {
         scratch[i] = ta_load_element(ctx.heap, dst, cls, i);
     }
 
-    ta_insertion_sort(scratch, ctx, comparefn, has_comparefn);
+    ta_merge_sort(scratch, temp, ctx, comparefn, has_comparefn);
 
     if (!ctx.should_throw) {
         for (uint i = 0; i < len; i++) {
