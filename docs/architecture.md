@@ -132,8 +132,11 @@ straightforward stack discipline cannot express without stranding higher slots.
 Scopes are a compile-time stack mirroring the runtime environment chain. The
 compiler resolves a name to a register where it can, and falls back to an
 environment lookup where it cannot. `needs_env` records the outcome for the whole
-function: when it stays false, the VM skips creating a scope on every call, which
-is one of the larger wins available to a one-pass compiler.
+function: when it stays false, the VM skips creating a scope on every call.
+After register-local environment writes are elided, a function with no remaining
+lexical bindings or depth-dependent environment operations also drops all
+lexical pushes and pops, including abrupt-exit pops. Functions with retained
+const or TDZ bindings keep their scope layout.
 
 ### Classes and private names
 
@@ -816,4 +819,3 @@ microtask drain that cannot pump itself.
 Host integration goes through `ModuleHostHooks`: specifier resolution, source
 loading, and load and evaluation callbacks, so an embedder decides what a
 specifier means.
-

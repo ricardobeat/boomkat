@@ -2242,6 +2242,35 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                     i++;
                 }
             }
+
+            // Remove every lexical push/pop together, including abrupt-exit
+            // pops. Keeping any binding or depth-dependent operation requires
+            // keeping the whole scope layout; matching pushes by instruction
+            // order would mistake break/continue pops for normal block exits.
+            bool needs_lexical_env = false;
+            for (uint i = 0; i < self.code_count; i++) {
+                switch (self.code[i].op) {
+                    case Opcode.INITTZ:
+                    case Opcode.PUTLEX:
+                    case Opcode.PUTLEX_C:
+                    case Opcode.GETBOUND:
+                    case Opcode.PUSH_VAR:
+                    case Opcode.POP_VAR:
+                        needs_lexical_env = true;
+                    case Opcode.PUSH_LEX:
+                        if (self.code[i].a != 0) needs_lexical_env = true;
+                    default:
+                }
+                if (needs_lexical_env) break;
+            }
+            if (!needs_lexical_env) {
+                for (uint i = 0; i < self.code_count; i++) {
+                    if (self.code[i].op == Opcode.PUSH_LEX
+                        || self.code[i].op == Opcode.POP_LEX) {
+                        self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                    }
+                }
+            }
         }
     }
 
