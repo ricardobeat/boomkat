@@ -3464,9 +3464,11 @@ fn void Heap.mark_roots(&self) {
     // reference are rooted here.
     for (uint fi = 0; fi < self.compiled_func_count; fi++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
-        if (cf == null || cf.constants == null) { continue; }
-        for (uint ci = 0; ci < cf.const_count; ci++) {
-            self.mark_tval(&cf.constants[ci]);
+        if (cf == null) { continue; }
+        if (cf.constants != null) {
+            for (uint ci = 0; ci < cf.const_count; ci++) {
+                self.mark_tval(&cf.constants[ci]);
+            }
         }
         // Property IC entries cache a proto object and a key string.
         if (cf.ic_entries != null && cf.ic_count > 0) {
@@ -3477,13 +3479,15 @@ fn void Heap.mark_roots(&self) {
                 if (ie.proto != null) { self.mark_hobject((HObject*)ie.proto); }
             }
         }
-        // Variable IC entries cache a bindings object and a key string.
+        // Variable IC entries are weak over their env/bindings: only the key is
+        // a root here. The bindings object is not marked, so a cache cannot
+        // retain a scope chain; prune_var_ic_entries clears entries whose env or
+        // bindings died, after marking reaches a fixed point.
         if (cf.var_ic_entries != null && cf.var_ic_count > 0) {
             hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
             for (uint vi = 0; vi < cf.var_ic_count; vi++) {
                 hobject::VarICEntry* vie = &vics[vi];
                 if (vie.key != null) { ((HeapHeader*)vie.key).set_reachable(); }
-                if (vie.bindings != null) { self.mark_hobject((HObject*)vie.bindings); }
             }
         }
     }
@@ -3566,6 +3570,44 @@ fn void Heap.mark_roots(&self) {
     }
 
     self.drain_gray();
+}
+
+// Prune weak variable-inline-cache entries once marking reaches a fixed point,
+// while object and environment marks are still readable and before any object
+// or environment memory is freed. A surviving entry needs live, marked records
+// at both env and search_head, a marked bindings object, and that object to be
+// the env's current bindings. Anything else is stale and is cleared so the
+// cache cannot hold a scope chain, and so a later address reuse is never served
+// from a dead entry.
+fn void Heap.prune_var_ic_entries(&self) {
+    for (uint fi = 0; fi < self.compiled_func_count; fi++) {
+        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
+        if (cf == null || cf.var_ic_entries == null || cf.var_ic_count == 0) { continue; }
+        hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
+        for (uint vi = 0; vi < cf.var_ic_count; vi++) {
+            hobject::VarICEntry* vie = &vics[vi];
+            if (vie.env == null && vie.bindings == null && vie.search_head == null) {
+                continue;  // already empty
+            }
+            bool survive = false;
+            // Verify the env records are live before reading vie.bindings or
+            // the env's bindings pointer: a dead owner's cached object may
+            // already be freed.
+            if (hobject::env_record_is_allocated(vie.env)
+                && hobject::env_record_get_epoch(vie.env) == self.env_mark_epoch
+                && hobject::env_record_is_allocated(vie.search_head)
+                && hobject::env_record_get_epoch(vie.search_head) == self.env_mark_epoch) {
+                HObject* b = (HObject*)vie.bindings;
+                if (b != null && ((HeapHeader*)b).is_reachable()
+                    && hobject::env_record_bindings(vie.env) == b) {
+                    survive = true;
+                }
+            }
+            if (!survive) {
+                hobject::var_ic_clear(vie, self);
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -4124,6 +4166,12 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
 
     // Phase 2: mark from the roots.
     self.mark_roots();
+
+    // Phase 2b: prune weak variable caches after marking reaches a fixed point,
+    // before the object sweep clears any marks or frees memory. This is what
+    // prevents a cache from retaining a scope chain, and clears stale entries
+    // before their env cells can be recycled.
+    self.prune_var_ic_entries();
 
     // Phase 3: sweep objects.
     self.sweep();

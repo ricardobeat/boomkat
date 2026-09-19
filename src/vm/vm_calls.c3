@@ -719,7 +719,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 }
                 // Accessor property: fall through to slow path which invokes getter
             }
-            vic.env = null;
+            hobject::var_ic_clear(vic, vm.heap);
         }
     }
 
@@ -1113,12 +1113,9 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     if (found) {
         if (ic_cacheable && ds.var_ic_base != null && ic_env != null) {
             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-            hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
-            gic.env = (void*)ic_env;
-            gic.bindings = (void*)ic_env.bindings;
-            gic.shape_id = ic_env.bindings.shape_id;
-            gic.prop_idx = (uint)ic_prop_idx;
-            gic.search_head = (void*)ds.act.lex_env;
+            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
+                ic_env.bindings.shape_id, (uint)ic_prop_idx, key, (void*)ds.act.lex_env,
+                false, vm.heap);
         }
     } else {
         // Not bound on the chain: the global record binds the global object's

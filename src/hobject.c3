@@ -2876,11 +2876,29 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     vic.shape_id = shape_id;
     vic.prop_idx = prop_idx;
     vic.recycle_epoch = h.shape_recycle_epoch;
+    // Retain the new key before releasing the old so replacing a key with
+    // itself is safe when the entry is its only counted owner.
+    if (key != null) { ((types::HeapHeader*)key).incref(); }
     if (vic.key != null) { h.decref((types::HeapHeader*)vic.key); }
     vic.key = key;
-    if (key != null) { ((types::HeapHeader*)key).incref(); }
     vic.search_head = search_head;
     vic.varref_store_ok = store_ok;
+}
+
+// Clear every field of a variable IC entry and release exactly its owned key
+// count. Readers guard on bindings or search_head rather than env, so clearing
+// only env would leave a stale pointer that a later lookup dereferences.
+fn void var_ic_clear(VarICEntry* vic, heap::Heap* h) {
+    void* key = vic.key;
+    vic.env = null;
+    vic.bindings = null;
+    vic.shape_id = 0;
+    vic.prop_idx = 0;
+    vic.recycle_epoch = 0;
+    vic.key = null;
+    vic.search_head = null;
+    vic.varref_store_ok = false;
+    if (key != null) { h.decref((types::HeapHeader*)key); }
 }
 
 // True when the megamorphic cache may answer a getter lookup on this receiver.
