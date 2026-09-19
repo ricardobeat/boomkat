@@ -1,5 +1,5 @@
 // Arithmetic operations benchmark
-var N = 900000;
+var N = 180000;
 var a = 12345;
 var b = 67890;
 var c = 0;

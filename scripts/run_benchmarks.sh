@@ -188,32 +188,34 @@ for f in "$BENCH_DIR"/bench_*.js; do
 done
 
 if [ "$QJS_AVAILABLE" = true ]; then
-    printf "  %-30s %12s %12s %12s %8s\n" "Benchmark" "boomkat(ms)" "Duktape(ms)" "QuickJS(ms)" "Ratio"
-    echo "  --------------------------------------------------------------------------"
+    printf "  %-28s %10s %10s %10s %8s %8s\n" "Benchmark" "boomkat(ms)" "Duktape(ms)" "QuickJS(ms)" "vsDuk" "vsQJS"
+    echo "  ------------------------------------------------------------------------------"
     for name in "${bench_names[@]}"; do
         c3_val=$(cat "$TMPDIR_BENCH/c3_$name")
         orig_val=$(cat "$TMPDIR_BENCH/orig_$name")
         qjs_val=$(cat "$TMPDIR_BENCH/qjs_$name")
 
+        ratio="?"
         if [ "$c3_val" != "N/A" ] && [ "$orig_val" != "N/A" ]; then
-            ratio=$(echo "scale=2; $c3_val / $orig_val" | bc 2>/dev/null || echo "?")
-            if [ "$(echo "$ratio > 0" | bc 2>/dev/null)" = "1" ]; then
-                printf "  %-30s %7.0fms %7.0fms %7.0fms %8.1fx\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "$ratio"
-            else
-                printf "  %-30s %7.0fms %7.0fms %7.0fms %8s\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "?"
+            r=$(echo "scale=2; $c3_val / $orig_val" | bc 2>/dev/null || echo "?")
+            if [ "$(echo "$r > 0" | bc 2>/dev/null)" = "1" ]; then
+                ratio=$(printf "%.1fx" "$r")
             fi
-        elif [ "$c3_val" != "N/A" ] && [ "$qjs_val" != "N/A" ]; then
-            ratio=$(echo "scale=2; $c3_val / $qjs_val" | bc 2>/dev/null || echo "?")
-            if [ "$(echo "$ratio > 0" | bc 2>/dev/null)" = "1" ]; then
-                printf "  %-30s %7.0fms %8s %7.0fms %8.1fx\n" "$name" "$c3_val" "-" "$qjs_val" "$ratio"
-            else
-                printf "  %-30s %7.0fms %8s %7.0fms %8s\n" "$name" "$c3_val" "-" "$qjs_val" "?"
-            fi
-        elif [ "$orig_val" != "N/A" ] && [ "$qjs_val" != "N/A" ]; then
-            printf "  %-30s %8s %7.0fms %7.0fms %8s\n" "$name" "-" "$orig_val" "$qjs_val" "?"
-        else
-            printf "  %-30s %10s %10s %10s %8s\n" "$name" "$c3_val" "$orig_val" "$qjs_val" "-"
         fi
+
+        qratio="?"
+        if [ "$c3_val" != "N/A" ] && [ "$qjs_val" != "N/A" ]; then
+            r=$(echo "scale=2; $c3_val / $qjs_val" | bc 2>/dev/null || echo "?")
+            if [ "$(echo "$r > 0" | bc 2>/dev/null)" = "1" ]; then
+                qratio=$(printf "%.1fx" "$r")
+            fi
+        fi
+
+        c3_disp="-";   [ "$c3_val" != "N/A" ]   && c3_disp="${c3_val}ms"
+        orig_disp="-"; [ "$orig_val" != "N/A" ] && orig_disp="${orig_val}ms"
+        qjs_disp="-";  [ "$qjs_val" != "N/A" ]  && qjs_disp="${qjs_val}ms"
+
+        printf "  %-28s %10s %10s %10s %8s %8s\n" "$name" "$c3_disp" "$orig_disp" "$qjs_disp" "$ratio" "$qratio"
     done
 else
     printf "  %-30s %12s %12s %10s\n" "Benchmark" "boomkat(ms)" "Duktape(ms)" "Ratio"
@@ -236,7 +238,7 @@ fi
 echo "  -------------------------------------------------------------"
 echo ""
 if [ "$QJS_AVAILABLE" = true ]; then
-    echo "Ratio (boomkat/Duktape) > 1.0 means boomkat is slower."
+    echo "vsDuk / vsQJS > 1.0 means boomkat is slower than that engine."
 else
     echo "Ratio > 1.0 means boomkat is slower (higher is worse)."
 fi

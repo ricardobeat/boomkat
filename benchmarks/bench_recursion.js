@@ -1,5 +1,5 @@
 // Recursion benchmark (Fibonacci)
-var N = 32;
+var N = 29;
 
 function fib(n) {
     if (n <= 1) return n;

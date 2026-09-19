@@ -8,7 +8,7 @@ var bench = function(name, fn, iterations) {
     print(name + ": " + elapsed + " ms (" + iterations + " iterations)");
 };
 
-var N = 10000;
+var N = 2000;
 
 // ── new Date() construction (current time) ──────────────────────────────────
 bench("new Date()", function () {

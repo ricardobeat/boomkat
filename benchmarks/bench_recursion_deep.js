@@ -1,5 +1,5 @@
-// Deep recursion benchmark (Fibonacci 35) — stress deeper call stacks
-var N = 35;
+// Deep recursion benchmark (Fibonacci 32) — stress deeper call stacks
+var N = 32;
 
 function fib(n) {
     if (n <= 1) return n;
