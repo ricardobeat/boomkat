@@ -179,4 +179,4 @@ work and the claimed ratio.
 Source anchors: `src/bytecode.c3`, `src/vm/vm_execute*.c3`,
 `src/vm/vm_control.c3`, `src/vm/vm_objects.c3`, `src/hobject.c3`,
 `src/heap.c3`, `src/env.c3`, `src/vm/vm_generators.c3`,
-`src/builtins/promise.c3`, and `docs/es6-vm-performance-review.md`.
+`src/builtins/promise.c3`, and `plans/086-es6-vm-performance.md`.

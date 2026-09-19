@@ -432,3 +432,32 @@ array spread and the aggregate still trail it.
 
 Three `/usr/bin/time -l` runs give median spread/rest peak RSS of 8,355,840
 bytes for the baseline and 6,225,920 for the candidate, a 25% reduction.
+
+## Follow-up bytecode review: allocation and materialization
+
+Fresh boomkat_debug disassembly of the spread/rest, template, and destructuring
+benchmarks identifies the following compiler opportunities. These are proposals,
+not implemented gains:
+
+- `arraySpread` emits PUSH_LEX at loop-body PC 5, PUTLEX_C at PC 15, and
+  POP_LEX at PC 18. The uncaptured array local still forces a runtime binding
+  and scope. Templates and destructuring show the same pattern. Register-local
+  const/TDZ checks would let these scopes disappear without weakening errors.
+- `arraySpread` emits INITPROP, ADDI, LDCONST("length"), PUTPROP after ARRSPRD.
+  A register-length counterpart to SETALEN would avoid generic property setting
+  at the end of spread literals. Any elimination must preserve trailing holes
+  and empty spreads; their final length need not follow from stored elements.
+- `restParams` has only DECLVAR, GETPROPC(args, "length"), and RET. Its rest
+  array and environment are materialized during call setup. Compiler metadata
+  for a nonescaping rest binding used solely for length could return the rest
+  argument count directly, with ordinary setup retained for other uses.
+- `spreadCall` moves the callee/receiver into r19/r20, loads the source into r21,
+  copies it into r22, then writes spread arguments starting at r21. The overlap
+  is intentional. An iterator-free copy must retain its source while those
+  registers are overwritten; removing the source move alone is unsafe.
+- The template body includes a final LDCONST/ADD for the trailing empty segment.
+  Eliding an empty segment after the required substitution ToString is a small
+  independent opportunity; fusing conversions must preserve their evaluation
+  order relative to later substitutions.
+
+Disassembly is in /tmp/boomkat-spread2{,-template,-destructuring}.bytecode.
