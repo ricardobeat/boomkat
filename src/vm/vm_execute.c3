@@ -4973,12 +4973,23 @@ fn TVal? Vm.run(Vm* vm) {
                             TVal* pv = &gb.prop_values()[gic.prop_idx];
                             if (!env::is_tdz_sentinel(pv)) {
                                 // Source is provably primitive: no incref of the
-                                // source, no track_heap_store. The destination
-                                // register may still hold a stale heap ref from a
-                                // prior use, so decref it before the raw write to
-                                // avoid a missed-decref leak.
-                                if (ra.is_heap_allocated()) vm.heap.decref_tval(ra);
-                                *ra = *pv;
+                                // source, no track_heap_store. The destination may
+                                // still hold a heap ref from a prior use, which
+                                // tval_copy_ref releases.
+                                //
+                                // It has to be tval_copy_ref and not a bare
+                                // decref: releasing the destination is only
+                                // correct if this register owns a count, and
+                                // nothing here establishes that. The same object
+                                // can sit in two registers of one frame after an
+                                // uncounted register copy, and then a bare decref
+                                // per loop iteration walks the count to zero and
+                                // frees it under the register that does own it.
+                                // GETGLOBAL's slot-IC path below takes the raw
+                                // route only when the destination is also
+                                // non-heap, which is the same rule stated as a
+                                // guard.
+                                vm.heap.tval_copy_ref(ra, pv);
                                 break;
                             }
                         }
@@ -5005,11 +5016,15 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     if (ic_env != null) {
                         TVal* slot = &ic_env.bindings.prop_values()[ic_prop_idx];
-                        if (ra.is_heap_allocated()) vm.heap.decref_tval(ra);
+                        // Same rule as the IC-hit path above: release the old
+                        // value through tval_copy_ref, never a bare decref of
+                        // whatever the register happens to hold.
                         if (!env::is_tdz_sentinel(slot)) {
-                            *ra = *slot;
+                            vm.heap.tval_copy_ref(ra, slot);
                         } else {
-                            ra.set_undefined();
+                            TVal undef_tv;
+                            undef_tv.set_undefined();
+                            vm.heap.tval_copy_ref(ra, &undef_tv);
                         }
                         if (ds.var_ic_base != null) {
                             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
