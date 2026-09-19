@@ -4487,7 +4487,7 @@ fn TVal? Vm.run(Vm* vm) {
                             // The readers of this register (THROW_UNRESOLVED,
                             // PUTVAR_ASSIGN) route on a non-null EnvRecord*
                             // pointer, not a boolean: null means unresolvable.
-                            ra.set_pointer(vic.env);
+                            ra.set_envref(vic.env);
                             track_heap_store(ds.act, ra, (uint)insn.a);
                             break;
                             }
@@ -4554,9 +4554,9 @@ fn TVal? Vm.run(Vm* vm) {
                     // deletes the binding (§9.1.1.2.5 step 3). A null pointer =
                     // unresolvable; a non-null EnvRecord* = resolvable.
                     if (found) {
-                        ra.set_pointer((void*)owner);
+                        ra.set_envref((void*)owner);
                     } else {
-                        ra.set_pointer(null);
+                        ra.set_envref(null);
                     }
                 }
             }
@@ -4572,7 +4572,7 @@ fn TVal? Vm.run(Vm* vm) {
             // (sloppy implicit global) still proceeds — the value will land
             // via PUTGLOBAL/PUTVAR_ASSIGN's resolver-fallthrough at plans/083
             // phase 2. Strict code keeps the original §6.2.5.6 throw.
-            if (ra.is_pointer() && ra.get_heapptr() != null) { continue; }
+            if (ra.is_envref() && ra.get_heapptr() != null) { continue; }
             if (((CompiledFunction*)ds.act.func).is_strict()) {
                 uint bc = insn.get_bc();
                 char* nm = (char*)"";
@@ -6101,7 +6101,7 @@ fn TVal? Vm.run(Vm* vm) {
                     EnvRecord* resolved_env = null;
                     if ((uint)insn.b < ds.nregs) {
                         TVal bv = ds.regs_base[(uint)insn.b];
-                        if (bv.is_pointer()) resolved_env = (EnvRecord*)bv.get_heapptr();
+                        if (bv.is_envref()) resolved_env = (EnvRecord*)bv.get_heapptr();
                     }
                     if (resolved_env != null && resolved_env.flags.is_with
                         && !resolved_env.bindings.has_prop_proto(key, vm.heap)) {
@@ -6250,7 +6250,7 @@ fn TVal? Vm.run(Vm* vm) {
             EnvRecord* snap_env = null;
             if ((uint)insn.b < ds.nregs) {
                 TVal bv = ds.regs_base[(uint)insn.b];
-                if (bv.is_pointer()) snap_env = (EnvRecord*)bv.get_heapptr();
+                if (bv.is_envref()) snap_env = (EnvRecord*)bv.get_heapptr();
             }
             if (name_idx < vm.current_func.const_count) {
                 TVal name_val = ds.constants[name_idx];
@@ -7272,7 +7272,7 @@ fn TVal? Vm.run(Vm* vm) {
                     ((types::HeapHeader*)base).incref();
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 } else if (owner_env != null) {
-                    ra.set_pointer((void*)owner_env);
+                    ra.set_envref((void*)owner_env);
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 } else {
                     ra.set_undefined();
@@ -7346,7 +7346,7 @@ fn TVal? Vm.run(Vm* vm) {
                         threw = true;
                     }
                 }
-            } else if (key != null && rb.is_pointer()) {
+            } else if (key != null && rb.is_envref()) {
                 // WITHBASE captured the owning EnvRecord*: the Reference did
                 // not resolve through a with-env, so SetMutableBinding runs
                 // against that declarative/global env directly. An RHS that

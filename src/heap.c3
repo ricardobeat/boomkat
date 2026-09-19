@@ -534,6 +534,15 @@ $else
 $endif
 }
 
+// One link of an allocation-free stack of native scoped environment roots. A
+// C3 local that holds the only reference to an EnvRecord across a GC-capable
+// call pushes one of these; the GC traces the stack on every collection so a
+// detached scope's bindings stay alive until the local goes out of scope.
+struct EnvRoot {
+    EnvRoot* previous;
+    void*    env;  // EnvRecord* (opaque)
+}
+
 struct Heap {
     // Allocator callbacks
     AllocFunc    alloc_func;
@@ -837,6 +846,9 @@ struct Heap {
     // collection. A cell whose EnvRecord.flags.mark_epoch equals this value was
     // traced by the current cycle.
     bool      env_mark_epoch;
+    // Stack of native scoped environment roots. Each link protects one
+    // EnvRecord held only in a C3 local; the GC traces it as a root.
+    EnvRoot*  env_roots;
 
     // Every CompiledFunction the compiler allocates. Freed in Heap.destroy.
     void**    compiled_funcs;
@@ -2870,15 +2882,19 @@ fn void Heap.mark_tval(&self, TVal* v) {
         if (b != null) {
             b.set_reachable();
         }
+    } else if (v.is_envref()) {
+        // A saved internal environment reference. Trace its whole chain; the
+        // epoch check inside mark_env_chain dedups shared ancestors.
+        self.mark_env_chain(v.get_heapptr());
     }
 }
 
 /**
  * Mark the `bindings` HObject of every EnvRecord in a scope chain.
  *
- * An EnvRecord is pool-allocated and never collected itself, but its `bindings`
- * object is an ordinary heap node. Marking only the innermost link roots one
- * scope and leaves every enclosing one collectible: a closure suspended over
+ * An EnvRecord is a pool-allocated cell and its `bindings` object is an
+ * ordinary heap node. Marking only the innermost link roots one scope and
+ * leaves every enclosing one collectible: a closure suspended over
  * `outer -> middle -> inner` survives a sweep with `inner.bindings` intact and
  * `outer.bindings` freed, and the first GETVAR walking past `inner` reads a
  * recycled pool block, which surfaces as HObject.get_shape under find_prop_idx.
@@ -2888,16 +2904,61 @@ fn void Heap.mark_tval(&self, TVal* v) {
  * live frames; this is the counterpart for closures, generator objects, and
  * suspended GeneratorStates.
  *
+ * The walk is first-visit: a cell whose mark_epoch already equals the heap's
+ * current epoch was traced earlier this cycle, so the chain above it was too,
+ * and the loop stops. Shared chains are therefore visited once per collection
+ * rather than once per closure, and the traversal is iterative so chain depth
+ * cannot grow the C stack.
+ *
  * `env_ptr` is an opaque EnvRecord*, since heap.c3 cannot import env.c3, which
  * imports heap.c3. The typed field reads happen in hobject.c3.
  */
 fn void Heap.mark_env_chain(&self, void* env_ptr) {
     void* cur = env_ptr;
     while (cur != null) {
+        // Only an allocated cell has meaningful bindings/heap. A free cell or a
+        // stale pointer into a recycled cell must stop the walk before either
+        // is read; verification builds report it rather than walking on.
+        if (!hobject::env_record_is_allocated(cur)) {
+            $if $feat(HEAP_VERIFY):
+                io::eprintf("[HEAP_VERIFY]   ERROR mark_env_chain: %p is not an allocated EnvRecord\n", cur);
+            $endif
+            break;
+        }
+        $if $feat(HEAP_VERIFY):
+            if (!hobject::env_pool_contains(self, cur)) {
+                io::eprintf("[HEAP_VERIFY]   ERROR mark_env_chain: %p is not in this heap's pool\n", cur);
+                break;
+            }
+        $endif
+        if (hobject::env_record_get_epoch(cur) == self.env_mark_epoch) {
+            break;
+        }
+        hobject::env_record_set_epoch(cur, self.env_mark_epoch);
+        self.mark_work_last++;
         HObject* bindings = hobject::env_record_bindings(cur);
         if (bindings != null) { self.mark_hobject(bindings); }
         cur = hobject::env_record_parent(cur);
     }
+}
+
+// Push a native scoped environment root: `root` is a C3 local that now
+// protects `env` (an EnvRecord the GC could not otherwise reach) until the
+// matching pop. The GC traces env_roots on every collection.
+fn void Heap.push_env_root(&self, EnvRoot* root, void* env) {
+    root.env = env;
+    root.previous = self.env_roots;
+    self.env_roots = root;
+}
+
+// Remove `root` from the native environment-root stack. Removal is LIFO.
+fn void Heap.pop_env_root(&self, EnvRoot* root) {
+    $if $feat(HEAP_VERIFY):
+        if (self.env_roots != root) {
+            io::eprintf("[HEAP_VERIFY] env root popped out of order\n");
+        }
+    $endif
+    self.env_roots = root.previous;
 }
 
 // Mark everything a suspended GeneratorState references. Both generator objects
@@ -3238,6 +3299,13 @@ fn void Heap.drain_gray(&self) {
  * through the gray stack, so there is no recursion or depth limit.
  */
 fn void Heap.mark_roots(&self) {
+    // Native scoped environment roots: an EnvRecord held only in a C3 local
+    // across a GC-capable call. Traced first so their whole chains are marked
+    // before the gray stack drains.
+    for (EnvRoot* r = self.env_roots; r != null; r = r.previous) {
+        self.mark_env_chain(r.env);
+    }
+
     for (uint i = 0; i < (uint)self.gc_roots.len(); i++) {
         HeapHeader* hdr = (HeapHeader*)self.gc_roots[i];
         if (hdr != null) {
@@ -3474,6 +3542,11 @@ fn void Heap.mark_roots(&self) {
         for (uint i = 0; i < self.module_cache_count; i++) {
             esm::ModuleDef* mod = cache[i];
             if (mod == null) continue;
+            // The module environment holds its bindings and chains to the
+            // global scope. The namespace/eval-error/import.meta marks below do
+            // not substitute for this edge: a module with no executing
+            // activation still needs its record alive.
+            self.mark_env_chain((void*)mod.env);
             if (mod.has_eval_error) { self.mark_tval(&mod.eval_error); }
             if (mod.is_synthetic)   { self.mark_tval(&mod.synth_value); }
             // The cached import.meta object (§16.2.1.10 [[ImportMeta]]) carries
@@ -4013,6 +4086,10 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
     // Reset before the mark phase so mark_work_last describes THIS cycle when
     // the trigger is recomputed at the end of it.
     self.mark_work_last = 0;
+    // Flip the environment epoch so this cycle's first-visit marks are
+    // distinguishable from the previous cycle's. A cell whose mark_epoch does
+    // not equal the new value was not reached this cycle and is dead.
+    self.env_mark_epoch = !self.env_mark_epoch;
 
     bool clear_temproots = safepoint && self.native_frame_depth == 0;
 

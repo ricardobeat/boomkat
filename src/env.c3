@@ -118,6 +118,22 @@ fn void env_pool_teardown(Heap* h) {
     h.env_peak_bytes_reserved = 0;
 }
 
+// True when `env` is a cell-aligned member of one of this heap's pool blocks.
+// HEAP_VERIFY uses it to confirm a traced EnvRecord* is a real member of this
+// heap's pool, not a wild pointer or a cell from another heap.
+fn bool env_pool_contains(Heap* h, EnvRecord* env) {
+    EnvPoolBlock* b = (EnvPoolBlock*)h.env_pool_blocks;
+    while (b != null) {
+        char* lo = (char*)&b.cells[0];
+        char* hi = lo + EnvRecord::size * ENV_POOL_BLOCK_SIZE;
+        if ((char*)env >= lo && (char*)env < hi) {
+            return ((usz)((char*)env - lo) % EnvRecord::size) == 0;
+        }
+        b = b.next;
+    }
+    return false;
+}
+
 // ============================================================================
 // Creation / destruction
 // ============================================================================

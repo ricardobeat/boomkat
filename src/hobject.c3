@@ -51,6 +51,35 @@ fn void env_pool_teardown(heap::Heap* h) {
     env::env_pool_teardown(h);
 }
 
+// True when `env_ptr` is a cell-aligned member of `h`'s pool. HEAP_VERIFY's
+// mark_env_chain check uses this to confirm a traced EnvRecord* is real.
+fn bool env_pool_contains(heap::Heap* h, void* env_ptr) {
+    return env_ptr != null && env::env_pool_contains(h, (env::EnvRecord*)env_ptr);
+}
+
+// Flag/epoch accessors for heap.c3's first-visit mark and the pool sweep. Each
+// reads or writes one EnvFlags bit through the opaque EnvRecord* so heap.c3
+// never sees the record layout.
+fn bool env_record_is_allocated(void* env_ptr) {
+    return env_ptr != null && ((env::EnvRecord*)env_ptr).flags.allocated;
+}
+
+fn bool env_record_get_epoch(void* env_ptr) {
+    return ((env::EnvRecord*)env_ptr).flags.mark_epoch;
+}
+
+fn void env_record_set_epoch(void* env_ptr, bool epoch) {
+    ((env::EnvRecord*)env_ptr).flags.mark_epoch = epoch;
+}
+
+fn bool env_record_is_temproot(void* env_ptr) {
+    return ((env::EnvRecord*)env_ptr).flags.temproot;
+}
+
+fn void env_record_clear_temproot(void* env_ptr) {
+    ((env::EnvRecord*)env_ptr).flags.temproot = false;
+}
+
 // ============================================================================
 // Constants
 // ============================================================================

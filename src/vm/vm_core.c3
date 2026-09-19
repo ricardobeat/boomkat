@@ -14,26 +14,14 @@ import std::core::sanitizer;
 // GC activation marking
 // ============================================================================
 
-// Mark the env bindings one activation holds. Both the live activation array
-// and the shadow frame stack go through here.
+// Mark the env chains one activation holds. Both the live activation array
+// and the shadow frame stack go through here. The first-visit mark_env_chain
+// walk covers each scope plus every enclosing one, so this is the single
+// place that roots a frame's scopes.
 fn void mark_activation_envs(heap::Heap* h, Activation* act) @inline {
-    if (act.var_env != null && act.var_env.bindings != null) {
-        h.mark_hobject(act.var_env.bindings);
-    }
-    if (act.lex_env != null && act.lex_env.bindings != null && act.lex_env != act.var_env) {
-        h.mark_hobject(act.lex_env.bindings);
-    }
-    // The parent chains keep every enclosing scope alive.
-    env::EnvRecord* cur = act.var_env;
-    while (cur != null) {
-        if (cur.bindings != null) { h.mark_hobject(cur.bindings); }
-        cur = cur.parent;
-    }
-    // lex_env can diverge from var_env, so it is walked separately.
-    cur = act.lex_env;
-    while (cur != null) {
-        if (cur.bindings != null) { h.mark_hobject(cur.bindings); }
-        cur = cur.parent;
+    h.mark_env_chain(act.var_env);
+    if (act.lex_env != act.var_env) {
+        h.mark_env_chain(act.lex_env);
     }
 }
 
@@ -146,6 +134,14 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     // and the next decref of the stale slot is a use-after-free.
     h.mark_tval(&vm.return_val);
     h.mark_tval(&vm.throw_value);
+
+    // The global scope records are roots even with no active activation: their
+    // bindings are registered GC roots, but the EnvRecord cells themselves are
+    // only reached by walking an activation's chain, and a top-level RET leaves
+    // no frame behind. Marking them here keeps the cells alive for the epoch
+    // sweep.
+    h.mark_env_chain((void*)vm.global_env);
+    h.mark_env_chain((void*)vm.global_lex_env);
 
     // Mark live activations (inner-most vm_call_fn_impl's callback + inline callees).
     // Each frame's register span runs from its bottom to the next inner frame's
@@ -458,10 +454,10 @@ fn void drop_pending_this_arrows(Vm* vm, Activation* act) {
 }
 
 // Track a heap-ref store in the current activation.  Call after any
-// instruction that writes an object or buffer TVal into a register.
+// instruction that writes an object, buffer, or ENVREF TVal into a register.
 // Updates heap_reg_count so decref_callee_regs can skip non-heap registers.
 fn void track_heap_store(Activation* act, TVal* val, uint reg_idx) @inline {
-    if (val.is_heap_allocated()) {
+    if (val.needs_gc_scan()) {
         if (val.get_heapptr() != null && reg_idx + 1 > act.heap_reg_count) {
             act.heap_reg_count = reg_idx + 1;
         }
@@ -490,7 +486,7 @@ fn void track_heap_store(Activation* act, TVal* val, uint reg_idx) @inline {
 fn void track_restored_regs(Activation* act, TVal* regs, uint nregs) {
     for (uint i = nregs; i > act.heap_reg_count; i--) {
         uint idx = i - 1;
-        if (regs[idx].is_heap_allocated() && regs[idx].get_heapptr() != null) {
+        if (regs[idx].needs_gc_scan() && regs[idx].get_heapptr() != null) {
             act.heap_reg_count = idx + 1;
             return;
         }
@@ -557,6 +553,10 @@ fn void catcher_chain_walk(heap::Heap* h, void* head, int mode) {
             case heap::CATCHER_CHAIN_MARK:
                 h.mark_tval(&c.thrown_val);
                 h.mark_tval(&c.return_val);
+                // The lexical env saved at TRY entry. An exceptional exit skips
+                // the try block's POP_LEX instructions, so CATCH/FINALLY restore
+                // it; while suspended it is held only here and must be traced.
+                h.mark_env_chain(c.saved_lex_env);
             default:
                 if (mode == heap::CATCHER_CHAIN_FREE) { h.decref_tval(&c.thrown_val); }
                 h.free_func(h.heap_udata, c);
@@ -722,7 +722,7 @@ $if $feat(HEAP_VERIFY):
     // that has already been reclaimed: that is the pointer vm_mark_activations
     // would follow, and the one a later frame reads as its own register.
     for (uint i = 0; i < nregs; i++) {
-        if (!regs[i].is_heap_allocated()) continue;
+        if (!regs[i].needs_gc_scan()) continue;
         void* ptr = regs[i].get_heapptr();
         if (ptr == null) continue;
         if (sanitizer::asan::address_is_poisoned(ptr)) {

@@ -78,6 +78,9 @@ enum TValTag : char {
     // Internal sentinel marking a deleted array_part slot, which a stored
     // undefined must not be confused with. Never a valid ECMAScript value.
     DELETED,
+    // Internal reference to an EnvRecord saved in a register snapshot. Not a
+    // valid ECMAScript value; escapes into public values are rejected.
+    ENVREF,
 }
 
 // 48-bit range fits the NaN-box payload.
@@ -126,6 +129,7 @@ const ulong TAG_LIGHTFUNC  = 0xFFF7;  // embed: func ptr
 const ulong TAG_STRING     = 0xFFF8;  // embed: HString* ptr
 const ulong TAG_OBJECT     = 0xFFF9;  // embed: HObject* ptr
 const ulong TAG_BUFFER     = 0xFFFA;  // embed: buffer ptr
+const ulong TAG_ENVREF     = 0xFFFB;  // embed: EnvRecord* ptr (internal, not a JS value)
 const ulong TAG_DELETED    = 0xFFFF;  // embed: nothing (Set/Map deletion sentinel)
 
 macro ulong nanbox_encode_tagged(ulong tag, ulong payload) {
@@ -183,6 +187,7 @@ $if USE_NANBOX:
         case TAG_POINTER:    return POINTER;
         case TAG_LIGHTFUNC:  return LIGHTFUNC;
         case TAG_BIGINT:     return BIGINT;
+        case TAG_ENVREF:     return ENVREF;
         case TAG_DELETED:    return DELETED;
         default:             return UNDEFINED;
     }
@@ -307,6 +312,23 @@ $if USE_NANBOX:
 $else
     return self.tag == POINTER;
 $endif
+}
+
+// Internal EnvRecord reference stored in a register snapshot. Not a JS value;
+// only the VM's snapshot slots and the GC marker read it.
+macro bool TVal.is_envref(&self) {
+$if USE_NANBOX:
+    return nanbox_get_tag(self.bits) == TAG_ENVREF;
+$else
+    return self.tag == ENVREF;
+$endif
+}
+
+// True when the value must be traced or cleared during register cleanup: a
+// heap value, or an internal ENVREF. Kept separate from is_heap_allocated,
+// which drives reference-counting and must never see ENVREF as heap memory.
+macro bool TVal.needs_gc_scan(&self) {
+    return self.is_heap_allocated() || self.is_envref();
 }
 
 macro bool TVal.is_lightfunc(&self) {
@@ -538,6 +560,18 @@ $if USE_NANBOX:
     self.bits = nanbox_encode_tagged(TAG_POINTER, (usz)ptr);
 $else
     self.tag     = POINTER;
+    self.pointer = ptr;
+$endif
+}
+
+// Store an internal EnvRecord reference. No refcount is touched: an ENVREF is
+// a traced GC edge, not an owned pointer, so neither the setter nor the
+// accessor performs header access.
+macro void TVal.set_envref(&self, void* ptr) {
+$if USE_NANBOX:
+    self.bits = nanbox_encode_tagged(TAG_ENVREF, (usz)ptr);
+$else
+    self.tag     = ENVREF;
     self.pointer = ptr;
 $endif
 }
