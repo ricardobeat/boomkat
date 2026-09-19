@@ -2075,72 +2075,30 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                         usz num_len = json_number_to_string(elem.get_number(), &num_buf, 64);
                         str_key = builtin_intern_string(ctx.heap, num_buf[:num_len]);
                     } else if (elem.is_object() && elem.get_heapptr() != null) {
+                        // §25.5.2.1 SerializeJSONProperty PropertyList step 5.b.iii:
+                        // a String or Number WRAPPER contributes ToString(value).
+                        // Any other object is skipped.
+                        //
+                        // This is the real ToString, not a toString() call: when
+                        // toString is absent or not callable, OrdinaryToPrimitive
+                        // falls through to valueOf, and a toString that returns a
+                        // non-string primitive is still used (the result is only
+                        // rejected when it is an object, which sends the hint on
+                        // to valueOf). Hand-rolling the call missed all three of
+                        // those, so an overridden valueOf was ignored whenever
+                        // toString was nulled out, and a String wrapper whose
+                        // toString returned a number fell back to the raw
+                        // internal primitive.
                         HObject* eobj = (HObject*)elem.get_heapptr();
-                        if (eobj.get_class() == ObjClass.STRING) {
-                            // ToString(value): call toString() to respect overrides
-                            HString* ts_key = (HString*)ctx.heap.strs[heap::BuiltinStr.TO_STRING];
-                            if (ts_key != null) {
-                                TVal? toString_fn_opt = eobj.get_prop_proto(ts_key, ctx.heap);
-                                if (try toString_fn = toString_fn_opt) {
-                                    bool callable = false;
-                                    if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
-                                        callable = ((HObject*)toString_fn.get_heapptr()).is_callable();
-                                    } else if (toString_fn.is_lightfunc()) {
-                                        callable = true;
-                                    }
-                                    if (callable && ctx.heap.call_fn != null && ctx.vm != null) {
-                                        TVal res = ctx.heap.call_fn(ctx.vm, toString_fn, null, 0, elem);
-                                        if (ctx.heap.has_error) { ctx.should_throw = true; if (prop_keys != null) ctx.heap.free_func(ctx.heap.heap_udata, prop_keys); return; }
-                                        else if (res.is_string()) {
-                                            str_key = (HString*)res.get_heapptr();
-                                        }
-                                    }
-                                }
-                            }
-                            // Fallback: primitive value
-                            if (str_key == null && (*eobj.extra_ptr()).prim.primitive_value.is_string()) {
-                                str_key = (HString*)(*eobj.extra_ptr()).prim.primitive_value.get_heapptr();
-                            }
-                        } else if (eobj.get_class() == ObjClass.NUMBER) {
-                            // ToString(value): call toString() to respect overrides
-                            HString* ts_key = (HString*)ctx.heap.strs[heap::BuiltinStr.TO_STRING];
-                            if (ts_key != null) {
-                                TVal? toString_fn_opt = eobj.get_prop_proto(ts_key, ctx.heap);
-                                if (try toString_fn = toString_fn_opt) {
-                                    bool callable = false;
-                                    if (toString_fn.is_object() && toString_fn.get_heapptr() != null) {
-                                        callable = ((HObject*)toString_fn.get_heapptr()).is_callable();
-                                    } else if (toString_fn.is_lightfunc()) {
-                                        callable = true;
-                                    }
-                                    if (callable && ctx.heap.call_fn != null && ctx.vm != null) {
-                                        TVal res = ctx.heap.call_fn(ctx.vm, toString_fn, null, 0, elem);
-                                        if (ctx.heap.has_error) { ctx.should_throw = true; if (prop_keys != null) ctx.heap.free_func(ctx.heap.heap_udata, prop_keys); return; }
-                                        else if (res.is_string()) {
-                                            str_key = (HString*)res.get_heapptr();
-                                        } else if (res.is_fastint() || res.is_number()) {
-                                            char[64] nb;
-                                            usz nl = json_number_to_string(
-                                                res.is_fastint() ? (double)res.get_fastint() : res.get_number(), &nb, 64);
-                                            str_key = builtin_intern_string(ctx.heap, nb[:nl]);
-                                        }
-                                    }
-                                }
-                            }
-                            // Fallback: primitive value
-                            if (str_key == null) {
-                                TVal pv = (*eobj.extra_ptr()).prim.primitive_value;
-                                if (pv.is_fastint()) {
-                                    str_key = ctx.heap.int_to_hstring(pv.get_fastint());
-                                } else if (pv.is_number()) {
-                                    char[64] num_buf;
-                                    usz num_len = json_number_to_string(pv.get_number(), &num_buf, 64);
-                                    str_key = builtin_intern_string(ctx.heap, num_buf[:num_len]);
-                                }
+                        ObjClass ecls = eobj.get_class();
+                        if (ecls == ObjClass.STRING || ecls == ObjClass.NUMBER) {
+                            str_key = builtin_to_string_vm(ctx, &elem);
+                            if (ctx.should_throw) {
+                                if (prop_keys != null) ctx.heap.free_func(ctx.heap.heap_udata, prop_keys);
+                                return;
                             }
                         }
                     }
-
                     if (str_key == null) continue;
 
                     // Deduplicate: check if already in list
