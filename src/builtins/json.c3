@@ -685,6 +685,31 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                     val.set_undefined();
                     return val;
                 }
+            } else if (is_typed_array_class(obj.get_class())) {
+                // A TypedArray is not an Array, so it takes this branch, but its
+                // elements are canonical numeric-index own properties living in
+                // the buffer rather than in the named-property table, so the
+                // prop_count scan below would find none of them and the reviver
+                // would never see them. [[OwnPropertyKeys]] (§10.4.5.6) lists
+                // them ascending ahead of any named key, which is the order this
+                // branch has to reproduce.
+                //
+                // The length is read once, up front: the reviver runs between
+                // elements and may detach or resize the buffer, and the indices
+                // in this snapshot are then simply absent, which js_get reports
+                // as undefined without faulting.
+                uint ta_len = ta_element_count(obj);
+                ordered = null;
+                ordered_count = 0;
+                if (ta_len > 0) {
+                    ordered = (HString**)heap.alloc_func(heap.heap_udata, (usz)ta_len * HString*::size);
+                    if (ordered == null) { val.set_undefined(); return val; }
+                    for (uint i = 0; i < ta_len; i++) {
+                        HString* idx_key = heap.int_to_hstring((long)i);
+                        if (idx_key == null) continue;
+                        ordered[ordered_count++] = idx_key;
+                    }
+                }
             } else {
                 // Snapshot own enumerable keys in integer-ascending + insertion order
                 // (EnumerableOwnPropertyNames per spec, for-in-order requirement).
