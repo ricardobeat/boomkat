@@ -431,6 +431,22 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     // boundary), none of which reflect the arrow's true lexical `this`.
     if (template.is_arrow() && enclosing_this != null) {
         vm.heap.tval_copy_ref(&(*func_obj.extra_ptr()).func.captured_this, enclosing_this);
+        // Capturing the TDZ sentinel means the enclosing derived constructor
+        // has not run super() yet, so this `this` is not a value but a promise
+        // of one. Register the arrow so super_init_this_chain() can fill it in:
+        // once the arrow escapes the constructor there is no live frame left
+        // for super_walk_live_this() to find. See Vm.pending_this_arrows.
+        if (env::is_tdz_sentinel(enclosing_this) && vm.activation_count > 0) {
+            Activation* creating_act = &vm.activations[vm.activation_count - 1];
+            PendingThisArrow* entry =
+                (PendingThisArrow*)vm.heap.alloc_func(vm.heap.heap_udata, PendingThisArrow::size);
+            if (entry != null) {
+                entry.next = vm.pending_this_arrows;
+                entry.act = creating_act;
+                entry.fn_obj = func_obj;
+                vm.pending_this_arrows = entry;
+            }
+        }
     }
     // ES2015 §9.2.1 [[NewTarget]]=lexical: capture the enclosing function's
     // new.target once, at closure-creation time (same rationale as

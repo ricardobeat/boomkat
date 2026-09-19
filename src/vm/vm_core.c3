@@ -205,6 +205,16 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         }
         shadow = (ShadowActFrame*)shadow.prev;
     }
+
+    // Arrows awaiting their derived constructor's super(). The entry holds the
+    // only guaranteed reference once the arrow has been stored somewhere the
+    // creating frame's registers no longer cover, so mark through the list
+    // rather than relying on that frame to keep it alive.
+    PendingThisArrow* pending = (PendingThisArrow*)vm.pending_this_arrows;
+    while (pending != null) {
+        if (pending.fn_obj != null) h.mark_hobject(pending.fn_obj);
+        pending = (PendingThisArrow*)pending.next;
+    }
 }
 
 // ============================================================================
@@ -407,6 +417,15 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 macro Activation* activation_begin(Vm* vm, TVal callee) {
     Activation* act = &vm.activations[vm.activation_count];
     vm.activation_count++;
+    // vm.activations[] is a pool reused WITHOUT zeroing, so this slot's address
+    // may still be named by pending_this_arrows entries left by an earlier
+    // derived constructor that exited without calling super() (it threw, or
+    // returned an object). Those entries must not survive into the new frame:
+    // the next super() here would match them by address and hand an unrelated
+    // instance to arrows that escaped the aborted constructor, where the spec
+    // requires they keep reporting an uninitialized `this`. Drop them now,
+    // which covers every exit path including abrupt ones.
+    if (vm.pending_this_arrows != null) drop_pending_this_arrows(vm, act);
     act.async_promise = null;
     act.async_gen_state = null;
     act.forin = null;
@@ -420,6 +439,20 @@ macro Activation* activation_begin(Vm* vm, TVal callee) {
     // register for as long as the activation is on the stack.
     act.tv_func = callee;
     return act;
+}
+
+// Discard every pending_this_arrows entry naming activation `act`, without
+// touching the arrows' captured_this: they keep the TDZ sentinel and so keep
+// throwing on `this`, which is correct for an arrow whose constructor never
+// completed its super() call. See Vm.pending_this_arrows.
+fn void drop_pending_this_arrows(Vm* vm, Activation* act) {
+    PendingThisArrow** link = (PendingThisArrow**)&vm.pending_this_arrows;
+    while (*link != null) {
+        PendingThisArrow* entry = *link;
+        if (entry.act != act) { link = (PendingThisArrow**)&entry.next; continue; }
+        *link = (PendingThisArrow*)entry.next;
+        vm.heap.free_func(vm.heap.heap_udata, entry);
+    }
 }
 
 // Track a heap-ref store in the current activation.  Call after any

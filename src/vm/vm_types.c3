@@ -102,6 +102,23 @@ struct ShadowActFrame {
     uint count;
 }
 
+// One arrow awaiting its derived constructor's super() call; see
+// Vm.pending_this_arrows. `act` identifies the constructor frame whose
+// this_binding the arrow is waiting on, and `fn_obj` is the arrow closure
+// whose captured_this must be overwritten once that binding exists.
+struct PendingThisArrow {
+    // Next entry in the linked list (null = end of list).
+    void* next;
+    // The derived-constructor activation this arrow was created in. Compared
+    // by identity when super() flushes the list; never dereferenced after the
+    // frame is popped.
+    Activation* act;
+    // The arrow closure whose captured_this is the TDZ sentinel. Marked by the
+    // GC through this list so a registered arrow cannot be collected while the
+    // entry names it.
+    HObject* fn_obj;
+}
+
 // ============================================================================
 // Activation record: one call frame
 // ============================================================================
@@ -342,6 +359,23 @@ struct Vm {
     // Shadow activation frames, linked and unlinked by vm_call_fn_impl around a
     // nested Vm.run() so the GC can mark the saved outer activations.
     void* shadow_act_list;  // ShadowActFrame*
+
+    // Arrows created in a derived constructor BEFORE super() ran, which
+    // therefore captured the TDZ sentinel as their `this`.
+    //
+    // An arrow captures `this` by value at closure-creation time, which is
+    // right for an initialized binding but not for one super() has yet to
+    // fill: the arrow must observe that later initialization. While the
+    // constructor frame is live, super_walk_live_this() re-resolves through
+    // it, but an arrow that ESCAPES the constructor outlives that frame and
+    // has nothing left to walk. So each such arrow registers here at creation,
+    // and super_init_this_chain() writes the constructed object into every
+    // entry belonging to the frame it initializes, then unlinks them.
+    //
+    // Entries are owned by the VM and freed when flushed or when the
+    // constructor frame is popped without a super() call (an abrupt exit), so
+    // the list cannot outlive the frames it names.
+    void* pending_this_arrows;  // PendingThisArrow*
 
     // Error state
     bool has_error;

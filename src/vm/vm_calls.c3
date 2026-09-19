@@ -330,6 +330,24 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
     }
 }
 
+// Write `constructed` into the captured_this of every arrow registered against
+// activation `act`, then unlink and free those entries. Arrows belonging to
+// other frames are left in place. See Vm.pending_this_arrows.
+fn void flush_pending_this_arrows(Vm* vm, Activation* act, TVal* constructed) {
+    PendingThisArrow** link = (PendingThisArrow**)&vm.pending_this_arrows;
+    while (*link != null) {
+        PendingThisArrow* entry = *link;
+        if (entry.act != act) { link = (PendingThisArrow**)&entry.next; continue; }
+        // The slot still holds the TDZ sentinel, which owns nothing, so the
+        // copy_ref below is the arrow's first owning reference to the object.
+        if (entry.fn_obj != null) {
+            vm.heap.tval_copy_ref(&(*entry.fn_obj.extra_ptr()).func.captured_this, constructed);
+        }
+        *link = (PendingThisArrow*)entry.next;
+        vm.heap.free_func(vm.heap.heap_udata, entry);
+    }
+}
+
 // Sub-dispatch for CALL, CALL_S, CALL_PROP, SETPROTO, SUPER_CALL, SUPER_CALL_S, NEWTARGET, NEW_OBJ, NEW_OBJ_S, TAILCALL opcodes.
 // Initialize the pending derived-constructor this_binding after super()
 // produced the constructed object. super() may execute inside an arrow
@@ -365,6 +383,12 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
         if (is_tdz) {
             vm.heap.tval_copy_ref(&a.this_binding, constructed);
             a.flags |= ACT_FLAG_THIS_OWNED;
+            // Any arrow created in this frame before super() captured the TDZ
+            // sentinel by value. Now that the binding exists, write it through
+            // to those arrows: one that escapes the constructor outlives this
+            // frame, so super_walk_live_this() will have nothing to re-resolve
+            // against by the time it is called. See Vm.pending_this_arrows.
+            flush_pending_this_arrows(vm, a, constructed);
         }
         if ((a.flags & ACT_FLAG_DERIVED) != 0) {
             if (bound_act != null) *bound_act = a;
