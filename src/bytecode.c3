@@ -900,6 +900,21 @@ enum Opcode : char {
     // user-patched `next` is detected, since that patch must still be called.
     ITER_NEXT_FAST,
 
+    // Fused GetIterator for a plain array source. A = iterator, B = source,
+    // C = the resolved `next`. Refuses to the generic sequence the compiler
+    // emits directly after whenever anything observable could differ: a
+    // non-array or exotic source, a patched Array.prototype[@@iterator], or a
+    // patched %ArrayIteratorPrototype%.next. Both patches are checked against
+    // the resolved value, not a shape generation (see ITER_NEXT_FAST).
+    //
+    // The iterator is a real ARRAY_ITERATOR: the win is skipping the lookup
+    // and the call, not the allocation, and ITER_NEXT_FAST/ITER_CLOSE both
+    // require that class.
+    //
+    //   +0  JUMP -> generic GetIterator (refusal falls here)
+    //   +1  continue with A and C populated
+    ITER_OPEN_FAST,
+
     // IteratorClose: if the value in A is an object and has a callable
     // `.return` method, call it with this = A and discard the result. Used
     // after a pattern walk so destructuring of partially-exhausted
@@ -1184,6 +1199,7 @@ case PUTLEX:     return A_BC;
         case GETPROPC2:  return ABC;
         case REQUIRE_OBJ: return ABC;
         case ITER_NEXT_FAST: return ABC;
+        case ITER_OPEN_FAST: return ABC;
         case ITER_CLOSE: return ABC;
         case ITER_CLOSE_ESCAPE: return ABC;
         case GET_ITER_ASYNC:   return ABC;

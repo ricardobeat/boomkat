@@ -615,6 +615,59 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
+        case Opcode.ITER_OPEN_FAST: {
+            TVal srcv = rb[0];
+            if (!srcv.is_object()) break;
+            HObject* src = (HObject*)srcv.get_heapptr();
+            if (src == null || src.flags.obj_class != hobject::ObjClass.ARRAY
+                || src.flags.exotic_proxyobj) break;
+
+            // Both intrinsics are checked by resolved value, not shape
+            // generation: an in-place patch must still be called.
+            HObject* aproto = vm.heap.array_proto;
+            if (aproto == null || src.prototype != aproto) break;
+            HString* sym = vm.heap.iterator_symbol;
+            if (sym == null) break;
+            // An own @@iterator shadows the intrinsic and must be called.
+            if (src.find_prop_idx(sym, vm.heap) >= 0) break;
+            hobject::PropLookupResult itm =
+                aproto.get_prop_or_accessor_proto(sym, true, vm.heap);
+            if (itm.kind != hobject::PropLookupKind.PROP_DATA
+                || !spread_builtin(itm.data_val,
+                        builtins::Builtin.ARRAY_PROTO_VALUES)) break;
+
+            // C feeds ITER_NEXT_FAST, which would refuse every step on a
+            // patched next and leave this slower than the generic path.
+            HObject* iproto = vm.heap.array_iterator_proto;
+            if (iproto == null || !spread_intrinsic_next(vm, iproto)) break;
+            HString* next_key = intern_string(vm, "next");
+            hobject::PropLookupResult nx =
+                iproto.get_prop_or_accessor_proto(next_key, true, vm.heap);
+            if (nx.kind != hobject::PropLookupKind.PROP_DATA) break;
+
+            HObject*? iter_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY_ITERATOR);
+            if (catch iter_raw) break;
+            HObject* iter = iter_raw;
+            src.as_header().incref();
+            (*iter.extra_ptr()).iter.target = src;
+            (*iter.extra_ptr()).iter.index = 0;
+            (*iter.extra_ptr()).iter.kind = 0;
+            iter.prototype = iproto;
+
+            TVal itv2;
+            itv2.set_object(iter);
+            vm.heap.tval_copy_ref(ra, &itv2);
+            track_heap_store(ds.act, ra, (uint)insn.a);
+            vm.heap.tval_copy_ref(rc, &nx.data_val);
+            track_heap_store(ds.act, rc, (uint)insn.c);
+            // The register now holds the counted reference alloc_object's
+            // temproot was standing in for.
+            ((types::HeapHeader*)iter).clear_temproot();
+            vm.heap.decref((types::HeapHeader*)iter);
+            ds.curr_pc += 1;
+            break;
+        }
+
         case Opcode.ITER_NEXT_FAST: {
             // Fused for-of step. Sets ds.iter_fast_done to tell the compiler's
             // branch whether iteration finished, and ds.iter_fast_taken to say

@@ -739,6 +739,17 @@ fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, Destruct
     // @@iterator read, which would otherwise fail as a property access.
     self.emit_abc(Opcode.CHKITER, (uint)src_reg, 0, 1);
 
+    // Fused open for a plain array, refusing into the generic sequence below.
+    // method_reg and next_reg are allocated up front so both paths land in the
+    // same registers; the generic path reuses them via LDREG.
+    ushort fast_iter_reg = self.alloc_persistent_reg();
+    ushort fast_next_reg = self.alloc_persistent_reg();
+    self.emit_abc(Opcode.ITER_OPEN_FAST, (uint)fast_iter_reg, (uint)src_reg,
+                  (uint)fast_next_reg);
+    uint open_slow_jump = self.emit_jump(Opcode.JUMP);
+    uint open_done_jump = self.emit_jump(Opcode.JUMP);
+    self.patch_jump(open_slow_jump);
+
     // Get Symbol.iterator from the global Symbol object
     ushort sym_reg = self.alloc_reg();
     self.emit_a_bc(Opcode.GETVAR, (uint)sym_reg, self.add_string_constant("Symbol"));
@@ -778,6 +789,15 @@ fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, Destruct
     ushort next_reg = self.alloc_reg();
     self.emit_abc(Opcode.GETPROP, (uint)next_reg, (uint)method_reg, (uint)next_key_reg);
     self.free_reg(next_key_reg);
+
+    // Funnel the generic results into the fast path's registers, then join.
+    self.emit_abc(Opcode.LDREG, (uint)fast_iter_reg, (uint)method_reg, 0);
+    self.emit_abc(Opcode.LDREG, (uint)fast_next_reg, (uint)next_reg, 0);
+    self.free_reg(next_reg);
+    self.free_reg(method_reg);
+    self.patch_jump(open_done_jump);
+    method_reg = fast_iter_reg;
+    next_reg = fast_next_reg;
 
     // Set up callee/this pair for .next calls
     // save_reg must live BELOW the callee window so it survives .next() calls.
