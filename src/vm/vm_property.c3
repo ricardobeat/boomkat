@@ -1935,24 +1935,40 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 }
 
-                // Proxy exotic: route through [[Set]].
+                // Proxy exotic: route through [[Set]] UNLESS this is a private
+                // field write. ES2022 PrivateFieldSet bypasses proxy traps: a
+                // frozen Proxy's existing private fields are still modifiable,
+                // and the field is stored on the proxy's [[ProxyTarget]] only
+                // when the target was stamped via PrivateBrandAdd (the brand
+                // was added to the proxy, not its target). Look up directly on
+                // the proxy and update there, bypassing the [[Set]] trap.
                 if (hobj.flags.exotic_proxyobj) {
                     void* pkey = get_prop_key(vm, rb);
-                    if (pkey == null) { return (TVal){}; }
-                    bool set_ok;
-                    if (!builtins::proxy_mop_set(vm, vm.heap, hobj, (HString*)pkey, *rc, *ra, &set_ok)) {
-                        return vm_proxy_rethrow(vm, ds);
-                    }
-                    if (!set_ok) {
-                        // [[Set]] returning false throws only in strict code;
-                        // sloppy drops the write silently (§13.15.2 PutValue).
-                        if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
-                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "'set' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
+                    bool is_private_set = pkey != null && ((HString*)pkey).is_hidden();
+                    if (!is_private_set) {
+                        if (pkey == null) { return (TVal){}; }
+                        bool set_ok;
+                        if (!builtins::proxy_mop_set(vm, vm.heap, hobj, (HString*)pkey, *rc, *ra, &set_ok)) {
+                            return vm_proxy_rethrow(vm, ds);
+                        }
+                        if (!set_ok) {
+                            // [[Set]] returning false throws only in strict code;
+                            // sloppy drops the write silently (§13.15.2 PutValue).
+                            if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "'set' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    return VM_ERROR~;
+                                }
                             }
                         }
+                        return (TVal){};
                     }
-                    return (TVal){};
+                    // Private field write on a proxy: fall through to the
+                    // ordinary private field path on the proxy itself (which
+                    // may not be the original ProxyTarget - the field was
+                    // stamped onto whatever `new C(proxy)` returned, which is
+                    // the proxy object when the constructor returns `this`).
+                    // No-op here; the existing private-field path below reads
+                    // and writes through the proxy object's own table.
                 }
 
                 // Module Namespace Exotic [[Set]] (§10.4.6.11): always returns
@@ -2421,23 +2437,33 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                             }
                         } else if (!exist_flags.writable) {
-                            // Sloppy [[Set]] silently drops writes to non-writable
-                            // own data properties (ES2024 §10.2.1.2 OrdinarySet +
-                            // §6.2.4.5 SetMutableBinding on declarative envs); only
-                            // strict mode throws. An accessor with a setter would
-                            // still call through (handled above).
-                            if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
-                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
+                            // ES2022 PrivateFieldSet skips [[Writable]] entirely: a frozen
+                            // object's existing private field is still modifiable. Bypass the
+                            // ordinary [[Set]] writability check when the key is a hidden
+                            // symbol naming a private field.
+                            bool is_private = key != null && ((HString*)key).is_hidden();
+                            if (is_private) {
+                                // Update value, preserve existing flags
+                                vm.heap.tval_copy_ref(entry, &put_val);
+                            } else {
+                                // Sloppy [[Set]] silently drops writes to non-writable
+                                // own data properties (ES2024 §10.2.1.2 OrdinarySet +
+                                // §6.2.4.5 SetMutableBinding on declarative envs); only
+                                // strict mode throws. An accessor with a setter would
+                                // still call through (handled above).
+                                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        return VM_ERROR~;
+                                    }
+                                    return (TVal){};
+                                }
+                                // Sloppy: silent no-op. Release the put_val reference
+                                // so the rax doesn't pin a heap object past the write.
+                                if (put_val.is_heap_allocated()) {
+                                    vm.heap.decref_tval(&put_val);
                                 }
                                 return (TVal){};
                             }
-                            // Sloppy: silent no-op. Release the put_val reference
-                            // so the rax doesn't pin a heap object past the write.
-                            if (put_val.is_heap_allocated()) {
-                                vm.heap.decref_tval(&put_val);
-                            }
-                            return (TVal){};
                         } else {
                             // Ordinary own data-property write: update the
                             // named slot. A mapped ARGUMENTS index also syncs
@@ -2653,7 +2679,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     vm.heap.tval_copy_ref(&new_act.this_binding, &obj_tv);
 
                                     TVal* new_regs = new_act.bottom;
-                                    mem::clear(new_regs, (sz)((usz)target.num_regs * TVal::size));
+                                    for (uint pi = 0; pi < target.num_regs; pi++) new_regs[pi].set_undefined();
                                     vm.heap.tval_copy_ref(&new_regs[0], &put_val);
 
                                     // Setter bodies that reference `arguments` need a
