@@ -5508,14 +5508,24 @@ fn ushort? CompilerContext.primary_expr(&self) {
             if (head_tok.has_invalid_escape) {
                 return COMPILE_ERROR~;
             }
-            uint head_idx = self.add_string_constant(head_tok.str_value);
-            // The accumulator is one register, reused as both destination and
-            // first operand of every concat in the chain. That is the
-            // `acc += chunk` shape vm_concat_accumulate grows in place; a chain
-            // of ADDs across fresh temporaries would allocate and copy the
-            // whole prefix on every step instead of extending it.
+
+            // Template parts land in one consecutive register region starting
+            // just above result_reg; STRJOIN fuses them with one allocation and
+            // one copy. The ADD chain would allocate and copy the whole prefix
+            // on every part, and substitution strings are only born there.
             ushort result_reg = self.alloc_reg();
-            self.emit_a_bc(Opcode.LDCONST, (uint)result_reg, head_idx);
+            uint part_count = 0;
+            if (head_tok.str_value.len > 0) {
+                uint head_idx = self.add_string_constant(head_tok.str_value);
+                self.emit_a_bc(Opcode.LDCONST, (uint)(result_reg + part_count), head_idx);
+                part_count++;
+                // Keep the watermark above the part region: any register in
+                // [result_reg, result_reg + part_count) holds a live part, so a
+                // substitution expression must allocate strictly above it.
+                if (self.next_reg <= (uint)(result_reg + part_count)) {
+                    self.next_reg = (ushort)(result_reg + part_count + 1);
+                }
+            }
 
             // Parse the expression inside ${...}. The closing `}` will be a
             // plain RBRACE token (B23 fix: the parser, not the lexer, owns
@@ -5532,28 +5542,27 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // converted via ToString directly, unlike the `+` operator,
             // which goes through ToPrimitive(default) first. The two only
             // differ observably when Symbol.prototype[@@toPrimitive] has
-            // been redefined/removed. Coerce here so the ADD below (both
-            // operands already strings) is a plain concat, not a second
-            // ToPrimitive pass.
+            // been redefined/removed. Coerce here so the join below only
+            // ever sees strings, in left-to-right source order.
             expr_reg = self.tostr_into_temp(expr_reg);
-
-            // Concatenate: result = result + expr  (ADD handles string coercion)
-            self.emit_abc(Opcode.ADD, (uint)result_reg, (uint)result_reg, (uint)expr_reg);
-            self.free_reg(expr_reg);
+            self.emit_abc(Opcode.LDREG, (uint)(result_reg + part_count), (uint)expr_reg, 0);
+            part_count++;
+            if (self.next_reg <= (uint)(result_reg + part_count)) {
+                self.next_reg = (ushort)(result_reg + part_count + 1);
+            }
 
             // Handle TEMPLATE_MIDDLE / TEMPLATE_TAIL chain
             while (next_tok.type == TokenType.TEMPLATE_MIDDLE) {
                 if (next_tok.has_invalid_escape) {
                     return COMPILE_ERROR~;
                 }
-                uint mid_idx = self.add_string_constant(next_tok.str_value);
                 if (next_tok.str_value.len > 0) {
-                    ushort mid_reg = self.alloc_reg();
-                    self.emit_a_bc(Opcode.LDCONST, (uint)mid_reg, mid_idx);
-
-                    // Concatenate the middle text
-                    self.emit_abc(Opcode.ADD, (uint)result_reg, (uint)result_reg, (uint)mid_reg);
-                    self.free_reg(mid_reg);
+                    uint mid_idx = self.add_string_constant(next_tok.str_value);
+                    self.emit_a_bc(Opcode.LDCONST, (uint)(result_reg + part_count), mid_idx);
+                    part_count++;
+                    if (self.next_reg <= (uint)(result_reg + part_count)) {
+                        self.next_reg = (ushort)(result_reg + part_count + 1);
+                    }
                 }
 
                 // Parse the next expression; consume its closing `}` and
@@ -5565,9 +5574,11 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 // ToString the substitution value (see head-substitution comment above).
                 next_expr_reg = self.tostr_into_temp(next_expr_reg);
 
-                // Concatenate expression
-                self.emit_abc(Opcode.ADD, (uint)result_reg, (uint)result_reg, (uint)next_expr_reg);
-                self.free_reg(next_expr_reg);
+                self.emit_abc(Opcode.LDREG, (uint)(result_reg + part_count), (uint)next_expr_reg, 0);
+                part_count++;
+                if (self.next_reg <= (uint)(result_reg + part_count)) {
+                    self.next_reg = (ushort)(result_reg + part_count + 1);
+                }
             }
 
             if (next_tok.type != TokenType.TEMPLATE_TAIL) {
@@ -5578,16 +5589,20 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 return COMPILE_ERROR~;
             }
 
-            uint tail_idx = self.add_string_constant(next_tok.str_value);
             if (next_tok.str_value.len > 0) {
-                ushort tail_reg = self.alloc_reg();
-                self.emit_a_bc(Opcode.LDCONST, (uint)tail_reg, tail_idx);
-
-                // Concatenate the tail text
-                self.emit_abc(Opcode.ADD, (uint)result_reg, (uint)result_reg, (uint)tail_reg);
-                self.free_reg(tail_reg);
+                uint tail_idx = self.add_string_constant(next_tok.str_value);
+                self.emit_a_bc(Opcode.LDCONST, (uint)(result_reg + part_count), tail_idx);
+                part_count++;
+                if (self.next_reg <= (uint)(result_reg + part_count)) {
+                    self.next_reg = (ushort)(result_reg + part_count + 1);
+                }
             }
 
+            // Fuse all parts in one pass.
+            self.emit_abc(Opcode.STRJOIN, (uint)result_reg, (uint)result_reg, part_count);
+            // The parts and any substitution temporaries sit above result_reg;
+            // the join has consumed the parts, so release the whole window.
+            self.free_regs_to((ushort)(result_reg + 1));
             return result_reg;
         }
 

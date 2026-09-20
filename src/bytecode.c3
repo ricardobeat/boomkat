@@ -1046,6 +1046,16 @@ enum Opcode : char {
     TAILCALL_CALL,
     TAILCALL_CALL_S,
 
+    // Template literal join: `A = B + (B+1) + ... + (B+count-1)`, the parts
+    // in consecutive registers. Every part is already a string: the compiler
+    // ToStrings each substitution at its source position (left to right,
+    // conversions and side effects in order), and constant parts are LDCONST
+    // loads. The join is one allocation and one copy, instead of the chain of
+    // ADDs that would allocate and copy the whole prefix per part. The result
+    // is a non-interned string with a deferred hash, the standing concat
+    // contract. ABC format: A=result_reg, B=parts_base, C=part_count.
+    STRJOIN,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

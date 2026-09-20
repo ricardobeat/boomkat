@@ -275,6 +275,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.TAILCALL_GLOBAL.ordinal]     = "TAILCALL_GLOBAL",
     [Opcode.TAILCALL_CALL.ordinal]       = "TAILCALL_CALL",
     [Opcode.TAILCALL_CALL_S.ordinal]     = "TAILCALL_CALL_S",
+    [Opcode.STRJOIN.ordinal]             = "STRJOIN",
     [Opcode.RET.ordinal]         = "RET",
     [Opcode.RETUNDEF.ordinal]    = "RETUNDEF",
     [Opcode.GETVAR.ordinal]      = "GETVAR",

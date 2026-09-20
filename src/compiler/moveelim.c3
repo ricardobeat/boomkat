@@ -325,6 +325,18 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         }
     }
 
+    // STRJOIN reads the parts in consecutive registers B .. B+C-1; C is a
+    // part count, not a register operand. Marking only the generic B and C
+    // would leave every part slot but the first looking dead, and move
+    // elimination would drop the LDCONST/LDREG fills. The range applies to
+    // both liveness analyses, so it sits outside the call-window gate.
+    if (op == Opcode.STRJOIN) {
+        if (ins.c > 0) {
+            moveelim_mark_range(live, (uint)ins.b, (uint)ins.b + (uint)ins.c - 1);
+        }
+        return;
+    }
+
     if (moveelim_a_is_read(op)) {
         live.set((uint)ins.a);
     }

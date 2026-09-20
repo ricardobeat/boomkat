@@ -2725,6 +2725,65 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        // Template literal join: fuse `count` string parts in consecutive
+        // registers into one string with a single allocation and copy.
+        case Opcode.STRJOIN: {
+            // Every part is a string (the compiler TOSTRs each substitution at
+            // its source position), so the only cost is summing lengths and one
+            // memcpy pass; no coercion or ToPrimitive can run here.
+            ulong total64 = 0;
+            for (uint i = 0; i < (uint)insn.c; i++) {
+                TVal part_val = rb[i];
+                HString* part = (HString*)part_val.get_heapptr();
+                total64 += (ulong)part.blen;
+            }
+            if (hstring::length_exceeds_max(total64)) {
+                if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
+                if (ds.needs_restart) break;
+                continue;
+            }
+            uint total = (uint)total64;
+
+            // Stack buffer for small joins, host-heap buffer for large ones,
+            // the same split the ADD concat path uses.
+            char[512] stack_buf;
+            char* buf;
+            bool heap_allocated = false;
+            if (total <= 512) {
+                buf = &stack_buf;
+            } else {
+                buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
+                if (buf == null) { ra.set_undefined(); continue; }
+                heap_allocated = true;
+            }
+
+            usz off = 0;
+            for (uint i = 0; i < (uint)insn.c; i++) {
+                TVal part_val = rb[i];
+                HString* part = (HString*)part_val.get_heapptr();
+                uint part_len = part.blen;
+                if (part_len > 0) {
+                    mem::copy(buf + off, part.get_cstr(), (sz)part_len);
+                    off += (usz)part_len;
+                }
+            }
+
+            // Exact fit for the joined string, like any non-accumulator concat
+            // result: a later `+=` on it walks the normal accumulate path.
+            HString* result = vm.heap.alloc_concat_string(buf[:total], total);
+            if (result == null) { result = intern_string(vm, buf[:total]); }
+            if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
+            vm.heap.set_reg_string(ra, result);
+            // A non-interned result is a pure refcounted leaf with no
+            // string-table/GC backstop. Raise heap_reg_count so
+            // decref_callee_regs releases the register's reference at frame
+            // teardown instead of leaking it.
+            track_heap_store(ds.act, ra, (uint)insn.a);
+            continue;
+        }
+
         case Opcode.SUBI: {
             // A = B - imm.  C is a signed 8-bit immediate (-128..127).
             long imm = (long)(ichar)insn.c;
