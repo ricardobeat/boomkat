@@ -3039,7 +3039,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
                 // Fill remaining registers with UNDEFINED (after the rest param)
                 if (rest_idx + 1 < new_nregs) {
-                    mem::clear(&new_regs[rest_idx + 1], (sz)((usz)(new_nregs - rest_idx - 1) * TVal::size));
+                    for (uint i = rest_idx + 1; i < new_nregs; i++) {
+                        new_regs[i].set_undefined();
+                    }
                 }
             } else {
                 // Args are already in position (new_regs == old_args, sliding window).
@@ -3633,7 +3635,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     vm.heap.tval_copy_ref(&new_regs[i], &old_args[i]);
                 }
                 if (nargs < new_nregs) {
-                    mem::clear(&new_regs[nargs], (sz)((usz)(new_nregs - nargs) * TVal::size));
+                    for (uint i = nargs; i < new_nregs; i++) {
+                        new_regs[i].set_undefined();
+                    }
                 }
             }
 
@@ -4086,7 +4090,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
 
                 if (rest_idx + 1 < new_nregs2) {
-                    mem::clear(&new_regs2[rest_idx + 1], (sz)((usz)(new_nregs2 - rest_idx - 1) * TVal::size));
+                    for (uint i = rest_idx + 1; i < new_nregs2; i++) {
+                        new_regs2[i].set_undefined();
+                    }
                 }
             } else {
                 for (uint i = 0; i < nargs && i < (uint)target.num_args; i++) {
