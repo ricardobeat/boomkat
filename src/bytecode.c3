@@ -1077,6 +1077,12 @@ enum Opcode : char {
     // Preserve B's SnapshotReference for the generic fallback; C is a capture.
     PUTCAP_SNAP,
 
+    // Private shared storage for function-scoped captures.
+    NEWCELLS,
+    GETCELL,
+    SETCELL,
+    MOVECELL,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }
@@ -1146,6 +1152,7 @@ fn OpFormat get_op_format(Opcode op) {
         case SETALEN:   return A_BC;
         case GETVAR:    return A_BC;
         case GETCAP:    return A_BC;
+        case NEWCELLS:  return A_BC;
         case PUTCAP:    return A_BC;
         case RESOLVEVAR: return A_BC;
         case THROW_UNRESOLVED: return A_BC;
@@ -1609,6 +1616,10 @@ struct CompiledFunction {
     // resolves candidates before the template can be instantiated.
     uint*           capture_names;
     uint            capture_count;
+    // Parallel entries: zero resolves an environment name; slot + 1 selects
+    // the private array in the defining activation's capture_parent_reg.
+    ushort*         capture_cells;
+    ushort          capture_parent_reg;
 
     // Sparse saved-register masks keyed by the LOAD_RESUME program counter
     // following an ordinary async AWAIT. Null means use the full snapshot.

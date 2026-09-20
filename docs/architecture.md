@@ -148,14 +148,30 @@ scope kind, and capture state. Environment-store retention combines these
 records with name consumers in compiled child functions, including synthetic
 class bindings. Same-named declarations in different scopes are conservatively
 retained together. Capture discovery uses dynamically sized name storage.
+For unique var and parameter bindings, compiled child references refine the
+conservative token scan: bindings with no child consumer return to their home
+register before bytecode optimization. Unsupported uses retain environment
+storage.
 
 Eligible references to a visible enclosing binding become `GETCAP`, `PUTCAP`,
 or `PUTCAP_SNAP`. Each closure owns an indexed descriptor vector referencing
-shared environment binding slots. Creation resolves those slots once; reads
-and writes fetch the owner's current value array so storage resizing is safe.
-TDZ and immutable writes use the regular checked path. Dynamic, unresolved,
-and unsupported references retain name-based bytecode. This representation
-still retains the environment chains and their binding objects.
+shared binding slots. Creation resolves those slots once; reads and writes
+fetch the owner's current value array so storage resizing is safe. Each
+descriptor retains its owner, and GC traces these owners independently of
+captured environment chains.
+
+Eligible captured var and parameter bindings share a private dense value
+array owned by a plain internal object with no named-property capacity.
+`NEWCELLS` allocates it; `GETCELL`, `SETCELL`, and `MOVECELL` access it
+from the defining function. Child descriptors point directly into the same
+array. Its persistent register sits below temporary call windows, which the
+VM can overwrite while executing a callee. Functions with no remaining
+environment bindings reuse the enclosing environment. Native callback and
+constructor entries record the active closure for indexed capture access.
+
+TDZ and immutable writes retain checked environment slots. Dynamic scope,
+unsupported operations, ambiguous same-named declarations, and transitive
+references without a direct capture mapping keep their environment paths.
 
 ### Classes and private names
 

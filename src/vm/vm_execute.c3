@@ -692,6 +692,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 if (try fv_cfn = env::env_create_function_scope(vm.heap, cfn_var_env)) { cfn_var_env = fv_cfn; }
             }
             act.func = target;
+            act.tv_func = func;
             act.parent = null;
             act.var_env = cfn_var_env;
             act.lex_env = resolve_call_lex_env(vm, hobj, target, cfn_var_env);
@@ -1388,6 +1389,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         cfn_var_env = fv_cfn;
     }
     act.func = target;
+    act.tv_func = func;
     act.parent = null;
     act.var_env = cfn_var_env;
     act.lex_env = resolve_call_lex_env(vm, ctor, target, cfn_var_env);
@@ -7623,6 +7625,13 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         // === CLOSURES ===
+        case Opcode.NEWCELLS:
+        case Opcode.GETCELL:
+        case Opcode.SETCELL:
+        case Opcode.MOVECELL:
+            if (catch err = dispatch_cells(&ds, op, ra, rb, rc, insn)) { return err~; }
+            continue;
+
         case Opcode.CLOSURE:
         case Opcode.GETBOUND:
             if (catch err = dispatch_closures(&ds, op, ra, rb, rc, insn)) { return err~; }

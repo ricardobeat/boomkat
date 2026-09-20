@@ -1643,6 +1643,7 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
         if (cf.capture_names != null) { self.free_func(self.heap_udata, cf.capture_names); }
+        if (cf.capture_cells != null) { self.free_func(self.heap_udata, cf.capture_cells); }
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
         if (cf.line_table != null) { self.free_func(self.heap_udata, cf.line_table); }
@@ -3149,6 +3150,14 @@ fn void Heap.drain_gray(&self) {
                 // dereferences a recycled EnvRecord.bindings.
                 self.mark_env_chain((void*)(*obj.extra_ptr()).func.var_env);
                 self.mark_env_chain((void*)(*obj.extra_ptr()).func.lex_env);
+                if ((*obj.extra_ptr()).func.capture_refs != null
+                    && (*obj.extra_ptr()).func.comp_func != null) {
+                    uint capture_count = (*obj.extra_ptr()).func.comp_func.capture_count;
+                    hobject::CaptureRef* refs = (*obj.extra_ptr()).func.capture_refs;
+                    for (uint i = 0; i < capture_count; i++) {
+                        if (refs[i].owner != null) self.mark_hobject(refs[i].owner);
+                    }
+                }
                 self.mark_tval(&(*obj.extra_ptr()).func.captured_this);
                 if ((*obj.extra_ptr()).func.captured_new_target != null) {
                     self.mark_hobject((*obj.extra_ptr()).func.captured_new_target);

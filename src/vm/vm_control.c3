@@ -407,7 +407,7 @@ fn int resolve_capture_ref(Vm* vm, EnvRecord* start, void* key, CaptureRef* out)
     return 0;
 }
 
-fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* var_env, EnvRecord* lex_env, TVal* enclosing_this = null, HObject* enclosing_new_target = null) {
+fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* var_env, EnvRecord* lex_env, TVal* enclosing_this = null, HObject* enclosing_new_target = null, TVal* parent_regs = null) {
     HObject*? func_obj_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch _e = func_obj_raw) return null;
     HObject* func_obj = func_obj_raw;
@@ -451,28 +451,57 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     }
     (*func_obj.extra_ptr()).func.var_env = cap_var_env;
     (*func_obj.extra_ptr()).func.lex_env = cap_lex_env;
-    if (template.capture_count > 0 && template.capture_names != null) {
+    if (template.capture_count > 0
+        && (template.capture_names != null || template.capture_cells != null)) {
+        bool requires_cells = false;
+        if (template.capture_cells != null) {
+            for (uint i = 0; i < template.capture_count; i++) {
+                if (template.capture_cells[i] != 0) { requires_cells = true; break; }
+            }
+        }
         usz refs_bytes = (usz)template.capture_count * CaptureRef::size;
         CaptureRef* refs = (CaptureRef*)vm.heap.alloc_func(vm.heap.heap_udata, refs_bytes);
         if (refs != null) {
             mem::clear(refs, (sz)refs_bytes);
+            // Publish immediately so an aborted cell resolution is reclaimed
+            // with the otherwise-unreachable closure at the next collection.
+            (*func_obj.extra_ptr()).func.capture_refs = refs;
             for (uint i = 0; i < template.capture_count; i++) {
+                ushort cell_entry = template.capture_cells != null ? template.capture_cells[i] : 0;
+                if (cell_entry != 0) {
+                    if (parent_regs == null) return null;
+                    TVal owner_val = parent_regs[template.capture_parent_reg];
+                    if (!owner_val.is_object()) return null;
+                    HObject* owner = (HObject*)owner_val.get_heapptr();
+                    uint cell_idx = (uint)cell_entry - 1;
+                    if (owner == null || owner.get_class() != hobject::ObjClass.OBJECT
+                        || owner.array_part() == null || cell_idx >= owner.array_size) return null;
+                    owner.as_header().incref();
+                    refs[i].owner = owner;
+                    refs[i].prop_idx = cell_idx;
+                    refs[i].is_cell = true;
+                    continue;
+                }
+                if (template.capture_names == null) continue;
                 uint name_idx = template.capture_names[i];
                 if (name_idx >= template.const_count) continue;
                 TVal name = template.constants[name_idx];
                 if (!name.is_string()) continue;
                 void* key = name.get_heapptr();
                 int resolved = resolve_capture_ref(vm, cap_lex_env, key, &refs[i]);
-                if (resolved != 0) continue;
+                if (resolved != 0) {
+                    if (resolved > 0) refs[i].owner.as_header().incref();
+                    continue;
+                }
                 // Some call paths keep distinct lexical and variable chains.
                 // Avoid walking the same head twice, while still resolving a
                 // function binding absent from the lexical chain.
                 if (cap_var_env != cap_lex_env) {
                     resolve_capture_ref(vm, cap_var_env, key, &refs[i]);
                 }
+                if (refs[i].owner != null) refs[i].owner.as_header().incref();
             }
-            (*func_obj.extra_ptr()).func.capture_refs = refs;
-        }
+        } else if (requires_cells) return null;
     }
     // ES2015 §9.2.1 [[ThisMode]]=lexical: capture the enclosing activation's
     // `this` once, at closure-creation time, so it survives being called from
@@ -605,7 +634,7 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             uint bc = insn.get_bc();
             if (bc < vm.current_func.inner_count) {
                 CompiledFunction* template = vm.current_func.inner_funcs[bc];
-                HObject* func_obj = instantiate_closure(vm, template, ds.act.var_env, ds.act.lex_env, &ds.act.this_binding, ds.act.new_target);
+                HObject* func_obj = instantiate_closure(vm, template, ds.act.var_env, ds.act.lex_env, &ds.act.this_binding, ds.act.new_target, ds.regs_base);
                 if (func_obj != null) {
                     ra.set_object(func_obj);
                     track_heap_store(ds.act, ra, (uint)insn.a);

@@ -83,6 +83,9 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.GETCAP.ordinal]        = &th_getcap;
     g_threaded_handlers[Opcode.PUTCAP.ordinal]        = &th_putcap;
     g_threaded_handlers[Opcode.PUTCAP_SNAP.ordinal]   = &th_putcap;
+    g_threaded_handlers[Opcode.GETCELL.ordinal]       = &th_getcell;
+    g_threaded_handlers[Opcode.SETCELL.ordinal]       = &th_setcell;
+    g_threaded_handlers[Opcode.MOVECELL.ordinal]      = &th_movecell;
     g_threaded_handlers[Opcode.PUTVAR_ASSIGN.ordinal] = &th_putvar_assign;
     g_threaded_handlers[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
     g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
@@ -569,6 +572,49 @@ fn Instruction* th_putcap(Instruction* pc, Instruction* code_end, TVal* regs, Co
     TVal* slot = capture_value_slot(cold.act, capture_index, cold.vm.heap, true);
     if (slot == null || !th_can_release(slot, cold)) return pc;
     TVal* src = regs + pc.a;
+    th_do_release(slot);
+    *slot = *src;
+    src.set_undefined();
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn TVal* th_cell_slot(Instruction* pc, TVal* regs) @private {
+    TVal* owner_val = regs + pc.b;
+    if (!owner_val.is_object()) return null;
+    HObject* owner = (HObject*)owner_val.get_heapptr();
+    uint slot_idx = (uint)pc.c;
+    if (owner == null || owner.get_class() != hobject::ObjClass.OBJECT
+        || owner.array_part() == null || slot_idx >= owner.array_size) return null;
+    return &owner.array_part()[slot_idx];
+}
+
+fn Instruction* th_getcell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal* slot = th_cell_slot(pc, regs);
+    if (slot == null) return pc;
+    TVal value = *slot;
+    TVal* dst = regs + pc.a;
+    if (!th_can_retain(&value) || !th_can_release(dst, cold)) return pc;
+    th_do_retain(&value);
+    th_do_release(dst);
+    *dst = value;
+    track_heap_store(cold.act, dst, (uint)pc.a);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_setcell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal* slot = th_cell_slot(pc, regs);
+    TVal* src = regs + pc.a;
+    if (slot == null || !th_can_retain(src) || !th_can_release(slot, cold)) return pc;
+    th_do_retain(src);
+    th_do_release(slot);
+    *slot = *src;
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_movecell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal* slot = th_cell_slot(pc, regs);
+    TVal* src = regs + pc.a;
+    if (slot == null || !th_can_release(slot, cold)) return pc;
     th_do_release(slot);
     *slot = *src;
     src.set_undefined();

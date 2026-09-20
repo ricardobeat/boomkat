@@ -72,15 +72,21 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
 }
 
 fn void restore_dynamic_capture_names(CompiledFunction* func) {
+    bool keeps_cells = false;
+    for (uint ci = 0; ci < func.capture_count; ci++) {
+        if (func.capture_cells != null && func.capture_cells[ci] != 0) keeps_cells = true;
+    }
     for (uint pc = 0; pc < func.code_count; pc++) {
         Instruction* ins = &func.code[pc];
         if (ins.op == Opcode.GETCAP || ins.op == Opcode.PUTCAP) {
+            if (func.capture_cells != null && func.capture_cells[ins.get_bc()] != 0) continue;
             Opcode generic = ins.op == Opcode.GETCAP ? Opcode.GETVAR : Opcode.PUTVAR_ASSIGN;
             *ins = bytecode::make_a_bc(generic, ins.get_a(), func.capture_names[ins.get_bc()]);
         } else if (ins.op == Opcode.PUTCAP_SNAP) {
+            if (func.capture_cells != null && func.capture_cells[ins.c] != 0) continue;
             *ins = bytecode::make_abc(Opcode.PUTVAR_SNAP, ins.a, ins.b, (char)func.capture_names[ins.c]);
         }
     }
-    func.capture_count = 0;
+    if (!keeps_cells) func.capture_count = 0;
     for (uint ci = 0; ci < func.inner_count; ci++) restore_dynamic_capture_names(func.inner_funcs[ci]);
 }

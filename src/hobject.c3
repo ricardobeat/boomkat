@@ -582,6 +582,7 @@ struct ShapeProperty {
 struct CaptureRef {
     HObject* owner;
     uint     prop_idx;
+    bool     is_cell;
 }
 
 struct HObjectFunction {
@@ -613,8 +614,9 @@ struct HObjectFunction {
     TVal              bound_this;
     HObject*          bound_args;
     // Resolved slots for the compiled function's captured names. Appended so
-    // the proxy/function overlay offsets above remain unchanged. Owners are
-    // borrowed through var_env/lex_env, which retain their binding chains.
+    // the proxy/function overlay offsets above remain unchanged.
+    // Each owner has one counted reference so cells survive independently
+    // of captured environment chains.
     CaptureRef*       capture_refs;
 }
 
@@ -2333,11 +2335,18 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
     }
 
-    // Compiled closures own the descriptor vector, while each owner pointer
-    // is borrowed from the captured environment chains. Builtins, bound
-    // functions, and async-state callbacks leave capture_refs null.
+    // Compiled closures own the descriptor vector and one reference per
+    // resolved owner. Builtins, bound functions, and async-state callbacks
+    // leave capture_refs null.
     if (obj.flags.obj_class == ObjClass.FUNCTION && !obj.flags.is_async_state
         && (*obj.extra_ptr()).func.capture_refs != null) {
+        if (!hp.tearing_down && (*obj.extra_ptr()).func.comp_func != null) {
+            uint count = (*obj.extra_ptr()).func.comp_func.capture_count;
+            CaptureRef* refs = (*obj.extra_ptr()).func.capture_refs;
+            for (uint i = 0; i < count; i++) {
+                if (refs[i].owner != null) hp.decref((types::HeapHeader*)refs[i].owner);
+            }
+        }
         hp.free_func(hp.heap_udata, (*obj.extra_ptr()).func.capture_refs);
         (*obj.extra_ptr()).func.capture_refs = null;
     }

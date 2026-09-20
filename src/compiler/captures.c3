@@ -550,6 +550,18 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     // --- Restore lexer state ---
     self.restore_lhs_snapshot(snap);
 
+    // Reserve before body temporaries: the VM places callees in sliding
+    // argument windows, so persistent storage must sit below those windows.
+    if (!self.cell_frame_reserved && !self.disable_optimize && !self.is_global
+        && !self.is_arrow && !self.is_generator && !self.is_async
+        && !self.in_class_body && !self.is_named_func_expr
+        && !self.has_rest && self.default_count == 0
+        && self.destruct_default_count == 0 && !self.has_destructured_param
+        && !self.capture_all && self.captured_names.len() > 0) {
+        self.cell_frame_reg = self.alloc_persistent_reg();
+        self.cell_frame_reserved = true;
+    }
+
     // Parameters (and destructured-parameter leaves) were declared before
     // this scan ran, so retroactively mark any the capture set names. Their
     // env copies already exist (param DECLVARs), so flipping reads to GETVAR

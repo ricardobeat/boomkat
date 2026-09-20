@@ -435,6 +435,8 @@ struct CompilerContext {
     uint scope_cap;
     uint scope_depth;
     List{BindingInfo} bindings;
+    ushort cell_frame_reg;
+    bool cell_frame_reserved;
 
     // Loop/break/continue tracking
     LoopInfo[MAX_LOOP_DEPTH] loop_stack;
@@ -1864,6 +1866,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     if (hw_max > MAX_REGISTERS) { hw_max = MAX_REGISTERS; }
 
 
+    promote_uncaptured_var_bindings(self, h);
+
     // --- Peephole: fuse GETVAR + INC/DEC + PUTVAR into INC_VAR/DEC_VAR ---
     // Pattern: GETVAR r, name  /  INC r  /  PUTVAR r, name
     //   → NOP  /  INC_VAR name  /  NOP
@@ -2671,6 +2675,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         restore_dynamic_capture_names(func);
     }
     self.collect_capture_candidates(func);
+    lower_captured_var_cells(self, func, hp);
 
     // Free compiler scratch buffers, the CompiledFunction owns its own copies.
     self.cleanup();

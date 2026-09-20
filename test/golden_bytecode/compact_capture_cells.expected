@@ -1,0 +1,49 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALFUNC       r0, 1
+[  2] CLOSURE             r0, 0
+[  3] DECLGLOBALFUNC      r0, 1
+[  4] LDUNDEF             r0 = r0, r0
+[  5] DECLVAR_HOIST       r0, 0
+[  6] LDINT               r3, +3
+[  7] CALL_GLOBAL         r1, argc=1, K[1]
+[  8] LDREG               r0 = r1, r0
+[  9] LDCONST             r1, 2
+[ 10] GETPROP             r2 = r0, r1
+[ 11] LDREG               r3 = r0, r0
+[ 12] LDINT               r4, +9
+[ 13] CALL                r2 = r2, r1
+[ 14] GETPROPC            r4 = r0, r4
+[ 15] LDREG               r5 = r0, r0
+[ 16] CALL                r4 = r4, r0
+[ 17] LDREG               r3 = r4, r0
+[ 18] CALL_GLOBAL         r1, argc=1, K[3]
+[ 19] PUTVAR              r0, 0
+[ 20] RETUNDEF            
+
+--- Inner function 0 ---
+[  0] NEWCELLS            r1, 1
+[  1] LDUNDEF             r2 = r0, r0
+[  2] SETCELL             r2 = r1, r0
+[  3] LDREG               r2 = r0, r0
+[  4] SETCELL             r2 = r1, r0
+[  5] NEWOBJ              r3 = r0, r0
+[  6] LDCONST             r4, 2
+[  7] CLOSURE             r5, 0
+[  8] INITPROP            r3 = r4, r5
+[  9] LDCONST             r4, 3
+[ 10] CLOSURE             r5, 1
+[ 11] INITPROP            r3 = r4, r5
+[ 12] RET                 r3 = r0, r0
+
+--- Inner function 0.0 ---
+[  0] GETCAP              r0, 0
+[  1] RET                 r0 = r0, r0
+
+--- Inner function 0.1 ---
+[  0] LDUNDEF             r2 = r0, r0
+[  1] NOP                 
+[  2] LDREG               r1 = r0, r0
+[  3] PUTCAP_SNAP         r1 = r2, r0
+[  4] RETUNDEF            
+--- End bytecode ---
