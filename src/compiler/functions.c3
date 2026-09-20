@@ -2080,8 +2080,7 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     // note above), so the register must not become the live home slot: force
     // every read through the environment, as the catch parameter does.
     if (uses_args_object) {
-        self.scope_stack[self.scope_depth - 1].is_captured = true;
-        self.has_captured_local = true;
+        self.mark_scope_captured(self.scope_depth - 1);
     }
     self.emit_abc(Opcode.LDUNDEF, (uint)var_reg, 0, 0);
     uint var_name_idx = self.add_string_constant(var_name);
@@ -4413,8 +4412,7 @@ fn void CompilerContext.mark_default_expr_captures(&self, CompiledFunction* func
         if (self.scope_stack[i].kind == SCOPEMARK) continue;
         if (!self.scope_stack[i].is_captured
             && self.is_captured_name(self.scope_stack[i].name)) {
-            self.scope_stack[i].is_captured = true;
-            self.has_captured_local = true;
+            self.mark_scope_captured(i);
         }
     }
 }

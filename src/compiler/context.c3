@@ -40,7 +40,6 @@ const uint INITIAL_INNER_FUNCS = 16;
 const uint MAX_CODE_HARD        = 1 << 22;  // 4M instructions
 const uint MAX_CONSTANTS_HARD   = 1 << 20;  // 1M constants
 const uint MAX_INNER_FUNCS_HARD = 1 << 16;  // 65K inner functions
-const uint MAX_CAPTURED_NAMES = 48;
 // Cap on primary_expr recursion depth (nested `[[[`, `((((`, etc). The
 // recursive-descent parser has no other bound and a deeply nested literal
 // overflows the native stack (measured: 500 levels fine, 1000 crashes with
@@ -135,10 +134,24 @@ enum ScopeKind : char {
     SCOPEMARK,   ///< boundary marker pushed by block() to delimit scope
 }
 
+// Persistent declaration identity for analyses that run after lexical scopes
+// have popped and their registers may have been reused.
+struct BindingInfo {
+    uint name_idx;
+    ushort reg;
+    ScopeKind kind;
+    bool is_captured;
+    bool is_param;
+    bool is_catch_param;
+}
+
 struct ScopeEntry {
     char[] name;
     ushort reg;
     ScopeKind kind;
+    // One-based index into CompilerContext.bindings. Zero belongs to markers
+    // and safely represents an entry without ledger metadata.
+    uint binding_id;
     bool is_captured;
     // True for a `let`/`const` binding that has been declared but whose
     // initialiser has not yet completed (i.e. the `PUTLEX`/`PUTLEX_C` that
@@ -421,6 +434,7 @@ struct CompilerContext {
     ScopeEntry* scope_stack;
     uint scope_cap;
     uint scope_depth;
+    List{BindingInfo} bindings;
 
     // Loop/break/continue tracking
     LoopInfo[MAX_LOOP_DEPTH] loop_stack;
@@ -987,11 +1001,9 @@ int  cur_with_depth;
     // Names referenced inside nested callable bodies, collected by
     // pre_scan_captures before the body compiles; declare_var marks matching
     // locals is_captured so all their access goes through the environment.
-    char[64][48] captured_names;
-    ushort[48] captured_name_lens;
-    uint captured_count;
-    // Treat every local as captured: direct eval present, class body seen,
-    // or pre-scan capacity overflow.
+    List{char[]} captured_names;
+    // Treat every local as captured when token-level analysis cannot name the
+    // affected binding precisely, including direct eval and class fields.
     bool capture_all;
 
     // Hoisted function declaration names (so main pass can skip recompilation).
@@ -1414,6 +1426,8 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.slot_global_name_idxs.allocator = mem;
     self.slot_global_synced_name_idxs.allocator = mem;
     self.direct_eval_offsets.allocator = mem;
+    self.bindings.allocator = mem;
+    self.captured_names.allocator = mem;
 
     // Phase 3 (plans/083): do NOT default the lexer to strict mode here. Each
     // compilation entry point (compile/compile_eval/compile_function/etc.) is
@@ -1453,6 +1467,9 @@ fn void CompilerContext.cleanup(&self) {
     self.slot_global_name_idxs.free();
     self.slot_global_synced_name_idxs.free();
     self.direct_eval_offsets.free();
+    self.bindings.free();
+    foreach (name : self.captured_names) { mem::free(name.ptr); }
+    self.captured_names.free();
 }
 
 // Borrow the private-names table from an enclosing context (a method,
@@ -1671,6 +1688,7 @@ fn void CompilerContext.ensure_private_name_cap(&self) {
 
 // Register an inner function and return its index.
 fn uint CompilerContext.add_inner_func(&self, CompiledFunction* func) {
+    self.resolve_capture_candidates(func);
     self.ensure_inner_func_cap();
     if (self.inner_func_count >= self.inner_func_cap) return 0;
     uint idx = self.inner_func_count;
@@ -2157,115 +2175,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         h.free_func(h.heap_udata, me_words);
     }
 
-    // Elide unobserved environment stores before NOP compaction. Captured
-    // bindings must agree with resolve_var: every scope entry marked captured
-    // also sets has_captured_local, keeping its environment stores intact.
-    // Const writes and TDZ reads retain their name-based runtime checks.
-    {
-        bool elide_has_params_needing_env = self.has_rest || self.default_count > 0;
-        bool elide_needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
-                              || self.uses_arguments
-                              || self.has_direct_eval;
-        bool elide_ok = !elide_needs_runtime_env
-                     && !elide_has_params_needing_env
-                     && !self.has_captured_local
-                     && !self.has_with_stmt  // dynamic scope: a with-object may own any local's name
-                     && !self.outer_with  // created inside a with body: every read goes through the env
-                     && !self.is_global   // global/eval vars are env-resident (resolve_var skips global scope)
-                     && (!self.is_arrow || can_remove_empty_arrow_scopes)
-                     && !self.is_generator
-                     && !self.is_async;
-        if (!self.disable_optimize && !self.has_wide && elide_ok) {
-            // Track all name-based consumers, including writes and sloppy
-            // delete. Names shared by separate scopes are kept conservatively.
-            uint[64] env_names;
-            uint env_name_count = 0;
-            bool retain_all_bindings = false;
-            for (uint i = 0; i < self.code_count; i++) {
-                uint name_idx;
-                switch (bytecode::get_env_name_operand(self.code[i].op)) {
-                    case EnvNameOperand.NONE:
-                        continue;
-                    case EnvNameOperand.INDIRECT:
-                        retain_all_bindings = true;
-                        continue;
-                    case EnvNameOperand.BC:
-                        name_idx = self.code[i].get_bc();
-                    case EnvNameOperand.C:
-                        name_idx = self.code[i].c;
-                }
-                if (env_name_count < env_names.len) {
-                    env_names[env_name_count++] = name_idx;
-                } else {
-                    retain_all_bindings = true;
-                }
-            }
-            for (uint i = 0; i < self.code_count; i++) {
-                Opcode dop = self.code[i].op;
-                // Declarations always target the function's own immediate scope.
-                // Retain const/TDZ bindings whenever a name-based operation
-                // can observe them, including uses in a different lexical scope.
-                if (dop == Opcode.DECLVAR || dop == Opcode.DECLVAR_HOIST
-                    || dop == Opcode.PUTLEX
-                    || dop == Opcode.INITTZ || dop == Opcode.PUTLEX_C) {
-                    if (dop == Opcode.INITTZ || dop == Opcode.PUTLEX_C) {
-                        bool keep_binding = retain_all_bindings;
-                        for (uint k = 0; k < env_name_count; k++) {
-                            if (env_names[k] == self.code[i].get_bc()) { keep_binding = true; break; }
-                        }
-                        if (keep_binding) { continue; }
-                    }
-                    self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                    continue;
-                }
-                // Loop-variable env sync: an adjacent `PUTVAR rX,n` + `GETVAR rX,n`
-                // pair with identical register AND name (for_statement writes the
-                // final loop counter back to the env). A genuine parent/global
-                // access never produces this same-reg/same-name adjacent pair.
-                if (dop == Opcode.PUTVAR && i + 1 < self.code_count
-                    && self.code[i + 1].op == Opcode.GETVAR
-                    && self.code[i].get_a() == self.code[i + 1].get_a()
-                    && self.code[i].get_bc() == self.code[i + 1].get_bc()) {
-                    self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                    self.code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                    i++;
-                }
-            }
-
-            // Remove every empty scope push/pop together, including
-            // abrupt-exit pops. Keeping any binding or depth-dependent
-            // operation requires keeping the whole scope layout; matching
-            // pushes by instruction order would mistake break/continue pops
-            // for normal block exits.
-            bool needs_lexical_env = false;
-            for (uint i = 0; i < self.code_count; i++) {
-                switch (self.code[i].op) {
-                    case Opcode.INITTZ:
-                    case Opcode.PUTLEX:
-                    case Opcode.PUTLEX_C:
-                    case Opcode.GETBOUND:
-                        needs_lexical_env = true;
-                    case Opcode.PUSH_VAR:
-                    case Opcode.POP_VAR:
-                        if (!can_remove_empty_arrow_scopes) needs_lexical_env = true;
-                    case Opcode.PUSH_LEX:
-                        if (self.code[i].a != 0) needs_lexical_env = true;
-                    default:
-                }
-                if (needs_lexical_env) break;
-            }
-            if (!needs_lexical_env) {
-                for (uint i = 0; i < self.code_count; i++) {
-                    if (self.code[i].op == Opcode.PUSH_LEX
-                        || self.code[i].op == Opcode.POP_LEX
-                        || self.code[i].op == Opcode.PUSH_VAR
-                        || self.code[i].op == Opcode.POP_VAR) {
-                        self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-                    }
-                }
-            }
-        }
-    }
+    prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
 
     // --- Peephole: fuse GETGLOBAL_PRIM + PUTGLOBAL_PRIM -> MOVE_GG ---
     // A plain `a = b` between two proven primitive-only globals compiles to a
@@ -2629,6 +2539,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.is_generator
                      && !self.is_async
                      && !self.is_named_func_expr;
+    if (!can_skip_env && can_reuse_binding_environment(self)) {
+        can_skip_env = true;
+    }
     func.flags.needs_env = !can_skip_env;
     func.flags.is_global = self.is_global;
     // eval_mode only means "accumulate a completion value", which a global
@@ -2754,6 +2667,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Run bytecode peephole optimizations (GETPROPC2 chain fusion, etc.)
     if (!self.has_wide) { peephole::peephole_scan(func, hp); }
     build_await_liveness(self, func, hp);
+    if (self.has_direct_eval || self.has_with_stmt || self.outer_with) {
+        restore_dynamic_capture_names(func);
+    }
+    self.collect_capture_candidates(func);
 
     // Free compiler scratch buffers, the CompiledFunction owns its own copies.
     self.cleanup();

@@ -143,6 +143,20 @@ A synchronous zero-parameter arrow with no own bindings, nested closures, or
 dynamic scope can also omit empty lexical and variable scopes. Its captured
 environment remains stable across calls, allowing variable-cache reuse.
 
+Each declaration has a persistent binding record with its home register,
+scope kind, and capture state. Environment-store retention combines these
+records with name consumers in compiled child functions, including synthetic
+class bindings. Same-named declarations in different scopes are conservatively
+retained together. Capture discovery uses dynamically sized name storage.
+
+Eligible references to a visible enclosing binding become `GETCAP`, `PUTCAP`,
+or `PUTCAP_SNAP`. Each closure owns an indexed descriptor vector referencing
+shared environment binding slots. Creation resolves those slots once; reads
+and writes fetch the owner's current value array so storage resizing is safe.
+TDZ and immutable writes use the regular checked path. Dynamic, unresolved,
+and unsupported references retain name-based bytecode. This representation
+still retains the environment chains and their binding objects.
+
 ### Classes and private names
 
 Classes compile to a constructor function plus installation code for methods,

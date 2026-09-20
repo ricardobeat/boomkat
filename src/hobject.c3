@@ -579,6 +579,11 @@ struct ShapeProperty {
 // ============================================================================
 
 // Compiled function / native builtin extra fields.
+struct CaptureRef {
+    HObject* owner;
+    uint     prop_idx;
+}
+
 struct HObjectFunction {
     CompiledFunction* comp_func;
     EnvRecord*        var_env;
@@ -607,6 +612,10 @@ struct HObjectFunction {
     TVal              bound_target;
     TVal              bound_this;
     HObject*          bound_args;
+    // Resolved slots for the compiled function's captured names. Appended so
+    // the proxy/function overlay offsets above remain unchanged. Owners are
+    // borrowed through var_env/lex_env, which retain their binding chains.
+    CaptureRef*       capture_refs;
 }
 
 // Host object (ObjClass.HOST): an instance of a class registered at runtime
@@ -869,7 +878,6 @@ union HObjectExtra {
 // Baseline (nanbox, default build, macOS arm64, 2026-08-25):
 //   HObjectTemporal::size         = 92  (current max; +20 B over previous
 //                                        HObjectFunction-led layout)
-//   HObjectFunction::size         = 72
 //   HObjectIteratorHelper::size   = 64
 //   HObjectPromise::size          = 40
 //   HObjectBufferView::size       = 32
@@ -2325,6 +2333,15 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
     }
 
+    // Compiled closures own the descriptor vector, while each owner pointer
+    // is borrowed from the captured environment chains. Builtins, bound
+    // functions, and async-state callbacks leave capture_refs null.
+    if (obj.flags.obj_class == ObjClass.FUNCTION && !obj.flags.is_async_state
+        && (*obj.extra_ptr()).func.capture_refs != null) {
+        hp.free_func(hp.heap_udata, (*obj.extra_ptr()).func.capture_refs);
+        (*obj.extra_ptr()).func.capture_refs = null;
+    }
+
     // Decref the stack string captured at Error construction time.
     if (obj.flags.obj_class == ObjClass.ERROR && !hp.tearing_down) {
         heap::Heap* h = hp;
@@ -3275,4 +3292,3 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
 // ============================================================================
 // Utility: next power of two
 // ============================================================================
-

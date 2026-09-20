@@ -15,8 +15,12 @@ unsuccessful experiments and their limitations too.
 - [x] 4. Shared internal built-in iterator stepping — kept.
 - [x] 5. Measure rest-length call setup shortcut — rejected as too narrow.
 - [x] 6. Reduce async suspension storage using register liveness — kept.
-- [ ] 7. Consolidate compiler analysis and scratch storage — next.
-- [ ] 8. Cumulative performance, memory, documentation, and regressions.
+- [ ] 7. Resolved bindings and indexed captures — active; see plan 090.
+- [ ] 8. Binding-aware register liveness and frame sizing.
+- [ ] 9. Cumulative performance, memory, documentation, and regressions.
+
+Compiler scratch-storage consolidation is deferred. The active work changes
+binding representation across the compiler, bytecode, and VM.
 
 Each item requires a bounded implementation experiment, a correctness decision,
 and an explicit keep/reject result. A completed experiment does not imply the

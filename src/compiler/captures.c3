@@ -31,8 +31,6 @@ import std::io;
 //     method-only class leaves the enclosing locals in registers.
 //   - The identifier `eval` anywhere degrades to capture_all: a direct eval
 //     can read and assign any caller binding by name.
-//   - Table overflow (more distinct names than the fixed capacity, or a name
-//     longer than the slot) degrades to capture_all.
 // ============================================================================
 
 fn bool is_control_paren_kw(TokenType tt) {
@@ -44,33 +42,19 @@ fn bool is_control_paren_kw(TokenType tt) {
 fn void CompilerContext.add_captured_name(&self, char[] name) {
     if (self.capture_all) return;
     if (name.len == 0) return;
-    if (name.len > 63) { self.capture_all = true; return; }
-    for (uint i = 0; i < self.captured_count; i++) {
-        if (self.captured_name_lens[i] == name.len) {
-            bool same = true;
-            for (usz j = 0; j < name.len; j++) {
-                if (self.captured_names[i][j] != name[j]) { same = false; break; }
-            }
-            if (same) return;
-        }
+    foreach (captured : self.captured_names) {
+        if (str_eq(captured, name)) return;
     }
-    if (self.captured_count >= MAX_CAPTURED_NAMES) { self.capture_all = true; return; }
-    for (usz j = 0; j < name.len; j++) self.captured_names[self.captured_count][j] = name[j];
-    self.captured_name_lens[self.captured_count] = (ushort)name.len;
-    self.captured_count++;
+    char[] owned = mem::new_array(char, name.len);
+    mem::copy(owned.ptr, name.ptr, (sz)name.len);
+    self.captured_names.push(owned);
 }
 
 // Is this local name captured by a nested callable (or is everything)?
 fn bool CompilerContext.is_captured_name(&self, char[] name) {
     if (self.capture_all) return true;
-    for (uint i = 0; i < self.captured_count; i++) {
-        if (self.captured_name_lens[i] == name.len) {
-            bool same = true;
-            for (usz j = 0; j < name.len; j++) {
-                if (self.captured_names[i][j] != name[j]) { same = false; break; }
-            }
-            if (same) return true;
-        }
+    foreach (captured : self.captured_names) {
+        if (str_eq(captured, name)) return true;
     }
     return false;
 }
@@ -575,8 +559,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
             if (self.scope_stack[i].kind == SCOPEMARK) continue;
             if (!self.scope_stack[i].is_captured
                 && self.is_captured_name(self.scope_stack[i].name)) {
-                self.scope_stack[i].is_captured = true;
-                self.has_captured_local = true;
+                self.mark_scope_captured(i);
             }
         }
     }

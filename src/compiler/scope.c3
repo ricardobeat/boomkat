@@ -62,6 +62,7 @@ fn void CompilerContext.push_scope_marker(&self, bool is_body = false) {
         self.scope_stack[self.scope_depth].name = (char[]){};
         self.scope_stack[self.scope_depth].reg = 0;
         self.scope_stack[self.scope_depth].kind = SCOPEMARK;
+        self.scope_stack[self.scope_depth].binding_id = 0;
         self.scope_stack[self.scope_depth].is_captured = false;
         self.scope_stack[self.scope_depth].is_param = false;
         self.scope_stack[self.scope_depth].is_body_mark = is_body;
@@ -175,9 +176,20 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         // `block()` / `for_of` / `class` install via `INITTZ`).  Cleared by
         // `emit_var_store` after the publishing `PUTLEX` runs.
         bool is_tdz = kind == LET || kind == CONST;
+        uint name_idx = self.add_string_constant(name);
+        uint binding_id = (uint)self.bindings.len() + 1;
+        self.bindings.push({
+            .name_idx = name_idx,
+            .reg = reg,
+            .kind = kind,
+            .is_captured = captured,
+            .is_param = is_param,
+            .is_catch_param = false,
+        });
         self.scope_stack[self.scope_depth].name = name;
         self.scope_stack[self.scope_depth].reg = reg;
         self.scope_stack[self.scope_depth].kind = kind;
+        self.scope_stack[self.scope_depth].binding_id = binding_id;
         self.scope_stack[self.scope_depth].is_captured = captured;
         self.scope_stack[self.scope_depth].is_tdz = is_tdz;
         self.scope_stack[self.scope_depth].is_param = is_param;
@@ -189,6 +201,29 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         self.scope_depth++;
     }
     return reg;
+}
+
+// Capture status is mirrored into the persistent declaration record so later
+// analyses retain the decision after scope pop and register reuse.
+fn void CompilerContext.mark_scope_captured(&self, uint index) {
+    if (index >= self.scope_depth) return;
+    ScopeEntry* entry = &self.scope_stack[index];
+    if (entry.kind == SCOPEMARK) return;
+    entry.is_captured = true;
+    if (entry.binding_id != 0 && entry.binding_id <= self.bindings.len()) {
+        self.bindings[(sz)(entry.binding_id - 1)].is_captured = true;
+    }
+    self.has_captured_local = true;
+}
+
+fn void CompilerContext.mark_scope_catch_param(&self, uint index) {
+    if (index >= self.scope_depth) return;
+    ScopeEntry* entry = &self.scope_stack[index];
+    if (entry.kind == SCOPEMARK) return;
+    entry.is_catch_param = true;
+    if (entry.binding_id != 0 && entry.binding_id <= self.bindings.len()) {
+        self.bindings[(sz)(entry.binding_id - 1)].is_catch_param = true;
+    }
 }
 
 // Resolve a variable name to its register. Searches from innermost scope out.
@@ -595,10 +630,7 @@ fn void CompilerContext.mark_var_captured(&self, char[] name) {
         uint idx = j - 1;
         if (self.scope_stack[idx].kind == SCOPEMARK) continue;
         if (str_eq(self.scope_stack[idx].name, name)) {
-            if (!self.scope_stack[idx].is_captured) {
-                self.scope_stack[idx].is_captured = true;
-                self.has_captured_local = true;
-            }
+            self.mark_scope_captured(idx);
             return;
         }
     }

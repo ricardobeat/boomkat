@@ -383,6 +383,30 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
 // instantiates exported `function` declarations eagerly at link time so a
 // cyclic early import observes the hoisted function rather than `undefined`
 // (ECMA-262 16.2.1.5.5 step 17).
+// Returns 1 when resolved, 0 when absent, and -1 when dynamic or global scope
+// makes a direct slot unsafe.
+fn int resolve_capture_ref(Vm* vm, EnvRecord* start, void* key, CaptureRef* out) {
+    EnvRecord* cur = start;
+    while (cur != null) {
+        // Object environment records can gain or lose a shadowing property,
+        // and global bindings remain observable through host/global mutation.
+        if (cur.flags.is_with) return -1;
+        if (cur == vm.global_env || cur == vm.global_lex_env) return 0;
+        if (cur.bindings != null) {
+            int idx = cur.bindings.find_prop_idx(key, vm.heap);
+            if (idx >= 0) {
+                hobject::PropFlags flags = cur.bindings.get_prop_flags((uint)idx, vm.heap);
+                if (flags.is_accessor || flags.configurable) return -1;
+                out.owner = cur.bindings;
+                out.prop_idx = (uint)idx;
+                return 1;
+            }
+        }
+        cur = cur.parent;
+    }
+    return 0;
+}
+
 fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* var_env, EnvRecord* lex_env, TVal* enclosing_this = null, HObject* enclosing_new_target = null) {
     HObject*? func_obj_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch _e = func_obj_raw) return null;
@@ -427,6 +451,29 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     }
     (*func_obj.extra_ptr()).func.var_env = cap_var_env;
     (*func_obj.extra_ptr()).func.lex_env = cap_lex_env;
+    if (template.capture_count > 0 && template.capture_names != null) {
+        usz refs_bytes = (usz)template.capture_count * CaptureRef::size;
+        CaptureRef* refs = (CaptureRef*)vm.heap.alloc_func(vm.heap.heap_udata, refs_bytes);
+        if (refs != null) {
+            mem::clear(refs, (sz)refs_bytes);
+            for (uint i = 0; i < template.capture_count; i++) {
+                uint name_idx = template.capture_names[i];
+                if (name_idx >= template.const_count) continue;
+                TVal name = template.constants[name_idx];
+                if (!name.is_string()) continue;
+                void* key = name.get_heapptr();
+                int resolved = resolve_capture_ref(vm, cap_lex_env, key, &refs[i]);
+                if (resolved != 0) continue;
+                // Some call paths keep distinct lexical and variable chains.
+                // Avoid walking the same head twice, while still resolving a
+                // function binding absent from the lexical chain.
+                if (cap_var_env != cap_lex_env) {
+                    resolve_capture_ref(vm, cap_var_env, key, &refs[i]);
+                }
+            }
+            (*func_obj.extra_ptr()).func.capture_refs = refs;
+        }
+    }
     // ES2015 §9.2.1 [[ThisMode]]=lexical: capture the enclosing activation's
     // `this` once, at closure-creation time, so it survives being called from
     // any later call site (bare call, .call/.apply/.bind, builtin callback

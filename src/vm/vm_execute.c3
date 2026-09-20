@@ -4710,8 +4710,18 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         // === VARIABLE ACCESS (inlined: hot in var-heavy / recursive code) ===
+        case Opcode.GETCAP:
         case Opcode.GETVAR: {
             uint bc = insn.get_bc();
+            if (op == Opcode.GETCAP) {
+                TVal* captured = capture_value_slot(ds.act, bc, vm.heap);
+                if (captured != null) {
+                    vm.heap.tval_copy_ref(ra, captured);
+                    track_heap_store(ds.act, ra, (uint)insn.a);
+                    continue;
+                }
+                bc = vm.current_func.capture_names[bc];
+            }
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
                 if (name_val.is_string()) {
@@ -6167,10 +6177,21 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.PUTCAP:
         case Opcode.PUTVAR_ASSIGN: {
             // User assignment: like PUTVAR but throws ReferenceError for a
             // let/const binding still in its temporal dead zone.
             uint bc = insn.get_bc();
+            if (op == Opcode.PUTCAP) {
+                TVal* captured = capture_value_slot(ds.act, bc, vm.heap, true);
+                if (captured != null) {
+                    vm.heap.decref_tval(captured);
+                    *captured = *ra;
+                    ra.set_undefined();
+                    continue;
+                }
+                bc = vm.current_func.capture_names[bc];
+            }
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
                 if (name_val.is_string()) {
@@ -6357,6 +6378,7 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
+        case Opcode.PUTCAP_SNAP:
         case Opcode.PUTVAR_SNAP: {
             // A = value register, B = probe env register, C = name constant.
             // Pairs with RESOLVEVAR, which stored the Reference's owning
@@ -6367,6 +6389,16 @@ fn TVal? Vm.run(Vm* vm) {
             // Reference. A null probe (unresolvable Reference) falls back to
             // PUTVAR_ASSIGN's implicit-global / ReferenceError handling.
             uint name_idx = insn.c;
+            if (op == Opcode.PUTCAP_SNAP) {
+                TVal* captured = capture_value_slot(ds.act, name_idx, vm.heap, true);
+                if (captured != null) {
+                    vm.heap.decref_tval(captured);
+                    *captured = *ra;
+                    ra.set_undefined();
+                    continue;
+                }
+                name_idx = vm.current_func.capture_names[name_idx];
+            }
             EnvRecord* snap_env = null;
             if ((uint)insn.b < ds.nregs) {
                 TVal bv = ds.regs_base[(uint)insn.b];

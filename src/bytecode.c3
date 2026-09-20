@@ -1071,6 +1071,12 @@ enum Opcode : char {
     // contract. ABC format: A=result_reg, B=parts_base, C=part_count.
     STRJOIN,
 
+    // A is the value register; BC indexes the closure's capture vector.
+    GETCAP,
+    PUTCAP,
+    // Preserve B's SnapshotReference for the generic fallback; C is a capture.
+    PUTCAP_SNAP,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }
@@ -1121,7 +1127,10 @@ fn EnvNameOperand get_env_name_operand(Opcode op) {
         case TAILCALL_VAR:
             return C;
         case GETBOUND:
-            // The operand addresses a depth/name pair, not a canonical name.
+        case GETCAP:
+        case PUTCAP:
+        case PUTCAP_SNAP:
+            // Resolving the name requires auxiliary depth or capture metadata.
             return INDIRECT;
         default:
             return NONE;
@@ -1136,6 +1145,8 @@ fn OpFormat get_op_format(Opcode op) {
         case LDINTX:    return A_BC;
         case SETALEN:   return A_BC;
         case GETVAR:    return A_BC;
+        case GETCAP:    return A_BC;
+        case PUTCAP:    return A_BC;
         case RESOLVEVAR: return A_BC;
         case THROW_UNRESOLVED: return A_BC;
         case TYPEOFIDENT: return A_BC;
@@ -1594,6 +1605,11 @@ struct CompiledFunction {
     // Number of instructions in `code`.
     uint            code_count;
 
+    // Constant-pool names for capture descriptors. The enclosing compiler
+    // resolves candidates before the template can be instantiated.
+    uint*           capture_names;
+    uint            capture_count;
+
     // Sparse saved-register masks keyed by the LOAD_RESUME program counter
     // following an ordinary async AWAIT. Null means use the full snapshot.
     AwaitLiveEntry* await_live;
@@ -1994,4 +2010,3 @@ fn uint CompiledFunction.get_line(&self, uint pc) {
 //
 // Build the `boomkat_debug` target, or pass `-D TRACE_VM`, to get the dump
 // helpers and the `-t`, `-c`, and `--format json` CLI options.
-

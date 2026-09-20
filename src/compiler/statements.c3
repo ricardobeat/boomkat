@@ -2387,8 +2387,7 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
         for (uint j = 0; j < saved_depth; j++) {
             if (str_eq(self.scope_stack[j].name, name)) {
                 if (lex_spans[i].is_fn && !self.is_strict && b33_span_exempt[i]) continue;
-                self.scope_stack[j].is_captured = true;
-                self.has_captured_local = true;
+                self.mark_scope_captured(j);
                 break;
             }
         }
@@ -3741,8 +3740,7 @@ fn void? CompilerContext.for_statement(&self) {
                         // the TDZ sentinel in the new lex_env.
                         for (uint j = 0; j < saved_scope; j++) {
                             if (str_eq(self.scope_stack[j].name, bname)) {
-                                self.scope_stack[j].is_captured = true;
-                                self.has_captured_local = true;
+                                self.mark_scope_captured(j);
                                 break;
                             }
                         }
@@ -4019,8 +4017,7 @@ fn void? CompilerContext.for_statement(&self) {
                 if (is_lexical) {
                     for (uint j = 0; j < saved_scope; j++) {
                         if (str_eq(self.scope_stack[j].name, name_tok.str_value)) {
-                            self.scope_stack[j].is_captured = true;
-                            self.has_captured_local = true;
+                            self.mark_scope_captured(j);
                             break;
                         }
                     }
@@ -4051,8 +4048,7 @@ fn void? CompilerContext.for_statement(&self) {
                     // when this flag was set here but the elide gate missed
                     // it).  Mirrors the outer-scope walk above, which sets
                     // both flags together.
-                    self.scope_stack[self.scope_depth - 1].is_captured = true;
-                    self.has_captured_local = true;
+                    self.mark_scope_captured(self.scope_depth - 1);
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
                     self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(name_tok.str_value));
@@ -4193,8 +4189,7 @@ fn void? CompilerContext.for_statement(&self) {
                         // the TDZ sentinel in the new lex_env.
                         for (uint j = 0; j < saved_scope; j++) {
                             if (str_eq(self.scope_stack[j].name, name_tok.str_value)) {
-                                self.scope_stack[j].is_captured = true;
-                                self.has_captured_local = true;
+                                self.mark_scope_captured(j);
                                 break;
                             }
                         }
@@ -5858,14 +5853,13 @@ fn void? CompilerContext.try_statement(&self) {
                 // (above var_env), so a body `var` / for-head that reuses it
                 // must walk the chain to update that binding rather than
                 // create a shadow in var_env (B.3.5).
-                self.scope_stack[self.scope_depth - 1].is_catch_param = true;
+                self.mark_scope_catch_param(self.scope_depth - 1);
                 // Force the catch variable through the environment (GETVAR/PUTVAR)
                 // instead of direct register access.  PUTVAR clears the source
                 // register after storing to the env (for refcount correctness),
                 // so a later register read would get undefined.
                 if (!self.is_global && self.scope_depth > 0) {
-                    self.scope_stack[self.scope_depth - 1].is_captured = true;
-                    self.has_captured_local = true;
+                    self.mark_scope_captured(self.scope_depth - 1);
                 }
                 self.emit_abc(Opcode.CATCH, (uint)catch_var, 0, 0);
                 // The catch parameter lives in its own lexical scope so it
@@ -6066,8 +6060,7 @@ fn void? CompilerContext.switch_statement(&self) {
         // installed in the new lex_env.
         for (uint j = 0; j < saved_switch_scope_depth; j++) {
             if (str_eq(self.scope_stack[j].name, name)) {
-                self.scope_stack[j].is_captured = true;
-                self.has_captured_local = true;
+                self.mark_scope_captured(j);
                 break;
             }
         }

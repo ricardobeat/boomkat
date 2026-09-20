@@ -80,6 +80,9 @@ fn void init_threaded_handlers() {
 
     // --- Variable access (VarIC shape and recycle-epoch path) ---
     g_threaded_handlers[Opcode.GETVAR.ordinal]        = &th_getvar;
+    g_threaded_handlers[Opcode.GETCAP.ordinal]        = &th_getcap;
+    g_threaded_handlers[Opcode.PUTCAP.ordinal]        = &th_putcap;
+    g_threaded_handlers[Opcode.PUTCAP_SNAP.ordinal]   = &th_putcap;
     g_threaded_handlers[Opcode.PUTVAR_ASSIGN.ordinal] = &th_putvar_assign;
     g_threaded_handlers[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
     g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
@@ -547,6 +550,30 @@ fn Instruction* th_dec_global(Instruction* pc, Instruction* code_end, TVal* regs
 }
 
 // --- Variable access: VarIC (shape and recycle-epoch) hit path only. ---
+
+fn Instruction* th_getcap(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal* slot = capture_value_slot(cold.act, pc.get_bc(), cold.vm.heap);
+    if (slot == null) return pc;
+    TVal value = *slot;
+    TVal* dst = regs + pc.a;
+    if (!th_can_retain(&value) || !th_can_release(dst, cold)) return pc;
+    th_do_retain(&value);
+    th_do_release(dst);
+    *dst = value;
+    track_heap_store(cold.act, dst, (uint)pc.a);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_putcap(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    uint capture_index = pc.op == Opcode.PUTCAP_SNAP ? pc.c : pc.get_bc();
+    TVal* slot = capture_value_slot(cold.act, capture_index, cold.vm.heap, true);
+    if (slot == null || !th_can_release(slot, cold)) return pc;
+    TVal* src = regs + pc.a;
+    th_do_release(slot);
+    *slot = *src;
+    src.set_undefined();
+    return th_next(pc + 1, code_end, regs, cold);
+}
 
 fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
