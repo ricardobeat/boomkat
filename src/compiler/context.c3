@@ -2139,34 +2139,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         h.free_func(h.heap_udata, me_words);
     }
 
-    // --- Register-resident locals: elide dead env ops when no scope is needed ---
-    // Must run BEFORE the NOP compaction below so the NOPs we introduce here are
-    // physically removed too. When this function needs no runtime scope object
-    // (no closures / eval / arguments / default-or-rest params, and not an
-    // arrow/generator/async), nothing can ever read its scope, all of its
-    // non-captured locals live purely in registers (reads already use registers;
-    // see resolve_var). The env *writes* below are therefore dead, so we NOP
-    // them; this lets the VM skip allocating the scope HObject per call (the
-    // dominant cost in call-heavy code). NOP is a valid jump target → layout-safe.
-    //
-    // PUTLEX_C is intentionally NOT in the elide list: a `const` binding must
-    // install its non-writable flag in the lex_env so a register-only write
-    // compiled to PUTVAR_ASSIGN / INC_VAR / DEC_VAR (the const-guard sites
-    // added by plan 062 group H) can throw TypeError on assignment. NOP'ing
-    // PUTLEX_C silently drops that flag and lets the assignment succeed.
-    // INITTZ stays in the list (it only matters for the typeof special case
-    // handled below).
-    //
-    // Invariant: elision must agree with resolve_var in scope.c3, any binding
-    // whose reads are forced through the env (is_captured=true on its scope
-    // entry) MUST keep its env writes (DECLVAR/INITTZ/PUTLEX), because NOP'ing
-    // them would leave the env without the binding and cause ReferenceError on
-    // the next GETVAR. A `with` statement forces every read the same way, so
-    // has_with_stmt disables the whole pass for the function. The
-    // has_captured_local flag is the indicator maintained for this check;
-    // sites that set is_captured=true manually (after declare_var) must also
-    // set has_captured_local=true. See the for-in head in statements.c3 (the
-    // iter-var entry) for the canonical example.
+    // Elide unobserved environment stores before NOP compaction. Captured
+    // bindings must agree with resolve_var: every scope entry marked captured
+    // also sets has_captured_local, keeping its environment stores intact.
+    // Const writes and TDZ reads retain their name-based runtime checks.
     {
         bool elide_has_params_needing_env = self.has_rest || self.default_count > 0;
         bool elide_needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
@@ -2182,49 +2158,44 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.is_generator
                      && !self.is_async;
         if (!self.disable_optimize && !self.has_wide && elide_ok) {
-            // TYPEOFIDENT relies on the INITTZ sentinel in the block env to
-            // throw for `typeof x` inside x's temporal dead zone, collect the
-            // name indices it references so those sentinels are kept.
-            //
-            // GETVAR needs it for the same reason: resolve_var refuses the
-            // register for a binding whose scope entry is still is_tdz, so the
-            // read is compiled as an env lookup precisely so it can hit the
-            // sentinel. Dropping the INITTZ leaves the name absent from the
-            // env, and the GETVAR then walks out to an enclosing binding of
-            // the same name — a global `var y` makes `let y = y` read 99
-            // instead of throwing. Keep the sentinel for every name read
-            // through the env, matching the "elision must agree with
-            // resolve_var" invariant above.
-            uint[64] typeof_names;
-            uint typeof_name_count = 0;
+            // Track all name-based consumers, including writes and sloppy
+            // delete. Names shared by separate scopes are kept conservatively.
+            uint[64] env_names;
+            uint env_name_count = 0;
+            bool retain_all_bindings = false;
             for (uint i = 0; i < self.code_count; i++) {
-                Opcode kop = self.code[i].op;
-                // Writes need the sentinel as much as reads: PUTVAR_ASSIGN and
-                // the ++/-- forms check it to throw inside the dead zone, and
-                // a destructuring assignment target (`let y = [y] = []`)
-                // reaches the binding through PUTVAR_ASSIGN with no GETVAR at
-                // all.
-                if ((kop == Opcode.TYPEOFIDENT || kop == Opcode.GETVAR
-                     || kop == Opcode.PUTVAR_ASSIGN || kop == Opcode.RESOLVEVAR
-                     || kop == Opcode.INC_VAR || kop == Opcode.DEC_VAR)
-                    && typeof_name_count < 64) {
-                    typeof_names[typeof_name_count++] = self.code[i].get_bc();
+                uint name_idx;
+                switch (bytecode::get_env_name_operand(self.code[i].op)) {
+                    case EnvNameOperand.NONE:
+                        continue;
+                    case EnvNameOperand.INDIRECT:
+                        retain_all_bindings = true;
+                        continue;
+                    case EnvNameOperand.BC:
+                        name_idx = self.code[i].get_bc();
+                    case EnvNameOperand.C:
+                        name_idx = self.code[i].c;
+                }
+                if (env_name_count < env_names.len) {
+                    env_names[env_name_count++] = name_idx;
+                } else {
+                    retain_all_bindings = true;
                 }
             }
             for (uint i = 0; i < self.code_count; i++) {
                 Opcode dop = self.code[i].op;
                 // Declarations always target the function's own immediate scope.
-                // PUTLEX_C is intentionally excluded, see the comment above the
-                // elision block for why const env writes must survive.
+                // Retain const/TDZ bindings whenever a name-based operation
+                // can observe them, including uses in a different lexical scope.
                 if (dop == Opcode.DECLVAR || dop == Opcode.DECLVAR_HOIST
                     || dop == Opcode.PUTLEX
-                    || dop == Opcode.INITTZ) {
-                    if (dop == Opcode.INITTZ) {
-                        bool keep_tdz = false;
-                        for (uint k = 0; k < typeof_name_count; k++) {
-                            if (typeof_names[k] == self.code[i].get_bc()) { keep_tdz = true; break; }
+                    || dop == Opcode.INITTZ || dop == Opcode.PUTLEX_C) {
+                    if (dop == Opcode.INITTZ || dop == Opcode.PUTLEX_C) {
+                        bool keep_binding = retain_all_bindings;
+                        for (uint k = 0; k < env_name_count; k++) {
+                            if (env_names[k] == self.code[i].get_bc()) { keep_binding = true; break; }
                         }
-                        if (keep_tdz) { continue; }
+                        if (keep_binding) { continue; }
                     }
                     self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
                     continue;

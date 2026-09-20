@@ -8,6 +8,7 @@ import boomkat::types;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
+import boomkat::gcprofile;
 
 // ============================================================================
 // EnvRecord pool
@@ -211,6 +212,7 @@ fn void env_pool_sweep(Heap* h) {
 
 // Creates a function-scoped environment record.
 fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
+    gcprofile::gcprof_env(true, false);
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
@@ -230,6 +232,7 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
 
 // Creates an object environment record.
 fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
+    gcprofile::gcprof_env(false, false);
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
@@ -249,6 +252,7 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
 
 // Creates a declarative environment record.
 fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
+    gcprofile::gcprof_env(false, true);
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
@@ -274,6 +278,7 @@ fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
 // bindings (unresolvable references inside `with` go to the enclosing
 // non-with scope).
 fn EnvRecord*? env_create_with_object(Heap* heap, EnvRecord* parent, HObject* bindings) {
+    gcprofile::gcprof_env(false, false);
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;

@@ -1095,6 +1095,39 @@ enum OpFormat : char {
     NONE,
 }
 
+// Environment consumers used by binding-elision passes. Keep fused forms
+// here with their unfused counterparts when adding variable-access opcodes.
+// Binding declarations and lexical initialization stores are producers.
+enum EnvNameOperand : char {
+    NONE,
+    BC,
+    C,
+    INDIRECT,
+}
+
+fn EnvNameOperand get_env_name_operand(Opcode op) {
+    switch (op) {
+        case TYPEOFIDENT:
+        case GETVAR:
+        case PUTVAR_ASSIGN:
+        case RESOLVEVAR:
+        case INC_VAR:
+        case DEC_VAR:
+        case PUTVAR:
+        case DELVAR:
+            return BC;
+        case PUTVAR_SNAP:
+        case CALL_VAR:
+        case TAILCALL_VAR:
+            return C;
+        case GETBOUND:
+            // The operand addresses a depth/name pair, not a canonical name.
+            return INDIRECT;
+        default:
+            return NONE;
+    }
+}
+
 // Return the operand format for a given opcode.
 fn OpFormat get_op_format(Opcode op) {
     switch (op) {

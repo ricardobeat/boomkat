@@ -136,7 +136,9 @@ function: when it stays false, the VM skips creating a scope on every call.
 After register-local environment writes are elided, a function with no remaining
 lexical bindings or depth-dependent environment operations also drops all
 lexical pushes and pops, including abrupt-exit pops. Functions with retained
-const or TDZ bindings keep their scope layout.
+const or TDZ bindings keep their scope layout. An uncaptured const used only
+through its initialized register needs no environment binding. Name-based
+reads, writes, and deletes retain the binding, as do dynamic scope and captures.
 
 ### Classes and private names
 

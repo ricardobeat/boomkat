@@ -16,6 +16,21 @@ ulong gcprof_last_live;
 ulong gcprof_cycles;
 ulong gcprof_marked;
 ulong gcprof_swept;
+ulong gcprof_function_envs;
+ulong gcprof_declarative_envs;
+ulong gcprof_object_envs;
+
+macro void gcprof_env(bool function_scope, bool declarative) @builtin {
+    $if $feat(GC_PROFILE):
+    if (function_scope) {
+        gcprof_function_envs++;
+    } else if (declarative) {
+        gcprof_declarative_envs++;
+    } else {
+        gcprof_object_envs++;
+    }
+    $endif
+}
 
 macro void gcprof_alloc() @builtin {
     $if $feat(GC_PROFILE):
@@ -51,6 +66,8 @@ $if $feat(GC_PROFILE):
     io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",
                  gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
     io::eprintfn("#   live_obj_count_at_last_cycle=%d", gcprof_last_live);
+    io::eprintfn("#   environments function=%d declarative=%d object=%d",
+                 gcprof_function_envs, gcprof_declarative_envs, gcprof_object_envs);
     if (gcprof_cycles > 0) {
         io::eprintfn("#   allocs_per_cycle=%d marked_per_cycle=%d",
                      gcprof_allocations / gcprof_cycles,
