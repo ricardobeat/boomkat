@@ -1303,11 +1303,17 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             method_name = self.advance(true)!;
             // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
             // Skip when this is a generator-method shorthand, `*get` / `*set` is a SyntaxError.
-            if (!is_generator_method && (method_name.str_value.len == 3
+            // Escape sequences in `get`/`set` disable the contextual keyword (§12.2.6.2
+            // "All non-grammar keywords are reserved for any other use"; escape turns
+            // the keyword token back into an IdentifierName, so `class { \u0067et foo() {} }`
+            // is a syntax error rather than a getter).
+            if ((!is_generator_method && method_name.str_value.len == 3
+                 && !method_name.has_escape
                  && method_name.str_value[0] == 'g'
                  && method_name.str_value[1] == 'e'
                  && method_name.str_value[2] == 't')
                 || (!is_generator_method && method_name.str_value.len == 3
+                    && !method_name.has_escape
                     && method_name.str_value[0] == 's'
                     && method_name.str_value[1] == 'e'
                     && method_name.str_value[2] == 't')) {
