@@ -759,20 +759,20 @@ fn bool is_restricted_name(char[] name,
                 name[3] == 'l' && name[4] == 'd') return in_generator_or_blocked_yield;
             break;
         case 6:
-            // "static"
+            // "static", "public"
             if (name[0] == 's' && name[1] == 't' && name[2] == 'a' &&
                 name[3] == 't' && name[4] == 'i' && name[5] == 'c') return strict;
+            if (name[0] == 'p' && name[1] == 'u' && name[2] == 'b' &&
+                name[3] == 'l' && name[4] == 'i' && name[5] == 'c') return strict;
             break;
         case 7:
-            // "package", "private", "public"
+            // "package", "private"
             if (name[0] == 'p' && name[1] == 'a' && name[2] == 'c' &&
                 name[3] == 'k' && name[4] == 'a' && name[5] == 'g' &&
                 name[6] == 'e') return strict;
             if (name[0] == 'p' && name[1] == 'r' && name[2] == 'i' &&
                 name[3] == 'v' && name[4] == 'a' && name[5] == 't' &&
                 name[6] == 'e') return strict;
-            if (name[0] == 'p' && name[1] == 'u' && name[2] == 'b' &&
-                name[3] == 'l' && name[4] == 'i' && name[5] == 'c') return strict;
             break;
         case 9:
             // "arguments", "interface"
