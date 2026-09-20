@@ -2214,7 +2214,13 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     for (ushort i = 0; i < item_count; i++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         TVal item = ctx.regs[ctx.base_reg + 2 + i];
-        if (!array_set_elem_ulong_checked(ctx, obj, actual_start + i, item)) {
+        // ES2022 §23.1.3.28 step 17: Set(O, ToString(F), items[k], true).
+        // Set walks the prototype chain for a setter; an inherited setter on
+        // Array.prototype must be invoked (test262 staging/sm/Array/
+        // set-with-indexed-property-on-prototype-chain). The "_checked"
+        // variant bypasses that walk and goes straight to the dense part, so
+        // we use the prototype-walking "_set" variant here.
+        if (!array_set_elem_ulong_set(ctx, obj, actual_start + i, item)) {
             ctx.result.set_undefined();
             return;
         }
