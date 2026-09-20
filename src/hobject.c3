@@ -367,6 +367,12 @@ bitstruct PropFlags : char {
     // from sloppy code silently no-ops; from strict code it throws. Ordinary
     // object properties never set this.
     bool immut_nonstrict : 4;
+    // Own data property is a private method or accessor (ES2022 §7.3.28
+    // PrivateMethodOrAccessorAdd). Combined with the hidden-symbol key,
+    // distinguishes a private field (writable bit ignored by PrivateSet)
+    // from a private method/accessor (PrivateSet throws TypeError per
+    // §7.3.29 step 4). Ordinary object properties never set this.
+    bool is_private_method : 5;
 }
 
 // The flags a plain assignment creates: writable, enumerable, configurable.

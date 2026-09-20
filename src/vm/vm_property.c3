@@ -2440,9 +2440,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // ES2022 PrivateFieldSet skips [[Writable]] entirely: a frozen
                             // object's existing private field is still modifiable. Bypass the
                             // ordinary [[Set]] writability check when the key is a hidden
-                            // symbol naming a private field.
-                            bool is_private = key != null && ((HString*)key).is_hidden();
-                            if (is_private) {
+                            // symbol naming a private FIELD. Private methods/accessors are
+                            // still rejected (PrivateSet §7.3.29 step 4 throws TypeError
+                            // when the entry's [[Kind]] is "method" or "accessor").
+                            bool is_private_field = key != null
+                                && ((HString*)key).is_hidden()
+                                && !exist_flags.is_private_method;
+                            if (is_private_field) {
                                 // Update value, preserve existing flags
                                 vm.heap.tval_copy_ref(entry, &put_val);
                             } else {

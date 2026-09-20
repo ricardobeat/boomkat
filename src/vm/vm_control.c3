@@ -1350,9 +1350,14 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                         // Private methods (hidden-symbol key) are non-writable
                         // per ES2022 §7.3.28 PrivateMethodOrAccessorAdd; public
                         // class methods remain writable (§14.5.14 step 9).
+                        // PrivateSet (§7.3.29 step 4) throws TypeError for
+                        // methods/accessors and only updates fields; mark the
+                        // flag so the runtime can tell them apart from a
+                        // frozen private field (which also ends up NNC).
                         HString* key_hs_m = (HString*)key;
                         hobject::PropFlags initprop_flags = key_hs_m.is_hidden()
                             ? hobject::PROP_FLAGS_NNC : hobject::PROP_FLAGS_CLASS_METHOD;
+                        if (key_hs_m.is_hidden()) initprop_flags.is_private_method = true;
                         hobj.put_prop(key, *rc, initprop_flags, ds.vm.heap);
                     }
                 }
