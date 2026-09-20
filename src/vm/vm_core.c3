@@ -311,8 +311,18 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     // however the property access was reached, super.prop included.
     Activation* new_act = activation_begin(vm, getter_fn);
 
+    // needs_env=false means the getter never reaches its scope at runtime: no
+    // closure, eval, arguments or captured local, so the compiler elided its
+    // DECLVARs and every binding lives in a register. Allocating a scope for
+    // it would cost an EnvRecord plus a bindings HObject per property read,
+    // which for an accessor in a loop is the dominant source of GC pressure.
+    // Reuse the parent env instead, exactly as the fast call path does. Eval
+    // is excluded there for the same reason it is here: builtin_eval has
+    // already attached the body's var_env to the function object.
     EnvRecord* invoke_getter_var_env = (*func_obj.extra_ptr()).func.var_env;
-    if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env)) { invoke_getter_var_env = fv_ig; }
+    if (target.needs_env() && !target.is_eval_fn()) {
+        if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env)) { invoke_getter_var_env = fv_ig; }
+    }
     new_act.parent = act;
     new_act.func = target;
     new_act.var_env = invoke_getter_var_env;
