@@ -151,12 +151,12 @@ macro ulong nanbox_get_payload(ulong v) {
 }
 
 // A tagged value. Every register, property, and stack slot holds one.
-struct TVal @if(USE_NANBOX) {
+struct TVal @feat(!NONANBOX) {
     // NaN-boxed: 8-byte representation.
     ulong bits;
 }
 
-struct TVal @if(!USE_NANBOX) {
+struct TVal @feat(NONANBOX) {
     // Explicit tag + union: 16-byte representation.
     TValTag tag;
     union {
