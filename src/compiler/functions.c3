@@ -5889,7 +5889,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
         arrow_ctx.forbid_in = self.arrow_forbid_in;
         ushort expr_reg = arrow_ctx.assignment_expr()!;
         arrow_ctx.emit_a_bc(Opcode.RET, (uint)expr_reg, 0);
-        body_end_pos = arrow_ctx.lexer.pos;
+        // The expression parser may have peeked at the next token (e.g. the
+        // closing ')' of an enclosing parenthesized expression), advancing
+        // lexer.pos past it. Use the start of the peeked token instead.
+        body_end_pos = arrow_ctx.lexer.has_lookahead
+            ? arrow_ctx.lexer.lookahead_token_start
+            : arrow_ctx.lexer.pos;
     }
 
     // Pop the function-level lexical scope (the PUSH_LEX above).
@@ -6263,7 +6268,9 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
         arrow_ctx.forbid_in = self.arrow_forbid_in;
         ushort expr_reg = arrow_ctx.assignment_expr()!;
         arrow_ctx.emit_a_bc(Opcode.RET, (uint)expr_reg, 0);
-        body_end_pos = arrow_ctx.lexer.pos;
+        body_end_pos = arrow_ctx.lexer.has_lookahead
+            ? arrow_ctx.lexer.lookahead_token_start
+            : arrow_ctx.lexer.pos;
     }
 
     // Pop the function-level lexical scope
