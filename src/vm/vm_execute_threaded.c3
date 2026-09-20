@@ -263,7 +263,21 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     TVal* rc = regs + insn.c;
     // Threaded fast path: FASTINT + FASTINT only. String concat / object
     // ToPrimitive / bigint all bail to the switch.
-    if (!types::both_fastint(rb, rc)) return pc;
+    if (!types::both_fastint(rb, rc)) {
+        // A double operand is handled here too. Adding two numbers cannot call
+        // user code or throw, so there is nothing for the switch's coercion
+        // machinery to guard; bailing instead sent every iteration of a
+        // floating-point loop back through decode.
+        if ((!rb.is_fastint() && !rb.is_number()) || (!rc.is_fastint() && !rc.is_number())) {
+            return pc;
+        }
+        TVal* ra = regs + insn.a;
+        double bnum = rb.is_fastint() ? (double)rb.get_fastint() : rb.get_number();
+        double cnum = rc.is_fastint() ? (double)rc.get_fastint() : rc.get_number();
+        ra.set_number(bnum + cnum);
+        pc++;
+        return th_next(pc, code_end, regs, cold);
+    }
     TVal* ra = regs + insn.a;
     long sum = rb.get_fastint() + rc.get_fastint();
     if (sum >= types::FASTINT_MIN && sum <= types::FASTINT_MAX) {
