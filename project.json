@@ -20,16 +20,6 @@
     "libregexp"
   ],
   "targets": {
-    "env_layout": {
-      "type": "executable",
-      "sources": ["src", "test/env_layout.c3"],
-      "opt": "O0"
-    },
-    "env_pool_stats": {
-      "type": "executable",
-      "sources": ["src", "test/env_pool_stats.c3"],
-      "opt": "O0"
-    },
     "boomkat": {
       "type": "executable",
       "name": "boomkat",
@@ -408,6 +398,16 @@
       "features": [
         "GC_STRESS"
       ]
+    },
+    "env_layout": {
+      "type": "executable",
+      "sources": ["src", "test/env_layout.c3"],
+      "opt": "O0"
+    },
+    "env_pool_stats": {
+      "type": "executable",
+      "sources": ["src", "test/env_pool_stats.c3"],
+      "opt": "O0"
     }
   }
 }
