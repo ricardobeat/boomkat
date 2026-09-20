@@ -2728,14 +2728,57 @@ fn TVal? Vm.run(Vm* vm) {
         // Template literal join: fuse `count` string parts in consecutive
         // registers into one string with a single allocation and copy.
         case Opcode.STRJOIN: {
-            // Every part is a string (the compiler TOSTRs each substitution at
-            // its source position), so the only cost is summing lengths and one
-            // memcpy pass; no coercion or ToPrimitive can run here.
+            // A slot usually holds a string: the compiler converts every
+            // substitution whose ToString can be observable (objects and
+            // symbols) at its source position, left to right. A slot may also
+            // hold a raw primitive — a string, fastint, double, bigint,
+            // boolean, null, or undefined — when the compiler deferred the
+            // conversion: the final part is deferrable unconditionally (no
+            // later expression or conversion exists to reorder past) and any
+            // provably-primitive expression may defer regardless of position.
+            // ToString on a primitive is pure and cannot throw, so converting
+            // here instead of at the source position is not observable.
+            uint count = (uint)insn.c;
+            TVal* parts = rb;
+
+            // Materialize non-string/non-fastint slots first. Objects and
+            // symbols can only arrive in the final slot, so this coercion
+            // runs in source order; for a primitive it is pure. vm_to_string
+            // can reallocate the valstack (object/symbol paths), so refresh
+            // the register pointers afterwards.
+            for (uint i = 0; i < count; i++) {
+                TValTag tag = parts[i].get_tag();
+                if (tag == TValTag.STRING || tag == TValTag.FASTINT) continue;
+                HString*? str = vm_to_string(vm, &parts[i]);
+                ds.regs_base = ds.act.bottom;
+                ra = &ds.regs_base[insn.a];
+                parts = ds.regs_base + (uint)insn.b;
+                if (vm.throw_pending) {
+                    if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                    if (ds.needs_restart) break;
+                    continue;
+                }
+                if (try s = str) {
+                    TVal str_tv;
+                    str_tv.set_string(s);
+                    vm.heap.tval_copy_ref(&parts[i], &str_tv);
+                    track_heap_store(ds.act, &parts[i], (uint)insn.b + i);
+                }
+            }
+
+            // Everything is a string or fastint now: sum the lengths, widening
+            // before the add so two lengths near the cap cannot wrap.
             ulong total64 = 0;
-            for (uint i = 0; i < (uint)insn.c; i++) {
-                TVal part_val = rb[i];
-                HString* part = (HString*)part_val.get_heapptr();
-                total64 += (ulong)part.blen;
+            for (uint i = 0; i < count; i++) {
+                TVal part_val = parts[i];
+                if (part_val.get_tag() == TValTag.FASTINT) {
+                    char[32] int_buf;
+                    total64 += (ulong)hstring::int_to_buf(part_val.get_fastint(),
+                                                          &int_buf, 32);
+                } else {
+                    HString* part = (HString*)part_val.get_heapptr();
+                    total64 += (ulong)part.blen;
+                }
             }
             if (hstring::length_exceeds_max(total64)) {
                 if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -2760,13 +2803,23 @@ fn TVal? Vm.run(Vm* vm) {
             }
 
             usz off = 0;
-            for (uint i = 0; i < (uint)insn.c; i++) {
-                TVal part_val = rb[i];
-                HString* part = (HString*)part_val.get_heapptr();
-                uint part_len = part.blen;
-                if (part_len > 0) {
-                    mem::copy(buf + off, part.get_cstr(), (sz)part_len);
-                    off += (usz)part_len;
+            for (uint i = 0; i < count; i++) {
+                TVal part_val = parts[i];
+                if (part_val.get_tag() == TValTag.FASTINT) {
+                    char[32] int_buf;
+                    int num_len = hstring::int_to_buf(part_val.get_fastint(),
+                                                      &int_buf, 32);
+                    if (num_len > 0) {
+                        mem::copy(buf + off, &int_buf, (sz)num_len);
+                        off += (usz)num_len;
+                    }
+                } else {
+                    HString* part = (HString*)part_val.get_heapptr();
+                    uint part_len = part.blen;
+                    if (part_len > 0) {
+                        mem::copy(buf + off, part.get_cstr(), (sz)part_len);
+                        off += (usz)part_len;
+                    }
                 }
             }
 
@@ -3738,6 +3791,25 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.TOSTR: {
+            // Fast path: format a fastint straight into a fresh non-interned
+            // string, skipping the full ToString dispatch and its number path.
+            // TOSTR only ever feeds a template join slot, so the string's
+            // interning status is never observable.
+            if (ra.is_fastint()) {
+                char[32] int_buf;
+                int int_len = hstring::int_to_buf(ra.get_fastint(), &int_buf, 32);
+                if (int_len > 0) {
+                    HString* s = vm.heap.alloc_concat_string(int_buf[:int_len],
+                                                             (uint)int_len);
+                    if (s != null) {
+                        TVal str_tv;
+                        str_tv.set_string(s);
+                        vm.heap.tval_copy_ref(ra, &str_tv);
+                        track_heap_store(ds.act, ra, (uint)insn.a);
+                        continue;
+                    }
+                }
+            }
             // In-place ToString coercion (see the bytecode.c3 doc comment), used
             // by template literal substitutions, which call ToString directly
             // rather than going through ToPrimitive(default) like `+`.

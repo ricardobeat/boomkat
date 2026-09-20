@@ -13,6 +13,17 @@ import std::io;
 // Expression parsing
 // ============================================================================
 
+// Whether a template substitution's ToString may move from its source
+// position into the STRJOIN that builds the template string.
+enum PartKind : uint {
+    // The value could be an object or symbol, so its conversion can run user
+    // code or throw; it must happen at the substitution's source position.
+    PART_UNKNOWN,
+    // Provably a primitive whose ToString is pure and cannot throw (string,
+    // number, bigint, boolean, null, undefined): safe to convert in the join.
+    PART_DEFER,
+}
+
 // Fail if the previous RHS expression was an ArrowFunction, ArrowFunction
 // is AssignmentExpression-level and must not appear as a binary operand
 // (`1 + () => 2`, `#x in () => {}`, ES §13.16, §13.15).
@@ -4184,6 +4195,116 @@ fn ushort CompilerContext.tostr_into_temp(&self, ushort reg) {
     return reg;
 }
 
+// Classify the value `reg` holds at the end of the instruction span
+// [start, end), the producer chain of one template substitution expression.
+// Walks backward from the last plain-destination writer of `reg`, recursing
+// through arithmetic operands, and answers PART_DEFER only for provably
+// primitive results whose ToString is pure and cannot throw. Anything outside
+// the conservative allow-list (property/var loads, calls, closures, arrays,
+// LDREG, dispatch) answers PART_UNKNOWN, so the analysis can never prove an
+// object or symbol primitive.
+fn PartKind CompilerContext.part_producer_kind(&self, uint start, uint end,
+                                               ushort reg, uint depth) {
+    if (depth > 3) return PartKind.PART_UNKNOWN;
+    // The last writer of `reg` inside the span is the producer chain node.
+    // INC/DEC mutate A in place and preserve the operand's number-ness, so
+    // skipping them as writers lets the real producer be found; every other
+    // non-plain-destination instruction (calls, var/property loads, arrays,
+    // iterators) means an arbitrary value and answers UNKNOWN in the default.
+    for (uint i = end; i > start; i--) {
+        Instruction ins = self.code[i - 1];
+        if (!moveelim_a_is_write(ins.op)) continue;
+        if ((uint)ins.a != (uint)reg) continue;
+        switch (ins.op) {
+            case Opcode.LDINT:
+            case Opcode.LDINTX:
+                return PartKind.PART_DEFER;
+            case Opcode.LDCONST: {
+                uint bc = ins.get_bc();
+                if (bc < self.const_count) {
+                    TVal value = self.constants[bc];
+                    if (value.is_string() || value.is_number()
+                        || value.is_fastint() || value.is_bigint()
+                        || value.is_boolean() || value.is_null()
+                        || value.is_undefined()) {
+                        return PartKind.PART_DEFER;
+                    }
+                }
+                return PartKind.PART_UNKNOWN;
+            }
+            case Opcode.LDUNDEF:
+            case Opcode.LDNULL:
+            case Opcode.LDTRUE:
+            case Opcode.LDFALSE:
+            case Opcode.VOID:
+                return PartKind.PART_DEFER;
+            case Opcode.TYPEOF:
+            case Opcode.TOSTR:
+            case Opcode.STRJOIN:
+                // typeof is always a string; TOSTR output and template
+                // literal results are strings.
+                return PartKind.PART_DEFER;
+            case Opcode.UNP:
+            case Opcode.UNM:
+            case Opcode.BNOT:
+                if (self.part_producer_kind(start, i - 1, (ushort)ins.b, depth + 1)
+                    != PartKind.PART_DEFER) {
+                    return PartKind.PART_UNKNOWN;
+                }
+                return PartKind.PART_DEFER;
+            case Opcode.ADD:
+            case Opcode.SUB:
+            case Opcode.MUL:
+            case Opcode.DIV:
+            case Opcode.MOD:
+            case Opcode.EXP:
+            case Opcode.BAND:
+            case Opcode.BOR:
+            case Opcode.BXOR:
+            case Opcode.SHL:
+            case Opcode.SHR:
+            case Opcode.USHR:
+            case Opcode.ADDI:
+            case Opcode.SUBI: {
+                // ADDI/SUBI read B only; C is an immediate.
+                ushort b_reg = (ushort)ins.b;
+                ushort c_reg = (ushort)ins.c;
+                if (ins.op == Opcode.ADDI || ins.op == Opcode.SUBI) {
+                    if (self.part_producer_kind(start, i - 1, b_reg, depth + 1)
+                        != PartKind.PART_DEFER) {
+                        return PartKind.PART_UNKNOWN;
+                    }
+                    return PartKind.PART_DEFER;
+                }
+                if (self.part_producer_kind(start, i - 1, b_reg, depth + 1)
+                        != PartKind.PART_DEFER
+                    || self.part_producer_kind(start, i - 1, c_reg, depth + 1)
+                        != PartKind.PART_DEFER) {
+                    return PartKind.PART_UNKNOWN;
+                }
+                // Two deferrable operands (strings, numbers, bigints,
+                // booleans, null, undefined) always yield a primitive.
+                return PartKind.PART_DEFER;
+            }
+            case Opcode.EQ:
+            case Opcode.NEQ:
+            case Opcode.SEQ:
+            case Opcode.SNEQ:
+            case Opcode.LT:
+            case Opcode.LE:
+            case Opcode.GT:
+            case Opcode.GE:
+            case Opcode.IN:
+            case Opcode.INSTANCEOF:
+            case Opcode.LNOT:
+                return PartKind.PART_DEFER;
+            default:
+                return PartKind.PART_UNKNOWN;
+        }
+    }
+    return PartKind.PART_UNKNOWN;
+}
+
 // Parse primary expressions: literals, identifiers, grouping, etc.
 fn ushort? CompilerContext.primary_expr(&self) {
     self.last_was_bare_arrow = false;
@@ -5530,6 +5651,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // Parse the expression inside ${...}. The closing `}` will be a
             // plain RBRACE token (B23 fix: the parser, not the lexer, owns
             // the substitution's brace boundary).
+            uint sub_start = self.code_count;
             ushort expr_reg = self.expression()!;
 
             // Consume the closing `}` and scan the next template part. This
@@ -5542,9 +5664,23 @@ fn ushort? CompilerContext.primary_expr(&self) {
             // converted via ToString directly, unlike the `+` operator,
             // which goes through ToPrimitive(default) first. The two only
             // differ observably when Symbol.prototype[@@toPrimitive] has
-            // been redefined/removed. Coerce here so the join below only
-            // ever sees strings, in left-to-right source order.
-            expr_reg = self.tostr_into_temp(expr_reg);
+            // been redefined/removed.
+            //
+            // The conversion stays here when this is an intermediate part
+            // whose value could be an object or symbol (conversion may run
+            // user code or throw, and must not skip ahead of the following
+            // substitutions). Otherwise it moves into the STRJOIN, which
+            // formats primitives itself; the final part is deferrable even
+            // when not provably primitive, since nothing runs after it.
+            bool sub_defer = next_tok.type == TokenType.TEMPLATE_TAIL
+                && next_tok.str_value.len == 0;
+            if (!sub_defer && self.part_producer_kind(sub_start, self.code_count,
+                    expr_reg, 0) == PartKind.PART_DEFER) {
+                sub_defer = true;
+            }
+            if (!sub_defer) {
+                expr_reg = self.tostr_into_temp(expr_reg);
+            }
             self.emit_abc(Opcode.LDREG, (uint)(result_reg + part_count), (uint)expr_reg, 0);
             part_count++;
             if (self.next_reg <= (uint)(result_reg + part_count)) {
@@ -5567,13 +5703,21 @@ fn ushort? CompilerContext.primary_expr(&self) {
 
                 // Parse the next expression; consume its closing `}` and
                 // scan the following template part.
+                uint mid_sub_start = self.code_count;
                 ushort next_expr_reg = self.expression()!;
                 self.expect(TokenType.RBRACE)!;
                 next_tok = self.lexer.scan_template_after_expr()!;
 
-                // ToString the substitution value (see head-substitution comment above).
-                next_expr_reg = self.tostr_into_temp(next_expr_reg);
-
+                // See the head-substitution comment above for the deferral rule.
+                bool mid_sub_defer = next_tok.type == TokenType.TEMPLATE_TAIL
+                    && next_tok.str_value.len == 0;
+                if (!mid_sub_defer && self.part_producer_kind(mid_sub_start,
+                        self.code_count, next_expr_reg, 0) == PartKind.PART_DEFER) {
+                    mid_sub_defer = true;
+                }
+                if (!mid_sub_defer) {
+                    next_expr_reg = self.tostr_into_temp(next_expr_reg);
+                }
                 self.emit_abc(Opcode.LDREG, (uint)(result_reg + part_count), (uint)next_expr_reg, 0);
                 part_count++;
                 if (self.next_reg <= (uint)(result_reg + part_count)) {
