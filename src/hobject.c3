@@ -1062,9 +1062,8 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
         case ObjClass.ARRAY:
         case ObjClass.ARGUMENTS:
             return &h.obj_pool_array;
-        case ObjClass.ERROR:
         case ObjClass.GETTER_SETTER:
-            return &h.obj_pool_func;
+            return &h.obj_pool_gs;
         default:
             return &h.obj_pool_func;
     }

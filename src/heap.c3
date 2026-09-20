@@ -1045,9 +1045,11 @@ struct Heap {
     //   plain: OBJECT, which needs no HObjectExtra
     //   array: ARRAY (array_length in the union) and ARGUMENTS (nargs in the
     //          union)
+    //   gs:    GETTER_SETTER accessor cells, which have no inline props
     //   func:  everything else, including ERROR and PROXY
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
+    mempool::FixedBlockPool obj_pool_gs;
     mempool::FixedBlockPool obj_pool_func;
 
     // One FixedBlockPool per POOL_CLASS_SIZES entry, shared by property blocks
@@ -1336,6 +1338,7 @@ fn Heap*? create(
     {
         h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
         h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
+        h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
         h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
             h.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
@@ -1868,6 +1871,7 @@ fn void Heap.destroy(&self) {
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
+    self.obj_pool_gs.free();
     self.obj_pool_func.free();
     for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
         self.small_pools[i].free();
@@ -2193,6 +2197,7 @@ fn void Heap.reset(&self) {
     // bump pointer and an empty freelist.
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
+    self.obj_pool_gs.free();
     self.obj_pool_func.free();
     for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
         self.small_pools[i].free();
@@ -2200,6 +2205,7 @@ fn void Heap.reset(&self) {
     {
         self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
         self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
+        self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
         self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
             self.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
