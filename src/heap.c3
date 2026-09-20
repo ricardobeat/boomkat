@@ -3612,6 +3612,23 @@ fn void Heap.prune_var_ic_entries(&self) {
     }
 }
 
+// Clear variable inline caches before eval introduces a new binding. A new
+// property can shadow the cached owner while leaving the search-head pointer
+// unchanged, so shape checks alone cannot reject the old resolution.
+fn void Heap.invalidate_var_ic_entries(&self) {
+    for (uint fi = 0; fi < self.compiled_func_count; fi++) {
+        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
+        if (cf == null || cf.var_ic_entries == null || cf.var_ic_count == 0) { continue; }
+        hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
+        for (uint vi = 0; vi < cf.var_ic_count; vi++) {
+            hobject::VarICEntry* vie = &vics[vi];
+            if (vie.env != null || vie.bindings != null || vie.search_head != null || vie.key != null) {
+                hobject::var_ic_clear(vie, self);
+            }
+        }
+    }
+}
+
 // ============================================================================
 // Heap verification, built only with `-D HEAP_VERIFY`
 // ============================================================================

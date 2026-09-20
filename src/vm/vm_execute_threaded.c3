@@ -752,9 +752,9 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     if (ic == null) return pc;
     if (ic.key != key || ic.shape_id != hobj.shape_id
         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
-    HObject* owner = hobject::ic_resolve_owner(ic, hobj);
-    if (owner == null || ic.cached_prop_alloc != (void*)owner.prop_values()) return pc;
-    TVal ic_val = *ic.prop_value_ptr;
+    TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+    if (ic_value == null) return pc;
+    TVal ic_val = *ic_value;
     TVal* ra = regs + insn.a;
     if (!ic_val.is_heap_allocated()) {
         *ra = ic_val;
@@ -776,7 +776,7 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
 }
 
 // GETPROPC_CACHED, the warm form GETPROPC rewrites itself into. The key is
-// implied by the site, so only the shape and the storage pointer are checked;
+// implied by the site, so only the shape and resolved value slot are checked;
 // a miss bails so the switch performs the downgrade back to GETPROPC.
 fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
@@ -787,9 +787,9 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
     if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
-    HObject* owner = hobject::ic_resolve_owner(ic, hobj);
-    if (owner == null || ic.cached_prop_alloc != (void*)owner.prop_values()) return pc;
-    TVal ic_val = *ic.prop_value_ptr;
+    TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+    if (ic_value == null) return pc;
+    TVal ic_val = *ic_value;
     TVal* ra = regs + insn.a;
     if (!ic_val.is_heap_allocated()) {
         *ra = ic_val;

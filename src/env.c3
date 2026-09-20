@@ -493,6 +493,9 @@ fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
 fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code, bool is_bare) @inline {
     Heap* h = env.heap;
     int existing = env.bindings.find_prop_idx(key, h);
+    if (is_eval_code && existing < 0) {
+        h.invalidate_var_ic_entries();
+    }
     // An existing binding stays untouched: CreateGlobalVarBinding steps 4-5
     // for the global object, and an initializer-less eval-code `var` is a
     // redundant re-stub (ES2024 §18.2.1.2). is_bare marks exactly the
@@ -554,11 +557,14 @@ fn bool env_can_declare_global_func(EnvRecord* env, void* key) @inline {
 // through.
 fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
     Heap* h = env.heap;
+    int idx = env.bindings.find_prop_idx(key, h);
+    if (is_eval_code && idx < 0) {
+        h.invalidate_var_ic_entries();
+    }
     if (!is_global) {
         hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
         return env.bindings.put_prop(key, val, flags, h);
     }
-    int idx = env.bindings.find_prop_idx(key, h);
     hobject::PropFlags flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
     if (idx >= 0) {
         hobject::PropFlags existing = env.bindings.get_prop_flags((uint)idx, h);

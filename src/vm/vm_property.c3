@@ -60,6 +60,9 @@ fn void getprop_store(Vm* vm, Dispatch* ds, TVal* dst, TVal* src, uint reg) @inl
     }
 }
 
+
+
+
 // Cold tail: fill an IC slot for an own-property data hit. Preserves the
 // incref-new-before-decref-old order: when the same string is re-cached at
 // this slot whose only live reference is the IC entry, decref-first would
@@ -409,11 +412,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 }
 
-                // Inline Cache fast path: check shape + key + prop_values pointer
-                // NOTE: We use prop_values() (not prop_alloc) because prop_alloc is
-                // NULL for objects with ≤4 inline properties, making the check always
-                // true for all small objects. prop_values() returns a unique pointer
-                // per object even for inline properties.
+                // Inline Cache fast path: check shape + key, then resolve the
+                // current receiver's slot or validate inherited storage.
                 if (ds.ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                     hobject::ICEntry* ic = ds.ic_base + pc_off;
@@ -422,9 +422,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // Check shape_id first: most likely to differ on polymorphic sites.
                     if (lookup_key != null && ic.shape_id == hobj.shape_id && ic.key == lookup_key
                         && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
-                        HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
-                        if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
-                            TVal ic_val = *ic.prop_value_ptr;
+                        TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+                        if (ic_value != null) {
+                            TVal ic_val = *ic_value;
                             getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                             return (TVal){};
                         }
@@ -883,9 +883,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::ICEntry* ic = ds.ic_base + pc_off;
                         if (ic.key == (void*)key_hstr && ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
-                            HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
-                            if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
-                                TVal ic_val = *ic.prop_value_ptr;
+                            TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+                            if (ic_value != null) {
+                                TVal ic_val = *ic_value;
                                 getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                                 return (TVal){};
                             }
@@ -1217,17 +1217,17 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             return (TVal){};
 
         case Opcode.GETPROPC_CACHED: {
-            // Specialized GETPROPC: IC is known warm. Only checks shape_id + prop_alloc.
-            // Falls back to GETPROPC if the check fails (shape changed or props reallocated).
+            // Specialized GETPROPC: IC is known warm. Checks the shape and resolves
+            // the receiver slot. Falls back to GETPROPC if validation fails.
             // key_tval/key_hstr are only needed on miss; defer them to avoid wasted loads on hit.
             if (rb.is_object() && ds.ic_base != null) {
                 HObject* hobj = (HObject*)rb.get_heapptr();
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::ICEntry* ic = ds.ic_base + pc_off;
                 if (ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
-                    HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
-                    if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
-                        TVal ic_val = *ic.prop_value_ptr;
+                    TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+                    if (ic_value != null) {
+                        TVal ic_val = *ic_value;
                         getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                         return (TVal){};
                     }
@@ -1282,9 +1282,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if (!hop1_proxy && ds.ic_base != null) {
                     hobject::ICEntry* ic1 = ds.ic_base + pc1;
                     if (ic1.key == (void*)key1_hstr && ic1.shape_id == hobj1.shape_id && ic1.shape_gen == hobj1.shape_generation(ds.vm.heap)) {
-                        HObject* owner1 = hobject::ic_resolve_owner(ic1, hobj1);
-                        if (owner1 != null && ic1.cached_prop_alloc == (void*)owner1.prop_values()) {
-                            mid_val = *ic1.prop_value_ptr;
+                        TVal* ic1_value = hobject::ic_resolve_value(ic1, hobj1);
+                        if (ic1_value != null) {
+                            mid_val = *ic1_value;
                         }
                     }
                 }
@@ -1386,9 +1386,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null && key2_hstr != null) {
                         hobject::ICEntry* ic2 = ds.ic_base + pc2;
                         if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id && ic2.shape_gen == hobj2.shape_generation(ds.vm.heap)) {
-                            HObject* owner2 = hobject::ic_resolve_owner(ic2, hobj2);
-                            if (owner2 != null && ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
-                                TVal ic2_val = *ic2.prop_value_ptr;
+                            TVal* ic2_value = hobject::ic_resolve_value(ic2, hobj2);
+                            if (ic2_value != null) {
+                                TVal ic2_val = *ic2_value;
                                 getprop_store(vm, ds, ra2, &ic2_val, dst2_reg);
                                 // Also store the intermediate result in ra (temp register)
                                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
@@ -1629,9 +1629,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null && key2_hstr != null) {
                         hobject::ICEntry* ic2 = ds.ic_base + pc2;
                         if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id && ic2.shape_gen == hobj2.shape_generation(ds.vm.heap)) {
-                            HObject* owner2 = hobject::ic_resolve_owner(ic2, hobj2);
-                            if (owner2 != null && ic2.cached_prop_alloc == (void*)owner2.prop_values()) {
-                                TVal ic2_val = *ic2.prop_value_ptr;
+                            TVal* ic2_value = hobject::ic_resolve_value(ic2, hobj2);
+                            if (ic2_value != null) {
+                                TVal ic2_val = *ic2_value;
                                 getprop_store(vm, ds, ra2, &ic2_val, dst2_reg);
                                 // Also store the intermediate result in ra (temp register)
                                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);

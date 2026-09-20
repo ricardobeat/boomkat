@@ -2763,11 +2763,9 @@ struct ICEntry {
     void*  proto;
     // The interned key this entry was filled for, compared by pointer.
     void*  key;
-    // Direct pointer to the resolved PropValue, valid only while the owner's
-    // prop_alloc still matches the snapshot below.
+    // Inherited/accessor reads and stores use this slot while the owner's
+    // storage matches the snapshot. Own-data reads use the receiver's index.
     TVal* prop_value_ptr;
-    // The owner's prop_alloc when this entry was filled. A hit requires it to
-    // still match, which is one pointer comparison.
     void*  cached_prop_alloc;
 }
 
@@ -2794,6 +2792,21 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
         if (cur.shape_id != ic.chain_shapes[i]) return null;
     }
     return (HObject*)ic.proto;
+}
+
+// Resolve the value slot for a validated IC entry. Own data properties use
+// the receiver's slot because a shape is shared by objects with distinct
+// inline or allocated property storage. Inherited properties and accessors
+// keep the recorded pointer and require its owner allocation to stay put.
+fn TVal* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
+    if (hobj.flags.exotic_proxyobj) return null;
+    HObject* owner = ic_resolve_owner(ic, hobj);
+    if (owner == null || owner.flags.exotic_proxyobj) return null;
+    if (ic.proto == null && !ic.prop_flags.is_accessor) {
+        return &hobj.prop_values()[ic.prop_idx];
+    }
+    if (ic.cached_prop_alloc != (void*)owner.prop_values()) return null;
+    return ic.prop_value_ptr;
 }
 
 // One entry in the global megamorphic cache, keyed by (shape_id, key), shared

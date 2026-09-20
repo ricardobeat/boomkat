@@ -1753,6 +1753,24 @@ fn void CompilerContext.emit_destruct_param_defaults(&self) {
 
 // Finalise compilation: allocate a CompiledFunction and copy code/constants.
 fn CompiledFunction*? CompilerContext.finish(&self) {
+    // A binding-free zero-parameter arrow can use its captured environment
+    // directly. Keep every case with dynamic lookup or nested closures on the
+    // regular scope path.
+    bool can_remove_empty_arrow_scopes = self.is_arrow
+                                   && self.num_args == 0
+                                   && !self.has_rest
+                                   && self.default_count == 0
+                                   && self.destruct_default_count == 0
+                                   && !self.has_destructured_param
+                                   && !self.has_local_bindings
+                                   && !self.has_lexical_bindings
+                                   && !self.has_captured_local
+                                   && !self.has_direct_eval
+                                   && !self.has_with_stmt
+                                   && !self.outer_with
+                                   && !self.has_closures
+                                   && !self.is_generator
+                                   && !self.is_async;
     if (self.reg_overflow) {
         return self.fail("register limit exceeded")~;
     }
@@ -2154,7 +2172,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                      && !self.has_with_stmt  // dynamic scope: a with-object may own any local's name
                      && !self.outer_with  // created inside a with body: every read goes through the env
                      && !self.is_global   // global/eval vars are env-resident (resolve_var skips global scope)
-                     && !self.is_arrow
+                     && (!self.is_arrow || can_remove_empty_arrow_scopes)
                      && !self.is_generator
                      && !self.is_async;
         if (!self.disable_optimize && !self.has_wide && elide_ok) {
@@ -2214,10 +2232,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                 }
             }
 
-            // Remove every lexical push/pop together, including abrupt-exit
-            // pops. Keeping any binding or depth-dependent operation requires
-            // keeping the whole scope layout; matching pushes by instruction
-            // order would mistake break/continue pops for normal block exits.
+            // Remove every empty scope push/pop together, including
+            // abrupt-exit pops. Keeping any binding or depth-dependent
+            // operation requires keeping the whole scope layout; matching
+            // pushes by instruction order would mistake break/continue pops
+            // for normal block exits.
             bool needs_lexical_env = false;
             for (uint i = 0; i < self.code_count; i++) {
                 switch (self.code[i].op) {
@@ -2225,9 +2244,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                     case Opcode.PUTLEX:
                     case Opcode.PUTLEX_C:
                     case Opcode.GETBOUND:
+                        needs_lexical_env = true;
                     case Opcode.PUSH_VAR:
                     case Opcode.POP_VAR:
-                        needs_lexical_env = true;
+                        if (!can_remove_empty_arrow_scopes) needs_lexical_env = true;
                     case Opcode.PUSH_LEX:
                         if (self.code[i].a != 0) needs_lexical_env = true;
                     default:
@@ -2237,7 +2257,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             if (!needs_lexical_env) {
                 for (uint i = 0; i < self.code_count; i++) {
                     if (self.code[i].op == Opcode.PUSH_LEX
-                        || self.code[i].op == Opcode.POP_LEX) {
+                        || self.code[i].op == Opcode.POP_LEX
+                        || self.code[i].op == Opcode.PUSH_VAR
+                        || self.code[i].op == Opcode.POP_VAR) {
                         self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
                     }
                 }

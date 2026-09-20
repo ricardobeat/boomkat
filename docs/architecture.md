@@ -133,12 +133,15 @@ Scopes are a compile-time stack mirroring the runtime environment chain. The
 compiler resolves a name to a register where it can, and falls back to an
 environment lookup where it cannot. `needs_env` records the outcome for the whole
 function: when it stays false, the VM skips creating a scope on every call.
-After register-local environment writes are elided, a function with no remaining
+After removing register-local environment writes, a function with no remaining
 lexical bindings or depth-dependent environment operations also drops all
 lexical pushes and pops, including abrupt-exit pops. Functions with retained
 const or TDZ bindings keep their scope layout. An uncaptured const used only
 through its initialized register needs no environment binding. Name-based
 reads, writes, and deletes retain the binding, as do dynamic scope and captures.
+A synchronous zero-parameter arrow with no own bindings, nested closures, or
+dynamic scope can also omit empty lexical and variable scopes. Its captured
+environment remains stable across calls, allowing variable-cache reuse.
 
 ### Classes and private names
 
@@ -247,9 +250,10 @@ heap-valued elements also fall back when reference ownership needs a slow call.
 Length is read on each access so mutations remain visible without a shape change.
 
 `GETPROP` and `PUTPROP` try, in order: the per-site inline cache, the
-megamorphic cache, then a full lookup. An IC hit needs the shape to match and the
-owner's `prop_alloc` to be unchanged. Fused two-hop forms exist for `a.b.c`, and
-string primitives auto-box on the first hop.
+megamorphic cache, then a full lookup. Own-data read ICs validate the shape and
+load the indexed slot from the current receiver, sharing hits across instances.
+Other IC paths also validate the owner's storage pointer. Fused two-hop forms
+exist for `a.b.c`, and string primitives auto-box on the first hop.
 
 Writes are where the exotics live. An array-index write may go to the dense part,
 grow it, or fall through to the property table. A `length` write on an array
@@ -460,11 +464,12 @@ for a dictionary-mode object, is one node deep per property.
 Three caches sit above property lookup:
 
 - **`ICEntry`**, one per `GETPROP`/`PUTPROP` site, holding the last resolved
-  shape, index, and a direct pointer to the value. A hit requires the shape to
-  match and the owner's `prop_alloc` to be unchanged, which is one pointer
-  comparison.
+  shape, index, and a direct pointer to the value. Own-data reads use the
+  current receiver's indexed slot after validating shape and generation.
+  Other paths require the recorded owner's storage pointer to match.
 - **`VarICEntry`** caches resolved environments and binding slots for variable
-  access. Numeric `PUTVAR_SNAP` stores cache the captured declarative owner,
+  access. Introducing an eval var/function binding clears variable caches,
+  since a new binding can shadow a cached owner without changing the chain head. Numeric `PUTVAR_SNAP` stores cache the captured declarative owner,
   checking its identity, shape, recycle epoch, writable flag and current value
   type before writing. The captured owner keeps RHS effects on name resolution
   from redirecting the store.
@@ -788,6 +793,12 @@ The iterator protocol appears in three layers. Ordinary iterators are objects
 with `next`; `%IteratorHelperPrototype%` backs the lazy `map`, `filter`, `take`,
 `drop`, and `flatMap` results; and `%AsyncFromSyncIteratorPrototype%` adapts a
 sync iterator for `for await`.
+
+`ITER_NEXT_FAST` consumes Map, Set, and String values through a shared step
+helper when the resolved `next` is the matching intrinsic. Public `.next()`
+wraps the same step in an IteratorResult object. Custom methods retain the
+protocol path; collection growth, exhaustion, and string code points use
+the same stepping rules on both paths.
 
 The helpers are not generators here, though the spec describes them as such. Each
 is a small state machine driven off the underlying iterator's `next`, which

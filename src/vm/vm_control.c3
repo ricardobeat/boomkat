@@ -679,7 +679,45 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             TVal itv = rb[0];
             if (!itv.is_object()) break;
             HObject* it = (HObject*)itv.get_heapptr();
-            if (it == null || it.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR) break;
+            if (it == null || it.flags.exotic_proxyobj) break;
+
+            hobject::ObjClass iter_class = it.flags.obj_class;
+            if (iter_class == hobject::ObjClass.MAP_ITERATOR ||
+                iter_class == hobject::ObjClass.SET_ITERATOR ||
+                iter_class == hobject::ObjClass.STRING_ITERATOR) {
+                TVal nextv = rc[0];
+                if (!nextv.is_object()) break;
+                HObject* nf = (HObject*)nextv.get_heapptr();
+                if (nf == null || !nf.is_callable() ||
+                    nf.callable_kind() != hobject::CallableKind.BUILTIN_FN) break;
+
+                int expected_next = -1;
+                switch (iter_class) {
+                    case hobject::ObjClass.MAP_ITERATOR:
+                        expected_next = (int)builtins::Builtin.MAP_ITERATOR_NEXT.ordinal;
+                    case hobject::ObjClass.SET_ITERATOR:
+                        expected_next = (int)builtins::Builtin.SET_ITERATOR_NEXT.ordinal;
+                    case hobject::ObjClass.STRING_ITERATOR:
+                        expected_next = (int)builtins::Builtin.STRING_ITERATOR_NEXT.ordinal;
+                    default: break;
+                }
+                if ((*nf.extra_ptr()).func.builtin_fn_index != expected_next) break;
+
+                TVal value;
+                bool done;
+                if (!builtins::builtin_iterator_step_value(vm.heap, it, &value, &done)) break;
+                if (done) {
+                    vm.heap.decref_tval(&value);
+                    ds.curr_pc += 1;
+                    break;
+                }
+                vm.heap.tval_copy_ref(ra, &value);
+                track_heap_store(ds.act, ra, (uint)insn.a);
+                vm.heap.decref_tval(&value);
+                ds.curr_pc += 2;
+                break;
+            }
+            if (iter_class != hobject::ObjClass.ARRAY_ITERATOR) break;
 
             // A patched `next` must still be called -- user code can count the
             // calls -- so check the method this loop actually resolved rather
@@ -2104,4 +2142,3 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
     }
     return (TVal){};
 }
-

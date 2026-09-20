@@ -467,90 +467,13 @@ fn void builtin_set_iterator_next(BuiltinContext* ctx) {
         return;
     }
 
-    HObject* target = (*iter.extra_ptr()).iter.target;
-    if (target == null) {
-        // Already exhausted, return {value: undefined, done: true}
-        HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (catch err = result_raw) { ctx.result.set_undefined(); return; }
-        HObject* result = result_raw;
-        result.prototype = null;
-        TVal undef; undef.set_undefined();
-        HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
-        HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-        TVal done_tv; done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        ctx.result.set_object(result);
+    TVal value;
+    bool done;
+    if (!builtin_iterator_step_value(heap, iter, &value, &done)) {
+        ctx.result.set_undefined();
         return;
     }
-
-    uint idx = (*iter.extra_ptr()).iter.index;
-    uint kind = (*iter.extra_ptr()).iter.kind;
-
-    bool done = false;
-    TVal value;
-    value.set_undefined();
-
-    // Skip over deleted slots, array_used is high water mark,
-    // and array_part() may contain TAG_DELETED slots from deletes.
-    TVal* entries = target.array_part();
-    if (entries != null) {
-        while (idx < target.array_used && entries[idx].is_deleted()) {
-            idx++;
-        }
-    }
-
-    if (idx < target.array_used) {
-        if (entries != null) {
-            TVal item = entries[idx];
-            if (kind == 1 || kind == 0) {
-                // keys()/values(): return the value
-                value = item;
-            } else {
-                // entries(): return [value, value]
-                HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-                if (try pair = pair_raw) {
-                    pair.prototype = heap.array_proto;
-                    pair.set_array_idx(0, item, ctx.heap);
-                    pair.set_array_idx(1, item, ctx.heap);
-                    pair.array_used = 2;
-                    HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-                    if (len_key != null) {
-                        TVal len_tv;
-                        len_tv.set_fastint(2);
-                        pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-                    }
-                    value.set_object(pair);
-                }
-            }
-            (*iter.extra_ptr()).iter.index = idx + 1;
-        } else {
-            done = true;
-        }
-    } else {
-        done = true;
-    }
-
-    if (done) {
-        value.set_undefined();
-        (*iter.extra_ptr()).iter.target = null;  // mark exhausted, no yielding after done
-    }
-
-    // Create result object: {value, done}
-    HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = result_raw) { ctx.result.set_undefined(); return; }
-    HObject* result = result_raw;
-    result.prototype = null;
-
-    HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-    TVal done_tv;
-    done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    ctx.result.set_object(result);
+    builtin_iterator_result(ctx, &value, done);
 }
 
 // ============================================================================

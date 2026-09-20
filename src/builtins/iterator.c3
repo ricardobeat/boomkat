@@ -147,6 +147,144 @@ fn void builtin_iterator_proto_symbol_iter(BuiltinContext* ctx) {
     *ctx.result = ctx.this_val;
 }
 
+// Step the collection and string iterators whose values can be consumed
+// directly by the VM. A false return leaves the iterator position unchanged.
+// A successful return gives the caller one owned reference in value.
+fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool* done) {
+    value.set_undefined();
+    *done = false;
+
+    switch (iter.get_class()) {
+        case hobject::ObjClass.MAP_ITERATOR: {
+            HObject* target = (*iter.extra_ptr()).iter.target;
+            if (target == null) {
+                *done = true;
+                return true;
+            }
+
+            uint slot_idx = (*iter.extra_ptr()).iter.index * 2;
+            TVal* entries = target.array_part();
+            while (entries != null && slot_idx < target.array_used &&
+                   entries[slot_idx].is_deleted()) {
+                slot_idx += 2;
+            }
+            if (entries == null || slot_idx >= target.array_used) {
+                (*iter.extra_ptr()).iter.target = null;
+                heap.decref((types::HeapHeader*)target);
+                *done = true;
+                return true;
+            }
+
+            uint kind = (*iter.extra_ptr()).iter.kind;
+            if (kind == 1) {
+                heap.tval_copy_ref(value, &entries[slot_idx]);
+            } else if (kind == 0) {
+                heap.tval_copy_ref(value, &entries[slot_idx + 1]);
+            } else {
+                HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+                if (catch pair_raw) return false;
+                HObject* pair = pair_raw;
+                pair.prototype = heap.array_proto;
+                pair.set_array_idx(0, entries[slot_idx], heap);
+                pair.set_array_idx(1, entries[slot_idx + 1], heap);
+                pair.array_used = 2;
+                *pair.array_len_ptr() = 2;
+                value.set_object(pair);
+                heap.decref((types::HeapHeader*)pair);
+            }
+            (*iter.extra_ptr()).iter.index = (slot_idx / 2) + 1;
+            return true;
+        }
+        case hobject::ObjClass.SET_ITERATOR: {
+            HObject* target = (*iter.extra_ptr()).iter.target;
+            if (target == null) {
+                *done = true;
+                return true;
+            }
+
+            uint idx = (*iter.extra_ptr()).iter.index;
+            TVal* entries = target.array_part();
+            while (entries != null && idx < target.array_used && entries[idx].is_deleted()) {
+                idx++;
+            }
+            if (entries == null || idx >= target.array_used) {
+                (*iter.extra_ptr()).iter.target = null;
+                heap.decref((types::HeapHeader*)target);
+                *done = true;
+                return true;
+            }
+
+            TVal item = entries[idx];
+            uint kind = (*iter.extra_ptr()).iter.kind;
+            if (kind == 0 || kind == 1) {
+                heap.tval_copy_ref(value, &item);
+            } else {
+                HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+                if (catch pair_raw) return false;
+                HObject* pair = pair_raw;
+                pair.prototype = heap.array_proto;
+                pair.set_array_idx(0, item, heap);
+                pair.set_array_idx(1, item, heap);
+                pair.array_used = 2;
+                *pair.array_len_ptr() = 2;
+                value.set_object(pair);
+                heap.decref((types::HeapHeader*)pair);
+            }
+            (*iter.extra_ptr()).iter.index = idx + 1;
+            return true;
+        }
+        case hobject::ObjClass.STRING_ITERATOR: {
+            HString* str = (HString*)(*iter.extra_ptr()).prim.primitive_value.get_heapptr();
+            if (str == null) return false;
+
+            uint idx = (*iter.extra_ptr()).iter.index;
+            char[] data = str.get_data();
+            if (idx >= data.len) {
+                *done = true;
+                return true;
+            }
+
+            uint seq_len = hstring::utf8_seq_len(data[idx]);
+            usz remain = (usz)(data.len - (long)idx);
+            if ((usz)seq_len > remain) seq_len = (uint)remain;
+            uint first_cp = hstring::decode_codepoint(data, idx);
+            if (hstring::is_high_surrogate(first_cp) &&
+                (usz)(idx + seq_len) < data.len) {
+                uint next_seq_len = hstring::utf8_seq_len(data[idx + seq_len]);
+                uint second_cp = hstring::decode_codepoint(data, idx + seq_len);
+                if (hstring::is_low_surrogate(second_cp)) seq_len += next_seq_len;
+            }
+
+            HString* cp_str = heap.str_intern(data[idx : seq_len]);
+            if (cp_str == null) return false;
+            value.set_string(cp_str);
+            (*iter.extra_ptr()).iter.index = idx + seq_len;
+            return true;
+        }
+        default: return false;
+    }
+}
+
+// Consumes the caller's owned value reference.
+fn void builtin_iterator_result(BuiltinContext* ctx, TVal* value, bool done) {
+    HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch result_raw) {
+        ctx.heap.decref_tval(value);
+        ctx.result.set_undefined();
+        return;
+    }
+    HObject* result = result_raw;
+    result.prototype = null;
+    HString* value_key = (HString*)ctx.heap.strs[heap::BuiltinStr.VALUE];
+    result.put_prop(value_key, *value, hobject::PROP_FLAGS_WEC, ctx.heap);
+    ctx.heap.decref_tval(value);
+    HString* done_key = (HString*)ctx.heap.strs[heap::BuiltinStr.DONE];
+    TVal done_tv;
+    done_tv.set_boolean(done);
+    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    ctx.result.set_object(result);
+}
+
 // Array iterator .next(), returns {value, done}.
 fn void builtin_array_iterator_next(BuiltinContext* ctx) {
     TVal this_val = ctx.this_val;
@@ -326,77 +464,13 @@ fn void builtin_string_iterator_next(BuiltinContext* ctx) {
         return;
     }
 
-    HString* str = (HString*)(*iter.extra_ptr()).prim.primitive_value.get_heapptr();
-    if (str == null) {
+    TVal value;
+    bool done;
+    if (!builtin_iterator_step_value(heap, iter, &value, &done)) {
         ctx.result.set_undefined();
         return;
     }
-
-    uint idx = (*iter.extra_ptr()).iter.index;
-    char[] data = str.get_data();
-
-    if (idx >= data.len) {
-        // Done, return {value: undefined, done: true}
-        HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (catch err = result_raw) { ctx.result.set_undefined(); return; }
-        HObject* result = result_raw;
-        result.prototype = null;
-        HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-        TVal done_tv;
-        done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-        TVal undef;
-        undef.set_undefined();
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
-        ctx.result.set_object(result);
-        return;
-    }
-
-    // ES2015 §22.1.5.1 %StringIteratorPrototype%.next: iterates by Unicode
-    // codepoint, not UTF-16 code unit. Under CESU-8 storage an astral
-    // codepoint is two adjacent 3-byte surrogate-half sequences, if the
-    // first is a high surrogate and a second (low-surrogate) unit follows,
-    // yield them together as one step; otherwise yield a single code unit
-    // (matches a lone/unpaired surrogate too).
-    uint seq_len = hstring::utf8_seq_len(data[idx]);
-    usz remain = (usz)(data.len - (long)idx);
-    if ((usz)seq_len > remain) {
-        seq_len = (uint)remain;
-    }
-    uint first_cp = hstring::decode_codepoint(data, idx);
-    if (hstring::is_high_surrogate(first_cp) && (usz)(idx + seq_len) < data.len) {
-        uint next_seq_len = hstring::utf8_seq_len(data[idx + seq_len]);
-        uint second_cp = hstring::decode_codepoint(data, idx + seq_len);
-        if (hstring::is_low_surrogate(second_cp)) {
-            seq_len += next_seq_len;
-        }
-    }
-
-    (*iter.extra_ptr()).iter.index = idx + seq_len;
-
-    // Create result object: {value: char, done: false}
-    HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = result_raw) { ctx.result.set_undefined(); return; }
-    HObject* result = result_raw;
-    result.prototype = null;
-
-    // Set .value, code point string (1-4 bytes)
-    HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    HString* cp_str = heap.str_intern(data[idx : seq_len]);
-    if (cp_str != null) {
-        TVal value_tv;
-        value_tv.set_string(cp_str);
-        result.put_prop(value_key, value_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    }
-
-    // Set .done
-    HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-    TVal done_tv;
-    done_tv.set_boolean(false);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    ctx.result.set_object(result);
+    builtin_iterator_result(ctx, &value, done);
 }
 
 // RegExpStringIterator .next(), ES2020 §21.2.7.2.1
