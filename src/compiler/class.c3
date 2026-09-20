@@ -448,13 +448,17 @@ fn ushort? CompilerContext.class_expression(&self) {
         self.inferred_name_len = 0;
     }
 
-    // Push classScope only when we have a class name, the immutable binding
-    // is the only thing the spec puts in classScope, and anonymous class
-    // expressions don't need one.  When we DO push, the classScope is a child
-    // of the current lex env; methods CLOSURE'd inside capture it.
+    // Push classScope unconditionally. Beyond the immutable class-name
+    // binding (named expressions only), classScope also holds the fresh
+    // per-evaluation private-name symbol and brand slots that
+    // parse_class_tail_with_name PUTLEXes; methods, field initializers and
+    // the static initializer capture it. An anonymous class body with
+    // private members must not store those slots into the enclosing
+    // function's env, where a second evaluation of the same class source
+    // would overwrite them and collapse the two classes' private names
+    // into one.
+    self.emit_simple(Opcode.PUSH_LEX);
     if (has_name) {
-        self.emit_simple(Opcode.PUSH_LEX);
-
         // Create the immutable className binding as TDZ (temporal dead zone).
         // INITTZ marks the binding as uninitialized so that any access before
         // the constructor is stored (below) throws ReferenceError.
@@ -2187,8 +2191,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         if (class_name_reg != REG_NONE) {
             self.emit_abc(Opcode.LDREG, (uint)class_name_reg, (uint)ctor_reg, 0);
             self.emit_a_bc(Opcode.PUTLEX_C, (uint)class_name_reg, class_name_str_idx);
-            self.emit_simple(Opcode.POP_LEX);
         }
+        // Pop classScope before the CALL: the CLOSURE above already captured
+        // it for static_init, and the enclosing scope must not see the
+        // class's private-name slots. class_decl and class_expression always
+        // push, so the pop is unconditional here.
+        self.emit_simple(Opcode.POP_LEX);
         ushort si_this_slot = self.alloc_reg();  // must be si_reg + 1
         self.emit_abc(Opcode.LDREG, (uint)si_this_slot, (uint)ctor_reg, 0);
         self.emit_abc(Opcode.CALL, (uint)si_reg, (uint)si_reg, 0);
@@ -2198,13 +2206,14 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // No static initializer, but the classScope className binding still
         // needs to be initialized with the constructor (so e.g. methods
         // referenced via `this.constructor` after a `super()`-without-extends
-        // class body resolve correctly) and the scope popped (so the outer
-        // binding installation doesn't double-pop).  PUSH_LEX/POP_LEX are
-        // balanced at module level.
+        // class body resolve correctly).
         self.emit_abc(Opcode.LDREG, (uint)class_name_reg, (uint)ctor_reg, 0);
         self.emit_a_bc(Opcode.PUTLEX_C, (uint)class_name_reg, class_name_str_idx);
-        self.emit_simple(Opcode.POP_LEX);
     }
+    // Anonymous class expressions push classScope too (for the private-name
+    // slots), so the pop is unconditional. PUSH_LEX/POP_LEX are balanced at
+    // module level.
+    self.emit_simple(Opcode.POP_LEX);
 
     // Restore class body state
     self.in_class_body = saved_in_class_body;
