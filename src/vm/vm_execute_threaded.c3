@@ -81,11 +81,14 @@ fn void init_threaded_handlers() {
     // --- Variable access (VarIC shape and recycle-epoch path) ---
     g_threaded_handlers[Opcode.GETVAR.ordinal]        = &th_getvar;
     g_threaded_handlers[Opcode.PUTVAR_ASSIGN.ordinal] = &th_putvar_assign;
+    g_threaded_handlers[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
     g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
     g_threaded_handlers[Opcode.JUMP.ordinal]          = &th_jump;
     g_threaded_handlers[Opcode.TONUMERIC.ordinal]     = &th_tonumeric;
 
     // --- Property access: IC hit path (bench_object / bench_property_lookup) ---
+    g_threaded_handlers[Opcode.GETPROP.ordinal]         = &th_getprop_array;
+    g_threaded_handlers[Opcode.GETPROP_CACHE.ordinal]   = &th_getprop_array;
     g_threaded_handlers[Opcode.GETPROPC.ordinal]        = &th_getpropc;
     g_threaded_handlers[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
     g_threaded_handlers[Opcode.PUTPROP.ordinal]         = &th_putprop;
@@ -604,6 +607,31 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     return th_next(pc, code_end, regs, cold);
 }
 
+fn Instruction* th_putvar_snap_number(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* value = regs + insn.a;
+    TVal* probe = regs + insn.b;
+    if ((!value.is_fastint() && !value.is_number()) || !probe.is_envref()) return pc;
+    env::EnvRecord* owner = (env::EnvRecord*)probe.get_heapptr();
+    if (owner == null || !owner.flags.is_declarative || owner.flags.is_with) return pc;
+    if (cold.var_ic_base == null) return pc;
+    hobject::VarICEntry* vic = cold.var_ic_base + (uint)(pc - cold.code_base);
+    // The captured owner, rather than the current scope head, identifies the
+    // binding even when evaluation of the RHS changes name resolution.
+    if (vic.env != (void*)owner || vic.bindings != (void*)owner.bindings) return pc;
+    HObject* bindings = owner.bindings;
+    if (bindings.shape_id != vic.shape_id
+        || cold.vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
+    hobject::PropFlags flags = bindings.get_prop_flags(vic.prop_idx, cold.vm.heap);
+    if (!flags.writable || flags.is_accessor) return pc;
+    TVal* slot = &bindings.prop_values()[vic.prop_idx];
+    if (!slot.is_fastint() && !slot.is_number()) return pc;
+    *slot = *value;
+    value.set_undefined();
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
 fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
@@ -662,6 +690,33 @@ macro hobject::ICEntry* th_ic_at(Vm* vm, ColdCtx* cold, Instruction* pc) {
     return base == null ? null : base + (uint)(pc - cold.code_base);
 }
 
+fn Instruction* th_getprop_array(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    if (!rb.is_object() || !rc.is_fastint()) return pc;
+    HObject* obj = (HObject*)rb.get_heapptr();
+    if (obj.flags.exotic_proxyobj || obj.get_class() != hobject::ObjClass.ARRAY) return pc;
+    long idx = rc.get_fastint();
+    TVal* elements = obj.array_part();
+    if (elements == null || idx < 0 || idx >= (long)obj.array_size) return pc;
+    TVal value = elements[idx];
+    // Undefined dense slots need named-property and prototype lookup.
+    if (value.is_undefined()) return pc;
+    TVal* ra = regs + insn.a;
+    if (value.is_heap_allocated()) {
+        if (!th_can_retain(&value) || !th_can_release(ra, cold)) return pc;
+        th_do_retain(&value);
+        th_do_release(ra);
+        *ra = value;
+        track_heap_store(cold.act, ra, (uint)insn.a);
+    } else {
+        *ra = value;
+    }
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
 fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
@@ -670,9 +725,17 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     HObject* hobj = (HObject*)rb.get_heapptr();
     // Proxy [[Get]] can run a trap, so it never reaches the cache.
     if (hobj.flags.exotic_proxyobj) return pc;
+    void* key = vm.current_func.constants[(uint)insn.c].get_heapptr();
+    // Array length lives outside the ordinary property cache and can change
+    // without a shape transition, so read its current value on every visit.
+    if (hobj.get_class() == hobject::ObjClass.ARRAY
+        && key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
+        regs[insn.a].set_fastint((long)*hobj.array_len_ptr());
+        pc++;
+        return th_next(pc, code_end, regs, cold);
+    }
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
-    void* key = vm.current_func.constants[(uint)insn.c].get_heapptr();
     if (ic.key != key || ic.shape_id != hobj.shape_id
         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
     HObject* owner = hobject::ic_resolve_owner(ic, hobj);

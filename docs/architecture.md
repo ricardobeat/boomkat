@@ -239,6 +239,11 @@ a derived constructor throws too.
 
 ### Property access
 
+Threaded dispatch reads dense array elements with fast-integer indices and
+array `.length` directly. Holes and non-array receivers use the generic path;
+heap-valued elements also fall back when reference ownership needs a slow call.
+Length is read on each access so mutations remain visible without a shape change.
+
 `GETPROP` and `PUTPROP` try, in order: the per-site inline cache, the
 megamorphic cache, then a full lookup. An IC hit needs the shape to match and the
 owner's `prop_alloc` to be unchanged. Fused two-hop forms exist for `a.b.c`, and
@@ -456,8 +461,11 @@ Three caches sit above property lookup:
   shape, index, and a direct pointer to the value. A hit requires the shape to
   match and the owner's `prop_alloc` to be unchanged, which is one pointer
   comparison.
-- **`VarICEntry`**, one per `GETVAR`/`TYPEOFIDENT` site, caching the resolved
-  environment record so the scope-chain walk can be skipped.
+- **`VarICEntry`** caches resolved environments and binding slots for variable
+  access. Numeric `PUTVAR_SNAP` stores cache the captured declarative owner,
+  checking its identity, shape, recycle epoch, writable flag and current value
+  type before writing. The captured owner keeps RHS effects on name resolution
+  from redirecting the store.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
   `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
   evicts, and it caches own properties only, since it cannot detect a change to

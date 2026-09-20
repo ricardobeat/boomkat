@@ -6397,6 +6397,26 @@ fn TVal? Vm.run(Vm* vm) {
                         continue;
                     }
                     if (snap_env != null) {
+                        // Cache numeric stores only in the captured declarative
+                        // owner. Other values keep the reference-ownership path.
+                        if (ds.var_ic_base != null && snap_env.flags.is_declarative
+                            && !snap_env.flags.is_with && (ra.is_fastint() || ra.is_number())) {
+                            HObject* bindings = snap_env.bindings;
+                            int idx = bindings.find_prop_idx(key, vm.heap);
+                            if (idx >= 0) {
+                                TVal* slot = &bindings.prop_values()[idx];
+                                hobject::PropFlags flags = bindings.get_prop_flags((uint)idx, vm.heap);
+                                if ((slot.is_fastint() || slot.is_number()) && flags.writable && !flags.is_accessor) {
+                                    uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                                    hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)snap_env,
+                                        (void*)bindings, bindings.shape_id, (uint)idx, key,
+                                        (void*)snap_env, false, vm.heap);
+                                    *slot = *ra;
+                                    ra.set_undefined();
+                                    continue;
+                                }
+                            }
+                        }
                         int put_result = env::env_try_put_lex(snap_env, key, *ra, true);
                         if (put_result == 1) {
                         } else if (put_result == 0) {
