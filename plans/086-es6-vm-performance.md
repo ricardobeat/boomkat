@@ -484,3 +484,67 @@ Validation: 439 local scripts and fixture groups, 42 Rosetta cases, and 306
 passing targeted test262 cases with three scope skips. Fresh ASAN GC-stress
 builds pass dense_array_spread, including an inline temporary source array,
 and temproot_gc_lifetime.
+
+## Experiment 7: intrinsic Set and Map iterator steps
+
+Opportunity 5 covers array iterators only. A Set and a Map keep their entries
+in the target's own array part, but their iterators still ran the generic
+protocol: a call to the built-in `next`, a `{value, done}` result object, and
+two hash lookups per element. A `for (const x of set)` over 100,000 elements
+took 19 ms against QuickJS's 1 ms.
+
+`ITER_NEXT_FAST` now serves `%SetIteratorPrototype%.next` and
+`%MapIteratorPrototype%.next` alongside the array case, for the kinds that
+return an existing slot: a Set's `values` and `keys` (both return the element)
+and a Map's `keys` and `values`. It reads the slot straight out of the target's
+array part and advances the iterator's index in place, with no call and no
+result object. The guard is the same one the array case uses: the iterator's
+class, the resolved `next` being the built-in at the expected index, and the
+kind. Deleted slots hold `TAG_DELETED` and are skipped, mirroring the built-in's
+own scan; a half-deleted Map pair is refused. The `entries` kinds stay on the
+built-in, since they synthesise a fresh pair (`[v, v]` for a Set, `[k, v]` for
+a Map).
+
+The done path matches the built-in it replaces rather than the array one: the
+Set and Map built-ins drop the target without a release, so this does too.
+
+Interleaved A/B, separate binaries, in-process minimum of 21 repetitions, in
+milliseconds: a 300,000-element array for `byIndex` and `overArray`, and a
+100,000-element Set and Map for the rest. Load average was 2.95, and the rows
+that do not run this opcode are the control.
+
+| Subcase | Baseline | Candidate | QuickJS |
+|---|---:|---:|---:|
+| byIndex (not this opcode) | 2 | 2 | 8 |
+| overArray (array path) | 13 | 14 | 7 |
+| overSet | 19 | 4 | 1 |
+| overMapKeys | 20 | 4 | 1 |
+| overMapValues | 19 | 4 | 1 |
+| overMapEntries (kind 2) | 61 | 60 | 27 |
+| overString (not this opcode) | 22 | 23 | 3 |
+
+The three kinds this covers move about 5x, and their gap to QuickJS falls from
+roughly 19x to 4x. Whole-process `bench_forof` moves 302.9 ms to 285.7 ms
+(-5.7%, interleaved best-of-15), with `bench_closure_capture` and
+`bench_let_loop` within 1.3%.
+
+What remains is not protocol work. Per element a `for (const x of ...)` still
+runs `ITER_NEXT_FAST`, two `JUMP`s, a `TRY`/`ENDTRY` pair, `LDREG`, the
+`PUTLEX_C` that publishes the head binding, `ADD`, and the back-edge `JUMP`,
+about nine dispatches. The environment itself is already hoisted out of the
+loop (d3687956), so the allocation is gone, but the store into it is not.
+Dropping that needs the head binding to live in a register with no environment
+write, which is opportunity 1's register-only const/TDZ enforcement.
+
+Validation: the new fixture agrees with both QuickJS and Node across Set and
+Map default iteration, `keys`/`values`/`entries`, deleted slots, early `break`
+followed by a fresh loop, an exhausted iterator, a patched prototype `next`
+(which must still be called), mutation during iteration, and heap-valued
+elements. Rosetta passes 42, the local suite is green (446 scripts plus every
+fixture group), and targeted test262 passes with no failures: Set 382, Map 203,
+Array 3066, ArrayIteratorPrototype 27, SetIteratorPrototype 11,
+MapIteratorPrototype 11, StringIteratorPrototype 7, Iterator 647, for-of 741,
+for-in 115. GC-stress and ordinary builds produce identical output on a
+3000-round Set/Map allocation fixture, and a fresh ASAN build reports no
+memory error across 1360 tests from Set, Map, for-of, and both iterator
+prototype suites.

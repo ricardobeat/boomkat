@@ -679,7 +679,12 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             TVal itv = rb[0];
             if (!itv.is_object()) break;
             HObject* it = (HObject*)itv.get_heapptr();
-            if (it == null || it.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR) break;
+            if (it == null) break;
+            hobject::ObjClass it_class = it.flags.obj_class;
+            bool is_array_iter = it_class == hobject::ObjClass.ARRAY_ITERATOR;
+            bool is_set_iter   = it_class == hobject::ObjClass.SET_ITERATOR;
+            bool is_map_iter   = it_class == hobject::ObjClass.MAP_ITERATOR;
+            if (!is_array_iter && !is_set_iter && !is_map_iter) break;
 
             // A patched `next` must still be called -- user code can count the
             // calls -- so check the method this loop actually resolved rather
@@ -695,8 +700,55 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             HObject* nf = (HObject*)nextv.get_heapptr();
             if (nf == null || !nf.is_callable()) break;
             if (nf.callable_kind() != hobject::CallableKind.BUILTIN_FN) break;
-            if ((*nf.extra_ptr()).func.builtin_fn_index
-                != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal) break;
+            int next_bidx = (*nf.extra_ptr()).func.builtin_fn_index;
+            if (is_array_iter
+                && next_bidx != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal) break;
+            if (is_set_iter
+                && next_bidx != (int)builtins::Builtin.SET_ITERATOR_NEXT.ordinal) break;
+            if (is_map_iter
+                && next_bidx != (int)builtins::Builtin.MAP_ITERATOR_NEXT.ordinal) break;
+
+            // A Set and a Map keep their entries in the target's own array
+            // part, so the kinds that hand back one of those slots need neither
+            // a call nor a {value, done} result object. `entries` (kind 2)
+            // synthesises a fresh pair -- [v, v] for a Set, [k, v] for a Map --
+            // so it stays on the built-in.
+            if (is_set_iter || is_map_iter) {
+                uint kind = (*it.extra_ptr()).iter.kind;
+                if (kind > 1) break;
+                HObject* st = (*it.extra_ptr()).iter.target;
+                if (st == null) {
+                    // Exhausted iterators drop their target, which is the done
+                    // state and is cheap to report without the generic path.
+                    ds.curr_pc += 1;   // -> the done JUMP
+                    break;
+                }
+                TVal* sel = st.array_part();
+                if (sel == null) break;
+                // A Map interleaves [k0, v0, k1, v1, ...]; a Set stores one
+                // element per slot. Deleted slots hold TAG_DELETED and are
+                // skipped, mirroring the built-in's own scan.
+                uint stride = is_map_iter ? 2 : 1;
+                uint sidx = (*it.extra_ptr()).iter.index * stride;
+                while (sidx < st.array_used && sel[sidx].is_deleted()) sidx += stride;
+                if (sidx >= st.array_used) {
+                    // Done. Unlike the Array iterator's built-in, these two
+                    // drop the target without a release, so this does too.
+                    (*it.extra_ptr()).iter.target = null;
+                    ds.curr_pc += 1;   // -> the done JUMP
+                    break;
+                }
+                // keys()/values() return the slot itself; a Map's value half is
+                // the next slot along.
+                uint vslot = (is_map_iter && kind == 0) ? sidx + 1 : sidx;
+                if (vslot >= st.array_used || sel[vslot].is_deleted()) break;
+                TVal item = sel[vslot];
+                (*it.extra_ptr()).iter.index = (sidx / stride) + 1;
+                vm.heap.tval_copy_ref(ra, &item);
+                track_heap_store(ds.act, ra, (uint)insn.a);
+                ds.curr_pc += 2;   // -> the continue JUMP, which lands on the body
+                break;
+            }
 
             // Only the plain `values` kind reads straight through; keys() and
             // entries() synthesise a value (and entries() allocates a pair).
