@@ -5109,15 +5109,37 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
 
+    // A lexical head needs a declarative environment for two separate reasons,
+    // and they have different costs:
+    //
+    //  1. Scoping. `let`/`const` head bindings are block-scoped to the loop, so
+    //     they must not survive into the enclosing scope. One env for the whole
+    //     loop is enough for that.
+    //  2. Per-iteration freshness (§14.7.5.6 CreatePerIterationEnvironment).
+    //     Only observable through something that outlives its iteration -- a
+    //     closure, `eval`, a direct capture -- and that needs a *new* env every
+    //     step, which is an allocation per element.
+    //
+    // So an uncaptured head still gets an env, just hoisted out of the loop:
+    // correct scoping at one allocation per loop instead of one per element.
+    // This mirrors the capture gate the C-style `for` already applies to its own
+    // CreatePerIterationEnvironment. capture_all degrades to captured through
+    // is_captured_name, so a scanner that lost track keeps the old behaviour.
+    bool needs_lex_env = head.is_lexical && !head.id_is_bare;
+    bool needs_per_iter_env = needs_lex_env && self.forof_head_is_captured(head);
+    bool needs_hoisted_env = needs_lex_env && !needs_per_iter_env;
+
+    if (needs_hoisted_env) {
+        self.emit_simple(Opcode.PUSH_LEX);
+        self.cur_lex_depth++;
+        self.emit_head_inittz(head);
+    }
+
     uint loop_start = self.code_count;
     self.push_loop(loop_start, true);
     self.loop_stack[self.loop_depth - 1].iter_close_reg = (int)rec.method_reg;
     self.loop_stack[self.loop_depth - 1].is_await_loop = is_await;
 
-    // Per-iteration lexical environment (§14.7.5.6 CreatePerIterationEnvironment):
-    // fresh declarative env each iteration so body closures capture distinct
-    // bindings. INITTZ marks each head binding TDZ before the value is stored.
-    bool needs_per_iter_env = head.is_lexical && !head.id_is_bare;
     if (needs_per_iter_env) {
         self.emit_simple(Opcode.PUSH_LEX);
         self.cur_lex_depth++;
@@ -5186,11 +5208,52 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     }
     self.pop_loop();
 
+    // The hoisted env wraps the whole loop, so it pops once here -- after
+    // pop_loop, since `break` unwinds only to the loop's saved_lex_depth (taken
+    // before this env was pushed) and so lands with it still standing.
+    if (needs_hoisted_env) {
+        self.emit_simple(Opcode.POP_LEX);
+        self.cur_lex_depth--;
+    }
+
     self.free_reg(val_slot);
     self.free_iter_rec(rec);
     self.free_reg(src_reg);
     self.pop_scope_to(saved_scope);
     self.free_regs_to(saved_reg);
+}
+
+// True when a lexical for-of head needs a real per-iteration environment.
+//
+// §14.7.5.6 creates a fresh binding every iteration, but the freshness is only
+// observable through something that holds on to the binding past its iteration:
+// a closure, `eval`, or a direct capture. When no name in the head is captured,
+// every iteration's binding is written and read within that one iteration, so a
+// single reused register is indistinguishable from a fresh env -- and skips a
+// heap allocation per element.
+//
+// This mirrors the gate the C-style `for` loop already applies to its own
+// CreatePerIterationEnvironment (see needs_periterenv above); for-of simply
+// never had it. capture_all degrades to true through is_captured_name, so a
+// scanner that lost track keeps the conservative behaviour.
+fn bool CompilerContext.forof_head_is_captured(&self, ForOfHead head) {
+    switch (head.kind) {
+        case IDENT:
+            HString* hs = (HString*)self.constants[head.id_name_idx].get_heapptr();
+            return self.is_captured_name(hs.get_data());
+        case DESTRUCTURE:
+            // Any captured leaf forces the env for the whole head: the binds
+            // share one iteration, so they share its lifetime.
+            for (uint i = 0; i < head.bind_count; i++) {
+                if (head.binds[i].is_synthetic) continue;
+                HString* hs = (HString*)self.constants[head.binds[i].name_idx].get_heapptr();
+                if (self.is_captured_name(hs.get_data())) return true;
+            }
+            return false;
+        case MEMBER:
+            // No head bindings, so nothing to keep fresh.
+            return false;
+    }
 }
 
 // Per-iteration TDZ init for lexical head bindings (fresh env each iteration).
