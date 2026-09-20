@@ -3066,12 +3066,25 @@ fn void Heap.mark_hobject(&self, HObject* obj) {
 // count (a GC leaf), the shared Calendar object, and the TimeZone object.
 // Fields are null when unused for the given obj_class, so the null checks
 // are the common case for PlainDate / PlainTime / Calendar.
+//
+// The calendar slot is overloaded: TimeZone and ZonedDateTime store the zone
+// name / calendar id HString there, while PlainDate and friends store a real
+// Calendar HObject. An HString pushed onto the gray stack would be walked as
+// an HObject by drain_gray, reading the string's cached_charlen +
+// cached_char_offset pair as a garbage prototype pointer.
 fn void Heap.mark_temporal(&self, HObjectTemporal* t) {
     if (t.big_ns != null) {
         HeapHeader* hdr = (HeapHeader*)t.big_ns;
         if (!hdr.is_reachable()) { hdr.set_reachable(); }
     }
-    if (t.calendar != null) { self.mark_hobject(t.calendar); }
+    if (t.calendar != null) {
+        HeapHeader* hdr = (HeapHeader*)t.calendar;
+        if (hdr.is_string()) {
+            if (!hdr.is_reachable()) { hdr.set_reachable(); }
+        } else {
+            self.mark_hobject(t.calendar);
+        }
+    }
     if (t.timezone != null) { self.mark_hobject(t.timezone); }
 }
 
