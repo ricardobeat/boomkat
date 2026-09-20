@@ -2753,6 +2753,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
     // Run bytecode peephole optimizations (GETPROPC2 chain fusion, etc.)
     if (!self.has_wide) { peephole::peephole_scan(func, hp); }
+    build_await_liveness(self, func, hp);
 
     // Free compiler scratch buffers, the CompiledFunction owns its own copies.
     self.cleanup();

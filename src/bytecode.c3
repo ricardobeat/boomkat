@@ -1570,6 +1570,12 @@ bitstruct FuncFlags : uint {
 // bindings. It holds everything the VM needs to run the function: the
 // instruction stream, the constant pool, the templates for nested functions,
 // the register budget and argument counts, and source metadata for debugging.
+struct AwaitLiveEntry {
+    uint pc;
+    uint num_regs;
+    ulong mask;
+}
+
 struct CompiledFunction {
     // ---- Inline HeapHeader (binary-compatible with HeapHeader*) ----------
 
@@ -1587,6 +1593,11 @@ struct CompiledFunction {
     Instruction*    code;
     // Number of instructions in `code`.
     uint            code_count;
+
+    // Sparse saved-register masks keyed by the LOAD_RESUME program counter
+    // following an ordinary async AWAIT. Null means use the full snapshot.
+    AwaitLiveEntry* await_live;
+    uint            await_live_count;
 
     // Constant pool holding the literal values, such as numbers and strings,
     // by LDCONST and friends.

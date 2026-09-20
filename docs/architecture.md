@@ -298,7 +298,7 @@ A generator call does not run its body. It allocates a `GeneratorState`, runs
 parameter initialization, and suspends at `GEN_START`, returning the generator
 object.
 
-`YIELD` copies the live registers, program counter, environments, and catcher
+`YIELD` copies the register window, program counter, environments, and catcher
 chain into that state and returns to the caller. `.next()`, `.throw()`, and
 `.return()` restore them and resume, with `ResumeKind` telling `YIELD` whether to
 return a value, inject an exception, or inject a return.
@@ -315,6 +315,14 @@ that reuses that valstack address.
 Async functions reuse the same machinery: `AWAIT` is a suspension whose
 continuation is a promise reaction, so an async function is a generator whose
 resumptions are driven by the microtask queue rather than by user calls.
+
+Bounded ordinary async functions carry a sparse register mask for each await
+continuation, computed with the move-elimination liveness analysis. Suspension
+copies only those values into a snapshot ending at the highest live register;
+resumption fills other slots with undefined. The resume destination needs no
+saved value because `LOAD_RESUME` overwrites it. Functions with exception
+handlers, captures, dynamic scope, or unsupported bytecode retain full
+snapshots, as do generators. Environments and promise state are saved normally.
 
 `yield*` delegation is a resumable state machine, because in an async generator
 every spec `Await` inside the delegation is itself a real suspension. The

@@ -31,6 +31,7 @@ fn uint call_nargs_reg(Dispatch* ds, DecodedInsn insn) @inline @local {
     return 0;
 }
 
+
 // Cold tail: TypeError for calling a non-constructor value. Builds the
 // "%s is not a constructor" message from the value's typeof string, so the
 // eleven throw sites share one body.
@@ -2487,8 +2488,12 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     $endif
                     TVal* new_regs_r = new_act_r.bottom;
                     uint new_nregs_r = target.num_regs;
+                    TVal resume_undef_r;
+                    resume_undef_r.set_undefined();
                     for (uint i = 0; i < new_nregs_r; i++) {
-                        vm.heap.tval_copy_ref(&new_regs_r[i], &gs.saved_regs[i]);
+                        TVal* saved_r = gs.saved_regs != null && i < gs.num_regs
+                            ? &gs.saved_regs[i] : &resume_undef_r;
+                        vm.heap.tval_copy_ref(&new_regs_r[i], saved_r);
                     }
                     // If yield fired inside a non-generator inner function
                     // (default expression thunk), place the resume value into

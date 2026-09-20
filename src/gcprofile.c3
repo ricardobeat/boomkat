@@ -19,6 +19,19 @@ ulong gcprof_swept;
 ulong gcprof_function_envs;
 ulong gcprof_declarative_envs;
 ulong gcprof_object_envs;
+ulong gcprof_await_suspensions;
+ulong gcprof_await_fullregs;
+ulong gcprof_await_savedspan;
+ulong gcprof_await_copiedlive;
+
+macro void gcprof_await_save(uint fullregs, uint savedspan, uint copiedlive) @builtin {
+    $if $feat(GC_PROFILE):
+    gcprof_await_suspensions++;
+    gcprof_await_fullregs += fullregs;
+    gcprof_await_savedspan += savedspan;
+    gcprof_await_copiedlive += copiedlive;
+    $endif
+}
 
 macro void gcprof_env(bool function_scope, bool declarative) @builtin {
     $if $feat(GC_PROFILE):
@@ -68,6 +81,9 @@ $if $feat(GC_PROFILE):
     io::eprintfn("#   live_obj_count_at_last_cycle=%d", gcprof_last_live);
     io::eprintfn("#   environments function=%d declarative=%d object=%d",
                  gcprof_function_envs, gcprof_declarative_envs, gcprof_object_envs);
+    io::eprintfn("#   await suspensions=%d fullregs=%d savedspan=%d copiedlive=%d",
+                 gcprof_await_suspensions, gcprof_await_fullregs,
+                 gcprof_await_savedspan, gcprof_await_copiedlive);
     if (gcprof_cycles > 0) {
         io::eprintfn("#   allocs_per_cycle=%d marked_per_cycle=%d",
                      gcprof_allocations / gcprof_cycles,

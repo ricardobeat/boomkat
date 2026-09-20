@@ -14,9 +14,9 @@ unsuccessful experiments and their limitations too.
 - [x] 3. Reuse indexed capture caches by stabilizing empty-arrow environments — kept.
 - [x] 4. Shared internal built-in iterator stepping — kept.
 - [x] 5. Measure rest-length call setup shortcut — rejected as too narrow.
-- [ ] 6. Reduce async suspension storage using register liveness — implementing.
-- [ ] 7. Review shared compiler analysis, cumulative performance, memory,
-      documentation, and regressions.
+- [x] 6. Reduce async suspension storage using register liveness — kept.
+- [ ] 7. Consolidate compiler analysis and scratch storage — next.
+- [ ] 8. Cumulative performance, memory, documentation, and regressions.
 
 Each item requires a bounded implementation experiment, a correctness decision,
 and an explicit keep/reject result. A completed experiment does not imply the
@@ -110,3 +110,29 @@ and a call-path branch. Removed the prototype from the candidate. Broader
 rest-use analysis and call-frame setup remain architectural work. No broad
 suites or ASAN runs are claimed for this rejected prototype. Artifacts include
 its immutable binary, source snapshots, patch, and timings under `05-*`.
+
+## Experiment 6: bounded async saved-register liveness — kept
+
+Eligible ordinary async functions reuse the move-elimination liveness solver
+and store sparse masks keyed by await continuation. Snapshots copy live values
+and stop at the highest live register. LOAD_RESUME overwrites its destination,
+so that slot needs no saved value. Both restore paths fill omitted slots with
+undefined using balanced reference ownership. Unknown/multiword bytecode,
+exception handlers, captures, dynamic scope, and large functions fall back to
+full snapshots. Generators retain their full snapshot path.
+
+Five alternating runs against experiment 4: promise 0.9423s to 0.9471s (-0.5%),
+checked await-tail 0.2938s to 0.2939s (unchanged). No timing gain is claimed.
+The promise profiler records 160,000 suspensions, 1,010,000 full-frame registers,
+560,000 registers in saved spans, and 460,000 copied values (54.5% fewer copies).
+A checked workload with 12,000 simultaneously suspended calls and large dead
+argument windows reduces median child peak RSS from 38,584,320 to 33,980,416
+bytes (11.9%, five alternating runs). Its time changed 1.0%, not attributed.
+Zero-length snapshots still allocate one TVal; logical span counters are not
+allocation-byte counters.
+
+Validation: expanded focused fixture in Boomkat and Node, including live
+receivers/argument windows across await, branches, loops, and fallback paths;
+42 Rosetta cases; full local suite; 244 async test262 cases; fresh ASAN/GC-stress
+fixture. Retained for reduced snapshot work and demonstrated peak-memory
+savings, not benchmark speed. Artifacts: `/tmp/boomkat-architecture-experiments/06-*`.

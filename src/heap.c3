@@ -1641,6 +1641,7 @@ fn void Heap.free_compiled_funcs(&self) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
         if (cf == null) continue;
         if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
+        if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
         if (cf.line_table != null) { self.free_func(self.heap_udata, cf.line_table); }

@@ -735,11 +735,13 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                             vm.heap.verify_tval_array(gs_r.saved_regs, gs_r.num_regs, "resume_saved_regs");
                         }
                     $endif
+                    TVal resume_undef;
+                    resume_undef.set_undefined();
                     for (uint i = 0; i < nregs; i++) {
-                        if (gs_r.saved_regs != null) {
+                        if (gs_r.saved_regs != null && i < gs_r.num_regs) {
                             vm.heap.tval_copy_ref(&frame[i], &gs_r.saved_regs[i]);
                         } else {
-                            frame[i].set_undefined();
+                            vm.heap.tval_copy_ref(&frame[i], &resume_undef);
                         }
                     }
                     // If the yield fired inside a non-generator inner function

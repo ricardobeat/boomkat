@@ -8,6 +8,7 @@ import boomkat::hobject;
 import boomkat::env;
 import boomkat::builtins;
 import boomkat::re_bindings;
+import boomkat::gcprofile;
 import std::math;
 
 // ============================================================================
@@ -108,6 +109,7 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     ds.needs_restart = true;
     return true;
 }
+
 
 // True if `v` is a callable value (a lightfunc or a callable object).
 fn bool ays_is_callable(TVal v) {
@@ -634,14 +636,31 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                 gs.state = GEN_SUSPENDED_YIELD;
                 gs.func = ds.act.func;
-                gs.num_regs = cur_func.num_regs;
                 gs.saved_pc = ds.curr_pc; // PC after AWAIT (points to LOAD_RESUME)
                 gs.var_env = ds.act.var_env;
                 gs.lex_env = ds.act.lex_env;
                 chains_save_to_gen(ds.act, gs);
                 vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
                 gs.async_promise = (void*)ds.act.async_promise;
-                usz regs_bytes = (usz)gs.num_regs * TVal::size;
+                ulong live_mask = ~0UL;
+                uint live_span = 0;
+                bool has_live_mask = false;
+                uint resume_pc = (uint)(ds.curr_pc - cur_func.code);
+                for (uint li = 0; li < cur_func.await_live_count; li++) {
+                    if (cur_func.await_live[li].pc == resume_pc) {
+                        live_mask = cur_func.await_live[li].mask;
+                        live_span = cur_func.await_live[li].num_regs;
+                        has_live_mask = true;
+                        break;
+                    }
+                }
+                if (has_live_mask) {
+                    gs.num_regs = live_span;
+                } else {
+                    gs.num_regs = cur_func.num_regs;
+                }
+                uint alloc_regs = gs.num_regs == 0 ? 1 : gs.num_regs;
+                usz regs_bytes = (usz)alloc_regs * TVal::size;
                 void* regs_mem = vm.heap.alloc_func(vm.heap.heap_udata, regs_bytes);
                 if (regs_mem == null) {
                     vm.heap.decref_tval(&gs.this_binding);
@@ -649,11 +668,16 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
                 gs.saved_regs = (TVal*)regs_mem;
-                mem::clear(regs_mem, (sz)(regs_bytes));
+                for (uint i = 0; i < alloc_regs; i++) gs.saved_regs[i].set_undefined();
                 TVal* regs_src = ds.act.bottom;
+                uint copied_live = 0;
                 for (uint i = 0; i < gs.num_regs; i++) {
-                    vm.heap.tval_copy_ref(&gs.saved_regs[i], &regs_src[i]);
+                    if (!has_live_mask || (live_mask & (1UL << i)) != 0) {
+                        vm.heap.tval_copy_ref(&gs.saved_regs[i], &regs_src[i]);
+                        copied_live++;
+                    }
                 }
+                gcprofile::gcprof_await_save((uint)cur_func.num_regs, gs.num_regs, copied_live);
 
                 $if $feat(HEAP_VERIFY):
                     vm.heap.verify_roots("after_await_save");
