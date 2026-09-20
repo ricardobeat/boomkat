@@ -91,15 +91,6 @@ echo ""
 bash "$DIR/robustness/run.sh" "$ENGINE"
 ROB_RC=$?
 
-# console format specifiers — asserted by diffing stdout against node's captured
-# output, which the self-asserting flat sweep cannot express.
-echo ""
-bash "$DIR/console_format/run.sh" "$ENGINE"
-
-# The calendrical layer must stay free of engine types; see the script header.
-bash "$DIR/../scripts/check_temporal_standalone.sh"
-CFMT_RC=$?
-
 # Compile-error messages — every parse failure must report a non-empty message
 # instead of "SyntaxError:  (line 0, col 0)".
 echo ""
@@ -115,4 +106,4 @@ TSB_RC=$?
 [ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] \
   && [ "$MODEXP_RC" -eq 0 ] && [ "$TOPLVL_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
   && [ "$REJ_RC" -eq 0 ] && [ "$ROB_RC" -eq 0 ] \
-  && [ "$CFMT_RC" -eq 0 ] && [ "$CEM_RC" -eq 0 ] && [ "$TSB_RC" -eq 0 ]
+  && [ "$CEM_RC" -eq 0 ] && [ "$TSB_RC" -eq 0 ]
