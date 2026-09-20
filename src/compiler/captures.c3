@@ -25,8 +25,10 @@ import std::io;
 //   - `=> {` opens a callable body; an expression-bodied arrow collects until
 //     the expression ends (bracket depth drops below the arrow's, or a
 //     top-level `,` / `;` / `:` at the arrow's depth).
-//   - `class` bodies degrade to capture_all: field initializers run in
-//     constructor scope and can reference outer locals without any `) {`.
+//   - A `class` body degrades to capture_all only if it has a field
+//     initializer, which runs in constructor scope and can reference outer
+//     locals without any `) {`. Methods are covered by the `) {` rule, so a
+//     method-only class leaves the enclosing locals in registers.
 //   - The identifier `eval` anywhere degrades to capture_all: a direct eval
 //     can read and assign any caller binding by name.
 //   - Table overflow (more distinct names than the fixed capacity, or a name
@@ -162,6 +164,22 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     bool decl_at_binder = false;  // next identifier is a binding identifier
     int  decl_cdepth = -1;        // combined_depth of the declarator list
 
+    // --- Class bodies awaiting a field-initializer verdict ---
+    // A `class` token alone does not force capture_all. Only a field
+    // initializer does, because it runs in constructor scope and reaches outer
+    // locals with no `) {` for the region tracking to see. Methods are ordinary
+    // callable bodies the `) {` rule already covers.
+    //
+    // `class_pending` marks a `class` whose body brace has not opened yet;
+    // class_brace[] then records the brace_depth of each open class body, so a
+    // `=` seen at that exact depth is a field initializer (a method body sits
+    // deeper) and degrades. Nesting past the fixed depth degrades too, rather
+    // than losing track of a body.
+    const uint MAX_CLASS_NEST = 8;
+    uint[MAX_CLASS_NEST] class_brace;
+    uint class_open = 0;
+    bool class_pending = false;
+
     bool done = false;
     while (!done && !self.capture_all) {
         Token? tok_opt = self.lexer.next_token();
@@ -283,6 +301,14 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
             param_buf_pending = false;
             param_buf_count = 0;
             if (!expr_mode && !started && brace_depth == 0) started = true;
+            // An armed `class` reaching its `{` opens a class body at this
+            // depth. `extends` clauses keep the arm set through their tokens,
+            // which is correct: the first `{` after `class` is the body.
+            if (class_pending) {
+                if (class_open >= MAX_CLASS_NEST) { self.capture_all = true; break; }
+                class_brace[class_open++] = brace_depth;
+                class_pending = false;
+            }
             brace_depth++;
             combined_depth++;
         } else if (tt == TokenType.TEMPLATE_HEAD) {
@@ -298,6 +324,9 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                 done = true;  // underflow: end of expr-mode span or malformed input
             } else {
                 brace_depth--;
+                if (class_open > 0 && class_brace[class_open - 1] == brace_depth) {
+                    class_open--;
+                }
                 combined_depth--;
                 // For function bodies, brace_depth returning to 0 means the
                 // body's closing `}`.  For global scripts (no outer `{}`),
@@ -401,13 +430,15 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                 cand_ok = true;
             }
         } else if (tt == TokenType.CLASS) {
-            // Class field initializers run in constructor scope with no
-            // `) {` marker, so degrade rather than miss captures. Unlike
-            // class_kw_starts_class in functions.c3, no lookahead gate is
-            // applied here: this scan works on raw token streams without
-            // lexer restore, and the over-approximation is safe (captures
-            // more, never fewer).
-            self.capture_all = true;
+            // Arm the body-brace watch rather than degrading outright. A class
+            // only defeats the region tracking when it has a field
+            // initializer; one with methods alone is covered by `) {` like any
+            // other callable. No lookahead gate is applied (unlike
+            // class_kw_starts_class in functions.c3): this scan reads raw
+            // tokens with no lexer restore, so a false arm is preferred, it
+            // can only cost an unnecessary degrade later, never a missed
+            // capture.
+            class_pending = true;
         } else if (tt == TokenType.VAR || tt == TokenType.LET
                    || tt == TokenType.CONST) {
             // A declaration at the tracked callable body's own top level binds
@@ -451,6 +482,17 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
             }
         } else if (tt == TokenType.ASSIGN) {
             if (decl_pending) decl_at_binder = false;  // initialiser follows
+            // A field initializer: `=` sitting directly in a class body, one
+            // brace inside it. Its expression runs in constructor scope and can
+            // name outer locals with no `) {` for the region tracking to catch,
+            // so this is the case that must degrade. A method body is deeper,
+            // and a default in a method's parameter list sits inside parens the
+            // param buffer already handles.
+            if (class_open > 0
+                && (int)brace_depth == (int)class_brace[class_open - 1] + 1) {
+                self.capture_all = true;
+                break;
+            }
         } else if (tt == TokenType.IDENTIFIER) {
             char[] name = tok.str_value;
             last_ident = name;
