@@ -2547,8 +2547,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         return vm_proxy_rethrow(vm, ds);
                                     }
                                     if (!sres) {
-                                        if (!vm_throw_error(vm, vm.heap.type_err_proto, "'set' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                            return VM_ERROR~;
+                                        if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                            if (!vm_throw_error(vm, vm.heap.type_err_proto, "'set' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                                return VM_ERROR~;
+                                            }
                                         }
                                     }
                                     return (TVal){};
