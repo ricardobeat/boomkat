@@ -366,7 +366,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     // Clear registers and copy args (getters have 0 args)
     TVal* new_regs = new_act.bottom;
     uint new_nregs = target.num_regs;
-    mem::clear(new_regs, (sz)((usz)new_nregs * TVal::size));
+    for (uint i = 0; i < new_nregs; i++) new_regs[i].set_undefined();
 
     // Create the arguments object for getters/setters that reference `arguments`.
     // Per ES2015 §14.3 step 7 + §14.5.14 step 11 (Runtime Semantics: ClassDefinitionEvaluation
