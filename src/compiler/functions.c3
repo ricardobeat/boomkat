@@ -4118,23 +4118,22 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     self.block(true, is_expr)!;
 
     // A "use strict" prologue makes the whole body strict, which
-    // retroactively forbids duplicate parameter names and `eval`/`arguments`
-    // as parameter names (ES2024 §15.2.1 / §15.2.2). The list was parsed
-    // under the outer strictness, so re-apply the strict early errors now.
-    // Only reachable for a simple list: parse_directives rejects "use strict"
-    // outright when the list is non-simple (ES2024 §14.1.2). The same
-    // re-validation runs for source functions in compile_inner_function.
+    // retroactively forbids duplicate parameter names and the strict-only
+    // FutureReservedWords ('eval', 'arguments', 'implements', 'let',
+    // 'static', 'yield', ...) as parameter names (ES2024 §15.2.1 /
+    // §15.2.2). The list was parsed under the outer strictness, so
+    // re-apply the strict early errors now. Only reachable for a simple
+    // list: parse_directives rejects "use strict" outright when the list
+    // is non-simple (ES2024 §14.1.2). The same re-validation runs for
+    // source functions in compile_inner_function.
     if (!seen_params.strict && self.is_strict) {
         for (uint pi = 0; pi < seen_params.count; pi++) {
             char[] pname = seen_params.names[pi][:seen_params.lens[pi]];
-            if (pname.len == 4 && pname[0] == 'e' && pname[1] == 'v'
-                && pname[2] == 'a' && pname[3] == 'l') {
-                return self.fail("'eval' is not a valid parameter name in strict mode")~;
-            }
-            if (pname.len == 9 && pname[0] == 'a' && pname[1] == 'r' && pname[2] == 'g'
-                && pname[3] == 'u' && pname[4] == 'm' && pname[5] == 'e'
-                && pname[6] == 'n' && pname[7] == 't' && pname[8] == 's') {
-                return self.fail("'arguments' is not a valid parameter name in strict mode")~;
+            if (is_restricted_name(pname,
+                    in_async_or_module: self.is_async || self.module_goal || self.forbid_await,
+                    in_generator_or_blocked_yield: true,
+                    strict: true)) {
+                return self.fail("parameter name is not allowed in strict mode")~;
             }
             for (uint pj = pi + 1; pj < seen_params.count; pj++) {
                 char[] other = seen_params.names[pj][:seen_params.lens[pj]];
@@ -5045,25 +5044,29 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // duplicate BoundNames in a non-simple list, and forbids 'eval'/'arguments'
     // as FormalParameterList BoundNames.
     if (prologue_made_strict) {
-        if (name.len == 4 && name[0] == 'e' && name[1] == 'v' && name[2] == 'a' && name[3] == 'l') {
-            return self.fail("'eval' is not a valid function name in strict mode")~;
-        }
-        if (name.len == 9 && name[0] == 'a' && name[1] == 'r' && name[2] == 'g' &&
-            name[3] == 'u' && name[4] == 'm' && name[5] == 'e' && name[6] == 'n' &&
-            name[7] == 't' && name[8] == 's') {
-            return self.fail("'arguments' is not a valid function name in strict mode")~;
+        // Function name itself: 'eval'/'arguments' and the strict-mode
+        // FutureReservedWords ('implements', 'let', 'static', 'yield', ...).
+        // The prologue can flip a sloppy function declaration/expression
+        // body to strict, so what looked like a plain identifier at parse
+        // time is now a restricted binding target.
+        if (name.len > 0 && is_restricted_name(name,
+                in_async_or_module: inner_ctx.is_async || inner_ctx.module_goal || inner_ctx.forbid_await,
+                in_generator_or_blocked_yield: true,
+                strict: true)) {
+            return self.fail("function name is not allowed in strict mode")~;
         }
         // Strict re-validation of params: forbidden names and duplicate
-        // BoundNames in a non-simple list.
+        // BoundNames in a non-simple list. The simple-parameter pass ran
+        // with the OUTER strictness; a "use strict" prologue can promote
+        // the body to strict and turn FutureReservedWords into restricted
+        // binding targets.
         for (ushort pi = 0; pi < inner_seen.count; pi++) {
             char[] pname = inner_seen.names[pi][:inner_seen.lens[pi]];
-            if (pname.len == 4 && pname[0] == 'e' && pname[1] == 'v' && pname[2] == 'a' && pname[3] == 'l') {
-                return self.fail("'eval' is not a valid parameter name in strict mode")~;
-            }
-            if (pname.len == 9 && pname[0] == 'a' && pname[1] == 'r' && pname[2] == 'g' &&
-                pname[3] == 'u' && pname[4] == 'm' && pname[5] == 'e' && pname[6] == 'n' &&
-                pname[7] == 't' && pname[8] == 's') {
-                return self.fail("'arguments' is not a valid parameter name in strict mode")~;
+            if (is_restricted_name(pname,
+                    in_async_or_module: inner_ctx.is_async || inner_ctx.module_goal || inner_ctx.forbid_await,
+                    in_generator_or_blocked_yield: true,
+                    strict: true)) {
+                return self.fail("parameter name is not allowed in strict mode")~;
             }
             for (ushort pj = pi + 1; pj < inner_seen.count; pj++) {
                 char[] other = inner_seen.names[pj][:inner_seen.lens[pj]];
