@@ -619,31 +619,96 @@ macro HBigInt* TVal.get_bigint(&self) => (HBigInt*)self.get_heapptr();
 
 // The value as a double, rounding when it exceeds 2^53. Infinite when the
 // magnitude is past the double range, matching ECMAScript's Number(bigint).
+//
+// Single-rounding: extract the top 53 mantissa bits plus guard/round/sticky
+// from the magnitude and round once, avoiding the double-rounding that the
+// old stepwise accumulator suffered from at wide bit-widths.
 fn double HBigInt.to_double(&self) {
     bool neg = self.is_negative();
-    // Accumulate the exact magnitude first, then apply the sign. Complementing
-    // limb-by-limb and adding one at the end would round before the correction
-    // and lose the low bit for magnitudes past 2^53.
+    Limb* limbs = self.limbs();
     int n = self.len;
+
+    // --- collect the unsigned magnitude limbs ---
+    Limb[36] mag;
     if (!neg) {
+        for (int i = 0; i < n; i++) mag[i] = limbs[i];
+    } else {
+        Limb carry = 1;
+        for (int i = 0; i < n; i++) {
+            bigmath::DLimb t = (bigmath::DLimb)(~limbs[i]) + (bigmath::DLimb)carry;
+            carry = (Limb)(t >> LIMB_BITS);
+            mag[i] = (Limb)t;
+        }
+    }
+    for (int i = n; i < 36; i++) mag[i] = 0;
+
+    // --- find the highest set bit of the magnitude ---
+    int p = -1;
+    for (int j = n - 1; j >= 0; j--) {
+        if (mag[j] != 0) {
+            p = j * LIMB_BITS + (LIMB_BITS - 1 - (int)mag[j].clz());
+            break;
+        }
+    }
+    if (p < 0) return neg ? -0.0 : 0.0;
+
+    int bit_len = p + 1;
+
+    // Exact when 53 or fewer bits: accumulate from magnitude, then negate.
+    if (bit_len <= 53) {
         double acc = 0.0;
         for (int i = n - 1; i >= 0; i--) {
-            acc = acc * 4294967296.0 + (double)self.limbs()[i];
+            acc = acc * 4294967296.0 + (double)mag[i];
         }
-        return acc;
+        return neg ? -acc : acc;
     }
-    // Negative: complement low-to-high so the carry propagates upward, scaling
-    // each magnitude limb into place as it is produced.
-    Limb carry = 1;
-    double scale = 1.0;
-    double total = 0.0;
-    for (int i = 0; i < n; i++) {
-        bigmath::DLimb t = (bigmath::DLimb)(~self.limbs()[i]) + (bigmath::DLimb)carry;
-        carry = (Limb)(t >> LIMB_BITS);
-        total += (double)(Limb)t * scale;
-        scale *= 4294967296.0;
+
+    // --- IEEE754 biased exponent for the highest bit position ---
+    int biased_exp = p + 1023;
+
+    // --- extract top 54 bits (53 mantissa + 1 guard) from magnitude ---
+    ulong mant_plus_guard = 0;
+    for (int i = 0; i < 54; i++) {
+        int bit_pos = p - i;
+        int limb_idx = bit_pos / LIMB_BITS;
+        int bit_in_limb = bit_pos % LIMB_BITS;
+        if ((mag[limb_idx] >> bit_in_limb) & 1u != 0) {
+            mant_plus_guard |= (1ul << (53 - i));
+        }
     }
-    return -total;
+    ulong mantissa = mant_plus_guard >> 1;  // top 53 bits
+    Limb guard = (Limb)(mant_plus_guard & 1);
+
+    // --- check for any nonzero bit below the guard bit (round+sticky) ---
+    bool any_below = false;
+    if (p >= 54) {
+        int check_pos = p - 54;            // highest bit in the round+sticky range
+        int check_limb = check_pos / LIMB_BITS;
+        int hi_bit = check_pos % LIMB_BITS;
+        Limb mask = (hi_bit == 31) ? bigmath::LIMB_MAX : ((1u << (hi_bit + 1)) - 1);
+        if ((mag[check_limb] & mask) != 0) any_below = true;
+        for (int i = check_limb - 1; i >= 0 && !any_below; i--) {
+            if (mag[i] != 0) any_below = true;
+        }
+    }
+
+    // --- round to nearest even ---
+    if (guard != 0 && (any_below || (mantissa & 1) != 0)) {
+        mantissa++;
+    }
+    if (mantissa >= (1ul << 53)) {
+        mantissa >>= 1;
+        biased_exp++;
+    }
+
+    if (biased_exp > 2046) {
+        return neg ? -1.0 / 0.0 : 1.0 / 0.0;
+    }
+
+    // --- assemble IEEE754 bit pattern ---
+    ulong bits = ((ulong)(uint)biased_exp << 52) | (mantissa & ((1ul << 52) - 1));
+    if (neg) bits |= (1ul << 63);
+    return bitcast(bits, double);
 }
 
 // The value as an int128, saturating at the int128 bounds. Used only where an
