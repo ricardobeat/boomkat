@@ -1056,7 +1056,12 @@ const usz OBJ_SIZE_FUNCTION = obj_size_for(HObjectFunction);
 // not, and which of those leads depends on the value representation.
 const usz OBJ_SIZE_ITER_HELPER = obj_size_for(HObjectIteratorHelper);
 const usz OBJ_SIZE_TEMPORAL    = obj_size_for(HObjectTemporal);
-const usz OBJ_SIZE_SMALL = OBJ_SIZE_PROMISE;
+// The block is padded eight bytes past the promise payload because a pool
+// stride of 144 measured 15-18% slower than 152 on a workload retaining eight
+// million Date objects, and a stride of 160 measured three times slower. Stride
+// interacts with cache geometry, so a pool block that merely fits its largest
+// payload is not automatically the fastest one; 152 is the measured choice.
+const usz OBJ_SIZE_SMALL = OBJ_SIZE_PROMISE + 8;
 const usz OBJ_SIZE_BIG   = OBJ_SIZE_TEMPORAL > OBJ_SIZE_ITER_HELPER
     ? OBJ_SIZE_TEMPORAL : OBJ_SIZE_ITER_HELPER;
 
