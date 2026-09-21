@@ -534,6 +534,19 @@ $else
 $endif
 }
 
+// Block count for one object pool page.
+//
+// A page is a single allocator request, and the allocator rounds it up to its
+// next size class, so a page that spills just past 64 KB costs about a quarter
+// more than the same bytes packed under it. Measured: 8M plain objects cost
+// 1168 MB with 512-block pages (53 KB) and 1011 MB with 630-block pages
+// (65.5 KB); 4M Date objects cost 708 MB with 512-block pages (74 KB) and
+// 647 MB with 455-block pages (65.5 KB). Sizing each page to fill the class it
+// lands in is worth roughly a tenth of the heap.
+fn sz pool_page_blocks(sz block_size) @inline {
+    return (sz)(65536 / block_size);
+}
+
 // One link of an allocation-free stack of native scoped environment roots. A
 // C3 local that holds the only reference to an EnvRecord across a GC-capable
 // call pushes one of these; the GC traces the stack on every collection so a
@@ -1342,12 +1355,12 @@ fn Heap*? create(
     // The pools must exist before the first string does: pre-interning the
     // well-known strings below allocates through the size-class pools.
     {
-        h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, 512);
-        h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
-        h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, 512);
-        h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, 512);
-        h.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, 512);
+        h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
+        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
+        h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
+        h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
+        h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
+        h.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, pool_page_blocks(hobject::OBJ_SIZE_BIG));
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
             h.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
         }
@@ -2215,12 +2228,12 @@ fn void Heap.reset(&self) {
         self.small_pools[i].free();
     }
     {
-        self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, 512);
-        self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
-        self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, 512);
-        self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, 512);
-        self.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, 512);
+        self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
+        self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
+        self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
+        self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
+        self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
+        self.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, pool_page_blocks(hobject::OBJ_SIZE_BIG));
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
             self.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
         }
