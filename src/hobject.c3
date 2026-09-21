@@ -1011,8 +1011,14 @@ const usz ARRAY_EXTRA    = 8;                                                   
 const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;                            // OBJECT, the only class with no trailing data
 const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA + INLINE_EXTRA;              // ARRAY, which reads and writes only array_length
 const usz OBJ_SIZE_ARGS  = HObjectBase::size + HObjectArguments::size + INLINE_EXTRA;   // ARGUMENTS: nargs aliases array_length, plus mapped_bits
-const usz OBJ_SIZE_FUNC  = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // FUNCTION, REGEXP, etc.
+const usz OBJ_SIZE_FUNC  = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // the classes with the largest payloads: TEMPORAL_*, ITERATOR_HELPER
 const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;               // GETTER_SETTER, which has no inline props
+
+// A function payload is 80 bytes and a proxy overlays its first 32, so both fit
+// a class of their own instead of the full union. HObjectProxy keeps
+// builtin_fn_index at the offset HObjectFunction uses for it, which is what lets
+// the two share an allocation size and a pool.
+const usz OBJ_SIZE_FUNCTION = HObjectBase::size + HObjectFunction::size + INLINE_EXTRA;
 
 // Classes whose payload fits HObjectPromise's share one pool, sized for the
 // largest of them. RegExp carries a pattern TVal, the compiled bytecode
@@ -1033,12 +1039,13 @@ fn usz alloc_size_for_class(ObjClass cls) @inline {
     switch (cls) {
         case ObjClass.OBJECT:
             return OBJ_SIZE_PLAIN;
-        // ERROR keeps captured_stack in the union, and a proxy overlays the
-        // function payload, so both need the full extra-data space that ARRAY
-        // and ARGUMENTS do not.
+        // ERROR keeps captured_stack in the union, which is the only class left
+        // that needs the full extra-data space.
         case ObjClass.ERROR:
-        case ObjClass.PROXY:
             return OBJ_SIZE_FUNC;
+        case ObjClass.FUNCTION:
+        case ObjClass.PROXY:
+            return OBJ_SIZE_FUNCTION;
         case ObjClass.ARRAY:
             return OBJ_SIZE_ARRAY;
         case ObjClass.ARGUMENTS:
@@ -1093,8 +1100,11 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
         case ObjClass.REGEXP:
         case ObjClass.PROMISE:
             return &h.obj_pool_small;
-        default:
+        case ObjClass.FUNCTION:
+        case ObjClass.PROXY:
             return &h.obj_pool_func;
+        default:
+            return &h.obj_pool_big;
     }
 }
 
