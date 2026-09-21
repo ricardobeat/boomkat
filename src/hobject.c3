@@ -775,6 +775,15 @@ struct HObjectProxy {
     int      builtin_fn_index;
 }
 
+// The lookup index MAP, SET, WEAKMAP, and WEAKSET keep over their dense part,
+// null until the collection is large enough to want one. These four keep their
+// entries in array_part, so this is the only payload they need; every other
+// class used to pay for the pointer. It is not the same thing as prop_hash,
+// which indexes named properties and can be live on a Map at the same time.
+struct HObjectCollHash {
+    CollHashInfo* info;
+}
+
 // A getter and setter pair, boxed in a GETTER_SETTER object. A prop_values[]
 // slot points here when PropFlags.is_accessor is set.
 struct HObjectGetterSetter {
@@ -846,6 +855,7 @@ union HObjectExtra {
     HObjectWrapForValidIterator  wrap_iter;
     HObjectIteratorHelper        iter_helper;
     HObjectGetterSetter          gs;
+    HObjectCollHash              coll;
     HObjectHost                  host;
     HObjectProxy                 proxy;
     HObjectArrayBuffer           ab;
@@ -983,10 +993,6 @@ struct HObjectBase {
     uint          array_used;
     void*         prop_alloc;
     PropHashInfo* prop_hash;
-    // Lookup index for MAP/SET/WEAKMAP/WEAKSET, null until the collection is
-    // large enough to want one. Never used by other classes -- prop_hash is
-    // the index over named properties, and a Map can have both.
-    CollHashInfo* coll_hash;
 }
 
 // The core ECMAScript object representation.
@@ -1034,6 +1040,7 @@ const usz OBJ_SIZE_HOST        = obj_size_for(HObjectHost);
 const usz OBJ_SIZE_WRAP_ITER   = obj_size_for(HObjectWrapForValidIterator);
 const usz OBJ_SIZE_ITER        = obj_size_for(HObjectIterator);    // ARRAY_ITERATOR, MAP_ITERATOR, SET_ITERATOR
 const usz OBJ_SIZE_STR_ITER    = obj_size_for(HObjectStringIterator);
+const usz OBJ_SIZE_COLL        = obj_size_for(HObjectCollHash);    // MAP, SET, WEAKMAP, WEAKSET
 const usz OBJ_SIZE_REGEXP      = obj_size_for(HObjectRegExp);
 const usz OBJ_SIZE_REGEXP_ITER = obj_size_for(HObjectRegExpStringIterator);
 const usz OBJ_SIZE_PROMISE     = obj_size_for(HObjectPromise);
@@ -1063,7 +1070,7 @@ $assert OBJ_SIZE_REGEXP <= OBJ_SIZE_SMALL && OBJ_SIZE_REGEXP_ITER <= OBJ_SIZE_SM
     && OBJ_SIZE_GENERATOR <= OBJ_SIZE_SMALL && OBJ_SIZE_ARRAYBUFFER <= OBJ_SIZE_SMALL
     && OBJ_SIZE_VIEW <= OBJ_SIZE_SMALL && OBJ_SIZE_HOST <= OBJ_SIZE_SMALL
     && OBJ_SIZE_WRAP_ITER <= OBJ_SIZE_SMALL && OBJ_SIZE_ITER <= OBJ_SIZE_SMALL
-    && OBJ_SIZE_STR_ITER <= OBJ_SIZE_SMALL
+    && OBJ_SIZE_STR_ITER <= OBJ_SIZE_SMALL && OBJ_SIZE_COLL <= OBJ_SIZE_SMALL
     : "the small pool block is smaller than one of the layouts it serves";
 $assert OBJ_SIZE_TEMPORAL <= OBJ_SIZE_BIG && OBJ_SIZE_ITER_HELPER <= OBJ_SIZE_BIG
     : "the big pool block is smaller than one of the layouts it serves";
@@ -1074,18 +1081,18 @@ $assert OBJ_SIZE_TEMPORAL <= OBJ_SIZE_BIG && OBJ_SIZE_ITER_HELPER <= OBJ_SIZE_BI
 fn usz alloc_size_for_class(ObjClass cls) @inline {
     switch (cls) {
         // Classes whose state lives entirely in the common header: a dense part
-        // in array_part or a lookup index in coll_hash. None of them reads the
-        // payload union.
+        // in array_part, or nothing at all beyond the named property table.
         case ObjClass.OBJECT:
         case ObjClass.JSON:
         case ObjClass.REFLECT:
+        case ObjClass.WEAKREF:
+        case ObjClass.FINALIZATION_REGISTRY:
+            return OBJ_SIZE_PLAIN;
         case ObjClass.MAP:
         case ObjClass.SET:
         case ObjClass.WEAKMAP:
         case ObjClass.WEAKSET:
-        case ObjClass.WEAKREF:
-        case ObjClass.FINALIZATION_REGISTRY:
-            return OBJ_SIZE_PLAIN;
+            return OBJ_SIZE_COLL;
         case ObjClass.ARRAY:
             return OBJ_SIZE_ARRAY;
         case ObjClass.ARGUMENTS:
@@ -1161,6 +1168,19 @@ fn ulong* HObject.mapped_bits_ptr(&self) @inline {
     return &self.extra.args.mapped_bits;
 }
 
+// extra.coll.info, the lookup index MAP, SET, WEAKMAP, and WEAKSET keep over
+// their dense part.
+fn CollHashInfo** HObject.coll_hash_ptr(&self) @inline {
+    return &self.extra.coll.info;
+}
+
+// True for the four classes that keep a lookup index in extra.coll. Reading it
+// on any other class would read whatever its payload holds instead.
+fn bool HObject.has_coll_hash(&self) @inline {
+    return self.flags.obj_class == ObjClass.MAP || self.flags.obj_class == ObjClass.SET
+        || self.flags.obj_class == ObjClass.WEAKMAP || self.flags.obj_class == ObjClass.WEAKSET;
+}
+
 // ============================================================================
 // Pool allocation helpers
 // ============================================================================
@@ -1174,13 +1194,13 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
         case ObjClass.OBJECT:
         case ObjClass.JSON:
         case ObjClass.REFLECT:
+        case ObjClass.WEAKREF:
+        case ObjClass.FINALIZATION_REGISTRY:
+            return &h.obj_pool_plain;
         case ObjClass.MAP:
         case ObjClass.SET:
         case ObjClass.WEAKMAP:
         case ObjClass.WEAKSET:
-        case ObjClass.WEAKREF:
-        case ObjClass.FINALIZATION_REGISTRY:
-            return &h.obj_pool_plain;
         case ObjClass.ARRAY:
         case ObjClass.ARGUMENTS:
             return &h.obj_pool_array;
@@ -2592,16 +2612,19 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     // The collection lookup index, for MAP/SET/WEAKMAP/WEAKSET. It holds
     // indices into array_part rather than references, so it needs freeing but
     // never GC tracing.
-    if (obj.coll_hash != null) {
-        if (hp != null) {
-            heap::Heap* h = hp;
-            if (obj.coll_hash.slots != null) { h.free_func(h.heap_udata, obj.coll_hash.slots); }
-            h.free_func(h.heap_udata, obj.coll_hash);
-        } else {
-            if (obj.coll_hash.slots != null) { mem::free(obj.coll_hash.slots); }
-            mem::free(obj.coll_hash);
+    if (obj.has_coll_hash()) {
+        CollHashInfo* coll = *obj.coll_hash_ptr();
+        if (coll != null) {
+            if (hp != null) {
+                heap::Heap* h = hp;
+                if (coll.slots != null) { h.free_func(h.heap_udata, coll.slots); }
+                h.free_func(h.heap_udata, coll);
+            } else {
+                if (coll.slots != null) { mem::free(coll.slots); }
+                mem::free(coll);
+            }
+            *obj.coll_hash_ptr() = null;
         }
-        obj.coll_hash = null;
     }
 
     // Free the block holding prop_values and array_part. The shape is shared

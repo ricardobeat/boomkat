@@ -1613,11 +1613,11 @@ fn uint coll_hash_key(TVal v, heap::Heap* h) {
 
 // Drop a collection's lookup index, so the next operation rebuilds it.
 fn void coll_hash_drop(HObject* obj, heap::Heap* h) {
-    hobject::CollHashInfo* ci = obj.coll_hash;
+    hobject::CollHashInfo* ci = *obj.coll_hash_ptr();
     if (ci == null) return;
     if (ci.slots != null) { h.free_func(h.heap_udata, ci.slots); }
     h.free_func(h.heap_udata, ci);
-    obj.coll_hash = null;
+    *obj.coll_hash_ptr() = null;
 }
 
 // Build (or rebuild) the index over array_part, sized to the current entry
@@ -1645,7 +1645,7 @@ fn void coll_hash_build(HObject* obj, uint stride, heap::Heap* h) {
     ci.mask = cap - 1;
     ci.used = 0;
     ci.built = obj.array_used;
-    obj.coll_hash = ci;
+    *obj.coll_hash_ptr() = ci;
 
     // A tombstoned entry keeps its array slot (live iterators depend on that)
     // but must not be indexed, or a lookup would resolve to a deleted value.
@@ -1692,7 +1692,7 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
         return find_in_array_part(obj, val, stride);
     }
 
-    hobject::CollHashInfo* ci = obj.coll_hash;
+    hobject::CollHashInfo* ci = *obj.coll_hash_ptr();
 
     // Entries appended since the last build are indexed incrementally rather
     // than by rebuilding: an append happens on every add/set, and rebuilding
@@ -1719,7 +1719,7 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
 
     if (ci == null || ci.built != obj.array_used || ci.used * 2 > ci.mask) {
         coll_hash_build(obj, stride, h);
-        ci = obj.coll_hash;
+        ci = *obj.coll_hash_ptr();
         if (ci == null) return find_in_array_part(obj, val, stride);
     }
 
