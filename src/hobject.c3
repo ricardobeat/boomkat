@@ -1014,9 +1014,17 @@ const usz OBJ_SIZE_ARGS  = HObjectBase::size + HObjectArguments::size + INLINE_E
 const usz OBJ_SIZE_FUNC  = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // FUNCTION, REGEXP, etc.
 const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;               // GETTER_SETTER, which has no inline props
 
+// Classes whose payload fits HObjectPromise's share one pool, sized for the
+// largest of them. RegExp carries a pattern TVal, the compiled bytecode
+// pointer, and the flag bits, which is smaller than the promise payload.
+const usz OBJ_SIZE_REGEXP  = HObjectBase::size + HObjectRegExp::size + INLINE_EXTRA;
+const usz OBJ_SIZE_PROMISE = HObjectBase::size + HObjectPromise::size + INLINE_EXTRA;
+const usz OBJ_SIZE_SMALL   = OBJ_SIZE_PROMISE;
+
 $assert ARRAY_EXTRA >= uint::size : "array_length does not fit in the ARRAY extra slot";
 $assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY's inline props would be misaligned";
 $assert OBJ_SIZE_ARGS % PropValue::alignment == 0 : "an ARGUMENTS' inline props would be misaligned";
+$assert OBJ_SIZE_REGEXP <= OBJ_SIZE_SMALL : "the small pool block is smaller than a REGEXP layout";
 
 // Allocation size for an object class. Every class but GETTER_SETTER carries
 // INLINE_PROPS slots at the tail, so an object with few named properties needs
@@ -1035,6 +1043,10 @@ fn usz alloc_size_for_class(ObjClass cls) @inline {
             return OBJ_SIZE_ARRAY;
         case ObjClass.ARGUMENTS:
             return OBJ_SIZE_ARGS;
+        case ObjClass.REGEXP:
+            return OBJ_SIZE_REGEXP;
+        case ObjClass.PROMISE:
+            return OBJ_SIZE_PROMISE;
         case ObjClass.GETTER_SETTER:
             return OBJ_SIZE_GS;
         default:
@@ -1078,6 +1090,9 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
             return &h.obj_pool_array;
         case ObjClass.GETTER_SETTER:
             return &h.obj_pool_gs;
+        case ObjClass.REGEXP:
+        case ObjClass.PROMISE:
+            return &h.obj_pool_small;
         default:
             return &h.obj_pool_func;
     }

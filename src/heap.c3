@@ -1040,16 +1040,18 @@ struct Heap {
     // builtin index at fn_idx * 3 + prop_bit: 0 name, 1 length, 2 prototype.
     ulong[LF_DELETED_WORDS] lf_deleted_props;
 
-    // Pooled HObject headers, avoiding a malloc per object. The four size
-    // classes match alloc_size_for_class():
+    // Pooled HObject headers, avoiding a malloc per object. The size classes
+    // match alloc_size_for_class():
     //   plain: OBJECT, which needs no HObjectExtra
     //   array: ARRAY (array_length in the union) and ARGUMENTS (nargs and
     //          mapped_bits), sized for the larger ARGUMENTS layout
     //   gs:    GETTER_SETTER accessor cells, which have no inline props
+    //   small: REGEXP and PROMISE, sized for the larger promise payload
     //   func:  everything else, including ERROR and PROXY
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
     mempool::FixedBlockPool obj_pool_gs;
+    mempool::FixedBlockPool obj_pool_small;
     mempool::FixedBlockPool obj_pool_func;
 
     // One FixedBlockPool per POOL_CLASS_SIZES entry, shared by property blocks
@@ -1339,6 +1341,7 @@ fn Heap*? create(
         h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
         h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, 512);
         h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
+        h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, 512);
         h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
             h.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
@@ -1872,6 +1875,7 @@ fn void Heap.destroy(&self) {
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
     self.obj_pool_gs.free();
+    self.obj_pool_small.free();
     self.obj_pool_func.free();
     for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
         self.small_pools[i].free();
@@ -2198,6 +2202,7 @@ fn void Heap.reset(&self) {
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
     self.obj_pool_gs.free();
+    self.obj_pool_small.free();
     self.obj_pool_func.free();
     for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
         self.small_pools[i].free();
@@ -2206,6 +2211,7 @@ fn void Heap.reset(&self) {
         self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
         self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, 512);
         self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
+        self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, 512);
         self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
             self.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
