@@ -1040,11 +1040,11 @@ struct Heap {
     // builtin index at fn_idx * 3 + prop_bit: 0 name, 1 length, 2 prototype.
     ulong[LF_DELETED_WORDS] lf_deleted_props;
 
-    // Pooled HObject headers, avoiding a malloc per object. The three size
+    // Pooled HObject headers, avoiding a malloc per object. The four size
     // classes match alloc_size_for_class():
     //   plain: OBJECT, which needs no HObjectExtra
-    //   array: ARRAY (array_length in the union) and ARGUMENTS (nargs in the
-    //          union)
+    //   array: ARRAY (array_length in the union) and ARGUMENTS (nargs and
+    //          mapped_bits), sized for the larger ARGUMENTS layout
     //   gs:    GETTER_SETTER accessor cells, which have no inline props
     //   func:  everything else, including ERROR and PROXY
     mempool::FixedBlockPool obj_pool_plain;
@@ -1337,7 +1337,7 @@ fn Heap*? create(
     // well-known strings below allocates through the size-class pools.
     {
         h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
+        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, 512);
         h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
         h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
@@ -2204,7 +2204,7 @@ fn void Heap.reset(&self) {
     }
     {
         self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, 512);
-        self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, 512);
+        self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, 512);
         self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
         self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {

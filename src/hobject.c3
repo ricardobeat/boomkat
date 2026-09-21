@@ -1001,11 +1001,22 @@ struct HObject {
 // ============================================================================
 
 // Pool size classes, derived from the struct sizes plus the inline prop space.
+//
+// A class pays only for the union members it actually uses, so ARRAY and
+// ARGUMENTS are much smaller than the FUNCTION-led classes, which must cover
+// HObjectExtra in full. The trailing inline props must stay 8-aligned, which
+// rounds each extra slot up to a multiple of PropValue::alignment.
 const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
+const usz ARRAY_EXTRA    = 8;                                                           // ARRAY: uint array_length plus padding to the prop alignment
 const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;                            // OBJECT, the only class with no trailing data
-const usz OBJ_SIZE_ARRAY = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // ARRAY (array_length in the union) and ARGUMENTS (nargs in the union)
+const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA + INLINE_EXTRA;              // ARRAY, which reads and writes only array_length
+const usz OBJ_SIZE_ARGS  = HObjectBase::size + HObjectArguments::size + INLINE_EXTRA;   // ARGUMENTS: nargs aliases array_length, plus mapped_bits
 const usz OBJ_SIZE_FUNC  = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // FUNCTION, REGEXP, etc.
 const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;               // GETTER_SETTER, which has no inline props
+
+$assert ARRAY_EXTRA >= uint::size : "array_length does not fit in the ARRAY extra slot";
+$assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY's inline props would be misaligned";
+$assert OBJ_SIZE_ARGS % PropValue::alignment == 0 : "an ARGUMENTS' inline props would be misaligned";
 
 // Allocation size for an object class. Every class but GETTER_SETTER carries
 // INLINE_PROPS slots at the tail, so an object with few named properties needs
@@ -1014,15 +1025,16 @@ fn usz alloc_size_for_class(ObjClass cls) @inline {
     switch (cls) {
         case ObjClass.OBJECT:
             return OBJ_SIZE_PLAIN;
-        // ERROR keeps captured_stack in the union and ARGUMENTS stashes its
-        // argument count in array_length, so both need the trailing extra-data
-        // space that plain OBJECT does not.
+        // ERROR keeps captured_stack in the union, and a proxy overlays the
+        // function payload, so both need the full extra-data space that ARRAY
+        // and ARGUMENTS do not.
         case ObjClass.ERROR:
         case ObjClass.PROXY:
-        case ObjClass.ARGUMENTS:
             return OBJ_SIZE_FUNC;
         case ObjClass.ARRAY:
             return OBJ_SIZE_ARRAY;
+        case ObjClass.ARGUMENTS:
+            return OBJ_SIZE_ARGS;
         case ObjClass.GETTER_SETTER:
             return OBJ_SIZE_GS;
         default:
@@ -1053,7 +1065,9 @@ fn ulong* HObject.mapped_bits_ptr(&self) @inline {
 // Pool allocation helpers
 // ============================================================================
 
-// The pool an object class allocates from.
+// The pool an object class allocates from. ARRAY and ARGUMENTS share the array
+// pool, whose block size is the larger of the two layouts (OBJ_SIZE_ARGS), so
+// the pool is initialized with that size rather than with OBJ_SIZE_ARRAY.
 fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
     heap::Heap* h = (heap::Heap*)heap_ptr;
     switch (cls) {
