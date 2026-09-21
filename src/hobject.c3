@@ -698,14 +698,19 @@ struct HObjectPromise {
 
 // Array/Map/Set iterator state.
 // Active when flags.obj_class is ARRAY_ITERATOR, MAP_ITERATOR, or SET_ITERATOR.
-//
-// STRING_ITERATOR shares this union slot: it keeps the iterated string in
-// extra.prim.primitive_value at bytes 0 to 7 for GC tracing, and its position
-// in extra.iter.index at bytes 8 to 11. Those byte ranges do not overlap.
 struct HObjectIterator {
     HObject*          target;   /// The iterated object (array, Map, or Set).
     uint              index;    /// Current iteration position.
     uint              kind;     /// 0=values, 1=keys, 2=entries.
+}
+
+// String iterator (ES2015 §22.1.5.1): the string being iterated and the current
+// code-unit position. A payload of its own rather than overlapping
+// extra.prim with extra.iter.index, whose bytes collide once a TVal is 16
+// bytes under NONANBOX.
+struct HObjectStringIterator {
+    TVal     string_val;   /// The string being iterated (for GC tracing).
+    uint     index;        /// Current position in code units.
 }
 
 // RegExpStringIterator: lazy iteration over regexp matches.
@@ -836,6 +841,7 @@ union HObjectExtra {
     HObjectGenerator             gen;
     HObjectPromise               promise;
     HObjectIterator              iter;
+    HObjectStringIterator        str_iter;
     HObjectRegExpStringIterator  regexp_iter;
     HObjectWrapForValidIterator  wrap_iter;
     HObjectIteratorHelper        iter_helper;
@@ -1006,58 +1012,133 @@ struct HObject {
 // ARGUMENTS are much smaller than the FUNCTION-led classes, which must cover
 // HObjectExtra in full. The trailing inline props must stay 8-aligned, which
 // rounds each extra slot up to a multiple of PropValue::alignment.
+// Logical allocation size for a class whose payload is `$Payload`: the common
+// header, the payload, and the inline property slots. A class reports its own
+// size even when it shares a pool with larger classes, because the fallback
+// allocation used when a pool is exhausted is sized from it.
+macro usz obj_size_for($Payload) => HObjectBase::size + $Payload::size + INLINE_EXTRA;
+
 const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
-const usz ARRAY_EXTRA    = 8;                                                           // ARRAY: uint array_length plus padding to the prop alignment
-const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;                            // OBJECT, the only class with no trailing data
-const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA + INLINE_EXTRA;              // ARRAY, which reads and writes only array_length
-const usz OBJ_SIZE_ARGS  = HObjectBase::size + HObjectArguments::size + INLINE_EXTRA;   // ARGUMENTS: nargs aliases array_length, plus mapped_bits
-const usz OBJ_SIZE_FUNC  = HObjectBase::size + HObjectExtra::size + INLINE_EXTRA;       // the classes with the largest payloads: TEMPORAL_*, ITERATOR_HELPER
-const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size;               // GETTER_SETTER, which has no inline props
+const usz ARRAY_EXTRA    = 8;                                            // ARRAY: uint array_length plus padding to the prop alignment
+const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;             // classes with no payload of their own
+const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA + INLINE_EXTRA;
+const usz OBJ_SIZE_ARGS  = obj_size_for(HObjectArguments);               // nargs aliases array_length, plus mapped_bits
+const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size; // GETTER_SETTER, which has no inline props
+
+const usz OBJ_SIZE_ERROR       = obj_size_for(HObjectError);       // captured_stack
+const usz OBJ_SIZE_PRIM        = obj_size_for(HObjectPrimitive);   // BOOLEAN, NUMBER, STRING, SYMBOL, DATE
+const usz OBJ_SIZE_GENERATOR   = obj_size_for(HObjectGenerator);
+const usz OBJ_SIZE_ARRAYBUFFER = obj_size_for(HObjectArrayBuffer);
+const usz OBJ_SIZE_VIEW        = obj_size_for(HObjectBufferView);  // DATAVIEW and the typed arrays
+const usz OBJ_SIZE_HOST        = obj_size_for(HObjectHost);
+const usz OBJ_SIZE_WRAP_ITER   = obj_size_for(HObjectWrapForValidIterator);
+const usz OBJ_SIZE_ITER        = obj_size_for(HObjectIterator);    // ARRAY_ITERATOR, MAP_ITERATOR, SET_ITERATOR
+const usz OBJ_SIZE_STR_ITER    = obj_size_for(HObjectStringIterator);
+const usz OBJ_SIZE_REGEXP      = obj_size_for(HObjectRegExp);
+const usz OBJ_SIZE_REGEXP_ITER = obj_size_for(HObjectRegExpStringIterator);
+const usz OBJ_SIZE_PROMISE     = obj_size_for(HObjectPromise);
 
 // A function payload is 80 bytes and a proxy overlays its first 32, so both fit
 // a class of their own instead of the full union. HObjectProxy keeps
 // builtin_fn_index at the offset HObjectFunction uses for it, which is what lets
 // the two share an allocation size and a pool.
-const usz OBJ_SIZE_FUNCTION = HObjectBase::size + HObjectFunction::size + INLINE_EXTRA;
+const usz OBJ_SIZE_FUNCTION = obj_size_for(HObjectFunction);
 
-// Classes whose payload fits HObjectPromise's share one pool, sized for the
-// largest of them. RegExp carries a pattern TVal, the compiled bytecode
-// pointer, and the flag bits, which is smaller than the promise payload.
-const usz OBJ_SIZE_REGEXP  = HObjectBase::size + HObjectRegExp::size + INLINE_EXTRA;
-const usz OBJ_SIZE_PROMISE = HObjectBase::size + HObjectPromise::size + INLINE_EXTRA;
-const usz OBJ_SIZE_SMALL   = OBJ_SIZE_PROMISE;
+// Two pools take everything else. The small one serves every class whose
+// payload fits the promise payload; the big one serves the two payloads that do
+// not, and which of those leads depends on the value representation.
+const usz OBJ_SIZE_ITER_HELPER = obj_size_for(HObjectIteratorHelper);
+const usz OBJ_SIZE_TEMPORAL    = obj_size_for(HObjectTemporal);
+const usz OBJ_SIZE_SMALL = OBJ_SIZE_PROMISE;
+const usz OBJ_SIZE_BIG   = OBJ_SIZE_TEMPORAL > OBJ_SIZE_ITER_HELPER
+    ? OBJ_SIZE_TEMPORAL : OBJ_SIZE_ITER_HELPER;
 
 $assert ARRAY_EXTRA >= uint::size : "array_length does not fit in the ARRAY extra slot";
 $assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY's inline props would be misaligned";
 $assert OBJ_SIZE_ARGS % PropValue::alignment == 0 : "an ARGUMENTS' inline props would be misaligned";
-$assert OBJ_SIZE_REGEXP <= OBJ_SIZE_SMALL : "the small pool block is smaller than a REGEXP layout";
+// Every class routed to the small pool must fit its block. The promise payload
+// is the largest of them in both representations.
+$assert OBJ_SIZE_REGEXP <= OBJ_SIZE_SMALL && OBJ_SIZE_REGEXP_ITER <= OBJ_SIZE_SMALL
+    && OBJ_SIZE_ERROR <= OBJ_SIZE_SMALL && OBJ_SIZE_PRIM <= OBJ_SIZE_SMALL
+    && OBJ_SIZE_GENERATOR <= OBJ_SIZE_SMALL && OBJ_SIZE_ARRAYBUFFER <= OBJ_SIZE_SMALL
+    && OBJ_SIZE_VIEW <= OBJ_SIZE_SMALL && OBJ_SIZE_HOST <= OBJ_SIZE_SMALL
+    && OBJ_SIZE_WRAP_ITER <= OBJ_SIZE_SMALL && OBJ_SIZE_ITER <= OBJ_SIZE_SMALL
+    && OBJ_SIZE_STR_ITER <= OBJ_SIZE_SMALL
+    : "the small pool block is smaller than one of the layouts it serves";
+$assert OBJ_SIZE_TEMPORAL <= OBJ_SIZE_BIG && OBJ_SIZE_ITER_HELPER <= OBJ_SIZE_BIG
+    : "the big pool block is smaller than one of the layouts it serves";
 
 // Allocation size for an object class. Every class but GETTER_SETTER carries
 // INLINE_PROPS slots at the tail, so an object with few named properties needs
 // no separate prop_alloc.
 fn usz alloc_size_for_class(ObjClass cls) @inline {
     switch (cls) {
+        // Classes whose state lives entirely in the common header: a dense part
+        // in array_part or a lookup index in coll_hash. None of them reads the
+        // payload union.
         case ObjClass.OBJECT:
+        case ObjClass.JSON:
+        case ObjClass.REFLECT:
+        case ObjClass.MAP:
+        case ObjClass.SET:
+        case ObjClass.WEAKMAP:
+        case ObjClass.WEAKSET:
+        case ObjClass.WEAKREF:
+        case ObjClass.FINALIZATION_REGISTRY:
             return OBJ_SIZE_PLAIN;
-        // ERROR keeps captured_stack in the union, which is the only class left
-        // that needs the full extra-data space.
-        case ObjClass.ERROR:
-            return OBJ_SIZE_FUNC;
-        case ObjClass.FUNCTION:
-        case ObjClass.PROXY:
-            return OBJ_SIZE_FUNCTION;
         case ObjClass.ARRAY:
             return OBJ_SIZE_ARRAY;
         case ObjClass.ARGUMENTS:
             return OBJ_SIZE_ARGS;
-        case ObjClass.REGEXP:
-            return OBJ_SIZE_REGEXP;
-        case ObjClass.PROMISE:
-            return OBJ_SIZE_PROMISE;
         case ObjClass.GETTER_SETTER:
             return OBJ_SIZE_GS;
+        case ObjClass.FUNCTION:
+        case ObjClass.PROXY:
+            return OBJ_SIZE_FUNCTION;
+        case ObjClass.ERROR:
+            return OBJ_SIZE_ERROR;
+        case ObjClass.BOOLEAN:
+        case ObjClass.NUMBER:
+        case ObjClass.STRING:
+        case ObjClass.SYMBOL:
+        case ObjClass.DATE:
+            return OBJ_SIZE_PRIM;
+        case ObjClass.STRING_ITERATOR:
+            return OBJ_SIZE_STR_ITER;
+        case ObjClass.GENERATOR:
+            return OBJ_SIZE_GENERATOR;
+        case ObjClass.ARRAYBUFFER:
+            return OBJ_SIZE_ARRAYBUFFER;
+        case ObjClass.DATAVIEW:
+        case ObjClass.INT8ARRAY:
+        case ObjClass.UINT8ARRAY:
+        case ObjClass.UINT8CLAMPEDARRAY:
+        case ObjClass.INT16ARRAY:
+        case ObjClass.UINT16ARRAY:
+        case ObjClass.INT32ARRAY:
+        case ObjClass.UINT32ARRAY:
+        case ObjClass.FLOAT16ARRAY:
+        case ObjClass.FLOAT32ARRAY:
+        case ObjClass.FLOAT64ARRAY:
+        case ObjClass.BIGINT64ARRAY:
+        case ObjClass.BIGUINT64ARRAY:
+            return OBJ_SIZE_VIEW;
+        case ObjClass.HOST:
+            return OBJ_SIZE_HOST;
+        case ObjClass.WRAP_FOR_VALID_ITERATOR:
+            return OBJ_SIZE_WRAP_ITER;
+        case ObjClass.ARRAY_ITERATOR:
+        case ObjClass.MAP_ITERATOR:
+        case ObjClass.SET_ITERATOR:
+            return OBJ_SIZE_ITER;
+        case ObjClass.REGEXP:
+            return OBJ_SIZE_REGEXP;
+        case ObjClass.REGEXP_STRING_ITERATOR:
+            return OBJ_SIZE_REGEXP_ITER;
+        case ObjClass.PROMISE:
+            return OBJ_SIZE_PROMISE;
         default:
-            return OBJ_SIZE_FUNC;
+            return OBJ_SIZE_BIG;
     }
 }
 
@@ -1084,25 +1165,61 @@ fn ulong* HObject.mapped_bits_ptr(&self) @inline {
 // Pool allocation helpers
 // ============================================================================
 
-// The pool an object class allocates from. ARRAY and ARGUMENTS share the array
-// pool, whose block size is the larger of the two layouts (OBJ_SIZE_ARGS), so
-// the pool is initialized with that size rather than with OBJ_SIZE_ARRAY.
+// The pool an object class allocates from. Each pool's block is the largest
+// layout it serves, which is why ARRAY shares the array pool at the ARGUMENTS
+// block size and every small class shares the promise block size.
 fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
     heap::Heap* h = (heap::Heap*)heap_ptr;
     switch (cls) {
         case ObjClass.OBJECT:
+        case ObjClass.JSON:
+        case ObjClass.REFLECT:
+        case ObjClass.MAP:
+        case ObjClass.SET:
+        case ObjClass.WEAKMAP:
+        case ObjClass.WEAKSET:
+        case ObjClass.WEAKREF:
+        case ObjClass.FINALIZATION_REGISTRY:
             return &h.obj_pool_plain;
         case ObjClass.ARRAY:
         case ObjClass.ARGUMENTS:
             return &h.obj_pool_array;
         case ObjClass.GETTER_SETTER:
             return &h.obj_pool_gs;
-        case ObjClass.REGEXP:
-        case ObjClass.PROMISE:
-            return &h.obj_pool_small;
         case ObjClass.FUNCTION:
         case ObjClass.PROXY:
             return &h.obj_pool_func;
+        case ObjClass.ERROR:
+        case ObjClass.BOOLEAN:
+        case ObjClass.NUMBER:
+        case ObjClass.STRING:
+        case ObjClass.SYMBOL:
+        case ObjClass.DATE:
+        case ObjClass.STRING_ITERATOR:
+        case ObjClass.GENERATOR:
+        case ObjClass.ARRAYBUFFER:
+        case ObjClass.DATAVIEW:
+        case ObjClass.INT8ARRAY:
+        case ObjClass.UINT8ARRAY:
+        case ObjClass.UINT8CLAMPEDARRAY:
+        case ObjClass.INT16ARRAY:
+        case ObjClass.UINT16ARRAY:
+        case ObjClass.INT32ARRAY:
+        case ObjClass.UINT32ARRAY:
+        case ObjClass.FLOAT16ARRAY:
+        case ObjClass.FLOAT32ARRAY:
+        case ObjClass.FLOAT64ARRAY:
+        case ObjClass.BIGINT64ARRAY:
+        case ObjClass.BIGUINT64ARRAY:
+        case ObjClass.HOST:
+        case ObjClass.WRAP_FOR_VALID_ITERATOR:
+        case ObjClass.ARRAY_ITERATOR:
+        case ObjClass.MAP_ITERATOR:
+        case ObjClass.SET_ITERATOR:
+        case ObjClass.REGEXP:
+        case ObjClass.REGEXP_STRING_ITERATOR:
+        case ObjClass.PROMISE:
+            return &h.obj_pool_small;
         default:
             return &h.obj_pool_big;
     }

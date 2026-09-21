@@ -108,11 +108,10 @@ fn void builtin_string_proto_symbol_iter(BuiltinContext* ctx) {
     HObject*? iter_raw = heap.alloc_object(hobject::ObjClass.STRING_ITERATOR);
     if (catch err = iter_raw) { ctx.result.set_undefined(); return; }
     HObject* iter = iter_raw;
-    // Store the string as primitive_value (for GC tracing via mark_tval).
-    // extra.prim.primitive_value occupies bytes 0-7; extra.iter.index
-    // occupies bytes 8-11, non-overlapping, so both can be used together.
-    (*iter.extra_ptr()).prim.primitive_value.set_string(str_data);
-    (*iter.extra_ptr()).iter.index = 0;
+    // The string is held for GC tracing (mark_tval on the payload) and the
+    // position tracks the current code unit.
+    (*iter.extra_ptr()).str_iter.string_val.set_string(str_data);
+    (*iter.extra_ptr()).str_iter.index = 0;
     // StringIterator instances share %StringIteratorPrototype%'s .next and
     // @@toStringTag, mirrors %ArrayIteratorPrototype%'s shared .next.
     iter.prototype = heap.string_iterator_proto;
@@ -234,10 +233,10 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
             return true;
         }
         case hobject::ObjClass.STRING_ITERATOR: {
-            HString* str = (HString*)(*iter.extra_ptr()).prim.primitive_value.get_heapptr();
+            HString* str = (HString*)(*iter.extra_ptr()).str_iter.string_val.get_heapptr();
             if (str == null) return false;
 
-            uint idx = (*iter.extra_ptr()).iter.index;
+            uint idx = (*iter.extra_ptr()).str_iter.index;
             char[] data = str.get_data();
             if (idx >= data.len) {
                 *done = true;
@@ -258,7 +257,7 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
             HString* cp_str = heap.str_intern(data[idx : seq_len]);
             if (cp_str == null) return false;
             value.set_string(cp_str);
-            (*iter.extra_ptr()).iter.index = idx + seq_len;
+            (*iter.extra_ptr()).str_iter.index = idx + seq_len;
             return true;
         }
         default: return false;

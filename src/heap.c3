@@ -1042,13 +1042,15 @@ struct Heap {
 
     // Pooled HObject headers, avoiding a malloc per object. The size classes
     // match alloc_size_for_class():
-    //   plain: OBJECT, which needs no HObjectExtra
-    //   array: ARRAY (array_length in the union) and ARGUMENTS (nargs and
-    //          mapped_bits), sized for the larger ARGUMENTS layout
+    //   plain: classes with no payload of their own, so no HObjectExtra
+    //   array: ARRAY (array_length) and ARGUMENTS (nargs and mapped_bits),
+    //          sized for the larger ARGUMENTS layout
     //   gs:    GETTER_SETTER accessor cells, which have no inline props
-    //   small: REGEXP and PROMISE, sized for the larger promise payload
+    //   small: every class whose payload fits the promise payload, from the
+    //          boxed primitives up through ARRAYBUFFER and PROMISE
     //   func:  FUNCTION and PROXY, sized for the function payload
-    //   big:   everything else, including ERROR and the Temporal classes
+    //   big:   the two payloads that exceed the small block: ITERATOR_HELPER
+    //          and the Temporal classes
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
     mempool::FixedBlockPool obj_pool_gs;
@@ -1345,7 +1347,7 @@ fn Heap*? create(
         h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
         h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, 512);
         h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, 512);
-        h.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
+        h.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, 512);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
             h.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
         }
@@ -2218,7 +2220,7 @@ fn void Heap.reset(&self) {
         self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, 512);
         self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, 512);
         self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, 512);
-        self.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNC, 512);
+        self.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, 512);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
             self.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
         }
@@ -3376,13 +3378,13 @@ fn void Heap.drain_gray(&self) {
             case ObjClass.MAP_ITERATOR:
             case ObjClass.SET_ITERATOR:
                 // extra.iter.target holds the iterated object for these three
-                // classes. STRING_ITERATOR uses extra.prim instead.
+                // classes.
                 if ((*obj.extra_ptr()).iter.target != null) {
                     self.mark_hobject((*obj.extra_ptr()).iter.target);
                 }
                 break;
             case ObjClass.STRING_ITERATOR:
-                self.mark_tval(&(*obj.extra_ptr()).prim.primitive_value);
+                self.mark_tval(&(*obj.extra_ptr()).str_iter.string_val);
                 break;
             case ObjClass.REGEXP_STRING_ITERATOR:
                 self.mark_tval(&(*obj.extra_ptr()).regexp_iter.string_val);
