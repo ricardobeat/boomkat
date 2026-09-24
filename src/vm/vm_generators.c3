@@ -501,11 +501,23 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     gs_lr.resume_kind = NEXT;
 
                     // Walk up the catcher chain to the nearest one with a
-                    // finally. The innermost catcher may be a plain
-                    // catch-only try (no finally_pc), in which case the
-                    // return must still route through an enclosing finally.
-                    Catcher* ret_cat3 = find_and_unlink_finally_catcher(vm, ds.act);
-                    if (ret_cat3 != null && ret_cat3.finally_pc != null) {
+                    // finally, running the IteratorClose of every for-of guard
+                    // passed on the way: a yield inside a loop body leaves that
+                    // loop's guard catcher linked, and the injected return must
+                    // close the iterator exactly as the ITER_CLOSE emitted
+                    // before RET_GEN does for a direct `return`. A plain
+                    // catch-only try has no finally_pc, in which case the
+                    // return still routes through an enclosing finally.
+                    Catcher* ret_cat3 = null;
+                    InjectedReturnWalk irw = gen_close_guards_to_finally(vm, ds, &ret_cat3);
+                    if (irw == InjectedReturnWalk.IRW_ABORTED
+                        || irw == InjectedReturnWalk.IRW_ERROR) {
+                        // IteratorClose threw: the throw replaces the return
+                        // completion (IRW_ABORTED already dispatched it).
+                        if (irw == InjectedReturnWalk.IRW_ERROR) return VM_ERROR~;
+                        return (TVal){};
+                    }
+                    if (irw == InjectedReturnWalk.IRW_FINALLY) {
                         ret_cat3.return_val = ret_val_raw;
                         // If the suspended yield point is already inside this
                         // catcher's finally body (e.g. `try {} finally { yield;

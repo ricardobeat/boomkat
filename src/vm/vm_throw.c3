@@ -51,13 +51,19 @@ fn void vm_complete_gen_on_unwind(Vm* vm, Activation* act) {
 // Codegen is the only thing that emits this pair, so the signature is exact:
 // a catch-only catcher whose handler is CATCH followed by ITER_CLOSE of
 // `iter_reg`, the very register this unwind is about to close.
-fn bool vm_catcher_is_iter_guard(Catcher* cat, uint iter_reg) {
+fn bool vm_catcher_is_iter_guard_reg(Catcher* cat, uint* iter_reg) {
     if (cat.finally_pc != null || cat.catch_pc == null) return false;
     Instruction* p = cat.catch_pc;
     if (p.op != Opcode.CATCH) return false;
     Instruction* q = p + 1;
     if (q.op != Opcode.ITER_CLOSE) return false;
-    return q.a == iter_reg;
+    *iter_reg = q.a;
+    return true;
+}
+
+fn bool vm_catcher_is_iter_guard(Catcher* cat, uint iter_reg) {
+    uint reg = 0;
+    return vm_catcher_is_iter_guard_reg(cat, &reg) && reg == iter_reg;
 }
 
 fn void vm_disarm_escaped_catchers(Vm* vm, Activation* act, uint count, uint iter_reg) {
@@ -82,6 +88,48 @@ fn void vm_disarm_escaped_catchers(Vm* vm, Activation* act, uint count, uint ite
         }
         slot = (Catcher**)&(cat.parent);
     }
+}
+
+// How an injected generator return resolved against the catcher chain.
+enum InjectedReturnWalk : char {
+    IRW_FINALLY,   // A finally catcher was found; route the return through it.
+    IRW_COMPLETE,  // No finally: complete the generator with the return value.
+    IRW_ABORTED,   // IteratorClose threw; the throw was caught and dispatched.
+    IRW_ERROR,     // IteratorClose threw and was uncaught (VM_ERROR~).
+}
+
+// A for-of loop whose body yields keeps its IteratorClose guard catcher
+// linked while the generator is suspended. An injected `return` at that yield
+// must close the loop's iterator, exactly as the ITER_CLOSE emitted before
+// RET_GEN does for a direct `return`. Walk out from `ds.act.cat`, closing and
+// unlinking every for-of guard and freeing every other catch-only catcher,
+// and report the nearest finally catcher. `*out_cat` is set only for
+// IRW_FINALLY.
+fn InjectedReturnWalk gen_close_guards_to_finally(Vm* vm, Dispatch* ds, Catcher** out_cat) {
+    Catcher** slot = (Catcher**)&ds.act.cat;
+    while (*slot != null) {
+        Catcher* cat = *slot;
+        if (cat.finally_pc != null) {
+            *out_cat = cat;
+            return InjectedReturnWalk.IRW_FINALLY;
+        }
+        uint iter_reg = 0;
+        bool is_guard = vm_catcher_is_iter_guard_reg(cat, &iter_reg);
+        Catcher* parent = (Catcher*)cat.parent;
+        *slot = parent;
+        vm.heap.decref_tval(&cat.thrown_val);
+        vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
+        if (is_guard) {
+            // The guard is already unlinked, so a throw from `.return()`
+            // belongs to the return completion and not to the guard's own
+            // catch clause; is_throw_completion=false is what makes it escape.
+            bool threw = false;
+            TVal? r = iterator_close_impl(vm, ds, ds.regs_base[iter_reg], 0, &threw);
+            if (catch _e = r) return InjectedReturnWalk.IRW_ERROR;
+            if (threw) return InjectedReturnWalk.IRW_ABORTED;
+        }
+    }
+    return InjectedReturnWalk.IRW_COMPLETE;
 }
 
 // Walk the catcher chain and throw a value.
