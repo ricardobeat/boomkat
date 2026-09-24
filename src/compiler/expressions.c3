@@ -6476,6 +6476,13 @@ fn ushort? CompilerContext.object_literal(&self) {
     self.super_name_idx = saved_super_name_idx;
     self.home_object_name_idx = saved_home_object_name_idx;
     self.static_super_name_idx = saved_static_super_name_idx;
+    // An object literal is a value, never a Reference. A property value such as
+    // the `b` of `{b: b}` leaves the reference markers set, and a parenthesized
+    // literal would then look like a bare identifier target: `({a: ({b: b})}) =`
+    // must be an early SyntaxError, not an assignment to `b`. Mirrors the
+    // marker clearing array_literal already does for `([a]) = ...
+    self.clear_ref_markers();
+    self.last_was_optional_chain = false;
     return obj_reg;
 }
 

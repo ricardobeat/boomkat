@@ -497,6 +497,15 @@ fn AssignTarget? CompilerContext.parse_assign_target_lhs(&self) {
 
     self.lhs_mode = saved_lhs;
 
+    // An AssignmentExpression (or UpdateExpression) has AssignmentTargetType
+    // ~invalid~ (§13.15.1), so a parenthesized assignment such as `(b = 7)` is
+    // not a destructuring target even though its reference markers survive.
+    // The verdict is stamped by assignment_expr after the inner parse.
+    if (self.last_target_invalid) {
+        self.free_reg(lhs_result);
+        return self.fail("invalid assignment target in destructuring pattern")~;
+    }
+
     if (self.last_was_member()) {
         // NOP the trailing GETPROP so we do not invoke a getter.
         if (self.code_count > 0) {
@@ -521,6 +530,17 @@ fn AssignTarget? CompilerContext.parse_assign_target_lhs(&self) {
         out.name_idx = self.last_getvar_name_idx;
         self.free_reg(lhs_result);
         self.last_was_getvar = false;
+        return out;
+    }
+
+    if (self.last_was_local_var && self.last_lhs_name_len > 0) {
+        // Register-resident local reached through a complex path, the common
+        // case being a parenthesized target (`[(a), b] = ...`). primary_expr
+        // captured the name, so resolve the target by name exactly as the
+        // identifier fast path above does.
+        out.name_idx = self.add_string_constant(self.last_lhs_name_buf[:self.last_lhs_name_len]);
+        self.free_reg(lhs_result);
+        self.last_was_local_var = false;
         return out;
     }
 
