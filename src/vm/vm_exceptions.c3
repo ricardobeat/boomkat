@@ -46,6 +46,12 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             cat.parent = (Catcher*)ds.act.cat;
             cat.flags = flags;
             cat.thrown_val.set_undefined();
+            // Every catcher field a reader can reach before its writer runs
+            // starts out valid: the GC marks return_val and ENDFINALLY reads it
+            // on every completion, and alloc_func hands back recycled memory
+            // that can still hold the previous owner's TVal or jump target.
+            cat.return_val.set_undefined();
+            cat.pending_pc = null;
             cat.catch_pc = catch_pc;
             cat.finally_pc = finally_pc;
             cat.endfinally_pc = null;
