@@ -180,8 +180,11 @@ fn bool vm_global_bareword_store(Vm* vm, void* key, TVal val) {
 fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* probe, TVal* ra) {
     HObject* cur = start;
     uint depth = 0;
+    // ES6 §7.3.19 step 7: each iteration starts with O = O.[[GetPrototypeOf]](),
+    // so the left operand itself is never compared against P. Comparing it
+    // first answers true for `C.prototype instanceof C` on any ordinary
+    // function, which is false: the walk must begin at the prototype.
     while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
-        if (cur == probe) { ra.set_boolean(true); return true; }
         if (cur.flags.exotic_proxyobj) {
             TVal next;
             if (!builtins::proxy_mop_get_proto(vm, vm.heap, cur, &next)) {
@@ -200,6 +203,7 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
             cur = cur.prototype;
         }
         depth++;
+        if (cur == probe) { ra.set_boolean(true); return true; }
     }
     return true;
 }

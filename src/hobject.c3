@@ -3243,9 +3243,10 @@ fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) 
     return result;
 }
 
-// Returns true if `probe` appears anywhere in the prototype chain of `self`.
+// Returns true if `probe` appears in the prototype chain of `self`, starting
+// at `self`'s prototype, so `self` itself never matches (ES6 §7.3.19 step 7).
 fn bool HObject.is_prototype_of(&self, HObject* probe) {
-    HObject* cur = self;
+    HObject* cur = self.prototype;
     uint depth = 0;
     while (cur != null && depth < MAX_PROTO_DEPTH) {
         if (cur == probe) return true;

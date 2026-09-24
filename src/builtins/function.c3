@@ -1261,13 +1261,14 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     }
 
     // Step 6: walk V's prototype chain looking for P, routing hops through
-    // the [[GetPrototypeOf]] trap when a Proxy appears on the chain.
+    // the [[GetPrototypeOf]] trap when a Proxy appears on the chain. ES6
+    // §7.3.19 step 7 begins each iteration at V.[[GetPrototypeOf]](), so V
+    // itself never matches: `C.prototype instanceof C` is false.
     HObject* p_obj = (HObject*)proto_val.get_heapptr();
     HObject* v_obj = (HObject*)v_val.get_heapptr();
     uint wdepth = 0;
     bool matched = false;
     while (v_obj != null && wdepth < 256) {
-        if (v_obj == p_obj) { matched = true; break; }
         if (v_obj.flags.exotic_proxyobj) {
             TVal next;
             if (!proxy_mop_get_proto(ctx.vm, ctx.heap, v_obj, &next)) { proxy_ctx_ok(ctx); return; }
@@ -1276,6 +1277,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
             v_obj = v_obj.prototype;
         }
         wdepth++;
+        if (v_obj == p_obj) { matched = true; break; }
     }
     ctx.result.set_boolean(matched);
 }
