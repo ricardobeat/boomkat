@@ -2156,17 +2156,13 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
                 }
             }
         }
-        ulong new_len = len - actual_delete_count + item_count;
-        for (ulong k = new_len; k < len; k++) {
+        ulong trunc_len = len - actual_delete_count + item_count;
+        for (ulong k = trunc_len; k < len; k++) {
             if (ctx.should_throw) { ctx.result.set_undefined(); return; }
             if (!array_delete_elem_ulong_checked(ctx, obj, k)) {
                 ctx.result.set_undefined();
                 return;
             }
-        }
-        HString* splice_len_key1 = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
-        if (!arr_set_length_or_throw(ctx, obj, splice_len_key1, new_len)) {
-            ctx.result.set_undefined(); return;
         }
     } else if (item_count > actual_delete_count) {
         ulong shift_len = len - actual_start - actual_delete_count;
@@ -2194,36 +2190,30 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
                 }
             }
         }
-        HString* splice_len_key2 = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
-        ulong new_len2 = len - actual_delete_count + (ulong)item_count;
-        if (!arr_set_length_or_throw(ctx, obj, splice_len_key2, new_len2)) {
-            ctx.result.set_undefined(); return;
-        }
-    } else {
-        // item_count == actual_delete_count: no shift needed, but must still
-        // write length back (spec step 24: Set(O, "length", len-adc+ic, true))
-        // so out-of-range lengths get clamped and accessor setters are invoked.
-        ulong new_len3 = len - actual_delete_count + (ulong)item_count;
-        HString* splice_len_key3 = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
-        if (!arr_set_length_or_throw(ctx, obj, splice_len_key3, new_len3)) {
-            ctx.result.set_undefined(); return;
-        }
     }
 
-    // Insert new items
+    // Insert the new items before the length write: spec step 16 precedes
+    // step 17, and a non-writable "length" makes step 17 throw, so the items
+    // must be in place first (staging/sm/Array/splice-species-changes-length).
     for (ushort i = 0; i < item_count; i++) {
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
         TVal item = ctx.regs[ctx.base_reg + 2 + i];
-        // ES2022 §23.1.3.28 step 17: Set(O, ToString(F), items[k], true).
-        // Set walks the prototype chain for a setter; an inherited setter on
-        // Array.prototype must be invoked (test262 staging/sm/Array/
-        // set-with-indexed-property-on-prototype-chain). The "_checked"
-        // variant bypasses that walk and goes straight to the dense part, so
-        // we use the prototype-walking "_set" variant here.
+        // In step 16 Set(O, ToString(F), items[k], true) has to walk the
+        // prototype chain for an inherited setter (test262 staging/sm/Array/
+        // set-with-indexed-property-on-prototype-chain); the "_checked"
+        // variant would bypass that walk and go straight to the dense part.
         if (!array_set_elem_ulong_set(ctx, obj, actual_start + i, item)) {
             ctx.result.set_undefined();
             return;
         }
+    }
+
+    // Spec step 17: Set(O, "length", len - actualDeleteCount + itemCount, true).
+    // A non-writable "length" throws here, after the shift and the inserts.
+    ulong splice_new_len = len - actual_delete_count + (ulong)item_count;
+    HString* splice_len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
+    if (!arr_set_length_or_throw(ctx, obj, splice_len_key, splice_new_len)) {
+        ctx.result.set_undefined(); return;
     }
 
     ctx.result.set_object(result);
