@@ -1393,6 +1393,17 @@ fn void date_get_field(BuiltinContext* ctx, int field, bool utc) {
 // Date.prototype.getFullYear(), ES5 §15.9.5.10
 fn void builtin_date_proto_getFullYear(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_YEAR, false);
 
+// Date.prototype.getYear(), Annex B §B.2.3.1: the local year minus 1900.
+fn void builtin_date_proto_getYear(BuiltinContext* ctx) {
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+    double tv = date_this_time_value(ctx, &this_val);
+    if (ctx.should_throw) return;
+    if (math::is_nan(tv)) { ctx.result.set_number(double::nan); return; }
+    long y, m, d, wday, h, mi, s;
+    date_break_time(tv, &y, &m, &d, &wday, &h, &mi, &s);
+    ctx.result.set_fastint(y - 1900);
+}
+
 // Date.prototype.getMonth(), ES5 §15.9.5.12
 fn void builtin_date_proto_getMonth(BuiltinContext* ctx) => date_get_field(ctx, DATE_FIELD_MONTH, false);
 
@@ -1705,6 +1716,34 @@ fn void builtin_date_proto_setFullYear(BuiltinContext* ctx) {
     date_store(ctx, obj, new_ms);
 }
 
+// Date.prototype.setYear(year), Annex B §B.2.3.2. Two legacy rules separate it
+// from setFullYear: a NaN clock becomes +0 rather than propagating, and
+// MakeFullYear shifts a year in 0..99 into the 1900s. The argument is coerced
+// even when the clock is NaN, so a valueOf side effect still runs.
+fn void builtin_date_proto_setYear(BuiltinContext* ctx) {
+    TVal this_val = ctx.regs[ctx.base_reg - 1];
+    double tv = date_this_time_value(ctx, &this_val);
+    if (ctx.should_throw) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    double year_arg = double::nan;
+    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &year_arg)) return;
+    // Step 4: with a NaN clock the fields come from +0, i.e. 1970-01-01
+    // 00:00:00 UTC; otherwise from the local wall clock of the clock value.
+    long y, m, d, wday, h, mi, s;
+    if (math::is_nan(tv)) { y = 1970; m = 0; d = 1; h = 0; mi = 0; s = 0; }
+    else { date_break_time(tv, &y, &m, &d, &wday, &h, &mi, &s); }
+    // Step 5: MakeFullYear maps 0..99 to 1900..1999.
+    double full_year = year_arg;
+    if (!math::is_nan(full_year)) {
+        double truncated = math::trunc(full_year);
+        if (truncated >= 0 && truncated <= 99) full_year = 1900 + truncated;
+    }
+    if (math::is_nan(full_year)) { date_store_nan(ctx, obj); return; }
+    double new_ms = date_local_to_ms((long)full_year, m, d, h, mi, s,
+                                     math::is_nan(tv) ? 0 : date_floor_mod_field(tv, 1, 1000));
+    date_store(ctx, obj, new_ms);
+}
+
 // Date.prototype.setUTCMilliseconds(ms), ES5 §15.9.5.49
 fn void builtin_date_proto_setUTCMilliseconds(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -1997,6 +2036,9 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // Add Date.prototype.getFullYear()
     if (!register_string_proto_method(proto, heap, "getFullYear", Builtin.DATE_PROTO_GETFULLYEAR.ordinal)) return false;
 
+    // Add Date.prototype.getYear(), Annex B §B.2.3.1
+    if (!register_string_proto_method(proto, heap, "getYear", Builtin.DATE_PROTO_GETYEAR.ordinal)) return false;
+
     // Add Date.prototype.getMonth()
     if (!register_string_proto_method(proto, heap, "getMonth", Builtin.DATE_PROTO_GETMONTH.ordinal)) return false;
 
@@ -2068,6 +2110,9 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
 
     // Add Date.prototype.setFullYear()
     if (!register_string_proto_method(proto, heap, "setFullYear", Builtin.DATE_PROTO_SETFULLYEAR.ordinal)) return false;
+
+    // Add Date.prototype.setYear(), Annex B §B.2.3.2
+    if (!register_string_proto_method(proto, heap, "setYear", Builtin.DATE_PROTO_SETYEAR.ordinal)) return false;
 
     // Add Date.prototype.setUTCMilliseconds()
     if (!register_string_proto_method(proto, heap, "setUTCMilliseconds", Builtin.DATE_PROTO_SETUTCMILLISECONDS.ordinal)) return false;
