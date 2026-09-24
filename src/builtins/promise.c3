@@ -870,18 +870,10 @@ fn void builtin_promise(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Promise cannot be called without 'new'");
         return;
     }
-    HObject*? prom_raw = promise_create(ctx.heap);
-    if (catch err = prom_raw) {
-        ctx.result.set_undefined();
-        return;
-    }
-    HObject* promise = prom_raw;
-    // ES2015 §25.4.3.1 step 3: OrdinaryCreateFromConstructor(NewTarget, "%PromisePrototype%")
-    promise.prototype = builtin_proto_from_new_target(ctx, ctx.heap.promise_proto);
-
-    // ES2015 §25.6.3.1 step 2: throw TypeError if IsCallable(executor) is
+    // ES2024 §27.2.3.1 step 2: throw TypeError if IsCallable(executor) is
     // false, including when no argument was passed at all (executor is
-    // then undefined, which is not callable).
+    // then undefined, which is not callable). This precedes the observable
+    // Get(newTarget, "prototype") in step 3.
     TVal executor;
     if (ctx.argc < 1) {
         executor.set_undefined();
@@ -899,6 +891,15 @@ fn void builtin_promise(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Promise resolver undefined is not a function");
         return;
     }
+
+    HObject*? prom_raw = promise_create(ctx.heap);
+    if (catch err = prom_raw) {
+        ctx.result.set_undefined();
+        return;
+    }
+    HObject* promise = prom_raw;
+    promise.prototype = builtin_proto_from_new_target(ctx, ctx.heap.promise_proto);
+    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     if (exec_func != null && (*exec_func.extra_ptr()).func.comp_func == null && (*exec_func.extra_ptr()).func.builtin_fn_index < 0) {
         ctx.result.set_object(promise);
