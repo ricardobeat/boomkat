@@ -889,15 +889,15 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
         // Generic objects: call valueOf(), then toString()
         // ES5 §9.1: hint "string" → toString first, then valueOf;
         //           hint "number" (default) → valueOf first, then toString.
-        // ES2024 §21.4.4.45: Date.prototype[@@toPrimitive] promotes hint
-        // "default" to "string", but leaves hint "number" alone — so
-        // `+date`, `date - date` and relational compares still take valueOf
-        // first and yield the time value, not the date string.
+        //
+        // Date's default→string promotion lives entirely in
+        // Date.prototype[@@toPrimitive], which the block above already ran
+        // when it is present. Once it is deleted, OrdinaryToPrimitive must
+        // treat "default" like "number" and take valueOf first, so there is
+        // no Date special case here.
         if (vm != null && vm.heap.call_fn != null) {
             Heap* h = vm.heap;
-            bool date_prefers_string = (cls == hobject::ObjClass.DATE) && (hint != 2);
-            // Date promotes "default" to "string"; others depend on hint.
-            bool use_string_first = date_prefers_string || (hint == 1);
+            bool use_string_first = (hint == 1);
             HString* first_key = use_string_first
                 ? (HString*)h.strs[heap::BuiltinStr.TO_STRING]
                 : (HString*)h.strs[heap::BuiltinStr.VALUE_OF];
