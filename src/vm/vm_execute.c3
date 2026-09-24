@@ -1457,12 +1457,14 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
             HObject*? rest_arr_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try rest_arr = rest_arr_raw) {
                 rest_arr.prototype = vm.heap.array_proto;
+                // Read the overflow from the caller's argument array, not from
+                // the frame: for a rest-only function nregs holds just the rest
+                // slot, so the frame beyond it never received args[1..], and a
+                // frame read yields undefined (see Reflect/argumentsList.js).
                 for (uint ri = 0; ri < overflow; ri++) {
-                    if (rest_idx + ri < nregs) {
-                        HString* rkey = vm.heap.int_to_hstring((long)ri);
-                        if (rkey != null) {
-                            rest_arr.put_prop(rkey, frame[rest_idx + ri], hobject::PROP_FLAGS_WEC, heap);
-                        }
+                    HString* rkey = vm.heap.int_to_hstring((long)ri);
+                    if (rkey != null) {
+                        rest_arr.put_prop(rkey, args[formals + ri], hobject::PROP_FLAGS_WEC, heap);
                     }
                 }
                 HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
