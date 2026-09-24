@@ -681,6 +681,14 @@ struct Heap {
     // Current execution thread (HThread*)
     void* curr_thread;
 
+    // HEAP_VERIFY: register range a frame pop is currently releasing. The
+    // decref-to-zero check skips these slots, because the release it is
+    // watching is exactly what clears them: a frame's registers are shared
+    // with the caller's window, so a scan attributes the slot being released
+    // to an enclosing frame and reports the release itself.
+    TVal* decref_exempt_lo;
+    TVal* decref_exempt_hi;
+
     // Longjmp state for error handling
     LongjmpState lj;
 
@@ -2014,6 +2022,8 @@ fn void Heap.reset(&self) {
     self.finalize_list    = null;
     self.flags            = 0;
     self.curr_thread      = null;
+    self.decref_exempt_lo = null;
+    self.decref_exempt_hi = null;
     self.valstack_base    = null;
     self.valstack_top_ptr = null;
     self.resume_gen       = null;
@@ -4025,6 +4035,8 @@ $if $feat(HEAP_VERIFY):
         }
         for (uint i = 0; i < nregs; i++) {
             TVal* tv = &a.bottom[i];
+            if (self.decref_exempt_lo != null
+                && tv >= self.decref_exempt_lo && tv < self.decref_exempt_hi) continue;
             if (!tv.is_heap_allocated()) continue;
             if (tv.get_heapptr() == (void*)ptr) {
                 if (out_frame != null) *out_frame = f;

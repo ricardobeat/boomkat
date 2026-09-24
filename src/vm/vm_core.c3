@@ -697,6 +697,14 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
     TVal* regs = callee_act.bottom;
     uint limit = callee_act.heap_reg_count - 1;
     if (limit >= nregs) limit = nregs - 1;
+    // Exempt the range being released from the verifier's "still holds it"
+    // scan: these registers are the release, and their addresses are shared
+    // with the caller's window, so the scan would otherwise report the pop's
+    // own slot as a live holder.
+    $if $feat(HEAP_VERIFY):
+        vm.heap.decref_exempt_lo = regs;
+        vm.heap.decref_exempt_hi = regs + limit + 1;
+    $endif
     for (uint i = 0; i <= limit; i++) {
         // Clear the slot after releasing the ref: callee frames overlap the
         // caller's register window (sliding-window calls), and the caller's
@@ -705,6 +713,10 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
         vm.heap.decref_tval(&regs[i]);
         regs[i].set_undefined();
     }
+    $if $feat(HEAP_VERIFY):
+        vm.heap.decref_exempt_lo = null;
+        vm.heap.decref_exempt_hi = null;
+    $endif
 }
 
 // Verify that a frame about to be popped leaves no heap bits behind.
