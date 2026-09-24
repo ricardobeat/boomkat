@@ -34,7 +34,9 @@
       "panic-msg": false,
       "debug-info": "none",
       "features": [
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_slim": {
@@ -53,7 +55,9 @@
       "features": [
         "THREADED_DISPATCH",
         "NO_INSPECT",
-        "NO_TEMPORAL"
+        "NO_TEMPORAL",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_threaded": {
@@ -69,7 +73,9 @@
       "panic-msg": false,
       "debug-info": "none",
       "features": [
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_debug": {
@@ -85,7 +91,9 @@
       "panic-msg": false,
       "debug-info": "full",
       "features": [
-        "TRACE_VM"
+        "TRACE_VM",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_opprofile": {
@@ -102,7 +110,9 @@
       "features": [
         "TRACE_VM",
         "OP_PROFILE",
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_gcprofile": {
@@ -118,7 +128,9 @@
       "debug-info": "full",
       "features": [
         "GC_PROFILE",
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_asan": {
@@ -129,7 +141,11 @@
       ],
       "opt": "O0",
       "single-module": true,
-      "sanitize": "address"
+      "sanitize": "address",
+      "features": [
+        "PRINT",
+        "CONSOLE"
+      ]
     },
     "boomkat_gc_stress": {
       "type": "executable",
@@ -142,7 +158,9 @@
       "sanitize": "address",
       "features": [
         "GC_STRESS",
-        "POOL_BYPASS"
+        "POOL_BYPASS",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_threaded_asan": {
@@ -155,7 +173,9 @@
       "single-module": true,
       "sanitize": "address",
       "features": [
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_envstrict": {
@@ -166,7 +186,9 @@
       ],
       "opt": "O0",
       "features": [
-        "ENV_STRICT"
+        "ENV_STRICT",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "boomkat_memberstrict": {
@@ -177,7 +199,9 @@
       ],
       "opt": "O0",
       "features": [
-        "MEMBER_STRICT"
+        "MEMBER_STRICT",
+        "PRINT",
+        "CONSOLE"
       ]
     },
     "lib": {
@@ -256,7 +280,10 @@
       "optsize": "small",
       "single-module": true,
       "features": [
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "TEST262_HELPERS"
       ]
     },
     "test262_runner_asan": {
@@ -267,7 +294,12 @@
       ],
       "opt": "O0",
       "single-module": true,
-      "sanitize": "address"
+      "sanitize": "address",
+      "features": [
+        "PRINT",
+        "CONSOLE",
+        "TEST262_HELPERS"
+      ]
     },
     "test262_runner_verify": {
       "type": "executable",
@@ -280,7 +312,10 @@
       "sanitize": "address",
       "features": [
         "HEAP_VERIFY",
-        "SCAN_POISON"
+        "SCAN_POISON",
+        "PRINT",
+        "CONSOLE",
+        "TEST262_HELPERS"
       ]
     },
     "test_prop": {
@@ -402,12 +437,18 @@
     },
     "env_layout": {
       "type": "executable",
-      "sources": ["src", "test/env_layout.c3"],
+      "sources": [
+        "src",
+        "test/env_layout.c3"
+      ],
       "opt": "O0"
     },
     "env_pool_stats": {
       "type": "executable",
-      "sources": ["src", "test/env_pool_stats.c3"],
+      "sources": [
+        "src",
+        "test/env_pool_stats.c3"
+      ],
       "opt": "O0"
     }
   }

@@ -3876,6 +3876,7 @@ fn void builtin_reset_globals(BuiltinContext* ctx) {
 // ============================================================================
 
 fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
+    $if $feat(PRINT):
     char[] print_name = "print";
     HString* print_key = heap.str_intern(print_name);
     if (print_key == null) {
@@ -3885,7 +3886,9 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     TVal print_val;
     print_val.set_lightfunc((void*)(usz)Builtin.PRINT.ordinal);
     env::env_declare_nonenum(global_env, print_key, print_val);
+    $endif
 
+    $if $feat(CONSOLE):
     char[] console_name = "console";
     HString* console_key = heap.str_intern(console_name);
     if (console_key == null) {
@@ -3902,6 +3905,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     TVal console_val;
     console_val.set_object(console_obj);
     env::env_declare_nonenum(global_env, console_key, console_val);
+    $endif
 
     // Register parseInt
     if (!register_simple_builtin(global_env, heap, "parseInt", Builtin.PARSE_INT.ordinal)) return false;
@@ -3936,8 +3940,10 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register unescape (Annex B §B.2.1.2)
     if (!register_simple_builtin(global_env, heap, "unescape", Builtin.UNESCAPE.ordinal)) return false;
 
-    // Register test262 batch runner helper
+    // The batch runner restores its initial globals between test262 files.
+    $if $feat(TEST262_HELPERS):
     if (!register_simple_builtin(global_env, heap, "__resetGlobals", Builtin.RESET_GLOBALS.ordinal)) return false;
+    $endif
 
     // Register global constants: NaN, Infinity, undefined
     // ES5 §15.1: these are {writable: false, enumerable: false, configurable: false}
