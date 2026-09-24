@@ -2940,6 +2940,10 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
 
             // Update flags, only overwrite fields present in descriptor
             cur_flags.is_accessor = true;
+            // An accessor has no [[Writable]]; clearing it keeps a later
+            // accessor→data redefine from inheriting the old data's writability
+            // (ValidateAndApplyPropertyDescriptor drops it on the kind change).
+            cur_flags.writable = false;
             if (has_enum_in_desc) cur_flags.enumerable   = desc_flags.enumerable;
             if (has_conf_in_desc) cur_flags.configurable = desc_flags.configurable;
             obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
@@ -3065,6 +3069,10 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 vm::mapped_args_unmap(obj, key_hstr.array_index());
             }
 
+            // Accessor→data: the descriptor's omitted attributes take the data
+            // defaults, so [[Writable]] resets to false unless the descriptor
+            // supplies it (ValidateAndApplyPropertyDescriptor).
+            if (cur_flags.is_accessor && !has_wrt_in_desc) cur_flags.writable = false;
             if (has_wrt_in_desc)  cur_flags.writable     = desc_flags.writable;
             if (has_enum_in_desc) cur_flags.enumerable   = desc_flags.enumerable;
             if (has_conf_in_desc) cur_flags.configurable = desc_flags.configurable;
