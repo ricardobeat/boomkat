@@ -2002,32 +2002,10 @@ fn void builtin_proxy_call(BuiltinContext* ctx) {
             // ES2020 §10.5.2 step 5: Construct(target, args, newTarget). newTarget
             // is whatever the caller supplied (Reflect.construct's third argument),
             // defaulting to the proxy itself (p) for ordinary `new P(...)` calls.
-            // Before forwarding we must simulate GetPrototypeFromConstructor(p,
-            // "%ObjectPrototype%")'s Get(p, "prototype") step, which triggers the
-            // proxy's [[Get]] trap, if that trap revokes p, the subsequent
-            // GetFunctionRealm(p) would throw (revoked proxy). We replicate that
-            // check explicitly:
-            HString* proto_key_str = heap.str(heap::BuiltinStr.PROTOTYPE);
-            if (proto_key_str != null) {
-                TVal proto_val; proto_val.set_undefined();
-                if (!js_get(ctx.vm, heap, p, proto_key_str, &proto_val)) {
-                    // js_get set heap.has_error
-                    ctx.should_throw = true;
-                    ctx.throw_value = heap.error_value;
-                    heap.has_error = false;
-                    ctx.result.set_undefined();
-                    return;
-                }
-                // If prototype is not an Object, GetFunctionRealm(p) is called.
-                // Per §7.3.22 step 4a: if p is a Proxy and its [[ProxyHandler]] is null, throw.
-                if (!proto_val.is_object() || proto_val.get_heapptr() == null) {
-                    if (proxy_handler(p) == null) {
-                        builtin_throw(ctx, heap.type_err_proto,
-                            "Cannot perform 'construct' on a proxy that has been revoked");
-                        return;
-                    }
-                }
-            }
+            // The Get(newTarget, "prototype") of GetPrototypeFromConstructor is
+            // NOT performed here: the target's own [[Construct]] does it, and
+            // doing it twice would fire a Proxy new.target's `get` trap an extra
+            // time (test262 staging/sm/Error/constructor-ordering).
             TVal fwd_new_target;
             if (ctx.new_target != null) { fwd_new_target.set_object(ctx.new_target); } else { fwd_new_target.set_object(p); }
             *ctx.result = heap.construct_fn(ctx.vm, target_tv, &ctx.regs[ctx.base_reg], ctx.argc, fwd_new_target);

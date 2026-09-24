@@ -831,7 +831,28 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
             return (HObject*)ptv.get_heapptr();
         }
     }
+    // ES2015 §9.1.14 step 4: a prototype that is not an object sends the
+    // fallback through GetFunctionRealm(new_target). A revoked Proxy (null
+    // [[ProxyHandler]]) throws there instead of silently taking the default
+    // prototype (@@construct must reject for a revoked new.target).
+    if (!builtin_new_target_realm_ok(ctx, nt)) return default_proto;
     return default_proto;
+}
+
+// GetFunctionRealm(new_target) (ES2022 §7.3.22) reduced to what this
+// single-realm engine can observe: the TypeError a revoked Proxy in the
+// chain produces. Returns false with ctx.should_throw set in that case.
+fn bool builtin_new_target_realm_ok(BuiltinContext* ctx, HObject* nt) {
+    HObject* realm_obj = nt;
+    while (realm_obj != null && realm_obj.flags.exotic_proxyobj) {
+        if (proxy_handler(realm_obj) == null) {
+            builtin_throw(ctx, ctx.heap.type_err_proto,
+                "Cannot perform 'get' on a proxy that has been revoked");
+            return false;
+        }
+        realm_obj = proxy_target(realm_obj);
+    }
+    return true;
 }
 
 // ES5 §8.12.3 [[Get]] / ES2020 §10.1.8.1 OrdinaryGet, for builtins that

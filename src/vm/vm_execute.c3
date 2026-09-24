@@ -1241,25 +1241,6 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         return vm_construct_fn_impl(vm_ptr, target_tv, combined_args, combined_idx, target_as_new);
     }
 
-    // Allocate a fresh plain object as `this`.
-    // GetPrototypeFromConstructor(new_target, "%Object.prototype%"), per ES2022
-    // §9.1.14: read new_target.prototype; if it isn't an object, fall back to
-    // the default intrinsic (heap.object_proto) rather than always using it.
-    HObject*? new_this_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err_t = new_this_raw) return undef;
-    HObject* new_this = new_this_raw;
-    new_this.prototype = heap.object_proto;
-    HString* ctor_proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
-    if (ctor_proto_key != null) {
-        if (try proto_tv = new_target_obj.get_prop_proto(ctor_proto_key, heap)) {
-            if (proto_tv.is_object() && proto_tv.get_heapptr() != null) {
-                new_this.prototype = (HObject*)proto_tv.get_heapptr();
-            }
-        }
-    }
-    TVal this_tv;
-    this_tv.set_object(new_this);
-
     // HObjectProxy.target overlays HObjectFunction.comp_func (both offset 0),
     // so reading comp_func directly on a Proxy exotic object would reinterpret
     // its [[ProxyTarget]] pointer as a CompiledFunction*. Route Proxies (and
@@ -1273,6 +1254,51 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     // constructed instance (e.g. a Promise subclass) is lost and combinator
     // capabilities read back as uninitialized.
     bool is_derived_target = (target != null && target.is_derived_ctor());
+
+    // GetPrototypeFromConstructor(new_target, "%Object.prototype%") is
+    // OrdinaryCreateFromConstructor work for an ordinary constructor that
+    // actually creates `this` (ES2022 §9.1.14). A built-in or bound
+    // constructor allocates its own instance and a derived constructor gets
+    // `this` from super(), so none of them may fire the observable
+    // Get(new_target, "prototype") here: the real constructor performs it,
+    // and firing it twice breaks a Proxy new.target whose get trap counts
+    // calls (test262 staging/sm/Error/constructor-ordering).
+    TVal this_tv;
+    if (target == null
+        || ctor.callable_kind() == hobject::CallableKind.BOUND_FN
+        || is_derived_target) {
+        this_tv.set_undefined();
+    } else {
+        HObject*? new_this_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (catch err_t = new_this_raw) return undef;
+        HObject* new_this = new_this_raw;
+        new_this.prototype = heap.object_proto;
+        HString* ctor_proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+        if (ctor_proto_key != null) {
+            bool have_proto = false;
+            if (try proto_tv = new_target_obj.get_prop_proto(ctor_proto_key, heap)) {
+                if (proto_tv.is_object() && proto_tv.get_heapptr() != null) {
+                    new_this.prototype = (HObject*)proto_tv.get_heapptr();
+                    have_proto = true;
+                }
+            }
+            if (!have_proto) {
+                // GetPrototypeFromConstructor step 6: the non-object fallback
+                // goes through GetFunctionRealm(new_target), which throws when
+                // a Proxy in the chain has been revoked.
+                HObject* realm_obj = new_target_obj;
+                while (realm_obj != null && realm_obj.flags.exotic_proxyobj) {
+                    if (builtins::proxy_handler(realm_obj) == null) {
+                        vm_host_throw(vm, heap.type_err_proto,
+                            "Cannot perform 'get' on a proxy that has been revoked");
+                        return undef;
+                    }
+                    realm_obj = builtins::proxy_target(realm_obj);
+                }
+            }
+        }
+        this_tv.set_object(new_this);
+    }
     if (is_derived_target) {
         this_tv = env::tdz_sentinel();
     }
@@ -1298,7 +1324,6 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 prom_this.prototype = heap.promise_proto;
                 builtins::promise_init(prom_this);
                 this_tv.set_object(prom_this);
-                new_this = prom_this;
             }
             TVal[18] temp_regs;
             temp_regs[0] = func;

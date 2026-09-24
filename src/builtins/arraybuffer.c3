@@ -192,6 +192,9 @@ fn HObject* arraybuffer_instance_proto(BuiltinContext* ctx, HObject* fallback_pr
             return (HObject*)ptv.get_heapptr();
         }
     }
+    // GetPrototypeFromConstructor step 6: the fallback goes through
+    // GetFunctionRealm(new_target), which throws for a revoked Proxy.
+    if (!builtin_new_target_realm_ok(ctx, nt)) return null;
     return fallback_proto;
 }
 
