@@ -125,7 +125,14 @@ echo
 printf "%-24s %10s %10s %9s\n" "workload" "baseline" "current" "delta"
 printf "%-24s %10s %10s %9s\n" "------------------------" "----------" "----------" "---------"
 
-run_once() { { /usr/bin/time -p "$1" "$2" >/dev/null; } 2>&1 | awk '/^real/{print $2}'; }
+# Wall clock from the shell's own `time` keyword: /usr/bin/time is not part of a
+# base install (Arch ships it as a separate package), and its absence turned
+# every workload into "(failed)" instead of a measurement.
+run_once() {
+    local t
+    t=$( { TIMEFORMAT=%R; time "$1" "$2" >/dev/null 2>&1; } 2>&1 ) || return 1
+    echo "$t"
+}
 
 REGRESSED=0
 for s in "${SCRIPTS[@]}"; do

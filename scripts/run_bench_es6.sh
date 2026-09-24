@@ -31,7 +31,7 @@ run_best() {
     local bin="$1" file="$2" best=999
     for _ in $(seq "$ITERATIONS"); do
         local t
-        t=$( { /usr/bin/time -p "$bin" "$file" >/dev/null; } 2>&1 | awk '/^real/{print $2}' ) || continue
+        t=$( { TIMEFORMAT=%R; time "$bin" "$file" >/dev/null 2>&1; } 2>&1 ) || continue
         best=$(awk -v a="$t" -v c="$best" 'BEGIN{print (a<c)?a:c}')
     done
     echo "$best"
