@@ -1915,8 +1915,32 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             self.del_mode = true;
             self.member.clear();
             self.last_was_getvar = false;
+            self.del_opt_chain = false;
+            self.del_opt_getprop_idx = -1;
             ushort op_del = self.unary_expr()!;
             self.del_mode = false;
+
+            // `delete a?.b` / `delete a?.[k]`: member_expr recorded the chain's
+            // final member GETPROP. Rewrite it to DELPROP for the live path;
+            // the short-circuit path was made to yield true (see member_expr).
+            // op_del is that GETPROP's result register, so it carries the
+            // DELPROP outcome on the live path and true on the short-circuit.
+            if (self.del_opt_chain && self.del_opt_getprop_idx >= 0) {
+                uint gi_idx = (uint)self.del_opt_getprop_idx;
+                if (gi_idx < self.code_count) {
+                    Instruction gi = self.code[gi_idx];
+                    if (gi.op == Opcode.GETPROP || gi.op == Opcode.GETPROP_CACHE) {
+                        self.code[gi_idx] = bytecode::make_abc(Opcode.DELPROP, gi.a, gi.b, gi.c);
+                    }
+                }
+                self.del_opt_chain = false;
+                self.del_opt_getprop_idx = -1;
+                self.clear_ref_markers();
+                self.last_lhs_name_len = 0;
+                return op_del;
+            }
+            self.del_opt_chain = false;
+            self.del_opt_getprop_idx = -1;
 
             if (self.last_was_member()) {
                 if (self.member_is_super()) {
@@ -2734,6 +2758,9 @@ fn ushort? CompilerContext.call_expr(&self) {
             callee = self.emit_call(callee)!;
             callee_is_base_local = false;
             self.last_ref = RefKind.REF_CALL;
+            // A call result is a value, not a delete target: drop any member
+            // recorded for its callee (e.g. the `.b` of `a?.b()`).
+            self.del_opt_getprop_idx = -1;
             // The result of a call is not a member expression and not a
             // direct variable reference. member_expr may have set
             // last_was_member for the callee (e.g. obj.prop) and
@@ -2765,6 +2792,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             // See comment in the LPAREN branch above.
             self.member.clear();
             self.last_was_getvar = false;
+            self.del_opt_getprop_idx = -1;
             // Free the property object used as 'this' (if any)
             if (self.call_prop_obj_reg != REG_NONE) {
                 self.free_reg(self.call_prop_obj_reg);
@@ -2823,6 +2851,11 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.member.set(MemberKind.PLAIN, callee, prop_reg, callee_is_base_local);
                 self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = callee;
+                // Inside an optional chain this is the chain's final member
+                // access when nothing else follows, so it is the delete target.
+                if (self.del_mode && opt_jump_count > 0) {
+                    self.del_opt_getprop_idx = (int)(self.code_count - 1);
+                }
             }
             callee = result;
             callee_is_base_local = false;
@@ -2858,10 +2891,17 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.member.set(MemberKind.PLAIN, callee, idx_reg, callee_is_base_local);
                 self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = callee;
+                if (self.del_mode && opt_jump_count > 0) {
+                    self.del_opt_getprop_idx = (int)(self.code_count - 1);
+                }
             }
             callee = result;
             callee_is_base_local = false;
         } else if (self.match(TokenType.OPT_CHAIN)) {
+            // A `?.` makes this an OptionalExpression, which delete treats
+            // specially (see the DELETE case): remember that so a delete target
+            // recorded below is honoured.
+            self.del_opt_chain = true;
             // Template literal after ?. is a SyntaxError
             if (self.is_next_template()) {
                 self.fail("Template literal after optional chain is not supported");
@@ -2891,6 +2931,8 @@ fn ushort? CompilerContext.call_expr(&self) {
                 callee_is_base_local = false;
                 self.member.clear();
                 self.last_was_getvar = false;
+                // A call result is a value, not a delete target.
+                self.del_opt_getprop_idx = -1;
             } else if (self.match(TokenType.LBRACKET)) {
                 // a?.[expr], result is never a referenceable member/target
                 // (optional chains can't be assignment targets per spec), so
@@ -2900,6 +2942,9 @@ fn ushort? CompilerContext.call_expr(&self) {
 
                 ushort result = self.alloc_reg();
                 self.emit_abc(Opcode.GETPROP, (uint)result, (uint)callee, (uint)idx_reg);
+                if (self.del_mode) {
+                    self.del_opt_getprop_idx = (int)(self.code_count - 1);
+                }
                 self.free_reg(idx_reg);
 
                 self.member.clear();
@@ -2924,6 +2969,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 ushort priv_result2 = self.alloc_reg();
                 self.emit_abc(Opcode.GETPROP_PRIVATE, (uint)priv_result2, (uint)callee, (uint)priv_prop_reg2);
                 self.free_reg(priv_prop_reg2);
+                self.del_opt_getprop_idx = -1;
 
                 self.member.clear();
                 self.last_was_getvar = false;
@@ -2943,6 +2989,9 @@ fn ushort? CompilerContext.call_expr(&self) {
 
                 ushort result = self.alloc_reg();
                 self.emit_abc(Opcode.GETPROP, (uint)result, (uint)callee, (uint)prop_reg);
+                if (self.del_mode) {
+                    self.del_opt_getprop_idx = (int)(self.code_count - 1);
+                }
                 self.free_reg(prop_reg);
 
                 self.member.clear();
@@ -2966,7 +3015,14 @@ fn ushort? CompilerContext.call_expr(&self) {
         for (int i = 0; i < opt_jump_count; i++) {
             self.patch_jump(opt_jump_addrs[i]);
         }
-        self.emit_abc(Opcode.LDUNDEF, (uint)callee, 0, 0);
+        // A short-circuited chain is undefined as a value, but delete of a
+        // non-reference (which a nullish chain is) yields true, so the delete
+        // operand's result register must hold true on this path.
+        if (self.del_mode) {
+            self.emit_abc(Opcode.LDTRUE, (uint)callee, 0, 0);
+        } else {
+            self.emit_abc(Opcode.LDUNDEF, (uint)callee, 0, 0);
+        }
         self.patch_jump(skip);
     }
 
