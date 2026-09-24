@@ -1,242 +1,303 @@
-# Commit Attribution & Agent Usage Audit
+# Agent Attribution and Usage
 
-Latest snapshot: **2026-09-25**. Earlier snapshots are kept verbatim at the
-bottom of this file; do not edit them, append a new snapshot instead.
+Snapshot taken 2026-09-25. The 2026-07-08 snapshot is kept unchanged in
+[ATTRIBUTION-2026-07-08.md](ATTRIBUTION-2026-07-08.md).
 
-Sources:
-- `git log --all --no-merges` across every branch (3,546 non-merge commits).
-- Crush: `.crush/crush.db` (opened read-only), sessions 2026-05 → 2026-09.
-- Claude Code: `~/.claude/projects/*boomkat*/**/*.jsonl` (79 transcripts).
-- opencode: `~/.local/share/opencode/opencode.db`, sessions whose directory contains `boomkat`.
-- Codex: `~/.codex/sessions/**/*.jsonl` mentioning `boomkat`.
-- Gemini CLI and pi were checked; neither has boomkat sessions.
+The repository lived at `~/cousas/duktape-c3` until the rename on
+2026-08-18, so every source below is filtered on both `cousas/duktape-c3` and
+`cousas/boomkat` (including `.worktrees/*`).
 
-## Git totals (2026-09-25)
+## Summary
 
-| Marker | Commits |
-|---|---:|
-| Non-merge commits, all branches | 3,546 |
-| `💘 Generated with Crush` in body | 796 |
-| `Co-Authored-By` / `Assisted-by` trailer present | 2,645 |
-| `claude.ai/code/session_*` URL | 1,671 (61 distinct sessions) |
-| No attribution trailer | 901 |
+| Harness | Commits | Human prompts | >10 words | Sessions | Data window | Reported cost |
+|---|---:|---:|---:|---:|---|---:|
+| Claude Code | 1,670 | 2,395 | 1,045 | 241 | 2026-05-23 → 09-25 | — |
+| Crush | 901 | 1,964 | 1,000 | 1,753 (607 top-level) | 2026-05-23 → 09-21 | $607.46 |
+| opencode | 338 | 763 | 307 | 704 (97 top-level) | 2026-06-09 → 09-15 | $362.89 |
+| opencode or pi | 38 | — | — | — | — | — |
+| Codex | 21 | 76 | 35 | 16 (6 top-level) | 2026-09-19 → 09-25 | — |
+| pi | 2 | 36 | 11 | 35 | 2026-05-23 → 08-02 | $0.77 |
+| Shelley (exe.dev) | 6 | — | — | — | — | — |
+| Unattributed | 75 | — | — | — | — | — |
+| **Total** | **3,051** | **5,234** | **2,398** | | | |
 
-## Per-agent commit counts (2026-09-25)
+Reported cost is whatever the harness recorded. Flat-rate plans
+(`xiaomi-token-plan-ams`, `minimax-coding-plan`, `kimi-coding`, the free
+tiers) record $0, so real spend is higher. Claude Code and Codex record no
+cost.
 
-Deduped, one bucket per commit; `Assisted-by:` wins over `Co-Authored-By:`
-(same rule as the 2026-07-08 snapshot).
+## Sources
 
-| Commits | Agent | Raw tag(s) |
-|---:|---|---|
-| 768 | **Claude Opus 5** | `Claude Opus 5` |
-| 486 | **Claude Opus 4.8** | `Claude Opus 4.8` |
-| 372 | **Claude Fable 5** | `Claude Fable 5` |
-| 273 | **Crush + deepseek-*** | `deepseek-v4-flash` (88), `deepseek-v4-pro` (71), `deepseek-v4-flash-free` (36), `deepseek-v4.1-flashx` (28), `deepseek-v4.1-flash` (26), `deepseek-v4-flash-0731` (17), `deepseek/deepseek-v4-flash-0731` (5), `deepseek/deepseek-v4.1-flash` (1), `deepseek/deepseek-v4-pro` (1) |
-| 201 | **Crush + MiniMax-M3** | `MiniMax-M3` (186), `minimax/minimax-m3:free` (13), `minimax-m3` (2) |
-| 196 | **Crush + mimo-*** | `mimo-v2.5-pro` (96), `mimo-v2.5` (88), `mimo-v2.5-pro-ultraspeed` (7), `mimo-v2.6-flash` (5) |
-| 75 | **Claude Sonnet 5** | |
-| 51 | **Claude Sonnet 4.6** | |
-| 45 | **Claude Opus 4.7** | |
-| 42 | **Crush + kimi-*** | `kimi-k2.7-code` (33), `k3-256k` (8), `moonshotai/kimi-k2.7-code` (1) |
-| 18 | **Crush + muse-spark** | `meta/muse-spark-1.3-contributor` |
-| 17 | **Mimo v2.5 Pro** (co-author, no harness tag) | |
-| 16 | **Crush + GLM-5.3** | `coding-glm-5.3` (11), `glm-5.3-flashx` (2), `glm-5.3-flash` (3) |
-| 13 | **Crush (model not decoded)** | bare `Crush` (11), `Crush:new-skill` (2) |
-| 13 | **Claude Haiku 4.5** | |
-| 12 | **Deepseek v4 Flash** (`Assisted-by`, no harness tag) | |
-| 9 | **Kimi K3** (co-author, no harness tag) | `Kimi K3` (6), `Kimi K3-256K` (3) |
-| 8 | **deepseek-v4-pro** (co-author, no harness tag) | |
-| 7 | **Crush + x-preview-f-free** | |
-| 6 | **Claude Opus 4.6** | |
-| 6 | **Crush + claude-sonnet-*** | `claude-sonnet-4-20250514` (3), `claude-sonnet-4-6` (2), `openrouter/anthropic/claude-sonnet-4` (1) |
-| 6 | **Shelley (exe.dev)** | |
-| 3 | **Crush + claude-opus-4-6** | |
-| 1 | **Crush + codestral-2506** | |
-| 1 | (malformed trailer) | a commit-body line starting with `Co-authored-by` |
-| 901 | **(no trailer)** | pre-hook, or committed outside an agent |
+| Harness | Source | Notes |
+|---|---|---|
+| git | `git log --branches --tags --remotes --no-merges` | `refs/stash` and `refs/original` excluded |
+| Crush | `.crush/crush.db` | opened with `immutable=1`; no other Crush DB on the machine has repo sessions |
+| Claude Code | `~/.claude/history.jsonl`, `~/.claude/projects/*boomkat*/**/*.jsonl` | history keeps every prompt; transcripts are deleted after 30 days |
+| opencode | `~/.local/share/opencode/opencode.db` | project `571ddff2…` (worktree `~/cousas/duktape-c3`) |
+| Codex | `~/.codex/sessions/**/*.jsonl`, `~/.codex/state_5.sqlite` | rollouts whose `session_meta.cwd` is in the repo |
+| pi | `~/.pi/agent/sessions/--Users-rtomasi-cousas-duktape-c3--/` | |
+| Gemini CLI | `~/.gemini` | no repo sessions |
 
-Roll-up: Claude (Code) 1,816 · Crush 776 · other/untagged-harness 53 · none 901.
+## Commits
 
-No Codex or opencode commits carry an identifying trailer, so their work is
-invisible in git. The untagged `Mimo`/`Kimi`/`deepseek` co-author lines are
-most likely opencode (see below), but that is not provable from git.
+3,536 non-merge commits sit on branches, tags and remotes. Rebases and
+cherry-picks copied many of them: 485 are copies of another commit with the
+same author, author date and subject. After collapsing those, **3,051**
+distinct commits remain, and every count in this file uses that number.
 
-## Harness usage (2026-09-25)
+Each commit is attributed by the first rule that applies:
 
-### Crush — `.crush/crush.db`
+1. **Harness log (751 commits).** Every harness logs the output of the
+   `git commit` it ran (`[branch 1a2b3c4] subject`). 954 such lines were
+   extracted; 773 resolve to a commit whose subject matches, and 181 point
+   at commits no longer on any ref (amended, rebased or on deleted branches).
+2. **Trailer (1,819).** `Assisted-by:` wins over `Co-Authored-By:`; a bare
+   `💘 Generated with Crush` counts as Crush. Co-author lines that name only a
+   model (`Mimo v2.5 Pro`, `Deepseek v4 Flash`, `deepseek-v4-pro`, `Kimi K3`)
+   count as **opencode or pi**. `GPT Astra 6` counts as Codex.
+3. **Time (406).** The commit's author timestamp is matched against each
+   harness's activity: the harness that was the only one active in the
+   previous 3 minutes (for Claude Code before 08-26, a prompt in the previous
+   45 minutes), or else the harness with the most recent activity within 2
+   hours. On the 751 log-verified commits this rule picks the right harness
+   734 times (98%).
+4. **Unattributed (75).** Nothing active within 2 hours.
 
-1,753 sessions (607 top-level, rest sub-agents), 187,965 messages,
-60.5M prompt / 2.6M completion tokens, **$607.46** reported cost
-(many providers are flat-rate plans that report $0, so real spend differs).
-
-| Month | Sessions | Prompt tok | Completion tok | Cost |
+| Harness | Log | Trailer | Time | Total |
 |---|---:|---:|---:|---:|
-| 2026-05 | 837 | 38,351,518 | 1,303,637 | $25.56 |
-| 2026-06 | 682 | 11,720,574 | 1,018,487 | $277.71 |
-| 2026-07 | 122 | 1,847,557 | 135,156 | $224.90 |
-| 2026-08 | 104 | 7,860,871 | 146,619 | $34.62 |
-| 2026-09 | 8 | 766,897 | 12,248 | $44.67 |
+| Claude Code | 45 | 1,412 | 213 | 1,670 |
+| Crush | 438 | 362 | 101 | 901 |
+| opencode | 250 | — | 88 | 338 |
+| opencode or pi | — | 38 | — | 38 |
+| Codex | 17 | 1 | 3 | 21 |
+| pi | 1 | — | 1 | 2 |
+| Shelley | — | 6 | — | 6 |
+| Unattributed | | | | 75 |
 
-Assistant messages by model (top 20; providers merged):
+### Models by commit
 
-| Model | Assistant msgs | Sessions | Providers |
+Log and trailer commits only; time-attributed commits have no model.
+
+| Harness | Model | Commits |
+|---|---|---:|
+| Claude Code | Claude Opus 5 | 649 |
+| | Claude Opus 4.8 | 331 |
+| | Claude Fable 5 | 301 |
+| | Claude Sonnet 5 | 71 |
+| | Claude Opus 4.7 | 45 |
+| | Claude Sonnet 4.6 | 44 |
+| | Claude Haiku 4.5 | 13 |
+| | Claude Opus 4.6 | 2 |
+| | Claude Opus 5.5 | 1 |
+| Crush | MiniMax-M3 | 239 |
+| | deepseek-v4-flash (incl. `-free`, `-0731`) | 165 |
+| | mimo-v2.5 | 98 |
+| | mimo-v2.5-pro (incl. `-ultraspeed`) | 93 |
+| | deepseek-v4-pro | 72 |
+| | deepseek-v4.1-flash / flashx | 55 |
+| | kimi-k2.7-code, k3-256k | 27 |
+| | glm-5.2, glm-5.3 (incl. `coding-`, `-flash`, `-flashx`) | 24 |
+| | x-preview-f-free | 7 |
+| | mimo-v2.6-flash | 5 |
+| | muse-spark-1.3-contributor | 3 |
+| | gpt-5.5-free | 1 |
+| | not recorded | 11 |
+| opencode | MiniMax-M3 | 64 |
+| | mimo-v2.5-pro (incl. `-ultraspeed`) | 51 |
+| | deepseek-v4-pro | 49 |
+| | mimo-v2.5 | 34 |
+| | mimo-v2-pro | 33 |
+| | deepseek-v4-flash (incl. `-free`) | 10 |
+| | muse-spark-1.3-contributor | 9 |
+| opencode or pi | Mimo v2.5 Pro | 17 |
+| | Deepseek v4 Flash | 12 |
+| | Kimi K3 / K3-256K | 5 |
+| | deepseek-v4-pro | 4 |
+| Codex | gpt-6-astra | 15 |
+| | gpt-6-sol | 3 |
+| pi | deepseek-v4-flash | 1 |
+
+### Trailer accuracy
+
+Of the 751 log-verified commits, 325 have no trailer at all: 245 opencode,
+60 Crush, 17 Codex, 2 Claude Code, 1 pi. opencode and Codex never add one,
+so trailer-only counts miss them entirely.
+
+Trailers written by the model are sometimes wrong:
+
+| Commits | Trailer says | Log says |
+|---:|---|---|
+| 6 | `Crush:meta/muse-spark-1.3-contributor` | Claude Code, claude-opus-5 |
+| 4 | `Claude Opus 4.6` | Crush, MiniMax-M3 |
+| 3 | `Claude Sonnet 4.6` | opencode, deepseek-v4-pro |
+| 2 | `Crush:kimi-k2.7-code` | opencode, mimo-v2-pro |
+| 1 | `Claude Opus 5` | Crush, deepseek-v4-flash |
+| 3 | `Crush:claude-sonnet-4-20250514` | Crush, mimo-v2.5 |
+| 3 | `Crush:claude-opus-4-6` | Crush, mimo-v2.5 |
+| 2 | `Crush:claude-sonnet-4-6` | Crush, mimo-v2.5 |
+| 1 | `Crush:codestral-2506` | Crush, mimo-v2.5 |
+| 1 | `Crush:openrouter/anthropic/claude-sonnet-4` | Crush, mimo-v2.5 |
+| 2 | `Crush:MiniMax-M3` | Crush, k3-256k |
+| 2 | `Crush:MiniMax-M3` | Crush, glm-5.2 |
+| 2 | `Crush:new-skill` | Crush, deepseek-v4-flash-free |
+| 4 | other single-model mismatches | Crush |
+| 1 | malformed `Co-authored-by:` line | Crush, deepseek-v4-flash |
+
+The Claude trailers on the 1,412 trailer-only Claude Code commits could not
+be checked: Claude Code transcripts before 2026-08-26 are gone (see
+[Data loss](#data-loss)).
+
+## Human prompts
+
+A human prompt is a user message in a top-level session. Sub-agent sessions,
+compaction and synthetic parts, injected `AGENTS.md` /
+`<environment_context>` blocks, shell escapes and slash commands (585 in
+Claude Code) are excluded. Words are counted on whitespace.
+
+| Harness | Prompts | >10 words |
+|---|---:|---:|
+| Claude Code | 2,395 | 1,045 |
+| Crush | 1,964 | 1,000 |
+| opencode | 763 | 307 |
+| Codex | 76 | 35 |
+| pi | 36 | 11 |
+| **Total** | **5,234** | **2,398** |
+
+| Month | Claude Code | Crush | opencode | Codex | pi | Total | >10 words |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 2026-05 | 85 | 569 | — | — | 23 | 677 | 423 |
+| 2026-06 | 292 | 628 | 452 | — | 12 | 1,384 | 639 |
+| 2026-07 | 1,049 | 304 | 137 | — | — | 1,490 | 621 |
+| 2026-08 | 659 | 392 | 75 | — | 1 | 1,127 | 487 |
+| 2026-09 | 310 | 71 | 99 | 76 | — | 556 | 228 |
+
+Short replies dominate the repeats: `continue` (Crush 72, opencode 24),
+`go on` (30, 11), `yes`. Crush also has templated prompts pasted many times,
+such as `@PRD.md @progress.md 1. Find the highest-priority …` (105 times
+across the four most common variants).
+
+## Usage
+
+### Crush
+
+Crush stores `prompt_tokens` and `completion_tokens` per session as the last
+turn's values, not running totals (a 7,458-message session shows 298
+completion tokens), and messages carry no usage. Token totals are not
+recoverable. `cost` does accumulate.
+
+| Month | Sessions | Top-level | Messages | Cost |
+|---|---:|---:|---:|---:|
+| 2026-05 | 837 | 276 | 65,010 | $25.56 |
+| 2026-06 | 682 | 235 | 71,191 | $277.71 |
+| 2026-07 | 122 | 45 | 25,034 | $224.90 |
+| 2026-08 | 104 | 44 | 23,913 | $34.62 |
+| 2026-09 | 8 | 7 | 2,817 | $44.67 |
+
+Assistant messages by model:
+
+| Model | Messages | Sessions | Providers |
 |---|---:|---:|---|
-| MiniMax-M3 / minimax-m3 | 21,460 | 160 | minimax, opencode-go |
-| deepseek-v4-flash (+free, -0731) | 22,110 | 371 | opencode-go, opencode-zen, aihubmix, openai-compat |
+| deepseek-v4-flash (incl. `-free`, `-0731`) | 22,110 | 371 | opencode-go, opencode-zen, aihubmix, openai-compat |
+| MiniMax-M3 | 21,460 | 160 | minimax, opencode-go |
 | mimo-v2.5 | 16,738 | 721 | xiaomi, xiaomi-api, xiaomi-token-plan-ams, openai-compat, aihubmix |
-| mimo-v2.5-pro (+ultraspeed) | 10,100 | 368 | xiaomi, xiaomi-api, xiaomi-token-plan-ams, openai-compat, aihubmix |
+| mimo-v2.5-pro (incl. `-ultraspeed`) | 10,100 | 368 | xiaomi, xiaomi-api, xiaomi-token-plan-ams, openai-compat, aihubmix |
 | deepseek-v4-pro | 8,394 | 139 | opencode-go, aihubmix, openrouter, openai-compat |
-| kimi (k2.7-code, k3, k3-256k) | 1,614 | 44 | opencode-go, openrouter, kimi, kimi-coding, aihubmix |
-| coding-glm-5.3 / glm-5.x | 777 | 4 | aihubmix, opencode-go |
-| lmstudio (local qwen/gemma/etc.) | 459 | 40 | lmstudio |
+| kimi (k2.7-code, k3, k3-256k) | 1,615 | 44 | opencode-go, openrouter, kimi, kimi-coding, aihubmix |
+| glm-5.2, glm-5.3, coding-glm-5.3 | 777 | 4 | aihubmix, opencode-go |
+| local models (lmstudio) | 458 | 40 | lmstudio |
 | stealth/ox-alpha | 401 | 8 | openrouter, opencode-go |
-| MiniMax-M2.7 (+highspeed) | 207 | 10 | minimax, anthropic |
-| other (≤150 msgs each) | ~620 | — | gemini, gpt-5.5-free, mistral, qwen3.7-max, muse-spark, … |
+| MiniMax-M2.7 (incl. `-highspeed`) | 207 | 10 | minimax, anthropic |
+| other | 414 | | gemini, gpt-5.5-free, mistral, qwen3.7-max, muse-spark, … |
 
-Timestamp caveat: `sessions.created_at` mixes milliseconds and seconds
-(the update trigger writes seconds); monthly buckets normalise both.
+### Claude Code
 
-### Claude Code — `~/.claude/projects/*boomkat*`
+`history.jsonl` has 2,980 prompt entries in 241 sessions from 2026-05-23 to
+2026-09-25. Transcripts, and with them token usage, survive only from
+2026-08-26 (33 sessions). Usage is taken from the last transcript line for
+each API message id, since streaming writes several lines per message.
 
-Transcripts span 2026-08-19 → 2026-09-24 (main checkout + worktrees
-`metrics`, `modern-bench`, `sloppy-mode`, `speed`, `speed2`, `temporal`).
-Deduped by API message id.
+| Model | Messages | Sessions | Output | Cache read | Cache write | Input |
+|---|---:|---:|---:|---:|---:|---:|
+| claude-opus-5 | 10,589 | 30 | 3,817,288 | 1,708,151,272 | 14,521,938 | 20,736 |
+| claude-sonnet-5 | 2,438 | 7 | 452,640 | 470,585,990 | 2,962,422 | 4,876 |
+| claude-haiku-4-5 | 112 | 1 | 10,901 | 4,579,296 | 101,636 | 586 |
+| claude-opus-5-5 | 50 | 2 | 45,900 | 3,725,097 | 117,833 | 100 |
 
-| Model | Assistant msgs | Sessions | Output tok | Cache-read tok | Cache-write tok |
+### opencode
+
+704 sessions (97 top-level) from 2026-06-09 to 2026-09-14; 57,609 assistant
+messages; 254.9M input, 14.3M output, 6.50B cache-read tokens.
+
+| Month | Sessions | Assistant messages | Cost |
+|---|---:|---:|---:|
+| 2026-06 | 399 | 21,670 | $150.19 |
+| 2026-07 | 188 | 19,252 | $125.15 |
+| 2026-08 | 37 | 3,965 | $12.83 |
+| 2026-09 | 62 | 12,722 | $74.72 |
+
+| Provider / model | Messages | Sessions | Input | Output | Cache read | Cost |
+|---|---:|---:|---:|---:|---:|---:|
+| minimax/MiniMax-M3 | 18,160 | 162 | 33,770,762 | 4,744,178 | 2,204,707,632 | $210.37 |
+| xiaomi-token-plan-ams/mimo-v2.5 | 7,608 | 115 | 28,108,662 | 1,626,602 | 803,594,944 | plan |
+| xiaomi/mimo-v2.5 | 6,994 | 176 | 29,011,145 | 1,765,154 | 601,627,712 | $77.02 |
+| minimax-coding-plan/MiniMax-M3 | 6,606 | 30 | 21,506,425 | 1,671,216 | 981,305,883 | plan |
+| opencode-go/deepseek-v4-pro | 3,760 | 39 | 5,665,051 | 915,782 | 387,933,824 | $21.47 |
+| openrouter/meta/muse-spark-1.3-contributor | 3,354 | 5 | 18,023,128 | 611,709 | 660,148,407 | $3.40 |
+| xiaomi/mimo-v2.5-pro | 1,904 | 33 | 8,302,735 | 754,899 | 159,460,864 | $30.00 |
+| opencode-go/deepseek-v4-flash | 1,573 | 21 | 1,994,223 | 405,625 | 142,804,480 | $0.91 |
+| xiaomi/mimo-v2.5-pro-ultraspeed | 1,268 | 54 | 6,467,031 | 170,027 | 61,873,408 | $11.22 |
+| xiaomi-token-plan-ams/mimo-v2.5-pro | 1,022 | 27 | 6,233,973 | 360,507 | 72,182,272 | plan |
+| opencode/deepseek-v4-flash-free | 972 | 16 | 3,539,237 | 240,153 | 74,673,792 | free |
+| xiaomi-token-plan-ams/mimo-v2-pro | 929 | 1 | 5,872,966 | 194,117 | 80,541,760 | plan |
+| opencode-go/minimax-m3 | 809 | 8 | 1,180,171 | 243,898 | 81,020,270 | $1.84 |
+| aihubmix/coding-glm-5.3 | 796 | 5 | 20,311,148 | 169,904 | 70,161,536 | $0 |
+| opencode/north-mini-code-free | 601 | 6 | 48,923,991 | 46,503 | 0 | free |
+| opencode-go/muse-spark-1.3-contributor | 541 | 1 | 2,574,252 | 110,529 | 80,769,386 | $0.47 |
+| lmstudio/qwen3.6-35b-a3b | 293 | 4 | 11,445,505 | 75,356 | 0 | local |
+| other (9 models) | 419 | | 1,985,170 | 178,834 | 33,530,656 | $6.19 |
+
+### Codex
+
+16 rollouts: 6 top-level CLI threads, 6 spawned sub-agents and 4
+`codex-auto-review` guardian threads. Tokens are summed from per-response
+`token_usage_record` entries; input includes cached input.
+
+| Model | Rollouts | Input | Cached input | Output | Reasoning |
 |---|---:|---:|---:|---:|---:|
-| claude-opus-5 | 11,822 | 31 | 4,234,806 | 1,990,146,872 | 17,103,171 |
-| claude-sonnet-5 | 2,443 | 8 | 353,154 | 470,676,421 | 3,322,976 |
-| claude-haiku-4-5 | 112 | 1 | 4,008 | 4,579,296 | 101,636 |
-| claude-opus-5-5 | 12 | 2 | 3,831 | 476,382 | 45,436 |
+| gpt-6-astra | 6 | 106,778,508 | 103,960,704 | 381,658 | 136,930 |
+| gpt-5.6-sol | 3 | 37,220,475 | 36,494,976 | 135,949 | 31,101 |
+| gpt-6-sol | 1 | 26,765,715 | 26,415,360 | 51,876 | 21,121 |
+| gpt-5.6-luna | 2 | 3,319,058 | 3,101,440 | 29,333 | 8,435 |
+| codex-auto-review | 4 | 896,138 | 681,984 | 2,298 | 1,148 |
 
-Earlier Claude work (Fable 5, Opus 4.x, Sonnet 4.6) was done in
-claude.ai/code cloud sessions, which leave no local transcripts; git
-session URLs are the only record of those.
+### pi
 
-### opencode — `opencode.db`
+35 sessions from 2026-05-23 to 2026-08-02.
 
-90 boomkat sessions, 2026-08-19 → 2026-09-14.
+| Provider / model | Messages | Sessions | Input | Output | Cache read | Cost |
+|---|---:|---:|---:|---:|---:|---:|
+| openrouter/deepseek/deepseek-v4-flash | 173 | 5 | 5,515,446 | 145,044 | 3,043,200 | $0.63 |
+| opencode-go/deepseek-v4-flash | 151 | 22 | 355,632 | 115,135 | 16,670,208 | $0.13 |
+| minimax/MiniMax-M3 | 6 | 4 | 41,360 | 768 | 35,239 | $0.00 |
+| other (3 models) | 4 | 4 | 11,301 | 61 | 1,024 | $0.00 |
 
-| Provider | Model | Assistant msgs | Sessions | Input tok | Output tok | Cache-read tok | Cost |
-|---|---|---:|---:|---:|---:|---:|---:|
-| minimax-coding-plan | MiniMax-M3 | 4,805 | 11 | 17,233,375 | 1,118,712 | 798,056,990 | $0 (plan) |
-| minimax | MiniMax-M3 | 3,927 | 35 | 9,802,092 | 741,202 | 649,584,076 | $70.85 |
-| openrouter | meta/muse-spark-1.3-contributor | 3,354 | 5 | 18,023,128 | 611,709 | 660,148,407 | $3.40 |
-| xiaomi-token-plan-ams | mimo-v2.5 | 1,182 | 21 | 1,564,448 | 499,375 | 197,577,152 | $0 (plan) |
-| opencode-go | muse-spark-1.3-contributor | 541 | 1 | 2,574,252 | 110,529 | 80,769,386 | $0.47 |
-| xiaomi-token-plan-ams | mimo-v2.5-pro | 278 | 13 | 2,181,781 | 173,777 | 25,840,512 | $0 (plan) |
-| opencode-go | deepseek-v4-pro | 164 | 3 | 354,352 | 31,840 | 17,837,696 | $0.43 |
-| opencode-go | deepseek-v4-flash | 1 | 1 | 0 | 0 | 0 | $0 |
+## Data loss
 
-### Codex — `~/.codex/sessions`
+- **Claude Code transcripts** are deleted 30 days after last use
+  (`cleanupPeriodDays` is unset). Everything before 2026-08-26 is gone,
+  including all `duktape-c3` sessions, and more expires every day. Only the
+  prompt text in `history.jsonl` survives. Setting `cleanupPeriodDays` in
+  `~/.claude/settings.json` stops further loss.
+- **Crush tokens** were never stored as totals (see [Crush](#crush)).
+- **181 logged commits** are no longer on any ref.
 
-25 rollouts mentioning boomkat, 2026-09-07 → 2026-09-24. Token counts are
-the last `total_token_usage` of each rollout, summed.
+## Corrections to the 2026-07-08 snapshot
 
-| Model | Rollouts | Input tok | Cached input tok | Output tok |
-|---|---:|---:|---:|---:|
-| gpt-6-astra | 10 | 323,066,127 | 316,193,664 | 1,050,565 |
-| codex-auto-review | 6 | 20,883,359 | 18,186,752 | 12,750 |
-| gpt-5.6-sol | 4 | 64,449,052 | 63,318,400 | 192,757 |
-| gpt-5.6-luna | 3 | 24,171,967 | 23,463,424 | 136,812 |
-| gpt-5.6-terra | 1 | 72,762,296 | 70,441,984 | 210,993 |
-| gpt-6-sol | 1 | 23,795,250 | 23,532,416 | 35,328 |
-
----
-
-## Historical snapshot — 2026-07-08 (preserved; headings demoted one level)
-
-Source: `git log --all --no-merges` across every branch in this repository
-(866 non-merge commits total).
-
-### Totals
-
-| Marker | Commits |
-|---|---:|
-| `💘 Generated with Crush` in body | 432 |
-| `Co-Authored-By` / `Assisted-by` trailer present | 562 |
-| `Claude-Session:` URL trailer | 76 (across 9 distinct sessions) |
-| No attribution trailer at all | 304 |
-
-The 304 untagged commits predate the attribution hook and have no recoverable
-model info — every one of them is just `Ricardo Tomasi <ricardobeat@gmail.com>`.
-
-### Per-agent commit counts
-
-Counts below are deduped: each commit is attributed to exactly one bucket.
-When a commit carries both `Assisted-by: Crush:<model>` and
-`Co-Authored-By: Claude ...`, the `Assisted-by` bucket wins (Crush is treated
-as the author, Claude as the co-author).
-
-| Commits | Agent | Raw tag(s) |
-|---:|---|---|
-| 148 | **Crush + mimo-*** | `mimo-v2.5` (71), `mimo-v2.5-pro` (72), `mimo-v2.5-pro-ultraspeed` (7) |
-| 137 | **Crush + deepseek-*** | `deepseek-v4-pro` (62), `deepseek-v4-flash` (40), `deepseek-v4-flash-free` (34), `deepseek/deepseek-v4-pro` (1) |
-| 86 | **Crush + MiniMax-M3** | `Crush:MiniMax-M3` (84), `Crush:minimax-m3` (2) |
-| 44 | **Claude Fable 5** | `Claude Fable 5 <noreply@anthropic.com>` (no `Assisted-by` trailer) |
-| 37 | **Claude Sonnet 4.6** | `Claude Sonnet 4.6 <noreply@anthropic.com>` |
-| 29 | **Crush + kimi-*** | `kimi-k2.7-code` (28), `moonshotai/kimi-k2.7-code` (1) |
-| 26 | **Claude Sonnet 5** | `Claude Sonnet 5 <noreply@anthropic.com>` |
-| 13 | **Crush (model not decoded)** | bare `Crush` (7), `Crush:new-skill` (2), misc. (4) |
-| 10 | **Claude Haiku 4.5** | `Claude Haiku 4.5 <noreply@anthropic.com>` |
-| 7 | **Claude Opus 4.8** | `Claude Opus 4.8 <noreply@anthropic.com>` |
-| 6 | **Claude Opus 4.6** | `Claude Opus 4.6 <noreply@anthropic.com>` |
-| 6 | **Crush + claude-sonnet-*** | `claude-sonnet-4-20250514` (3), `claude-sonnet-4-6` (2), `openrouter/anthropic/claude-sonnet-4` (1) |
-| 6 | **Shelley (exe.dev)** | `Shelley <shelley@exe.dev>` — only non-Claude, non-Crush agent |
-| 3 | **Crush + claude-opus-*** | `claude-opus-4-6` (3) |
-| 1 | **Crush + codestral-2506** | Mistral |
-| 304 | **(no trailer)** | pre-hook, model unknown |
-
-### Claude-Session URLs (9 distinct)
-
-The `Co-Authored-By: Claude Fable 5` line links to a `claude.ai/code/session_*`
-URL. Nine distinct IDs appear across the 76 commits that carry the trailer.
-The current `metrics` branch corresponds to session
-`0152v5R4mfY8uu9MjUzdAXsS`; the rest live on `main` and older worktrees.
-
-### Cross-tag counts (raw, not deduped)
-
-Because many commits carry **both** `Assisted-by: Crush:<model>` and
-`Co-Authored-By: Claude Fable 5`, the raw agent-line totals exceed the
-deduped bucket counts:
-
-| Lines | Agent line (verbatim) |
-|---:|---|
-| 84 | `Crush:MiniMax-M3` |
-| 72 | `Crush:mimo-v2.5-pro` |
-| 71 | `Crush:mimo-v2.5` |
-| 62 | `Crush:deepseek-v4-pro` |
-| 44 | `Claude Fable 5 <noreply@anthropic.com>` |
-| 40 | `Crush:deepseek-v4-flash` |
-| 37 | `Claude Sonnet 4.6 <noreply@anthropic.com>` |
-| 34 | `Crush:deepseek-v4-flash-free` |
-| 28 | `Crush:kimi-k2.7-code` |
-| 26 | `Claude Sonnet 5 <noreply@anthropic.com>` |
-| 10 | `Claude Haiku 4.5 <noreply@anthropic.com>` |
-| 7 | `Claude Opus 4.8 <noreply@anthropic.com>` |
-| 7 | `Crush` (bare) |
-| 7 | `Crush:mimo-v2.5-pro-ultraspeed` |
-| 6 | `Claude Opus 4.6 <noreply@anthropic.com>` |
-| 6 | `Shelley <shelley@exe.dev>` |
-| 3 | `Crush:claude-sonnet-4-20250514` |
-| 3 | `Crush:claude-opus-4-6` |
-| 2 | `Crush:new-skill` |
-| 2 | `Crush <crush@anthropic.local>` |
-| 2 | `Crush:minimax-m3` |
-| 2 | `Crush:claude-sonnet-4-6` |
-| 1 each | `Crush <noreply@crush.dev>`, `Crush <noreply@crush.sh>`, `Crush <crush@charm.land>`, `Crush <crush@anthropic.com>`, `Crush:moonshotai/kimi-k2.7-code`, `Crush:codestral-2506`, `Crush:openrouter/anthropic/claude-sonnet-4`, `Crush:deepseek/deepseek-v4-pro` |
-
-### Caveats
-
-- **Bucket priority**: `Assisted-by:` wins over `Co-Authored-By:`. A commit
-  written by Crush with Claude as a co-author is counted under Crush.
-- **OpenRouter routing**: many `mimo-*`, `deepseek/deepseek-*`, and
-  `moonshotai/kimi-*` tags indicate the model was reached via OpenRouter
-  rather than the model's native API.
-- **The 304 untagged commits** are all pre-hook and have no model info.
-  They cluster at the start of each branch's history.
-- **Per-branch variance**: every commit on the current `metrics` branch
-  carries `Co-Authored-By: Claude Fable 5` with no `Assisted-by:` trailer,
-  so commits on this branch cannot be tied to a specific Crush model from
-  git alone — the session URL (`0152v5R4mfY8uu9MjUzdAXsS`) is the only
-  cross-reference.
+- "The 304 untagged commits predate the attribution hook." Many do not:
+  opencode (from 2026-06-09) and Codex never write trailers, and Crush
+  omitted them on 60 logged commits.
+- The snapshot counted all refs including `refs/stash`, and counted rebased
+  copies separately, which inflates every bucket.
+- Buckets such as `Crush:claude-opus-4-6` and `Crush:codestral-2506` came from
+  wrong trailers; the logs show mimo-v2.5 (see
+  [Trailer accuracy](#trailer-accuracy)).
