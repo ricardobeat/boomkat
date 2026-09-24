@@ -1,48 +1,70 @@
 #!/usr/bin/env bash
-# Run every test262 file under DIR through the HEAP_VERIFY runner and fail if
-# any of them reports a frame popped with heap slots still in it.
+# Run every test262 file under one or more DIRs through the HEAP_VERIFY runner,
+# all of them fed to a single worker, and fail if it reports a broken heap
+# invariant.
 #
-# The verifier prints "[vm] pop at <site> left heap slot rN" at the moment the
-# invariant breaks. Without it the same bug surfaces as a stale register
-# dispatched as a callee ("<typeof> is not a function") in a later frame, or as
-# nothing at all until a different test in the same worker crashes.
+# One worker for the whole shard is the point: the invariants behind these
+# reports are about state that outlives a single test, so a fresh process per
+# test would hide them. A stale register, a recycled allocator block, or a scope
+# the previous test left behind only shows up when the next test runs on top of
+# it.
+#
+# Reports that fail the gate:
+#   [vm] ...           a frame popped with a heap slot still pointing at it, or
+#                      a value released while a live register still holds it
+#   [scan-poison] ...  the marker reached a slot no writer filled, or one whose
+#                      owner was freed (SCAN_POISON is on in this build)
+#   ERROR: AddressSanitizer
+#                      a bad read that aborted the worker before a report
+#
+# Leak reports are off by default: this gate is about invalidity, and the tree
+# has long-standing leaks that other checks track (see scripts/run_heap_reset.sh
+# and scripts/check_temproot_rss.py). Set ASAN_OPTIONS to override.
+#
+# Usage: bash scripts/test262_verify.sh [dir ...]   (paths under test262/test)
 set -uo pipefail
 
-DIR="${1:-staging/sm/Number}"
+DIRS=("$@")
+[ "${#DIRS[@]}" -gt 0 ] || DIRS=("built-ins/TypedArray/prototype")
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 BIN=out/test262_runner_verify
-[ -x "$BIN" ] || { echo "missing $BIN (run: just build-verify)" >&2; exit 2; }
+[ -x "$BIN" ] || { echo "missing $BIN (run: just build-test262-verify)" >&2; exit 2; }
 
-BASE="test262/test/$DIR"
-[ -d "$BASE" ] || { echo "no such directory: $BASE" >&2; exit 2; }
+FILES=()
+for d in "${DIRS[@]}"; do
+    BASE="test262/test/$d"
+    [ -d "$BASE" ] || { echo "no such directory: $BASE" >&2; exit 2; }
+    while IFS= read -r f; do FILES+=("$f"); done \
+        < <(find "$BASE" -name '*.js' ! -name '*_FIXTURE*' | sort)
+done
 
-mapfile -t FILES < <(find "$BASE" -name '*.js' ! -name '*_FIXTURE*' | sort)
-[ "${#FILES[@]}" -gt 0 ] || { echo "no tests under $BASE" >&2; exit 2; }
+[ "${#FILES[@]}" -gt 0 ] || { echo "no tests under ${DIRS[*]}" >&2; exit 2; }
 
-echo "verifying ${#FILES[@]} test(s) under $DIR"
+echo "verifying ${#FILES[@]} test(s) under ${DIRS[*]}"
+
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 
-# One worker process, fed every path: this is also what exercises the
-# cross-test contamination the verifier is there to catch.
-printf '%s\n' "${FILES[@]}" | "$BIN" --worker > "$log" 2>&1
+printf '%s\n' "${FILES[@]}" \
+    | ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" "$BIN" --worker > "$log" 2>&1
 rc=$?
 
 fail=0
 
-# A frame popped with a slot pointing at reclaimed memory: the invariant broke
-# here, whatever reads it later.
-if grep -q '^\[vm\] ' "$log"; then
-    echo "HEAP VERIFY FAILURES:" >&2
-    grep '^\[vm\] ' "$log" | sort | uniq -c | sort -rn >&2
-    fail=1
-fi
+for pat in '^\[vm\] ' '^\[scan-poison\] '; do
+    if grep -q "$pat" "$log"; then
+        echo "HEAP VERIFY FAILURES (${pat}):" >&2
+        grep "$pat" "$log" | sort | uniq -c | sort -rn >&2
+        fail=1
+    fi
+done
 
 # ASan aborts the process on the first bad read, which can happen before any
-# [vm] line is printed -- that is itself the finding, so surface it rather than
-# reporting success on a run that died.
+# report line is printed -- that is itself the finding, so surface it rather
+# than reporting success on a run that died.
 if grep -q 'ERROR: AddressSanitizer' "$log"; then
     echo "ADDRESSSANITIZER:" >&2
     grep -A 4 'ERROR: AddressSanitizer' "$log" | head -20 >&2

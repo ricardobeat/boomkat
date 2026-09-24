@@ -62,11 +62,14 @@ jobs:
           c3c-version: ${{ env.C3C_VERSION }}
 
       # `make boomkat` and `make out/test262_runner` produce the binaries the
-      # suite jobs consume.
+      # suite jobs consume. The heap-verifying runner is a separate feature
+      # build (HEAP_VERIFY + SCAN_POISON + ASan) and rides along in the same
+      # artifact so the suite job does not need the toolchain.
       - name: Build engine + test262 runner
         run: |
           make boomkat
           make out/test262_runner
+          make out/test262_runner_verify
 
       # out/qjs is the reference engine the JS library corpus differs against.
       # The corpus only needs to know whether a library loads, so a prebuilt
@@ -160,6 +163,13 @@ jobs:
       # verdict). This is the same script `just test262-gate` uses.
       - name: test262 zero-fail gate
         run: bash scripts/test262_gate.sh
+
+      # One worker, whole shard: the heap invariants this checks are about state
+      # that outlives a single test, so a process per test would hide them.
+      - name: heap verifier shard
+        run: |
+          chmod +x out/test262_runner_verify
+          bash scripts/test262_verify.sh
 
   corpus:
     name: library corpus

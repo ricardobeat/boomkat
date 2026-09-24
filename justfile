@@ -153,15 +153,17 @@ build-asan:
     @make out/test262_runner_asan
 
 # Build the heap-verifying test262 runner (out/test262_runner_verify).
-# HEAP_VERIFY + ASan. Distinct from `build-verify`, which builds out/boomkat
-# with the same feature but no sanitizer and no test262 driver.
+# HEAP_VERIFY + SCAN_POISON + ASan. Distinct from `build-verify`, which builds
+# out/boomkat with the same features but no sanitizer and no test262 driver.
 build-test262-verify:
     @make out/test262_runner_verify
 
-# Run a suite under the heap verifier and fail on any [vm] report.
-# Slow (ASan + O0): scope it to a directory while iterating.
-test262-verify dir="staging/sm/Number": build-test262-verify
-    @bash scripts/test262_verify.sh "{{dir}}"
+# Run a shard under the heap verifier and fail on any [vm] or [scan-poison]
+# report. Slow (ASan + O0): scope it to directories while iterating, e.g.
+# `just test262-verify language/statements/try`. Defaults to the TypedArray
+# prototype directories, where a stale-scope crash surfaced.
+test262-verify *ARGS: build-test262-verify
+    @bash scripts/test262_verify.sh {{ARGS}}
 
 # Build with NaN-boxing disabled (-D NONANBOX)
 build-nonanbox t="boomkat":
