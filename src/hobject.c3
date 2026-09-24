@@ -905,10 +905,25 @@ struct HObjectTemporal {
     HObject*        timezone;
 }
 
-// HObjectTemporal is now the union's max. The 92-byte size must be kept
-// below HObjectFunction by other means if any other variant grows; today
-// it does not.
-$assert HObjectTemporal::size > HObjectFunction::size;
+// HObjectExtra is charged to every FUNCTION/REGEXP/PROMISE object, so its size
+// is a memory budget as well as a layout fact. Which variant sets it depends on
+// the representation, because a TVal is 8 bytes when NaN-boxed and 16 when
+// tagged: the Temporal variant is on top of the NaN-boxed build, and the
+// iterator helper above it in the tagged build. A third variant growing past
+// the current max is a size regression to re-baseline here, not a compile
+// error, so each representation states its own bound.
+//
+// Sizes with 8-byte TVals: extra 104, temporal 104, helper 88, function 80,
+// promise 40, getter/setter 16, arraybuffer 32, bufferview 32.
+// With 16-byte TVals: extra 112, helper 112, temporal 104, function 104,
+// promise 48, getter/setter 32, arraybuffer 32, bufferview 32.
+fn void assert_union_max() @feat(!NONANBOX) {
+    $assert HObjectExtra::size == HObjectTemporal::size;
+}
+
+fn void assert_union_max() @feat(NONANBOX) {
+    $assert HObjectExtra::size == HObjectIteratorHelper::size;
+}
 
 // The prefix every HObject variant starts with, which lets the GC walk the
 // heap lists and reach shapes and properties at fixed offsets. Its first
