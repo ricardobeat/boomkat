@@ -251,9 +251,8 @@ fn void async_gen_enqueue(BuiltinContext* ctx, GeneratorState* gs, ResumeKind ki
     if (catch err = p_raw) { ctx.result.set_undefined(); return; }
     HObject* promise = p_raw;
 
-    AsyncGenRequest* req = (AsyncGenRequest*)heap.alloc_func(heap.heap_udata, AsyncGenRequest::size);
+    AsyncGenRequest* req = (AsyncGenRequest*)heap::alloc_scanned(AsyncGenRequest, heap);
     if (req == null) { ctx.result.set_undefined(); return; }
-    mem::clear(req, (sz)(AsyncGenRequest::size));
     req.completion_kind = kind;
     req.value = completion;
     req.capability = promise;

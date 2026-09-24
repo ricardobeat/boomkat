@@ -2634,13 +2634,12 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
 
                 // Allocate GeneratorState
-                void* gs_raw = vm.heap.alloc_func(vm.heap.heap_udata, GeneratorState::size);
+                void* gs_raw = heap::alloc_scanned(GeneratorState, vm.heap);
                 if (gs_raw == null) {
                     ds.regs_base[result_reg].set_undefined();
                     return (TVal){};
                 }
                 GeneratorState* gs = (GeneratorState*)gs_raw;
-                mem::clear(gs_raw, (sz)(GeneratorState::size));
                 gs.pending_resume_reg = 0xFFFF;
 
                 gs.func = target;

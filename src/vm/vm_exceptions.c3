@@ -38,7 +38,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 : null;
 
             // Allocate catcher
-            Catcher* cat = (Catcher*)vm.heap.alloc_func(vm.heap.heap_udata, Catcher::size);
+            Catcher* cat = (Catcher*)heap::alloc_scanned(Catcher, vm.heap);
             if (cat == null) {
                 // Out of memory, so skip the catcher and let the try body run unprotected
                 break;

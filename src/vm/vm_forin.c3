@@ -512,7 +512,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
 
     seen.free(h);
 
-    ForInState* state = (ForInState*)h.alloc_func(h.heap_udata, ForInState::size);
+    ForInState* state = (ForInState*)heap::alloc_scanned(ForInState, h);
     if (state == null) { h.free_func(h.heap_udata, keys); return null; }
     state.keys = keys;
     state.target = obj;

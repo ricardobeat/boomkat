@@ -1169,6 +1169,26 @@ fn void default_fatal(void* udata, char* msg) {
 // The FixedBlockPools draw from `allocators::LIBC_ALLOCATOR`.
 
 // ============================================================================
+// Scanned-state allocation
+// ============================================================================
+
+// Allocate a zeroed node for state the collector walks: a try handler's saved
+// values, a for-in enumeration, a suspended generator's registers.
+//
+// C3 zero-initialises a declared struct value, but this heap hands back raw
+// allocator memory, so a recycled block arrives holding the previous owner's
+// bytes. A TVal field no writer has reached yet would then be scanned as a live
+// pointer, and the marker stamps the reachable bit into whatever now lives at
+// that address. A zeroed field is a double, which the mark phase ignores, so an
+// uninitialised field costs a missing root rather than a corrupt heap.
+macro void* alloc_scanned($Type, Heap* h) {
+    void* raw = h.alloc_func(h.heap_udata, (usz)$Type::size);
+    if (raw == null) { return null; }
+    mem::clear(raw, (sz)((usz)$Type::size));
+    return raw;
+}
+
+// ============================================================================
 // Heap creation / destruction
 // ============================================================================
 

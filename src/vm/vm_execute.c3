@@ -901,9 +901,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // their body immediately (handled elsewhere), so exclude those.
             if (!did_resume && (target.is_sync_generator() || target.is_async_gen())
                 && vm.heap.gen_initial_gs == null) {
-                void* cfn_gs_raw = vm.heap.alloc_func(vm.heap.heap_udata, GeneratorState::size);
+                void* cfn_gs_raw = heap::alloc_scanned(GeneratorState, vm.heap);
                 if (cfn_gs_raw != null) {
-                    mem::clear(cfn_gs_raw, (sz)(GeneratorState::size));
                     GeneratorState* cfn_gs = (GeneratorState*)cfn_gs_raw;
                     cfn_gs.pending_resume_reg = 0xFFFF;
                     cfn_gs.func = target;
