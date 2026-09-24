@@ -1,46 +1,35 @@
 # Engine architecture
 
-A guide to how this JavaScript engine fits together: what the major pieces are,
-how a value moves through them, and which invariants hold everything in place.
-It is written for someone reading or changing the code, so it concentrates on
-what is hard to work out from any single file.
+Boomkat compiles JavaScript directly to register bytecode and runs it in a C3
+virtual machine. Objects use shared shapes and inline caches; memory is managed
+by reference counting plus a tracing collector for cycles. This guide follows
+the path from source text to execution, then explains the representations and
+ownership rules that connect the parts.
 
-The engine is a register-based bytecode interpreter written in C3, with a
-single-pass compiler, a hybrid refcounting and mark-and-sweep collector, hidden
-classes with inline caches, and ES2015-and-later features including generators,
-async functions, proxies, typed arrays, and ES modules.
+Start with [How a script runs](#how-a-script-runs) for the whole path. The later
+sections cover the [compiler](#from-source-to-bytecode),
+[VM](#the-virtual-machine), [values and objects](#values-and-objects),
+[memory](#memory-the-heap-the-collector-and-strings), and
+[builtins and modules](#builtins-and-modules).
 
 ## How a script runs
 
-Before the details, the shape of the whole thing. Running `f("hi")` from a file
-involves every layer:
+Running a file containing `f("hi")` crosses these boundaries:
 
-1. **Compile.** `compile()` sets up a `CompilerContext` and parses. The lexer
-   hands over tokens on demand, and bytecode is emitted as each construct is
-   recognized. There is no AST. Function bodies become nested
-   `CompiledFunction`s, string literals are interned into the constant pool, and
-   `finish()` runs the fusion and move-elimination passes over the finished
-   instruction stream.
-
-2. **Set up.** The VM pushes an activation for the top-level code, pointing its
-   register window into the valstack and its environment at the global scope.
-
-3. **Execute.** `Vm.run` loads the frame into a `Dispatch` struct and enters the
-   inner loop. `GETVAR` resolves `f` through an inline cache; `LDCONST` loads
-   the interned `"hi"`; `CALL` finds a plain compiled function, pushes an
-   activation, and signals a restart so the outer loop reloads state for the new
-   frame.
-
-4. **Allocate.** Anything the body constructs comes from the heap: an object
-   gets a pooled `HObject` header, a shape describing its layout, and a temproot
-   flag so a collection running before it is anchored cannot free it.
-
-5. **Collect.** Refcounting reclaims most values as registers are overwritten.
-   At a backward jump the VM may reach a safepoint, where mark-and-sweep runs to
-   collect the cycles refcounting cannot.
-
-6. **Drain.** When the script returns, the microtask queue runs, settling
-   promises and resuming any async function that was awaiting.
+1. **Compile:** `compile()` creates a `CompilerContext`. The lexer supplies
+   tokens on demand, and the parser emits bytecode without building an AST.
+   Each function body gets a `CompiledFunction`; `finish()` optimizes its code.
+2. **Enter:** The VM creates a top-level `Activation`. Its registers occupy a
+   window in the shared value stack, and its scope points at the global
+   environment.
+3. **Execute:** `Vm.run` loads frame state into `Dispatch`. `GETVAR` resolves
+   `f`, `LDCONST` loads `"hi"`, and `CALL` pushes another activation. The outer
+   dispatch loop then loads the callee's state.
+4. **Allocate and collect:** Objects come from the heap with a shape and a
+   temporary GC root. Reference counts release most dead values; tracing at
+   safepoints reclaims cycles.
+5. **Drain jobs:** After the top-level execution, the VM drains promise jobs
+   and resumes async continuations they schedule.
 
 ## Where the code lives
 
@@ -50,10 +39,10 @@ involves every layer:
 | `src/compiler/` | Single-pass parser and code generator, plus the optimization passes |
 | `src/bytecode.c3` | Instruction encoding, the opcode set, `CompiledFunction` |
 | `src/vm/` | The dispatch loop, calls, property access, exceptions, generators |
-| `src/heap.c3` | Allocation, both collectors, the string table, shapes |
+| `src/heap.c3` | Allocation, collection, string table, shapes, job queue |
 | `src/types.c3` | `TVal` and `HeapHeader`, the two universal representations |
 | `src/hobject.c3` | Object layout, property storage, shapes, inline caches |
-| `src/hstring.c3` | Immutable interned strings and the CESU-8 encoding |
+| `src/hstring.c3` | String storage, interning, and CESU-8 conversion |
 | `src/env.c3` | Environment records and the scope chain |
 | `src/module.c3` | The ESM lifecycle: resolve, link, evaluate |
 | `src/builtins/` | The standard library, one file per area |
@@ -63,116 +52,78 @@ involves every layer:
 
 ### The lexer
 
-The lexer is on-demand rather than a separate pass: the compiler asks for the
-next token as it parses. That matters because JavaScript cannot be tokenized
-context-free. Whether `/` starts a regexp or is division depends on what came
-before, and a `}` may close a block or resume a template literal.
+The compiler requests tokens as it parses. JavaScript needs this cooperation:
+`/` can begin a regexp or divide two expressions, and `}` can close a block or
+resume a template literal. The lexer records line breaks for automatic
+semicolon insertion and tracks nesting inside `${...}`.
 
-Automatic semicolon insertion needs line-break information, so the lexer records
-whether a newline preceded each token. It also tracks template-substitution
-nesting, since a `}` inside `${...}` is not a block close.
-
-Lookahead is the other reason the two stay coupled. Deciding whether `async (x)`
-begins an async arrow or a call to a function named `async` requires peeking past
-several tokens, and `tokens.c3` holds those speculative helpers. They restore
-lexer state on a miss, so the peek is invisible to the parse.
+The speculative helpers in `src/compiler/tokens.c3` look ahead for ambiguous
+forms such as `async (x)`. They restore the lexer's position when the form does
+not match, leaving the ordinary parse at the same token.
 
 ### The compiler
 
-Parsing and code generation happen together in one pass. There is no AST: the
-parser emits bytecode as it recognizes each construct, which keeps compilation
-fast and memory use flat, and shapes everything else about the design.
+The parser emits bytecode while recognizing each construct. It does not retain
+an AST. `CompilerContext` owns the instruction buffer, constant pool, register
+allocator, scope stack, and flags for one function. A nested function gets its
+own context and becomes a template in the parent's `inner_funcs` array.
 
-`CompilerContext` holds the state for one function being compiled: the code
-buffer, constant pool, register allocator, scope stack, and the flags that end up
-in `FuncFlags`. Nested functions get their own context, and the inner
-`CompiledFunction` is added to the parent's `inner_funcs`.
+Scripts and dynamic function bodies default to sloppy mode; modules default to
+strict mode. A `"use strict"` directive or class body also selects strict mode.
+The compiler enforces syntax rules with that context and stores the result in
+`FuncFlags.is_strict` for runtime behavior. Class code is strict throughout,
+including its own binding name.
 
-Strictness is per function, and it comes from the compilation unit's default:
-sloppy for a script or a dynamic `Function()` body, strict for a module. A
-`"use strict"` directive or a class body raises it, and `FuncFlags.is_strict`
-carries the result to the VM, which is the only place that needs it at run time.
-Class code counts as strict throughout, so the class's own name is subject to
-the strict-mode binding rules even in a sloppy script.
+Ambiguous forms require a second look. The compiler saves a lexer position and
+reparses `(a, b)` if it proves to be arrow parameters, or `[a, b]` if an `=`
+turns it into a destructuring target. Other constructs patch bytecode already
+emitted.
 
-Working without an AST does cost something. Some constructs are only recognizable
-after their opening tokens have been consumed and code emitted, so the compiler
-either patches emitted instructions later or re-parses from a saved lexer
-position. Arrow functions and destructuring assignment both use the second
-approach: `(a, b)` might be a parenthesized expression or an arrow's parameter
-list, and `[a, b] = c` is an array literal until the `=` arrives.
+For `a.b`, the parser cannot yet tell whether the member will be read, assigned,
+incremented, or deleted. It records the base and key in
+`CompilerContext.member` until the enclosing expression chooses the operation.
+Its tagged `MemberRef` distinguishes plain, private, and `super` members and
+requires producers to set every operand together.
 
-A third case is the member expression. `a.b` is compiled before anything says
-whether it is a value, a store target, an increment, or a `delete` operand, so
-`member_expr` records the base and key registers in `CompilerContext.member` and
-the enclosing form consumes them. That record is the parser's only lookback, and
-it is a single tagged `MemberRef` rather than a set of parallel flags:
-`MemberKind` distinguishes plain, private, and super members, which cannot
-overlap, and the tag doubles as the validity bit, so the operands cannot be read
-without first testing whether a member is recorded. Producers write it through
-`set()`, which takes every field, so a member cannot inherit an operand from the
-expression before it.
-
-Building the engine with `-D MEMBER_STRICT` (the `boomkat_memberstrict` target)
-turns the access rules into traps: reading an operand with no member recorded, or
-reading a register that has already fallen out of the live register window, halts
-the compiler at the read instead of emitting an instruction that points at a
-freed register. It is off in every shipping target.
+The `boomkat_memberstrict` build traps a read of an absent member or a register
+outside the live window at the point of compilation. Shipping builds omit
+these checks.
 
 ### Registers and scopes
 
-Registers are allocated as a stack. Expressions take temporaries from the top and
-release them in reverse, while parameters and locals get permanent slots for the
-function's lifetime.
+The compiler allocates temporary registers from the top of a stack and releases
+them in reverse order. Parameters and locals keep their slots for the function's
+lifetime. `regalloc.c3` covers expressions that need to release a register while
+higher temporary registers remain live.
 
-Some sequences need a register freed in the middle of an expression, which the
-straightforward stack discipline cannot express without stranding higher slots.
-`regalloc.c3` documents where that happens and how those cases are handled.
+The compile-time scope stack mirrors runtime environments. A name uses a
+register when its binding is known and local; it uses an environment lookup
+when eval, `with`, closure capture, or scope rules require one. `needs_env`
+tells the call path whether to allocate a function scope. A pass removes
+environment writes and scope push/pop instructions when no surviving operation
+needs them. Retained TDZ and const bindings keep their scope layout.
 
-Scopes are a compile-time stack mirroring the runtime environment chain. The
-compiler resolves a name to a register where it can, and falls back to an
-environment lookup where it cannot. `needs_env` records the outcome for the whole
-function: when it stays false, the VM skips creating a scope on every call.
-After removing register-local environment writes, a function with no remaining
-lexical bindings or depth-dependent environment operations also drops all
-lexical pushes and pops, including abrupt-exit pops. Functions with retained
-const or TDZ bindings keep their scope layout. An uncaptured const used only
-through its initialized register needs no environment binding. Name-based
-reads, writes, and deletes retain the binding, as do dynamic scope and captures.
-A synchronous zero-parameter arrow with no own bindings, nested closures, or
-dynamic scope can also omit empty lexical and variable scopes. Its captured
-environment remains stable across calls, allowing variable-cache reuse.
+Each declaration has a binding record with its home register, scope kind, and
+capture state. The compiler compares these records with name consumers in
+nested functions before removing environment stores. It retains all producers
+for a spelling when distinct scopes make ownership ambiguous. For eligible
+unique var and parameter bindings, the compiler can prove that no child uses
+the binding and keep it in a register.
 
-Each declaration has a persistent binding record with its home register,
-scope kind, and capture state. Environment-store retention combines these
-records with name consumers in compiled child functions, including synthetic
-class bindings. Same-named declarations in different scopes are conservatively
-retained together. Capture discovery uses dynamically sized name storage.
-For unique var and parameter bindings, compiled child references refine the
-conservative token scan: bindings with no child consumer return to their home
-register before bytecode optimization. Unsupported uses retain environment
-storage.
+An eligible reference to an enclosing binding becomes `GETCAP`, `PUTCAP`, or
+`PUTCAP_SNAP`. The closure holds indexed descriptors for the shared binding
+slots. A descriptor keeps its owner alive and loads the owner's current value
+array, since that array can resize. If resolution crossed a scope that might
+gain the name later, access checks for a nearer binding and falls back to name
+lookup when one appears. GC traces descriptor owners alongside the captured
+environment chain.
 
-Eligible references to a visible enclosing binding become `GETCAP`, `PUTCAP`,
-or `PUTCAP_SNAP`. Each closure owns an indexed descriptor vector referencing
-shared binding slots. Creation resolves those slots once. Reads and writes
-check for a nearer binding when resolution crossed a scope that could gain
-the name later. They fetch the owner's current value array after resizing.
-Each descriptor retains its owner, and GC traces these owners independently of
-captured environment chains.
-
-Eligible captured var and parameter bindings share a private dense value
-array owned by a plain internal object with no named-property capacity.
-`NEWCELLS` allocates it; `GETCELL`, `SETCELL`, and `MOVECELL` access it
-from the defining function. Child descriptors point directly into the same
-array. Its persistent register sits below temporary call windows, which the
-VM can overwrite while executing a callee. Functions with no remaining
-environment bindings reuse the enclosing environment. Native callback and
-constructor entries record the active closure for indexed capture access.
-
-TDZ and immutable writes retain checked environment slots. Dynamic scope,
-unsupported operations, ambiguous same-named declarations, and transitive
-references without a direct capture mapping keep their environment paths.
+Eligible captured var and parameter bindings can instead share a private dense
+cell array. `NEWCELLS` allocates it, and `GETCELL`, `SETCELL`, and `MOVECELL`
+serve accesses in the defining function. Child descriptors point into the same
+array. Its persistent register stays below temporary call windows. TDZ, const,
+dynamic scope, ambiguous names, and captures without a direct mapping retain
+their checked environment path.
 
 ### Classes and private names
 
@@ -193,58 +144,50 @@ function therefore snapshots its private-name table into
 
 ### Optimization passes
 
-After a function body is compiled, `finish()` runs several passes over the
-instruction stream. Their order is deliberate and documented in `fusion.c3`:
+`finish()` optimizes the emitted instruction stream. The order in
+`fusion.c3` matters:
 
 1. `GETVAR` + `INC`/`DEC` + `PUTVAR` fuses into `INC_VAR`/`DEC_VAR`.
 2. `LDCONST` + `GETPROP` fuses into `GETPROPC`.
 3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`. Loose
    `EQ` and `NEQ` are excluded, since they coerce and can throw.
-4. Copy propagation substitutes through `LDREG` moves. This must run before any
-   pass whose trigger and consumer can be separated by a parser-emitted move.
-5. Move elimination removes the moves copy propagation made dead.
-6. Peephole cleanup and NOP compaction close the stream up.
+4. Copy propagation substitutes through `LDREG` moves, exposing consumers that
+   a parser-emitted move separated from their producers.
+5. `LDINT` + `ADD`/`SUB` fuses into `ADDI`/`SUBI`.
+6. Dead moves are removed; peephole cleanup and NOP compaction close gaps.
 
-Two facts make this safe. Every fusion consumes instructions the compiler itself
-emitted in a known shape, and the jump-aware passes maintain a whole-function
-bitset of jump targets, so no fusion can span a label another branch lands on.
+The fusion drivers check jump targets and register liveness before replacing a
+sequence. A branch cannot land inside a sequence whose producer was removed.
 
-A separate pass, `prim_globals.c3`, proves that certain globals are never
-observed through `eval`, `with`, `delete`, or a getter, which lets global reads
-and writes compile to guard-free opcodes.
+The `prim_globals.c3` pre-scan proves that some script globals remain primitive
+and cannot be changed through dynamic access. Those reads and writes use
+opcodes without heap ownership checks; uncertainty keeps the guarded path.
 
 ## The virtual machine
 
 ### The dispatch loop
 
-`Vm.run` is a loop inside a loop. The outer one loads all per-frame state into a
-`Dispatch` struct: the code base, constant pool, inline-cache arrays, register
-base, and program counter. The inner one dispatches instructions.
+The outer loop in `Vm.run` loads the active frame's code, constants, caches,
+register base, and program counter into `Dispatch`. The inner loop executes
+instructions. A JS-to-JS call pushes an `Activation` and restarts the outer
+loop; it does not recurse on the C stack. `MAX_CALLS` bounds this activation
+array at 4096 frames.
 
-A JS-to-JS call does not recurse into the interpreter. It pushes an activation
-and sets `needs_restart`, which breaks back to the outer loop to reload state for
-the new frame. Deep JavaScript recursion therefore costs activation slots rather
-than C stack, and `MAX_CALLS` (512) bounds it.
+Every compiled function ends with a return opcode, so the inner loop needs no
+fall-off check. Return and generator instructions handle `halt` at their own
+sites.
 
-Two invariants keep the inner loop tight. The compiler ends every function with
-an explicit `RET`, so there is no fall-off-the-end check, and only the return and
-generator opcodes set `halt`, so it is tested at those sites rather than once per
-instruction.
-
-Some paths do need real re-entry, and `vm_call_fn_impl` handles them: a builtin
-calling back into JS, a getter, a `Symbol.toPrimitive`. These run a nested
-`Vm.run`, which is why the VM tracks `run_depth` and why saved frames need
-relocating if the valstack moves underneath them.
+A builtin calling back into JS, a getter, or a coercion hook can re-enter
+`Vm.run` through `vm_call_fn_impl`. These nested runs count against
+`MAX_RUN_DEPTH` (128). Saved frame pointers must be relocated if the growable
+value stack moves during re-entry.
 
 ### Frames
 
-An `Activation` is one call frame: the function, the parent activation, the var
-and lex environments, the catcher chain, the program counter, and where in the
-valstack its registers start.
-
-Registers are a window into a single growable valstack rather than a per-frame
-allocation. That makes calls cheap and makes `ensure_valstack_grow` delicate,
-since a realloc invalidates every absolute pointer into it.
+An `Activation` records its function, parent frame, variable and lexical
+environments, catcher chain, program counter, and register window. Windows
+share one growable value stack. `ensure_valstack_grow` must update saved
+pointers after reallocating it.
 
 Frames also carry the flags that drive spec behaviour: `ACT_FLAG_CONSTRUCT`,
 `ACT_FLAG_DERIVED` for a derived constructor's return check,
@@ -252,39 +195,35 @@ Frames also carry the flags that drive spec behaviour: `ACT_FLAG_CONSTRUCT`,
 `ACT_FLAG_BORROWED_CALLEE` when the callee was copied from a global binding
 without an incref, so the return write-back must not decref it.
 
-The GC's view of a frame is deliberately explicit. `mark_roots` only scans the
-valstack up to `valstack_top`, a high-water mark for the deepest frame, so each
-live frame's own register span is marked separately, along with the fields that
-can be a value's only root: an owned `this`, `new_target`, an async function's
-promise, the generator state being resumed, and every in-flight exception parked
-in a catcher.
+For GC, `valstack_top` bounds the live stack area. The marker also scans each
+frame's register span and fields that may be a value's only root: owned `this`,
+`new_target`, an async promise, resumed generator state, and exceptions saved
+in catchers.
 
 ### Calls
 
-`resolve_call_var` picks the path. The fast path is a plain compiled function
-that is neither a generator nor a class constructor, which is the common case; it
-sets up the activation inline and restarts the outer loop. Everything else,
-meaning lightfuncs, builtins, bound functions, generators, and class
-constructors, goes through the slower dispatch in `vm_calls.c3`.
+`resolve_call_var` selects the call path. An ordinary compiled function gets
+an activation inline before dispatch restarts. Lightfuncs, builtins, bound
+functions, generators, and class constructors use the general call path in
+`vm_calls.c3`.
 
-Constructors add the `new.target` chain and, for a derived class, the deferred
-`this`. A derived constructor starts with `this` in TDZ, and `super()` walks up
-the activation chain to find the frame whose binding it must initialize.
-Reading `this` before that throws, and returning a non-object non-undefined from
-a derived constructor throws too.
+Construction carries `new.target` through the call chain. A derived
+constructor starts with `this` uninitialized; `super()` finds and initializes
+the owning frame. Reading `this` first throws, as does returning a primitive
+other than `undefined` from that constructor.
 
 ### Property access
 
-Threaded dispatch reads dense array elements with fast-integer indices and
-array `.length` directly. Holes and non-array receivers use the generic path;
-heap-valued elements also fall back when reference ownership needs a slow call.
-Length is read on each access so mutations remain visible without a shape change.
+Threaded dispatch reads dense array elements and array `.length` directly when
+its guards hold. Holes, other receivers, and values needing slower reference
+ownership handling use the generic path. Length is read on each access so a
+mutation is visible without a shape change.
 
-`GETPROP` and `PUTPROP` try, in order: the per-site inline cache, the
-megamorphic cache, then a full lookup. Own-data read ICs validate the shape and
-load the indexed slot from the current receiver, sharing hits across instances.
-Other IC paths also validate the owner's storage pointer. Fused two-hop forms
-exist for `a.b.c`, and string primitives auto-box on the first hop.
+`GETPROP` and `PUTPROP` consult the site cache, then the heap-wide
+megamorphic cache, then perform a full lookup. An own-data read validates the
+receiver's shape and loads its indexed slot; other cache entries also validate
+the owner's storage pointer. Fused forms serve two-hop expressions such as
+`a.b.c`.
 
 Writes are where the exotics live. An array-index write may go to the dense part,
 grow it, or fall through to the property table. A `length` write on an array
@@ -294,22 +233,18 @@ afterwards.
 
 ### Array and call spread
 
-`ARRSPRD` and `SPREAD_ARG` resolve `Symbol.iterator` before selecting a fast
-path. Dense arrays with the intrinsic values factory and an ordinary intrinsic
-`next` method on the array iterator prototype copy directly without creating
-an iterator. Custom factories run normally; an intrinsic array-values iterator
-they return can also drain its dense remaining range without per-element calls
-or iterator result objects. Destination storage is reserved once, and each copied value
-acquires the reference its destination owns. Call spread refreshes register
-pointers after stack growth and extends the stack watermark over its arguments.
-It retains the source while copying because argument slots can overwrite the
-register that owns the source array.
+`ARRSPRD` and `SPREAD_ARG` resolve `Symbol.iterator` first. A dense array using
+the intrinsic values factory and `next` method can copy its range without
+allocating iterator results. A custom factory still runs; if it returns an
+intrinsic array iterator, its remaining dense range can be drained in bulk.
+The destination reserves space once and owns a reference to every copied
+heap value. Call spread refreshes register pointers after stack growth and
+retains its source while argument slots may overwrite the source register.
 
-The guard rejects proxy iterator prototypes, custom next methods, and dense
-holes, including the undefined sentinel. These take the generic iterator path,
-which can observe indexed getters and inherited properties. A bulk drain
-updates the iterator's index and releases its target on exhaustion, including
-when a custom iterator factory exposes that iterator elsewhere.
+Proxy iterator prototypes, custom `next` methods, and dense holes take the
+generic iterator path, which can observe getters and inherited properties.
+Bulk draining updates the iterator's index and releases its target on
+exhaustion.
 
 ### Exceptions
 
@@ -329,31 +264,22 @@ A generator call does not run its body. It allocates a `GeneratorState`, runs
 parameter initialization, and suspends at `GEN_START`, returning the generator
 object.
 
-`YIELD` copies the register window, program counter, environments, and catcher
-chain into that state and returns to the caller. `.next()`, `.throw()`, and
-`.return()` restore them and resume, with `ResumeKind` telling `YIELD` whether to
-return a value, inject an exception, or inject a return.
+`YIELD` saves the register window, program counter, environments, and catchers.
+`.next()`, `.throw()`, and `.return()` restore them; `ResumeKind` tells the
+resumed opcode which completion to inject.
 
-Restoring the registers takes a reference per heap value, and the copy bypasses
-the usual `track_heap_store` accounting while `activation_begin` has just reset
-`heap_reg_count`. Both restore sites, in `vm_call_fn_impl` and
-`dispatch_calls`, therefore call `track_restored_regs()` to raise the watermark
-over the restored window, which keeps the `decref_callee_regs` sweep and the
-`vm_mark_activations` scan sound. A bulk register restore added later owes the
-same call, or it leaks the references and leaves stale pointer bits for a frame
-that reuses that valstack address.
+Restoring heap values acquires references, then `track_restored_regs()` raises
+the register watermark over the restored window. Both restore paths call it.
+Any new bulk restore must do the same so frame teardown and GC scan the owned
+values.
 
-Async functions reuse the same machinery: `AWAIT` is a suspension whose
-continuation is a promise reaction, so an async function is a generator whose
-resumptions are driven by the microtask queue rather than by user calls.
+Async functions use the same suspension machinery. `AWAIT` registers a promise
+reaction that resumes the saved frame from the microtask queue.
 
-Bounded ordinary async functions carry a sparse register mask for each await
-continuation, computed with the move-elimination liveness analysis. Suspension
-copies only those values into a snapshot ending at the highest live register;
-resumption fills other slots with undefined. The resume destination needs no
-saved value because `LOAD_RESUME` overwrites it. Functions with exception
-handlers, captures, dynamic scope, or unsupported bytecode retain full
-snapshots, as do generators. Environments and promise state are saved normally.
+For eligible ordinary async functions, liveness analysis gives each await a
+register mask. Suspension saves only live values up to the highest live slot;
+resumption fills the rest with `undefined`. Generators and async functions with
+handlers, captures, dynamic scope, or unsupported bytecode save full windows.
 
 `yield*` delegation is a resumable state machine, because in an async generator
 every spec `Await` inside the delegation is itself a real suspension. The
@@ -371,9 +297,9 @@ allocation between collections in a loop, and throttles them with
 
 ### TVal
 
-Every register, property slot, and stack slot holds a `TVal`. The default build
-NaN-boxes it into a single 8-byte `ulong`; passing `-D NONANBOX` switches to a
-16-byte tagged union with identical semantics, which is useful when debugging.
+Registers, property slots, and stack slots hold `TVal`s. The default build
+NaN-boxes each value into eight bytes. `-D NONANBOX` selects a 16-byte tagged
+union with the same JavaScript semantics.
 
 NaN-boxing exploits the unused payload space in IEEE 754 NaNs. A double is any
 value whose top 16 bits are at or below `0xFFF0`; everything above that is a
@@ -387,23 +313,15 @@ tagged non-double, with the payload in the low 48 bits:
 | `0xFFF5` | boolean, 0 or 1 |
 | `0xFFF6`, `0xFFF7` | raw pointer, lightfunc |
 | `0xFFF8` … `0xFFFA` | `HString*`, `HObject*`, buffer |
-| `0xFFFF` | deleted-slot sentinel |
+| `0xFFFB`, `0xFFFC`, `0xFFFF` | internal environment reference, poison, deleted-entry sentinel |
 
-Two consequences follow. `set_number` normalizes any NaN it stores to
-a canonical positive NaN, because a negative NaN's bits would collide with the
-tag range. And the tag layout is deliberate: undefined and null are adjacent so
-`is_nullish` is one range check, and numbers and fastints sit below every
-pointer tag so `is_numeric` and `is_heap_allocated` are also single comparisons.
+`set_number` canonicalizes NaNs whose bits overlap the tag range. Adjacent tags
+make nullish and heap-value checks cheap. Fastints store signed integers in the
+48-bit payload; `set_fastint_or_number` chooses that representation when the
+integer fits, avoiding a double round trip in integer arithmetic.
 
-**Fastints** are the integer fast path. An integer that fits in 48 bits is
-stored as a fastint rather than a double, so integer arithmetic avoids
-float round-tripping. `set_fastint_or_number` is the one place that decides,
-and arithmetic opcodes write their results through it rather than repeating the
-range check.
-
-The `DELETED` tag is internal and never a JavaScript value. It marks an array
-slot that was deleted, which the dense array part cannot express with
-`undefined` alone.
+`DELETED` and `POISON` are internal markers, never JavaScript values. `DELETED`
+marks removed Map/Set entries; `POISON` exposes unwritten scanned storage.
 
 ### HeapHeader
 
@@ -418,9 +336,9 @@ and decref do nothing. That sentinel is only meaningful together with
 
 ### HString
 
-Strings are immutable, and their bytes live in the same allocation as the
-header, so `get_data()` is pointer arithmetic. A NUL always follows the last
-byte, letting the data pointer go straight to a C API.
+String bytes live next to the header, with a trailing NUL for C APIs. Published
+strings are immutable. A uniquely owned, non-interned concat accumulator may
+extend its spare capacity before another value can observe it.
 
 String equality uses pointer identity when both strings are interned and
 compares content otherwise. Strict equality, SameValue, and collection lookups
@@ -428,20 +346,14 @@ share that rule. Map and Set materialize a deferred content hash when needed.
 Property tables use canonical keys: property-key conversion and insertion call
 `Heap.ensure_interned` before relying on pointer identity.
 
-Concatenation results defer hashing and interning. A uniquely owned accumulator
-can append into spare capacity; other results allocate exactly their content.
-The weak string registry tracks both kinds, including short results, for GC
-and heap teardown.
+Concatenation results defer hashing and interning. The weak string registry
+tracks non-interned results, including short ones, for GC and heap teardown.
 
-Internally the bytes are **CESU-8**, not standard UTF-8. An ECMAScript string is
-a sequence of UTF-16 code units, so every astral codepoint is split into its two
-surrogate halves and each half encoded separately as a 3-byte sequence. That is
-what makes `"\u{1F600}".length === 2` come out right, and it lets lone
-surrogates round-trip, which the spec permits. `normalize_to_cesu8` is the only
-normalization point, called at intern time so one logical string cannot reach
-the table under two different encodings. `write_cesu8_as_utf8` inverts it at
-every host-visible boundary, so nothing outside the engine sees a surrogate
-half.
+The internal encoding is **CESU-8**. JavaScript strings are sequences of
+UTF-16 code units: an astral code point occupies two surrogate units, while a
+lone surrogate is also a valid string element. Encoding each unit separately
+preserves both cases. `normalize_to_cesu8` canonicalizes input for interning;
+`write_cesu8_as_utf8` converts text for host output.
 
 Character indexing is by UTF-16 code unit and cached. Each string remembers one
 `(char_offset, byte_offset)` cursor, and `char_offset_to_byte_offset` scans from
@@ -455,34 +367,31 @@ An object is a `HObjectBase` prefix followed, for most classes, by an
 `HObjectExtra` union holding subtype fields. `flags.obj_class` says which
 variant is live, and `alloc_size_for_class` decides how much space to allocate:
 
-- `OBJECT` and `ARGUMENTS` need no union at all.
-- `ARRAY` keeps its `array_length` in the union's first four bytes.
-- Everything else, `ERROR` and `PROXY` included, gets the full union.
+- `OBJECT` has no trailing union.
+- `ARRAY` and `ARGUMENTS` use the union for their metadata.
+- Other classes, including `ERROR` and `PROXY`, have subtype fields in the
+  union. `GETTER_SETTER` has a smaller dedicated trailing area.
 
 Every class but `GETTER_SETTER` also carries `INLINE_PROPS` (4) property slots
 at the tail of its allocation, so an object with few properties needs no
 separate property block at all.
 
-**Property storage** has three layers, and a lookup tries them in order:
+**Property storage** has three lookup paths:
 
-1. **The dense array part**, for integer-indexed properties. It holds bare
-   `TVal`s with no per-element flags, and `undefined` doubles as the hole
-   sentinel. `dense_index_ok` keeps it dense only while an index stays near the
-   current size, so `a[2**31] = x` cannot allocate billions of empty slots.
+1. **The dense array part** holds nearby integer indices as bare `TVal`s.
+   `dense_index_ok` prevents a distant index from allocating a huge gap.
 2. **A hash table**, built once an object reaches `HASH_MIN_PROPS` (8)
    properties. It maps a key pointer to an index in the value array.
 3. **A linear scan of the shape chain**, which is what small objects use.
 
-Because array builtins like `push` write only to the dense part while `PUTPROP`
-writes the property table, `put_prop` syncs numeric-string keys into both.
+Some numeric-string properties also live in the named table; writes keep the
+dense part consistent when that index is present there.
 
 ### Shapes
 
-Names and flags do not live on the object. They live in a shared `Shape`, and
-the object stores only values. Adding a property moves the object from a parent
-shape to a child, so shapes form a transition tree, and a transition table keyed
-on `(parent, key, flags)` makes objects that add the same properties in the same
-order converge on one shape.
+An object stores property values; its `Shape` records the corresponding names
+and flags. Adding a property follows a transition keyed by the parent shape,
+name, and flags. Objects built in the same order can share the resulting shape.
 
 Including the flags in that key matters: every instance of a class installing
 the same private field can share a shape, while the same key added with
@@ -493,10 +402,9 @@ Some operations need a shape that belongs to one object alone.
 out of the transition table, which is how `seal`, `freeze`, and per-property
 flag edits avoid leaking into every object sharing the shape.
 
-`has_nondefault_flags` is set the moment any non-default
-property is installed and never cleared. While it is false, `get_prop_flags`
-returns the default descriptor in O(1) instead of walking a shape chain that,
-for a dictionary-mode object, is one node deep per property.
+`has_nondefault_flags` remains set after the first non-default descriptor.
+Before that, `get_prop_flags` returns the default flags without walking the
+shape chain.
 
 ### Inline caches
 
@@ -506,12 +414,11 @@ Three caches sit above property lookup:
   shape, index, and a direct pointer to the value. Own-data reads use the
   current receiver's indexed slot after validating shape and generation.
   Other paths require the recorded owner's storage pointer to match.
-- **`VarICEntry`** caches resolved environments and binding slots for variable
-  access. Introducing an eval var/function binding clears variable caches,
-  since a new binding can shadow a cached owner without changing the chain head. Numeric `PUTVAR_SNAP` stores cache the captured declarative owner,
-  checking its identity, shape, recycle epoch, writable flag and current value
-  type before writing. The captured owner keeps RHS effects on name resolution
-  from redirecting the store.
+- **`VarICEntry`** caches resolved environments and binding slots. Introducing
+  an eval binding clears these caches because it can shadow an owner without
+  changing the chain head. Numeric `PUTVAR_SNAP` stores validate their saved
+  owner, shape, recycle epoch, writable flag, and value type before writing;
+  the right-hand side cannot redirect a saved reference.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
   `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
   evicts, and it caches own properties only, since it cannot detect a change to
@@ -538,22 +445,15 @@ environment.
 
 ### Environments
 
-A scope is an `EnvRecord`: a parent pointer, a bindings object, a heap pointer,
-and a one-byte flag bitstruct marking whether it is declarative, a function
-boundary, a `with` scope, a catch scope, and its GC state (allocated,
-mark epoch, temporary-root pin). Records come from a fixed-size pool of typed
-64-cell blocks.
+A runtime scope is an `EnvRecord` with a parent, a bindings object, a heap
+pointer, and flags for scope kind and GC state. The allocator groups records
+into blocks of 64 cells.
 
-Unlike ordinary objects, an `EnvRecord` carries no reference count. The pool is
-traced by the full collector: at the start of each collection the heap flips a
-one-bit epoch, and `mark_env_chain` does a first-visit walk that stamps each
-reachable record with the current epoch and marks its bindings object. A record
-whose epoch is stale after marking is reclaimed by the pool sweep, which clears
-the cell's bytes (without touching its now-dead bindings) and relinks it onto
-the freelist; a block with no survivors is returned to the allocator, except for
-one spare kept to avoid churn. Environment allocations decrement a separate
-budget so a bounded live scope graph keeps bounded storage. A 100k-capture loop
-now holds three cells across three blocks rather than every record it created.
+Environment records have no reference count. Each tracing collection flips an
+epoch bit; `mark_env_chain` stamps reachable records and marks their bindings
+objects. The pool sweep recycles records with the old epoch and can release an
+empty block. Environment allocation has its own collection budget so temporary
+scope chains do not accumulate indefinitely.
 
 Uninitialized `let` and `const` bindings hold a **TDZ sentinel**, encoded as
 `undefined` with a non-zero payload so it is distinguishable from real
@@ -572,32 +472,25 @@ the environment.
 
 ## Memory: the heap, the collector, and strings
 
-Everything the engine allocates at runtime belongs to a `Heap`. One heap holds
-the object graph, the string tables, the shape system, the module cache, and the
-microtask queue, and it owns the allocator those all draw from. A VM is created
-against a heap, and a heap can outlive one VM and host another, which is what
-`Heap.reset()` exists for.
+`Heap` owns runtime objects, strings, shapes, the module cache, and the job
+queue. A VM uses one heap; `Heap.reset()` prepares it for another VM after a
+run.
 
 ### The allocator layer
 
-The heap never calls `malloc` directly. It holds four function pointers set at
-creation time (`alloc_func`, `realloc_func`, `free_func`, `fatal_func`), each
-taking an opaque `udata` pointer, so an embedder can supply its own allocator.
-Passing null selects defaults that route through the C3 thread allocator.
-
-Anything allocated through the heap must be
-released through the same heap, including during teardown. `gs_release()` takes
-an explicit heap pointer for exactly this reason: teardown clears the active-heap
-global but still has to free through the heap's own allocator, and releasing to
-libc instead would be a cross-allocator free.
+The heap exposes allocator hooks (`alloc_func`, `realloc_func`, `free_func`, and
+`fatal_func`) with an opaque user pointer. Embedders can provide them; default
+hooks use the C3 allocator. Memory obtained through a hook must be released
+through that heap's matching hook, including during teardown. `gs_release()`
+takes an explicit heap for this reason.
 
 On top of that sit three `FixedBlockPool` allocators for HObject headers, one per
 size class, which avoid a malloc per object:
 
 | Pool  | Classes                                | Why |
 |-------|----------------------------------------|-----|
-| plain | `OBJECT`, `ARGUMENTS`                  | no `HObjectExtra` needed |
-| array | `ARRAY`                                | `array_length` lives in the union |
+| plain | `OBJECT`                               | no `HObjectExtra` needed |
+| array | `ARRAY`, `ARGUMENTS`                  | array and argument metadata |
 | func  | everything else, including `ERROR` and `PROXY` | carries subtype fields |
 
 `alloc_size_for_class()` in `hobject.c3` is the authority on which class goes
@@ -605,22 +498,15 @@ where.
 
 ### Two collectors, one heap
 
-The engine reclaims memory two ways at once.
+Reference counting releases objects when their last owned reference goes away.
+Tracing reclaims unreachable cycles whose members still have nonzero counts.
+Refcounted objects leave `heap_allocated` before the tracing sweep can see them.
+Strings use their intern table or non-interned registry rather than that object
+list; their sweeps also use reachability.
 
-**Reference counting** handles the common case. Every `HeapHeader` carries a
-refcount; `decref()` frees the object when it hits zero, unlinking it from the
-`heap_allocated` list on the way. Strings are purely refcounted and are never on
-that list at all.
-
-**Mark-and-sweep** exists to collect what refcounting cannot: cycles. An object
-in a cycle keeps a non-zero refcount forever, so the tracing collector finds the
-objects no root can reach and frees them regardless of count.
-
-The two interact carefully. Objects freed by refcounting are already off the
-list, so the sweep never sees them. Conversely, while `Heap.sweep()` runs, the
-`sweeping` flag makes `decref()` skip references into unmarked nodes: a dying
-object's teardown can reference a sibling that the same sweep is also collecting,
-and touching its header would be a use-after-free.
+During `Heap.sweep()`, teardown of one dead object must not decref another
+dead object that the sweep may already have released. The `sweeping` flag
+guards that case.
 
 Marking is tri-colour with an explicit gray stack rather than recursion, so a
 deep object graph cannot overflow the C stack. `mark_roots()` seeds it, and
@@ -680,21 +566,17 @@ The string table is open-addressed with linear probing and tombstones, hashed
 with FNV-1a seeded per heap. Taking a slot makes the table an owner: the string
 is marked interned and increfed for the table's reference.
 
-Strings longer than `MAX_INTERN_BYTES` (256) and concatenation results bypass
-interning until used as property keys. A uniquely owned concatenation result
-can grow geometrically, keeping repeated appends linear. Because non-interned
-strings are in neither the string table nor `heap_allocated`, a separate
-**large-string registry** tracks them for collection and teardown. Each string
-records a one-based slot index, so removal is an O(1) swap with the last element. Zero denotes an unregistered string; GC compaction
-updates the surviving entries’ indices. Registry scans count toward the work
-used to budget the next GC cycle.
+Strings longer than `MAX_INTERN_BYTES` (256) and concatenation results can
+remain non-interned until a property-key operation needs a canonical pointer.
+A uniquely owned concatenation accumulator can grow geometrically. The
+non-interned string registry covers these strings for collection and teardown.
+Each entry records a one-based index, allowing removal by swapping in the last
+entry; zero means unregistered. Compaction updates surviving indices.
 
-That difference shapes how each is swept. An interned string can be freed when
-only the table still holds it, but a refcount of 1 is not enough on its own,
-because property tables and IC entries hold keys without taking a reference:
-reachability decides. The registry holds no reference at all, so for non-interned
-strings reachability is the whole test, which makes that pass a backstop for a
-refcount that was never decremented.
+The intern table owns a reference; the non-interned registry does not. A low
+refcount alone cannot decide that an interned string is dead because property
+tables and caches can borrow its key pointer. Both sweeps therefore account
+for reachability.
 
 Both sweeps run only when `string_sweep_safe` is set, since a GC can trigger from
 any allocation, including one made while an opcode holds a freshly interned
