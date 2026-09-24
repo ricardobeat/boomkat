@@ -363,14 +363,11 @@ invalidated. ASCII strings skip all of it: one byte is one character.
 
 ### HObject
 
-An object is a `HObjectBase` prefix followed, for most classes, by an
-`HObjectExtra` union holding subtype fields. `flags.obj_class` says which
-variant is live, and `alloc_size_for_class` decides how much space to allocate:
-
-- `OBJECT` has no trailing union.
-- `ARRAY` and `ARGUMENTS` use the union for their metadata.
-- Other classes, including `ERROR` and `PROXY`, have subtype fields in the
-  union. `GETTER_SETTER` has a smaller dedicated trailing area.
+An object starts with `HObjectBase`. Most classes store their subtype fields at
+the following address, interpreted through `HObjectExtra`. `flags.obj_class`
+selects the live member. `alloc_size_for_class()` allocates only the portion
+needed by that class, rather than the whole union. `OBJECT` needs no subtype
+fields; `GETTER_SETTER` uses its own smaller trailing area.
 
 Every class but `GETTER_SETTER` also carries `INLINE_PROPS` (4) property slots
 at the tail of its allocation, so an object with few properties needs no
@@ -484,17 +481,23 @@ hooks use the C3 allocator. Memory obtained through a hook must be released
 through that heap's matching hook, including during teardown. `gs_release()`
 takes an explicit heap for this reason.
 
-On top of that sit three `FixedBlockPool` allocators for HObject headers, one per
-size class, which avoid a malloc per object:
+Six `FixedBlockPool` allocators serve object classes with similar storage needs:
 
-| Pool  | Classes                                | Why |
-|-------|----------------------------------------|-----|
-| plain | `OBJECT`                               | no `HObjectExtra` needed |
-| array | `ARRAY`, `ARGUMENTS`                  | array and argument metadata |
-| func  | everything else, including `ERROR` and `PROXY` | carries subtype fields |
+| Pool | Classes |
+|------|---------|
+| plain | `OBJECT`, `JSON`, `REFLECT`, `WEAKREF`, `FINALIZATION_REGISTRY` |
+| array | `ARRAY`, `ARGUMENTS`, `MAP`, `SET`, `WEAKMAP`, `WEAKSET` |
+| gs | `GETTER_SETTER` |
+| small | boxed primitives, errors, generators, buffers, views, iterators, `REGEXP`, `PROMISE` |
+| func | `FUNCTION`, `PROXY` |
+| big | `ITERATOR_HELPER` and Temporal classes |
 
-`alloc_size_for_class()` in `hobject.c3` is the authority on which class goes
-where.
+Each class reports its own logical size through `alloc_size_for_class()`, even
+when its pool block is larger. `pool_for_class()` selects the physical pool.
+The four collection classes keep their lookup index in a class payload, so
+other objects do not pay for it in the common header. Pool pages fit within a
+64 KB allocator size class. The small pool uses a measured 152-byte stride:
+its smaller 144-byte layout slowed a retained-Date workload.
 
 ### Two collectors, one heap
 
