@@ -4169,7 +4169,10 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (heap.function_proto != null) {
         // NativeErrors (TypeError, RangeError, etc.) are excluded here, their [[Prototype]]
         // is the Error constructor HObject (set by register_native_error_ctor), not Function.prototype.
-        char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Promise", "GeneratorFunction" };
+        // GeneratorFunction is deliberately absent: its [[Prototype]] is
+        // %Function% itself, not Function.prototype (ES2024 §27.5.1.1), and
+        // register_generator_constructor already set it.
+        char[][] ctor_names = { "Object", "Number", "Boolean", "String", "Array", "Function", "Date", "RegExp", "Error", "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Promise" };
         for (int i = 0; i < ctor_names.len; i++) {
             TVal? optv = env::env_get(global_env, builtin_intern_string(heap, ctor_names[i]));
             if (try tv = optv) {

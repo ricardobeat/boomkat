@@ -456,21 +456,8 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(proto, heap, "throw",  Builtin.GENERATOR_PROTO_THROW.ordinal))  return false;
     if (!register_string_proto_method(proto, heap, "return", Builtin.GENERATOR_PROTO_RETURN.ordinal)) return false;
 
-    // Add [Symbol.iterator]() → returns `this` (ES6 §25.3.1.12)
-    {
-        HString* iter_sym = ensure_iterator_symbol(heap);
-        if (iter_sym != null) {
-            HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-            if (catch err = fn_raw) return false;
-            HObject* fn_obj = fn_raw;
-            (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.ITERATOR_PROTO_SYMBOL_ITER.ordinal;
-            fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
-            TVal iter_tv;
-            iter_tv.set_object(fn_obj);
-            proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_WC, heap);
-        }
-    }
+    // @@iterator is inherited from %IteratorPrototype% through the deferred
+    // prototype-chain wiring below; %GeneratorPrototype% does not own one.
 
     // Set @@toStringTag on Generator.prototype
     HString* tag_key = ensure_tostringtag_symbol(heap);
