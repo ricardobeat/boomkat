@@ -2210,10 +2210,11 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         self.emit_abc(Opcode.LDREG, (uint)class_name_reg, (uint)ctor_reg, 0);
         self.emit_a_bc(Opcode.PUTLEX_C, (uint)class_name_reg, class_name_str_idx);
     }
-    // Anonymous class expressions push classScope too (for the private-name
-    // slots), so the pop is unconditional. PUSH_LEX/POP_LEX are balanced at
-    // module level.
-    self.emit_simple(Opcode.POP_LEX);
+    // The static-initializer path above already popped the classScope before
+    // its CALL; every other class pops here, anonymous class expressions
+    // included, which push it for the private-name slots. PUSH_LEX/POP_LEX
+    // are balanced at module level.
+    if (!has_static_init) self.emit_simple(Opcode.POP_LEX);
 
     // Restore class body state
     self.in_class_body = saved_in_class_body;
