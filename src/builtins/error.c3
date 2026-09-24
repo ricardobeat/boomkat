@@ -141,6 +141,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
     }
     HObject* err = err_raw;
     err.prototype = builtin_proto_from_new_target(ctx, proto);
+    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     // Set .message if first arg is provided and not undefined
     HString* msg_str = null;
@@ -408,6 +409,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
     }
     HObject* err = err_raw;
     err.prototype = builtin_proto_from_new_target(ctx, ctx.heap.aggregate_err_proto);
+    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     // §20.5.7.1.1 step 5: message uses ToString via ToPrimitive (hint
     // "string") so a throwing toString()/valueOf() propagates, builtin_to_string
