@@ -3683,6 +3683,14 @@ fn ushort? CompilerContext.new_expr(&self) {
         // Parse the constructor (could be member access)
         ctor_reg = self.member_expr()!;
 
+        // ES2020 §13.3: an OptionalChain is not a MemberExpression, so a `?.`
+        // directly after `new`'s callee is an early SyntaxError (`new o?.C()`,
+        // `new C?.()`). Parenthesising it is legal (`new (o?.C)()`), since the
+        // parenthesised expression is a PrimaryExpression.
+        if (self.check(TokenType.OPT_CHAIN)) {
+            return self.fail("optional chain is not allowed in a new expression")~;
+        }
+
         // TypeScript constructor type arguments: `new Y<T>(...)`. The `<`
         // after the constructor name is type args only when followed by `(`;
         // otherwise it's a comparison.
