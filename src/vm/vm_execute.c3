@@ -2780,9 +2780,18 @@ fn TVal? Vm.run(Vm* vm) {
             // runs in source order; for a primitive it is pure. vm_to_string
             // can reallocate the valstack (object/symbol paths), so refresh
             // the register pointers afterwards.
+            //
+            // A Symbol is a STRING-tagged HString, so a bare tag test would
+            // treat it as an already-converted string and copy its bytes into
+            // a plain result instead of running ToString, which must throw
+            // TypeError (ES2024 §7.1.12). Route symbols through vm_to_string.
             for (uint i = 0; i < count; i++) {
                 TValTag tag = parts[i].get_tag();
-                if (tag == TValTag.STRING || tag == TValTag.FASTINT) continue;
+                if (tag == TValTag.FASTINT) continue;
+                if (tag == TValTag.STRING) {
+                    HString* hs = (HString*)parts[i].get_heapptr();
+                    if (hs != null && !hs.is_symbol()) continue;
+                }
                 HString*? str = vm_to_string(vm, &parts[i]);
                 ds.regs_base = ds.act.bottom;
                 ra = &ds.regs_base[insn.a];
