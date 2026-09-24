@@ -4662,6 +4662,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // is_namebinding, so it must not take the needs_env=false fast path
     // (see is_named_func_expr doc in context.c3).
     inner_ctx.is_named_func_expr = is_named_expr && name.len > 0;
+    if (inner_ctx.is_named_func_expr) inner_ctx.named_func_expr_name = name;
 
     // subst_global_this is gone (plans/083 phase 2); is_strict now carries
     // the dynamic-Function-or-not distinction implicitly through the same

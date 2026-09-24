@@ -1,6 +1,7 @@
 module boomkat::compiler;
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hstring;
 
 // Publish free-name candidates after register and bytecode transformations.
 // A name declared anywhere in this function stays conservative until lexical
@@ -22,6 +23,10 @@ fn void CompilerContext.collect_capture_candidates(&self, CompiledFunction* func
         bool local = false;
         for (sz bi = 0; bi < self.bindings.len(); bi++) {
             if (self.bindings[bi].name_idx == name) { local = true; break; }
+        }
+        if (self.is_named_func_expr
+            && ((HString*)func.constants[name].get_heapptr()).equals(self.named_func_expr_name)) {
+            local = true;
         }
         if (local) continue;
         bool present = false;

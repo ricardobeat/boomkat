@@ -984,6 +984,9 @@ int  cur_with_depth;
     // safe on a per-call scope object, so such functions can never take the
     // needs_env=false fast path that reuses the shared captured var_env.
     bool is_named_func_expr;
+    // The expression's own name is bound in a call-time environment and must
+    // not resolve to an enclosing capture.
+    char[] named_func_expr_name;
 
     // When true, function_declaration() stores its binding via PUTLEX into
     // the current (innermost) lex_env instead of DECLVAR into var_env. Set

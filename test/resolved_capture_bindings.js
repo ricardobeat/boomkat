@@ -96,6 +96,13 @@ var shadowed = makeShadowed();
 assert(shadowed[0]() === "outer", "outer shadowed binding");
 assert(shadowed[1]() === "inner", "inner shadowed binding");
 
+function namedExpressionCapture() {
+    var self = 7;
+    return function self() { return self; };
+}
+var namedSelf = namedExpressionCapture();
+assert(namedSelf() === namedSelf, "named expression self binding");
+
 function captureCatch() {
     try {
         throw { code: 17 };
