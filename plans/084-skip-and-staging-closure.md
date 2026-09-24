@@ -23,7 +23,7 @@ Every skip was tallied by reason on 2026-09-15, corpus-wide:
 | 426 | `explicit-resource-management` + Disposable/SuppressedError | item 6 |
 | 276 | `cross-realm`, `$262.agent`, `CanBlockIsFalse`, `IsHTMLDDA` | out |
 | 222 | iterator helpers, second wave (4 tokens) | item 8 |
-| 161 | Annex B String/Date/`legacy-regexp` | out |
+| 137 | Annex B String/`legacy-regexp` (Date done) | out |
 | 89 | `await-dictionary` (`Promise.allKeyed`) | item 7 |
 | 66 | `immutable-arraybuffer` | item 4 |
 | 64 | `ShadowRealm` | out |
@@ -41,7 +41,7 @@ Tail calls are the clearest case: §14.8 is shipped ES6 text, and
 
 ---
 
-## 1. Clear the remaining `staging/sm` failures
+## 1. Clear the remaining `staging/sm` failures — ✅ DONE
 
 171 tests. Low risk per fix, but the work is unbounded until surveyed.
 
@@ -69,10 +69,10 @@ Each had normative coverage that passed anyway: `built-ins/Object` was
 path and never reaches the dense one. That is the shape of what is left here —
 one spec behavior with two internal representations, tested on one of them.
 
-Remaining leads from the same sample: iterator close not running
-(`Array/from-iterator-close.js`, `Map/constructor-iterator-close.js`), a
-missing rest-param duplicate rejection (`Function/rest-has-duplicated.js`),
-`RegExp` `lastIndex` writability, and `class/boundFunctionSubclassing.js`.
+The leads from the same sample are now closed: iterator close
+(`Array/from-iterator-close.js`, `Map/constructor-iterator-close.js`), the
+rest-param duplicate rejection (`Function/rest-has-duplicated.js`), `RegExp`
+`lastIndex` writability, and `class/boundFunctionSubclassing.js`.
 
 **Steps.**
 
@@ -89,19 +89,17 @@ missing rest-param duplicate rejection (`Function/rest-has-duplicated.js`),
    is already skipped for contradicting
    `annexB/language/function-code/block-decl-func-skip-arguments.js`.
 3. **Fix by bucket, not by test**, committing each cause separately.
-4. **Handle the 4 non-assertion failures separately**: 2 MEMKILL
-   (`sm/regress/regress-596805-2.js`, `regress-619003-1.js`, over the 2 GB
-   worker cap) and 2 TIMEOUT (`sm/TypedArray/sort_large_countingsort.js`,
-   `sm/statements/for-of-iterator-close-throw.js`). These are resource limits
-   or perf problems, not semantics, and may be legitimate skips.
+4. **The 4 non-assertion failures** (2 MEMKILL, 2 TIMEOUT) now pass; the worker
+   memory cap was raised to 3 GB and the remaining cost is real perf.
 
 **Gate.** `just test262-suite staging` reaching 0 fail, with every skip added
 carrying a written reason. Re-run the full suite afterwards: fixes to shared
-machinery like `Object.values` touch far more than `staging`.
+machinery like `Object.values` touch far more than `staging`. Both hold: the
+`staging` suite reports 0 fail, and the full run reports 0 fail.
 
-**Progress.** 171 -> 65 failures. The buckets closed so far, each a real engine
-bug with a normative regression test, since by definition the normative suite
-missed it:
+**Progress.** 171 -> 0 failures; every bucket closed was a real engine bug, since
+by definition the normative suite missed it. The last 16 `staging/sm` failures
+came in one sweep, each committed on its own root cause:
 
 - A spec `Set` wrote through `put_prop` with the default attributes, so a
   property created non-enumerable and non-configurable (a RegExp's `lastIndex`)
@@ -145,6 +143,45 @@ missed it:
   a Symbol.toPrimitive method, a Proxy trap -- was skipped and `undefined`
   returned in its place. The call opcodes checked for it; the entry point every
   builtin uses did not.
+
+The final 16, closed in one sweep:
+
+- `instanceof` started its prototype walk at the operand instead of
+  `operand.prototype`, so `C.prototype instanceof C` was true for every
+  function.
+- `Array.prototype.indexOf`/`lastIndexOf` read an element before testing
+  presence, so a Proxy `has` trap that reports absent was bypassed.
+- `Array.prototype.splice` wrote the length before inserting the items, so a
+  species constructor that changes `length` moved the insert window.
+- `new.target` was read twice while constructing, so a Proxy revoked by the
+  first read threw the wrong error.
+- Retiring a callback error cleared one of the engine's three throw channels
+  and left the other two stale, so the next nested call (a Proxy trap, a string
+  coercion) aborted with the old exception.
+- A rest parameter was built from the frame's formals rather than the caller's
+  argument list, which is shorter when the rest target sits alone.
+- `delete` on an optional chain left the recorded GETPROP in place; the
+  short-circuit path also stored `undefined` where a Reference was needed.
+- An optional chain was accepted as a `new` callee, and a parenthesised literal
+  as a destructuring target.
+- A template literal's join skipped ToString for a symbol substitution, and
+  `OrdinaryToPrimitive` carried a Date special case the spec puts only in
+  `Date.prototype[@@toPrimitive]`.
+- `iterator.next()` was not required to return an object in every consumer
+  (array spread, spread arguments, typed-array construction, destructuring).
+- `%GeneratorPrototype%` defined its own `[Symbol.iterator]` instead of
+  inheriting it, and `%GeneratorFunction%`'s `[[Prototype]]` was wired to
+  `Function.prototype`.
+- A property that changed kind (accessor to data or back) kept its old
+  `[[Writable]]`.
+- A generator resumed by `.return()` at a yield inside a `for-of` walked past
+  the loop's IteratorClose guard to the nearest `finally`, so the iterator was
+  never closed; the injected return now closes each guard on the way out.
+- A destructuring default ran as an ordinary function, so `super()` in it was
+  rejected at parse time and, once allowed, read the constructor's
+  uninitialized `this`. A thunk that (directly or through a nested default)
+  contains a SuperCall is now arrow-flagged, so `super()` binds the enclosing
+  constructor's `this`.
 
 The recurring shape is the one the plan predicted: one spec behavior with two
 internal representations, tested on only one of them. Elements held in a
@@ -436,11 +473,13 @@ semantics, with multi-iterator close on partial exhaustion and the
   multi-worker harness (112), `CanBlockIsFalse` (2), `IsHTMLDDA` (29, the
   `document.all` slot, host-provided by definition), and the `$DONOTEVALUATE`
   module-resolution negatives (37).
-- **Annex B legacy browser surface**: the String HTML wrappers (111), Date
-  `getYear`/`setYear` (24) and `legacy-regexp` (26). The first two are nearly
-  mechanical and could be picked up cheaply. `legacy-regexp` needs static state
-  on the RegExp constructor updated on every match, which costs the match path
-  for 26 tests of legacy surface. Revisit if a real workload wants them.
+- **Annex B legacy browser surface**: the String HTML wrappers (111) and
+  `legacy-regexp` (26). The Date methods (`getYear`/`setYear`/`toGMTString`, 24)
+  are implemented, so their `SKIP_DIRS` entry is gone and `annexB/built-ins/Date`
+  runs. The String wrappers are nearly mechanical and could be picked up
+  cheaply. `legacy-regexp` needs static state on the RegExp constructor updated
+  on every match, which costs the match path for 26 tests of legacy surface.
+  Revisit if a real workload wants them.
 
 ## Ordering
 

@@ -49,7 +49,8 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   function declarations, B.3.3 for function declarations in a block, B.3.4
   function declarations as `if` bodies, B.3.5 initializers in for-in heads,
   B.3.9 runtime errors for function call assignment targets, legacy octals and
-  octal escapes are in. Absent: `Date.prototype.getYear`/`setYear`, the
+  octal escapes are in. So are `Date.prototype.getYear`/`setYear` and
+  `toGMTString` (B.2.4/B.2.6). Absent: the
   `String.prototype` HTML methods, the `RegExp` legacy statics, and the legacy
   eval-code and global-code var-hoisting rules.
 - **ECMA-402.** A separate specification. `Date.prototype.toLocaleString` is

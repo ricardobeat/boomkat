@@ -159,7 +159,6 @@ def sample_worker_rss(workers):
 # Only the legacy-browser built-ins stay out.
 SKIP_DIRS = {
     "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
-    "annexB/built-ins/Date",           # 24   — B.2.4/B.2.5 getYear/setYear/toGMTString
     "intl402",                         # 3,337 — ECMA-402, out of scope
     "staging/intl402",                 # ECMA-402 staging tests, likewise
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
