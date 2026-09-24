@@ -599,10 +599,11 @@ struct CompilerContext {
     // a.b on the live path and yields true when the chain short-circuits. The
     // optional-chain machinery emits its terminal LDUNDEF after the member
     // GETPROP, so the delete patch (which rewrites the last instruction) misses
-    // it. These record the chain's final member access instead: the index of
-    // its GETPROP/GETPROP_CACHE, and whether a `?.` was seen at all.
+    // it. These record the chain's final member access, its short-circuit
+    // write, and whether a `?.` was seen at all.
     bool del_opt_chain;
     int del_opt_getprop_idx;
+    int del_opt_short_idx;
     // Set while parsing a `class ... extends` heritage expression, whose
     // grammar is LeftHandSideExpression and therefore admits no arrow
     // function. check_arrow() reports false under this flag so `=>` is left

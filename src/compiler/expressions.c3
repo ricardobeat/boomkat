@@ -184,6 +184,7 @@ fn ushort? CompilerContext.assignment_expr(&self) {
         // register-aliasing hint the enclosing operator's copy-to-temp guard
         // needs (b0fdc49c), which is why the two are separate flags.
         self.last_target_invalid = true;
+        self.last_was_optional_chain = false;
     }
     return r;
 }
@@ -1596,6 +1597,7 @@ fn void CompilerContext.clear_ref_markers(&self) {
     // conditional -- makes `eval` there an indirect call.
     self.callee_is_eval = false;
     self.last_ref = RefKind.REF_NONE;
+    self.last_was_optional_chain = false;
     // Dropping every marker already makes the target check fail, so the
     // separate ~invalid~ verdict has done its job and must not linger: a stale
     // `true` would wrongly reject the NEXT target parsed before any marker is
@@ -1912,35 +1914,42 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // member_expr emits GETPROP as usual; we patch it to DELPROP below.
             // We use del_mode (not lhs_mode) because expression() inside [bracket]
             // calls assignment_expr which resets lhs_mode.
+            bool saved_del_mode = self.del_mode;
             self.del_mode = true;
             self.member.clear();
             self.last_was_getvar = false;
             self.del_opt_chain = false;
             self.del_opt_getprop_idx = -1;
+            self.del_opt_short_idx = -1;
             ushort op_del = self.unary_expr()!;
-            self.del_mode = false;
+            self.del_mode = saved_del_mode;
 
-            // `delete a?.b` / `delete a?.[k]`: member_expr recorded the chain's
-            // final member GETPROP. Rewrite it to DELPROP for the live path;
-            // the short-circuit path was made to yield true (see member_expr).
-            // op_del is that GETPROP's result register, so it carries the
-            // DELPROP outcome on the live path and true on the short-circuit.
-            if (self.del_opt_chain && self.del_opt_getprop_idx >= 0) {
+            // Only the operand's own optional member is a delete target.
+            // A chain nested in an assignment, binary expression, or computed
+            // key must keep its ordinary undefined short-circuit value.
+            if (self.del_opt_chain && self.last_was_optional_chain
+                && self.del_opt_getprop_idx >= 0 && self.del_opt_short_idx >= 0) {
                 uint gi_idx = (uint)self.del_opt_getprop_idx;
-                if (gi_idx < self.code_count) {
+                uint si_idx = (uint)self.del_opt_short_idx;
+                if (gi_idx < self.code_count && si_idx < self.code_count) {
                     Instruction gi = self.code[gi_idx];
-                    if (gi.op == Opcode.GETPROP || gi.op == Opcode.GETPROP_CACHE) {
+                    Instruction si = self.code[si_idx];
+                    if ((gi.op == Opcode.GETPROP || gi.op == Opcode.GETPROP_CACHE)
+                        && gi.a == op_del && si.op == Opcode.LDUNDEF && si.a == op_del) {
                         self.code[gi_idx] = bytecode::make_abc(Opcode.DELPROP, gi.a, gi.b, gi.c);
+                        self.code[si_idx] = bytecode::make_abc(Opcode.LDTRUE, si.a, 0, 0);
+                        self.del_opt_chain = false;
+                        self.del_opt_getprop_idx = -1;
+                        self.del_opt_short_idx = -1;
+                        self.clear_ref_markers();
+                        self.last_lhs_name_len = 0;
+                        return op_del;
                     }
                 }
-                self.del_opt_chain = false;
-                self.del_opt_getprop_idx = -1;
-                self.clear_ref_markers();
-                self.last_lhs_name_len = 0;
-                return op_del;
             }
             self.del_opt_chain = false;
             self.del_opt_getprop_idx = -1;
+            self.del_opt_short_idx = -1;
 
             if (self.last_was_member()) {
                 if (self.member_is_super()) {
@@ -3015,15 +3024,15 @@ fn ushort? CompilerContext.call_expr(&self) {
         for (int i = 0; i < opt_jump_count; i++) {
             self.patch_jump(opt_jump_addrs[i]);
         }
-        // A short-circuited chain is undefined as a value, but delete of a
-        // non-reference (which a nullish chain is) yields true, so the delete
-        // operand's result register must hold true on this path.
-        if (self.del_mode) {
-            self.emit_abc(Opcode.LDTRUE, (uint)callee, 0, 0);
-        } else {
-            self.emit_abc(Opcode.LDUNDEF, (uint)callee, 0, 0);
-        }
+        // A nested chain remains a value expression even inside delete. The
+        // delete handler patches this to LDTRUE only for its direct operand.
+        if (self.del_mode) self.del_opt_short_idx = (int)self.code_count;
+        self.emit_abc(Opcode.LDUNDEF, (uint)callee, 0, 0);
         self.patch_jump(skip);
+        // A computed key or call argument may have parsed its own expression
+        // and cleared the marker while this chain was still being built.
+        self.last_was_optional_chain = true;
+        if (self.del_mode) self.del_opt_chain = true;
     }
 
     return callee;
