@@ -24,25 +24,6 @@ else
   BK_LDLIBS := -lm -ldl
 endif
 
-# The BigInt path multiplies int128 values, which LLVM lowers to the
-# overflow-checked builtin __muloti4. Apple's libSystem carries it, but GNU
-# libgcc does not -- it lives only in LLVM's compiler-rt -- so on Linux the
-# link fails with "undefined reference to `__muloti4'" unless that archive is
-# named explicitly. This bites twice: once when c3c links the engine (c3c's -z
-# forwards the path to the linker) and again when a *consumer* links the static
-# archive, since the archive carries the undefined reference outward. It does
-# not affect the shared library, which resolves it at its own link.
-# Override C3C_RT_LIB to point at a different compiler-rt build.
-ifneq ($(UNAME_S),Darwin)
-  C3C_RT_LIB ?= $(firstword $(wildcard \
-      /usr/lib/llvm-*/lib/clang/*/lib/linux/libclang_rt.builtins-$(shell uname -m).a))
-  ifneq ($(C3C_RT_LIB),)
-    C3C_LDFLAGS := -z $(C3C_RT_LIB)
-    BK_LDLIBS += $(C3C_RT_LIB)
-  endif
-endif
-
-# C3C_LDFLAGS trails the target name: c3c rejects -z before it.
 C3C ?= c3c
 
 # Every target compiles the c-sources into <build-dir>/obj/<arch>/tmp_c_compile
@@ -55,8 +36,8 @@ C3C ?= c3c
 # assignment: the latter runs once at parse time, on every make invocation,
 # including the no-op runs the mtime gate above is there to make free.
 #
-# --build-dir has to trail the target name for the same reason C3C_LDFLAGS does,
-# so recipes read `$(C3C_BUILD) <target> $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)`.
+# --build-dir has to trail the target name, so recipes read
+# `$(C3C_BUILD) <target> $(C3C_BUILDFLAGS)`.
 #
 # --macos-min-version silences "object file was built for newer macOS version"
 # on every host: c3c's default link target is 11.0, but each Xcode SDK stamps the
@@ -66,7 +47,7 @@ C3C ?= c3c
 # the SDK rejects values lower than its floor, so we cannot pin a single number.
 # On hosts without `xcrun` (Linux CI, no Xcode), the lookup fails, the flag is
 # dropped, and c3c falls back to its default -- the same behaviour as before.
-SDK_MIN_MACOS ?= $(shell /usr/libexec/PlistBuddy -c "Print :DefaultProperties:MACOSX_DEPLOYMENT_TARGET" "$(shell xcrun --show-sdk-path)/SDKSettings.plist" 2>/dev/null)
+SDK_MIN_MACOS ?= $(shell command -v xcrun >/dev/null 2>&1 && /usr/libexec/PlistBuddy -c "Print :DefaultProperties:MACOSX_DEPLOYMENT_TARGET" "$$(xcrun --show-sdk-path)/SDKSettings.plist" 2>/dev/null)
 SDK_MIN_FLAG := $(if $(SDK_MIN_MACOS),--macos-min-version $(SDK_MIN_MACOS),)
 C3C_BUILD = d=$$(mktemp -d "$${TMPDIR:-/tmp}/boomkat-build.XXXXXX"); trap 'rm -rf "$$d"' EXIT; $(C3C) build
 C3C_BUILDFLAGS = --build-dir "$$d" $(SDK_MIN_FLAG)
@@ -95,28 +76,28 @@ boomkat_debug: out/boomkat_debug
 boomkat_gc_stress: out/boomkat_gc_stress
 
 out/lib.a: project.json $(call target_sources,lib)
-	$(C3C_BUILD) lib $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) lib $(C3C_BUILDFLAGS)
 
 out/test262_runner: project.json $(call target_sources,test262_runner)
-	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS)
 
 out/test262_runner_asan: project.json $(call target_sources,test262_runner_asan)
-	$(C3C_BUILD) test262_runner_asan $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) test262_runner_asan $(C3C_BUILDFLAGS)
 
 # The HEAP_VERIFY + ASan runner. HEAP_VERIFY's $feat blocks are compiled out of
 # every other target, so nothing else catches them rotting: they last broke on a
 # ZString/String cast that no ordinary build could see.
 out/test262_runner_verify: project.json $(call target_sources,test262_runner_verify)
-	$(C3C_BUILD) test262_runner_verify $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) test262_runner_verify $(C3C_BUILDFLAGS)
 
 out/boomkat: project.json $(call target_sources,boomkat)
-	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS)
 
 out/boomkat_debug: project.json $(call target_sources,boomkat_debug)
-	$(C3C_BUILD) boomkat_debug $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) boomkat_debug $(C3C_BUILDFLAGS)
 
 out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
-	$(C3C_BUILD) boomkat_gc_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) boomkat_gc_stress $(C3C_BUILDFLAGS)
 
 # ---- C embedding ABI targets ------------------------------------------------
 
@@ -126,7 +107,7 @@ out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
 # at out/boomkat.a and the dylib at out/boomkat.dylib.
 lib: out/boomkat.a
 out/boomkat.a: project.json include/boomkat.h $(call target_sources,boomkat_static)
-	$(C3C_BUILD) boomkat_static $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) boomkat_static $(C3C_BUILDFLAGS)
 
 # Linker export lists for the shared library, regenerated from the header's
 # BK_API declarations by scripts/gen_abi_header.py. Without one the dylib
@@ -157,7 +138,7 @@ check-abi:
 # PREFIX. The shared link is named libboomkat so embedders write `-lboomkat`.
 shared: out/boomkat.$(SHLIB_EXT)
 out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(BK_EXPORT_LIST) $(call target_sources,boomkat_dylib)
-	$(C3C_BUILD) boomkat_dylib $(C3C_BUILDFLAGS) $(C3C_LDFLAGS) $(BK_EXPORT_LDFLAG)
+	$(C3C_BUILD) boomkat_dylib $(C3C_BUILDFLAGS) $(BK_EXPORT_LDFLAG)
 ifeq ($(UNAME_S),Darwin)
 	install_name_tool -id "@rpath/libboomkat.dylib" $@
 endif
@@ -167,7 +148,7 @@ endif
 # GC_STRESS + ASan shared build: collects at every allocation, which is what
 # turns a missing GC root in the slot registry into a deterministic failure.
 boomkat-stress:
-	$(C3C_BUILD) boomkat_stress $(C3C_BUILDFLAGS) $(C3C_LDFLAGS)
+	$(C3C_BUILD) boomkat_stress $(C3C_BUILDFLAGS)
 
 # Host-function ABI tests: registration, argument access, throwing, and
 # calling JS from a callback, all through include/boomkat.h only.
@@ -213,7 +194,7 @@ smoke: out/boomkat.a test/capi/smoke.c include/boomkat.h
 # instead of rarely.
 .PHONY: test-registry-gc
 test-registry-gc:
-	$(C3C_BUILD) value_registry_gc_stress $(C3C_LDFLAGS)
+	$(C3C_BUILD) value_registry_gc_stress
 	./out/value_registry_gc_stress
 
 # Multiple runtimes in one process: independent globals, objects, shapes and

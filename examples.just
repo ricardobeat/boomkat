@@ -29,15 +29,7 @@ BK_STATIC  := env_var_or_default("BK_STATIC_LIB", BK_LIBDIR + "/boomkat.a")
 BK_SHARED  := env_var_or_default("BK_SHARED_LIB", BK_LIBDIR + "/boomkat." + shared_ext)
 
 # macOS gets libm and libdl from libSystem; ELF platforms need them spelled out.
-# The engine's BigInt path needs __muloti4 from LLVM's compiler-rt, which lives
-# outside libgcc. Only the static link is affected; the shared library already
-# resolved it at its own link. Probe the platform-specific path on ELF.
-[private]
-clang-rt-archive:
-    @firstword /usr/lib/llvm-*/lib/clang/*/lib/linux/libclang_rt.builtins-`uname -m`.a 2>/dev/null || true
-
-clang_rt := if os() == "macos" { "" } else { `just clang-rt-archive` }
-ldlibs_static := if os() == "macos" { "" } else { if clang_rt == "" { "-lm -ldl" } else { "-lm -ldl " + clang_rt } }
+ldlibs_static := if os() == "macos" { "" } else { "-lm -ldl" }
 
 ldlibs_shared := if os() == "macos" { "" } else { "-lm -ldl" }
 

@@ -33,7 +33,7 @@ Phases: `build`, `tests`, `test262`, `libs`, `smoke`, `link`, `initarray`,
 | `test262` | `bash scripts/test262_gate.sh`, the full test262 suite with a zero-fail gate (needs the `test262/` submodule; ~15 min) |
 | `libs` | `make lib` and `make shared` produce `boomkat.a` and `boomkat.so` |
 | `smoke` | `make smoke` prints 42 (links the **static** archive) |
-| `link` | `ldd` has no unresolved deps; `nm -D` exports all 12 `bk_` symbols; the static archive links from plain `cc`; whether compiler-rt is required |
+| `link` | `ldd` has no unresolved deps; `nm -D` exports all 12 `bk_` symbols; the static archive links from plain `cc` |
 | `initarray` | Static archive linked by **Zig** and by **rustc** — the ELF counterpart of the macOS init hazard |
 | `install` | `make install PREFIX=…`, then static and shared compiles against the prefix, and that the rpath is load-bearing |
 | `bindings` | C99 (static + shared), Python, Ruby, Zig, Rust, C3 |

@@ -24,9 +24,6 @@ pass() { RESULTS+=("PASS  $*"); printf '  \033[32mPASS\033[0m  %s\n' "$*"; }
 fail() { RESULTS+=("FAIL  $*"); FAILED=1; printf '  \033[31mFAIL\033[0m  %s\n' "$*"; }
 skip() { RESULTS+=("SKIP  $*"); printf '  \033[33mSKIP\033[0m  %s\n' "$*"; }
 
-# The compiler-rt archive carrying __muloti4; see the Makefile comment.
-RT_LIB=$(ls /usr/lib/llvm-*/lib/clang/*/lib/linux/libclang_rt.builtins-"$(uname -m)".a 2>/dev/null | head -1)
-
 want() {
     [ ${#PHASES[@]} -eq 0 ] && return 0
     local p
@@ -65,7 +62,6 @@ printf 'kernel    : %s\n' "$(uname -sr)"
 printf 'c3c       : %s\n' "$(c3c --version 2>&1 | awk '/Compiler Version/{print $4}')"
 printf 'llvm      : %s\n' "$(c3c --version 2>&1 | awk '/LLVM version/{print $3}')"
 printf 'cc        : %s\n' "$(cc --version | head -1)"
-printf 'compiler-rt: %s\n' "${RT_LIB:-<none found>}"
 
 # ---------------------------------------------------------------------------
 if want build; then
@@ -183,7 +179,7 @@ if want link; then
 
     say "5c. static archive links from plain cc"
     write_probe
-    if cc -std=c99 -Iinclude /tmp/staticprobe.c out/boomkat.a -lm -ldl ${RT_LIB:+"$RT_LIB"} \
+    if cc -std=c99 -Iinclude /tmp/staticprobe.c out/boomkat.a -lm -ldl \
            -o /tmp/staticprobe 2>/tmp/staticprobe.err; then
         out=$(/tmp/staticprobe)
         [ "$out" = "42" ] && pass "plain cc + static archive runs (printed $out)" \
@@ -191,19 +187,6 @@ if want link; then
     else
         head -5 /tmp/staticprobe.err
         fail "plain cc could not link the static archive"
-    fi
-
-    # Does the archive link WITHOUT the compiler-rt archive? A GCC-only host has
-    # no __muloti4, so this decides what an embedder must be told to pass. It is
-    # reported either way rather than failed: needing compiler-rt is a genuine
-    # platform constraint, not a defect the suite can fix.
-    if cc -std=c99 -Iinclude /tmp/staticprobe.c out/boomkat.a -lm -ldl \
-           -o /tmp/staticprobe_nort 2>/tmp/nort.err; then
-        pass "static archive links without compiler-rt (libgcc suffices)"
-    else
-        printf '  missing: %s\n' \
-            "$(grep -oE "undefined reference to \`[^']+'" /tmp/nort.err | sort -u | tr '\n' ' ')"
-        pass "static archive requires compiler-rt (documented: embedders must pass it)"
     fi
 fi
 
@@ -243,7 +226,6 @@ pub fn main() void {
 EOF
     zig_cmd=(zig build-exe main.zig -lc
              "-I$ROOT/include" "$ROOT/out/boomkat.a" -lm -ldl)
-    [ -n "$RT_LIB" ] && zig_cmd+=("$RT_LIB")
     if timeout 300 "${zig_cmd[@]}" 2>/tmp/zigstatic.err; then
         zout=$(timeout 60 ./main 2>&1); zrc=$?
         printf '  run: rc=%d out=[%s]\n' "$zrc" "$zout"
@@ -297,7 +279,6 @@ EOF
     # archive; the C3 runtime's atexit hook needs it named explicitly.
     rustc_args=(src/main.rs -o ruststatic -L "$ROOT/out"
                 -C link-arg="$ROOT/out/boomkat.a" -C link-arg=-lm -C link-arg=-ldl)
-    [ -n "$RT_LIB" ] && rustc_args+=(-C link-arg="$RT_LIB")
     rustc_args+=(-C link-arg=-lc)
     if timeout 300 rustc "${rustc_args[@]}" 2>/tmp/ruststatic.err; then
         rout=$(timeout 60 ./ruststatic 2>&1); rrc=$?
@@ -323,7 +304,7 @@ if want install; then
     ls -la "$PREFIX/lib" "$PREFIX/include" 2>&1 | sed 's/^/  /'
 
     if cc -std=c99 -I"$PREFIX/include" /tmp/staticprobe.c "$PREFIX/lib/boomkat.a" \
-           -lm -ldl ${RT_LIB:+"$RT_LIB"} -o /tmp/prefix_static 2>/tmp/ps.err; then
+           -lm -ldl -o /tmp/prefix_static 2>/tmp/ps.err; then
         o=$(cd /tmp && ./prefix_static)
         [ "$o" = "42" ] && pass "installed static: -I\$PREFIX/include + boomkat.a runs ($o)" \
                         || fail "installed static printed '$o'"
@@ -447,8 +428,7 @@ if want bindings; then
 
     # --- C3 (native, does not go through the C ABI) ------------------------
     if timeout 600 make -s boomkat_example_c3 >/dev/null 2>&1 \
-       || timeout 600 c3c build boomkat_example_c3 ${C3C_LDFLAGS:-} >/tmp/c3.log 2>&1 \
-       || timeout 600 c3c build boomkat_example_c3 ${RT_LIB:+-z "$RT_LIB"} >/tmp/c3.log 2>&1; then
+       || timeout 600 c3c build boomkat_example_c3 >/tmp/c3.log 2>&1; then
         if [ -x out/boomkat_example_c3 ] && timeout 120 ./out/boomkat_example_c3 >/tmp/c3run.log 2>&1; then
             tail -8 /tmp/c3run.log | sed 's/^/  /'; pass "binding: C3 (native)"
         else

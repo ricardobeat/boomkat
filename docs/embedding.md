@@ -96,30 +96,6 @@ cc -std=c99 -I$PREFIX/include app.c -L$PREFIX/lib -lboomkat \
 On Linux add `-lm -ldl`. On macOS nothing extra is needed. The Makefile applies
 this automatically via `BK_LDLIBS`.
 
-**On Linux the static archive also needs LLVM's compiler-rt.** The BigInt path
-multiplies `int128` values, which LLVM lowers to the overflow-checked builtin
-`__muloti4`. Apple's libSystem carries it; GNU `libgcc` and `libgcc_s` do not,
-and it exists only in compiler-rt (verified: `nm` finds it in neither libgcc). A
-GCC-driven static link therefore fails with:
-
-```
-/usr/bin/ld: boomkat.a(boomkat.esm.o): in function `boomkat.hbigint.bigint_mul':
-boomkat::esm:(.text+0xee228): undefined reference to `__muloti4'
-```
-
-Pass the archive explicitly (Debian: `apt install libclang-rt-19-dev`):
-
-```sh
-cc -std=c99 -I$PREFIX/include app.c $PREFIX/lib/boomkat.a -lm -ldl \
-   /usr/lib/llvm-19/lib/clang/19/lib/linux/libclang_rt.builtins-$(uname -m).a -o app
-```
-
-The root Makefile and `examples/justfile` locate it automatically and append it
-to `BK_LDLIBS`; override `C3C_RT_LIB` / `BK_RT_LIB` to point elsewhere. The
-shared library is unaffected, because it resolved the symbol at its own link.
-The same flag is needed when `c3c` links the engine itself, which the Makefile
-passes via `c3c build <target> -z <archive>`.
-
 ### Build configuration
 
 The `boomkat_dylib` and `boomkat_static` targets in `project.json` are built at `-O2`,
@@ -142,7 +118,7 @@ against LLVM 19.1.7, GCC 14.2). Run it with `make linux-ci`; see
 
 | Area | Result |
 |---|---|
-| `c3c build boomkat` | Builds, once `__muloti4` is supplied (see above) |
+| `c3c build boomkat` | Builds |
 | `bash test/run_local.sh` | Fully green, identical counts to macOS: 302 scripts, 14 module fixtures, 101 + 63 syntax/export checks, 24 top-level, 12 uncaught, 5796 console lines |
 | `make lib` / `make shared` | Both build; `out/boomkat.so` is produced |
 | `make smoke` | Prints `42` |
@@ -150,9 +126,6 @@ against LLVM 19.1.7, GCC 14.2). Run it with `make linux-ci`; see
 | `nm -D` | The export list is enforced: exactly the header's `bk_` surface |
 | `make install PREFIX=…` | Header and both libraries install; static and `-lboomkat` shared builds compile and run against the prefix |
 | rpath | `-Wl,-rpath,$PREFIX/lib` is load-bearing: without it the loader fails and `LD_LIBRARY_PATH` is required |
-
-`__muloti4` is not in libgcc; see the linking section above for how the build
-supplies it.
 
 Every loader (`bindings/python/js.py`, `bindings/ruby/lib/js.rb`,
 `bindings/zig/build.zig`, `bindings/rust`'s `build.rs`, `examples/justfile`)
@@ -179,7 +152,6 @@ linking from Zig and Rust is supported on Linux. Two caveats, both mechanical:
 
 - `rustc` passes `-nodefaultlibs`, so the C3 runtime's `atexit` hook is
   unresolved unless you add `-C link-arg=-lc`.
-- Both need the compiler-rt archive for `__muloti4`.
 
 #### Binding status on Linux
 
@@ -187,7 +159,7 @@ All seven binding surfaces were run in-container and produce correct output.
 
 | Binding | Linux | Notes |
 |---|---|---|
-| C99 static | pass | needs compiler-rt; `examples/justfile` adds it |
+| C99 static | pass | |
 | C99 shared | pass | |
 | Python (ctypes) | pass | |
 | Ruby (fiddle) | pass | only after the `re_exec` → `re_run` fix; every regexp crashed before it |
@@ -742,9 +714,8 @@ runtime surface; see `engine-scope.md`. Supply your own from the host.
   The x86-64 path was not exercised, because `container`'s amd64 emulation
   breaks `c3c`'s `posix_spawn` of the C compiler, so no build could be produced
   there. Nothing found on arm64 was architecture-specific (the `re_exec`
-  collision and the `__muloti4` gap are both ELF/glibc properties, not
-  instruction-set ones), so x86-64 is expected to behave the same, but that is
-  an inference and not a measurement.
+  collision is an ELF/glibc property, not an instruction-set one), so x86-64 is
+  expected to behave the same, but that is an inference and not a measurement.
 - musl and other non-glibc Linux. Only glibc was tested. The `re_exec` collision
   is a glibc symbol; musl may differ in either direction.
 - Cross-compilation, which was not attempted for any binding.
