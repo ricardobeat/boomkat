@@ -155,9 +155,10 @@ storage.
 
 Eligible references to a visible enclosing binding become `GETCAP`, `PUTCAP`,
 or `PUTCAP_SNAP`. Each closure owns an indexed descriptor vector referencing
-shared binding slots. Creation resolves those slots once; reads and writes
-fetch the owner's current value array so storage resizing is safe. Each
-descriptor retains its owner, and GC traces these owners independently of
+shared binding slots. Creation resolves those slots once. Reads and writes
+check for a nearer binding when resolution crossed a scope that could gain
+the name later. They fetch the owner's current value array after resizing.
+Each descriptor retains its owner, and GC traces these owners independently of
 captured environment chains.
 
 Eligible captured var and parameter bindings share a private dense value

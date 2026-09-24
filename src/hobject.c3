@@ -583,6 +583,7 @@ struct CaptureRef {
     HObject* owner;
     uint     prop_idx;
     bool     is_cell;
+    bool     guard_shadow;
 }
 
 struct HObjectFunction {

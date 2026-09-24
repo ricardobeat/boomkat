@@ -21,6 +21,23 @@ fn TVal* capture_value_slot(Activation* act, uint index, Heap* h, bool write = f
         if (ref.prop_idx >= ref.owner.array_size || ref.owner.array_part() == null) return null;
         return &ref.owner.array_part()[ref.prop_idx];
     }
+    if (ref.guard_shadow) {
+        TVal name = fields.comp_func.constants[fields.comp_func.capture_names[index]];
+        void* key = name.get_heapptr();
+        EnvRecord* cur = act.lex_env;
+        while (cur != null) {
+            if (cur.flags.is_with) return null;
+            if (cur.bindings != null) {
+                int idx = cur.bindings.find_prop_idx(key, h);
+                if (idx >= 0) {
+                    if (cur.bindings != ref.owner || (uint)idx != ref.prop_idx) return null;
+                    break;
+                }
+            }
+            cur = cur.parent;
+        }
+        if (cur == null) return null;
+    }
     if (write && !ref.owner.get_prop_flags(ref.prop_idx, h).writable) return null;
     TVal* value = &ref.owner.prop_values()[ref.prop_idx];
     if (env::is_tdz_sentinel(value)) return null;

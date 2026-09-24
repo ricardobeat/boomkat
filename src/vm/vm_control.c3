@@ -387,6 +387,7 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
 // makes a direct slot unsafe.
 fn int resolve_capture_ref(Vm* vm, EnvRecord* start, void* key, CaptureRef* out) {
     EnvRecord* cur = start;
+    bool passed_scope = false;
     while (cur != null) {
         // Object environment records can gain or lose a shadowing property,
         // and global bindings remain observable through host/global mutation.
@@ -399,9 +400,13 @@ fn int resolve_capture_ref(Vm* vm, EnvRecord* start, void* key, CaptureRef* out)
                 if (flags.is_accessor || flags.configurable) return -1;
                 out.owner = cur.bindings;
                 out.prop_idx = (uint)idx;
+                // A nearer scope can gain this binding after closure creation
+                // (for example when a hoisted function is published).
+                out.guard_shadow = passed_scope;
                 return 1;
             }
         }
+        passed_scope = true;
         cur = cur.parent;
     }
     return 0;
