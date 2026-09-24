@@ -38,7 +38,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 : null;
 
             // Allocate catcher
-            Catcher* cat = (Catcher*)heap::alloc_scanned(Catcher, vm.heap);
+            Catcher* cat = (Catcher*)heap::alloc_scanned_checked(Catcher, vm.heap);
             if (cat == null) {
                 // Out of memory, so skip the catcher and let the try body run unprotected
                 break;
@@ -74,7 +74,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             Catcher* cat = (Catcher*)ds.act.cat;
             if (cat != null && cat.finally_pc == null) {
                 ds.act.cat = (void*)cat.parent;
-                vm.heap.free_func(vm.heap.heap_udata, cat);
+                vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
             }
             return (TVal){};
         }
@@ -157,7 +157,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // re-throws in the catch block are handled by the finally handler.
                 if (cat.finally_pc == null) {
                     ds.act.cat = (void*)cat.parent;
-                    vm.heap.free_func(vm.heap.heap_udata, cat);
+                    vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
                 }
             } else {
                 ra.set_undefined();
@@ -218,7 +218,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                 // Pop the finally catcher
                 ds.act.cat = (void*)parent_cat;
-                vm.heap.free_func(vm.heap.heap_udata, cat);
+                vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
 
                 if (has_pending_ret) {
                     // When the parent catcher also has a finally,

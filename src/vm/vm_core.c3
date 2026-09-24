@@ -569,7 +569,7 @@ fn void catcher_chain_walk(heap::Heap* h, void* head, int mode) {
                 h.mark_env_chain(c.saved_lex_env);
             default:
                 if (mode == heap::CATCHER_CHAIN_FREE) { h.decref_tval(&c.thrown_val); }
-                h.free_func(h.heap_udata, c);
+                h.free_scanned((void*)c, (usz)Catcher::size);
         }
         c = parent;
     }
@@ -589,7 +589,7 @@ fn void forin_state_free(Vm* vm, ForInState* state) @inline {
     if (state.keys != null) {
         vm.heap.free_func(vm.heap.heap_udata, state.keys);
     }
-    vm.heap.free_func(vm.heap.heap_udata, state);
+    vm.heap.free_scanned((void*)state, (usz)ForInState::size);
 }
 
 // Unlink `state` from `*head` and free it. No-op if it is not on the chain

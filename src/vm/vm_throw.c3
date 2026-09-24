@@ -195,7 +195,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
             if (cat.flags & CATCHER_FLAG_IN_FINALLY) {
                 Catcher* next = (Catcher*)cat.parent;
                 search_act.cat = (void*)next;
-                vm.heap.free_func(vm.heap.heap_udata, cat);
+                vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
                 cat = next;
                 continue;
             }

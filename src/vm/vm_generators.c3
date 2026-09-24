@@ -609,7 +609,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // "always a queued job" semantics for both fulfilled and
                 // rejected Promises (PromiseReactionJob, ES2015+ §27.2.2.1).
                 // 1. Allocate GeneratorState for saving execution state
-                void* gs_raw = vm.heap.alloc_func(vm.heap.heap_udata, GeneratorState::size);
+                void* gs_raw = heap::alloc_scanned(GeneratorState, vm.heap);
                 if (gs_raw == null) {
                     // OOM: cannot suspend.  Reject the async Promise if
                     // applicable, otherwise propagate as an uncaught error.
@@ -629,7 +629,6 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
                 GeneratorState* gs = (GeneratorState*)gs_raw;
-                mem::clear(gs_raw, (sz)(GeneratorState::size));
                 gs.pending_resume_reg = 0xFFFF;
 
                 CompiledFunction* cur_func = (CompiledFunction*)ds.act.func;
@@ -664,7 +663,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 void* regs_mem = vm.heap.alloc_func(vm.heap.heap_udata, regs_bytes);
                 if (regs_mem == null) {
                     vm.heap.decref_tval(&gs.this_binding);
-                    vm.heap.free_func(vm.heap.heap_udata, gs_raw);
+                    vm.heap.free_scanned(gs_raw, (usz)GeneratorState::size);
                     return (TVal){};
                 }
                 gs.saved_regs = (TVal*)regs_mem;
@@ -691,8 +690,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         vm.heap.decref_tval(&gs.saved_regs[i]);
                     }
                     vm.heap.decref_tval(&gs.this_binding);
-                    vm.heap.free_func(vm.heap.heap_udata, gs.saved_regs);
-                    vm.heap.free_func(vm.heap.heap_udata, gs_raw);
+                    vm.heap.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size);
+                    vm.heap.free_scanned(gs_raw, (usz)GeneratorState::size);
                     return (TVal){};
                 }
                 HObject* resume_fn = resume_raw;

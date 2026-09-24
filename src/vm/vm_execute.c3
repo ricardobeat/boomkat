@@ -913,7 +913,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         ? vm.heap.alloc_func(vm.heap.heap_udata, cfn_regs_bytes)
                         : null;
                     if (cfn_regs_bytes > 0 && cfn_regs_raw == null) {
-                        vm.heap.free_func(vm.heap.heap_udata, cfn_gs_raw);
+                        vm.heap.free_scanned(cfn_gs_raw, (usz)GeneratorState::size);
                     } else {
                         if (cfn_regs_raw != null) mem::clear(cfn_regs_raw, (sz)(cfn_regs_bytes));
                         cfn_gs.saved_regs = (TVal*)cfn_regs_raw;
@@ -943,8 +943,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                             vm.heap.gen_initial_retval = &cfn_gen_result_slot;
                             cfn_is_gen_initial = true;
                         } else {
-                            vm.heap.free_func(vm.heap.heap_udata, cfn_regs_raw);
-                            vm.heap.free_func(vm.heap.heap_udata, cfn_gs_raw);
+                            vm.heap.free_scanned(cfn_regs_raw, cfn_regs_bytes);
+                            vm.heap.free_scanned(cfn_gs_raw, (usz)GeneratorState::size);
                         }
                     }
                 }

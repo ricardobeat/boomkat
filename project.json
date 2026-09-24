@@ -279,7 +279,8 @@
       "single-module": true,
       "sanitize": "address",
       "features": [
-        "HEAP_VERIFY"
+        "HEAP_VERIFY",
+        "SCAN_POISON"
       ]
     },
     "test_prop": {

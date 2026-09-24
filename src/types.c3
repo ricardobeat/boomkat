@@ -81,6 +81,9 @@ enum TValTag : char {
     // Internal reference to an EnvRecord saved in a register snapshot. Not a
     // valid ECMAScript value; escapes into public values are rejected.
     ENVREF,
+    // Fill pattern for freed scanned state under SCAN_POISON. Not a valid
+    // ECMAScript value and never produced by evaluation.
+    POISON,
 }
 
 // 48-bit range fits the NaN-box payload.
@@ -130,7 +133,13 @@ const ulong TAG_STRING     = 0xFFF8;  // embed: HString* ptr
 const ulong TAG_OBJECT     = 0xFFF9;  // embed: HObject* ptr
 const ulong TAG_BUFFER     = 0xFFFA;  // embed: buffer ptr
 const ulong TAG_ENVREF     = 0xFFFB;  // embed: EnvRecord* ptr (internal, not a JS value)
+const ulong TAG_POISON     = 0xFFFC;  // embed: nothing (SCAN_POISON fill only, never a JS value)
 const ulong TAG_DELETED    = 0xFFFF;  // embed: nothing (Set/Map deletion sentinel)
+
+// Byte pattern for blocks the collector must never see: SCAN_POISON fills freed
+// scanned state with it, so a slot no writer reached is distinguishable from one
+// holding a real value. The 48-bit payload is not a valid heap address.
+const ulong POISON_PAYLOAD = 0x0D0D0D0D0D0D;
 
 macro ulong nanbox_encode_tagged(ulong tag, ulong payload) {
     return (tag << 48) | (payload & NANBOX_PAYLOAD_MASK);
@@ -469,6 +478,25 @@ $if USE_NANBOX:
 $else
     self.tag     = DELETED;
     self.pointer = null;
+$endif
+}
+
+// Write the fill pattern SCAN_POISON uses for freed scanned state. Callers loop
+// it over whole TVal slots; see Heap.free_scanned.
+macro void TVal.set_poison(&self) {
+$if USE_NANBOX:
+    self.bits = (TAG_POISON << 48) | POISON_PAYLOAD;
+$else
+    self.tag     = POISON;
+    self.pointer = (void*)POISON_PAYLOAD;
+$endif
+}
+
+macro bool TVal.is_poison(&self) {
+$if USE_NANBOX:
+    return self.bits == ((TAG_POISON << 48) | POISON_PAYLOAD);
+$else
+    return self.tag == POISON;
 $endif
 }
 

@@ -400,7 +400,7 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
         }
         h.decref_tval(&gs.this_binding);
     }
-    if (gs.saved_regs != null) { h.free_func(h.heap_udata, gs.saved_regs); }
+    if (gs.saved_regs != null) { h.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size); }
     // A generator abandoned mid-for-in (never resumed to exhaustion, then
     // collected) still owns the states its body was enumerating, which were
     // MOVED here when the body suspended. Nothing else can reach them now, so
@@ -410,7 +410,7 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
     while (fi != null) {
         ForInState* fi_parent = fi.parent;
         if (fi.keys != null) { h.free_func(h.heap_udata, fi.keys); }
-        h.free_func(h.heap_udata, fi);
+        h.free_scanned((void*)fi, (usz)ForInState::size);
         fi = fi_parent;
     }
     gs.forin = null;
@@ -428,7 +428,7 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
         h.catcher_chain_fn(h, gs.cat, run_decref ? CATCHER_CHAIN_FREE : CATCHER_CHAIN_FREE_NODES_ONLY);
     }
     gs.cat = null;
-    h.free_func(h.heap_udata, gs);
+    h.free_scanned((void*)gs, (usz)GeneratorState::size);
 }
 
 // One parked Atomics.waitAsync waiter. `byte_index` is an absolute offset into
@@ -1186,6 +1186,43 @@ macro void* alloc_scanned($Type, Heap* h) {
     if (raw == null) { return null; }
     mem::clear(raw, (sz)((usz)$Type::size));
     return raw;
+}
+
+// Same, for a struct whose every field is written before the marker can reach
+// it. A SCAN_POISON build fills the block with the poison TVal instead of
+// zeroing, so a field a later edit forgets to write is reported at the marking
+// site rather than silently read as `undefined`. Structs that rely on zero to
+// mean "unset" (a suspended generator's delegation state, its this_binding)
+// must keep using alloc_scanned: poison there is a false positive, not a
+// finding.
+macro void* alloc_scanned_checked($Type, Heap* h) {
+    void* raw = alloc_scanned($Type, h);
+    if (raw == null) { return null; }
+    $if $feat(SCAN_POISON):
+        h.poison_block(raw, (usz)$Type::size);
+    $endif
+    return raw;
+}
+
+// Free scanned state, poisoning its bytes first so a recycled block cannot hand
+// the next owner a plausible-looking TVal. The fill is SCAN_POISON-only; every
+// other build relies on alloc_scanned zeroing the block instead.
+fn void Heap.free_scanned(&self, void* ptr, usz bytes) {
+    if (ptr == null) { return; }
+    $if $feat(SCAN_POISON):
+        self.poison_block(ptr, bytes);
+    $endif
+    self.free_func(self.heap_udata, ptr);
+}
+
+// Overwrite `bytes` at `ptr` with the poison TVal, zeroing any tail too short to
+// hold one. Only SCAN_POISON builds call this.
+fn void Heap.poison_block(&self, void* ptr, usz bytes) @feat(SCAN_POISON) {
+    TVal* slot = (TVal*)ptr;
+    usz whole = bytes / TVal::size;
+    for (usz i = 0; i < whole; i++) { slot[i].set_poison(); }
+    usz tail = bytes % TVal::size;
+    if (tail != 0) { mem::clear((char*)ptr + whole * TVal::size, (sz)tail); }
 }
 
 // ============================================================================
@@ -2658,6 +2695,9 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
  * overwriting a register or slot that may hold a heap pointer.
  */
 fn void Heap.decref_tval(&self, TVal* tv) @inline {
+    $if $feat(SCAN_POISON):
+        self.reject_poison(tv, "decref_tval");
+    $endif
     if (tv.is_heap_allocated()) {
         void* ptr = tv.get_heapptr();
         if (ptr != null) {
@@ -2885,9 +2925,32 @@ fn HObject* Heap.gray_pop(&self) {
  * the gray stack so its children are visited. Strings and bigints have no
  * outgoing edges, so they are only marked.
  */
+// A poisoned slot is one no writer ever reached, or one whose owner was freed
+// while the marker still had a path to it. The payload is not a heap address, so
+// following it stamps the reachable bit into whatever now occupies that address.
+fn void Heap.reject_poison(&self, TVal* v, ZString where) @feat(SCAN_POISON) {
+    if (v.is_poison()) {
+        io::eprintf("[scan-poison] %s: slot %p holds the poison fill\n", where, v);
+        self.fatal_func(self.heap_udata, "scan-poison: poisoned slot reached the collector");
+    }
+}
+
+// Same check for a pointer field that holds the fill because no writer reached
+// it: casting such a pointer to a HeapHeader and reading its flags is the write
+// this rejects.
+fn void Heap.reject_poison_ptr(&self, void* ptr, ZString where) @feat(SCAN_POISON) {
+    if ((usz)ptr == (usz)types::POISON_PAYLOAD) {
+        io::eprintf("[scan-poison] %s: pointer %p holds the poison fill\n", where, ptr);
+        self.fatal_func(self.heap_udata, "scan-poison: poisoned pointer reached the collector");
+    }
+}
+
 fn void Heap.mark_tval(&self, TVal* v) {
     gcprofile::gcprof_mark();
     self.mark_work_last++;
+    $if $feat(SCAN_POISON):
+        self.reject_poison(v, "mark_tval");
+    $endif
     if (v.is_object()) {
         HObject* obj = (HObject*)v.get_heapptr();
         if (obj != null) {
@@ -2941,6 +3004,9 @@ fn void Heap.mark_tval(&self, TVal* v) {
 fn void Heap.mark_env_chain(&self, void* env_ptr) {
     void* cur = env_ptr;
     while (cur != null) {
+        $if $feat(SCAN_POISON):
+            self.reject_poison_ptr(cur, "mark_env_chain");
+        $endif
         // Only an allocated cell has meaningful bindings/heap. A free cell or a
         // stale pointer into a recycled cell must stop the walk before either
         // is read; verification builds report it rather than walking on.
@@ -3075,6 +3141,9 @@ fn void Heap.mark_generator_state(&self, GeneratorState* gs) {
  */
 fn void Heap.mark_hobject(&self, HObject* obj) {
     if (obj == null) { return; }
+    $if $feat(SCAN_POISON):
+        self.reject_poison_ptr((void*)obj, "mark_hobject");
+    $endif
     HeapHeader* hdr = (HeapHeader*)obj;
     if (!hdr.is_reachable()) {
         hdr.set_reachable();

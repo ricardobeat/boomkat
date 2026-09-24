@@ -1158,7 +1158,7 @@ fn void tailcall_free_catchers(Vm* vm, Activation* act) {
     Catcher* c = (Catcher*)act.cat;
     while (c != null) {
         Catcher* next = c.parent;
-        vm.heap.free_func(vm.heap.heap_udata, c);
+        vm.heap.free_scanned((void*)c, (usz)Catcher::size);
         c = next;
     }
     act.cat = null;
@@ -2517,7 +2517,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             for (uint i = 0; i < gs.num_regs; i++) {
                                 vm.heap.decref_tval(&gs.saved_regs[i]);
                             }
-                            vm.heap.free_func(vm.heap.heap_udata, gs.saved_regs);
+                            vm.heap.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size);
                             gs.saved_regs = null;
                             gs.num_regs = 0;
                         }
@@ -2652,7 +2652,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (regs_bytes > 0) {
                     regs_raw = vm.heap.alloc_func(vm.heap.heap_udata, regs_bytes);
                     if (regs_raw == null) {
-                        vm.heap.free_func(vm.heap.heap_udata, gs_raw);
+                        vm.heap.free_scanned(gs_raw, (usz)GeneratorState::size);
                         ds.regs_base[result_reg].set_undefined();
                         return (TVal){};
                     }
@@ -2669,8 +2669,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (try go = gen_obj_raw) {
                     gen_obj = go;
                 } else {
-                    vm.heap.free_func(vm.heap.heap_udata, gs.saved_regs);
-                    vm.heap.free_func(vm.heap.heap_udata, gs_raw);
+                    vm.heap.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size);
+                    vm.heap.free_scanned(gs_raw, (usz)GeneratorState::size);
                     ds.regs_base[result_reg].set_undefined();
                     return (TVal){};
                 }
