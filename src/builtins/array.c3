@@ -2770,11 +2770,12 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
 
     for (; k < len; k++) {
         TVal v;
-        // arr_get_elem_vm returns false if the element is missing OR if the
-        // getter threw (sets ctx.should_throw). Spec: terminate iteration on
-        // an unhandled exception (tests 15.4.4.14-9-b-i-30/31).
+        // arr_get_elem_present_vm performs the HasProperty test first and
+        // returns false if the element is absent OR if a getter threw (sets
+        // ctx.should_throw). Spec: terminate iteration on an unhandled
+        // exception (tests 15.4.4.14-9-b-i-30/31).
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_get_elem_vm(obj, k, ctx.heap, ctx, &v)) {
+        if (arr_get_elem_present_vm(obj, k, ctx.heap, ctx, &v)) {
             if (array_strict_equals(v, search_elem)) {
                 // Indices can exceed the 48-bit fastint range (up to 2^53-1),
                 // so use set_number for large values to avoid silent truncation.
@@ -2846,11 +2847,12 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
 
     for (; k >= 0; k--) {
         TVal v;
-        // arr_get_elem_vm returns false if the element is missing OR if the
-        // getter threw (sets ctx.should_throw). Spec: terminate iteration on
-        // an unhandled exception.
+        // arr_get_elem_present_vm performs the HasProperty test first and
+        // returns false if the element is absent OR if a getter threw (sets
+        // ctx.should_throw). Spec: terminate iteration on an unhandled
+        // exception.
         if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (arr_get_elem_vm(obj, (ulong)k, ctx.heap, ctx, &v)) {
+        if (arr_get_elem_present_vm(obj, (ulong)k, ctx.heap, ctx, &v)) {
             if (array_strict_equals(v, search_elem)) {
                 // Indices can exceed the 48-bit fastint range (up to 2^53-1),
                 // so use set_number for large values to avoid silent truncation.
@@ -4403,12 +4405,21 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
 // Handles accessor properties by invoking the getter via VM, and propagates
 // any thrown error from the getter back to ctx.should_throw/ctx.throw_value
 // so the surrounding JS try/catch can catch it.
-fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx, TVal* out) {
-    // Proxy exotic: route through [[Get]] trap machinery.
+fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx, TVal* out, bool require_present = false) {
+    // Proxy exotic: route through [[Get]] trap machinery, with a
+    // [[HasProperty]] test first when the caller pairs the two.
     if (obj.flags.exotic_proxyobj) {
         if (ctx == null || ctx.vm == null) return false;
         HString* pk = heap.int_to_hstring((long)key);
         if (pk == null) return false;
+        if (require_present) {
+            bool present = false;
+            if (!js_has_property(ctx.vm, heap, obj, pk, &present)) {
+                proxy_ctx_ok(ctx);
+                return false;
+            }
+            if (!present) return false;
+        }
         TVal recv; recv.set_object(obj);
         if (!proxy_mop_get(ctx.vm, heap, obj, pk, recv, out)) {
             if (heap.has_error) {
@@ -4494,6 +4505,23 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
         return true;
     }
 
+    // Prototype chain lookup. When the caller needs the HasProperty half too
+    // and a Proxy sits on the chain, run js_has_property first: it routes
+    // through the `has` trap, so an answer of false suppresses the fetch
+    // instead of letting get_prop_or_accessor_proto reach the `get` trap.
+    if (require_present && ctx != null && ctx.vm != null) {
+        for (HObject* p = obj.prototype; p != null; p = p.prototype) {
+            if (!p.flags.exotic_proxyobj) continue;
+            bool present = false;
+            if (!js_has_property(ctx.vm, heap, obj, pk, &present)) {
+                proxy_ctx_ok(ctx);
+                return false;
+            }
+            if (!present) return false;
+            break;
+        }
+    }
+
     // Prototype chain lookup
     hobject::PropLookupResult res = obj.get_prop_or_accessor_proto(pk, true, heap);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -4504,6 +4532,14 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
         return true;
     }
     return false;
+}
+
+// arr_get_elem_vm performs only the [[Get]] half of the spec's element read.
+// The iteration methods (indexOf, lastIndexOf, forEach, map, filter, some,
+// every, reduce, flat) are specified as [[HasProperty]] then [[Get]], so a
+// Proxy's `has` trap decides whether the fetch happens at all.
+fn bool arr_get_elem_present_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx, TVal* out) {
+    return arr_get_elem_vm(obj, key, heap, ctx, out, true);
 }
 
 // Helper: check if callback is callable, throw TypeError if not.
