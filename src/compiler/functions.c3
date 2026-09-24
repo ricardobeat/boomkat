@@ -1015,7 +1015,12 @@ fn void CompilerContext.emit_destruct_default(&self, uint func_idx, ushort dest_
     ushort call_base = self.alloc_reg();
     if (self.next_reg <= call_base + 1) { self.next_reg = call_base + 2; }
     self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-    self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
+    // A SuperCall default thunk is arrow-flagged and takes `this` from the
+    // lexical capture (see compile_default_expr); a plain LDTHIS here would
+    // read the enclosing derived constructor's uninitialized `this` and throw
+    // before the default ever runs. Every other thunk takes the receiver.
+    Opcode this_op = func.is_arrow() ? Opcode.LDUNDEF : Opcode.LDTHIS;
+    self.emit_abc(this_op, (uint)(call_base + 1), 0, 0);
     self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
     self.emit_abc(Opcode.LDREG, (uint)dest_reg, (uint)call_base, 0);
     self.free_regs_to(call_base);
@@ -3741,7 +3746,12 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
         }
         ushort this_reg = self.alloc_reg();
         self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-        self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
+        // A SuperCall default thunk is arrow-flagged and takes `this` from the
+        // lexical capture, so the this slot is unused (see
+        // compile_default_expr); every other thunk takes the receiver.
+        Opcode this_op = self.inner_funcs[func_idx].is_arrow()
+            ? Opcode.LDUNDEF : Opcode.LDTHIS;
+        self.emit_abc(this_op, (uint)(call_base + 1), 0, 0);
 
         self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
 
@@ -4282,6 +4292,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
 
     // Propagate class context (for super expressions)
     def_ctx.in_class_body = self.in_class_body;
+    def_ctx.is_constructable = self.is_constructable;
     def_ctx.has_super_binding = self.has_super_binding;
     def_ctx.super_is_home_object = self.super_is_home_object;
     def_ctx.super_is_static_method = self.super_is_static_method;
@@ -4349,6 +4360,43 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     def_ctx.emit_simple(Opcode.POP_LEX);
 
     CompiledFunction* func = def_ctx.finish()!;
+    // A default expression is part of the enclosing function's definition
+    // site, so a `super()` inside it must bind the enclosing derived
+    // constructor's `this`, not construct a fresh one. When the thunk contains
+    // a SuperCall, flag it as an arrow so instantiate_closure captures the
+    // creating frame's `this` (registering a pending arrow while the
+    // constructor has not run super() yet) and super_init_this_chain walks out
+    // to that frame; the call sites then pass LDUNDEF for the this slot so the
+    // uninitialized `this` is never read. Only SuperCall needs this: `super.x`
+    // reads the home object through the captured scope, and `this` /
+    // `new.target` are passed or captured independently. Flagging every
+    // default thunk as an arrow instead changes direct-eval `arguments`
+    // semantics, which key off the arrow's lexical-arguments rules.
+    if (func.code != null) {
+        for (uint ci = 0; ci < func.code_count; ci++) {
+            Instruction ins = func.code[ci];
+            if (ins.op == Opcode.SUPER_CALL || ins.op == Opcode.SUPER_CALL_S) {
+                func.flags.is_arrow = true;
+                break;
+            }
+            // A nested default thunk that itself contains a SuperCall (e.g.
+            // `[x=[a=super()]=[]]`) is arrow-flagged already; this thunk runs
+            // it, so it must be arrow too, or the LDTHIS at its call site would
+            // read the constructor's uninitialized `this` before the nested
+            // default could bind it. needs_lex_bridge distinguishes a nested
+            // default thunk from an ordinary arrow expression, which manages
+            // its own lexical `this` and does not require this thunk to.
+            if (ins.op == Opcode.CLOSURE) {
+                uint idx = ins.get_bc();
+                if (idx < func.inner_count && func.inner_funcs[idx] != null
+                    && func.inner_funcs[idx].is_arrow()
+                    && func.inner_funcs[idx].needs_lex_bridge()) {
+                    func.flags.is_arrow = true;
+                    break;
+                }
+            }
+        }
+    }
     // A parameter default value is evaluated in the enclosing function's own
     // FormalParameters (ES2015 §9.2.12 FunctionDeclarationInstantiation step
     // 24), so `new.target` there is the enclosing function's. The thunk is a

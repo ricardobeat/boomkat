@@ -1766,7 +1766,12 @@ fn void CompilerContext.emit_destruct_param_defaults(&self) {
         ushort call_base = self.alloc_reg();
         self.reserve_call_frame(call_base, 0);
         self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-        self.emit_abc(Opcode.LDTHIS, (uint)(call_base + 1), 0, 0);
+        // A SuperCall default thunk is arrow-flagged and takes `this` from the
+        // lexical capture, so the this slot is unused (see
+        // compile_default_expr); every other thunk takes the receiver.
+        Opcode this_op = self.inner_funcs[func_idx].is_arrow()
+            ? Opcode.LDUNDEF : Opcode.LDTHIS;
+        self.emit_abc(this_op, (uint)(call_base + 1), 0, 0);
         self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
         self.emit_abc(Opcode.LDREG, (uint)arg_slot, (uint)call_base, 0);
         self.free_regs_to(call_base);
