@@ -1,0 +1,614 @@
+<title>Boomkat Build Record</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600&display=swap">
+<style>
+:root {
+  --page: #f4f5f6;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #7d7b75;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --ring: rgba(11, 11, 11, 0.10);
+  --h0: #2a78d6;
+  --h1: #eb6834;
+  --h2: #1baf7a;
+  --h3: #eda100;
+  --h4: #e87ba4;
+  --h5: #008300;
+  --h6: #a3a19a;
+  --in-long: #4a3aa7;
+  --in-short: #8c80de;
+  --in-rep: #c9c7bf;
+  --line: #2a78d6;
+  --scope: #c3c2b7;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #8e8c86;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --ring: rgba(255, 255, 255, 0.10);
+    --h0: #3987e5;
+    --h1: #d95926;
+    --h2: #199e70;
+    --h3: #c98500;
+    --h4: #d55181;
+    --h5: #008300;
+    --h6: #6b6a64;
+    --in-long: #9085e9;
+    --in-short: #5a4fb8;
+    --in-rep: #45443f;
+    --line: #3987e5;
+    --scope: #55544f;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #8e8c86;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --ring: rgba(255, 255, 255, 0.10);
+  --h0: #3987e5;
+  --h1: #d95926;
+  --h2: #199e70;
+  --h3: #c98500;
+  --h4: #d55181;
+  --h5: #008300;
+  --h6: #6b6a64;
+  --in-long: #9085e9;
+  --in-short: #5a4fb8;
+  --in-rep: #45443f;
+  --line: #3987e5;
+  --scope: #55544f;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.55 var(--sans);
+  padding-inline: 16px;
+  padding-block: 40px 64px;
+}
+main { max-width: 1040px; margin: 0 auto; display: grid; gap: 56px; }
+h1, h2 { font-family: var(--cond); font-weight: 600; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.05; letter-spacing: -0.01em; }
+h2 { font-size: 24px; line-height: 1.15; }
+h3 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
+p { margin: 0; max-width: 68ch; color: var(--ink-2); }
+p strong { color: var(--ink); font-weight: 600; }
+code, .mono { font-family: var(--mono); font-size: 0.9em; }
+a { color: inherit; }
+
+header { display: grid; gap: 14px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+.stats {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px;
+  background: var(--ring); border: 1px solid var(--ring); border-radius: 10px; overflow: hidden;
+}
+.stat { background: var(--surface); padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
+.stat b { font: 500 28px/1.1 var(--mono); letter-spacing: -0.02em; }
+.stat span { font-size: 13px; color: var(--ink-2); }
+@media (max-width: 720px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+section { display: grid; gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 18px 18px 14px; display: grid; gap: 12px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 20px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.legend i.dash { height: 0; border-top: 2px dashed var(--line); border-radius: 0; width: 16px; vertical-align: 3px; }
+.legend i.solid { height: 2px; background: var(--line); border-radius: 0; width: 16px; vertical-align: 3px; }
+.legend i.scope { height: 2px; background: var(--scope); border-radius: 0; width: 16px; vertical-align: 3px; }
+.chart { position: relative; width: 100%; min-width: 0; }
+.chart svg { display: block; overflow: visible; }
+.chart text { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+.chart .lbl { fill: var(--ink-2); }
+.marks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--ink-2); }
+.marks b { font: 500 11px/1 var(--mono); display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--axis); color: var(--ink); margin-right: 6px; }
+.two { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 820px) { .two { grid-template-columns: 1fr; } }
+
+.bars { display: grid; gap: 7px; }
+.bar-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) 64px; gap: 12px; align-items: center; font-size: 13px; }
+.bar-row .name { color: var(--ink); overflow-wrap: anywhere; }
+.bar-row .val { font-family: var(--mono); text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.track { display: flex; gap: 2px; height: 14px; }
+.track span { height: 100%; min-width: 2px; }
+.track span:first-child { border-radius: 3px 0 0 3px; }
+.track span:last-child { border-radius: 0 3px 3px 0; }
+.track span:only-child { border-radius: 3px; }
+@media (max-width: 560px) { .bar-row { grid-template-columns: 110px minmax(0, 1fr) 52px; gap: 8px; } }
+
+.score { width: 100%; border-collapse: collapse; font-size: 13px; }
+.score th { text-align: right; font-weight: 500; color: var(--muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.score th:first-child, .score td:first-child { text-align: left; }
+.score td { padding: 7px 8px; border-bottom: 1px solid var(--grid); text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.score td:first-child { font-family: var(--sans); }
+.score td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
+.score .cell { display: grid; grid-template-columns: minmax(40px, 1fr) auto; gap: 8px; align-items: center; }
+.score .mini { height: 6px; background: var(--grid); border-radius: 3px; overflow: hidden; }
+.score .mini span { display: block; height: 100%; border-radius: 3px; }
+.score tfoot td { color: var(--ink); font-weight: 500; border-bottom: 0; }
+.scroll { overflow-x: auto; }
+
+details { font-size: 13px; }
+details summary { cursor: pointer; color: var(--ink-2); width: max-content; }
+details summary:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; border-radius: 3px; }
+details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
+
+.tip {
+  position: fixed; pointer-events: none; z-index: 10; min-width: 150px; max-width: 280px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--ring);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14); border-radius: 8px; padding: 9px 11px; font-size: 12px;
+}
+.tip .t { font: 500 11px/1.3 var(--mono); color: var(--muted); margin-bottom: 5px; }
+.tip .r { display: flex; justify-content: space-between; gap: 14px; line-height: 1.6; }
+.tip .r i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.tip .r b { font: 500 12px var(--mono); }
+.note { font-size: 13px; color: var(--muted); max-width: 80ch; }
+.notes { display: grid; gap: 10px; }
+.notes p { font-size: 14px; }
+@media (prefers-reduced-motion: no-preference) { .track span, .mini span { transition: width 0.3s ease; } }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow" id="range"></div>
+    <h1>Boomkat build record</h1>
+    <p>How the engine was built: which coding agents made the commits, which models ran them, how much the human typed, and how test262 moved. Everything here comes from git history and the agents' local logs. The test suite was not re-run.</p>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <section id="timeline">
+    <h2>Commits per week</h2>
+    <p>Each commit is credited to one harness. Rebased and cherry-picked copies count once.</p>
+    <div class="panel">
+      <div class="panel-head"><h3>Commits by harness</h3><div class="legend" data-legend="harness"></div></div>
+      <div class="chart" id="c-commits"></div>
+      <ol class="marks" id="m-commits"></ol>
+      <details><summary>Weekly numbers</summary><div class="scroll" id="t-commits"></div></details>
+    </div>
+  </section>
+
+  <section id="harnesses">
+    <h2>Harnesses</h2>
+    <p id="attrib-note"></p>
+    <div class="panel scroll">
+      <table class="score" id="scorecard"></table>
+    </div>
+  </section>
+
+  <section id="models">
+    <h2>Models</h2>
+    <p>Commits by model family, split by the harness that ran the model. A commit's model comes from the harness log or the trailer. For time-matched commits it is the model the harness was running at that moment. It is missing where the transcript is gone, mostly Claude Code before August.</p>
+    <div class="panel">
+      <div class="panel-head"><h3>Commits by model family</h3><div class="legend" data-legend="harness"></div></div>
+      <div class="bars" id="families"></div>
+    </div>
+  </section>
+
+  <section id="input">
+    <h2>Human input</h2>
+    <p id="input-note"></p>
+    <div class="panel">
+      <div class="panel-head"><h3>Prompts per week</h3><div class="legend" id="legend-input"></div></div>
+      <div class="chart" id="c-input"></div>
+      <details><summary>By month, with commits per typed prompt</summary><div class="scroll" id="t-months"></div></details>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Prompts per week by harness</h3><div class="legend" data-legend="harness"></div></div>
+      <div class="chart" id="c-prompts"></div>
+    </div>
+  </section>
+
+  <section id="test262">
+    <h2>test262</h2>
+    <p id="t262-note"></p>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Distinct tests passing</h3>
+        <div class="legend">
+          <span><i class="dash"></i>estimated from overlapping phases</span>
+          <span><i class="solid"></i>measured, distinct files</span>
+          <span><i class="scope"></i>tests in scope</span>
+        </div>
+      </div>
+      <div class="chart" id="c-t262"></div>
+      <ol class="marks" id="m-t262"></ol>
+      <details><summary>Every data point</summary><div class="scroll" id="t-t262"></div></details>
+    </div>
+    <p>Pass rate within each group of the runner's phases, as a share of the tests the skip list let run at the time. The group's in-scope count moved with the skip list, so a dip can mean more tests came into scope.</p>
+    <div class="two" id="groups"></div>
+    <div class="panel scroll">
+      <h3>After the switch to test262's own suites</h3>
+      <table class="score" id="suites"></table>
+    </div>
+  </section>
+
+  <section id="july">
+    <h2>From the July 31 snapshot</h2>
+    <p>The earlier analysis in <code>.attrib/</code> recorded token counts while Claude Code's June and July transcripts still existed. They were deleted later by the 30-day transcript cleanup, so these figures cannot be rebuilt and cover May 22 to July 31 only.</p>
+    <div class="stats" id="july-stats"></div>
+  </section>
+
+  <section id="method">
+    <h2>Method and limits</h2>
+    <div class="notes" id="notes"></div>
+  </section>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const D = /*DATA*/null;
+
+const NS = 'http://www.w3.org/2000/svg';
+const HC = { 'Claude Code': 'var(--h0)', 'Crush': 'var(--h1)', 'opencode': 'var(--h2)',
+  'opencode or pi': 'var(--h3)', 'Codex': 'var(--h4)', 'Other': 'var(--h5)', 'Unattributed': 'var(--h6)' };
+const HLABEL = { 'Other': 'pi + Shelley' };
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const pct = (a, b) => b ? (100 * a / b) : 0;
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const day = s => new Date(s.slice(0, 10) + 'T00:00:00Z');
+const dstr = d => `${MON[d.getUTCMonth()]} ${d.getUTCDate()}`;
+const sum = a => a.reduce((x, y) => x + y, 0);
+const hname = h => HLABEL[h] || h;
+
+function svg(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceMax(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+  return 10 * p;
+}
+function ticks(max, n) {
+  const step = niceMax(max / n);
+  const out = [];
+  for (let v = 0; v <= max + 1e-9; v += step) out.push(v);
+  return out;
+}
+const kfmt = v => v >= 1000 ? (v / 1000) + 'k' : String(v);
+
+// Tooltip
+const tip = document.getElementById('tip');
+function showTip(ev, html) {
+  tip.innerHTML = html;
+  tip.hidden = false;
+  const r = tip.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+  tip.style.left = Math.max(8, x) + 'px';
+  tip.style.top = Math.max(8, y) + 'px';
+}
+const hideTip = () => { tip.hidden = true; };
+const row = (color, label, value) =>
+  `<div class="r"><span>${color ? `<i style="background:${color}"></i>` : ''}${label}</span><b>${value}</b></div>`;
+
+// Legends
+for (const el of document.querySelectorAll('[data-legend="harness"]')) {
+  el.innerHTML = D.harnesses.filter(h => D.totals[h].commits || D.totals[h].prompts)
+    .map(h => `<span><i style="background:${HC[h]}"></i>${hname(h)}</span>`).join('');
+}
+
+// Header
+const weeks = D.weeks.map(day);
+const lastWeek = new Date(weeks[weeks.length - 1].getTime() + 6 * 864e5);
+const gen = day(D.generated);
+document.getElementById('range').textContent =
+  `duktape-c3 → boomkat · ${dstr(day(D.milestones[0].date))} – ${dstr(gen)} 2026`;
+const T = D.totals, H = D.harnesses;
+const allCommits = sum(H.map(h => T[h].commits || 0));
+const allPrompts = sum(H.map(h => T[h].prompts || 0));
+const long = sum(H.map(h => T[h].long || 0)), short = sum(H.map(h => T[h].short || 0));
+const repeated = sum(H.map(h => T[h].repeated || 0));
+const allLines = sum(H.map(h => T[h].lines || 0));
+const exact = D.test262.points.filter(p => p.exact);
+const lastT = exact[exact.length - 1];
+document.getElementById('stats').innerHTML = [
+  [fmt(allCommits), 'commits, all branches'],
+  [fmt(allPrompts), `human prompts, ${fmt(long)} over ten words`],
+  [fmt(lastT.distinct), `test262 tests passing on ${dstr(day(lastT.date))}`],
+  [fmt(allLines), `source lines at main, ${fmt(T['Claude Code'].lines)} from Claude Code`],
+].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+
+// Stacked weekly bars
+function stacked(id, series, keys, colors, labels, opts = {}) {
+  const box = document.getElementById(id);
+  const draw = () => {
+    box.innerHTML = '';
+    const W = box.clientWidth, Hh = opts.height || 260;
+    const m = { l: 40, r: 6, t: opts.marks ? 24 : 8, b: 26 };
+    const s = svg('svg', { width: W, height: Hh, role: 'img', 'aria-label': opts.aria || '' }, box);
+    const n = D.weeks.length;
+    const totals = D.weeks.map((_, i) => sum(keys.map(k => series[k][i])));
+    const max = niceMax(Math.max(...totals));
+    const y = v => m.t + (Hh - m.t - m.b) * (1 - v / max);
+    const bw = (W - m.l - m.r) / n;
+    for (const t of ticks(max, 4)) {
+      svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: t ? 'var(--grid)' : 'var(--axis)', 'stroke-width': 1 }, s);
+      svg('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end' }, s).textContent = kfmt(t);
+    }
+    let lastMonth = -1;
+    D.weeks.forEach((w, i) => {
+      const d = day(w);
+      const mid = new Date(d.getTime() + 3 * 864e5);
+      if (mid.getUTCMonth() !== lastMonth) {
+        lastMonth = mid.getUTCMonth();
+        svg('text', { x: m.l + i * bw + 2, y: Hh - 8 }, s).textContent = MON[lastMonth];
+      }
+      let acc = 0;
+      const x = m.l + i * bw + 1, width = Math.max(1, bw - 2);
+      keys.forEach(k => {
+        const v = series[k][i];
+        if (!v) return;
+        const y0 = y(acc), y1 = y(acc + v);
+        svg('rect', { x, y: y1, width, height: Math.max(0.5, y0 - y1 - 1), fill: colors[k], rx: 1.5 }, s);
+        acc += v;
+      });
+      const hit = svg('rect', { x: m.l + i * bw, y: m.t, width: bw, height: Hh - m.t - m.b, fill: 'transparent' }, s);
+      hit.addEventListener('mousemove', ev => {
+        const end = new Date(d.getTime() + 6 * 864e5);
+        showTip(ev, `<div class="t">${dstr(d)} – ${dstr(end)}</div>` +
+          keys.filter(k => series[k][i]).reverse().map(k => row(colors[k], labels(k), fmt(series[k][i]))).join('') +
+          row('', 'Total', fmt(totals[i])));
+      });
+      hit.addEventListener('mouseleave', hideTip);
+    });
+    if (opts.marks) {
+      const t0 = day(D.weeks[0]).getTime();
+      opts.marks.forEach((mk, j) => {
+        const x = m.l + ((day(mk.date).getTime() - t0) / (7 * 864e5)) * bw;
+        svg('line', { x1: x, x2: x, y1: m.t - 6, y2: Hh - m.b, stroke: 'var(--ink-2)', 'stroke-width': 1, 'stroke-dasharray': '2 3', opacity: 0.6 }, s);
+        svg('circle', { cx: x, cy: m.t - 13, r: 8, fill: 'var(--surface)', stroke: 'var(--axis)' }, s);
+        svg('text', { x, y: m.t - 9.5, 'text-anchor': 'middle', class: 'lbl' }, s).textContent = j + 1;
+      });
+    }
+  };
+  draw();
+  new ResizeObserver(draw).observe(box);
+}
+
+function marks(id, list) {
+  document.getElementById(id).innerHTML = list.map((m, j) =>
+    `<li><b>${j + 1}</b>${dstr(day(m.date))}: ${m.label}</li>`).join('');
+}
+
+function table(id, head, rows) {
+  document.getElementById(id).innerHTML = `<table class="score"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>` +
+    rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
+}
+
+const commitKeys = H.filter(h => T[h].commits);
+stacked('c-commits', D.commits_weekly, commitKeys, HC, hname,
+  { marks: D.milestones, height: 280, aria: 'Weekly commits stacked by harness' });
+marks('m-commits', D.milestones);
+table('t-commits', ['Week of', ...commitKeys.map(hname), 'Total'],
+  D.weeks.map((w, i) => [dstr(day(w)), ...commitKeys.map(k => fmt(D.commits_weekly[k][i])),
+    fmt(sum(commitKeys.map(k => D.commits_weekly[k][i])))]));
+
+// Scorecard
+{
+  const [ok, total] = D.calibration;
+  document.getElementById('attrib-note').innerHTML =
+    `A commit goes to the harness whose own log shows the <code>git commit</code> output. If no log has it, the <code>Assisted-by</code> or <code>Co-Authored-By</code> trailer decides. Failing both, it goes to the only harness active in the three minutes before the commit, or else the one active most recently within two hours. On the ${fmt(total)} commits with a log record, that timing rule alone picks the same harness ${fmt(ok)} times (${pct(ok, total).toFixed(0)}%). Model-only trailers (Mimo, Deepseek, Kimi) are counted as <strong>opencode or pi</strong>.`;
+  const maxC = Math.max(...H.map(h => T[h].commits || 0));
+  const maxP = Math.max(...H.map(h => T[h].prompts || 0));
+  const maxL = Math.max(...H.map(h => T[h].lines || 0));
+  const cell = (v, max, total, color) => v ? `<div class="cell"><div class="mini"><span style="width:${pct(v, max)}%;background:${color}"></span></div><span>${fmt(v)} <span style="color:var(--muted)">${pct(v, total).toFixed(0).padStart(2, ' ')}%</span></span></div>` : '<span style="color:var(--muted)">–</span>';
+  const how = h => ['log', 'trailer', 'time'].map(k => T[h][k] || 0).map(fmt).join(' / ');
+  document.getElementById('scorecard').innerHTML =
+    `<thead><tr><th>Harness</th><th>Commits</th><th>log / trailer / time</th><th>Prompts</th><th>Surviving lines</th></tr></thead><tbody>` +
+    H.map(h => `<tr><td><span class="sw" style="background:${HC[h]}"></span>${hname(h)}</td>` +
+      `<td>${cell(T[h].commits, maxC, allCommits, HC[h])}</td><td>${how(h)}</td>` +
+      `<td>${cell(T[h].prompts, maxP, allPrompts, HC[h])}</td><td>${cell(T[h].lines, maxL, allLines, HC[h])}</td></tr>`).join('') +
+    `</tbody><tfoot><tr><td>Total</td><td>${fmt(allCommits)}</td><td>${['log', 'trailer', 'time'].map(k => fmt(sum(H.map(h => T[h][k] || 0)))).join(' / ')}</td><td>${fmt(allPrompts)}</td><td>${fmt(allLines)}</td></tr></tfoot>`;
+}
+
+// Model families
+{
+  const fams = D.families;
+  const max = Math.max(...fams.map(([, c]) => sum(Object.values(c))));
+  const box = document.getElementById('families');
+  box.innerHTML = fams.map(([f, c]) => {
+    const tot = sum(Object.values(c));
+    const segs = H.filter(h => c[h]).map(h =>
+      `<span style="width:${pct(c[h], max)}%;background:${HC[h]}" data-h="${h}" data-v="${c[h]}"></span>`).join('');
+    return `<div class="bar-row" data-f="${f}"><span class="name">${f}</span><div class="track">${segs}</div><span class="val">${fmt(tot)}</span></div>`;
+  }).join('');
+  box.addEventListener('mousemove', ev => {
+    const r = ev.target.closest('.bar-row');
+    if (!r) return hideTip();
+    const f = fams.find(x => x[0] === r.dataset.f);
+    showTip(ev, `<div class="t">${f[0]}</div>` +
+      H.filter(h => f[1][h]).map(h => row(HC[h], hname(h), fmt(f[1][h]))).join(''));
+  });
+  box.addEventListener('mouseleave', hideTip);
+}
+
+// Human input
+{
+  const IC = { long: 'var(--in-long)', short: 'var(--in-short)', repeated: 'var(--in-rep)' };
+  const IL = { long: 'Typed, over ten words', short: 'Typed, ten words or fewer', repeated: 'Loop prompt, sent 3+ times verbatim' };
+  document.getElementById('legend-input').innerHTML =
+    ['long', 'short', 'repeated'].map(k => `<span><i style="background:${IC[k]}"></i>${IL[k]}</span>`).join('');
+  document.getElementById('input-note').innerHTML =
+    `${fmt(allPrompts)} prompts across all harnesses, slash commands excluded. <strong>${fmt(long + short)}</strong> were typed once, ${fmt(long)} of them longer than ten words. The other ${fmt(repeated)} were the same text sent three or more times: Ralph-style loop prompts telling the agent to pick its next task, mostly in Crush. Claude Code counts come from its prompt history, which kept every prompt even after the transcripts were deleted.`;
+  stacked('c-input', D.input_weekly, ['long', 'short', 'repeated'], IC, k => IL[k],
+    { height: 220, aria: 'Weekly prompts by kind' });
+  stacked('c-prompts', D.prompts_weekly, H.filter(h => T[h].prompts), HC, hname,
+    { height: 200, aria: 'Weekly prompts by harness' });
+  table('t-months', ['Month', 'Typed > 10 words', 'Typed ≤ 10 words', 'Loop', 'Commits', 'Commits per typed prompt'],
+    D.months.map(([m, c]) => {
+      const typed = (c.long || 0) + (c.short || 0);
+      return [MON[+m.slice(5) - 1] + ' ' + m.slice(0, 4), fmt(c.long || 0), fmt(c.short || 0), fmt(c.repeated || 0),
+        fmt(c.commits || 0), typed ? ((c.commits || 0) / typed).toFixed(2) : '–'];
+    }));
+}
+
+// test262
+{
+  const P = D.test262.points;
+  const chk = D.test262.dup_check;
+  const est = P.filter(p => !p.exact && p.kind === 'phases').find(p => p.reported === chk.reported);
+  document.getElementById('t262-note').innerHTML =
+    `The skip list changed many times, so the pass rate is not comparable across the timeline. This chart counts tests passing instead. Until Aug 22 the runner's phases overlapped: Phase 5 ran all of <code>built-ins/Object</code>, <code>Array</code>, <code>String</code>, <code>Number</code>, <code>Boolean</code> and <code>Function</code>, which Phases 3 and 6 also ran. The reported totals counted those tests two or three times. The <strong>${fmt(chk.reported)}</strong> passes reported on Aug 17 are <strong>${fmt(chk.measured)}</strong> distinct files. Points before Aug 22 have the duplicates removed by file share${est ? `, which gives ${fmt(est.distinct)} for that run` : ''}. Later points are full runs quoted in commit messages. The last one with a count for every suite is Sep 17.`;
+  const box = document.getElementById('c-t262');
+  const t0 = day('2026-05-22').getTime(), t1 = gen.getTime() + 864e5;
+  const draw = () => {
+    box.innerHTML = '';
+    const W = box.clientWidth, Hh = 320, m = { l: 44, r: 10, t: 26, b: 26 };
+    const s = svg('svg', { width: W, height: Hh, role: 'img', 'aria-label': 'Distinct test262 tests passing over time' }, box);
+    const max = 55000;
+    const x = t => m.l + (W - m.l - m.r) * (t - t0) / (t1 - t0);
+    const y = v => m.t + (Hh - m.t - m.b) * (1 - v / max);
+    for (const t of ticks(max, 5)) {
+      svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: t ? 'var(--grid)' : 'var(--axis)' }, s);
+      svg('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end' }, s).textContent = kfmt(t);
+    }
+    for (let mo = 4; mo <= 8; mo++) {
+      const t = Date.UTC(2026, mo, 1);
+      if (t < t0) continue;
+      svg('line', { x1: x(t), x2: x(t), y1: Hh - m.b, y2: Hh - m.b + 4, stroke: 'var(--axis)' }, s);
+      svg('text', { x: x(t) + 3, y: Hh - 8 }, s).textContent = MON[mo];
+    }
+    const pts = P.map(p => ({ ...p, t: new Date(p.date).getTime() }));
+    const scope = pts.filter(p => p.in_scope);
+    svg('path', { d: scope.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.in_scope).toFixed(1)}`).join(''),
+      fill: 'none', stroke: 'var(--scope)', 'stroke-width': 1.5 }, s);
+    const estPts = pts.filter(p => !p.exact), exPts = pts.filter(p => p.exact);
+    svg('path', { d: estPts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.distinct).toFixed(1)}`).join(''),
+      fill: 'none', stroke: 'var(--line)', 'stroke-width': 2, 'stroke-dasharray': '5 3', 'stroke-linejoin': 'round' }, s);
+    svg('path', { d: exPts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.distinct).toFixed(1)}`).join(''),
+      fill: 'none', stroke: 'var(--line)', 'stroke-width': 2, 'stroke-linejoin': 'round' }, s);
+    for (const p of exPts) svg('circle', { cx: x(p.t), cy: y(p.distinct), r: 4, fill: 'var(--line)', stroke: 'var(--surface)', 'stroke-width': 2 }, s);
+    const lp = exPts[exPts.length - 1];
+    svg('text', { x: x(lp.t) - 6, y: y(lp.distinct) - 10, 'text-anchor': 'end', class: 'lbl' }, s).textContent = fmt(lp.distinct);
+    D.test262.events.forEach((e, j) => {
+      const ex = x(day(e.date).getTime());
+      svg('line', { x1: ex, x2: ex, y1: m.t - 6, y2: Hh - m.b, stroke: 'var(--ink-2)', 'stroke-dasharray': '2 3', opacity: 0.5 }, s);
+      svg('circle', { cx: ex, cy: m.t - 13, r: 8, fill: 'var(--surface)', stroke: 'var(--axis)' }, s);
+      svg('text', { x: ex, y: m.t - 9.5, 'text-anchor': 'middle', class: 'lbl' }, s).textContent = j + 1;
+    });
+    const cross = svg('line', { y1: m.t, y2: Hh - m.b, stroke: 'var(--ink-2)', opacity: 0, 'stroke-width': 1 }, s);
+    const dot = svg('circle', { r: 5, fill: 'var(--line)', stroke: 'var(--surface)', 'stroke-width': 2, opacity: 0 }, s);
+    const hit = svg('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: Hh - m.t - m.b, fill: 'transparent' }, s);
+    hit.addEventListener('mousemove', ev => {
+      const bx = s.getBoundingClientRect().left;
+      const t = t0 + (ev.clientX - bx - m.l) / (W - m.l - m.r) * (t1 - t0);
+      let best = pts[0];
+      for (const p of pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+      cross.setAttribute('x1', x(best.t)); cross.setAttribute('x2', x(best.t)); cross.setAttribute('opacity', 0.35);
+      dot.setAttribute('cx', x(best.t)); dot.setAttribute('cy', y(best.distinct)); dot.setAttribute('opacity', 1);
+      showTip(ev, `<div class="t">${dstr(new Date(best.t))} · ${best.sha}</div>` +
+        row('var(--line)', best.exact ? 'Passing (measured)' : 'Passing (estimated)', fmt(best.distinct)) +
+        (best.in_scope ? row('var(--scope)', 'In scope', fmt(best.in_scope)) : '') +
+        (best.reported ? row('', 'Reported, with duplicates', fmt(best.reported)) : ''));
+    });
+    hit.addEventListener('mouseleave', () => { hideTip(); cross.setAttribute('opacity', 0); dot.setAttribute('opacity', 0); });
+  };
+  draw();
+  new ResizeObserver(draw).observe(box);
+  marks('m-t262', D.test262.events);
+  table('t-t262', ['Date', 'Commit', 'Source', 'Passing', 'In scope', 'Reported'],
+    P.map(p => [p.date.slice(0, 10), `<span class="mono">${p.sha}</span>`,
+      p.exact ? 'measured' : p.kind === 'headline' ? 'headline, estimated' : 'phase table, estimated',
+      fmt(p.distinct), p.in_scope ? fmt(p.in_scope) : '–', p.reported ? fmt(p.reported) : '–']));
+
+  // Phase-group small multiples
+  const groups = ['Core + ES5', 'ES2015 syntax + collections', 'Buffers, Proxy, async iteration, modules'];
+  const gp = P.filter(p => p.groups);
+  const gbox = document.getElementById('groups');
+  gbox.innerHTML = groups.map((g, i) => `<div class="panel"><h3>${g}</h3><div class="chart" id="g${i}"></div><p class="note" id="gn${i}"></p></div>`).join('');
+  const ga = gp[0] ? new Date(gp[0].date).getTime() : t0, gb = new Date(gp[gp.length - 1].date).getTime();
+  groups.forEach((g, i) => {
+    const el = document.getElementById('g' + i);
+    const series = gp.filter(p => p.groups[g] && p.groups[g][1]).map(p => ({ t: new Date(p.date).getTime(), v: pct(...p.groups[g]), p }));
+    const last = series[series.length - 1];
+    document.getElementById('gn' + i).textContent = last
+      ? `${fmt(last.p.groups[g][0])} of ${fmt(last.p.groups[g][1])} on ${dstr(new Date(last.t))}` : '';
+    const draw = () => {
+      el.innerHTML = '';
+      const W = el.clientWidth, Hh = 150, m = { l: 34, r: 8, t: 8, b: 22 };
+      const s = svg('svg', { width: W, height: Hh, role: 'img', 'aria-label': `${g} pass rate` }, el);
+      const x = t => m.l + (W - m.l - m.r) * (t - ga) / (gb - ga);
+      const y = v => m.t + (Hh - m.t - m.b) * (1 - v / 100);
+      for (const t of [0, 50, 100]) {
+        svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: t ? 'var(--grid)' : 'var(--axis)' }, s);
+        svg('text', { x: m.l - 6, y: y(t) + 4, 'text-anchor': 'end' }, s).textContent = t + '%';
+      }
+      for (let mo = 5; mo <= 7; mo++) {
+        const t = Date.UTC(2026, mo, 1);
+        svg('text', { x: x(t) + 2, y: Hh - 6 }, s).textContent = MON[mo];
+      }
+      if (!series.length) return;
+      svg('path', { d: series.map((p, j) => `${j ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(''),
+        fill: 'none', stroke: 'var(--line)', 'stroke-width': 2, 'stroke-linejoin': 'round' }, s);
+      svg('circle', { cx: x(last.t), cy: y(last.v), r: 4, fill: 'var(--line)', stroke: 'var(--surface)', 'stroke-width': 2 }, s);
+      const hit = svg('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: Hh - m.t - m.b, fill: 'transparent' }, s);
+      hit.addEventListener('mousemove', ev => {
+        const t = ga + (ev.clientX - s.getBoundingClientRect().left - m.l) / (W - m.l - m.r) * (gb - ga);
+        let best = series[0];
+        for (const p of series) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+        showTip(ev, `<div class="t">${dstr(new Date(best.t))} · ${best.p.sha}</div>` +
+          row('var(--line)', 'Passing', `${best.v.toFixed(1)}%`) +
+          row('', 'Tests', `${fmt(best.p.groups[g][0])} / ${fmt(best.p.groups[g][1])}`));
+      });
+      hit.addEventListener('mouseleave', hideTip);
+    };
+    draw();
+    new ResizeObserver(draw).observe(el);
+  });
+
+  // Suite era table
+  const sp = P.filter(p => p.suites);
+  const names = ['language', 'built-ins', 'annexB', 'staging'];
+  const cell = v => v ? `${fmt(v[0])} / ${fmt(v[0] + v[1])} <span style="color:var(--muted)">${pct(v[0], v[0] + v[1]).toFixed(1)}%</span>` : '<span style="color:var(--muted)">not recorded</span>';
+  document.getElementById('suites').innerHTML =
+    `<thead><tr><th>Date</th><th>Commit</th>${names.map(n => `<th>${n}</th>`).join('')}<th>Total passing</th></tr></thead><tbody>` +
+    sp.map(p => `<tr><td>${dstr(day(p.date))}</td><td>${p.sha}</td>${names.map(n => `<td>${cell(p.suites[n])}</td>`).join('')}<td>${fmt(p.distinct)}</td></tr>`).join('') +
+    `</tbody>`;
+}
+
+// July snapshot
+{
+  const J = D.july;
+  document.getElementById('july-stats').innerHTML = [
+    [(J.tokens_out / 1e6).toFixed(1) + 'M', 'output tokens, all harnesses'],
+    [(J.tokens_cache_in / 1e9).toFixed(1) + 'B', `cache-read input tokens, plus ${(J.tokens_fresh_in / 1e6).toFixed(0)}M uncached`],
+    ['$' + J.cost_usd_known.toFixed(2), 'cost the harnesses recorded; subscriptions not included'],
+    [pct(J.lines_surviving, J.lines_written).toFixed(0) + '%', `of ${fmt(J.lines_written)} source lines written were still in HEAD`],
+  ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+}
+
+// Notes
+{
+  const S = D.surviving;
+  document.getElementById('notes').innerHTML = [
+    `<strong>Commits.</strong> Non-merge commits on every branch, tag and remote. Copies with the same author, author date and subject count once, so a rebased branch is not counted twice. Merges are left out.`,
+    `<strong>Surviving lines.</strong> <code>git blame -w -M -C</code> at <code>${S.rev || 'main'}</code> over ${fmt(S.files || 0)} source files (<code>.c3 .c .h .sh .py</code>), vendored <code>libregexp/</code> and <code>vendor/</code> excluded. Each line goes to the harness of the last commit that touched it. A squash merge credits its lines to whoever made the squash.`,
+    `<strong>Data loss.</strong> Claude Code deletes transcripts after 30 days by default, which removed its tool output and models for everything before August. Its prompt history survived, so prompts are complete but most of its commits rely on trailers. Retention has since been raised.`,
+    `<strong>test262.</strong> Phase tables come from 226 revisions of <code>progress.md</code> and <code>test262_results/latest.json</code>. Revisions with only a headline total have their duplicates removed by interpolating between the nearest tables. The runner's phase groups follow its own labels: phases 0–8 are called ES5 but include ES2015 tests in those directories.`,
+    `<strong>Reproducing.</strong> <code>scripts/agent_metrics.py --json … --blame main</code>, then <code>scripts/test262_history.py</code>, then <code>scripts/attribution_report.py</code>. The data has timestamps, word counts and counts only, never prompt text.`,
+  ].map(t => `<p>${t}</p>`).join('');
+}
+</script>

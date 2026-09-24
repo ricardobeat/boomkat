@@ -68,11 +68,20 @@ class Harness:
         self.commits = []        # (sha prefix, subject, model)
         self.prompts = []        # (unix ts, text)
         self.activity = []       # unix ts of any message
+        self.models = []         # (unix ts, model) of assistant messages
         self.usage = collections.defaultdict(collections.Counter)
 
     def scan_commits(self, text, model):
         for _branch, sha, subject in COMMIT_LINE.findall(text or ''):
             self.commits.append((sha, subject.strip(), model or '?'))
+
+    def model_at(self, t):
+        """The model of the last assistant message at or before t."""
+        if not hasattr(self, '_model_ts'):
+            self.models.sort()
+            self._model_ts = [ts for ts, _ in self.models]
+        i = bisect.bisect_right(self._model_ts, t + 30)
+        return self.models[i - 1][1] if i else None
 
 
 # --- harness readers --------------------------------------------------------
@@ -92,6 +101,7 @@ def read_crush(repo):
             h.activity.append(ts)
             if mdl:
                 model[sid] = f'{prov}/{mdl}'
+                h.models.append((ts, model[sid]))
                 h.usage[f'{prov}/{mdl}']['messages'] += 1
         elif role == 'tool' and parts:
             for p in json.loads(parts):
@@ -125,6 +135,7 @@ def read_opencode():
         m = json.loads(mdata)
         if m.get('role') != 'assistant':
             continue
+        h.models.append((ts / 1000, f"{m.get('providerID')}/{m.get('modelID')}"))
         u, t = h.usage[f"{m.get('providerID')}/{m.get('modelID')}"], m.get('tokens') or {}
         u['messages'] += 1
         u['input'] += t.get('input') or 0
@@ -169,6 +180,8 @@ def read_codex():
                         u[k] += v
             elif kind == 'response_item':
                 h.activity.append(iso(d['timestamp']))
+                if p.get('role') == 'assistant':
+                    h.models.append((iso(d['timestamp']), model))
                 if p.get('type') in ('function_call_output', 'custom_tool_call_output'):
                     out = p.get('output')
                     h.scan_commits(out if isinstance(out, str) else json.dumps(out), model)
@@ -198,6 +211,7 @@ def read_pi():
             content = [c for c in m.get('content', []) if isinstance(c, dict)]
             if m.get('role') == 'assistant':
                 model = f"{m.get('provider')}/{m.get('model')}"
+                h.models.append((ts, model))
                 u, t = h.usage[model], m.get('usage') or {}
                 u['messages'] += 1
                 u['input'] += t.get('input', 0)
@@ -234,6 +248,7 @@ def read_claude():
             msg = d.get('message') or {}
             if d['type'] == 'assistant':
                 model = msg.get('model', model)
+                h.models.append((iso(d['timestamp']), model))
                 # Streaming writes several lines per message id; the last has final usage.
                 last[msg.get('id') or d.get('uuid')] = (model, msg.get('usage') or {})
             elif isinstance(msg.get('content'), list):
@@ -326,27 +341,93 @@ def attribute(repo, harnesses):
             return active.pop()
         return min(recent, key=recent.get) if recent else None
 
+    by_name = {h.name: h for h in harnesses}
     table = collections.Counter()
     models = collections.defaultdict(collections.Counter)
     calibration = collections.Counter()
+    records = []
     for key, members in groups.items():
         at = key[1]
         log = next((logged[s] for s in members if s in logged), None)
-        if log:
-            table[(log[0], 'log')] += 1
-            models[log[0]][log[1].split('/')[-1]] += 1
-            calibration[by_time(at) == log[0]] += 1
-            continue
         t = next((trailer(commits[s][3]) for s in members if trailer(commits[s][3])), None)
-        if t and harness_of_trailer(t):
-            name = harness_of_trailer(t)
-            table[(name, 'trailer')] += 1
-            models[name][re.sub(r'^Crush:?', '', t) or '(not recorded)'] += 1
-            continue
-        table[(by_time(at) or 'Unattributed', 'time')] += 1
+        if log:
+            name, method, model = log[0], 'log', log[1].split('/')[-1]
+            models[name][model] += 1
+            calibration[by_time(at) == name] += 1
+        elif t and harness_of_trailer(t):
+            name, method = harness_of_trailer(t), 'trailer'
+            model = re.sub(r'^Crush:?', '', t) or '(not recorded)'
+            models[name][model] += 1
+        else:
+            name, method = by_time(at) or 'Unattributed', 'time'
+            # The model is inferred like the harness: the one that harness was
+            # running at commit time. Not counted in the `models` table.
+            model = name in by_name and by_name[name].model_at(at)
+            model = model.split('/')[-1] if model else '(not recorded)'
+        table[(name, method)] += 1
+        records.append({'at': at, 'harness': name, 'method': method, 'model': model,
+                        'family': model_family(model), 'shas': members})
     return {'commits': len(commits), 'distinct': len(groups), 'logged_lines':
             sum(len(h.commits) for h in harnesses), 'stale': stale,
-            'table': table, 'models': models, 'calibration': calibration}
+            'table': table, 'models': models, 'calibration': calibration,
+            'records': records}
+
+
+FAMILIES = [
+    (r'opus[- ]5', 'Claude Opus 5.x'),
+    (r'opus[- ]4', 'Claude Opus 4.x'),
+    (r'fable', 'Claude Fable 5'),
+    (r'sonnet|haiku', 'Claude Sonnet / Haiku'),
+    (r'deepseek', 'DeepSeek V4'),
+    (r'minimax', 'MiniMax M3'),
+    (r'mimo', 'Xiaomi MiMo'),
+    (r'kimi|^k3', 'Kimi'),
+    (r'glm', 'GLM'),
+    (r'gpt|astra|sol', 'GPT (OpenAI)'),
+]
+
+
+def model_family(model):
+    for pattern, family in FAMILIES:
+        if re.search(pattern, model, re.I):
+            return family
+    return 'Not recorded' if model in ('(not recorded)', 'Shelley', '?', '<synthetic>') else 'Other'
+
+
+# --- surviving lines --------------------------------------------------------
+
+SOURCE_GLOBS = ('*.c3', '*.c', '*.h', '*.sh', '*.py')
+VENDORED = ('libregexp/', 'vendor/')
+
+
+def blame_file(repo, rev, path):
+    out = subprocess.run(['git', '-C', repo, 'blame', '--porcelain', '-w', '-M', '-C', rev, '--', path],
+                         capture_output=True, text=True, errors='replace').stdout
+    counts = collections.Counter()
+    for line in out.split('\n'):
+        # Header lines are "<sha> <orig line> <final line> [<group size>]".
+        parts = line.split(' ')
+        if len(parts) >= 3 and len(parts[0]) == 40 and parts[1].isdigit():
+            counts[parts[0]] += 1
+    return counts
+
+
+def surviving_lines(repo, rev, records):
+    """Lines in rev's source files, credited by git blame to each commit record."""
+    from concurrent.futures import ThreadPoolExecutor
+    files = subprocess.run(['git', '-C', repo, 'ls-tree', '-r', '--name-only', rev],
+                           capture_output=True, text=True, check=True).stdout.split('\n')
+    import fnmatch
+    files = [f for f in files if any(fnmatch.fnmatch(os.path.basename(f), g) for g in SOURCE_GLOBS)
+             and not f.startswith(VENDORED)]
+    owner = {sha: r for r in records for sha in r['shas']}
+    lines = collections.Counter()
+    with ThreadPoolExecutor(8) as pool:
+        for counts in pool.map(lambda f: blame_file(repo, rev, f), files):
+            for sha, n in counts.items():
+                r = owner.get(sha)
+                lines[(r['harness'], r['family']) if r else ('Unattributed', 'Not recorded')] += n
+    return len(files), lines
 
 
 # --- report -----------------------------------------------------------------
@@ -358,6 +439,8 @@ def words(text):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--repo', default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ap.add_argument('--json', metavar='PATH', help='also write per-commit and per-prompt data (no prompt text)')
+    ap.add_argument('--blame', metavar='REV', help='with --json, credit surviving source lines at REV')
     args = ap.parse_args()
     # Crush's database lives in the main checkout, not in worktrees.
     main_repo = os.path.dirname(subprocess.run(
@@ -401,6 +484,31 @@ def main():
             print('sessions:', h.sessions)
         for model, u in sorted(h.usage.items(), key=lambda x: -x[1].get('messages', x[1].get('rollouts', 0))):
             print(f'  {model}: ' + ', '.join(f'{k}={v}' for k, v in u.items()))
+
+    if args.json:
+        write_json(args, harnesses, a)
+
+
+def write_json(args, harnesses, a):
+    # A prompt sent verbatim three or more times is a loop tick, not a new instruction.
+    seen = collections.Counter(' '.join(t.split()) for h in harnesses for _, t in h.prompts)
+    data = {
+        'generated': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
+        'commits': [{k: r[k] for k in ('at', 'harness', 'method', 'model', 'family')}
+                    for r in sorted(a['records'], key=lambda r: r['at'])],
+        'prompts': sorted(({'ts': round(ts), 'harness': h.name, 'words': words(t),
+                            'repeated': seen[' '.join(t.split())] >= 3}
+                           for h in harnesses for ts, t in h.prompts), key=lambda p: p['ts']),
+        'messages': {h.name: {m: u.get('messages', 0) for m, u in h.usage.items()} for h in harnesses},
+        'calibration': [a['calibration'][True], sum(a['calibration'].values())],
+    }
+    if args.blame:
+        nfiles, lines = surviving_lines(args.repo, args.blame, a['records'])
+        data['surviving'] = {'rev': args.blame, 'files': nfiles,
+                             'lines': [{'harness': h, 'family': f, 'lines': n}
+                                       for (h, f), n in lines.most_common()]}
+    with open(args.json, 'w') as f:
+        json.dump(data, f, separators=(',', ':'))
 
 
 if __name__ == '__main__':
