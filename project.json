@@ -83,7 +83,7 @@
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
-      "debug-info": "line-tables",
+      "debug-info": "full",
       "features": [
         "TRACE_VM"
       ]
@@ -98,7 +98,7 @@
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
-      "debug-info": "line-tables",
+      "debug-info": "full",
       "features": [
         "TRACE_VM",
         "OP_PROFILE",
@@ -115,7 +115,7 @@
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
-      "debug-info": "line-tables",
+      "debug-info": "full",
       "features": [
         "GC_PROFILE",
         "THREADED_DISPATCH"

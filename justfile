@@ -120,7 +120,9 @@ build t="boomkat":
 build-debug t="boomkat":
     c3c -O0 build "{{t}}"
 
-# Build inspection CLI (out/boomkat_debug, carries -D TRACE_VM for disasm and tracing)
+# Build inspection CLI (out/boomkat_debug, carries -D TRACE_VM for disasm and
+# tracing). Its target asks for full debug info, not line tables: c3c's
+# line-tables mode aborts libLLVM's DWARF emitter (see AGENTS.md, Build Flags).
 build-trace:
     c3c build boomkat_debug
 

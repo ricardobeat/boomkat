@@ -69,6 +69,8 @@ Typical debug loop: minimize a failure to a single-line `.js` repro → `just ru
 
 - `-D NONANBOX`: disable NaN-boxing, using the 16-byte tagged union `TVal` instead. Default is nanbox-on. Use `just build-nonanbox` or `just test-nonanbox` to exercise the non-nanbox path (e.g., for 16-bit ESP32 targets).
 
+- **Debug targets ask for full debug info**, never `"debug-info": "line-tables"`: c3c's line-tables mode aborts libLLVM's DWARF emitter (`MachineFrameInfo::StackObject` bounds assertion) for any target on Linux, at every optimization level. Full debug info is a superset and builds everywhere, so `boomkat_debug`, `boomkat_opprofile` and `boomkat_gcprofile` use it.
+
 ## AddressSanitizer
 
 `just build-asan` builds `out/test262_runner_asan` (the `test262_runner_asan` target: same sources as the normal runner, `-O0` plus `"sanitize": "address"`). Use it to turn a use-after-free or heap-overflow that only shows up as a sporadic crash into a precise allocation/free trace. Drive it exactly like the normal worker:
