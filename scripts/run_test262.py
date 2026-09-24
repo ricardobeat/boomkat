@@ -238,6 +238,10 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 # Glob patterns (relative to test262/test) skipped wholesale. Unlike SKIP_FILES
 # (exact paths) these match families of tests.
 SKIP_GLOBS = {
+    # SpiderMonkey's DST cache stress suite exhausts four-date lookup
+    # sequences to exercise its internal cache paths. It is implementation
+    # specific and each eighth exceeds two minutes on this interpreter.
+    "staging/sm/Date/dst-offset-caching-*-of-8.js",
     # Async generators (`async function*` / `async *m()`) implemented — plan 060.
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
 }
