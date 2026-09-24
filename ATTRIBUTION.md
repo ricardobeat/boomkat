@@ -2,6 +2,8 @@
 
 Snapshot taken 2026-09-25. The 2026-07-08 snapshot is kept unchanged in
 [ATTRIBUTION-2026-07-08.md](ATTRIBUTION-2026-07-08.md).
+`python3 scripts/agent_metrics.py` recomputes every table from the local
+harness logs; numbers drift as sessions are added or expire.
 
 The repository lived at `~/cousas/duktape-c3` until the rename on
 2026-08-18, so every source below is filtered on both `cousas/duktape-c3` and
