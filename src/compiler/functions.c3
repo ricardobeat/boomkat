@@ -857,6 +857,11 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     ushort result_reg = self.alloc_reg();
     self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)state.callee_reg, 0);
 
+    // IteratorNext (§7.4.3): the value returned by .next() must be an object.
+    // Without this a primitive step reads .done as undefined, so a rest loop
+    // never sees done and spins forever.
+    self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
+
     // IteratorStep (§7.4.7) reads `.done` first and only reads `.value`
     // (IteratorValue, §7.4.8) when not done, an observable ordering when
     // `.done`/`.value` are accessor properties (a `.value` getter must not
@@ -1286,6 +1291,11 @@ fn void CompilerContext.emit_destruct_bindings(&self,
 
                 self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)state.callee_reg, 0);
 
+                // IteratorNext (§7.4.3): a non-object step is a TypeError.
+                // Without this a primitive step reads .done as undefined and
+                // the collection loop never terminates.
+                self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
+
                 self.emit_abc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"), 0);
                 self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);
                 uint done_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
@@ -1499,6 +1509,11 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
 
                     self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)state.callee_reg, 0);
+
+                    // IteratorNext (§7.4.3): a non-object step is a TypeError.
+                    // Without this a primitive step reads .done as undefined and
+                    // the collection loop never terminates.
+                    self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
 
                     self.emit_abc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"), 0);
                     self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);

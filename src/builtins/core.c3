@@ -1922,7 +1922,15 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     ctx.result.set_undefined();
                     return;
                 }
-                if (!result.is_object() || result.get_heapptr() == null) break;
+                if (!result.is_object() || result.get_heapptr() == null) {
+                    // IteratorNext (ES2024 §7.4.3): a non-object step result is
+                    // a TypeError. AddEntriesFromIterable wraps the call in
+                    // IfAbruptCloseIterator, so the iterator is closed first.
+                    coll_throw(ctx, "Iterator result is not an object");
+                    arr_iterator_close_after_throw(ctx, iterator);
+                    ctx.result.set_undefined();
+                    return;
+                }
                 HObject* res_obj = (HObject*)result.get_heapptr();
                 // Use accessor-aware reads for IteratorResult fields (ES2022 §7.4.4).
                 // get_prop_proto bypasses accessor getters; builtins_generic_get

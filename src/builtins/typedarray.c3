@@ -809,7 +809,12 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                         ctx.heap.has_error = false;
                         return;
                     }
-                    if (!result.is_object() || result.get_heapptr() == null) break;
+                    if (!result.is_object() || result.get_heapptr() == null) {
+                        heap.free_func(heap.heap_udata, items);
+                        arraybuffer_throw_type_error(ctx, "TypedArray: iterator result is not an object");
+                        arr_iterator_close_after_throw(ctx, iterator);
+                        return;
+                    }
                     HObject* result_obj = (HObject*)result.get_heapptr();
 
                     TVal? done_opt = result_obj.get_prop_proto(done_key, ctx.heap);

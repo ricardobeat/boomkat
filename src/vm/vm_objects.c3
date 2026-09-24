@@ -786,7 +786,16 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     }
                     return (TVal){};
                 }
-                if (!result.is_object() || result.get_heapptr() == null) { break; }
+                if (!result.is_object() || result.get_heapptr() == null) {
+                    // IteratorStepValue (§7.4.9): a non-object step result is a
+                    // TypeError. Array spread propagates it without closing.
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                            "Iterator result is not an object",
+                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    return (TVal){};
+                }
 
                 HObject* result_obj = (HObject*)result.get_heapptr();
 
@@ -1026,7 +1035,17 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     }
                     return (TVal){};
                 }
-                if (!result.is_object() || result.get_heapptr() == null) { break; }
+                if (!result.is_object() || result.get_heapptr() == null) {
+                    // IteratorNext (§7.4.3): a non-object step result is a
+                    // TypeError. Spread argument evaluation propagates it
+                    // without an IteratorClose.
+                    if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                            "Iterator result is not an object",
+                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    return (TVal){};
+                }
 
                 HObject* result_obj = (HObject*)result.get_heapptr();
 
