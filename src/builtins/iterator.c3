@@ -899,6 +899,7 @@ fn TVal iterhelper_getv(BuiltinContext* ctx, HObject* lookup_obj, void* key, TVa
                 ctx.should_throw = true;
                 ctx.throw_value = ctx.heap.error_value;
                 ctx.heap.has_error = false;
+                iterhelper_clear_error_channels(ctx);
                 return undef;
             }
             return result;
@@ -921,6 +922,18 @@ fn HObject* iterhelper_make_result(Heap* heap, TVal value, bool done) {
     done_tv.set_boolean(done);
     result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, heap);
     return result;
+}
+
+// A throw from heap.call_fn lands on three channels: heap.has_error (polled by
+// the callers below), vm.has_error, and vm.throw_pending (polled by the
+// coercion paths). Clearing only heap.has_error leaves the other two set, and
+// the next nested call this builtin makes -- a Proxy trap, a string coercion,
+// a user callback -- then aborts with the stale exception instead of running.
+fn void iterhelper_clear_error_channels(BuiltinContext* ctx) {
+    if (ctx.vm != null) {
+        ((vm::Vm*)ctx.vm).throw_pending = false;
+        ((vm::Vm*)ctx.vm).has_error = false;
+    }
 }
 
 // GetIteratorDirect(obj), ES2025 §7.4.5: Get(obj, "next"), bundled with obj
@@ -956,6 +969,7 @@ fn bool iterhelper_step_value(BuiltinContext* ctx, HObject* iterator, TVal next_
         ctx.should_throw = true;
         ctx.throw_value = heap.error_value;
         heap.has_error = false;
+        iterhelper_clear_error_channels(ctx);
         return false;
     }
     if (!step.is_object() || step.get_heapptr() == null) {
@@ -1040,6 +1054,7 @@ fn void iterhelper_iterator_close(BuiltinContext* ctx, HObject* iterator, bool h
             ctx.throw_value = heap.error_value;
         }
         heap.has_error = false;
+        iterhelper_clear_error_channels(ctx);
         if (had_error) { ctx.should_throw = true; ctx.throw_value = saved_throw_value; }
         return;
     }
@@ -1106,6 +1121,7 @@ fn bool iterhelper_get_iterator_flattenable(BuiltinContext* ctx, TVal obj, bool 
             ctx.should_throw = true;
             ctx.throw_value = heap.error_value;
             heap.has_error = false;
+            iterhelper_clear_error_channels(ctx);
             return false;
         }
         if (!iterator_val.is_object() || iterator_val.get_heapptr() == null) {
@@ -1164,6 +1180,7 @@ fn void builtin_iterator_from(BuiltinContext* ctx) {
                         ctx.should_throw = true;
                         ctx.throw_value = heap.error_value;
                         heap.has_error = false;
+                        iterhelper_clear_error_channels(ctx);
                     }
                     ctx.result.set_undefined();
                     return;
@@ -1263,6 +1280,7 @@ fn void iterhelper_setter_ignores_prototype_properties(BuiltinContext* ctx, HObj
                     ctx.should_throw = true;
                     ctx.throw_value = heap.error_value;
                     heap.has_error = false;
+                    iterhelper_clear_error_channels(ctx);
                 }
             }
             return;
@@ -1314,6 +1332,7 @@ fn void builtin_wrap_for_valid_iterator_next(BuiltinContext* ctx) {
         ctx.should_throw = true;
         ctx.throw_value = heap.error_value;
         heap.has_error = false;
+        iterhelper_clear_error_channels(ctx);
         ctx.result.set_undefined();
         return;
     }
@@ -1358,6 +1377,7 @@ fn void builtin_wrap_for_valid_iterator_return(BuiltinContext* ctx) {
         ctx.should_throw = true;
         ctx.throw_value = heap.error_value;
         heap.has_error = false;
+        iterhelper_clear_error_channels(ctx);
         ctx.result.set_undefined();
         return;
     }
@@ -1480,6 +1500,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 ctx.should_throw = true;
                 ctx.throw_value = heap.error_value;
                 heap.has_error = false;
+                iterhelper_clear_error_channels(ctx);
                 iterhelper_iterator_close(ctx, ih.underlying, true);
                 return false;
             }
@@ -1504,6 +1525,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                     ctx.should_throw = true;
                     ctx.throw_value = heap.error_value;
                     heap.has_error = false;
+                    iterhelper_clear_error_channels(ctx);
                     iterhelper_iterator_close(ctx, ih.underlying, true);
                     return false;
                 }
@@ -1592,6 +1614,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                     ctx.should_throw = true;
                     ctx.throw_value = heap.error_value;
                     heap.has_error = false;
+                    iterhelper_clear_error_channels(ctx);
                     iterhelper_iterator_close(ctx, ih.underlying, true);
                     return false;
                 }
@@ -1724,6 +1747,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                     ctx.should_throw = true;
                     ctx.throw_value = heap.error_value;
                     heap.has_error = false;
+                    iterhelper_clear_error_channels(ctx);
                     iterhelper_iterator_close(ctx, ih.underlying, true);
                     return false;
                 }
@@ -2311,6 +2335,7 @@ fn void builtin_iterator_proto_reduce(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = heap.error_value;
             heap.has_error = false;
+            iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
             ctx.result.set_undefined();
             return;
@@ -2381,6 +2406,7 @@ fn void builtin_iterator_proto_foreach(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = heap.error_value;
             heap.has_error = false;
+            iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
             ctx.result.set_undefined();
             return;
@@ -2418,6 +2444,7 @@ fn void builtin_iterator_proto_some(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = heap.error_value;
             heap.has_error = false;
+            iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
             ctx.result.set_undefined();
             return;
@@ -2461,6 +2488,7 @@ fn void builtin_iterator_proto_every(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = heap.error_value;
             heap.has_error = false;
+            iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
             ctx.result.set_undefined();
             return;
@@ -2504,6 +2532,7 @@ fn void builtin_iterator_proto_find(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = heap.error_value;
             heap.has_error = false;
+            iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
             ctx.result.set_undefined();
             return;
@@ -2650,6 +2679,7 @@ fn bool iterhelper_step_only(BuiltinContext* ctx, HObject* iterator, TVal next_m
         ctx.should_throw = true;
         ctx.throw_value = heap.error_value;
         heap.has_error = false;
+        iterhelper_clear_error_channels(ctx);
         return false;
     }
     if (!step.is_object() || step.get_heapptr() == null) {
@@ -3045,6 +3075,7 @@ fn bool iterhelper_get_iterator(BuiltinContext* ctx, HObject* obj, HObject** out
         ctx.should_throw = true;
         ctx.throw_value = heap.error_value;
         heap.has_error = false;
+        iterhelper_clear_error_channels(ctx);
         return false;
     }
     if (!itv.is_object() || itv.get_heapptr() == null) {
