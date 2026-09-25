@@ -18,8 +18,11 @@ Token counts have two holes that the harness logs cannot fill:
                models through the same providers.
   Claude Code  deletes transcripts after 30 days by default. The .attrib
                snapshot (--attrib) recorded per-model token totals and weekly
-               message counts for 2026-06-30..07-31; weeks outside that and
-               outside the surviving transcripts are marked as not recorded.
+               message counts for 2026-06-30..07-31. Its prompt history kept
+               every prompt, so days with neither a transcript nor the
+               snapshot are estimated as their prompt count times the tokens
+               per prompt measured over all covered days, split across the
+               models of that week's Claude Code commits.
 """
 import argparse
 import collections
@@ -33,6 +36,9 @@ from agent_metrics import model_name  # noqa: E402
 
 HARNESSES = ['Claude Code', 'Crush', 'opencode', 'opencode or pi', 'Codex', 'Other', 'Unattributed']
 OTHER = {'pi', 'Shelley'}
+# The commits-by-model bars show every model with more commits than this;
+# smaller ones are listed by name under the chart.
+BAR_MIN = 15
 # Models charted as their own series, grouped by vendor in stacking order.
 # Each group takes one categorical color slot (the template's --mN), and its
 # models are shaded light to dark, oldest first. Any other model folds into
@@ -75,7 +81,7 @@ def series_of(name):
     return name if name in MODELS else 'Other models'
 
 
-def tokens(metrics, attrib, weeks, index, claude_prompts, others):
+def tokens(metrics, attrib, weeks, index, claude_prompts, claude_commits, others):
     """Weekly tokens per charted model: measured, Crush estimated, and the
     .attrib snapshot for Claude Code in July. Adds each folded model's tokens
     to `others`."""
@@ -113,7 +119,7 @@ def tokens(metrics, attrib, weeks, index, claude_prompts, others):
             t, o = r['total'], r['output']
         add(r['model'], w, t, o)
 
-    snapshot_weeks = set()
+    snapshot_weeks, snapshot_tokens = set(), [0, 0]
     if attrib:
         weekly = json.load(open(os.path.join(attrib, 'activity_weekly.json')))['by_week']
         models = {m['model']: m for m in json.load(open(os.path.join(attrib, 'token_totals.json')))['by_model']
@@ -125,21 +131,37 @@ def tokens(metrics, attrib, weeks, index, claude_prompts, others):
                     continue
                 all_tokens = m['tokens_out'] + m['tokens_fresh_in'] + m['tokens_cache_in']
                 add(model_name(model), index[wk], n * all_tokens / m['messages'], n * m['tokens_out'] / m['messages'])
+                snapshot_tokens[0] += n * all_tokens / m['messages']
+                snapshot_tokens[1] += n * m['tokens_out'] / m['messages']
                 snapshot_weeks.add(wk)
 
-    # A week is missing Claude Code tokens when most of its Claude Code prompts
-    # fall on days with no transcript and no snapshot covers it.
-    gaps = []
+    # Claude Code days with prompts but neither a transcript nor the snapshot:
+    # prompts times the tokens per prompt measured where both exist.
+    measured = [0, 0, 0]  # prompts, all tokens, output tokens
+    claude = collections.defaultdict(lambda: [0, 0])
+    for r in metrics['tokens']:
+        if r['harness'] == 'Claude Code':
+            claude[r['day']][0] += r['total']
+            claude[r['day']][1] += r['output']
     for w in weeks:
-        days = claude_prompts.get(w, [])
-        if w in snapshot_weeks or len(days) < 10:
+        for day in claude_prompts.get(w, []):
+            if w in snapshot_weeks or day in covered:
+                measured[0] += 1
+    measured[1] = sum(t for t, _ in claude.values()) + snapshot_tokens[0]
+    measured[2] = sum(o for _, o in claude.values()) + snapshot_tokens[1]
+    for i, w in enumerate(weeks):
+        missing = sum(1 for day in claude_prompts.get(w, []) if day not in covered and w not in snapshot_weeks)
+        if not missing:
             continue
-        if sum(d in covered for d in days) < len(days) / 2:
-            gaps.append(w)
+        # Models of the nearest week with attributed Claude Code commits.
+        near = min((j for j in range(len(weeks)) if claude_commits[j]), key=lambda j: abs(j - i))
+        shares = claude_commits[near]
+        n = sum(shares.values())
+        for name, k in shares.items():
+            add(name, i, missing * measured[1] / measured[0] * k / n, missing * measured[2] / measured[0] * k / n)
     rnd = lambda d: {k: [round(x) for x in v] for k, v in d.items()}
     return {'total': rnd(total), 'output': rnd(output),
-            'crush_total': [round(x) for x in crush_total], 'crush_output': [round(x) for x in crush_output],
-            'claude_gaps': gaps}
+            'crush_total': [round(x) for x in crush_total], 'crush_output': [round(x) for x in crush_output]}
 
 
 def week_of_day(day):
@@ -168,6 +190,9 @@ def build(metrics, t262, attrib=None):
     written = {m: [0] * len(weeks) for m in MODELS}
     surviving = {m: [0] * len(weeks) for m in MODELS}
     others = collections.defaultdict(collections.Counter)
+    claude_commits = [collections.Counter() for _ in weeks]
+    commit_count = collections.Counter(c['name'] for c in commits)
+    bar_of = lambda name: name if name in MODELS or commit_count[name] > BAR_MIN else 'Other models'
     claude_prompts = collections.defaultdict(list)
 
     for c in commits:
@@ -176,7 +201,9 @@ def build(metrics, t262, attrib=None):
         totals[h]['commits'] += 1
         totals[h][c['method']] += 1
         m = series_of(c['name'])
-        by_model[m][h] += 1
+        by_model[bar_of(c['name'])][h] += 1
+        if h == 'Claude Code' and c['name'] != 'Not recorded':
+            claude_commits[index[week_of(c['at'])]][c['name']] += 1
         months[month_of(c['at'])]['commits'] += 1
         written[m][index[week_of(c['at'])]] += c.get('added', 0)
         surviving[m][index[week_of(c['at'])]] += c.get('surviving', 0)
@@ -208,7 +235,11 @@ def build(metrics, t262, attrib=None):
         points.append({k: p[k] for k in ('date', 'sha', 'kind', 'exact', 'distinct', 'in_scope',
                                           'groups', 'suites', 'reported') if k in p})
 
-    token_weekly = tokens(metrics, attrib, weeks, index, claude_prompts, others)
+    token_weekly = tokens(metrics, attrib, weeks, index, claude_prompts, claude_commits, others)
+    # Bars in chart order; models charted only as bars go before the
+    # catch-all rows, largest first.
+    extra = sorted((n for n in by_model if n not in MODELS), key=lambda n: -sum(by_model[n].values()))
+    bar_order = [m for m in MODELS if m not in ('Not recorded', 'Other models')] + extra + ['Not recorded', 'Other models']
     return {
         'generated': metrics['generated'],
         'harnesses': HARNESSES,
@@ -217,7 +248,8 @@ def build(metrics, t262, attrib=None):
         'prompts_weekly': prompts_weekly,
         'input_weekly': input_weekly,
         'totals': {h: dict(c) for h, c in totals.items()},
-        'by_model': [[m, dict(by_model[m])] for m in MODELS if by_model[m]],
+        'by_model': [[m, dict(by_model[m])] for m in bar_order if by_model[m]],
+        'bar_min': BAR_MIN,
         'months': [[m, dict(c)] for m, c in sorted(months.items())],
         'model_groups': GROUPS,
         'written': written,

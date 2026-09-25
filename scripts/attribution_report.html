@@ -34,7 +34,6 @@
   --m7: #008300;
   --lift: var(--surface);
   --sink: var(--ink);
-  --gap: rgba(11, 11, 11, 0.045);
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -72,7 +71,6 @@
     --m7: #008300;
     --lift: var(--ink);
     --sink: var(--surface);
-    --gap: rgba(255, 255, 255, 0.05);
   }
 }
 :root[data-theme="dark"] {
@@ -107,7 +105,6 @@
   --m7: #008300;
   --lift: var(--ink);
   --sink: var(--surface);
-  --gap: rgba(255, 255, 255, 0.05);
 }
 
 * { box-sizing: border-box; }
@@ -202,7 +199,6 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
 .legend-models { margin: 2px 0 12px; }
 .legend .lgroup { display: inline-flex; flex-wrap: wrap; gap: 6px 12px; margin-right: 10px; }
 .others { font-size: 13px; color: var(--ink-2); margin: 10px 0 0; }
-.legend i.gapkey { background: var(--gap); border: 1px dashed var(--axis); }
 .note { font-size: 13px; color: var(--muted); max-width: 80ch; }
 .notes { display: grid; gap: 10px; }
 .notes p { font-size: 14px; }
@@ -275,7 +271,7 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
           <button type="button" id="tok-out" aria-pressed="false">Output only</button>
         </div>
       </div>
-      <div class="legend legend-models"><span data-legend="model" style="display:contents"></span><span><i class="gapkey"></i>Claude Code not recorded</span></div>
+      <div class="legend legend-models" data-legend="model"></div>
       <div class="chart" id="c-tokens"></div>
       <p class="others" data-others="tokens"></p>
     </div>
@@ -395,7 +391,8 @@ for (const el of document.querySelectorAll('[data-legend="model"]')) {
 // Models folded into "Other models", listed by name under each chart
 for (const el of document.querySelectorAll('[data-others]')) {
   const key = el.dataset.others, f = key === 'tokens' ? mfmt : fmt;
-  const list = D.others.filter(o => o[key]).sort((a, b) => b[key] - a[key]);
+  const list = D.others.filter(o => o[key] && (key !== 'commits' || o.commits <= D.bar_min))
+    .sort((a, b) => b[key] - a[key]);
   const unit = { commits: 'commits', written: 'lines written', surviving: 'lines in main', tokens: 'tokens' }[key];
   el.innerHTML = list.length ? `<strong>Other models</strong>, ${unit}: ` + list.map(o => `${o.name} ${f(o[key])}`).join(', ') : '';
 }
@@ -548,10 +545,6 @@ function area(id, series, keys, colors, options = {}) {
     const x = i => m.l + (W - m.l - m.r) * (i + 0.5) / n;
     const y = v => m.t + (Hh - m.t - m.b) * (1 - v / max);
     const bw = (W - m.l - m.r) / n;
-    for (const w of opts.gaps || []) {
-      const i = D.weeks.indexOf(w);
-      if (i >= 0) svg('rect', { x: m.l + i * bw, y: m.t, width: bw, height: Hh - m.t - m.b, fill: 'var(--gap)' }, s);
-    }
     for (const t of ticks(max, 4)) {
       svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: t ? 'var(--grid)' : 'var(--axis)' }, s);
       svg('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end' }, s).textContent = mfmt(t);
@@ -610,16 +603,15 @@ function area(id, series, keys, colors, options = {}) {
   const K = D.tokens;
   const all = sum(MO.map(f => sum(K.total[f]))), crush = sum(K.crush_total);
   document.getElementById('tokens-note').innerHTML =
-    `<strong>${mfmt(all)}</strong> tokens in total, almost all of them cached context read back on each turn; the output-only view shows what the models generated (${mfmt(sum(MO.map(f => sum(K.output[f]))))}). Crush does not record tokens per message, so its ${mfmt(crush)} are estimated from its message count and opencode's measured tokens per message for the same model. Claude Code keeps transcripts for 30 days; the shaded weeks had Claude Code sessions whose token counts are gone, so the Claude lines run flat through them.`;
+    `<strong>${mfmt(all)}</strong> tokens in total, almost all of them cached context read back on each turn; the output-only view shows what the models generated (${mfmt(sum(MO.map(f => sum(K.output[f]))))}). Crush does not record tokens per message, so its ${mfmt(crush)} are estimated from its message count and opencode's measured tokens per message for the same model.`;
   const allBtn = document.getElementById('tok-all'), outBtn = document.getElementById('tok-out');
   let key = 'total';
   const draw = area('c-tokens', () => K[key], MO, MC, () => {
     const crushCum = cumulative(K[key === 'total' ? 'crush_total' : 'crush_output']);
     return {
-      gaps: K.claude_gaps, vfmt: mfmt, height: 300,
+      vfmt: mfmt, height: 300,
       aria: 'Tokens consumed, cumulative, by model',
-      extra: i => (crushCum[i] ? row('', 'of which Crush, estimated', mfmt(crushCum[i])) : '') +
-        (K.claude_gaps.includes(D.weeks[i]) ? row('', 'Claude Code that week', 'not recorded') : ''),
+      extra: i => (crushCum[i] ? row('', 'of which Crush, estimated', mfmt(crushCum[i])) : ''),
     };
   });
   const show = k => {
