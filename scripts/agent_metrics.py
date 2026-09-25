@@ -377,32 +377,62 @@ def attribute(repo, harnesses):
             model = model.split('/')[-1] if model else '(not recorded)'
         table[(name, method)] += 1
         records.append({'at': at, 'harness': name, 'method': method, 'model': model,
-                        'family': model_family(model), 'shas': members})
+                        'name': model_name(model), 'shas': members})
     return {'commits': len(commits), 'distinct': len(groups), 'logged_lines':
             sum(len(h.commits) for h in harnesses), 'stale': stale,
             'table': table, 'models': models, 'calibration': calibration,
             'records': records}
 
 
-FAMILIES = [
-    (r'opus[- ]5', 'Claude Opus 5.x'),
-    (r'opus[- ]4', 'Claude Opus 4.x'),
+# Display names for model ids, first match wins. Variants that differ only in
+# provider, speed tier, context size or a free-tier suffix share a name.
+MODELS = [
+    (r'opus[- ]?5[.-]5', 'Claude Opus 5.5'),
+    (r'opus[- ]?5', 'Claude Opus 5'),
+    (r'opus[- ]?4[.-]8', 'Claude Opus 4.8'),
+    (r'opus[- ]?4', 'Claude Opus 4.6 / 4.7'),
     (r'fable', 'Claude Fable 5'),
-    (r'sonnet|haiku', 'Claude Sonnet / Haiku'),
-    (r'deepseek', 'DeepSeek V4'),
-    (r'minimax', 'MiniMax M3'),
-    (r'mimo', 'Xiaomi MiMo'),
-    (r'kimi|^k3', 'Kimi'),
-    (r'glm', 'GLM'),
-    (r'gpt|astra|sol', 'GPT (OpenAI)'),
+    (r'sonnet[- ]?5', 'Claude Sonnet 5'),
+    (r'sonnet|haiku', 'Claude Sonnet 4.6 / Haiku 4.5'),
+    (r'deepseek.*v4\.1', 'DeepSeek V4.1'),
+    (r'deepseek.*v4.*pro', 'DeepSeek V4 Pro'),
+    (r'deepseek.*v4.*flash', 'DeepSeek V4 Flash'),
+    (r'mimo.*2\.6', 'MiMo V2.6'),
+    (r'mimo.*2\.5.*pro', 'MiMo V2.5 Pro'),
+    (r'mimo.*2\.5', 'MiMo V2.5'),
+    (r'mimo.*v2.*pro', 'MiMo V2 Pro'),
+    (r'minimax.*m3', 'MiniMax M3'),
+    (r'minimax.*m2\.7', 'MiniMax M2.7'),
+    (r'kimi.*k2\.7', 'Kimi K2.7'),
+    (r'kimi|^k3', 'Kimi K3'),
+    (r'glm.*5\.3', 'GLM 5.3'),
+    (r'glm.*5\.2', 'GLM 5.2'),
+    (r'gpt-?6|astra', 'GPT-6'),
+    (r'gpt-?5\.6', 'GPT-5.6'),
+    (r'gpt-?5\.5', 'GPT-5.5'),
+    (r'qwopus', 'Qwopus 3.6'),
+    (r'qwen3\.7', 'Qwen 3.7'),
+    (r'qwen3\.6', 'Qwen 3.6'),
+    (r'gemini', 'Gemini'),
+    (r'gemma', 'Gemma 4'),
+    (r'mistral', 'Mistral Medium'),
+    (r'muse-spark', 'Muse Spark'),
+    (r'north-mini', 'North Mini Code'),
+    (r'laguna', 'Laguna'),
+    (r'lfm', 'LFM 2.5'),
 ]
+NOT_RECORDED = ('(not recorded)', 'Shelley', '?', '<synthetic>')
 
 
-def model_family(model):
-    for pattern, family in FAMILIES:
+def model_name(model):
+    """Display name for a model id. Unknown ids are returned as they are, minus
+    any free-tier suffix."""
+    if model in NOT_RECORDED:
+        return 'Not recorded'
+    for pattern, name in MODELS:
         if re.search(pattern, model, re.I):
-            return family
-    return 'Not recorded' if model in ('(not recorded)', 'Shelley', '?', '<synthetic>') else 'Other'
+            return name
+    return re.sub(r'[-:]free$', '', model)
 
 
 # --- surviving lines --------------------------------------------------------
@@ -410,6 +440,8 @@ def model_family(model):
 SOURCE_GLOBS = ('*.c3', '*.c', '*.h', '*.sh', '*.py')
 VENDORED = ('libregexp/', 'vendor/')
 GENERATED = ('*_generated.c3',)
+# Commits that move fewer lines than this keep the credit blame gives them.
+MOVE_MIN = 50
 # Whole-tree mechanical rewrites. Blame looks through them to the commit that
 # wrote each line, and their lines do not count as written.
 MECHANICAL = (
@@ -418,16 +450,20 @@ MECHANICAL = (
 
 
 def blame_file(repo, rev, path):
+    """(commit, line without indentation) for each line of path at rev."""
     ignore = [a for sha in MECHANICAL for a in ('--ignore-rev', sha)]
     out = subprocess.run(['git', '-C', repo, 'blame', '--porcelain', '-w', '-M', '-C', *ignore, rev, '--', path],
                          capture_output=True, text=True, errors='replace').stdout
-    counts = collections.Counter()
+    lines, sha = [], None
     for line in out.split('\n'):
+        if line.startswith('\t'):
+            lines.append((sha, line[1:].strip()))
+            continue
         # Header lines are "<sha> <orig line> <final line> [<group size>]".
         parts = line.split(' ')
         if len(parts) >= 3 and len(parts[0]) == 40 and parts[1].isdigit():
-            counts[parts[0]] += 1
-    return counts
+            sha = parts[0]
+    return lines
 
 
 def line_counts(repo, rev, records):
@@ -436,7 +472,12 @@ def line_counts(repo, rev, records):
     A line counts as added unless the same commit also removes an identical
     line (ignoring indentation), so splitting a file or moving a function is
     not counted as new code. Survivors come from git blame, which credits each
-    line to the last commit that touched it.
+    line to the last commit that touched it. Blame does not follow lines across
+    a file split, so a surviving line that its commit only moved is traced to
+    the commit that last wrote it in the file it came from. Tracing is limited
+    to commits that move at least MOVE_MIN lines; below that the moved lines
+    are mostly braces and blank lines, and tracing every such commit takes
+    longer than the rest of the run.
     """
     from concurrent.futures import ThreadPoolExecutor
     import fnmatch
@@ -449,42 +490,88 @@ def line_counts(repo, rev, records):
 
     owner = {sha: i for i, r in enumerate(records) for sha in r['shas']}
     added, surviving = collections.Counter(), collections.Counter()
+    # Per commit, the lines it moved (added and removed at once) and the files
+    # it removed lines from.
+    moved, moved_from = {}, {}
     proc = subprocess.Popen(['git', '-C', repo, 'log', rev, '--no-merges', '-M', '-p', '-U0',
                              '--no-color', '--format=@%H'],
                             stdout=subprocess.PIPE, text=True, errors='replace')
-    i, keep, plus, minus = None, False, collections.Counter(), collections.Counter()
+    sha, keep, old = None, False, None
+    plus, minus, removed_from = collections.Counter(), collections.Counter(), set()
 
     def flush():
-        if i is not None:
-            added[i] += sum(n - min(n, minus[line]) for line, n in plus.items())
+        if sha is None or sha in MECHANICAL:
+            return
+        both = collections.Counter({line: min(n, minus[line]) for line, n in plus.items() if minus[line]})
+        if sha in owner:
+            added[owner[sha]] += sum(plus.values()) - sum(both.values())
+        if sum(both.values()) >= MOVE_MIN:
+            moved[sha], moved_from[sha] = both, removed_from
 
     for line in proc.stdout:
         if line.startswith('@') and not line.startswith('@@'):
             flush()
             sha = line[1:].strip()
-            i = None if sha in MECHANICAL else owner.get(sha)
-            plus, minus = collections.Counter(), collections.Counter()
+            plus, minus, removed_from = collections.Counter(), collections.Counter(), set()
         elif line.startswith('diff --git '):
             keep = source(line.rstrip('\n').split(' b/', 1)[-1])
-        elif not keep or line.startswith(('+++', '---')):
+        elif line.startswith('--- '):
+            path = line[4:].rstrip('\n')
+            old = path[2:] if path.startswith('a/') and source(path[2:]) else None
+        elif not keep and not old or line.startswith('+++'):
             continue
-        elif line.startswith('+'):
+        elif line.startswith('+') and keep:
             plus[line[1:].strip()] += 1
-        elif line.startswith('-'):
+        elif line.startswith('-') and old:
             minus[line[1:].strip()] += 1
+            removed_from.add(old)
     flush()
     proc.wait()
     files = [f for f in subprocess.run(['git', '-C', repo, 'ls-tree', '-r', '--name-only', rev],
                                        capture_output=True, text=True, check=True).stdout.split('\n')
              if f and source(f)]
-    unowned = 0
     with ThreadPoolExecutor(8) as pool:
-        for counts in pool.map(lambda f: blame_file(repo, rev, f), files):
-            for sha, n in counts.items():
-                if sha in owner:
-                    surviving[owner[sha]] += n
-                else:
-                    unowned += n
+        blamed = [line for lines in pool.map(lambda f: blame_file(repo, rev, f), files) for line in lines]
+
+    # Where each moved line came from: blame of the files the commit removed
+    # lines from, at its parent. Built on first use.
+    origins = {}
+
+    def origin_map(commit):
+        if commit not in origins:
+            m = collections.defaultdict(collections.Counter)
+            with ThreadPoolExecutor(8) as pool:
+                for lines in pool.map(lambda f: blame_file(repo, commit + '^', f), sorted(moved_from[commit])):
+                    for origin, text in lines:
+                        m[text][origin] += 1
+            origins[commit] = m
+        return origins[commit]
+
+    def author(commit, text):
+        # Each moved copy of a line is traced once; any surplus is the
+        # commit's own. Lines moved more than once are traced back each step.
+        for _ in range(50):
+            left = moved.get(commit)
+            if not left or not left[text]:
+                return commit
+            left[text] -= 1
+            candidates = origin_map(commit)[text]
+            if not candidates:
+                return commit
+            origin = candidates.most_common(1)[0][0]
+            candidates[origin] -= 1
+            if not candidates[origin]:
+                del candidates[origin]
+            commit = origin
+        return commit
+
+    unowned = 0
+    for commit, text in blamed:
+        commit = author(commit, text)
+        if commit in owner:
+            surviving[owner[commit]] += 1
+        else:
+            unowned += 1
     return len(files), added, surviving, unowned
 
 
@@ -556,27 +643,27 @@ def write_json(args, harnesses, a):
     # A prompt sent verbatim three or more times is a loop tick, not a new instruction.
     seen = collections.Counter(' '.join(t.split()) for h in harnesses for _, t in h.prompts)
     records = sorted(a['records'], key=lambda r: r['at'])
-    commits = [{k: r[k] for k in ('at', 'harness', 'method', 'model', 'family')} for r in records]
-    # Tokens per UTC day, harness and model family. Crush stores no per-message
+    commits = [{k: r[k] for k in ('at', 'harness', 'method', 'model', 'name')} for r in records]
+    # Tokens per UTC day, harness and model name. Crush stores no per-message
     # token counts (its session totals hold only the last turn), so its rows
     # carry the message count alone.
     days = collections.defaultdict(lambda: [0, 0, 0])
     for h in harnesses:
         if h.name == 'Crush':
             for ts, model in h.models:
-                days[(iso_day(ts), h.name, model_family(model.split('/')[-1]))][0] += 1
+                days[(iso_day(ts), h.name, model_name(model.split('/')[-1]))][0] += 1
             continue
         for ts, model, total, out in h.tokens:
-            row = days[(iso_day(ts), h.name, model_family((model or '?').split('/')[-1]))]
+            row = days[(iso_day(ts), h.name, model_name((model or '?').split('/')[-1]))]
             row[0] += 1
             row[1] += total
             row[2] += out
     data = {
         'generated': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
         'commits': commits,
-        'tokens': [{'day': d, 'harness': h, 'family': f, 'messages': m,
+        'tokens': [{'day': d, 'harness': h, 'model': n, 'messages': m,
                     'total': None if h == 'Crush' else t, 'output': None if h == 'Crush' else o}
-                   for (d, h, f), (m, t, o) in sorted(days.items())],
+                   for (d, h, n), (m, t, o) in sorted(days.items())],
         'prompts': sorted(({'ts': round(ts), 'harness': h.name, 'words': words(t),
                             'repeated': seen[' '.join(t.split())] >= 3}
                            for h in harnesses for ts, t in h.prompts), key=lambda p: p['ts']),

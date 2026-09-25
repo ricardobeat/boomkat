@@ -12,9 +12,10 @@ substitutes them for the template's /*DATA*/ marker.
 
 Token counts have two holes that the harness logs cannot fill:
   Crush        keeps no per-message token counts. Its weekly tokens are
-               estimated as its message count per model family times
-               opencode's measured tokens per message for that family, since
-               both ran the same models through the same providers.
+               estimated as its message count per model times opencode's
+               measured tokens per message for that model (or opencode's
+               overall average below 200 messages), since both ran the same
+               models through the same providers.
   Claude Code  deletes transcripts after 30 days by default. The .attrib
                snapshot (--attrib) recorded per-model token totals and weekly
                message counts for 2026-06-30..07-31; weeks outside that and
@@ -28,14 +29,25 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from agent_metrics import model_family  # noqa: E402
+from agent_metrics import model_name  # noqa: E402
 
 HARNESSES = ['Claude Code', 'Crush', 'opencode', 'opencode or pi', 'Codex', 'Other', 'Unattributed']
 OTHER = {'pi', 'Shelley'}
-# Model families for the line and token charts, in stacking order. Families
-# with few commits fold into "Other models".
-FAMILIES = ['Claude Opus 5.x', 'Claude Opus 4.x', 'Claude Fable 5', 'Claude Sonnet / Haiku',
-            'DeepSeek V4', 'Xiaomi MiMo', 'MiniMax M3', 'Other models', 'Not recorded']
+# Models charted as their own series, grouped by vendor in stacking order.
+# Each group takes one categorical color slot (the template's --mN), and its
+# models are shaded light to dark, oldest first. Any other model folds into
+# "Other models" and is listed by name under the charts.
+GROUPS = [
+    ('Claude Opus', ['Claude Opus 4.6 / 4.7', 'Claude Opus 4.8', 'Claude Opus 5', 'Claude Opus 5.5']),
+    ('Claude Sonnet / Haiku', ['Claude Sonnet 4.6 / Haiku 4.5', 'Claude Sonnet 5']),
+    ('Claude Fable', ['Claude Fable 5']),
+    ('MiMo', ['MiMo V2 Pro', 'MiMo V2.5', 'MiMo V2.5 Pro', 'MiMo V2.6']),
+    ('DeepSeek', ['DeepSeek V4 Flash', 'DeepSeek V4 Pro', 'DeepSeek V4.1']),
+    ('MiniMax', ['MiniMax M3']),
+    ('Not recorded', ['Not recorded']),
+    ('Other models', ['Other models']),
+]
+MODELS = [m for _, ms in GROUPS for m in ms]
 
 MILESTONES = [
     ('2026-05-22', 'first commit'),
@@ -59,41 +71,47 @@ def month_of(ts):
     return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime('%Y-%m')
 
 
-def family(f):
-    return f if f in FAMILIES else 'Other models'
+def series_of(name):
+    return name if name in MODELS else 'Other models'
 
 
-def tokens(metrics, attrib, weeks, index, claude_prompts):
-    """Weekly tokens per model family: measured, Crush estimated, and the
-    .attrib snapshot for Claude Code in July."""
-    zero = lambda: {f: [0] * len(weeks) for f in FAMILIES}
+def tokens(metrics, attrib, weeks, index, claude_prompts, others):
+    """Weekly tokens per charted model: measured, Crush estimated, and the
+    .attrib snapshot for Claude Code in July. Adds each folded model's tokens
+    to `others`."""
+    zero = lambda: {m: [0] * len(weeks) for m in MODELS}
     total, output = zero(), zero()
     crush_total, crush_output = [0] * len(weeks), [0] * len(weeks)
     per_msg = collections.defaultdict(lambda: [0, 0, 0])
     covered = set()
     for r in metrics['tokens']:
         if r['harness'] == 'opencode':
-            m = per_msg[family(r['family'])]
+            m = per_msg[r['model']]
             m[0] += r['messages']
             m[1] += r['total']
             m[2] += r['output']
         if r['harness'] == 'Claude Code':
             covered.add(r['day'])
     overall = [sum(v[i] for v in per_msg.values()) for i in range(3)]
+
+    def add(name, w, t, o):
+        total[series_of(name)][w] += t
+        output[series_of(name)][w] += o
+        if series_of(name) == 'Other models':
+            others[name]['tokens'] += t
+
     for r in metrics['tokens']:
         w = index.get(week_of_day(r['day']))
         if w is None:
             continue
-        f = family(r['family'])
         if r['harness'] == 'Crush':
-            m = per_msg[f] if per_msg[f][0] >= 200 else overall
+            m = per_msg[r['model']] if per_msg[r['model']][0] >= 200 else overall
             t, o = r['messages'] * m[1] / m[0], r['messages'] * m[2] / m[0]
             crush_total[w] += t
             crush_output[w] += o
         else:
             t, o = r['total'], r['output']
-        total[f][w] += t
-        output[f][w] += o
+        add(r['model'], w, t, o)
 
     snapshot_weeks = set()
     if attrib:
@@ -105,10 +123,8 @@ def tokens(metrics, attrib, weeks, index, claude_prompts):
                 m = models.get(model)
                 if not m or wk not in index or not m['messages']:
                     continue
-                f = family(model_family(model))
                 all_tokens = m['tokens_out'] + m['tokens_fresh_in'] + m['tokens_cache_in']
-                total[f][index[wk]] += n * all_tokens / m['messages']
-                output[f][index[wk]] += n * m['tokens_out'] / m['messages']
+                add(model_name(model), index[wk], n * all_tokens / m['messages'], n * m['tokens_out'] / m['messages'])
                 snapshot_weeks.add(wk)
 
     # A week is missing Claude Code tokens when most of its Claude Code prompts
@@ -147,10 +163,11 @@ def build(metrics, t262, attrib=None):
     commits_weekly, prompts_weekly = series(), series()
     input_weekly = {k: [0] * len(weeks) for k in ('long', 'short', 'repeated')}
     totals = {h: collections.Counter() for h in HARNESSES}
-    families = collections.defaultdict(collections.Counter)
+    by_model = collections.defaultdict(collections.Counter)
     months = collections.defaultdict(collections.Counter)
-    written = {f: [0] * len(weeks) for f in FAMILIES}
-    surviving = {f: [0] * len(weeks) for f in FAMILIES}
+    written = {m: [0] * len(weeks) for m in MODELS}
+    surviving = {m: [0] * len(weeks) for m in MODELS}
+    others = collections.defaultdict(collections.Counter)
     claude_prompts = collections.defaultdict(list)
 
     for c in commits:
@@ -158,10 +175,15 @@ def build(metrics, t262, attrib=None):
         commits_weekly[h][index[week_of(c['at'])]] += 1
         totals[h]['commits'] += 1
         totals[h][c['method']] += 1
-        families[c['family']][h] += 1
+        m = series_of(c['name'])
+        by_model[m][h] += 1
         months[month_of(c['at'])]['commits'] += 1
-        written[family(c['family'])][index[week_of(c['at'])]] += c.get('added', 0)
-        surviving[family(c['family'])][index[week_of(c['at'])]] += c.get('surviving', 0)
+        written[m][index[week_of(c['at'])]] += c.get('added', 0)
+        surviving[m][index[week_of(c['at'])]] += c.get('surviving', 0)
+        if m == 'Other models':
+            others[c['name']]['commits'] += 1
+            others[c['name']]['written'] += c.get('added', 0)
+            others[c['name']]['surviving'] += c.get('surviving', 0)
         totals[h]['lines'] += c.get('surviving', 0)
     for p in prompts:
         h = bucket(p['harness'])
@@ -186,6 +208,7 @@ def build(metrics, t262, attrib=None):
         points.append({k: p[k] for k in ('date', 'sha', 'kind', 'exact', 'distinct', 'in_scope',
                                           'groups', 'suites', 'reported') if k in p})
 
+    token_weekly = tokens(metrics, attrib, weeks, index, claude_prompts, others)
     return {
         'generated': metrics['generated'],
         'harnesses': HARNESSES,
@@ -194,14 +217,15 @@ def build(metrics, t262, attrib=None):
         'prompts_weekly': prompts_weekly,
         'input_weekly': input_weekly,
         'totals': {h: dict(c) for h, c in totals.items()},
-        'families': sorted(([f, dict(c)] for f, c in families.items()),
-                           key=lambda x: -sum(x[1].values())),
+        'by_model': [[m, dict(by_model[m])] for m in MODELS if by_model[m]],
         'months': [[m, dict(c)] for m, c in sorted(months.items())],
-        'model_order': FAMILIES,
+        'model_groups': GROUPS,
         'written': written,
         'surviving': surviving,
+        'others': sorted(({'name': n, **{k: round(v) for k, v in c.items()}} for n, c in others.items()),
+                         key=lambda o: o['name'].lower()),
         'lines': metrics.get('lines', {}),
-        'tokens': tokens(metrics, attrib, weeks, index, claude_prompts),
+        'tokens': token_weekly,
         'test262': {'points': points, 'events': t262['events'], 'dup_check': t262['dup_check']},
         'milestones': [{'date': d, 'label': l} for d, l in MILESTONES],
     }

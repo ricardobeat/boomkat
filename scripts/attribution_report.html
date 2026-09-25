@@ -25,14 +25,15 @@
   --line: #2a78d6;
   --scope: #c3c2b7;
   --m0: #2a78d6;
-  --m1: #eb6834;
-  --m2: #1baf7a;
-  --m3: #eda100;
-  --m4: #e87ba4;
-  --m5: #008300;
-  --m6: #4a3aa7;
-  --m7: #e34948;
-  --m8: #a3a19a;
+  --m1: #e87ba4;
+  --m2: #4a3aa7;
+  --m3: #eb6834;
+  --m4: #1baf7a;
+  --m5: #eda100;
+  --m6: #a3a19a;
+  --m7: #008300;
+  --lift: var(--surface);
+  --sink: var(--ink);
   --gap: rgba(11, 11, 11, 0.045);
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
@@ -62,14 +63,15 @@
     --line: #3987e5;
     --scope: #55544f;
     --m0: #3987e5;
-    --m1: #d95926;
-    --m2: #199e70;
-    --m3: #c98500;
-    --m4: #d55181;
-    --m5: #008300;
-    --m6: #9085e9;
-    --m7: #e66767;
-    --m8: #6b6a64;
+    --m1: #d55181;
+    --m2: #9085e9;
+    --m3: #d95926;
+    --m4: #199e70;
+    --m5: #c98500;
+    --m6: #6b6a64;
+    --m7: #008300;
+    --lift: var(--ink);
+    --sink: var(--surface);
     --gap: rgba(255, 255, 255, 0.05);
   }
 }
@@ -96,14 +98,15 @@
   --line: #3987e5;
   --scope: #55544f;
   --m0: #3987e5;
-  --m1: #d95926;
-  --m2: #199e70;
-  --m3: #c98500;
-  --m4: #d55181;
-  --m5: #008300;
-  --m6: #9085e9;
-  --m7: #e66767;
-  --m8: #6b6a64;
+  --m1: #d55181;
+  --m2: #9085e9;
+  --m3: #d95926;
+  --m4: #199e70;
+  --m5: #c98500;
+  --m6: #6b6a64;
+  --m7: #008300;
+  --lift: var(--ink);
+  --sink: var(--surface);
   --gap: rgba(255, 255, 255, 0.05);
 }
 
@@ -196,6 +199,9 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
 .seg button + button { border-left: 1px solid var(--ring); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
 .seg button:focus-visible { outline: 2px solid var(--line); outline-offset: -2px; }
+.legend-models { margin: 2px 0 12px; }
+.legend .lgroup { display: inline-flex; flex-wrap: wrap; gap: 6px 12px; margin-right: 10px; }
+.others { font-size: 13px; color: var(--ink-2); margin: 10px 0 0; }
 .legend i.gapkey { background: var(--gap); border: 1px dashed var(--axis); }
 .note { font-size: 13px; color: var(--muted); max-width: 80ch; }
 .notes { display: grid; gap: 10px; }
@@ -232,10 +238,11 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
 
   <section id="models">
     <h2>Models</h2>
-    <p>Commits by model family, split by the harness that ran the model. The model is unknown where the session record is gone, mostly Claude Code before August.</p>
+    <p>Commits by model, split by the harness that ran the model. The model is unknown where the session record is gone, mostly Claude Code before August.</p>
     <div class="panel">
-      <div class="panel-head"><h3>Commits by model family</h3><div class="legend" data-legend="harness"></div></div>
-      <div class="bars" id="families"></div>
+      <div class="panel-head"><h3>Commits by model</h3><div class="legend" data-legend="harness"></div></div>
+      <div class="bars" id="by-model"></div>
+      <p class="others" data-others="commits"></p>
     </div>
   </section>
 
@@ -243,12 +250,16 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
     <h2>Code written and kept</h2>
     <p id="code-note"></p>
     <div class="panel">
-      <div class="panel-head"><h3>Lines written per week</h3><div class="legend" data-legend="model"></div></div>
+      <div class="panel-head"><h3>Lines written, cumulative</h3></div>
+      <div class="legend legend-models" data-legend="model"></div>
       <div class="chart" id="c-written"></div>
+      <p class="others" data-others="written"></p>
     </div>
     <div class="panel">
-      <div class="panel-head"><h3>Lines still in main, by week written</h3><div class="legend" data-legend="model"></div></div>
+      <div class="panel-head"><h3>Lines still in main, cumulative by week written</h3></div>
+      <div class="legend legend-models" data-legend="model"></div>
       <div class="chart" id="c-surviving"></div>
+      <p class="others" data-others="surviving"></p>
       <details><summary>Totals by model</summary><div class="scroll" id="t-lines"></div></details>
     </div>
   </section>
@@ -258,14 +269,15 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
     <p id="tokens-note"></p>
     <div class="panel">
       <div class="panel-head">
-        <h3>Tokens per week</h3>
+        <h3>Tokens, cumulative</h3>
         <div class="seg" role="group" aria-label="Token measure">
           <button type="button" id="tok-all" aria-pressed="true">All tokens</button>
           <button type="button" id="tok-out" aria-pressed="false">Output only</button>
         </div>
       </div>
-      <div class="legend"><span data-legend="model" style="display:contents"></span><span><i class="gapkey"></i>Claude Code not recorded</span></div>
+      <div class="legend legend-models"><span data-legend="model" style="display:contents"></span><span><i class="gapkey"></i>Claude Code not recorded</span></div>
       <div class="chart" id="c-tokens"></div>
+      <p class="others" data-others="tokens"></p>
     </div>
   </section>
 
@@ -339,6 +351,9 @@ function ticks(max, n) {
   return out;
 }
 const kfmt = v => v >= 1000 ? (v / 1000) + 'k' : String(v);
+const trim = v => String(+v.toFixed(1));
+const mfmt = v => v >= 1e9 ? trim(v / 1e9) + 'B' : v >= 1e6 ? trim(v / 1e6) + 'M' : v >= 1e3 ? trim(v / 1e3) + 'k' : trim(v);
+const cumulative = a => { let t = 0; return a.map(v => (t += v)); };
 
 // Tooltip
 const tip = document.getElementById('tip');
@@ -362,10 +377,27 @@ for (const el of document.querySelectorAll('[data-legend="harness"]')) {
     .map(h => `<span><i style="background:${HC[h]}"></i>${hname(h)}</span>`).join('');
 }
 
-const MO = D.model_order;
-const MC = Object.fromEntries(MO.map((f, i) => [f, `var(--m${i})`]));
+// Models: one hue per vendor group (--mN), each model a step from lighter
+// (older) to darker (newer). --lift and --sink are the lighter and darker
+// ends in the current theme.
+const MO = D.model_groups.flatMap(([, ms]) => ms);
+const MC = {};
+D.model_groups.forEach(([, ms], g) => ms.forEach((m, i) => {
+  const t = ms.length > 1 ? 0.22 - 0.57 * i / (ms.length - 1) : 0;
+  MC[m] = t > 0 ? `color-mix(in oklab, var(--m${g}), var(--lift) ${Math.round(t * 100)}%)`
+    : t < 0 ? `color-mix(in oklab, var(--m${g}), var(--sink) ${Math.round(-t * 100)}%)` : `var(--m${g})`;
+}));
 for (const el of document.querySelectorAll('[data-legend="model"]')) {
-  el.innerHTML = MO.map(f => `<span><i style="background:${MC[f]}"></i>${f}</span>`).join('');
+  el.innerHTML = D.model_groups.map(([, ms]) => `<span class="lgroup">` +
+    ms.map(m => `<span><i style="background:${MC[m]}"></i>${m}</span>`).join('') + '</span>').join('');
+}
+
+// Models folded into "Other models", listed by name under each chart
+for (const el of document.querySelectorAll('[data-others]')) {
+  const key = el.dataset.others, f = key === 'tokens' ? mfmt : fmt;
+  const list = D.others.filter(o => o[key]).sort((a, b) => b[key] - a[key]);
+  const unit = { commits: 'commits', written: 'lines written', surviving: 'lines in main', tokens: 'tokens' }[key];
+  el.innerHTML = list.length ? `<strong>Other models</strong>, ${unit}: ` + list.map(o => `${o.name} ${f(o[key])}`).join(', ') : '';
 }
 
 // Header
@@ -478,11 +510,11 @@ table('t-commits', ['Week of', ...commitKeys.map(hname), 'Total'],
     `</tbody><tfoot><tr><td>Total</td><td>${fmt(allCommits)}</td><td>${fmt(allPrompts)}</td><td>${fmt(allLines)}</td></tr></tfoot>`;
 }
 
-// Model families
+// Commits by model
 {
-  const fams = D.families;
+  const fams = D.by_model;
   const max = Math.max(...fams.map(([, c]) => sum(Object.values(c))));
-  const box = document.getElementById('families');
+  const box = document.getElementById('by-model');
   box.innerHTML = fams.map(([f, c]) => {
     const tot = sum(Object.values(c));
     const segs = H.filter(h => c[h]).map(h =>
@@ -499,21 +531,20 @@ table('t-commits', ['Week of', ...commitKeys.map(hname), 'Total'],
   box.addEventListener('mouseleave', hideTip);
 }
 
-// Stacked weekly areas
-const trim = v => String(+v.toFixed(1));
-const mfmt = v => v >= 1e9 ? trim(v / 1e9) + 'B' : v >= 1e6 ? trim(v / 1e6) + 'M' : v >= 1e3 ? trim(v / 1e3) + 'k' : trim(v);
-// series and opts may be functions, re-read on every draw.
+// Stacked cumulative areas, from weekly series per key. series and options
+// may be functions, re-read on every draw.
 function area(id, series, keys, colors, options = {}) {
   const box = document.getElementById(id);
   const draw = () => {
     box.innerHTML = '';
     const opts = typeof options === 'function' ? options() : options;
-    series = typeof opts.series === 'function' ? opts.series() : series;
-    const W = box.clientWidth, Hh = opts.height || 260, m = { l: 44, r: 8, t: 8, b: 26 };
+    const weekly = typeof series === 'function' ? series() : series;
+    const cum = Object.fromEntries(keys.map(k => [k, cumulative(weekly[k])]));
+    const W = box.clientWidth, Hh = opts.height || 280, m = { l: 44, r: 8, t: 8, b: 26 };
     const s = svg('svg', { width: W, height: Hh, role: 'img', 'aria-label': opts.aria || '' }, box);
     const n = D.weeks.length;
-    const totals = D.weeks.map((_, i) => sum(keys.map(k => series[k][i])));
-    const max = niceMax(opts.max || Math.max(...totals));
+    const totals = D.weeks.map((_, i) => sum(keys.map(k => cum[k][i])));
+    const max = niceMax(opts.max || totals[n - 1]);
     const x = i => m.l + (W - m.l - m.r) * (i + 0.5) / n;
     const y = v => m.t + (Hh - m.t - m.b) * (1 - v / max);
     const bw = (W - m.l - m.r) / n;
@@ -523,7 +554,7 @@ function area(id, series, keys, colors, options = {}) {
     }
     for (const t of ticks(max, 4)) {
       svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: t ? 'var(--grid)' : 'var(--axis)' }, s);
-      svg('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end' }, s).textContent = (opts.yfmt || kfmt)(t);
+      svg('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end' }, s).textContent = mfmt(t);
     }
     let lastMonth = -1;
     D.weeks.forEach((w, i) => {
@@ -535,8 +566,8 @@ function area(id, series, keys, colors, options = {}) {
     });
     const base = new Array(n).fill(0);
     for (const k of keys) {
-      const top = base.map((b, i) => b + series[k][i]);
-      if (series[k].some(v => v)) {
+      const top = base.map((b, i) => b + cum[k][i]);
+      if (cum[k][n - 1]) {
         const up = top.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
         const down = base.map((v, i) => `L${x(i).toFixed(1)},${y(v).toFixed(1)}`).reverse().join('');
         svg('path', { d: up + down + 'Z', fill: colors[k], stroke: 'var(--surface)', 'stroke-width': 1, 'stroke-linejoin': 'round' }, s);
@@ -545,14 +576,15 @@ function area(id, series, keys, colors, options = {}) {
     }
     const cross = svg('line', { y1: m.t, y2: Hh - m.b, stroke: 'var(--ink-2)', opacity: 0 }, s);
     const hit = svg('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: Hh - m.t - m.b, fill: 'transparent' }, s);
+    const vf = opts.vfmt || fmt;
     hit.addEventListener('mousemove', ev => {
       const i = Math.max(0, Math.min(n - 1, Math.floor((ev.clientX - s.getBoundingClientRect().left - m.l) / bw)));
       cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('opacity', 0.35);
-      const d = day(D.weeks[i]), end = new Date(d.getTime() + 6 * 864e5);
-      const vf = opts.vfmt || fmt;
-      showTip(ev, `<div class="t">${dstr(d)} – ${dstr(end)}</div>` +
-        keys.filter(k => series[k][i]).reverse().map(k => row(colors[k], k, vf(series[k][i]))).join('') +
-        row('', 'Total', vf(totals[i])) + (opts.extra ? opts.extra(i) : ''));
+      const end = new Date(day(D.weeks[i]).getTime() + 6 * 864e5);
+      showTip(ev, `<div class="t">Total through ${dstr(end)}</div>` +
+        keys.filter(k => cum[k][i]).reverse().map(k => row(colors[k], k, vf(cum[k][i]))).join('') +
+        row('', 'All models', vf(totals[i])) +
+        row('', 'Added that week', vf(sum(keys.map(k => weekly[k][i])))) + (opts.extra ? opts.extra(i) : ''));
     });
     hit.addEventListener('mouseleave', () => { hideTip(); cross.setAttribute('opacity', 0); });
   };
@@ -566,12 +598,11 @@ function area(id, series, keys, colors, options = {}) {
   const W = D.written, S = D.surviving;
   const tw = sum(MO.map(f => sum(W[f]))), ts = sum(MO.map(f => sum(S[f])));
   document.getElementById('code-note').innerHTML =
-    `<strong>${fmt(tw)}</strong> lines of source (<code>.c3 .c .h .sh .py</code>) were added on <code>main</code>, and <strong>${fmt(ts)}</strong> of them (${pct(ts, tw).toFixed(0)}%) are still there. Vendored libraries, generated tables and code moved between files do not count as written; a whole-tree comment restyle is looked through to the lines' authors. A line still in <code>main</code> is credited to the last commit that touched it, so recent weeks keep more of their code than older ones by construction.`;
-  const max = Math.max(...D.weeks.map((_, i) => sum(MO.map(f => W[f][i]))));
-  area('c-written', W, MO, MC, { max, aria: 'Source lines written per week by model family' });
-  area('c-surviving', S, MO, MC, { max, aria: 'Source lines still in main by week written and model family' });
+    `<strong>${fmt(tw)}</strong> lines of source (<code>.c3 .c .h .sh .py</code>) were added on <code>main</code>, and <strong>${fmt(ts)}</strong> of them (${pct(ts, tw).toFixed(0)}%) are still there. Vendored libraries, generated tables and code moved between files do not count as written; a whole-tree comment restyle is looked through to the lines' authors. A line still in <code>main</code> is credited to the last commit that changed it, and a line moved to another file keeps its author. Recent weeks keep more of their code than older ones because their code has had less time to be rewritten. Both charts share one scale.`;
+  area('c-written', W, MO, MC, { max: tw, aria: 'Source lines written, cumulative, by model' });
+  area('c-surviving', S, MO, MC, { max: tw, aria: 'Source lines still in main, cumulative by week written, by model' });
   table('t-lines', ['Model', 'Written', 'Still in main', 'Kept'],
-    MO.map(f => [f, fmt(sum(W[f])), fmt(sum(S[f])), sum(W[f]) ? pct(sum(S[f]), sum(W[f])).toFixed(0) + '%' : '–']));
+    MO.filter(f => sum(W[f])).map(f => [f, fmt(sum(W[f])), fmt(sum(S[f])), pct(sum(S[f]), sum(W[f])).toFixed(0) + '%']));
 }
 
 // Tokens
@@ -579,16 +610,16 @@ function area(id, series, keys, colors, options = {}) {
   const K = D.tokens;
   const all = sum(MO.map(f => sum(K.total[f]))), crush = sum(K.crush_total);
   document.getElementById('tokens-note').innerHTML =
-    `<strong>${mfmt(all)}</strong> tokens in total, almost all of them cached context read back on each turn; the output-only view shows what the models generated (${mfmt(sum(MO.map(f => sum(K.output[f]))))}). Crush does not record tokens per message, so its ${mfmt(crush)} are estimated from its message count and opencode's measured tokens per message for the same model. Claude Code keeps transcripts for 30 days; the shaded weeks had Claude Code sessions whose token counts are gone.`;
+    `<strong>${mfmt(all)}</strong> tokens in total, almost all of them cached context read back on each turn; the output-only view shows what the models generated (${mfmt(sum(MO.map(f => sum(K.output[f]))))}). Crush does not record tokens per message, so its ${mfmt(crush)} are estimated from its message count and opencode's measured tokens per message for the same model. Claude Code keeps transcripts for 30 days; the shaded weeks had Claude Code sessions whose token counts are gone, so the Claude lines run flat through them.`;
   const allBtn = document.getElementById('tok-all'), outBtn = document.getElementById('tok-out');
   let key = 'total';
-  const draw = area('c-tokens', null, MO, MC, () => {
-    const crush = K[key === 'total' ? 'crush_total' : 'crush_output'];
+  const draw = area('c-tokens', () => K[key], MO, MC, () => {
+    const crushCum = cumulative(K[key === 'total' ? 'crush_total' : 'crush_output']);
     return {
-      series: () => K[key], gaps: K.claude_gaps, yfmt: mfmt, vfmt: mfmt, height: 280,
-      aria: 'Tokens per week by model family',
-      extra: i => (crush[i] ? row('', 'of which Crush, estimated', mfmt(crush[i])) : '') +
-        (K.claude_gaps.includes(D.weeks[i]) ? row('', 'Claude Code', 'not recorded') : ''),
+      gaps: K.claude_gaps, vfmt: mfmt, height: 300,
+      aria: 'Tokens consumed, cumulative, by model',
+      extra: i => (crushCum[i] ? row('', 'of which Crush, estimated', mfmt(crushCum[i])) : '') +
+        (K.claude_gaps.includes(D.weeks[i]) ? row('', 'Claude Code that week', 'not recorded') : ''),
     };
   });
   const show = k => {
