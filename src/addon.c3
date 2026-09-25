@@ -39,6 +39,17 @@ const int BK_ADDON_ERR_VERSION = -3;  // ABI mismatch
 const int BK_ADDON_ERR_INIT    = -4;  // the add-on's own init returned failure
 const int BK_ADDON_ERR_DISABLED = -5; // loading not enabled for this runtime
 
+extern fn void* win_load_library(ZString path) @cname("LoadLibraryA") @feat(WIN32);
+extern fn void* win_get_proc(void* handle, ZString name) @cname("GetProcAddress") @feat(WIN32);
+extern fn int win_free_library(void* handle) @cname("FreeLibrary") @feat(WIN32);
+
+fn void* addon_open(ZString path) @feat(WIN32) => win_load_library(path);
+fn void* addon_open(ZString path) @feat(!WIN32) => libc::dlopen(path, libc::RTLD_NOW | libc::RTLD_LOCAL);
+fn void* addon_symbol(void* handle, ZString name) @feat(WIN32) => win_get_proc(handle, name);
+fn void* addon_symbol(void* handle, ZString name) @feat(!WIN32) => libc::dlsym(handle, name);
+fn void addon_close(void* handle) @feat(WIN32) { win_free_library(handle); }
+fn void addon_close(void* handle) @feat(!WIN32) { libc::dlclose(handle); }
+
 // Opaque handle an add-on passes back to every api call. Holds the engine
 // state the add-on is not allowed to see the shape of.
 struct BkAddonCtx {
@@ -458,13 +469,13 @@ fn int load_addon(heap::Heap* h, env::EnvRecord* global_env, char[] path) {
     for (usz i = 0; i < path.len; i++) pathbuf[i] = path[i];
     pathbuf[path.len] = 0;
 
-    void* handle = libc::dlopen((ZString)&pathbuf[0], libc::RTLD_NOW | libc::RTLD_LOCAL);
+    void* handle = addon_open((ZString)&pathbuf[0]);
     if (handle == null) return BK_ADDON_ERR_OPEN;
 
     char[16] sym = "bk_init_addon\0";
-    void* init_raw = libc::dlsym(handle, (ZString)&sym[0]);
+    void* init_raw = addon_symbol(handle, (ZString)&sym[0]);
     if (init_raw == null) {
-        libc::dlclose(handle);
+        addon_close(handle);
         return BK_ADDON_ERR_SYMBOL;
     }
 
@@ -474,7 +485,7 @@ fn int load_addon(heap::Heap* h, env::EnvRecord* global_env, char[] path) {
     // itself -- both live as long as anything the add-on registered can run.
     void* ctx_raw = h.alloc_func(h.heap_udata, BkAddonCtx::size);
     if (ctx_raw == null) {
-        libc::dlclose(handle);
+        addon_close(handle);
         return BK_ADDON_ERR_INIT;
     }
     BkAddonCtx* ctx = (BkAddonCtx*)ctx_raw;
@@ -486,7 +497,7 @@ fn int load_addon(heap::Heap* h, env::EnvRecord* global_env, char[] path) {
     int rc = init(ctx, &g_addon_api);
     if (rc != BK_ADDON_OK) {
         h.free_func(h.heap_udata, ctx_raw);
-        libc::dlclose(handle);
+        addon_close(handle);
         return BK_ADDON_ERR_INIT;
     }
     return BK_ADDON_OK;
