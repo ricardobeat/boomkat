@@ -53,9 +53,9 @@ example-c-static:
 example-c-hello:
     mkdir -p {{ROOT_DIR}}/bindings/c/out
     cc -std=c99 -Wall -Wextra -pedantic -I{{BK_INCDIR}} \
-        {{ROOT_DIR}}/bindings/c/hello_console.c {{BK_STATIC}} {{ldlibs_static}} \
-        -o {{ROOT_DIR}}/bindings/c/out/hello-console
-    {{ROOT_DIR}}/bindings/c/out/hello-console
+        {{ROOT_DIR}}/bindings/c/hello.c {{BK_STATIC}} {{ldlibs_static}} \
+        -o {{ROOT_DIR}}/bindings/c/out/hello
+    {{ROOT_DIR}}/bindings/c/out/hello
 
 [doc("Build the shared-link C example (links against boomkat.dylib/.so)")]
 example-c-shared:

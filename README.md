@@ -112,48 +112,31 @@ a GitHub release.
 The engine ships a `bk_` C ABI (`include/boomkat.h`, static `boomkat.a` and a
 shared library). See `docs/embedding.md`.
 
-A C host can add its own `console` object. The default library leaves host
-output unbound, so this small module defines `console.log` and then runs JS:
+The library leaves host output to the application, so a C host defines the
+functions it wants JavaScript to call. This one adds a global `print`:
 
 ```c
 #include <boomkat.h>
 #include <stdio.h>
 
-static void log_to_stdout(bk_ctx js, void *udata) {
-    (void)udata;
-    for (unsigned int i = 0; i < bk_argc(js); i++) {
-        const char *text = bk_cstr(js, bk_arg(js, i), NULL);
-        if (!text) return;
-        if (i) putchar(' ');
-        fputs(text, stdout);
-    }
-    putchar('\n');
+/* print(value): write String(value) and a newline to the FILE* in udata. */
+static void print(bk_ctx js, void *out) {
+    const char *text = bk_cstr(js, bk_arg(js, 0), NULL);
+    if (text) fprintf(out, "%s\n", text);
 }
 
 int main(void) {
     bk_ctx js = bk_open();
     if (!js) return 1;
-    bk_value console = bk_object(js);
-    if (!console ||
-        bk_register_fn(js, console, "log", log_to_stdout, 1, 0u, NULL) != BK_OK ||
-        bk_set_globalp(js, "console", console) != BK_OK) {
-        fprintf(stderr, "console setup: %s\n", bk_error(js));
-        bk_free(js, console);
-        bk_close(js);
-        return 1;
-    }
-    bk_free(js, console);
-    if (bk_exec(js, "console.log('Hello, world from Boomkat!')")) {
-        fprintf(stderr, "JavaScript: %s\n", bk_error(js));
-        bk_close(js);
-        return 1;
-    }
+    bk_register_fn(js, 0, "print", print, 1, 0u, stdout);
+    int failed = bk_exec(js, "print('Hello, world from Boomkat!')");
+    if (failed) fprintf(stderr, "JavaScript: %s\n", bk_error(js));
     bk_close(js);
-    return 0;
+    return failed;
 }
 ```
 
-The runnable version is [bindings/c/hello_console.c](bindings/c/hello_console.c).
+The runnable version is [bindings/c/hello.c](bindings/c/hello.c).
 Build the static library with `make lib`, then run `just example-c-hello`.
 
 Bindings in C3, Rust, Python, Ruby, and Zig

@@ -1,12 +1,12 @@
 # C99 embedding examples
 
 The public C interface is [boomkat.h](../../include/boomkat.h). The static
-library leaves host globals such as `console` to the application. These examples
+library leaves host output such as `console` to the application. These examples
 use the library built at `out/boomkat.a`.
 
 | Example | Shows |
 |---|---|
-| [hello_console.c](hello_console.c) | A minimal host `console.log` and JavaScript evaluation |
+| [hello.c](hello.c) | A one-function host `print` and JavaScript evaluation |
 | [main.c](main.c) | Values, UTF-8 strings, error reporting, and cleanup |
 | [host_fn.c](host_fn.c) | C callbacks, `udata`, exceptions, and calls back into JS |
 | [two_runtimes.c](two_runtimes.c) | Independent runtimes and rejected cross-runtime handles |
@@ -24,7 +24,7 @@ just example-c-multiple
 The examples build with `cc -std=c99 -Wall -Wextra -pedantic`. On Linux, static
 linking also needs `-lm -ldl`. To use a downloaded release archive instead,
 extract the library package and follow its `README.txt`; it includes the public
-header and `hello_console.c`.
+header and `hello.c`.
 
 An evaluation returning `0` failed. Read `bk_error(ctx)` for the message, then
 continue using or close the runtime. Release each nonzero owned `bk_value` with

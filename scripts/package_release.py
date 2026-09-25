@@ -52,15 +52,15 @@ def package(platform: str, binary_dir: pathlib.Path, dist: pathlib.Path) -> None
         (root / "lib").mkdir()
         (root / "examples").mkdir()
         shutil.copy2(ROOT / "include" / "boomkat.h", root / "include" / "boomkat.h")
-        shutil.copy2(ROOT / "bindings" / "c" / "hello_console.c", root / "examples" / "hello_console.c")
+        shutil.copy2(ROOT / "bindings" / "c" / "hello.c", root / "examples" / "hello.c")
         shutil.copy2(ROOT / "LICENSE", root / "LICENSE")
         shutil.copy2(library, root / "lib" / library.name)
         if platform.startswith("linux-"):
-            build_line = f"cc -std=c99 -Iinclude examples/hello_console.c lib/{library.name} -lm -ldl -o hello"
+            build_line = f"cc -std=c99 -Iinclude examples/hello.c lib/{library.name} -lm -ldl -o hello"
         elif platform.startswith("macos-"):
-            build_line = f"cc -std=c99 -Iinclude examples/hello_console.c lib/{library.name} -o hello"
+            build_line = f"cc -std=c99 -Iinclude examples/hello.c lib/{library.name} -o hello"
         else:
-            build_line = f"cl /Iinclude examples\\hello_console.c lib\\{library.name}"
+            build_line = f"cl /Iinclude examples\\hello.c lib\\{library.name}"
         (root / "README.txt").write_text(
             f"Boomkat v{version} C embedding library ({platform})\n\n"
             f"Build the included hello-world example:\n{build_line}\n\n"
