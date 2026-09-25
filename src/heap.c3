@@ -1083,6 +1083,11 @@ struct Heap {
     uint        module_cache_count;
     uint        module_cache_cap;
     void*       module_hooks;       // ModuleHostHooks*, the pluggable host callbacks
+    // Host-defined module sources (esm::DefinedModule array), consulted before
+    // the filesystem when a specifier is resolved and read.
+    void*       defined_modules;
+    uint        defined_module_count;
+    uint        defined_module_cap;
     // Module whose body is currently executing, empty outside a module
     // evaluation. Relative dynamic-import specifiers resolve against it when the
     // importing function has no filename of its own.
@@ -1888,6 +1893,7 @@ fn void Heap.destroy(&self) {
 
     // Free module cache
     self.free_module_cache();
+    esm::free_defined_modules(self);
 
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
@@ -2213,6 +2219,7 @@ fn void Heap.reset(&self) {
     self.init_transition_table();
 
     self.free_module_cache();
+    esm::free_defined_modules(self);
     self.module_hooks = null;
     self.current_module_name = {};
 

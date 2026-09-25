@@ -40,20 +40,21 @@ embedding application. The CLI enables the `PRINT` and `CONSOLE` build
 features and installs test262 host helpers for local fixtures. Library builds have none of
 these features, so `print`, `console`, and `__resetGlobals` are absent.
 
-The shared library exports exactly the 50 `bk_` entry points, enforced at link
+The shared library exports exactly the 53 `bk_` entry points, enforced at link
 time by a generated export list (`out/boomkat.exports` on Mach-O,
 `out/boomkat.map` on ELF, both produced by `scripts/gen_abi_header.py` from the
 header's own declarations):
 
 ```
 bk_arg  bk_argc  bk_array  bk_array_of  bk_bool  bk_call  bk_close  bk_cstr
-bk_delete  bk_drain  bk_error  bk_error_code  bk_error_info_of  bk_eval
-bk_eval_named  bk_free  bk_get  bk_get_index  bk_global  bk_has
-bk_is_construct  bk_keys  bk_new_target  bk_null  bk_number  bk_object
-bk_open  bk_persist  bk_read_bool  bk_read_number  bk_read_string  bk_register
-bk_return  bk_set  bk_set_global  bk_set_index  bk_set_interrupt  bk_status_str
-bk_strdup  bk_string  bk_this  bk_throw  bk_throw_error  bk_to_bool
-bk_to_number  bk_to_string  bk_type_of  bk_type_str  bk_undefined  bk_version
+bk_define_module  bk_delete  bk_drain  bk_error  bk_error_code
+bk_error_info_of  bk_eval  bk_eval_module  bk_eval_named  bk_free  bk_get
+bk_get_index  bk_global  bk_has  bk_is_construct  bk_keys  bk_new_target
+bk_null  bk_number  bk_object  bk_open  bk_persist  bk_read_bool
+bk_read_number  bk_read_string  bk_register  bk_return  bk_set  bk_set_global
+bk_set_index  bk_set_interrupt  bk_set_strict  bk_status_str  bk_strdup
+bk_string  bk_this  bk_throw  bk_throw_error  bk_to_bool  bk_to_number
+bk_to_string  bk_type_of  bk_type_str  bk_undefined  bk_version
 ```
 
 Before the export list existed, `c3c`'s lack of visibility control exported the
@@ -261,6 +262,9 @@ return a `bk_status`.
 | `bk_version(void)` | `const char *` | Static string. Never `NULL`. |
 | `bk_eval(ctx, src, len)` | `bk_value` | Compiles and runs `len` bytes of UTF-8 for its completion value, so `"40 + 2"` yields 42. Owned handle, or 0 on failure. Drains microtasks before returning. |
 | `bk_eval_named(ctx, src, len, name, name_len)` | `bk_value` | As `bk_eval`, with `name` recorded as the script name for error reporting. Copied; `NULL` means `"<eval>"`. |
+| `bk_set_strict(ctx, on)` | void | Makes later `bk_eval` calls compile strict global script code: top-level declarations stay globals shared across calls, and `with` or an implicit global is an error. `0` returns to the sloppy default. |
+| `bk_eval_module(ctx, src, len, name, name_len)` | `bk_value` | Compiles, links and evaluates an ES module, top-level `await` included, and returns its namespace object (owned), or 0 on failure. Relative imports resolve against `name` (copied; `NULL` means `"<module>"`). Drains microtasks. |
+| `bk_define_module(ctx, name, name_len, src, len)` | status | Defines module `name` from source, so an import resolving to `name` loads it before any file. Both are copied; defining a name again replaces its source for later imports. |
 | `bk_drain(ctx)` | status | Runs pending promise jobs. Re-entrancy guarded. `bk_eval` already drains. |
 | `bk_free(ctx, v)` | void | Releases an owned handle. Safe with `0`, a scope handle, or an already-freed handle. |
 | `bk_persist(ctx, v)` | `bk_value` | Copies a scope value into the registry so it outlives the current callback. Owned result. |
@@ -290,9 +294,11 @@ The header also carries `static inline` sugar (`bk_eval_str`, `bk_getp`,
 `bk_return_number`, the `bk_is_*` predicates, ...), which adds no symbols to the
 ABI.
 
-`bk_eval` uses `compile_eval`, not `compile`. Plain `compile` returns a value
-only on an explicit `RET`, so a top-level expression would yield `undefined`,
-which is not what an embedder expects.
+By default `bk_eval` compiles sloppy indirect-eval code with `compile_eval`,
+which keeps the completion value an embedder expects from `"40 + 2"`. Under
+`bk_set_strict` it calls `compile` with `want_completion` and `strict` instead:
+strict eval code would give each call its own variable environment, so a
+function declared in one `bk_eval` would be gone by the next.
 
 ### The string protocol
 

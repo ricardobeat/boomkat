@@ -171,7 +171,8 @@ BK_API const char *bk_version(void);
 
 /*
  * Compile and run `len` bytes of UTF-8 source, evaluated for its completion
- * value, so "40 + 2" yields 42 (eval() semantics, not script semantics).
+ * value, so "40 + 2" yields 42. By default the source is sloppy-mode code run
+ * like an indirect eval(); see bk_set_strict for the strict mode.
  *
  * Returns an owned handle, or 0 on failure with the detail in bk_error.
  * Microtasks are drained before returning.
@@ -184,6 +185,49 @@ BK_API bk_value bk_eval(bk_ctx ctx, const char *src, size_t len);
  */
 BK_API bk_value bk_eval_named(bk_ctx ctx, const char *src, size_t len,
                               const char *name, size_t name_len);
+
+/*
+ * Choose how later bk_eval calls compile. With `on` non-zero, source is strict
+ * global script code, as if it began with "use strict": no `with`, no implicit
+ * globals, and `this` is undefined in a plain function call. Top-level
+ * declarations still become globals shared by later calls, and declaring a
+ * top-level `let`/`const` name again throws a SyntaxError, as between two
+ * <script> tags. With `on` zero, bk_eval returns to the sloppy default.
+ */
+BK_API void bk_set_strict(bk_ctx ctx, int on);
+
+/*
+ * Compile `len` bytes of UTF-8 source as an ECMAScript module, then link and
+ * evaluate it along with everything it imports. Modules are always strict and
+ * may use top-level await; microtasks are drained before returning.
+ *
+ * `name` identifies the module in error reports and is what its relative
+ * imports resolve against: "app/main.js" importing "./util.js" loads
+ * "app/util.js". `name` is copied. NULL behaves like "<module>". Every call
+ * evaluates a new module, even when one with the same name was loaded before.
+ *
+ * Imports load modules defined with bk_define_module first, then files.
+ *
+ * Returns an owned handle to the module's namespace object (its exports), or
+ * 0 on failure with the detail in bk_error: BK_ERR_SYNTAX when it or an import
+ * fails to compile, load, or link, BK_ERR_THROW when evaluation throws.
+ */
+BK_API bk_value bk_eval_module(bk_ctx ctx, const char *src, size_t len,
+                               const char *name, size_t name_len);
+
+/*
+ * Define the module `name` from `len` bytes of UTF-8 source, so an import that
+ * resolves to `name` loads it without touching the filesystem. A bare
+ * specifier resolves to itself (`import "lib"` finds "lib"), and a relative one
+ * joins the importer's directory. Both `name` and `src` are copied.
+ *
+ * Defining a name again replaces its source for later imports. A module
+ * already loaded under that name stays loaded as it was.
+ *
+ * Returns BK_OK, BK_ERR_INVALID for a NULL or empty name, or BK_ERR_NOMEM.
+ */
+BK_API bk_status bk_define_module(bk_ctx ctx, const char *name, size_t name_len,
+                                  const char *src, size_t len);
 
 /*
  * Run pending promise jobs. bk_eval already drains; call this after resolving

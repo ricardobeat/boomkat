@@ -2,6 +2,7 @@ module boomkat::capi;
 
 import boomkat::builtins;
 import boomkat::embed;
+import boomkat::esm;
 import boomkat::vm;
 import boomkat::heap;
 import boomkat::hobject;
@@ -121,6 +122,35 @@ fn ulong bk_eval_named(void* ctxp, char* src, usz len, char* name, usz name_len)
 
 fn ulong bk_eval(void* ctxp, char* src, usz len) @export("bk_eval") {
     return bk_eval_named(ctxp, src, len, "<eval>", 6);
+}
+
+fn void bk_set_strict(void* ctxp, int on) @export("bk_set_strict") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return;
+    rt.strict = on != 0;
+}
+
+fn ulong bk_eval_module(void* ctxp, char* src, usz len, char* name, usz name_len)
+        @export("bk_eval_module") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || src == null) return 0;
+    char[] mod_name = name != null && name_len != 0 ? name[:name_len] : (char[])"<module>";
+    TVal ns;
+    if (embed::eval_module(rt, src[:len], mod_name, &ns) != BK_OK) return 0;
+    return store(rt, ns);
+}
+
+fn int bk_define_module(void* ctxp, char* name, usz name_len, char* src, usz len)
+        @export("bk_define_module") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    if (name == null || name_len == 0 || src == null) {
+        return fail(rt, BK_ERR_INVALID, "bk_define_module: missing name or source");
+    }
+    if (!esm::define_module(rt.heap, name[:name_len], src[:len])) {
+        return fail(rt, BK_ERR_NOMEM, "out of memory");
+    }
+    return BK_OK;
 }
 
 fn int bk_drain(void* ctxp) @export("bk_drain") {

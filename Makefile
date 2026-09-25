@@ -171,6 +171,15 @@ out/embed_api: test/capi/embed_api.c include/boomkat.h out/boomkat.a
 test-embed-api: out/embed_api
 	./out/embed_api
 
+# Strict bk_eval, bk_eval_module, and host-defined modules (bk_define_module).
+out/modules_api: test/capi/modules.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/modules.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/modules_api
+
+.PHONY: test-modules-api
+test-modules-api: out/modules_api
+	./out/modules_api
+
 # The acceptance test for the v2 surface: the hello-world from the header,
 # verbatim, compiled with every warning on.
 out/dozen_lines: test/capi/dozen_lines.c include/boomkat.h out/boomkat.a

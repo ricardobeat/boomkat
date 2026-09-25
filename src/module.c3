@@ -387,6 +387,79 @@ fn char[]? probe_ts_twin(char[] path) {
     return MODULE_ERROR~;
 }
 
+// ============================================================================
+// Host-defined modules
+// ============================================================================
+
+// A module whose source the host supplied by name. Both slices are owned
+// copies, freed with the heap. Compiled code keeps no pointer into a module's
+// source, so a source only has to live until its module is compiled.
+struct DefinedModule {
+    char[] name;
+    char[] source;
+}
+
+fn char[]? copy_bytes(char[] bytes) @local {
+    void* raw = alloc::malloc_try(mem, (sz)(bytes.len + 1)) ?? null;
+    if (raw == null) return MODULE_ERROR~;
+    if (bytes.len > 0) mem::copy(raw, bytes.ptr, (sz)bytes.len);
+    ((char*)raw)[bytes.len] = 0;
+    return ((char*)raw)[:bytes.len];
+}
+
+fn DefinedModule* find_defined_module(Heap* heap, char[] name) @local {
+    DefinedModule* table = (DefinedModule*)heap.defined_modules;
+    for (uint i = 0; i < heap.defined_module_count; i++) {
+        if (char_slice_eq(table[i].name, name)) return &table[i];
+    }
+    return null;
+}
+
+// Make `source` the module named `name`: an import whose specifier resolves to
+// `name` loads it without touching the filesystem. Defining a name again
+// replaces its source for later loads; a module already loaded under that name
+// stays as it is. Returns false when out of memory.
+fn bool define_module(Heap* heap, char[] name, char[] source) {
+    char[]? src_copy = copy_bytes(source);
+    if (catch err = src_copy) return false;
+    DefinedModule* existing = find_defined_module(heap, name);
+    if (existing != null) {
+        mem::free(existing.source.ptr);
+        existing.source = src_copy;
+        return true;
+    }
+    char[]? name_copy = copy_bytes(name);
+    if (catch err = name_copy) { mem::free(src_copy.ptr); return false; }
+    if (heap.defined_module_count >= heap.defined_module_cap) {
+        uint new_cap = heap.defined_module_cap == 0 ? 8 : heap.defined_module_cap * 2;
+        void* grown = mem::realloc(heap.defined_modules, (usz)new_cap * DefinedModule::size);
+        if (grown == null) { mem::free(src_copy.ptr); mem::free(name_copy.ptr); return false; }
+        heap.defined_modules = grown;
+        heap.defined_module_cap = new_cap;
+    }
+    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, src_copy };
+    return true;
+}
+
+// The source defined for `name`, if the host defined one.
+fn char[]? defined_module_source(Heap* heap, char[] name) {
+    DefinedModule* dm = find_defined_module(heap, name);
+    if (dm == null) return MODULE_ERROR~;
+    return dm.source;
+}
+
+fn void free_defined_modules(Heap* heap) {
+    DefinedModule* table = (DefinedModule*)heap.defined_modules;
+    for (uint i = 0; i < heap.defined_module_count; i++) {
+        mem::free(table[i].name.ptr);
+        mem::free(table[i].source.ptr);
+    }
+    mem::free(heap.defined_modules);
+    heap.defined_modules = null;
+    heap.defined_module_count = 0;
+    heap.defined_module_cap = 0;
+}
+
 // Default source reader: read a module file from disk into a caller-owned
 // buffer allocated from the engine's `mem` (libc-backed) heap. The returned
 // slice is exactly the file's bytes; the lexer scans by length (no NUL
@@ -677,6 +750,16 @@ fn char[]? package_json_main(char[] body, char[] pkg_dir) {
 }
 
 fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
+    // A host-defined module wins over the host hook and the filesystem, so a
+    // file on disk with a matching name cannot shadow it.
+    if (heap.defined_module_count > 0) {
+        char[] name = specifier;
+        if (specifier.len > 0 && specifier[0] == '.') name = join_relative(base_name, specifier)!;
+        if (find_defined_module(heap, name) != null) return name;
+        // join_relative allocated unless it returned a view into specifier.
+        bool joined = name.ptr < specifier.ptr || name.ptr >= specifier.ptr + specifier.len;
+        if (joined) mem::free(name.ptr);
+    }
     if (heap.module_hooks != null) {
         ModuleHostHooks* hooks = (ModuleHostHooks*)heap.module_hooks;
         if (hooks.resolve_name != null) {
@@ -691,27 +774,34 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
         if (try pkg_path = pkg) return pkg;
         return resolve_extension(specifier);
     }
-    // A relative specifier resolves against base_name's directory. A leading
-    // "./" must be stripped in every case (not just when base_name itself
-    // has a directory component) so the same file always normalizes to the
-    // same identifier regardless of which importer's relative path reached
-    // it, e.g. a top-level module loaded as "a.js" (no base directory) and
-    // a same-directory sibling's "./a.js" re-export must resolve to the
-    // identical cache key, or the module cache treats them as two distinct
-    // ModuleDefs: a cyclic self-reference silently gets its own separate,
-    // never-evaluated env, whose pre-linked TDZ export bindings then leak
-    // into a module-namespace accessor read as a spurious TDZ throw.
+    return resolve_extension(join_relative(base_name, specifier)!);
+}
+
+// Join a relative specifier onto the directory of `base_name`, without
+// touching the filesystem. The result is `specifier` itself (minus "./") or a
+// fresh allocation the module name then owns.
+//
+// A leading "./" must be stripped in every case (not just when base_name
+// itself has a directory component) so the same file always normalizes to the
+// same identifier regardless of which importer's relative path reached it,
+// e.g. a top-level module loaded as "a.js" (no base directory) and a
+// same-directory sibling's "./a.js" re-export must resolve to the identical
+// cache key, or the module cache treats them as two distinct ModuleDefs: a
+// cyclic self-reference silently gets its own separate, never-evaluated env,
+// whose pre-linked TDZ export bindings then leak into a module-namespace
+// accessor read as a spurious TDZ throw.
+fn char[]? join_relative(char[] base_name, char[] specifier) @local {
     char[] rel = specifier;
     if (rel.len >= 2 && rel[0] == '.' && rel[1] == '/') {
         rel = rel[2..];
     }
-    if (base_name.len == 0) return resolve_extension(rel);
+    if (base_name.len == 0) return rel;
     // Find last '/' in base_name to get directory
     int last_slash = -1;
     for (usz i = 0; i < base_name.len; i++) {
         if (base_name[i] == '/') last_slash = (int)i;
     }
-    if (last_slash < 0) return resolve_extension(rel);
+    if (last_slash < 0) return rel;
     char[] dir = base_name[:last_slash + 1];
     usz total = dir.len + rel.len;
     void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
@@ -719,8 +809,7 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     mem::copy(raw, dir.ptr, (sz)(dir.len));
     mem::copy((char*)raw + dir.len, rel.ptr, (sz)(rel.len));
     ((char*)raw)[total] = 0;
-    char[] joined = ((char*)raw)[:total];
-    return resolve_extension(joined);
+    return ((char*)raw)[:total];
 }
 
 // Call the host's read_source hook, or use the default.
@@ -737,6 +826,7 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
 // the text and bytes reads itself.
 fn char[]? call_read_source(Heap* heap, char[] normalized_name,
                             compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
+    if (try defined = defined_module_source(heap, normalized_name)) return defined;
     if (heap.module_hooks != null) {
         ModuleHostHooks* hooks = (ModuleHostHooks*)heap.module_hooks;
         if (hooks.read_source != null) {

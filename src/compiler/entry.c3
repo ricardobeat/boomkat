@@ -27,8 +27,11 @@ import std::io;
 // still scans the sloppy-only lexical forms; the parser's own strictness
 // default already covers those units. Top-level scripts take that default
 // directly and modules are strict, so neither passes this.
+// `strict` compiles the whole Script as strict code, as if its prologue held
+// "use strict". The CLI and the embedding API use it for their strict-by-
+// default modes; spec-driven callers leave it off.
 fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = false,
-                              bool non_strict_source = false) {
+                              bool non_strict_source = false, bool strict = false) {
     // Reset error state for this top-level compilation.
     lex.err_msg[0] = 0;
     lex.err_line = 0;
@@ -37,12 +40,11 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ctx.init(lex, heap);
     ctx.is_global = true;
     ctx.eval_mode = want_completion;
-    // Phase 1 (plans/083): top-level scripts now default to sloppy
-    // (ES2024 §16.2.1.1 — script bodies are non-strict code unless a
-    // Directive Prologue says otherwise). The "use strict" directive in the
-    // prologue raises it back to true via parse_directives() below.
-    ctx.is_strict = false;
-    ctx.lexer.set_strict(false);
+    // Top-level scripts default to sloppy (ES2024 §16.2.1.1: script bodies
+    // are non-strict code unless a Directive Prologue says otherwise). The
+    // "use strict" directive raises it via parse_directives() below.
+    ctx.is_strict = strict;
+    ctx.lexer.set_strict(strict);
     if (want_completion) {
         ctx.eval_acc_reg = ctx.alloc_reg();
         // Seed the accumulator so an empty Script, or one whose only
@@ -59,9 +61,8 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ctx.parse_directives()!;
 
     // Sync the lexer to ctx.is_strict after the directive prologue so the
-    // statement parse below runs in the right mode. The default is sloppy
-    // (line above); a "use strict" directive raises ctx.is_strict to true
-    // and now the lexer tracks it too. Without this sync, the lexer would
+    // statement parse below runs in the right mode: a "use strict" directive
+    // raises ctx.is_strict to true and now the lexer tracks it too. Without this sync, the lexer would
     // stay sloppy and accept non-octal decimal escapes (`\8`, `\9`) that
     // ES2017 §12.8.4.1 says are SyntaxErrors in strict code.
     ctx.lexer.set_strict(ctx.is_strict);

@@ -16,6 +16,7 @@ import boomkat::lexer;
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::embed::abi;
+import boomkat::esm;
 
 // ============================================================================
 // Status and type codes from boomkat::embed::abi (src/embed/abi.c3)
@@ -113,6 +114,9 @@ struct Runtime {
     int      err_line;       // 1-based, 0 when unknown
     int      err_col;
     char[ERRBUF] err_name;   // script name for the most recent failure
+    // eval_source compiles strict global Script code instead of sloppy eval
+    // code (bk_set_strict).
+    bool     strict;
 
     // Root context for embedding operations outside host callbacks.
     Ctx      root;
@@ -569,8 +573,13 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out) {
 
     Lexer lex = lexer::lexer_init(src, rt.heap, name.len != 0 ? name : (char[])"<eval>");
     lex.skip_hashbang();
-    // Use compile_eval to capture top-level completion values.
-    CompiledFunction*? fr = compiler::compile_eval(&lex, rt.heap);
+    // Both modes capture the top-level completion value. Sloppy source runs as
+    // indirect eval code. Strict source runs as a strict global Script: strict
+    // eval code would give every call its own variable environment, so a
+    // declared function would not outlive the call that declared it.
+    CompiledFunction*? fr = rt.strict
+        ? compiler::compile(&lex, rt.heap, true, false, true)
+        : compiler::compile_eval(&lex, rt.heap);
     if (catch fr) {
         // Copy compiler error message before lexer arena teardown.
         char* m = &lex.err_msg[0];
@@ -606,6 +615,53 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out) {
 
     *out = res;
     return BK_OK;
+}
+
+// Compile `src` as a new top-level module named `name`, link and evaluate it,
+// and drain the jobs it queued. `*out` receives its namespace object.
+fn int eval_module(Runtime* rt, char[] src, char[] name, TVal* out) {
+    clear_err(rt);
+    set_script_name(rt, &name[0], name.len);
+    rt.heap.uncatchable_throw = false;
+    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
+    rt.heap.has_error = false;
+    rt.heap.error_value.set_undefined();
+
+    esm::ModuleDef*? loaded = esm::load_module_source(rt.heap, name, src, true);
+    if (catch err = loaded) return module_failure(rt, BK_ERR_SYNTAX);
+    esm::ModuleDef* mod = loaded;
+    int rc = esm::run_module(rt.heap, rt.vm, mod);
+    // run_module returns 1 for a thrown value and 2 for a failed link, which
+    // parks a SyntaxError when an import does not resolve.
+    if (rc != 0) return module_failure(rt, rc == 1 ? BK_ERR_THROW : BK_ERR_SYNTAX);
+
+    HObject*? ns = esm::build_namespace_object(rt.heap, mod);
+    if (catch err = ns) {
+        set_err(rt, BK_ERR_NOMEM, "out of memory");
+        return BK_ERR_NOMEM;
+    }
+    out.set_object(ns);
+    return BK_OK;
+}
+
+// Report a failed module load or evaluation as `code`, from whatever the heap
+// error channel holds, and clear the channel.
+fn int module_failure(Runtime* rt, int code) @local {
+    Heap* h = rt.heap;
+    if (h.uncatchable_throw) {
+        h.uncatchable_throw = false;
+        code = BK_ERR_INTERRUPT;
+        set_err(rt, code, "interrupted");
+    } else if (h.has_error || !h.error_value.is_undefined()) {
+        describe_error(rt, &h.error_value);
+        rt.errcode = code;
+    } else {
+        // A dependency that could not be read leaves no error value behind.
+        set_err(rt, code, "could not load module");
+    }
+    h.error_value.set_undefined();
+    h.has_error = false;
+    return code;
 }
 
 // Executes pending microtasks. Returns BK_OK or BK_ERR_INTERRUPT.
