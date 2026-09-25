@@ -627,6 +627,14 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     uint saved_static_super_name_idx = self.static_super_name_idx;
     uint saved_home_object_name_idx = self.home_object_name_idx;
     bool saved_is_strict = self.is_strict;
+    // The three class-internal bindings (__super__N / __static_super__N /
+    // __home_object__N) below are declared as LET in the ENCLOSING compile-time
+    // scope but bound at runtime into the class's own lex_env (PUSH_LEX +
+    // PUTLEX). Without a matching pop, they would leak into the outer
+    // scope_stack and make a later `var __super__0` in the same scope look
+    // like a var-vs-lexical redeclaration. Pop back to this mark once the
+    // body is compiled and the PUTLEXes have been emitted.
+    uint saved_scope_depth = self.scope_depth;
     // ES2024 §15.4.1: a ClassBody is always strict code, regardless of the
     // enclosing strictness. Phase 1 (plans/083): sloppy enclosing scripts now
     // exist, so force is_strict = true for the class body and any nested
@@ -2226,6 +2234,12 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     self.is_strict = saved_is_strict;
     self.lexer.set_strict(saved_is_strict);
     self.pop_private_scope();
+    // Drop the class-internal __super__N / __static_super__N / __home_object__N
+    // entries from the enclosing scope_stack (and free their registers). Their
+    // PUTLEXes have already been emitted above, so the registers have served
+    // their purpose. Inner method bodies resolve these names through GETVAR
+    // against the runtime lex_env, not through the compile-time scope_stack.
+    self.pop_scope_to(saved_scope_depth);
 
     return ctor_reg;
 }

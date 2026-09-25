@@ -19,12 +19,13 @@
 // CaseBlockEvaluation runs the same instantiation over a whole switch
 // CaseBlock, so a clause could not call a function declared in a later one.
 //
-// The engine is strict-only, so Annex B §B.3.2.1 (two plain
-// FunctionDeclarations sharing a name in one block, and hoisting the binding
-// out to the enclosing var scope) does NOT apply: a duplicate is a
-// SyntaxError and the binding stays confined to the block. Every expectation
-// below was cross-checked against qjs running the same source with a
-// "use strict" prologue.
+// Scripts default to sloppy (ES2024 §16.2.1.1); this file runs under
+// "use strict" so Annex B §B.3.2.1 / §B.3.3 (two plain FunctionDeclarations
+// sharing a name in one block, and hoisting the binding out to the enclosing
+// var scope) does NOT apply. A duplicate is a SyntaxError and the binding
+// stays confined to the block. Every expectation below was cross-checked
+// against qjs running the same source with a "use strict" prologue.
+"use strict";
 
 var failures = 0;
 function check(name, actual, expected) {

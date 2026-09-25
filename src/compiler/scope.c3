@@ -152,6 +152,16 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
     if (kind == LET || kind == CONST) {
         self.has_lexical_bindings = true;
     }
+    // Intern `name` once and store the stable slice below. Callers may pass a
+    // stack-allocated buffer (class.c3 builds `__super__N` / `__static_super__N`
+    // / `__home_object__N` into `char[32]` locals before calling us), and a
+    // `char[]` pointing into a frame that has since returned would leave
+    // scope_stack holding a dangling slice. Later walks such as
+    // check_var_lex_conflict compare those slices by content, so the stale
+    // bytes can masquerade as a different binding's name and produce a bogus
+    // duplicate-declaration error. Interning moves the bytes to the heap.
+    HString* name_hs = ((Heap*)self.heap).str_intern(name);
+    char[] stable_name = name_hs == null ? name : name_hs.get_data();
     // Push to scope_stack for all lexical declarations (even at global scope)
     // so duplicate let/const can be detected.  Var at global scope is still
     // hoisted to the function-scoped environment and doesn't need scope
@@ -186,7 +196,7 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
             .is_param = is_param,
             .is_catch_param = false,
         });
-        self.scope_stack[self.scope_depth].name = name;
+        self.scope_stack[self.scope_depth].name = stable_name;
         self.scope_stack[self.scope_depth].reg = reg;
         self.scope_stack[self.scope_depth].kind = kind;
         self.scope_stack[self.scope_depth].binding_id = binding_id;
