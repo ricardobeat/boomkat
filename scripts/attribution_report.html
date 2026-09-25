@@ -24,6 +24,16 @@
   --in-rep: #c9c7bf;
   --line: #2a78d6;
   --scope: #c3c2b7;
+  --m0: #2a78d6;
+  --m1: #eb6834;
+  --m2: #1baf7a;
+  --m3: #eda100;
+  --m4: #e87ba4;
+  --m5: #008300;
+  --m6: #4a3aa7;
+  --m7: #e34948;
+  --m8: #a3a19a;
+  --gap: rgba(11, 11, 11, 0.045);
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -51,6 +61,16 @@
     --in-rep: #45443f;
     --line: #3987e5;
     --scope: #55544f;
+    --m0: #3987e5;
+    --m1: #d95926;
+    --m2: #199e70;
+    --m3: #c98500;
+    --m4: #d55181;
+    --m5: #008300;
+    --m6: #9085e9;
+    --m7: #e66767;
+    --m8: #6b6a64;
+    --gap: rgba(255, 255, 255, 0.05);
   }
 }
 :root[data-theme="dark"] {
@@ -75,6 +95,16 @@
   --in-rep: #45443f;
   --line: #3987e5;
   --scope: #55544f;
+  --m0: #3987e5;
+  --m1: #d95926;
+  --m2: #199e70;
+  --m3: #c98500;
+  --m4: #d55181;
+  --m5: #008300;
+  --m6: #9085e9;
+  --m7: #e66767;
+  --m8: #6b6a64;
+  --gap: rgba(255, 255, 255, 0.05);
 }
 
 * { box-sizing: border-box; }
@@ -161,6 +191,12 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
 .tip .r { display: flex; justify-content: space-between; gap: 14px; line-height: 1.6; }
 .tip .r i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
 .tip .r b { font: 500 12px var(--mono); }
+.seg { display: inline-flex; border: 1px solid var(--ring); border-radius: 7px; overflow: hidden; }
+.seg button { font: 500 12px var(--sans); color: var(--ink-2); background: transparent; border: 0; padding: 5px 11px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--ring); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:focus-visible { outline: 2px solid var(--line); outline-offset: -2px; }
+.legend i.gapkey { background: var(--gap); border: 1px dashed var(--axis); }
 .note { font-size: 13px; color: var(--muted); max-width: 80ch; }
 .notes { display: grid; gap: 10px; }
 .notes p { font-size: 14px; }
@@ -171,7 +207,7 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
   <header>
     <div class="eyebrow" id="range"></div>
     <h1>Boomkat build record</h1>
-    <p>How the engine was built: which coding agents made the commits, which models ran them, how much the human typed, and how test262 moved. Everything here comes from git history and the agents' local logs. The test suite was not re-run.</p>
+    <p>How the engine was built: which coding agents made the commits, which models ran them, how much code survived, how much the human typed, and how test262 moved.</p>
     <div class="stats" id="stats"></div>
   </header>
 
@@ -188,7 +224,7 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
 
   <section id="harnesses">
     <h2>Harnesses</h2>
-    <p id="attrib-note"></p>
+    <p>Commits, prompts and lines still in <code>main</code>, per harness. Commits that name only a model and no harness (MiMo, DeepSeek, Kimi) are counted as <strong>opencode or pi</strong>.</p>
     <div class="panel scroll">
       <table class="score" id="scorecard"></table>
     </div>
@@ -196,10 +232,40 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
 
   <section id="models">
     <h2>Models</h2>
-    <p>Commits by model family, split by the harness that ran the model. A commit's model comes from the harness log or the trailer. For time-matched commits it is the model the harness was running at that moment. It is missing where the transcript is gone, mostly Claude Code before August.</p>
+    <p>Commits by model family, split by the harness that ran the model. The model is unknown where the session record is gone, mostly Claude Code before August.</p>
     <div class="panel">
       <div class="panel-head"><h3>Commits by model family</h3><div class="legend" data-legend="harness"></div></div>
       <div class="bars" id="families"></div>
+    </div>
+  </section>
+
+  <section id="code">
+    <h2>Code written and kept</h2>
+    <p id="code-note"></p>
+    <div class="panel">
+      <div class="panel-head"><h3>Lines written per week</h3><div class="legend" data-legend="model"></div></div>
+      <div class="chart" id="c-written"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Lines still in main, by week written</h3><div class="legend" data-legend="model"></div></div>
+      <div class="chart" id="c-surviving"></div>
+      <details><summary>Totals by model</summary><div class="scroll" id="t-lines"></div></details>
+    </div>
+  </section>
+
+  <section id="tokens">
+    <h2>Tokens</h2>
+    <p id="tokens-note"></p>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Tokens per week</h3>
+        <div class="seg" role="group" aria-label="Token measure">
+          <button type="button" id="tok-all" aria-pressed="true">All tokens</button>
+          <button type="button" id="tok-out" aria-pressed="false">Output only</button>
+        </div>
+      </div>
+      <div class="legend"><span data-legend="model" style="display:contents"></span><span><i class="gapkey"></i>Claude Code not recorded</span></div>
+      <div class="chart" id="c-tokens"></div>
     </div>
   </section>
 
@@ -235,22 +301,8 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
     </div>
     <p>Pass rate within each group of the runner's phases, as a share of the tests the skip list let run at the time. The group's in-scope count moved with the skip list, so a dip can mean more tests came into scope.</p>
     <div class="two" id="groups"></div>
-    <div class="panel scroll">
-      <h3>After the switch to test262's own suites</h3>
-      <table class="score" id="suites"></table>
-    </div>
   </section>
 
-  <section id="july">
-    <h2>From the July 31 snapshot</h2>
-    <p>The earlier analysis in <code>.attrib/</code> recorded token counts while Claude Code's June and July transcripts still existed. They were deleted later by the 30-day transcript cleanup, so these figures cannot be rebuilt and cover May 22 to July 31 only.</p>
-    <div class="stats" id="july-stats"></div>
-  </section>
-
-  <section id="method">
-    <h2>Method and limits</h2>
-    <div class="notes" id="notes"></div>
-  </section>
 </main>
 <div class="tip" id="tip" hidden></div>
 
@@ -310,6 +362,12 @@ for (const el of document.querySelectorAll('[data-legend="harness"]')) {
     .map(h => `<span><i style="background:${HC[h]}"></i>${hname(h)}</span>`).join('');
 }
 
+const MO = D.model_order;
+const MC = Object.fromEntries(MO.map((f, i) => [f, `var(--m${i})`]));
+for (const el of document.querySelectorAll('[data-legend="model"]')) {
+  el.innerHTML = MO.map(f => `<span><i style="background:${MC[f]}"></i>${f}</span>`).join('');
+}
+
 // Header
 const weeks = D.weeks.map(day);
 const lastWeek = new Date(weeks[weeks.length - 1].getTime() + 6 * 864e5);
@@ -328,7 +386,7 @@ document.getElementById('stats').innerHTML = [
   [fmt(allCommits), 'commits, all branches'],
   [fmt(allPrompts), `human prompts, ${fmt(long)} over ten words`],
   [fmt(lastT.distinct), `test262 tests passing on ${dstr(day(lastT.date))}`],
-  [fmt(allLines), `source lines at main, ${fmt(T['Claude Code'].lines)} from Claude Code`],
+  [fmt(allLines), `source lines in main, ${fmt(T['Claude Code'].lines)} from Claude Code`],
 ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
 
 // Stacked weekly bars
@@ -408,20 +466,16 @@ table('t-commits', ['Week of', ...commitKeys.map(hname), 'Total'],
 
 // Scorecard
 {
-  const [ok, total] = D.calibration;
-  document.getElementById('attrib-note').innerHTML =
-    `A commit goes to the harness whose own log shows the <code>git commit</code> output. If no log has it, the <code>Assisted-by</code> or <code>Co-Authored-By</code> trailer decides. Failing both, it goes to the only harness active in the three minutes before the commit, or else the one active most recently within two hours. On the ${fmt(total)} commits with a log record, that timing rule alone picks the same harness ${fmt(ok)} times (${pct(ok, total).toFixed(0)}%). Model-only trailers (Mimo, Deepseek, Kimi) are counted as <strong>opencode or pi</strong>.`;
   const maxC = Math.max(...H.map(h => T[h].commits || 0));
   const maxP = Math.max(...H.map(h => T[h].prompts || 0));
   const maxL = Math.max(...H.map(h => T[h].lines || 0));
   const cell = (v, max, total, color) => v ? `<div class="cell"><div class="mini"><span style="width:${pct(v, max)}%;background:${color}"></span></div><span>${fmt(v)} <span style="color:var(--muted)">${pct(v, total).toFixed(0).padStart(2, ' ')}%</span></span></div>` : '<span style="color:var(--muted)">–</span>';
-  const how = h => ['log', 'trailer', 'time'].map(k => T[h][k] || 0).map(fmt).join(' / ');
   document.getElementById('scorecard').innerHTML =
-    `<thead><tr><th>Harness</th><th>Commits</th><th>log / trailer / time</th><th>Prompts</th><th>Surviving lines</th></tr></thead><tbody>` +
+    `<thead><tr><th>Harness</th><th>Commits</th><th>Prompts</th><th>Lines in main</th></tr></thead><tbody>` +
     H.map(h => `<tr><td><span class="sw" style="background:${HC[h]}"></span>${hname(h)}</td>` +
-      `<td>${cell(T[h].commits, maxC, allCommits, HC[h])}</td><td>${how(h)}</td>` +
+      `<td>${cell(T[h].commits, maxC, allCommits, HC[h])}</td>` +
       `<td>${cell(T[h].prompts, maxP, allPrompts, HC[h])}</td><td>${cell(T[h].lines, maxL, allLines, HC[h])}</td></tr>`).join('') +
-    `</tbody><tfoot><tr><td>Total</td><td>${fmt(allCommits)}</td><td>${['log', 'trailer', 'time'].map(k => fmt(sum(H.map(h => T[h][k] || 0)))).join(' / ')}</td><td>${fmt(allPrompts)}</td><td>${fmt(allLines)}</td></tr></tfoot>`;
+    `</tbody><tfoot><tr><td>Total</td><td>${fmt(allCommits)}</td><td>${fmt(allPrompts)}</td><td>${fmt(allLines)}</td></tr></tfoot>`;
 }
 
 // Model families
@@ -443,6 +497,108 @@ table('t-commits', ['Week of', ...commitKeys.map(hname), 'Total'],
       H.filter(h => f[1][h]).map(h => row(HC[h], hname(h), fmt(f[1][h]))).join(''));
   });
   box.addEventListener('mouseleave', hideTip);
+}
+
+// Stacked weekly areas
+const trim = v => String(+v.toFixed(1));
+const mfmt = v => v >= 1e9 ? trim(v / 1e9) + 'B' : v >= 1e6 ? trim(v / 1e6) + 'M' : v >= 1e3 ? trim(v / 1e3) + 'k' : trim(v);
+// series and opts may be functions, re-read on every draw.
+function area(id, series, keys, colors, options = {}) {
+  const box = document.getElementById(id);
+  const draw = () => {
+    box.innerHTML = '';
+    const opts = typeof options === 'function' ? options() : options;
+    series = typeof opts.series === 'function' ? opts.series() : series;
+    const W = box.clientWidth, Hh = opts.height || 260, m = { l: 44, r: 8, t: 8, b: 26 };
+    const s = svg('svg', { width: W, height: Hh, role: 'img', 'aria-label': opts.aria || '' }, box);
+    const n = D.weeks.length;
+    const totals = D.weeks.map((_, i) => sum(keys.map(k => series[k][i])));
+    const max = niceMax(opts.max || Math.max(...totals));
+    const x = i => m.l + (W - m.l - m.r) * (i + 0.5) / n;
+    const y = v => m.t + (Hh - m.t - m.b) * (1 - v / max);
+    const bw = (W - m.l - m.r) / n;
+    for (const w of opts.gaps || []) {
+      const i = D.weeks.indexOf(w);
+      if (i >= 0) svg('rect', { x: m.l + i * bw, y: m.t, width: bw, height: Hh - m.t - m.b, fill: 'var(--gap)' }, s);
+    }
+    for (const t of ticks(max, 4)) {
+      svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: t ? 'var(--grid)' : 'var(--axis)' }, s);
+      svg('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end' }, s).textContent = (opts.yfmt || kfmt)(t);
+    }
+    let lastMonth = -1;
+    D.weeks.forEach((w, i) => {
+      const mid = new Date(day(w).getTime() + 3 * 864e5);
+      if (mid.getUTCMonth() !== lastMonth) {
+        lastMonth = mid.getUTCMonth();
+        svg('text', { x: m.l + i * bw + 2, y: Hh - 8 }, s).textContent = MON[lastMonth];
+      }
+    });
+    const base = new Array(n).fill(0);
+    for (const k of keys) {
+      const top = base.map((b, i) => b + series[k][i]);
+      if (series[k].some(v => v)) {
+        const up = top.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
+        const down = base.map((v, i) => `L${x(i).toFixed(1)},${y(v).toFixed(1)}`).reverse().join('');
+        svg('path', { d: up + down + 'Z', fill: colors[k], stroke: 'var(--surface)', 'stroke-width': 1, 'stroke-linejoin': 'round' }, s);
+      }
+      top.forEach((v, i) => { base[i] = v; });
+    }
+    const cross = svg('line', { y1: m.t, y2: Hh - m.b, stroke: 'var(--ink-2)', opacity: 0 }, s);
+    const hit = svg('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: Hh - m.t - m.b, fill: 'transparent' }, s);
+    hit.addEventListener('mousemove', ev => {
+      const i = Math.max(0, Math.min(n - 1, Math.floor((ev.clientX - s.getBoundingClientRect().left - m.l) / bw)));
+      cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('opacity', 0.35);
+      const d = day(D.weeks[i]), end = new Date(d.getTime() + 6 * 864e5);
+      const vf = opts.vfmt || fmt;
+      showTip(ev, `<div class="t">${dstr(d)} – ${dstr(end)}</div>` +
+        keys.filter(k => series[k][i]).reverse().map(k => row(colors[k], k, vf(series[k][i]))).join('') +
+        row('', 'Total', vf(totals[i])) + (opts.extra ? opts.extra(i) : ''));
+    });
+    hit.addEventListener('mouseleave', () => { hideTip(); cross.setAttribute('opacity', 0); });
+  };
+  draw();
+  new ResizeObserver(draw).observe(box);
+  return draw;
+}
+
+// Code written and kept
+{
+  const W = D.written, S = D.surviving;
+  const tw = sum(MO.map(f => sum(W[f]))), ts = sum(MO.map(f => sum(S[f])));
+  document.getElementById('code-note').innerHTML =
+    `<strong>${fmt(tw)}</strong> lines of source (<code>.c3 .c .h .sh .py</code>) were added on <code>main</code>, and <strong>${fmt(ts)}</strong> of them (${pct(ts, tw).toFixed(0)}%) are still there. Vendored libraries, generated tables and code moved between files do not count as written; a whole-tree comment restyle is looked through to the lines' authors. A line still in <code>main</code> is credited to the last commit that touched it, so recent weeks keep more of their code than older ones by construction.`;
+  const max = Math.max(...D.weeks.map((_, i) => sum(MO.map(f => W[f][i]))));
+  area('c-written', W, MO, MC, { max, aria: 'Source lines written per week by model family' });
+  area('c-surviving', S, MO, MC, { max, aria: 'Source lines still in main by week written and model family' });
+  table('t-lines', ['Model', 'Written', 'Still in main', 'Kept'],
+    MO.map(f => [f, fmt(sum(W[f])), fmt(sum(S[f])), sum(W[f]) ? pct(sum(S[f]), sum(W[f])).toFixed(0) + '%' : '–']));
+}
+
+// Tokens
+{
+  const K = D.tokens;
+  const all = sum(MO.map(f => sum(K.total[f]))), crush = sum(K.crush_total);
+  document.getElementById('tokens-note').innerHTML =
+    `<strong>${mfmt(all)}</strong> tokens in total, almost all of them cached context read back on each turn; the output-only view shows what the models generated (${mfmt(sum(MO.map(f => sum(K.output[f]))))}). Crush does not record tokens per message, so its ${mfmt(crush)} are estimated from its message count and opencode's measured tokens per message for the same model. Claude Code keeps transcripts for 30 days; the shaded weeks had Claude Code sessions whose token counts are gone.`;
+  const allBtn = document.getElementById('tok-all'), outBtn = document.getElementById('tok-out');
+  let key = 'total';
+  const draw = area('c-tokens', null, MO, MC, () => {
+    const crush = K[key === 'total' ? 'crush_total' : 'crush_output'];
+    return {
+      series: () => K[key], gaps: K.claude_gaps, yfmt: mfmt, vfmt: mfmt, height: 280,
+      aria: 'Tokens per week by model family',
+      extra: i => (crush[i] ? row('', 'of which Crush, estimated', mfmt(crush[i])) : '') +
+        (K.claude_gaps.includes(D.weeks[i]) ? row('', 'Claude Code', 'not recorded') : ''),
+    };
+  });
+  const show = k => {
+    key = k;
+    allBtn.setAttribute('aria-pressed', k === 'total');
+    outBtn.setAttribute('aria-pressed', k === 'output');
+    draw();
+  };
+  allBtn.addEventListener('click', () => show('total'));
+  outBtn.addEventListener('click', () => show('output'));
 }
 
 // Human input
@@ -471,7 +627,7 @@ table('t-commits', ['Week of', ...commitKeys.map(hname), 'Total'],
   const chk = D.test262.dup_check;
   const est = P.filter(p => !p.exact && p.kind === 'phases').find(p => p.reported === chk.reported);
   document.getElementById('t262-note').innerHTML =
-    `The skip list changed many times, so the pass rate is not comparable across the timeline. This chart counts tests passing instead. Until Aug 22 the runner's phases overlapped: Phase 5 ran all of <code>built-ins/Object</code>, <code>Array</code>, <code>String</code>, <code>Number</code>, <code>Boolean</code> and <code>Function</code>, which Phases 3 and 6 also ran. The reported totals counted those tests two or three times. The <strong>${fmt(chk.reported)}</strong> passes reported on Aug 17 are <strong>${fmt(chk.measured)}</strong> distinct files. Points before Aug 22 have the duplicates removed by file share${est ? `, which gives ${fmt(est.distinct)} for that run` : ''}. Later points are full runs quoted in commit messages. The last one with a count for every suite is Sep 17.`;
+    `The skip list changed many times, so the pass rate is not comparable across the timeline; this counts tests passing instead. Until Aug 22 the runner's phases overlapped and counted the <code>built-ins/Object</code>, <code>Array</code>, <code>String</code>, <code>Number</code>, <code>Boolean</code> and <code>Function</code> tests two or three times: the ${fmt(chk.reported)} passes reported on Aug 17 were ${fmt(chk.measured)} distinct tests. Earlier points have those duplicates removed${est ? ` (this correction gives ${fmt(est.distinct)} for Aug 17)` : ''}; later points are exact.`;
   const box = document.getElementById('c-t262');
   const t0 = day('2026-05-22').getTime(), t1 = gen.getTime() + 864e5;
   const draw = () => {
@@ -579,36 +735,5 @@ table('t-commits', ['Week of', ...commitKeys.map(hname), 'Total'],
     new ResizeObserver(draw).observe(el);
   });
 
-  // Suite era table
-  const sp = P.filter(p => p.suites);
-  const names = ['language', 'built-ins', 'annexB', 'staging'];
-  const cell = v => v ? `${fmt(v[0])} / ${fmt(v[0] + v[1])} <span style="color:var(--muted)">${pct(v[0], v[0] + v[1]).toFixed(1)}%</span>` : '<span style="color:var(--muted)">not recorded</span>';
-  document.getElementById('suites').innerHTML =
-    `<thead><tr><th>Date</th><th>Commit</th>${names.map(n => `<th>${n}</th>`).join('')}<th>Total passing</th></tr></thead><tbody>` +
-    sp.map(p => `<tr><td>${dstr(day(p.date))}</td><td>${p.sha}</td>${names.map(n => `<td>${cell(p.suites[n])}</td>`).join('')}<td>${fmt(p.distinct)}</td></tr>`).join('') +
-    `</tbody>`;
-}
-
-// July snapshot
-{
-  const J = D.july;
-  document.getElementById('july-stats').innerHTML = [
-    [(J.tokens_out / 1e6).toFixed(1) + 'M', 'output tokens, all harnesses'],
-    [(J.tokens_cache_in / 1e9).toFixed(1) + 'B', `cache-read input tokens, plus ${(J.tokens_fresh_in / 1e6).toFixed(0)}M uncached`],
-    ['$' + J.cost_usd_known.toFixed(2), 'cost the harnesses recorded; subscriptions not included'],
-    [pct(J.lines_surviving, J.lines_written).toFixed(0) + '%', `of ${fmt(J.lines_written)} source lines written were still in HEAD`],
-  ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
-}
-
-// Notes
-{
-  const S = D.surviving;
-  document.getElementById('notes').innerHTML = [
-    `<strong>Commits.</strong> Non-merge commits on every branch, tag and remote. Copies with the same author, author date and subject count once, so a rebased branch is not counted twice. Merges are left out.`,
-    `<strong>Surviving lines.</strong> <code>git blame -w -M -C</code> at <code>${S.rev || 'main'}</code> over ${fmt(S.files || 0)} source files (<code>.c3 .c .h .sh .py</code>), vendored <code>libregexp/</code> and <code>vendor/</code> excluded. Each line goes to the harness of the last commit that touched it. A squash merge credits its lines to whoever made the squash.`,
-    `<strong>Data loss.</strong> Claude Code deletes transcripts after 30 days by default, which removed its tool output and models for everything before August. Its prompt history survived, so prompts are complete but most of its commits rely on trailers. Retention has since been raised.`,
-    `<strong>test262.</strong> Phase tables come from 226 revisions of <code>progress.md</code> and <code>test262_results/latest.json</code>. Revisions with only a headline total have their duplicates removed by interpolating between the nearest tables. The runner's phase groups follow its own labels: phases 0–8 are called ES5 but include ES2015 tests in those directories.`,
-    `<strong>Reproducing.</strong> <code>scripts/agent_metrics.py --json … --blame main</code>, then <code>scripts/test262_history.py</code>, then <code>scripts/attribution_report.py</code>. The data has timestamps, word counts and counts only, never prompt text.`,
-  ].map(t => `<p>${t}</p>`).join('');
 }
 </script>

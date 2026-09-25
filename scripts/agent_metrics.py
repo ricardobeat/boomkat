@@ -69,6 +69,7 @@ class Harness:
         self.prompts = []        # (unix ts, text)
         self.activity = []       # unix ts of any message
         self.models = []         # (unix ts, model) of assistant messages
+        self.tokens = []         # (unix ts, model, all tokens, output tokens) per response
         self.usage = collections.defaultdict(collections.Counter)
 
     def scan_commits(self, text, model):
@@ -142,6 +143,10 @@ def read_opencode():
         u['output'] += t.get('output') or 0
         u['cache_read'] += (t.get('cache') or {}).get('read') or 0
         u['cost_micro'] += int(1e6 * (m.get('cost') or 0))
+        cache = t.get('cache') or {}
+        out = (t.get('output') or 0) + (t.get('reasoning') or 0)
+        h.tokens.append((ts / 1000, f"{m.get('providerID')}/{m.get('modelID')}",
+                         (t.get('input') or 0) + out + (cache.get('read') or 0) + (cache.get('write') or 0), out))
     q = f"""select p.data, m.data, m.id, m.time_created, s.parent_id is null
             from part p join message m on m.id = p.message_id join session s on s.id = p.session_id
             where {where}"""
@@ -174,6 +179,9 @@ def read_codex():
             if kind == 'turn_context':
                 model = p.get('model', model)
             elif kind == 'token_usage_record':
+                # input_tokens includes the cached ones; total = input + output.
+                t = p['usage']
+                h.tokens.append((iso(d['timestamp']), model, t.get('total_tokens', 0), t.get('output_tokens', 0)))
                 u = h.usage[model]
                 for k, v in p['usage'].items():
                     if isinstance(v, int):
@@ -218,6 +226,7 @@ def read_pi():
                 u['output'] += t.get('output', 0)
                 u['cache_read'] += t.get('cacheRead', 0)
                 u['cost_micro'] += int(1e6 * (t.get('cost') or {}).get('total', 0))
+                h.tokens.append((ts, model, t.get('totalTokens', 0), t.get('output', 0)))
             elif m.get('role') == 'user':
                 text = '\n'.join(c.get('text', '') for c in content if c.get('type') == 'text')
                 if text.strip():
@@ -250,7 +259,7 @@ def read_claude():
                 model = msg.get('model', model)
                 h.models.append((iso(d['timestamp']), model))
                 # Streaming writes several lines per message id; the last has final usage.
-                last[msg.get('id') or d.get('uuid')] = (model, msg.get('usage') or {})
+                last[msg.get('id') or d.get('uuid')] = (iso(d['timestamp']), model, msg.get('usage') or {})
             elif isinstance(msg.get('content'), list):
                 for b in msg['content']:
                     if isinstance(b, dict) and b.get('type') == 'tool_result':
@@ -258,11 +267,13 @@ def read_claude():
                         text = c if isinstance(c, str) else '\n'.join(
                             x.get('text', '') for x in c or [] if isinstance(x, dict))
                         h.scan_commits(text, model)
-    for model, u in last.values():
+    keys = ('input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens')
+    for ts, model, u in last.values():
         c = h.usage[model]
         c['messages'] += 1
-        for k in ('input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'):
+        for k in keys:
             c[k] += u.get(k) or 0
+        h.tokens.append((ts, model, sum(u.get(k) or 0 for k in keys), u.get('output_tokens') or 0))
     return h
 
 
@@ -398,10 +409,17 @@ def model_family(model):
 
 SOURCE_GLOBS = ('*.c3', '*.c', '*.h', '*.sh', '*.py')
 VENDORED = ('libregexp/', 'vendor/')
+GENERATED = ('*_generated.c3',)
+# Whole-tree mechanical rewrites. Blame looks through them to the commit that
+# wrote each line, and their lines do not count as written.
+MECHANICAL = (
+    '4481e0f15e23470e305cbb7f6bd3a2697623d3dd',  # style: replace /// with // in src comments
+)
 
 
 def blame_file(repo, rev, path):
-    out = subprocess.run(['git', '-C', repo, 'blame', '--porcelain', '-w', '-M', '-C', rev, '--', path],
+    ignore = [a for sha in MECHANICAL for a in ('--ignore-rev', sha)]
+    out = subprocess.run(['git', '-C', repo, 'blame', '--porcelain', '-w', '-M', '-C', *ignore, rev, '--', path],
                          capture_output=True, text=True, errors='replace').stdout
     counts = collections.Counter()
     for line in out.split('\n'):
@@ -412,25 +430,69 @@ def blame_file(repo, rev, path):
     return counts
 
 
-def surviving_lines(repo, rev, records):
-    """Lines in rev's source files, credited by git blame to each commit record."""
+def line_counts(repo, rev, records):
+    """Source lines each commit record added on rev, and how many survive at rev.
+
+    A line counts as added unless the same commit also removes an identical
+    line (ignoring indentation), so splitting a file or moving a function is
+    not counted as new code. Survivors come from git blame, which credits each
+    line to the last commit that touched it.
+    """
     from concurrent.futures import ThreadPoolExecutor
-    files = subprocess.run(['git', '-C', repo, 'ls-tree', '-r', '--name-only', rev],
-                           capture_output=True, text=True, check=True).stdout.split('\n')
     import fnmatch
-    files = [f for f in files if any(fnmatch.fnmatch(os.path.basename(f), g) for g in SOURCE_GLOBS)
-             and not f.startswith(VENDORED)]
-    owner = {sha: r for r in records for sha in r['shas']}
-    lines = collections.Counter()
+
+    def source(f):
+        name = os.path.basename(f)
+        return (any(fnmatch.fnmatch(name, g) for g in SOURCE_GLOBS)
+                and not any(fnmatch.fnmatch(name, g) for g in GENERATED)
+                and not f.startswith(VENDORED))
+
+    owner = {sha: i for i, r in enumerate(records) for sha in r['shas']}
+    added, surviving = collections.Counter(), collections.Counter()
+    proc = subprocess.Popen(['git', '-C', repo, 'log', rev, '--no-merges', '-M', '-p', '-U0',
+                             '--no-color', '--format=@%H'],
+                            stdout=subprocess.PIPE, text=True, errors='replace')
+    i, keep, plus, minus = None, False, collections.Counter(), collections.Counter()
+
+    def flush():
+        if i is not None:
+            added[i] += sum(n - min(n, minus[line]) for line, n in plus.items())
+
+    for line in proc.stdout:
+        if line.startswith('@') and not line.startswith('@@'):
+            flush()
+            sha = line[1:].strip()
+            i = None if sha in MECHANICAL else owner.get(sha)
+            plus, minus = collections.Counter(), collections.Counter()
+        elif line.startswith('diff --git '):
+            keep = source(line.rstrip('\n').split(' b/', 1)[-1])
+        elif not keep or line.startswith(('+++', '---')):
+            continue
+        elif line.startswith('+'):
+            plus[line[1:].strip()] += 1
+        elif line.startswith('-'):
+            minus[line[1:].strip()] += 1
+    flush()
+    proc.wait()
+    files = [f for f in subprocess.run(['git', '-C', repo, 'ls-tree', '-r', '--name-only', rev],
+                                       capture_output=True, text=True, check=True).stdout.split('\n')
+             if f and source(f)]
+    unowned = 0
     with ThreadPoolExecutor(8) as pool:
         for counts in pool.map(lambda f: blame_file(repo, rev, f), files):
             for sha, n in counts.items():
-                r = owner.get(sha)
-                lines[(r['harness'], r['family']) if r else ('Unattributed', 'Not recorded')] += n
-    return len(files), lines
+                if sha in owner:
+                    surviving[owner[sha]] += n
+                else:
+                    unowned += n
+    return len(files), added, surviving, unowned
 
 
 # --- report -----------------------------------------------------------------
+
+def iso_day(ts):
+    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).date().isoformat()
+
 
 def words(text):
     return len(text.split())
@@ -440,7 +502,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--repo', default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     ap.add_argument('--json', metavar='PATH', help='also write per-commit and per-prompt data (no prompt text)')
-    ap.add_argument('--blame', metavar='REV', help='with --json, credit surviving source lines at REV')
+    ap.add_argument('--blame', metavar='REV', help='with --json, count source lines each commit added '
+                    'on REV and how many survive there')
     args = ap.parse_args()
     # Crush's database lives in the main checkout, not in worktrees.
     main_repo = os.path.dirname(subprocess.run(
@@ -492,10 +555,28 @@ def main():
 def write_json(args, harnesses, a):
     # A prompt sent verbatim three or more times is a loop tick, not a new instruction.
     seen = collections.Counter(' '.join(t.split()) for h in harnesses for _, t in h.prompts)
+    records = sorted(a['records'], key=lambda r: r['at'])
+    commits = [{k: r[k] for k in ('at', 'harness', 'method', 'model', 'family')} for r in records]
+    # Tokens per UTC day, harness and model family. Crush stores no per-message
+    # token counts (its session totals hold only the last turn), so its rows
+    # carry the message count alone.
+    days = collections.defaultdict(lambda: [0, 0, 0])
+    for h in harnesses:
+        if h.name == 'Crush':
+            for ts, model in h.models:
+                days[(iso_day(ts), h.name, model_family(model.split('/')[-1]))][0] += 1
+            continue
+        for ts, model, total, out in h.tokens:
+            row = days[(iso_day(ts), h.name, model_family((model or '?').split('/')[-1]))]
+            row[0] += 1
+            row[1] += total
+            row[2] += out
     data = {
         'generated': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
-        'commits': [{k: r[k] for k in ('at', 'harness', 'method', 'model', 'family')}
-                    for r in sorted(a['records'], key=lambda r: r['at'])],
+        'commits': commits,
+        'tokens': [{'day': d, 'harness': h, 'family': f, 'messages': m,
+                    'total': None if h == 'Crush' else t, 'output': None if h == 'Crush' else o}
+                   for (d, h, f), (m, t, o) in sorted(days.items())],
         'prompts': sorted(({'ts': round(ts), 'harness': h.name, 'words': words(t),
                             'repeated': seen[' '.join(t.split())] >= 3}
                            for h in harnesses for ts, t in h.prompts), key=lambda p: p['ts']),
@@ -503,10 +584,10 @@ def write_json(args, harnesses, a):
         'calibration': [a['calibration'][True], sum(a['calibration'].values())],
     }
     if args.blame:
-        nfiles, lines = surviving_lines(args.repo, args.blame, a['records'])
-        data['surviving'] = {'rev': args.blame, 'files': nfiles,
-                             'lines': [{'harness': h, 'family': f, 'lines': n}
-                                       for (h, f), n in lines.most_common()]}
+        nfiles, added, surviving, unowned = line_counts(args.repo, args.blame, records)
+        for i, c in enumerate(commits):
+            c['added'], c['surviving'] = added[i], surviving[i]
+        data['lines'] = {'rev': args.blame, 'files': nfiles, 'unowned': unowned}
     with open(args.json, 'w') as f:
         json.dump(data, f, separators=(',', ':'))
 
