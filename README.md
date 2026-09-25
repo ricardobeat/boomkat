@@ -97,10 +97,64 @@ From `just bench`:
 | ASAN test262 runner | `just build-asan` |
 | lldb on a crash | `just lldb <file>` |
 
+The release CLI runs a file with `boomkat script.js` (or `boomkat --module
+module.js` for ESM). It reads JavaScript from stdin when piped in or when given
+`-`; `boomkat --help` lists the options and `boomkat --version` prints the
+committed release version.
+
+Tagging a commit with a version matching [VERSION](VERSION) (for example,
+`v0.0.0`) starts the [release workflow](docs/releasing.md). It validates the
+test gates, builds platform archives, checks their hashes, and attaches them to
+a GitHub release.
+
 ## Embedding / bindings
 
-The engine ships a `bk_` C ABI (`include/boomkat.h`, static `libboomkat.a` and a
+The engine ships a `bk_` C ABI (`include/boomkat.h`, static `boomkat.a` and a
 shared library). See `docs/embedding.md`.
+
+A C host can add its own `console` object. The default library leaves host
+output unbound, so this small module defines `console.log` and then runs JS:
+
+```c
+#include <boomkat.h>
+#include <stdio.h>
+
+static void log_to_stdout(bk_ctx js, void *udata) {
+    (void)udata;
+    for (unsigned int i = 0; i < bk_argc(js); i++) {
+        const char *text = bk_cstr(js, bk_arg(js, i), NULL);
+        if (!text) return;
+        if (i) putchar(' ');
+        fputs(text, stdout);
+    }
+    putchar('\n');
+}
+
+int main(void) {
+    bk_ctx js = bk_open();
+    if (!js) return 1;
+    bk_value console = bk_object(js);
+    if (!console ||
+        bk_register_fn(js, console, "log", log_to_stdout, 1, 0u, NULL) != BK_OK ||
+        bk_set_globalp(js, "console", console) != BK_OK) {
+        fprintf(stderr, "console setup: %s\n", bk_error(js));
+        bk_free(js, console);
+        bk_close(js);
+        return 1;
+    }
+    bk_free(js, console);
+    if (bk_exec(js, "console.log('Hello, world from Boomkat!')")) {
+        fprintf(stderr, "JavaScript: %s\n", bk_error(js));
+        bk_close(js);
+        return 1;
+    }
+    bk_close(js);
+    return 0;
+}
+```
+
+The runnable version is [bindings/c/hello_console.c](bindings/c/hello_console.c).
+Build the static library with `make lib`, then run `just example-c-hello`.
 
 Bindings in C3, Rust, Python, Ruby, and Zig
 (`bindings/` and `examples/`) are **work in progress*.

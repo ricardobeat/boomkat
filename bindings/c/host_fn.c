@@ -10,7 +10,7 @@
  *   3. throwing       — a C callback raising a TypeError that JS catches
  *   4. bk_call       — a C callback invoking a JS function passed to it
  *
- * Build and run with `make run-host-fn` (see README.md).
+ * Build and run with `just example-c-multiple` (see README.md).
  */
 
 #include <boomkat.h>
@@ -101,8 +101,8 @@ static void h_divide(bk_ctx ctx, void *udata)
  * that owns it, which ctx supplies — a handle names a slot in
  * one specific runtime's registry, so there is no runtime-agnostic free.
  *
- * If the callee throws, bk_call returns BK_ERR_THROW with the exception
- * already recorded on this context. The right move is to return promptly and
+ * If the callee throws, bk_call returns 0 with the exception already
+ * recorded on this context. Return promptly and
  * let the engine propagate it — which is what the early returns below do.
  *
  * Host recursion is bounded, so a callback that re-enters JS forever gets a
@@ -229,7 +229,7 @@ int main(void)
     show(rt, "  builtin", "mapTwice(Math.sqrt, 81)");
     show(rt, "  callee throws",
          "(function () { try { mapTwice(function () { throw new EvalError('nope'); }, 1); }"
-         " catch (e) { return e.constructor.name + ': ' + e.message; } })()");
+         " catch (e) { return String(e); } })()");
 
     /*
      * --------------------------------------------------- 5. host state

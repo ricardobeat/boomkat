@@ -41,13 +41,21 @@ shared_rpath := absolute_path(BK_LIBDIR)
 
 # === C embedding examples ===================================================
 
-[doc("Build the static-link C example (links against libbk.a)")]
+[doc("Build the static-link C example (links against boomkat.a)")]
 example-c-static:
     mkdir -p {{ROOT_DIR}}/bindings/c/out
     cc -std=c99 -Wall -Wextra -pedantic -I{{BK_INCDIR}} \
         {{ROOT_DIR}}/bindings/c/main.c {{BK_STATIC}} {{ldlibs_static}} \
         -o {{ROOT_DIR}}/bindings/c/out/example
     {{ROOT_DIR}}/bindings/c/out/example
+
+[doc("Run the C hello-world example with a host console module")]
+example-c-hello:
+    mkdir -p {{ROOT_DIR}}/bindings/c/out
+    cc -std=c99 -Wall -Wextra -pedantic -I{{BK_INCDIR}} \
+        {{ROOT_DIR}}/bindings/c/hello_console.c {{BK_STATIC}} {{ldlibs_static}} \
+        -o {{ROOT_DIR}}/bindings/c/out/hello-console
+    {{ROOT_DIR}}/bindings/c/out/hello-console
 
 [doc("Build the shared-link C example (links against boomkat.dylib/.so)")]
 example-c-shared:

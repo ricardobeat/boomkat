@@ -35,6 +35,11 @@ Both libraries are self-contained: the vendored C sources (`libregexp`,
 `cutils`, `dtoa`) are already inside them. Compiling those separately into
 your program produces duplicate symbols.
 
+Library builds expose the ECMAScript globals and leave host output to the
+embedding application. The CLI enables the `PRINT` and `CONSOLE` build
+features and installs test262 host helpers for local fixtures. Library builds have none of
+these features, so `print`, `console`, and `__resetGlobals` are absent.
+
 The shared library exports exactly the 50 `bk_` entry points, enforced at link
 time by a generated export list (`out/boomkat.exports` on Mach-O,
 `out/boomkat.map` on ELF, both produced by `scripts/gen_abi_header.py` from the
@@ -98,9 +103,10 @@ this automatically via `BK_LDLIBS`.
 
 ### Build configuration
 
-The `boomkat_dylib` and `boomkat_static` targets in `project.json` are built at `-O2`,
-`single-module`, relaxed FP math, no panic messages, no debug info, with the
-`THREADED_DISPATCH` feature. Two of those settings are not obvious.
+The `boomkat_static` target uses `-O4` with the `small` size setting;
+`boomkat_dylib` uses `-O2`. Both use `single-module`, relaxed FP math,
+no panic messages, no debug info, and `THREADED_DISPATCH`.
+Two of those settings are not obvious.
 `"single-module": true` is mandatory; without it the dylib link fails with
 undefined symbols such as `_unicode_is_cased`. `--no-headers` is also required,
 because the `c3c`-generated header leaks C3 internals (`c3slice_t`,
