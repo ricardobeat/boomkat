@@ -55,7 +55,6 @@
       "features": [
         "THREADED_DISPATCH",
         "NO_INSPECT",
-        "NO_TEMPORAL",
         "PRINT",
         "CONSOLE"
       ]
