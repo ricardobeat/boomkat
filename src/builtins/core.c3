@@ -204,15 +204,15 @@ alias BuiltinFunc = fn void(BuiltinContext*);
 // this single declaration at compile time (see below), adding a builtin
 // requires exactly one new line here.
 enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFunc handler) {
-    PRINT {"print", 1, false, &builtin_print},
-    CONSOLE_LOG {"log", 1, false, &builtin_console_log},
-    CONSOLE_INFO {"info", 1, false, &builtin_console_info},
-    CONSOLE_DEBUG {"debug", 1, false, &builtin_console_debug},
-    CONSOLE_TRACE {"trace", 1, false, &builtin_console_trace},
-    CONSOLE_WARN {"warn", 1, false, &builtin_console_warn},
-    CONSOLE_ERROR {"error", 1, false, &builtin_console_error},
-    CONSOLE_DIR {"dir", 1, false, &builtin_console_dir},
-    CONSOLE_ASSERT {"assert", 1, false, &builtin_console_assert},
+    PRINT {"print", 1, false, $feat(PRINT) ? &builtin_print : null},
+    CONSOLE_LOG {"log", 1, false, $feat(CONSOLE) ? &builtin_console_log : null},
+    CONSOLE_INFO {"info", 1, false, $feat(CONSOLE) ? &builtin_console_info : null},
+    CONSOLE_DEBUG {"debug", 1, false, $feat(CONSOLE) ? &builtin_console_debug : null},
+    CONSOLE_TRACE {"trace", 1, false, $feat(CONSOLE) ? &builtin_console_trace : null},
+    CONSOLE_WARN {"warn", 1, false, $feat(CONSOLE) ? &builtin_console_warn : null},
+    CONSOLE_ERROR {"error", 1, false, $feat(CONSOLE) ? &builtin_console_error : null},
+    CONSOLE_DIR {"dir", 1, false, $feat(CONSOLE) ? &builtin_console_dir : null},
+    CONSOLE_ASSERT {"assert", 1, false, $feat(CONSOLE) ? &builtin_console_assert : null},
     PARSE_INT {"parseInt", 2, false, &builtin_parse_int},
     PARSE_FLOAT {"parseFloat", 1, false, &builtin_parse_float},
     IS_NAN {"isNaN", 1, false, &builtin_is_nan},
@@ -308,7 +308,7 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     DATE_PROTO_GETMILLISECONDS {"getMilliseconds", 0, false, &builtin_date_proto_getMilliseconds},
     DATE_PROTO_GETTIMEZONEOFFSET {"", -1, false, &builtin_date_proto_getTimezoneOffset},
     FUNCTION {"Function", 1, true, &builtin_function},
-    RESET_GLOBALS {"", -1, false, &builtin_reset_globals},
+    RESET_GLOBALS {"", -1, false, $feat(TEST262_HELPERS) ? &builtin_reset_globals : null},
     REGEXP {"RegExp", 2, true, &builtin_regexp},
     REGEXP_PROTO_TEST {"test", 1, false, &builtin_regexp_proto_test},
     REGEXP_PROTO_EXEC {"exec", 1, false, &builtin_regexp_proto_exec},
@@ -4212,7 +4212,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 }
 
 // Helper: register all console.* methods on the console object.
-fn bool register_console_methods(HObject* console, Heap* heap) {
+fn bool register_console_methods(HObject* console, Heap* heap) @feat(CONSOLE) {
     if (!register_console_method(console, heap, "log",    Builtin.CONSOLE_LOG.ordinal))    return false;
     if (!register_console_method(console, heap, "info",   Builtin.CONSOLE_INFO.ordinal))   return false;
     if (!register_console_method(console, heap, "debug",  Builtin.CONSOLE_DEBUG.ordinal))  return false;
@@ -4224,7 +4224,7 @@ fn bool register_console_methods(HObject* console, Heap* heap) {
     return true;
 }
 
-fn bool register_console_method(HObject* console, Heap* heap, char[] name, uint fn_index) {
+fn bool register_console_method(HObject* console, Heap* heap, char[] name, uint fn_index) @feat(CONSOLE) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
     TVal tv;
