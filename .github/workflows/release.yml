@@ -1,140 +1,221 @@
-# Build release binaries for every supported platform, and optionally publish
-# them to a GitHub release.
-#
-# Manual trigger only: producing artifacts is cheap enough to run on demand, but
-# publishing is a one-way, outward-facing action, so it happens only when the
-# `release` input says so. Without it the run just leaves the binaries as
-# workflow artifacts to download and check.
 name: Release
 
 on:
+  push:
+    tags:
+      - 'v0.0*'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag (e.g. v0.2.0). Required when publishing.'
-        required: false
-        type: string
-      release:
-        description: 'Publish a GitHub release with these binaries'
-        required: false
-        default: false
-        type: boolean
-      draft:
-        description: 'Publish as a draft release'
-        required: false
-        default: true
-        type: boolean
+
+permissions:
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}-${{ inputs.tag }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  C3C_VERSION: "0.8.3"
+  C3C_VERSION: '0.8.3'
+  QJS_NG_VERSION: 'v0.16.2'
+  TS_VERSION: '7.0.2'
 
 jobs:
-  # Fail before spending three builds if the inputs cannot produce a release.
   check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Validate inputs
-        run: |
-          if [ "${{ inputs.release }}" = "true" ] && [ -z "${{ inputs.tag }}" ]; then
-            echo "::error::'tag' is required when 'release' is enabled." >&2
-            exit 1
-          fi
-
-  build:
-    needs: check
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      # One platform failing should not hide whether the others build.
-      fail-fast: false
-      matrix:
-        include:
-          - name: linux-x86_64
-            runner: ubuntu-latest
-          # Native arm64 runner. Emulating amd64 instead does not work: c3c's
-          # posix_spawn of the C compiler fails under it (see
-          # scripts/linux/arm64/Dockerfile for the full diagnosis).
-          - name: linux-arm64
-            runner: ubuntu-24.04-arm
-          - name: darwin-arm64
-            runner: macos-14
+    name: Check committed version
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: Match VERSION, CLI, and tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            python3 scripts/check_release_version.py --tag "$GITHUB_REF_NAME"
+          else
+            python3 scripts/check_release_version.py
+          fi
 
+  validate:
+    name: Release gates
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: ./.github/actions/toolchain
         with:
           c3c-version: ${{ env.C3C_VERSION }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Install TypeScript
+        run: npm install -g typescript@${TS_VERSION}
+      - name: Build validation targets
+        run: make out/boomkat out/boomkat.a out/test262_runner out/test262_runner_verify
+      - name: CLI and embedding smoke
+        run: |
+          make smoke
+          test "$(out/boomkat --version)" = "boomkat $(cat VERSION)"
+          test "$(printf 'print(6*7)\n' | out/boomkat)" = '42'
+          out/boomkat --help
+      - name: Local suite
+        run: bash test/run_local.sh
+      - name: TypeScript conformance
+        run: |
+          python3 scripts/fetch_ts_conformance.py
+          python3 scripts/run_ts_conformance.py
+      - name: test262 zero-fail gate
+        run: bash scripts/test262_gate.sh
+      - name: Heap verifier shard
+        run: bash scripts/test262_verify.sh
+      - name: Fetch QuickJS reference
+        run: |
+          curl -fsSL -o out/qjs "https://github.com/quickjs-ng/quickjs/releases/download/${QJS_NG_VERSION}/qjs-linux-x86_64"
+          chmod +x out/qjs
+      - name: JavaScript library corpus
+        run: python3 scripts/verify_libraries.py
+      - name: TypeScript library corpus
+        run: python3 scripts/verify_ts_libraries.py
 
-      # Two engines per platform: the full one, and the slim one that drops the
-      # rich console formatter, Temporal, and inspect (see project.json's
-      # boomkat_slim features).
-      - name: Build normal and slim
+  build:
+    name: ${{ matrix.platform }}
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos-arm64
+            runner: macos-15
+          - platform: macos-x64
+            runner: macos-15
+          - platform: windows-x64
+            runner: windows-2025
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/toolchain
+        if: runner.os != 'Windows'
+        with:
+          c3c-version: ${{ env.C3C_VERSION }}
+      - name: Install C3 on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:RUNNER_TEMP 'c3-windows.zip'
+          $unpack = Join-Path $env:RUNNER_TEMP 'c3-unpack'
+          $install = Join-Path $env:RUNNER_TEMP 'c3c'
+          Invoke-WebRequest -Uri "https://github.com/c3lang/c3c/releases/download/v${env:C3C_VERSION}/c3-windows.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $unpack
+          $compiler = Get-ChildItem $unpack -Recurse -Filter c3c.exe | Select-Object -First 1
+          if (-not $compiler) { throw 'c3-windows.zip contains no c3c.exe' }
+          New-Item -ItemType Directory -Force -Path $install | Out-Null
+          Copy-Item -Recurse -Force (Join-Path $compiler.DirectoryName '*') $install
+          Add-Content -Path $env:GITHUB_PATH -Value $install
+          & (Join-Path $install 'c3c.exe') --version
+      - name: Build Unix binaries
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           set -euo pipefail
+          if [[ '${{ matrix.platform }}' == macos-x64 ]]; then
+            cat > "$RUNNER_TEMP/cc-macos-x64" <<'CC'
+          #!/bin/sh
+          exec clang -arch x86_64 "$@"
+          CC
+            chmod +x "$RUNNER_TEMP/cc-macos-x64"
+            export MACOSX_DEPLOYMENT_TARGET=15.0
+            c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
+            c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
+            c3c build boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
+          elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
+            export MACOSX_DEPLOYMENT_TARGET=15.0
+            c3c build boomkat --macos-min-version 15.0
+            c3c build boomkat_slim --macos-min-version 15.0
+            c3c build boomkat_static --macos-min-version 15.0
+          else
+            c3c build boomkat
+            c3c build boomkat_slim
+            c3c build boomkat_static
+          fi
+      - name: Build Windows binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
           c3c build boomkat
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           c3c build boomkat_slim
-
-      # A binary that cannot run is not a release artifact. This also catches a
-      # cross-arch mistake immediately, which a successful link does not.
-      # The CLI takes a script path (and an optional --module), so the smoke
-      # test runs a file rather than an inline -e expression.
-      - name: Smoke-test both binaries
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          c3c build boomkat_static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke Unix binaries
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           set -euo pipefail
-          echo 'print(6*7);' > /tmp/smoke.js
-          for b in out/boomkat out/boomkat_slim; do
-            echo "--- $b"
-            file "$b"
-            test "$("$b" /tmp/smoke.js)" = "42"
+          for binary in out/boomkat out/boomkat_slim; do
+            file "$binary"
+            test "$("$binary" --version)" = "boomkat $(cat VERSION)"
+            test "$(printf 'print(6*7)\n' | "$binary")" = '42'
           done
-
-      - name: Stage artifacts
+          if [[ '${{ matrix.platform }}' == macos-x64 ]]; then
+            clang -arch x86_64 -std=c99 -Iinclude test/capi/smoke.c out/boomkat.a -o out/lib_smoke
+          elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
+            clang -std=c99 -Iinclude test/capi/smoke.c out/boomkat.a -o out/lib_smoke
+          else
+            cc -std=c99 -Iinclude test/capi/smoke.c out/boomkat.a -lm -ldl -o out/lib_smoke
+          fi
+          test "$(out/lib_smoke)" = '42'
+      - name: Smoke Windows binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp out/boomkat      "dist/boomkat-${{ matrix.name }}"
-          cp out/boomkat_slim "dist/boomkat-slim-${{ matrix.name }}"
-          cd dist
-          # Checksums are per-platform here and concatenated into one manifest
-          # at publish time, because each build job writes its own file.
-          shasum -a 256 boomkat-* > "SHA256SUMS-${{ matrix.name }}.txt"
-          ls -l
-
+          $expected = 'boomkat ' + (Get-Content VERSION -Raw).Trim()
+          foreach ($binary in @('out/boomkat.exe', 'out/boomkat_slim.exe')) {
+            if ((& $binary --version) -ne $expected) { throw "version failed: $binary" }
+            if (('print(6*7)' | & $binary) -ne '42') { throw "execution failed: $binary" }
+          }
+      - name: Package Unix release assets
+        if: runner.os != 'Windows'
+        run: python3 scripts/package_release.py --platform '${{ matrix.platform }}'
+      - name: Package Windows release assets
+        if: runner.os == 'Windows'
+        run: python scripts/package_release.py --platform '${{ matrix.platform }}'
       - uses: actions/upload-artifact@v4
         with:
-          name: boomkat-${{ matrix.name }}
-          path: dist/
+          name: release-${{ matrix.platform }}
+          path: dist/release/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
   publish:
-    needs: build
-    if: inputs.release
-    runs-on: ubuntu-latest
+    name: Publish GitHub release
+    needs: [check, validate, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-*
           path: staged
-
-      - name: Collect binaries and merge checksums
+      - name: Collect and verify release assets
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
-          find staged -type f -name 'boomkat-*' ! -name 'SHA256SUMS*' -exec cp {} dist/ \;
+          mkdir dist
+          find staged -type f ! -name 'SHA256SUMS-*' -exec cp {} dist/ \;
           cat staged/*/SHA256SUMS-*.txt > dist/SHA256SUMS.txt
-          ls -l dist
-          cat dist/SHA256SUMS.txt
-
+          cd dist
+          sha256sum -c SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag }}
-          name: ${{ inputs.tag }}
-          draft: ${{ inputs.draft }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           generate_release_notes: true
           files: dist/*

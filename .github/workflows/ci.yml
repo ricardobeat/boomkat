@@ -43,8 +43,10 @@ jobs:
               - 'scripts/**'
               - 'ci/**'
               - 'project.json'
+              - 'VERSION'
               - 'Makefile'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/release.yml'
               - '.github/actions/**'
 
   # Build the engine and the batch test262 runner once, then hand them to the
