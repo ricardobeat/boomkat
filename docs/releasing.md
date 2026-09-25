@@ -47,8 +47,7 @@ version and stdin smoke check on both normal and slim binaries.
 | Windows x64 | native Windows runner | `.zip` |
 
 Each platform produces normal and slim CLI archives, plus a static library
-archive with `boomkat.h` and a C hello-world example. Every archive includes
-`LICENSE`.
+archive holding `boomkat.h` and the library. Every archive includes `LICENSE`.
 `SHA256SUMS.txt` on the GitHub release covers every archive.
 The packaging script is `scripts/package_release.py`; it is also usable locally.
 Windows is best effort until its first GitHub runner build verifies the full

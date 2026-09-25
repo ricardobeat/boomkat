@@ -22,9 +22,8 @@ just example-c-multiple
 ```
 
 The examples build with `cc -std=c99 -Wall -Wextra -pedantic`. On Linux, static
-linking also needs `-lm -ldl`. To use a downloaded release archive instead,
-extract the library package and follow its `README.txt`; it includes the public
-header and `hello.c`.
+linking also needs `-lm -ldl`. To build against a downloaded release instead,
+point `-I` at the library archive's `include/` and link the library in its `lib/`.
 
 An evaluation returning `0` failed. Read `bk_error(ctx)` for the message, then
 continue using or close the runtime. Release each nonzero owned `bk_value` with
