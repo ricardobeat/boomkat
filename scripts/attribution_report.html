@@ -25,15 +25,14 @@
   --line: #2a78d6;
   --scope: #c3c2b7;
   --m0: #2a78d6;
-  --m1: #e87ba4;
-  --m2: #4a3aa7;
-  --m3: #eb6834;
-  --m4: #1baf7a;
-  --m5: #eda100;
-  --m6: #a3a19a;
-  --m7: #008300;
-  --lift: var(--surface);
-  --sink: var(--ink);
+  --m1: #eb6834;
+  --m2: #1baf7a;
+  --m3: #eda100;
+  --m4: #e87ba4;
+  --m5: #008300;
+  --m6: #4a3aa7;
+  --m7: #e34948;
+  --m8: #a3a19a;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -62,15 +61,14 @@
     --line: #3987e5;
     --scope: #55544f;
     --m0: #3987e5;
-    --m1: #d55181;
-    --m2: #9085e9;
-    --m3: #d95926;
-    --m4: #199e70;
-    --m5: #c98500;
-    --m6: #6b6a64;
-    --m7: #008300;
-    --lift: var(--ink);
-    --sink: var(--surface);
+    --m1: #d95926;
+    --m2: #199e70;
+    --m3: #c98500;
+    --m4: #d55181;
+    --m5: #008300;
+    --m6: #9085e9;
+    --m7: #e66767;
+    --m8: #6b6a64;
   }
 }
 :root[data-theme="dark"] {
@@ -96,15 +94,14 @@
   --line: #3987e5;
   --scope: #55544f;
   --m0: #3987e5;
-  --m1: #d55181;
-  --m2: #9085e9;
-  --m3: #d95926;
-  --m4: #199e70;
-  --m5: #c98500;
-  --m6: #6b6a64;
-  --m7: #008300;
-  --lift: var(--ink);
-  --sink: var(--surface);
+  --m1: #d95926;
+  --m2: #199e70;
+  --m3: #c98500;
+  --m4: #d55181;
+  --m5: #008300;
+  --m6: #9085e9;
+  --m7: #e66767;
+  --m8: #6b6a64;
 }
 
 * { box-sizing: border-box; }
@@ -197,7 +194,6 @@ details .scroll { margin-top: 10px; max-height: 360px; overflow: auto; }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
 .seg button:focus-visible { outline: 2px solid var(--line); outline-offset: -2px; }
 .legend-models { margin: 2px 0 12px; }
-.legend .lgroup { display: inline-flex; flex-wrap: wrap; gap: 6px 12px; margin-right: 10px; }
 .others { font-size: 13px; color: var(--ink-2); margin: 10px 0 0; }
 .note { font-size: 13px; color: var(--muted); max-width: 80ch; }
 .notes { display: grid; gap: 10px; }
@@ -373,26 +369,20 @@ for (const el of document.querySelectorAll('[data-legend="harness"]')) {
     .map(h => `<span><i style="background:${HC[h]}"></i>${hname(h)}</span>`).join('');
 }
 
-// Models: one hue per vendor group (--mN), each model a step from lighter
-// (older) to darker (newer). --lift and --sink are the lighter and darker
-// ends in the current theme.
-const MO = D.model_groups.flatMap(([, ms]) => ms);
-const MC = {};
-D.model_groups.forEach(([, ms], g) => ms.forEach((m, i) => {
-  const t = ms.length > 1 ? 0.22 - 0.57 * i / (ms.length - 1) : 0;
-  MC[m] = t > 0 ? `color-mix(in oklab, var(--m${g}), var(--lift) ${Math.round(t * 100)}%)`
-    : t < 0 ? `color-mix(in oklab, var(--m${g}), var(--sink) ${Math.round(-t * 100)}%)` : `var(--m${g})`;
-}));
+const MO = D.families;
+const MC = Object.fromEntries(MO.map((f, i) => [f, `var(--m${i})`]));
 for (const el of document.querySelectorAll('[data-legend="model"]')) {
-  el.innerHTML = D.model_groups.map(([, ms]) => `<span class="lgroup">` +
-    ms.map(m => `<span><i style="background:${MC[m]}"></i>${m}</span>`).join('') + '</span>').join('');
+  el.innerHTML = MO.map(f => `<span><i style="background:${MC[f]}"></i>${f}</span>`).join('');
 }
 
-// Models folded into "Other models", listed by name under each chart
+// Models folded into "Other models", listed by name under each chart: under
+// the bars those with too few commits for a bar, under the cumulative charts
+// those outside the charted families.
 for (const el of document.querySelectorAll('[data-others]')) {
   const key = el.dataset.others, f = key === 'tokens' ? mfmt : fmt;
-  const list = D.others.filter(o => o[key] && (key !== 'commits' || o.commits <= D.bar_min))
-    .sort((a, b) => b[key] - a[key]);
+  const folded = key === 'commits' ? o => o.commits <= D.bar_min && o.name !== 'Not recorded'
+    : o => o.family === 'Other models';
+  const list = D.models.filter(o => o[key] && folded(o)).sort((a, b) => b[key] - a[key]);
   const unit = { commits: 'commits', written: 'lines written', surviving: 'lines in main', tokens: 'tokens' }[key];
   el.innerHTML = list.length ? `<strong>Other models</strong>, ${unit}: ` + list.map(o => `${o.name} ${f(o[key])}`).join(', ') : '';
 }
@@ -594,8 +584,9 @@ function area(id, series, keys, colors, options = {}) {
     `<strong>${fmt(tw)}</strong> lines of source (<code>.c3 .c .h .sh .py</code>) were added on <code>main</code>, and <strong>${fmt(ts)}</strong> of them (${pct(ts, tw).toFixed(0)}%) are still there. Vendored libraries, generated tables and code moved between files do not count as written; a whole-tree comment restyle is looked through to the lines' authors. A line still in <code>main</code> is credited to the last commit that changed it, and a line moved to another file keeps its author. Recent weeks keep more of their code than older ones because their code has had less time to be rewritten. Both charts share one scale.`;
   area('c-written', W, MO, MC, { max: tw, aria: 'Source lines written, cumulative, by model' });
   area('c-surviving', S, MO, MC, { max: tw, aria: 'Source lines still in main, cumulative by week written, by model' });
-  table('t-lines', ['Model', 'Written', 'Still in main', 'Kept'],
-    MO.filter(f => sum(W[f])).map(f => [f, fmt(sum(W[f])), fmt(sum(S[f])), pct(sum(S[f]), sum(W[f])).toFixed(0) + '%']));
+  table('t-lines', ['Model', 'Family', 'Written', 'Still in main', 'Kept'],
+    D.models.filter(o => o.written).map(o =>
+      [o.name, o.family, fmt(o.written), fmt(o.surviving), pct(o.surviving, o.written).toFixed(0) + '%']));
 }
 
 // Tokens

@@ -29,6 +29,7 @@ import collections
 import datetime
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -39,21 +40,22 @@ OTHER = {'pi', 'Shelley'}
 # The commits-by-model bars show every model with more commits than this;
 # smaller ones are listed by name under the chart.
 BAR_MIN = 15
-# Models charted as their own series, grouped by vendor in stacking order.
-# Each group takes one categorical color slot (the template's --mN), and its
-# models are shaded light to dark, oldest first. Any other model folds into
-# "Other models" and is listed by name under the charts.
-GROUPS = [
-    ('Claude Opus', ['Claude Opus 4.6 / 4.7', 'Claude Opus 4.8', 'Claude Opus 5', 'Claude Opus 5.5']),
-    ('Claude Sonnet / Haiku', ['Claude Sonnet 4.6 / Haiku 4.5', 'Claude Sonnet 5']),
-    ('Claude Fable', ['Claude Fable 5']),
-    ('MiMo', ['MiMo V2 Pro', 'MiMo V2.5', 'MiMo V2.5 Pro', 'MiMo V2.6']),
-    ('DeepSeek', ['DeepSeek V4 Flash', 'DeepSeek V4 Pro', 'DeepSeek V4.1']),
-    ('MiniMax', ['MiniMax M3']),
-    ('Not recorded', ['Not recorded']),
-    ('Other models', ['Other models']),
+# Model families for the cumulative charts, in stacking order, matched
+# against model names from agent_metrics.model_name. Each takes one
+# categorical color slot (the template's --mN). Models matching none fold
+# into "Other models" and are listed by name under the charts.
+FAMILIES = [
+    ('Claude Opus 5.x', r'^Claude Opus 5'),
+    ('Claude Opus 4.x', r'^Claude Opus 4'),
+    ('Claude Fable 5', r'^Claude Fable'),
+    ('Claude Sonnet / Haiku', r'^Claude (Sonnet|Haiku)'),
+    ('DeepSeek V4', r'^DeepSeek V4'),
+    ('Xiaomi MiMo', r'^MiMo'),
+    ('MiniMax', r'^MiniMax'),
+    ('Other models', None),
+    ('Not recorded', r'^Not recorded$'),
 ]
-MODELS = [m for _, ms in GROUPS for m in ms]
+FAMILY_NAMES = [f for f, _ in FAMILIES]
 
 MILESTONES = [
     ('2026-05-22', 'first commit'),
@@ -77,15 +79,15 @@ def month_of(ts):
     return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime('%Y-%m')
 
 
-def series_of(name):
-    return name if name in MODELS else 'Other models'
+def family(name):
+    return next((f for f, pattern in FAMILIES if pattern and re.search(pattern, name)), 'Other models')
 
 
-def tokens(metrics, attrib, weeks, index, claude_prompts, claude_commits, others):
-    """Weekly tokens per charted model: measured, Crush estimated, and the
-    .attrib snapshot for Claude Code in July. Adds each folded model's tokens
-    to `others`."""
-    zero = lambda: {m: [0] * len(weeks) for m in MODELS}
+def tokens(metrics, attrib, weeks, index, claude_prompts, claude_commits, models):
+    """Weekly tokens per model family: measured, Crush estimated, the .attrib
+    snapshot for Claude Code in July, and Claude Code estimates where neither
+    exists. Adds each model's total to `models`."""
+    zero = lambda: {f: [0] * len(weeks) for f in FAMILY_NAMES}
     total, output = zero(), zero()
     crush_total, crush_output = [0] * len(weeks), [0] * len(weeks)
     per_msg = collections.defaultdict(lambda: [0, 0, 0])
@@ -101,10 +103,9 @@ def tokens(metrics, attrib, weeks, index, claude_prompts, claude_commits, others
     overall = [sum(v[i] for v in per_msg.values()) for i in range(3)]
 
     def add(name, w, t, o):
-        total[series_of(name)][w] += t
-        output[series_of(name)][w] += o
-        if series_of(name) == 'Other models':
-            others[name]['tokens'] += t
+        total[family(name)][w] += t
+        output[family(name)][w] += o
+        models[name]['tokens'] += t
 
     for r in metrics['tokens']:
         w = index.get(week_of_day(r['day']))
@@ -122,11 +123,12 @@ def tokens(metrics, attrib, weeks, index, claude_prompts, claude_commits, others
     snapshot_weeks, snapshot_tokens = set(), [0, 0]
     if attrib:
         weekly = json.load(open(os.path.join(attrib, 'activity_weekly.json')))['by_week']
-        models = {m['model']: m for m in json.load(open(os.path.join(attrib, 'token_totals.json')))['by_model']
-                  if 'claude-code' in m['harnesses']}
+        snapshot_models = {m['model']: m for m in
+                           json.load(open(os.path.join(attrib, 'token_totals.json')))['by_model']
+                           if 'claude-code' in m['harnesses']}
         for wk, counts in weekly.items():
             for model, n in counts.items():
-                m = models.get(model)
+                m = snapshot_models.get(model)
                 if not m or wk not in index or not m['messages']:
                     continue
                 all_tokens = m['tokens_out'] + m['tokens_fresh_in'] + m['tokens_cache_in']
@@ -187,12 +189,12 @@ def build(metrics, t262, attrib=None):
     totals = {h: collections.Counter() for h in HARNESSES}
     by_model = collections.defaultdict(collections.Counter)
     months = collections.defaultdict(collections.Counter)
-    written = {m: [0] * len(weeks) for m in MODELS}
-    surviving = {m: [0] * len(weeks) for m in MODELS}
-    others = collections.defaultdict(collections.Counter)
+    written = {f: [0] * len(weeks) for f in FAMILY_NAMES}
+    surviving = {f: [0] * len(weeks) for f in FAMILY_NAMES}
+    models = collections.defaultdict(collections.Counter)
     claude_commits = [collections.Counter() for _ in weeks]
     commit_count = collections.Counter(c['name'] for c in commits)
-    bar_of = lambda name: name if name in MODELS or commit_count[name] > BAR_MIN else 'Other models'
+    bar_of = lambda name: name if commit_count[name] > BAR_MIN or name == 'Not recorded' else 'Other models'
     claude_prompts = collections.defaultdict(list)
 
     for c in commits:
@@ -200,17 +202,16 @@ def build(metrics, t262, attrib=None):
         commits_weekly[h][index[week_of(c['at'])]] += 1
         totals[h]['commits'] += 1
         totals[h][c['method']] += 1
-        m = series_of(c['name'])
+        f = family(c['name'])
         by_model[bar_of(c['name'])][h] += 1
         if h == 'Claude Code' and c['name'] != 'Not recorded':
             claude_commits[index[week_of(c['at'])]][c['name']] += 1
         months[month_of(c['at'])]['commits'] += 1
-        written[m][index[week_of(c['at'])]] += c.get('added', 0)
-        surviving[m][index[week_of(c['at'])]] += c.get('surviving', 0)
-        if m == 'Other models':
-            others[c['name']]['commits'] += 1
-            others[c['name']]['written'] += c.get('added', 0)
-            others[c['name']]['surviving'] += c.get('surviving', 0)
+        written[f][index[week_of(c['at'])]] += c.get('added', 0)
+        surviving[f][index[week_of(c['at'])]] += c.get('surviving', 0)
+        models[c['name']]['commits'] += 1
+        models[c['name']]['written'] += c.get('added', 0)
+        models[c['name']]['surviving'] += c.get('surviving', 0)
         totals[h]['lines'] += c.get('surviving', 0)
     for p in prompts:
         h = bucket(p['harness'])
@@ -235,11 +236,10 @@ def build(metrics, t262, attrib=None):
         points.append({k: p[k] for k in ('date', 'sha', 'kind', 'exact', 'distinct', 'in_scope',
                                           'groups', 'suites', 'reported') if k in p})
 
-    token_weekly = tokens(metrics, attrib, weeks, index, claude_prompts, claude_commits, others)
-    # Bars in chart order; models charted only as bars go before the
-    # catch-all rows, largest first.
-    extra = sorted((n for n in by_model if n not in MODELS), key=lambda n: -sum(by_model[n].values()))
-    bar_order = [m for m in MODELS if m not in ('Not recorded', 'Other models')] + extra + ['Not recorded', 'Other models']
+    token_weekly = tokens(metrics, attrib, weeks, index, claude_prompts, claude_commits, models)
+    # Models in family order, then by commits.
+    order = lambda n: (FAMILY_NAMES.index(family(n)), -models[n]['commits'], n)
+    bar_order = sorted((n for n in by_model if n != 'Other models'), key=order) + ['Other models']
     return {
         'generated': metrics['generated'],
         'harnesses': HARNESSES,
@@ -251,11 +251,11 @@ def build(metrics, t262, attrib=None):
         'by_model': [[m, dict(by_model[m])] for m in bar_order if by_model[m]],
         'bar_min': BAR_MIN,
         'months': [[m, dict(c)] for m, c in sorted(months.items())],
-        'model_groups': GROUPS,
+        'families': FAMILY_NAMES,
         'written': written,
         'surviving': surviving,
-        'others': sorted(({'name': n, **{k: round(v) for k, v in c.items()}} for n, c in others.items()),
-                         key=lambda o: o['name'].lower()),
+        'models': [{'name': n, 'family': family(n), **{k: round(v) for k, v in models[n].items()}}
+                   for n in sorted(models, key=order)],
         'lines': metrics.get('lines', {}),
         'tokens': token_weekly,
         'test262': {'points': points, 'events': t262['events'], 'dup_check': t262['dup_check']},
