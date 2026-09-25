@@ -232,7 +232,7 @@
       "sources": [
         "src"
       ],
-      "opt": "O2",
+      "opt": "O4",
       "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
