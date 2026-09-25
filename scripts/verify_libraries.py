@@ -99,9 +99,9 @@ def wrap(src_path, name):
     return dest
 
 
-def run_one(binary, path, timeout=30):
+def run_one(binary, path, flags=(), timeout=30):
     try:
-        p = subprocess.run([binary, path], capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run([binary, *flags, path], capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, "(timeout)"
     out = (p.stdout or "") + (p.stderr or "")
@@ -125,7 +125,7 @@ def sweep(names):
             rows.append((name, "MISSING", "", ""))
             continue
         wrapped = wrap(src, name)
-        c3_ok, c3_err = run_one(ENGINE, wrapped)
+        c3_ok, c3_err = run_one(ENGINE, wrapped, ["--script"])
         qjs_ok, _ = run_one(QJS, wrapped) if have_qjs else (None, "")
         rows.append((name, "PASS" if c3_ok else "FAIL",
                      ("PASS" if qjs_ok else "FAIL") if have_qjs else "?", c3_err))
@@ -171,7 +171,7 @@ def api_check_one(name, timeout=30):
         f.write(SHIM + cjs_shim + bundle_src + "\n" + driver_src)
 
     try:
-        c3 = subprocess.run([ENGINE, wrapped], capture_output=True, text=True, timeout=timeout)
+        c3 = subprocess.run([ENGINE, "--script", wrapped], capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return "FAIL", "(timeout)"
 

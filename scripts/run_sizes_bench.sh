@@ -42,6 +42,7 @@ file_size_kb() {
 measure_rss_kb() {
     local exe="$1"
     local script="$2"
+    local flags="${3:-}"  # engine options, e.g. --script for boomkat
     if [ ! -f "$exe" ]; then
         echo "N/A"
         return
@@ -52,7 +53,7 @@ measure_rss_kb() {
     fi
 
     local output
-    output=$(/usr/bin/time -l "$exe" "$script" 2>&1 >/dev/null) || true
+    output=$(/usr/bin/time -l "$exe" $flags "$script" 2>&1 >/dev/null) || true
 
     # Parse "maximum resident set size" (macOS) or "Maximum resident set size" (Linux)
     local rss_bytes
@@ -100,7 +101,7 @@ echo "┌───────────────────────�
 echo "│ Engine                   │ Peak RSS(KB)│"
 echo "├──────────────────────────┼─────────────┤"
 
-c3_rss=$(measure_rss_kb "$C3_RUNNER" "$MEM_SCRIPT")
+c3_rss=$(measure_rss_kb "$C3_RUNNER" "$MEM_SCRIPT" --script)
 orig_rss=$(measure_rss_kb "$ORIG" "$MEM_SCRIPT")
 qjs_rss=$(measure_rss_kb "$QJS" "$MEM_SCRIPT")
 

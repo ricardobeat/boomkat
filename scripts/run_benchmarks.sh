@@ -98,7 +98,7 @@ for f in "$BENCH_DIR"/bench_*.js; do
     count=0
     failed=false
     for ((i=0; i<ITERATIONS; i++)); do
-        ms=$(time_ms "$C3_RUNNER" "$f")
+        ms=$(time_ms "$C3_RUNNER" --script "$f")
         if [ $? -ne 0 ]; then failed=true; break; fi
         total=$((total + ms))
         count=$((count + 1))

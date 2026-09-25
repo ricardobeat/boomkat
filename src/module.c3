@@ -786,8 +786,13 @@ fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name,
             }
         }
     }
+    return heap_new_module(heap, name, attr_type);
+}
 
-    // Allocate new ModuleDef
+// Allocate a ModuleDef named `name` and add it to the heap's module cache,
+// without looking for an existing one. `name` must outlive the module.
+fn ModuleDef*? heap_new_module(Heap* heap, char[] name,
+                               compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
     void* raw = heap.alloc_func(heap.heap_udata, ModuleDef::size);
     if (raw == null) return MODULE_ERROR~;
     mem::clear(raw, (sz)(ModuleDef::size));
@@ -945,7 +950,14 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         return mod;
     }
 
-    // 5. Compile
+    return compile_module_source(heap, mod, normalized, source, quiet);
+}
+
+// Compile `source` as the body of `mod` (status LOADING, named `normalized`),
+// then resolve its dependencies. On a parse failure a SyntaxError is parked on
+// the heap error channel and, unless `quiet`, printed to stderr.
+fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normalized,
+                                     char[] source, bool quiet) {
     Lexer lex = lexer::lexer_init(source, heap, normalized);
     defer lex.free_arena();
     // ES2024 §12.5: the HTML-like comment grammar is reachable from Script
@@ -2484,8 +2496,28 @@ fn int run_module_file(Heap* heap, Vm* vm, char[] path) {
         heap.has_error = false;
         return 2;
     }
-    ModuleDef* mod = mod_opt;
+    return run_module(heap, vm, mod_opt);
+}
 
+// Compile `source` as a new top-level module named `name`, which is what its
+// relative imports resolve against and what errors report. Each call makes a
+// fresh module, even when a module with the same name is already loaded. The
+// name is copied. On a parse failure a SyntaxError is left on the heap error
+// channel; on a dependency load failure the channel is empty.
+fn ModuleDef*? load_module_source(Heap* heap, char[] name, char[] source, bool quiet) {
+    void* raw = alloc::malloc_try(mem, (sz)(name.len + 1)) ?? null;
+    if (raw == null) return MODULE_ERROR~;
+    if (name.len > 0) mem::copy(raw, name.ptr, (sz)name.len);
+    ((char*)raw)[name.len] = 0;
+    char[] owned = ((char*)raw)[:name.len];
+    ModuleDef* mod = heap_new_module(heap, owned)!;
+    mod.status = ModuleStatus.LOADING;
+    return compile_module_source(heap, mod, owned, source, quiet);
+}
+
+// Link and evaluate a loaded top-level module, then drain the jobs it queued.
+// Returns the same codes as run_module_file.
+fn int run_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     if (!link_module(heap, vm, mod, vm.global_env)) { return 2; }
 
     // Evaluation. execute_module returns false when the module body (or a

@@ -25,7 +25,7 @@ check_clean() {
   local name="$1" secs="$2" src="$3"
   printf '%s\n' "$src" > "$TMP/t.js"
   local got rc
-  got="$(timeout "$secs" "$ENGINE" "$TMP/t.js" 2>&1)"
+  got="$(timeout "$secs" "$ENGINE" --script "$TMP/t.js" 2>&1)"
   rc=$?
 
   if [ "$rc" -eq 124 ]; then
@@ -50,7 +50,7 @@ check_catchable() {
   printf 'try { %s\n print("NOTHROW"); } catch (e) { print("CAUGHT:" + (e && e.constructor && e.constructor.name)); }\n' \
     "$body" > "$TMP/t.js"
   local got rc
-  got="$(timeout "$secs" "$ENGINE" "$TMP/t.js" 2>&1)"
+  got="$(timeout "$secs" "$ENGINE" --script "$TMP/t.js" 2>&1)"
   rc=$?
 
   if [ "$rc" -eq 124 ]; then

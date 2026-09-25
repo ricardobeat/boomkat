@@ -46,7 +46,7 @@ PASS=0
 FAIL=0
 
 for t in "${TESTS[@]}"; do
-  output=$(cd "$ROOT" && timeout "$TIMEOUT" "$ENGINE" "$t" 2>&1)
+  output=$(cd "$ROOT" && timeout "$TIMEOUT" "$ENGINE" --script "$t" 2>&1)
   rc=$?
 
   if [ "$rc" -eq 0 ] && ! echo "$output" | grep -q "FAIL"; then

@@ -47,7 +47,7 @@ RAW="$(mktemp "${TMPDIR:-/tmp}/triage.XXXXXX")"
 DIS="$(mktemp "${TMPDIR:-/tmp}/triagedis.XXXXXX")"
 trap 'rm -f "$RAW" "$DIS"' EXIT
 
-"$BIN" "$SCRIPT_JS" >/dev/null 2>&1 &
+"$BIN" --script "$SCRIPT_JS" >/dev/null 2>&1 &
 PID=$!
 sample "$PID" "$SECONDS_ARG" -mayDie >"$RAW" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true

@@ -16,7 +16,7 @@ while [[ $# -gt 0 ]]; do
 done
 ulimit_v=$((memlimit_mb * 1024))
 ulimit -v "$ulimit_v" 2>/dev/null || true
-timeout "$timeout_s" ./out/boomkat "$file" 2>/dev/null
+timeout "$timeout_s" ./out/boomkat --script "$file" 2>/dev/null
 rc=$?
 if   [ "$rc" -eq 124 ]; then echo "TIMEOUT ($timeout_s s)"
 elif [ "$rc" -eq 137 ]; then echo "MEMKILL ($memlimit_mb MB)"

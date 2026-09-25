@@ -32,13 +32,13 @@ for sample in "$DIR"/*.js; do
     if [ -f "$DIR/$name.check.js" ]; then
         joined="$TMP/$name.js"
         { cat "$DIR/_harness.js"; sample_body "$sample"; cat "$DIR/$name.check.js"; } > "$joined"
-        if out=$(timeout 10 "$ENGINE" "$joined" 2>&1); then
+        if out=$(timeout 10 "$ENGINE" --script "$joined" 2>&1); then
             echo "  ok  $name"; PASS=$((PASS+1))
         else
             echo "FAIL  $name"; echo "$out" | sed 's/^/        /' | head -5; FAIL=$((FAIL+1))
         fi
     elif [ -f "$DIR/$name.expected" ]; then
-        if out=$(timeout 10 "$ENGINE" "$sample" 2>&1) && \
+        if out=$(timeout 10 "$ENGINE" --script "$sample" 2>&1) && \
            diff -q <(printf '%s\n' "$out") "$DIR/$name.expected" >/dev/null; then
             echo "  ok  $name (output)"; PASS=$((PASS+1))
         else

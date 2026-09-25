@@ -33,7 +33,7 @@ for f in "$BENCH_DIR"/bench_*.js; do
     failed=false
     for ((i = 0; i < ITERATIONS; i++)); do
         start=$(date +%s%N)
-        if ! "$RUNNER" "$f" >/dev/null 2>&1; then
+        if ! "$RUNNER" --script "$f" >/dev/null 2>&1; then
             failed=true
             break
         fi

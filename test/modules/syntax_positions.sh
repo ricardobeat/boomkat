@@ -33,7 +33,7 @@ check() {
   printf '%s\n' "$src" > "$f"
 
   local out rc got
-  out=$(timeout 5 "$ENGINE" --module "$f" 2>&1)
+  out=$(timeout 5 "$ENGINE" "$f" 2>&1)
   rc=$?
   if [ "$rc" -eq 124 ]; then
     FAIL=$((FAIL + 1))

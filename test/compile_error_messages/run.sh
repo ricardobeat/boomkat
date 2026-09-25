@@ -16,7 +16,7 @@ check() {
   local f rc out
   f="$TMP/case.js"
   printf '%s\n' "$src" > "$f"
-  out=$(timeout 5 "$ENGINE" "$f" 2>&1); rc=$?
+  out=$(timeout 5 "$ENGINE" --script "$f" 2>&1); rc=$?
   if [ "$rc" -eq 0 ]; then
     FAIL=$((FAIL + 1))
     echo "FAIL: $desc -- compiled cleanly (expected a SyntaxError)"

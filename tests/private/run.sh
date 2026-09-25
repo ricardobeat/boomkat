@@ -27,7 +27,7 @@ printf "%-55s %-6s %s\n" "----" "------" "------"
 for f in "$SCRIPT_DIR"/*.js; do
     name="$(basename "$f")"
 
-    stdout_out="$("$RUN_JS" "$f" 2>/tmp/run_private_stderr.$$)"
+    stdout_out="$("$RUN_JS" --script "$f" 2>/tmp/run_private_stderr.$$)"
     rc=$?
     stderr_out="$(cat /tmp/run_private_stderr.$$)"
     rm -f /tmp/run_private_stderr.$$

@@ -19,11 +19,12 @@ QJS="$PROJ_DIR/out/qjs"
 measure_rss_kb() {
     local exe="$1"
     local script="$2"
+    local flags="${3:-}"  # engine options, e.g. --script for boomkat
     if [ ! -f "$exe" ]; then echo "N/A"; return; fi
     if [ ! -f "$script" ]; then echo "N/A"; return; fi
 
     local output
-    output=$(/usr/bin/time -l "$exe" "$script" 2>&1 >/dev/null) || true
+    output=$(/usr/bin/time -l "$exe" $flags "$script" 2>&1 >/dev/null) || true
     local rss_bytes
     rss_bytes=$(echo "$output" | grep -i "maximum resident set size" | grep -o '[0-9][0-9]*' | head -1)
     if [ -z "$rss_bytes" ]; then echo "N/A"; return; fi
@@ -82,7 +83,7 @@ echo ""
 for script in "${SCRIPTS[@]}"; do
     sname=$(basename "$script")
 
-    c3_rss=$(measure_rss_kb "$C3_RUNNER" "$script")
+    c3_rss=$(measure_rss_kb "$C3_RUNNER" "$script" --script)
     orig_rss=$(measure_rss_kb "$ORIG" "$script")
     qjs_rss=$(measure_rss_kb "$QJS" "$script")
 

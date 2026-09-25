@@ -2,8 +2,8 @@
 # Run the local JS test suite.
 #
 # Five surfaces, because they need different invocations:
-#   1. test/*.js       — plain scripts, run as `boomkat <file>`.
-#   2. test/modules/   — ESM fixtures, run as `boomkat --module <entry>`;
+#   1. test/*.js       — plain scripts, run as `boomkat --script <file>`.
+#   2. test/modules/   — ESM fixtures, run as `boomkat <entry>`;
 #                        delegated to test/modules/run.sh, which owns the
 #                        entry-point list. The flat sweep skips the directory.
 #   3. test/uncaught/  — uncaught-exception reporting on stderr; delegated to
@@ -35,7 +35,7 @@ for f in "$DIR"/*.js; do
   name="$(basename "$f")"
   case " $SKIP " in *" $name "*) continue;; esac
 
-  output=$(timeout 30 "$ENGINE" "$f" 2>&1)
+  output=$(timeout 30 "$ENGINE" --script "$f" 2>&1)
   rc=$?
 
   if [ "$rc" -eq 0 ] && ! echo "$output" | grep -q "FAIL"; then

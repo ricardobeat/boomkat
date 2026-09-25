@@ -23,7 +23,7 @@ if [ $# -eq 0 ]; then
     for f in "$PROJ_DIR/benchmarks"/bench_*.js; do
         name=$(basename "$f" .js)
         echo "==== $name ===="
-        "$C3_RUNNER" "$f"
+        "$C3_RUNNER" --script "$f"
         echo ""
     done
 else
@@ -32,11 +32,11 @@ else
         f="$PROJ_DIR/benchmarks/$name"
         if [ -f "$f" ]; then
             echo "==== $name ===="
-            "$C3_RUNNER" "$f"
+            "$C3_RUNNER" --script "$f"
             echo ""
         elif [ -f "$PROJ_DIR/benchmarks/${name}.js" ]; then
             echo "==== $name ===="
-            "$C3_RUNNER" "$PROJ_DIR/benchmarks/${name}.js"
+            "$C3_RUNNER" --script "$PROJ_DIR/benchmarks/${name}.js"
             echo ""
         else
             echo "ERROR: benchmark not found: $name"

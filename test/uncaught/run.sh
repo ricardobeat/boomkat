@@ -33,7 +33,7 @@ check() {
   local name="$1" src="$2" want="$3"
   printf '%s\n' "$src" > "$TMP/t.js"
   local got rc lines
-  got="$(timeout 30 "$ENGINE" "$TMP/t.js" 2>&1)"
+  got="$(timeout 30 "$ENGINE" --script "$TMP/t.js" 2>&1)"
   rc=$?
   lines="$(printf '%s\n' "$got" | grep -c .)"
 

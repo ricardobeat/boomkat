@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run all ESM module tests through the boomkat engine.
-# Each test is an entry main.js run with --module flag.
+# Each test is an entry main.js, run as a module (the CLI default).
 # Pass = exit 0; Fail = non-zero exit (thrown string or runtime error).
 # Usage: bash test/modules/run.sh [engine_binary]
 # Returns non-zero if any test fails.
@@ -38,7 +38,7 @@ for entry in "${TESTS[@]}"; do
   name="modules/$subdir"
 
   start=$(python3 -c "import time; print(time.time())")
-  output=$(timeout 5 "$ENGINE" --module "$mainfile" 2>&1)
+  output=$(timeout 5 "$ENGINE" "$mainfile" 2>&1)
   rc=$?
   end=$(python3 -c "import time; print(time.time())")
   ms=$(python3 -c "print(int(($end - $start) * 1000))")

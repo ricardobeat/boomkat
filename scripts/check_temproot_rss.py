@@ -28,7 +28,7 @@ def peak_rss(engine, rounds):
         pid = os.fork()
         if pid == 0:
             try:
-                os.execv(str(engine), [str(engine), str(script)])
+                os.execv(str(engine), [str(engine), "--script", str(script)])
             finally:
                 os._exit(127)
         _, status, usage = os.wait4(pid, 0)

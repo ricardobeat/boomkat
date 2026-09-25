@@ -88,7 +88,7 @@ From `just bench`:
 |---|---|
 | Build a target | `just build <target>` (e.g. `boomkat`, `boomkat_debug`, `test262_runner`) |
 | Run one JS file | `just run <file>` |
-| Run one JS file as ESM | `just run-module <file>` |
+| Run one JS file as a script | `just run-script <file>` |
 | Inspect bytecode | `just build-trace`, then `./out/boomkat_debug -c <file>` |
 | Local suite | `just test-local` |
 | Rosetta suite | `just rosetta` |
@@ -97,9 +97,10 @@ From `just bench`:
 | ASAN test262 runner | `just build-asan` |
 | lldb on a crash | `just lldb <file>` |
 
-The release CLI runs a file with `boomkat script.js` (or `boomkat --module
-module.js` for ESM). It reads JavaScript from stdin when piped in or when given
-`-`; `boomkat --help` lists the options and `boomkat --version` prints the
+The release CLI runs a file as an ES module with `boomkat main.js`, so
+`import`, `export` and top-level `await` work. `boomkat --script legacy.js`
+runs a classic sloppy-mode script instead. It reads JavaScript from stdin when
+piped in or when given `-`; `boomkat --help` lists the options and `boomkat --version` prints the
 committed release version.
 
 Tagging a commit with a version matching [VERSION](VERSION) (for example,

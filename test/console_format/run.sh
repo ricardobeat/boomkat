@@ -43,7 +43,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 
 total=0
 for name in cases matrix; do
-  got="$(timeout 30 "$ENGINE" "$DIR/$name.js" 2>&1)"
+  got="$(timeout 30 "$ENGINE" --script "$DIR/$name.js" 2>&1)"
   rc=$?
 
   if [ "$rc" -ne 0 ]; then

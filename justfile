@@ -194,10 +194,11 @@ run file="test/simple.js":
     @make out/boomkat
     ./out/boomkat {{file}}
 
-# Run a JS file as an ESM module (--module)
-run-module file="test/modules/t01_named/main.js":
+# Run a JS file as a classic Script (--script) instead of a module, the goal
+# test262 and the local test suites use
+run-script file="test/simple.js":
     @make out/boomkat
-    ./out/boomkat --module {{file}}
+    ./out/boomkat --script {{file}}
 
 # Run all ESM module tests (runtime fixtures and syntax error checks)
 modules:
@@ -351,7 +352,7 @@ bench-fast n="2":
 # Run a single benchmark file (e.g. `just bench-one benchmarks/bench_loop.js`)
 bench-one file n="3":
     @test -f out/boomkat || { echo "ERROR: out/boomkat not found"; exit 1; }
-    ./out/boomkat {{file}}
+    ./out/boomkat --script {{file}}
 
 # Run a single benchmark on original Duktape
 bench-orig file: duktape-ready

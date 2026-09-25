@@ -34,7 +34,9 @@ fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reaso
 }
 
 fn int main(String[] args) {
-    bool force_module = false;
+    // Source runs as an ECMAScript module unless --script asks for the Script
+    // goal, which test suites and legacy sloppy-mode code expect.
+    bool script = false;
     String path = "<stdin>";
     bool stdin_source = true;
     bool option_ended = false;
@@ -50,7 +52,7 @@ fn int main(String[] args) {
         io::printfn("boomkat %s", CLI_VERSION);
         return 0;
     }
-    if (i < args.len && args[i] == "--module") { force_module = true; i++; }
+    if (i < args.len && args[i] == "--script") { script = true; i++; }
     if (i < args.len && args[i] == "--") { option_ended = true; i++; }
     if (i < args.len) {
         path = args[i++];
@@ -62,8 +64,8 @@ fn int main(String[] args) {
         stdin_source = path == "-";
         if (stdin_source) path = "<stdin>";
     }
-    if (i < args.len || (force_module && stdin_source)) {
-        io::eprintfn("boomkat: expected one filename%s", force_module ? " after --module" : "");
+    if (i < args.len) {
+        io::eprintfn("boomkat: expected one filename");
         print_usage_error();
         return 2;
     }
@@ -105,30 +107,48 @@ fn int main(String[] args) {
     // wants a sandbox simply does not call this.
     if (v.global_env != null) addon::enable_loading(hp, v.global_env);
 
-    // Run TypeScript files with type syntax erased at parse time. Route files
-    // with top-level import or export through the ESM pipeline regardless of extension.
-    bool ts_mode = !stdin_source && has_ts_extension(path);
-    if (force_module || (!stdin_source && looks_like_module(source))) {
-        int rc = esm::run_module_file(hp, v, (char[])path);
-        if (rc == 1 && (hp.has_error || !hp.error_value.is_undefined())) {
+    if (script) {
+        // TypeScript files run with type syntax erased at parse time.
+        bool ts_mode = !stdin_source && has_ts_extension(path);
+        return run_script_source(hp, v, source, path, ts_mode);
+    }
+    return run_module_source(hp, v, source, path, stdin_source);
+}
+
+// Run `source` as the top-level module. A file loads through the module
+// pipeline by its path, which also picks TypeScript mode from the extension;
+// stdin has no path, so its source compiles directly under the name `path`.
+fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin_source) {
+    int rc;
+    if (stdin_source) {
+        esm::ModuleDef*? mod = esm::load_module_source(hp, (char[])path, source, false);
+        if (catch err = mod) {
+            hp.error_value.set_undefined();
+            hp.has_error = false;
+            rc = 2;
+        } else {
+            rc = esm::run_module(hp, v, mod);
+        }
+    } else {
+        rc = esm::run_module_file(hp, v, (char[])path);
+    }
+    if (rc == 1 && (hp.has_error || !hp.error_value.is_undefined())) {
             print_uncaught(hp, &hp.error_value);
         } else if (rc != 0) {
             io::eprintfn("boomkat: could not load module %s (code %d)", path, rc);
-        }
-        if (rc == 0 && unhandled_rejection_count > 0) return 1;
-        return rc;
     }
-
-    return run_script_source(hp, v, source, path, ts_mode);
+    if (rc == 0 && unhandled_rejection_count > 0) return 1;
+    return rc;
 }
 
 const String CLI_VERSION = "0.0.0";
 
 fn void print_usage() {
-    io::printn("Usage: boomkat [--module] [FILE | -]");
+    io::printn("Usage: boomkat [--script] [FILE | -]");
     io::printn("       boomkat --help | --version");
     io::printn("Run a JavaScript or TypeScript file, or read JavaScript from stdin.");
-    io::printn("Use --module to run a file as an ECMAScript module.");
+    io::printn("Source runs as an ECMAScript module, which is always strict.");
+    io::printn("Use --script to run it as a classic script, non-strict unless it opts in.");
 }
 
 fn void print_usage_error() {
@@ -170,74 +190,6 @@ fn bool has_ts_extension(String path) {
     if (path.len >= 4 && path[^4..] == ".mts") return true;
     if (path.len >= 4 && path[^4..] == ".cts") return true;
     return false;
-}
-
-// Scan for top-level `import` or `export` at depth 0, skipping whitespace,
-// comments, and string/template literals.
-//
-// Matches `import`/`export` keywords only at nesting depth 0 so object keys
-// inside blocks or parens do not trigger module mode.
-//
-// `import.meta` is valid at any depth and always signals module code.
-// Dynamic `import(...)` is valid in scripts and is excluded.
-fn bool looks_like_module(char[] src) {
-    usz i = 0;
-    bool at_stmt_start = true;
-    int depth = 0;
-    while (i < src.len) {
-        char c = src[i];
-        if (c == '\n') { at_stmt_start = true; i++; continue; }
-        if (c == ' ' || c == '\t' || c == '\r') { i++; continue; }
-        // Line comment
-        if (i + 1 < src.len && c == '/' && src[i+1] == '/') {
-            while (i < src.len && src[i] != '\n') i++;
-            continue;
-        }
-        // Block comment
-        if (i + 1 < src.len && c == '/' && src[i+1] == '*') {
-            i += 2;
-            while (i + 1 < src.len && !(src[i] == '*' && src[i+1] == '/')) i++;
-            if (i + 1 < src.len) i += 2;
-            continue;
-        }
-        // Skip string and template literal contents.
-        if (c == '"' || c == '\'' || c == '`') {
-            char quote = c;
-            i++;
-            while (i < src.len && src[i] != quote) {
-                if (src[i] == '\\' && i + 1 < src.len) i++;
-                i++;
-            }
-            if (i < src.len) i++;
-            at_stmt_start = false;
-            continue;
-        }
-        // Track nesting depth.
-        if (c == '{' || c == '(' || c == '[') { depth++; at_stmt_start = false; i++; continue; }
-        if (c == '}' || c == ')' || c == ']') { if (depth > 0) depth--; at_stmt_start = false; i++; continue; }
-        // `import.meta` at any depth marks module code. Exclude property chains.
-        if (i + 6 < src.len && src[i:6] == "import" && src[i+6] == '.'
-            && (i == 0 || (!is_ident_cont(src[i-1]) && src[i-1] != '.'))) {
-            return true;
-        }
-        if (at_stmt_start && depth == 0) {
-            // Match `import` or `export` as complete words. `import(` is dynamic import.
-            if (i + 6 <= src.len && src[i:6] == "import" &&
-                (i + 6 == src.len || !is_ident_cont(src[i+6]))) {
-                if (i + 6 >= src.len || src[i+6] != '(') return true;
-            }
-            if (i + 6 <= src.len && src[i:6] == "export" &&
-                (i + 6 == src.len || !is_ident_cont(src[i+6]))) return true;
-        }
-        at_stmt_start = false;
-        i++;
-    }
-    return false;
-}
-
-fn bool is_ident_cont(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-           (c >= '0' && c <= '9') || c == '_' || c == '$';
 }
 
 // Report an uncaught JS exception on stderr as a single line.

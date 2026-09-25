@@ -31,11 +31,11 @@ check() {
   if [ "$mode" = "module" ]; then
     f="$TMP/case.mjs"
     printf '%s\n' "$src" > "$f"
-    out=$(timeout 5 "$ENGINE" --module "$f" 2>&1); rc=$?
+    out=$(timeout 5 "$ENGINE" --script "$f" 2>&1); rc=$?
   else
     f="$TMP/case.js"
     printf '"use strict";\n%s\n' "$src" > "$f"
-    out=$(timeout 5 "$ENGINE" "$f" 2>&1); rc=$?
+    out=$(timeout 5 "$ENGINE" --script "$f" 2>&1); rc=$?
   fi
   if [ "$rc" -eq 124 ]; then
     FAIL=$((FAIL + 1))

@@ -62,7 +62,7 @@ write_script "$LARGE"
 measure_rss_kb() {
     local script="$1"
     local output
-    output=$(/usr/bin/time -l "$RUNNER" "$script" 2>&1 >/dev/null) || true
+    output=$(/usr/bin/time -l "$RUNNER" --script "$script" 2>&1 >/dev/null) || true
     local rss_bytes
     rss_bytes=$(echo "$output" | grep -i "maximum resident set size" | grep -o '[0-9][0-9]*' | head -1)
     if [ -z "$rss_bytes" ]; then echo ""; return; fi
@@ -71,7 +71,7 @@ measure_rss_kb() {
 
 # A wrong answer here matters more than the memory, so fail on it first.
 for n in "$SMALL" "$LARGE"; do
-    if "$RUNNER" "$TMPDIR_RUN/props_$n.js" | grep -q FAIL; then
+    if "$RUNNER" --script "$TMPDIR_RUN/props_$n.js" | grep -q FAIL; then
         echo "SOME TESTS FAILED"
         echo "FAIL: property reads returned wrong values at $n properties." >&2
         exit 1

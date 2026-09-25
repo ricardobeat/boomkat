@@ -8,7 +8,7 @@ A C3-native JavaScript engine. **Goal**: pass 100% of the targeted test262 subse
 - Focus on ES5/ES6 core; ignore *staging* features in the spec.
 - RegExp uses libregexp (from QuickJS).
 - **BigInt** is arbitrary precision: a 32-bit limb vector with `BIGINT_MAX_LIMBS = 1 << 26` (~2 billion bits, `src/hbigint.c3`). Magnitude is not a limit.
-- **Strict vs sloppy**: scripts default to sloppy (matching ES2024); modules default to strict; per-function `is_strict` is recorded in `FuncFlags`.
+- **Strict vs sloppy**: scripts default to sloppy (matching ES2024); modules default to strict; per-function `is_strict` is recorded in `FuncFlags`. The `boomkat` CLI runs its input as a module unless given `--script`.
 - **test262 skip list**: ~60% of test262 falls outside this engine's scope, which is ES5/ES6 core plus the sloppy-mode and Annex B behavior it needs (ECMA-402, Stage 3 proposals, host-specific and cross-realm behavior stay out). Scope is documented in `docs/engine-scope.md`. The skip list (`SKIP_DIRS`/`SKIP_GLOBS`/`SKIP_FILES`/`UNSUPPORTED_PATTERN`) is embedded directly in `scripts/run_test262.py`: update it there when implementing new features. The skip list is the *only* place scope is expressed — test selection itself is exhaustive over test262's directory tree, so a feature is out of scope because a rule names it, never because nobody listed its directory. `intl402` (ECMA-402) is skipped per test262's own guidance; `annexB` runs (920/1086 passing, 0 failures, 166 skipped: the Annex B String HTML wrappers, `legacy-regexp`, and `IsHTMLDDA` — see the sloppy-mode section); `staging` runs, as upstream `INTERPRETING.md` asks.
 
 ## Strict and Sloppy Modes
@@ -35,7 +35,8 @@ All common tasks are `just` recipes (`just list` to see them all). The fast debu
 
 | Task | Command |
 |------|---------|
-| Run one JS file | `just run <file>` (rebuilds `boomkat`, runs `./out/boomkat <file>`) |
+| Run one JS file | `just run <file>` (rebuilds `boomkat`, runs `./out/boomkat <file>` as a module) |
+| Run one JS file as a script | `just run-script <file>` (`./out/boomkat --script <file>`, the sloppy Script goal test262 repros need) |
 | Inspect bytecode | `./out/boomkat_debug -c <file>` (disassemble, skip run); build with `just build-trace` |
 | Build a target | `just build <target>` (e.g. `boomkat`, `boomkat_debug`, `test262_runner`) |
 | Build everything | `just all` |
@@ -43,21 +44,20 @@ All common tasks are `just` recipes (`just list` to see them all). The fast debu
 | ASAN test262 runner | `just build-asan` (`out/test262_runner_asan`) |
 | Rosetta suite | `just rosetta` (22+ language features; the go-to regression check) |
 | Local suite | `just test-local` (every `test/*.js` + the ESM fixtures) |
-| Run one JS file as ESM | `just run-module <file>` (`./out/boomkat --module <file>`) |
 | ESM module tests only | `just modules` (`test/modules/`, 12 entry points) |
 | One test262 suite | `just test262-suite <name>` |
 | One test262 directory | `just test262-dir <path>` |
 | Full test262 | `just test262` |
 
-**Validate changes with `just rosetta`, `just run` on a local repro, or a narrow `just test262-dir <path>`: not a full `just test262` run, which is slow and noisy.** Test fixtures live in `test/`; test262 lives under `test262/`.
+**Validate changes with `just rosetta`, `just run-script` on a local repro, or a narrow `just test262-dir <path>`: not a full `just test262` run, which is slow and noisy.** Test fixtures live in `test/`; test262 lives under `test262/`.
 
-**ESM tests need `--module`.** `import`/`export` are rejected at parse time by the plain runner, so an ESM fixture run as a plain script always reports a SyntaxError. Every ESM test therefore lives under `test/modules/<tNN_name>/main.js` (with its dependency files alongside) and is invoked through `test/modules/run.sh`, which passes `--module` and treats a non-zero exit as failure. `just test-local` runs both surfaces: the flat `test/*.js` sweep under the plain runner, then `run.sh` for the module fixtures. Do NOT add `import`/`export` files directly to `test/`: they would read as spurious failures in the flat sweep. `test/test_async_500k.js` is skipped by the local suite: it passes but takes ~20s, so it is a perf stress test, not a regression check.
+**The CLI runs modules; the suites pass `--script`.** `boomkat <file>` evaluates its input as an ES module, so every harness that runs plain scripts passes `--script` to get the sloppy Script goal. `import`/`export` are a SyntaxError under `--script`. Every ESM test therefore lives under `test/modules/<tNN_name>/main.js` (with its dependency files alongside) and is invoked through `test/modules/run.sh`, which runs it as a module and treats a non-zero exit as failure. `just test-local` runs both surfaces: the flat `test/*.js` sweep under `--script`, then `run.sh` for the module fixtures. Do NOT add `import`/`export` files directly to `test/`: they would read as spurious failures in the flat sweep. `test/test_async_500k.js` is skipped by the local suite: it passes but takes ~20s, so it is a perf stress test, not a regression check.
 
 For test262 work: `python3 scripts/run_test262.py --dir <path> --log <file>` writes per-test `RESULT<TAB>path` lines for failure clustering. Selection follows test262's own top-level directories: `--suite` takes one of `language`, `built-ins`, `staging`, `annexB`, `intl402`, `harness` and is repeatable; `--dir <path-under-test262/test>` narrows to a single directory for the tight debug loop. Without either, every suite runs. Because the suites are the corpus's own layout, selection is exhaustive: a directory added upstream is picked up automatically, and anything the engine does not target is excluded by `SKIP_DIRS`/`UNSUPPORTED_PATTERN` rather than by going unlisted. `python3 scripts/run_test262.py --single <path-under-test262/test>` reproduces one test through the canonical worker path. **`--single` warns `⚠ SUITE SKIPS THIS TEST` (naming the reason) when the test carries an unsupported-feature or `noStrict` flag. A raw COMPILE_ERROR or FAIL on such a test is not a real failure**, the suite skips it. Add `--debug` (concat assert/sta/includes + run under `boomkat`) or `--keep` (emit the combined file for `just lldb` / `--trace-vm`). The runner kills workers exceeding 2 GB RSS (`MEMKILL`); see `plans/040-test262-100-percent.md` §A5.
 
 **TypeScript conformance** (`just ts-conformance`, or `just ts-conformance <phase-dir>` for a subset like `types`/`classes`): `scripts/run_ts_conformance.py` runs the official Microsoft conformance corpus (`test/typescript/conformance-src`, a sparse clone fetched by `scripts/fetch_ts_conformance.py`; gitignored) against the engine's TS type-stripping mode, using `tsc --erasableSyntaxOnly` as the acceptance oracle. Each file is classified ACCEPT (must compile), REJECT (must SyntaxError, TS1294-only), or SKIP, with verdicts cached in `test/typescript/ts_conformance_cache` (also gitignored). The full corpus run takes about a minute: tsc verdicts are cached, engine runs are parallel (`--jobs`, default 16), files that compile but run past the per-file timeout count as passes (compile conformance, not runtime), and a hard deadline (default 600s) aborts with partial results. Use `--log <file>` for `RESULT<TAB>path` failure clustering. Documented non-goals are skipped by outcome, not fixed: decorators, auto-accessors (`accessor`), and `using` declarations. `JS_EARLY_ERROR_FILES` in the runner names spec-correct JS early errors tsc's lenient parser accepts (catch-var shadowing, `with`).
 
-Typical debug loop: minimize a failure to a single-line `.js` repro → `just run` it → if it fails to compile the bug is in the compiler; if it runs but gives a wrong value / `VM_ERROR` it's in the VM → trace with the flags below.
+Typical debug loop: minimize a failure to a single-line `.js` repro → `just run-script` it → if it fails to compile the bug is in the compiler; if it runs but gives a wrong value / `VM_ERROR` it's in the VM → trace with the flags below.
 
 **test262 result categories** (per-suite table from `python3 scripts/run_test262.py --suite <name>`):
 - **Pass**: runtime PASS

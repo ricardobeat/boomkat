@@ -29,7 +29,7 @@ reported() {
   local name="$1" src="$2" want="$3"
   printf '%s\n' "$src" > "$TMP/t.js"
   local got rc
-  got="$(timeout 30 "$ENGINE" "$TMP/t.js" 2>&1)"
+  got="$(timeout 30 "$ENGINE" --script "$TMP/t.js" 2>&1)"
   rc=$?
 
   if [ "$rc" -eq 0 ]; then
@@ -54,7 +54,7 @@ silent() {
   local name="$1" src="$2"
   printf '%s\n' "$src" > "$TMP/t.js"
   local got rc
-  got="$(timeout 30 "$ENGINE" "$TMP/t.js" 2>&1)"
+  got="$(timeout 30 "$ENGINE" --script "$TMP/t.js" 2>&1)"
   rc=$?
 
   if [ "$rc" -ne 0 ]; then
@@ -79,7 +79,7 @@ silent_quiet() {
   local name="$1" src="$2"
   printf '%s\n' "$src" > "$TMP/t.js"
   local got rc
-  got="$(timeout 30 "$ENGINE" "$TMP/t.js" 2>&1)"
+  got="$(timeout 30 "$ENGINE" --script "$TMP/t.js" 2>&1)"
   rc=$?
 
   if [ "$rc" -ne 0 ]; then

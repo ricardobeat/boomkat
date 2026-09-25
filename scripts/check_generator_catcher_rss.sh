@@ -58,7 +58,7 @@ EOF
 measure_rss_kb() {
     local script="$1"
     local output
-    output=$(/usr/bin/time -l "$RUNNER" "$script" 2>&1 >/dev/null) || true
+    output=$(/usr/bin/time -l "$RUNNER" --script "$script" 2>&1 >/dev/null) || true
     local rss_bytes
     rss_bytes=$(echo "$output" | grep -i "maximum resident set size" | grep -o '[0-9][0-9]*' | head -1)
     if [ -z "$rss_bytes" ]; then echo ""; return; fi

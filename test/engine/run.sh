@@ -13,7 +13,7 @@ SLOW=0
 for f in "$DIR"/*.js; do
     name=$(basename "$f")
     start=$(python3 -c "import time; print(time.time())")
-    output=$(timeout 2 "$ENGINE" "$f" 2>&1) && rc=0 || rc=$?
+    output=$(timeout 2 "$ENGINE" --script "$f" 2>&1) && rc=0 || rc=$?
     end=$(python3 -c "import time; print(time.time())")
     ms=$(python3 -c "print(int(($end - $start) * 1000))")
     if [ $rc -ne 0 ]; then

@@ -50,7 +50,7 @@ time_ms() {
   for _ in 1 2 3; do
     local start end
     start=$(python3 -c 'import time; print(int(time.time()*1000))')
-    timeout 120 "$ENGINE" "$file" > /dev/null 2>&1 || { echo "ENGINE_FAILED"; return 1; }
+    timeout 120 "$ENGINE" --script "$file" > /dev/null 2>&1 || { echo "ENGINE_FAILED"; return 1; }
     end=$(python3 -c 'import time; print(int(time.time()*1000))')
     runs+=($((end - start)))
   done

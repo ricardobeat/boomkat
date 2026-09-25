@@ -22,7 +22,7 @@
 ENGINE="${1:-./out/boomkat}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-got="$(timeout 30 "$ENGINE" "$DIR/tiny.js" 2>&1)"
+got="$(timeout 30 "$ENGINE" --script "$DIR/tiny.js" 2>&1)"
 rc=$?
 
 if [ "$rc" -ne 0 ]; then

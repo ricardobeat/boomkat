@@ -1076,7 +1076,7 @@ def run_single(test, debug=False, keep=False):
                   file=sys.stderr)
             return 2
         try:
-            proc = subprocess.run([debug_bin, combined], capture_output=True,
+            proc = subprocess.run([debug_bin, "--script", combined], capture_output=True,
                                   text=True, timeout=10)
             if proc.returncode == 0:
                 print(f"PASS  {path}")

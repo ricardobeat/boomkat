@@ -28,10 +28,10 @@ if awk -v l="$LOAD" 'BEGIN{exit !(l>3.0)}'; then
 fi
 
 run_best() {
-    local bin="$1" file="$2" best=999
+    local bin="$1" file="$2" flags="${3:-}" best=999
     for _ in $(seq "$ITERATIONS"); do
         local t
-        t=$( { TIMEFORMAT=%R; time "$bin" "$file" >/dev/null 2>&1; } 2>&1 ) || continue
+        t=$( { TIMEFORMAT=%R; time "$bin" $flags "$file" >/dev/null 2>&1; } 2>&1 ) || continue
         best=$(awk -v a="$t" -v c="$best" 'BEGIN{print (a<c)?a:c}')
     done
     echo "$best"
@@ -43,7 +43,7 @@ printf "%-26s %10s %10s %9s\n" "--------------------------" "----------" "------
 total_bk=0; total_qjs=0
 for f in "$BENCH_DIR"/bench_*.js; do
     name="$(basename "$f" .js | sed 's/^bench_//')"
-    b=$(run_best "$BK" "$f")
+    b=$(run_best "$BK" "$f" --script)
     q=$(run_best "$QJS" "$f")
     ratio=$(awk -v b="$b" -v q="$q" 'BEGIN{ if (q==0) print "n/a"; else printf "%.1fx", b/q }')
     printf "%-26s %9ss %9ss %9s\n" "$name" "$b" "$q" "$ratio"

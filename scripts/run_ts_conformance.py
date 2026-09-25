@@ -176,14 +176,21 @@ def engine_outcome(path, bin_path, timeout):
     'compiled_timeout' (the source compiled and ran past `timeout`; a
     compile-conformance pass whose runtime never terminates), or 'missing'.
     """
-    try:
-        res = subprocess.run([bin_path, path], capture_output=True, text=True,
-                             timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return "compiled_timeout"
-    except FileNotFoundError:
-        return "missing"
-    combined = res.stdout + res.stderr
+    # The corpus does not say which goal a file targets; tsc treats a file with
+    # import/export as a module and anything else as a script. Try the script
+    # goal first and fall back to the CLI's module default when that fails to
+    # compile, so a file passes when it compiles under either goal.
+    for flags in (["--script"], []):
+        try:
+            res = subprocess.run([bin_path, *flags, path], capture_output=True,
+                                 text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return "compiled_timeout"
+        except FileNotFoundError:
+            return "missing"
+        combined = res.stdout + res.stderr
+        if "SyntaxError" not in combined and "compile error" not in combined:
+            break
     # The script path prints "SyntaxError: ..."; the ESM path prints
     # "<file>: SyntaxError at line X:Y: ...". Both mean the source failed
     # to compile (vs. compiled-and-threw, which prints "Uncaught"/"VM error").
