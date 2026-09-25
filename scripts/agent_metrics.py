@@ -305,6 +305,15 @@ def harness_of_trailer(t):
     return None
 
 
+# Attributions set by hand where the logs show better than the rules which
+# model did the work: sha -> (harness, model).
+OVERRIDES = {
+    # "tonno stuff": a hand commit of the first Crush session's work, made
+    # while DeepSeek was running. MiniMax M2.7 wrote the largest share of it.
+    '33d743954ce32ec5f98c4abe78764c98da5702d0': ('Crush', 'MiniMax-M2.7'),
+}
+
+
 def attribute(repo, harnesses):
     fmt = '%H%x1f%an%x1f%at%x1f%s%x1f%B%x1e'
     out = subprocess.run(['git', '-C', repo, 'log', '--branches', '--tags', '--remotes',
@@ -361,7 +370,10 @@ def attribute(repo, harnesses):
         at = key[1]
         log = next((logged[s] for s in members if s in logged), None)
         t = next((trailer(commits[s][3]) for s in members if trailer(commits[s][3])), None)
-        if log:
+        manual = next((OVERRIDES[s] for s in members if s in OVERRIDES), None)
+        if manual:
+            (name, model), method = manual, 'manual'
+        elif log:
             name, method, model = log[0], 'log', log[1].split('/')[-1]
             models[name][model] += 1
             calibration[by_time(at) == name] += 1
@@ -607,10 +619,10 @@ def main():
     cal = a['calibration']
     print(f"time rule on log-verified commits: {cal[True]}/{cal[True] + cal[False]} correct\n")
     names = sorted({n for n, _ in a['table']}, key=lambda n: -sum(v for (m, _), v in a['table'].items() if m == n))
-    print(f"{'harness':16} {'log':>5} {'trailer':>7} {'time':>5} {'total':>6}")
+    print(f"{'harness':16} {'log':>5} {'trailer':>7} {'time':>5} {'manual':>6} {'total':>6}")
     for n in names:
-        row = [a['table'][(n, k)] for k in ('log', 'trailer', 'time')]
-        print(f'{n:16} {row[0]:5} {row[1]:7} {row[2]:5} {sum(row):6}')
+        row = [a['table'][(n, k)] for k in ('log', 'trailer', 'time', 'manual')]
+        print(f'{n:16} {row[0]:5} {row[1]:7} {row[2]:5} {row[3]:6} {sum(row):6}')
     print('\n# Models by commit (log + trailer)')
     for n, c in a['models'].items():
         print(f'{n}: ' + ', '.join(f'{m} {v}' for m, v in c.most_common()))
