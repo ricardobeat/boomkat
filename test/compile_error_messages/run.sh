@@ -1,11 +1,8 @@
 #!/bin/bash
 # Compile-error messages must never be empty.
 #
-# Several parse paths returned COMPILE_ERROR without recording a message,
-# so the CLI printed "SyntaxError:  (line 0, col 0)" for common typos like
-# `var ] x` or `class {`. Each case below must fail AND name what went
-# wrong. The first line of the engine's stderr is `SyntaxError: <msg>
-# (line L, col C)`; the empty-message form is `(line 0, col 0)`.
+# Each case must fail and name what went wrong. The CLI reports
+# `<file>:<line>:<column>: SyntaxError: <message>`.
 
 ENGINE="${1:-./out/boomkat}"
 TMP="$(mktemp -d)"
@@ -32,11 +29,11 @@ check() {
   fi
   first=$(printf '%s\n' "$out" | head -1)
   case "$first" in
-    "SyntaxError:  (line 0, col 0)")
+    *"SyntaxError:  (line 0, col 0)"|*"SyntaxError: ")
       FAIL=$((FAIL + 1))
       echo "FAIL: $desc -- empty error message"
       ;;
-    SyntaxError:*)
+    *": SyntaxError: "*)
       PASS=$((PASS + 1))
       ;;
     *)

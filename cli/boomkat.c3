@@ -34,40 +34,69 @@ fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reaso
 }
 
 fn int main(String[] args) {
+    bool force_module = false;
+    String path = "<stdin>";
+    bool stdin_source = true;
+    bool option_ended = false;
+    // Local fixtures use __detachArrayBuffer; the library leaves host helpers
+    // unregistered so embedders can supply their own host surface.
     vm::test262_host_enabled = true;
-    // `--module <path>` drives the full ESM resolve->link->evaluate pipeline.
-    if (args.len > 2 && args[1] == "--module") {
-        String mpath = args[2];
-        Heap*? mhp = heap::create(null, null, null, null, null);
-        if (catch h = mhp) { io::eprintfn("Failed heap"); return 1; }
-        defer mhp.destroy();
-        Vm*? mv = vm::vm_create(mhp);
-        if (catch err = mv) { io::eprintfn("VM failed"); return 1; }
-        defer vm::vm_destroy(mv);
-        mhp.set_rejection_tracker(&cli_rejection_tracker, null);
-        int rc = esm::run_module_file(mhp, mv, (char[])mpath);
-        // rc 1 means the module body threw and the value is on the error
-        // channel; report it the way script mode does, so a module failure
-        // says WHAT failed instead of only that it did. rc 2 is a structural
-        // load/link failure with no thrown value, which has no more to say.
-        if (rc == 1 && (mhp.has_error || !mhp.error_value.is_undefined())) {
-            print_uncaught(mhp, &mhp.error_value);
-        } else if (rc != 0) {
-            io::eprintfn("module rc=%d", rc);
-        }
-        if (rc == 0 && unhandled_rejection_count > 0) return 1;
-        return rc;
+    usz i = 1;
+    if (i < args.len && (args[i] == "--help" || args[i] == "-h")) {
+        print_usage();
+        return 0;
     }
-    String path = args.len > 1 ? args[1] : "test/simple.js";
-    char[]? source = file::load_temp(path);
-    if (catch err = source) { io::eprintfn("Failed to read"); return 1; }
+    if (i < args.len && args[i] == "--version") {
+        io::printfn("boomkat %s", CLI_VERSION);
+        return 0;
+    }
+    if (i < args.len && args[i] == "--module") { force_module = true; i++; }
+    if (i < args.len && args[i] == "--") { option_ended = true; i++; }
+    if (i < args.len) {
+        path = args[i++];
+        if (!option_ended && path.len > 0 && path[0] == '-' && path != "-") {
+            io::eprintfn("boomkat: unknown option %s", path);
+            print_usage_error();
+            return 2;
+        }
+        stdin_source = path == "-";
+        if (stdin_source) path = "<stdin>";
+    }
+    if (i < args.len || (force_module && stdin_source)) {
+        io::eprintfn("boomkat: expected one filename%s", force_module ? " after --module" : "");
+        print_usage_error();
+        return 2;
+    }
+    if (stdin_source && io::stdin().isatty()) {
+        print_usage();
+        return 0;
+    }
+
+    char[] source;
+    if (stdin_source) {
+        DString input = dstring::temp_with_capacity(4096);
+        char[4096] chunk;
+        while (true) {
+            sz? read_result = io::stdin().read(chunk[0:chunk.len]);
+            sz n;
+            if (try got = read_result) { n = got; }
+            else { io::eprintfn("boomkat: could not read stdin"); return 1; }
+            if (n == 0) break;
+            input.append_bytes(chunk[:n]);
+        }
+        source = (char[])input.str_view();
+    } else {
+        char[]? loaded = file::load_temp(path);
+        if (try data = loaded) { source = data; }
+        else { io::eprintfn("boomkat: could not read %s", path); return 1; }
+    }
 
     Heap*? hp = heap::create(null, null, null, null, null);
-    if (catch h = hp) { io::eprintfn("Failed heap"); return 1; }
+    if (catch h = hp) { io::eprintfn("boomkat: could not create heap"); return 1; }
     defer hp.destroy();
 
     Vm*? v = vm::vm_create(hp);
-    if (catch err = v) { io::eprintfn("VM failed"); return 1; }
+    if (catch err = v) { io::eprintfn("boomkat: could not create VM"); return 1; }
     defer vm::vm_destroy(v);
 
     hp.set_rejection_tracker(&cli_rejection_tracker, null);
@@ -78,22 +107,32 @@ fn int main(String[] args) {
 
     // Run TypeScript files with type syntax erased at parse time. Route files
     // with top-level import or export through the ESM pipeline regardless of extension.
-    bool ts_mode = has_ts_extension(path);
-    if (looks_like_module(source)) {
-        if (!ts_mode) {
-            int rc = esm::run_module_file(hp, v, (char[])path);
-            if (rc != 0) io::eprintfn("module rc=%d", rc);
-            if (rc == 1 && hp.has_error) { print_uncaught(hp, &hp.error_value); }
-            if (rc == 0 && unhandled_rejection_count > 0) return 1;
-            return rc;
-        }
+    bool ts_mode = !stdin_source && has_ts_extension(path);
+    if (force_module || (!stdin_source && looks_like_module(source))) {
         int rc = esm::run_module_file(hp, v, (char[])path);
-        if (rc != 0) io::eprintfn("module rc=%d", rc);
+        if (rc == 1 && (hp.has_error || !hp.error_value.is_undefined())) {
+            print_uncaught(hp, &hp.error_value);
+        } else if (rc != 0) {
+            io::eprintfn("boomkat: could not load module %s (code %d)", path, rc);
+        }
         if (rc == 0 && unhandled_rejection_count > 0) return 1;
         return rc;
     }
 
     return run_script_source(hp, v, source, path, ts_mode);
+}
+
+const String CLI_VERSION = "0.0.0";
+
+fn void print_usage() {
+    io::printn("Usage: boomkat [--module] [FILE | -]");
+    io::printn("       boomkat --help | --version");
+    io::printn("Run a JavaScript or TypeScript file, or read JavaScript from stdin.");
+    io::printn("Use --module to run a file as an ECMAScript module.");
+}
+
+fn void print_usage_error() {
+    io::eprintfn("Try 'boomkat --help' for usage.");
 }
 
 // Compile a script source and run it, reporting compile errors and uncaught
@@ -109,7 +148,7 @@ fn int run_script_source(Heap* hp, Vm* v, char[] source, String path, bool ts_mo
         f = ff;
     } else {
         ZString msg = (ZString)&lex.err_msg[0];
-        io::eprintfn("SyntaxError: %s (line %d, col %d)", msg, lex.err_line, lex.err_col);
+        io::eprintfn("%s:%d:%d: SyntaxError: %s", path, lex.err_line, lex.err_col, msg);
         return 1;
     }
     TVal? result = v.execute(f);
