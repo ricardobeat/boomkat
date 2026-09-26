@@ -1072,25 +1072,10 @@ int  cur_with_depth;
     // guarded GETGLOBAL/PUTGLOBAL path is used by default (conservative).
     List{uint} prim_only_name_idxs;
 
-    // Constant-pool indices of top-level `var` globals that a whole-program
-    // pre-scan proved REGISTER-RESIDENT: the unit has no eval/globalThis/
-    // window/Function/with/this observability, and the name is never referenced
-    // from a nested function body. Reads/writes of such a global compile to the
-    // name's home register (a live slot for the whole top-level body), avoiding
-    // the global-object GETGLOBAL/PUTGLOBAL IC walk per access. The global
-    // property is still created by DECLVAR_HOIST and synced once at the end of
-    // the script (PUTVAR), preserving observability for the embedder and any
-    // post-Program reader. Populated by pre_scan_global_var_slots at Script
-    // global scope only; empty otherwise (conservative).
+    // Constant-pool indices of a module's top-level `var`s that
+    // pre_scan_global_var_slots proved REGISTER-RESIDENT: reads and writes
+    // compile to the name's home register, a live slot for the whole body.
     List{uint} slot_global_name_idxs;
-
-    // Subset of slot_global_name_idxs whose binding was actually VALUE-WRITTEN
-    // somewhere in the unit (an initializer or an assignment/update). A bare
-    // `var x;` declaration never writes the global property, so it must not be
-    // synced either: writing a no-op value to a non-writable global (e.g.
-    // `var undefined;` or a property frozen by another script) would wrongly
-    // throw. Only value-written vars get the end-of-script PUTVAR.
-    List{uint} slot_global_synced_name_idxs;
 
     // Direct eval tracking, when true, the CALL path must create a fresh env.
     bool has_direct_eval;
@@ -1410,7 +1395,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.declared_global_name_idxs.allocator = mem;
     self.prim_only_name_idxs.allocator = mem;
     self.slot_global_name_idxs.allocator = mem;
-    self.slot_global_synced_name_idxs.allocator = mem;
     self.direct_eval_offsets.allocator = mem;
     self.bindings.allocator = mem;
     self.captured_names.allocator = mem;
@@ -1459,7 +1443,6 @@ fn void CompilerContext.cleanup(&self) {
     self.declared_global_name_idxs.free();
     self.prim_only_name_idxs.free();
     self.slot_global_name_idxs.free();
-    self.slot_global_synced_name_idxs.free();
     self.direct_eval_offsets.free();
     self.bindings.free();
     foreach (name : self.captured_names) { mem::free(name.ptr); }

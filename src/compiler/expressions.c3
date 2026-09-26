@@ -1632,9 +1632,9 @@ fn ushort? CompilerContext.unary_expr(&self) {
 // Resolve a bare or parenthesized identifier under TYPEOF to a register and
 // emit register-based TYPEOF, which reads the live value rather than the
 // env-walking TYPEOFIDENT. A non-captured local resolves from the scope
-// stack; a REGISTER-RESIDENT top-level var resolves to its home register
-// (its env binding only holds the end-of-script mirror, so TYPEOFIDENT would
-// report a stale "undefined"). Returns the TYPEOF result register, or
+// stack; a REGISTER-RESIDENT module var resolves to its home register
+// (its env binding is never written, so TYPEOFIDENT would report a stale
+// "undefined"). Returns the TYPEOF result register, or
 // SCOPE_ERROR when the name is neither, so the caller falls back to
 // TYPEOFIDENT (which handles the unresolvable-reference case).
 fn ushort? CompilerContext.try_emit_typeof_register(&self, char[] id_name) {

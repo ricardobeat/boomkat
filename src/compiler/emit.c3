@@ -96,8 +96,8 @@ fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
 // implicit binding needs the function to build an arguments object.
 fn uint? CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
     self.note_arguments_reference_by_index(name_idx)!;
-    // A REGISTER-RESIDENT top-level var reads its home register instead of the
-    // global-object property (which only holds the end-of-script mirror).
+    // A REGISTER-RESIDENT module var reads its home register, the binding's
+    // only live storage.
     if (self.is_slot_global_name_index(name_idx)) {
         if (try ushort home = self.resolve_slot_global_by_index(name_idx)) {
             self.last_was_getvar = false;

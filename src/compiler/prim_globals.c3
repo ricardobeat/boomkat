@@ -500,21 +500,19 @@ fn bool CompilerContext.is_prim_only_global(&self, uint name_idx) {
 
 const uint SLOT_GLOBAL_MAX = 64;
 
-// Whole-program register-resident global proof (slot_global_name_idxs).
+// Register-resident module variable proof (slot_global_name_idxs).
 //
-// A top-level `var` is register-resident when the unit contains no dynamic
-// observability hazards and the variable is never referenced inside nested
-// callables (brace_depth >= 1 or arrow bodies).
+// A module's top-level `var` is register-resident when the body contains no
+// direct `eval` or `with` and the variable is never referenced inside nested
+// callables (brace_depth >= 1 or arrow bodies). The binding lives in the
+// module environment, which only direct `eval`, nested callables, and
+// importers can reach. Following V8's and JSC's module scope allocation, an
+// exported name stays in the environment, where importers' live bindings read
+// it; any other binding is invisible outside the body, so it needs no sync.
 //
-// In a Script the binding is a global object property, so `eval`,
-// `globalThis`, `window`, `Function`, `with`, and `this` are all hazards, and
-// the value is synced to the property once at script completion.
-//
-// In a Module the binding lives in the module environment, which only direct
-// `eval`, nested callables, and importers can reach. Following V8's and JSC's
-// module scope allocation, an exported name stays in the environment, where
-// importers' live bindings read it; any other binding is invisible outside the
-// body, so it needs no end-of-body sync.
+// Scripts get no such proof: a Script's var is a global object property, and
+// code from another script (an earlier script's function, or one evaluated
+// mid-run by the host) can read or write it at any call.
 //
 // Register-resident globals allocate a dedicated home register across the
 // top-level body (reads use LDREG, writes use register stores). Ambiguous
@@ -522,8 +520,7 @@ const uint SLOT_GLOBAL_MAX = 64;
 // standard GETGLOBAL/PUTGLOBAL paths.
 fn void CompilerContext.pre_scan_global_var_slots(&self) {
     // Eval code may reference an outer caller environment.
-    if (!self.is_global || self.in_eval_code) return;
-    bool in_module = self.is_module;
+    if (!self.is_module || self.in_eval_code) return;
 
     ForLhsSnapshot snap = self.save_lhs_snapshot();
 
@@ -531,8 +528,7 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
     ushort[SLOT_GLOBAL_MAX]   name_lens;
     bool[SLOT_GLOBAL_MAX]     declared;
     bool[SLOT_GLOBAL_MAX]     nested_ref;
-    bool[SLOT_GLOBAL_MAX]     value_written;   // Assigned or initialized with a value
-    bool[SLOT_GLOBAL_MAX]     exported;        // Named by an export (modules only)
+    bool[SLOT_GLOBAL_MAX]     exported;        // Named by an export
     uint count = 0;
     bool disabled = false;
     bool overflow = false;
@@ -606,14 +602,7 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
         if (paren_depth == 0 && tt != TokenType.ARROW) { pend_count = 0; }
 
         if (tt == TokenType.WITH) { disabled = true; break; }
-        if (in_module) {
-            if (tt == TokenType.IDENTIFIER && tok.str_value == "eval") { disabled = true; break; }
-        } else {
-            if (tt == TokenType.THIS) { disabled = true; break; }
-            if (tt == TokenType.IDENTIFIER && is_prim_observability_name(tok.str_value)) {
-                disabled = true; break;
-            }
-        }
+        if (tt == TokenType.IDENTIFIER && tok.str_value == "eval") { disabled = true; break; }
 
         if (tt == TokenType.LPAREN) {
             paren_depth++;
@@ -724,19 +713,12 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
                     || (tt == TokenType.IDENTIFIER && tok.str_value == "of");
                 if (!destructure_closed) {
                     destructure_closed = true;
-                } else if (in_module) {
+                } else {
                     // Only a pattern is followed by `=` (an assignment or a
                     // declaration initializer) or by `in`/`of` (a for head);
                     // any other follower means the candidate was a literal.
                     if (pattern_follower) { disabled = true; break; }
                     in_destructure = false;
-                } else if (pattern_follower || tt == TokenType.SEMICOLON
-                           || tt == TokenType.RPAREN) {
-                    // A Script also treats a literal closed by `;` or `)` as a
-                    // pattern. Its vars are global properties that a function
-                    // from another script can read mid-run, before the
-                    // end-of-script sync, so the proof stays this narrow.
-                    disabled = true; break;
                 }
             }
         }
@@ -784,14 +766,13 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
 
         if (tt == TokenType.SEMICOLON && paren_depth == 0) decl_context = false;
 
-        // Assignments and updates record variables that require property
-        // synchronization at script completion. Bare `var x;` declarations
-        // do not write properties and are skipped.
+        // An assignment inside parentheses may turn out to be an arrow
+        // parameter default, which runs in the arrow's own scope: hold it
+        // until the closing paren shows whether `=>` follows.
         if (slot_global_is_assign_op(tt) && prev_tt == TokenType.IDENTIFIER && prev_ident_len > 0) {
             int aidx = slot_global_find(&names[0], &name_lens[0], count,
                                         prev_ident[:prev_ident_len]);
             if (aidx >= 0) {
-                value_written[aidx] = true;
                 if (paren_depth > 0) {
                     if (pend_count < SLOT_MAX_PAREN_ASSIGNS) {
                         pend_aidx[pend_count]  = (ushort)aidx;
@@ -839,11 +820,6 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
             uint idx = self.add_string_constant(names[i][:name_lens[i]]);
             if (!self.slot_global_name_idxs.contains(idx)) {
                 self.slot_global_name_idxs.push(idx);
-            }
-            // Only sync values to the global property if an assignment or
-            // initializer occurred; bare declarations do not overwrite properties.
-            if (!in_module && value_written[i] && !self.slot_global_synced_name_idxs.contains(idx)) {
-                self.slot_global_synced_name_idxs.push(idx);
             }
         }
     }
