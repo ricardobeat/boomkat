@@ -97,6 +97,10 @@ fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
     if ((act.flags & (ACT_FLAG_THIS_OWNED | ACT_FLAG_CONSTRUCT | ACT_FLAG_THIS_VALID)) != 0) {
         h.mark_tval(&act.this_binding);
     }
+    // An owned callee may sit in no register at all: a tail call slides the
+    // frame over the one that held it. Otherwise tv_func copies a value the
+    // caller still holds.
+    if ((act.flags & ACT_FLAG_CALLEE_OWNED) != 0) { h.mark_tval(&act.tv_func); }
     if (act.new_target != null) { h.mark_hobject(act.new_target); }
     if (act.async_promise != null) { h.mark_hobject(act.async_promise); }
     if (act.async_gen_state != null) {
@@ -514,17 +518,21 @@ fn bool derived_ctor_returns_undefined_uninitialized(Activation* callee_act) @in
         && env::is_tdz_sentinel(&callee_act.this_binding);
 }
 
-// When an activation whose callee was BORROWED (ACT_FLAG_BORROWED_CALLEE) is
-// unwound abnormally (exception), its retval slot in the surviving caller
-// still holds the borrowed, non-owned callee value. A later decref_callee_regs
-// sweep of that caller frame would decref a reference the caller never owned
-// (the callee register is inside the caller's [0..heap_reg_count] range whenever
-// a heap argument was passed). Neutralize the borrowed bits with a raw
-// overwrite so the sweep skips over harmless undefined. No decref: borrowed.
-fn void clear_borrowed_callee_slot(Activation* act) @inline {
+// Release what an activation owns as a throw unwinds it. Its registers are
+// left for the surviving caller's sweep (see vm_pop_activation), but its owned
+// this_binding and callee are the frame's alone.
+//
+// A BORROWED_CALLEE frame's retval slot in the surviving caller still holds
+// the non-owned callee, and a later decref_callee_regs sweep of that caller
+// would decref a reference the caller never owned (the callee register is
+// inside the caller's [0..heap_reg_count] range whenever a heap argument was
+// passed). The slot is cleared with a raw overwrite before the frame's own
+// reference to that callee drops.
+fn void release_unwound_refs(Vm* vm, Activation* act) @inline {
     if ((act.flags & ACT_FLAG_BORROWED_CALLEE) != 0 && act.retval != null) {
         act.retval.set_undefined();
     }
+    act.release_refs(vm.heap);
 }
 
 // Free every Catcher still chained on an activation that is being popped.
@@ -781,7 +789,7 @@ $endif
 //   - a frame unwound by a throw. Callee frames overlap the caller's register
 //     window (sliding-window calls), so the surviving catcher frame's own
 //     later sweep owns that shared region. That is why
-//     clear_borrowed_callee_slot neutralizes the borrowed slot for "a later
+//     release_unwound_refs neutralizes the borrowed slot for "a later
 //     decref_callee_regs sweep of that caller frame" instead of releasing it
 //     during the unwind. Sweeping per-unwound-frame double-releases the
 //     overlap: it costs 1-2 intermittent failures in built-ins/Iterator's
@@ -843,7 +851,7 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
     // If we just popped the last activation, there is no caller
     if (vm.activation_count == 0) {
         vm.heap.tval_copy_ref(&vm.return_val, &val);
-        callee_act.release_this(vm.heap);
+        callee_act.release_refs(vm.heap);
         return val;
     }
 
@@ -894,7 +902,7 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
     // (construct returns may read this_binding to produce the result value).
     // ACT_FLAG_THIS_OWNED is set by paths that incref this_binding (inline CALL,
     // getter invocation) and NOT set by vm_call_fn_impl (raw assign + restore).
-    callee_act.release_this(vm.heap);
+    callee_act.release_refs(vm.heap);
 
     // Restore valstack_top to match caller's nregs
     if (caller_act.func != null) {

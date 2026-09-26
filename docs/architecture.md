@@ -201,13 +201,17 @@ pointers after reallocating it.
 Frames also carry the flags that drive spec behaviour: `ACT_FLAG_CONSTRUCT`,
 `ACT_FLAG_DERIVED` for a derived constructor's return check,
 `ACT_FLAG_THIS_OWNED` when the frame holds a reference to `this`, and
-`ACT_FLAG_BORROWED_CALLEE` when the callee was copied from a global binding
+`ACT_FLAG_BORROWED_CALLEE` when the callee was copied from a permanent binding
 without an incref, so the return write-back must not decref it.
+`ACT_FLAG_CALLEE_OWNED` marks a frame that holds its own reference to its
+function in `tv_func`: a borrowed call, whose binding the body may reassign,
+and a tail call, which slides the frame over the register that held the
+callee. Every pop releases what the frame owns through `release_refs`.
 
 For GC, `valstack_top` bounds the live stack area. The marker also scans each
 frame's register span and fields that may be a value's only root: owned `this`,
-`new_target`, an async promise, resumed generator state, and exceptions saved
-in catchers.
+an owned callee, `new_target`, an async promise, resumed generator state, and
+exceptions saved in catchers.
 
 ### Calls
 

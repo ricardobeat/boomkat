@@ -310,6 +310,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // `continue` and re-execute stale bytecode.)
                         vm.heap.tval_copy_ref(&vm.return_val, &val);
                         if (val_pinned) vm.heap.decref_tval(&val);
+                        callee_act.release_callee(vm.heap);
                         ds.halt = true;
                         ds.halt_value = vm.return_val;
                         return (TVal){};
@@ -390,6 +391,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         }
                     }
                     if (val_pinned) vm.heap.decref_tval(&val);
+                    callee_act.release_refs(vm.heap);
                     ds.act = &vm.activations[vm.activation_count - 1];
                     vm.valstack_bottom = ds.act.bottom;
                     vm.valstack_top = ds.act.caller_valstack_top;

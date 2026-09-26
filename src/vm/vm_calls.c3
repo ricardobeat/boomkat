@@ -647,16 +647,17 @@ fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
 // vm_throw_value/vm_throw_error_fmt + needs_restart protocol) on a
 // ReferenceError, TDZ access, or a propagated getter throw.
 //
-// `borrowed` (out): set true when the callee resolved to a *global*
-// binding (the global object record or the top-level declarative record).
-// Those environments are permanent GC roots, so their binding slot cannot
-// be freed for the duration of the call; the callee value is written into
-// the register WITHOUT an incref (a plain copy) and NOT registered via
+// `borrowed` (out): set true when the callee resolved to a binding of a
+// permanent environment (see is_permanent_env). The callee value is written
+// into the register WITHOUT an incref (a plain copy) and NOT registered via
 // track_heap_store. The caller (try_fast_compiled_call) commits this borrow
 // only when it also takes the compiled-function fast path, where the result
 // overwrites the same register on return and must therefore skip decref-ing
-// the (non-owned) old value. For any other callee kind the caller "un-borrows"
-// by incref+track before dispatching, so every slow path stays balanced.
+// the (non-owned) old value. The environment outlives the call but its
+// binding can be reassigned mid-call, so the frame that path pushes takes the
+// one reference to the callee (ACT_FLAG_CALLEE_OWNED). For any other callee
+// kind the caller "un-borrows" by incref+track before dispatching, so every
+// slow path stays balanced.
 fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bool* borrowed) @inline {
     Vm* vm = ds.vm;
     TVal* ra = ds.regs_base + callee_reg;
@@ -670,7 +671,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     //
     // The slot holds only owned references here: the borrow it may have held
     // was consumed by the previous call's write-back (owned result) or
-    // neutralized by clear_borrowed_callee_slot on unwind. Dropping the
+    // neutralized by release_unwound_refs on unwind. Dropping the
     // reference is therefore mandatory, not optional. Raw-clearing without a
     // decref leaks the previous value, and a leaked large non-interned string
     // (parked here by a compound-assignment result copy) survives until the
@@ -1504,19 +1505,22 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;
                     new_act.flags = 0;
-                    // Sloppy `arguments.callee` mirrors the Function value the
-                    // call was made through; fast paths skipped the callee TV
-                    // extraction above so we re-derive it from the callable
-                    // bracket. hobj_fast is the wrapping Function HObject
-                    // (lightfuncs carry their own TV via the slow path's
-                    // gate above, so this branch handles heap functions only).
-                    if (hobj_fast != null) {
-                        TVal fast_callee_tv;
-                        fast_callee_tv.set_object(hobj_fast);
-                        new_act.tv_func = fast_callee_tv;
-                    }
+                    // hobj_fast is the Function HObject the call was made
+                    // through (lightfuncs take the slow path). The caller's
+                    // callee register keeps it alive unless the register was
+                    // borrowed: then the binding it came from can be
+                    // reassigned mid-call, so the frame takes its own
+                    // reference. A function calling itself is the exception:
+                    // the caller's frame runs the same closure and outlives
+                    // this one, so whatever keeps the caller's alive keeps
+                    // this one's too.
+                    new_act.tv_func.set_object_borrowed(hobj_fast);
                     if (callee_borrowed) {
                         new_act.flags |= ACT_FLAG_BORROWED_CALLEE;
+                        if (!ds.act.tv_func.is_object() || ds.act.tv_func.get_heapptr() != hobj_fast) {
+                            ((HeapHeader*)hobj_fast).incref();
+                            new_act.flags |= ACT_FLAG_CALLEE_OWNED;
+                        }
                     }
                     if (target_fast.has_direct_eval()) {
                         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
@@ -1808,7 +1812,25 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             && (ca.flags & ACT_FLAG_THIS_VALID) != 0) {
                             vm.heap.decref_tval(&ca.this_binding);
                         }
-                        bool ca_borrowed = (ca.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
+                        // The caller's own function dies with its frame too,
+                        // except where it still sits in the retval slot the
+                        // tail callee inherits. A borrowed slot owns nothing,
+                        // so the slot takes ca's tv_func reference (one is
+                        // taken here when ca ran on its caller's): it becomes
+                        // an ordinary owned register of the frame below,
+                        // released by the write-back or by that frame's sweep
+                        // if a throw unwinds past it.
+                        if ((ca.flags & ACT_FLAG_BORROWED_CALLEE) != 0) {
+                            if ((ca.flags & ACT_FLAG_CALLEE_OWNED) == 0) {
+                                ((HeapHeader*)ca.tv_func.get_heapptr()).incref();
+                            }
+                            Activation* below = &vm.activations[vm.activation_count - 2];
+                            if (ca.retval >= below.bottom) {
+                                track_heap_store(below, ca.retval, (uint)(ca.retval - below.bottom));
+                            }
+                        } else if ((ca.flags & ACT_FLAG_CALLEE_OWNED) != 0) {
+                            vm.heap.decref_tval(&ca.tv_func);
+                        }
 
                         // Take ownership of the arguments before releasing the
                         // caller's registers.
@@ -1847,15 +1869,12 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // swept — the overlap holds the callee's arguments, which
                         // the block above just made this frame's own.
                         //
-                        // The callee register is skipped outright. When the
-                        // resolution borrowed (callee_borrowed / a committed
-                        // ACT_FLAG_BORROWED_CALLEE) the slot holds a non-owned
-                        // reference the sweep must not decref; and it sits
-                        // BELOW the callee window (callee_reg, not
+                        // The callee register is skipped outright: it sits
+                        // below the callee window (callee_reg, not
                         // callee_reg + 2), so the overlap bound does not
-                        // exclude it the way the original comment assumed.
-                        // Either way its reference is the live callee's, which
-                        // outlives this frame.
+                        // exclude it. A borrowed register owns nothing, and an
+                        // owned one hands its reference to the callee's
+                        // tv_func below.
                         if (ca.heap_reg_count != 0) {
                             CompiledFunction* ca_func = (CompiledFunction*)ca.func;
                             if (ca_func != null) {
@@ -1889,8 +1908,16 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         new_act.retval = ca.retval;
                         new_act.parent = ca.parent;
                         new_act.caller_valstack_top = ca.caller_valstack_top;
-                        if (ca_borrowed) { new_act.flags |= ACT_FLAG_BORROWED_CALLEE; }
-                        else { new_act.flags &= ~ACT_FLAG_BORROWED_CALLEE; }
+                        // The slide overwrites the register that held the
+                        // callee and ends the frame that may have been keeping
+                        // it alive, so from here the frame owns its function.
+                        // An owned register's reference moves into tv_func; a
+                        // borrowed call took one at push unless it was calling
+                        // itself. The inherited retval slot is owned (above).
+                        if (callee_borrowed && (new_act.flags & ACT_FLAG_CALLEE_OWNED) == 0) {
+                            ((HeapHeader*)hobj_fast).incref();
+                        }
+                        new_act.flags = (new_act.flags & ~ACT_FLAG_BORROWED_CALLEE) | ACT_FLAG_CALLEE_OWNED;
                         // The callee's frame was built in the pooled slot one
                         // above the caller's, and a tail call never advances
                         // `activation_count` past it, so that slot is abandoned
@@ -1905,7 +1932,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         Activation* scratch = new_act;
                         *ca = *scratch;
                         scratch.this_binding.set_undefined();
-                        scratch.flags &= ~(ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID);
+                        scratch.flags &= ~(ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID | ACT_FLAG_CALLEE_OWNED);
                         new_act = ca;
                         new_regs = dst;
                     }

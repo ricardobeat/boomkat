@@ -194,7 +194,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                            && &vm.activations[vm.activation_count - 1] != search_act) {
                         Activation* popping = &vm.activations[vm.activation_count - 1];
                         vm_complete_gen_on_unwind(vm, popping);
-                        clear_borrowed_callee_slot(popping);
+                        release_unwound_refs(vm, popping);
                         free_catcher_chain(vm, popping);
                         vm_pop_activation(vm, popping, "throw_unwind", true);
                     }
@@ -225,7 +225,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                            && &vm.activations[vm.activation_count - 1] != search_act) {
                         Activation* popping = &vm.activations[vm.activation_count - 1];
                         vm_complete_gen_on_unwind(vm, popping);
-                        clear_borrowed_callee_slot(popping);
+                        release_unwound_refs(vm, popping);
                         free_catcher_chain(vm, popping);
                         vm_pop_activation(vm, popping, "throw_unwind", true);
                     }
@@ -264,7 +264,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                    && &vm.activations[vm.activation_count - 1] != search_act) {
                 Activation* popping = &vm.activations[vm.activation_count - 1];
                 vm_complete_gen_on_unwind(vm, popping);
-                clear_borrowed_callee_slot(popping);
+                release_unwound_refs(vm, popping);
                 free_catcher_chain(vm, popping);
                 vm_pop_activation(vm, popping, "throw_unwind_async", true);
             }
@@ -273,6 +273,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                 vm.heap.resume_gen = null;
             }
             decref_callee_regs(vm, search_act);
+            search_act.release_refs(vm.heap);
             // Registers already released just above; pop the async frame itself.
             if (vm.activation_count > 0) {
                 vm_pop_activation(vm, search_act, "throw_async_frame", true);
