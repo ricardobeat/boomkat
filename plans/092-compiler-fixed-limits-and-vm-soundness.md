@@ -35,7 +35,7 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
    for lookahead, so functions and classes stop at 100-150 levels on an 8 MB stack.
 4. [x] **Strict duplicate parameters.** Duplicates past the 32nd parameter are accepted, and names of 64
    or more characters escape the check (`SeenParams`).
-5. [ ] **Nested classes.** 17 or more give a spurious "private name is not declared" error.
+5. [x] **Nested classes.** 17 or more give a spurious "private name is not declared" error.
 6. [ ] **Octal escapes before `"use strict"`.** One that sits more than 16 directives earlier is not
    rejected (the `prologue_octal` ring).
 7. [ ] **Long names are cut.** A function assigned to a name over 128 characters gets an empty `.name`

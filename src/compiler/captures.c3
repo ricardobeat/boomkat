@@ -2,6 +2,7 @@ module boomkat::compiler;
 
 import boomkat::lexer;
 import std::io;
+import std::collections::list;
 
 // ============================================================================
 // Capture pre-scan (plan 045)
@@ -155,13 +156,12 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     // callable bodies the `) {` rule already covers.
     //
     // `class_pending` marks a `class` whose body brace has not opened yet;
-    // class_brace[] then records the brace_depth of each open class body, so a
+    // class_brace then records the brace_depth of each open class body, so a
     // `=` seen at that exact depth is a field initializer (a method body sits
-    // deeper) and degrades. Nesting past the fixed depth degrades too, rather
-    // than losing track of a body.
-    const uint MAX_CLASS_NEST = 8;
-    uint[MAX_CLASS_NEST] class_brace;
-    uint class_open = 0;
+    // deeper) and degrades.
+    List{uint} class_brace;
+    class_brace.init(mem);
+    defer class_brace.free();
     bool class_pending = false;
 
     bool done = false;
@@ -289,8 +289,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
             // depth. `extends` clauses keep the arm set through their tokens,
             // which is correct: the first `{` after `class` is the body.
             if (class_pending) {
-                if (class_open >= MAX_CLASS_NEST) { self.capture_all = true; break; }
-                class_brace[class_open++] = brace_depth;
+                class_brace.push(brace_depth);
                 class_pending = false;
             }
             brace_depth++;
@@ -308,8 +307,8 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                 done = true;  // underflow: end of expr-mode span or malformed input
             } else {
                 brace_depth--;
-                if (class_open > 0 && class_brace[class_open - 1] == brace_depth) {
-                    class_open--;
+                if (try top = class_brace.last()) {
+                    if (top == brace_depth) class_brace.remove_last()!!;
                 }
                 combined_depth--;
                 // For function bodies, brace_depth returning to 0 means the
@@ -472,8 +471,8 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
             // so this is the case that must degrade. A method body is deeper,
             // and a default in a method's parameter list sits inside parens the
             // param buffer already handles.
-            if (class_open > 0
-                && (int)brace_depth == (int)class_brace[class_open - 1] + 1) {
+            if (class_brace.len() > 0
+                && (int)brace_depth == (int)class_brace[^1] + 1) {
                 self.capture_all = true;
                 break;
             }

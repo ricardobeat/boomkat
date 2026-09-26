@@ -37,8 +37,6 @@ fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx
     target_ctx.is_constructable = false;  // super() forbidden in initializers
     target_ctx.forbid_arguments = true;
     target_ctx.adopt_private_names(self);
-    target_ctx.private_scope_start = self.private_scope_start;
-    target_ctx.private_scope_depth = self.private_scope_depth;
     // Re-intern super name into the field-init context's own constant pool.
     // Without this, super.x inside a field initializer or arrow compiled
     // within one would resolve against the literal "__super__" fallback
@@ -69,8 +67,7 @@ fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx
 // source-illegal "#priv:" prefix as declare_class_brand, so it can never
 // collide with or be resolved via resolve_private_name.
 fn char[] CompilerContext.mint_priv_closure_slot(&self, usz index, char[] tag) {
-    uint class_id = self.private_scope_depth > 0
-        ? self.private_class_id[self.private_scope_depth - 1] : 0;
+    uint class_id = self.innermost_private_scope().class_id;
     char[96] buf;
     char[16] digits;
     char[] prefix = "#priv:";
@@ -783,8 +780,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     bool has_static_brand = false;
     char[] static_brand_slot_name = "";
     {
-        uint priv_scope_begin0 = self.private_scope_depth > 0
-            ? self.private_scope_start[self.private_scope_depth - 1] : 0;
+        uint priv_scope_begin0 = self.innermost_private_scope().start;
         for (uint pbi = priv_scope_begin0; pbi < self.private_name_table.count; pbi++) {
             if (self.private_name_table.entries[pbi].is_static) {
                 if (!has_static_brand) {
@@ -819,8 +815,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // it stamps the constructor object itself via ADD_BRAND, which needs
     // ctor_reg, not yet live until the constructor closure is built below.
     {
-        uint priv_scope_begin = self.private_scope_depth > 0
-            ? self.private_scope_start[self.private_scope_depth - 1] : 0;
+        uint priv_scope_begin = self.innermost_private_scope().start;
         for (uint pi = priv_scope_begin; pi < self.private_name_table.count; pi++) {
             uint desc_idx = self.add_string_constant(self.private_name_table.entries[pi].name);
             ushort sym_reg = self.alloc_reg();
@@ -882,8 +877,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // are unaffected, their target is always ctor_reg, whose identity
     // return-override can't change.
     {
-        uint priv_scope_begin_m = self.private_scope_depth > 0
-            ? self.private_scope_start[self.private_scope_depth - 1] : 0;
+        uint priv_scope_begin_m = self.innermost_private_scope().start;
         for (uint pmi = priv_scope_begin_m; pmi < self.private_name_table.count; pmi++) {
             PrivateNameEntry* pme = &self.private_name_table.entries[pmi];
             if (!pme.is_method || pme.is_static) continue;
@@ -1506,9 +1500,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             char[] fkey_slot = "";
             ushort fkey_reg = 0xFFFF;
             if (has_computed_key) {
-                uint class_id_f = self.private_scope_depth > 0
-                    ? self.private_class_id[self.private_scope_depth - 1]
-                    : 0;
+                uint class_id_f = self.innermost_private_scope().class_id;
                 char[96] buf;
                 char[16] digits;
                 char[] prefix = "#priv:";
