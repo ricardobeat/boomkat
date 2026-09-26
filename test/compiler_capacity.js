@@ -175,6 +175,16 @@ check("a bound name that ends in a multibyte character",
     run("var o = { " + "x".repeat(119) + "\u00e9: function(){} }; o." + "x".repeat(119) + "\u00e9.bind().name"),
     "bound " + "x".repeat(119) + "\u00e9");
 
+// Names past the string intern cutoff (256 bytes) still resolve.
+var giantName = "g".repeat(1000);
+check("a long global variable", run("var " + giantName + " = 1; " + giantName), 1);
+check("a long implicit global", run(giantName + "x = 2; " + giantName + "x"), 2);
+check("a long local captured by a closure",
+    run("(function(){ var " + giantName + " = 3; return () => " + giantName + " })()()"), 3);
+check("a long property name", run("({ " + giantName + ": 4 })." + giantName), 4);
+check("a long property name from a computed key", run("({ " + giantName + ": 5 })['" + giantName + "']"), 5);
+check("a long global function name", run("function " + giantName + "(){ return 6 } " + giantName + "()"), 6);
+
 // Nesting deep enough to exhaust the native stack is an error, not a crash.
 function throwsOnDeepNesting(src) {
     try { run(src); return false; } catch (e) { return e instanceof SyntaxError || e instanceof RangeError; }
