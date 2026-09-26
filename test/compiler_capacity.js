@@ -89,4 +89,23 @@ check("a for-in head pattern with many captured bindings",
     run("(function(){ var fs = []; for (let [" + names + "] in {ab: 0, cd: 0}) fs.push(() => a0 + a1 + (a99 === undefined)); " +
         "return fs.map(f => f()).join() })()"), "abtrue,cdtrue");
 
+// Control flow nested past any small fixed depth.
+function nest(n, open, close, inner) { return open.repeat(n) + inner + close.repeat(n); }
+check("a break out of many nested try blocks runs every finally",
+    run("(function(){ var log = 0; for (;;) { " + nest(20, "try { ", " } finally { log++ } ", "break;") + " } return log })()"), 20);
+check("a break from a try inside a loop inside many try blocks runs its finally",
+    run("(function(){ var log = 0; " + nest(10, "try { ", " } finally {} ",
+        "for (;;) { try { break; } finally { log++ } }") + " return log })()"), 1);
+check("a labelled continue across many nested loops",
+    run("(function(){ var n = 0; outer: for (var i = 0; i < 3; i++) { " +
+        nest(30, "for (;;) { ", " } ", "n++; continue outer;") + " } return n })()"), 3);
+check("a break out of 200 nested loops",
+    run("(function(){ var n = 0; " + nest(200, "while (true) { ", " break; } ", "n++;") + " return n })()"), 1);
+check("many nested labels",
+    run("(function(){ var n = 0; " + range(30, i => "l" + i + ": { ").join("") + "n++; break l0; n++; " +
+        "}".repeat(30) + " return n })()"), 1);
+var arms = range(3000, i => "case " + i + ": return " + i + ";").join(" ");
+check("a switch with many cases",
+    run("(function(x){ switch (x) { " + arms + " } })(2999)"), 2999);
+
 print("compiler_capacity: " + passed + " passed");
