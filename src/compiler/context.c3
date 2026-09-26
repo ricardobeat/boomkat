@@ -558,9 +558,9 @@ struct CompilerContext {
     // is a simple IdentifierReference. Overwritten on every identifier
     // primary_expr; only meaningful immediately after parsing an
     // assignment LHS.
-    char[128] last_lhs_name_buf;
-    ushort last_lhs_name_len;
-    // True when the name in last_lhs_name_buf reached us through a
+    // Token text, so it stays valid for the whole compile.
+    char[] last_lhs_name;
+    // True when last_lhs_name reached us through a
     // CoverParenthesizedExpression, as in `(fn) = function(){}`.
     //
     // Parentheses change only ONE of the two things the saved name feeds.
@@ -569,7 +569,7 @@ struct CompilerContext {
     // must not name the function. The strict-mode early error for assigning
     // to `eval` / `arguments` (§13.15.1) is the opposite: it keys off
     // AssignmentTargetType, which parentheses PRESERVE, so `(eval) = 1` and
-    // `(eval)++` stay SyntaxErrors. Clearing last_lhs_name_len for the first
+    // `(eval)++` stay SyntaxErrors. Clearing last_lhs_name for the first
     // rule silently disabled the second, so the two are tracked separately.
     bool last_lhs_name_parenthesized;
     // LHS mode: when true, member_expr saves obj/key without emitting GETPROP
@@ -1179,8 +1179,8 @@ int  cur_with_depth;
     // or by object literal property parsing (e.g. `o = { method() {} }`).
     // Used by function_expr / function_expr_body when no explicit function name is given.
     // Cleared after use. Per ES2015 §14.1.20 SetFunctionName.
-    char[128] inferred_name_buf;
-    ushort inferred_name_len;
+    // Token text or a keep_name copy, so it stays valid for the whole compile.
+    char[] inferred_name;
     bool has_inferred_name;
 
     // Optimization toggle, when true, finish() skips the peephole passes
@@ -1256,6 +1256,14 @@ fn bool CompilerContext.last_was_assign_target(&self) @inline
        && (self.last_was_member() || self.last_was_getvar || self.last_was_local_var);
 
 
+// Copy a name built outside the source text (a formatted numeric key, a
+// "#"-prefixed private name) into the lexer's arena, which lives as long as
+// the compile, so it can be held as a slice like token text.
+fn char[] CompilerContext.keep_name(&self, char[] name) {
+    if (name.len == 0) return {};
+    return self.lexer.arena_dup(name.ptr, name.len);
+}
+
 // Bracket the parser's inferred-name slot across a NamedEvaluation scope via
 // a save/defer-restore helper pair. Use:
 //
@@ -1275,22 +1283,19 @@ fn bool CompilerContext.last_was_assign_target(&self) @inline
 // body, method-shorthand body, class field, `export default`.
 struct NameEvalFrame {
     bool has;
-    ushort len;
-    char[128] buf;
+    char[] name;
 }
 
 fn NameEvalFrame CompilerContext.save_name_eval(&self) {
     return {
         .has = self.has_inferred_name,
-        .len = self.inferred_name_len,
-        .buf = self.inferred_name_buf,
+        .name = self.inferred_name,
     };
 }
 
 fn void CompilerContext.restore_name_eval(&self, NameEvalFrame f) {
     self.has_inferred_name = f.has;
-    self.inferred_name_len = f.len;
-    self.inferred_name_buf = f.buf;
+    self.inferred_name = f.name;
 }
 
 // True when the recorded member is `super.x` / `super[k]`, whose store form is

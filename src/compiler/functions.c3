@@ -4317,12 +4317,9 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // propagate this via the inferred_name slot, `function_expr` /
     // arrow / class / generator consults `has_inferred_name` (set by
     // the var initializer path in `decl_var`) and tags the function.
-    if (inferred_name.len > 0 && inferred_name.len < 128) {
+    if (inferred_name.len > 0) {
         def_ctx.has_inferred_name = true;
-        def_ctx.inferred_name_len = (ushort)inferred_name.len;
-        for (usz i = 0; i < (usz)inferred_name.len; i++) {
-            def_ctx.inferred_name_buf[i] = inferred_name[i];
-        }
+        def_ctx.inferred_name = self.keep_name(inferred_name);
     }
 
     // Function-level lexical scope (empty, no parameters)
@@ -5115,11 +5112,9 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     CompiledFunction* func = inner_ctx.finish()!;
 
-    // Set function name. The name parameter is a slice into the caller's
-    // inferred_name_buf (or a lexer token buffer), which gets reused for
-    // subsequent function compilations. Copy the bytes into a heap allocation
-    // that outlives the compile context, so each CompiledFunction holds its
-    // own stable copy of its name.
+    // Set function name. The name parameter is a slice into compile-lifetime
+    // storage; copy the bytes into a heap allocation that outlives the
+    // compile, so each CompiledFunction holds its own stable copy of its name.
     if (name.len > 0) {
         char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)name.len + 1)) ?? null;
         if (name_heap != null) {
@@ -5312,13 +5307,13 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
         has_name = true;
         name_is_explicit = true;
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
     } else if (self.has_inferred_name) {
-        name = self.inferred_name_buf[:(uint)self.inferred_name_len];
+        name = self.inferred_name;
         has_name = true;
         name_is_explicit = false;
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
     }
 
     // Compile the function body into a sub-context with the expression's own
@@ -5371,9 +5366,9 @@ fn ushort? CompilerContext.function_expr_body(&self, uint src_start = 0xFFFFFFFF
     // calling. After consumption clear it so nested functions don't inherit.
     char[] name;
     if (self.has_inferred_name) {
-        name = self.inferred_name_buf[:(uint)self.inferred_name_len];
+        name = self.inferred_name;
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
     }
     // Capture byte offset of the opening of the method body, the caller
     // optionally supplies `src_start` if it knows the start of the full
@@ -5409,9 +5404,9 @@ fn ushort? CompilerContext.parse_arrow_function_reparse(&self, uint src_start = 
     // Apply inferred name (from enclosing `var f = ...`) per ES2015 §14.1.20.
     char[] arrow_name;
     if (self.has_inferred_name) {
-        arrow_name = self.inferred_name_buf[:(uint)self.inferred_name_len];
+        arrow_name = self.inferred_name;
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
     }
 
     // If primary_expr set pending_async_arrow_src before consuming `async` and
@@ -6013,9 +6008,9 @@ fn ushort? CompilerContext.parse_arrow_function(&self, char[]* params, ushort pa
     // (from enclosing `var f = ...`) per ES2015 §14.1.20 SetFunctionName.
     char[] arrow_name;
     if (self.has_inferred_name) {
-        arrow_name = self.inferred_name_buf[:(uint)self.inferred_name_len];
+        arrow_name = self.inferred_name;
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
     }
     // If primary_expr recorded the `async` keyword's position before
     // consuming it and re-entering (async arrow form `async param => body`),

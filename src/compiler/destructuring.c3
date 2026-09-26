@@ -441,12 +441,12 @@ fn AssignTarget? CompilerContext.parse_assign_target_lhs(&self) {
         return out;
     }
 
-    if (self.last_was_local_var && self.last_lhs_name_len > 0) {
+    if (self.last_was_local_var && self.last_lhs_name.len > 0) {
         // Register-resident local reached through a complex path, the common
         // case being a parenthesized target (`[(a), b] = ...`). primary_expr
         // captured the name, so resolve the target by name exactly as the
         // identifier fast path above does.
-        out.name_idx = self.add_string_constant(self.last_lhs_name_buf[:self.last_lhs_name_len]);
+        out.name_idx = self.add_string_constant(self.last_lhs_name);
         self.free_reg(lhs_result);
         self.last_was_local_var = false;
         return out;

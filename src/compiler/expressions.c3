@@ -88,7 +88,7 @@ fn ushort? CompilerContext.expression_inner(&self) {
             self.call_prop_obj_reg = REG_NONE;
         }
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
         // The operand about to be parsed inherits outer_void; if another comma
         // follows (next loop iteration), it was actually non-final and its value
         // is discarded by free_reg at the top of that iteration, but its void
@@ -120,7 +120,7 @@ fn ushort? CompilerContext.expression_inner(&self) {
 
 // Save the raw text of a just-resolved identifier for later SetFunctionName
 // inference (assignment_expr reads this when the LHS is a simple
-// IdentifierReference). Truncates (clears) if the name doesn't fit.
+// IdentifierReference). `name` is token text, valid for the whole compile.
 fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
     // A freshly resolved identifier is a bare IdentifierReference until a
     // CoverParenthesizedExpression closes around it, so clear the marker here
@@ -129,12 +129,7 @@ fn void CompilerContext.save_lhs_ident_name(&self, char[] name) {
     // An IdentifierReference is a valid SimpleAssignmentTarget, so it also
     // retires any ~invalid~ verdict left by a previously parsed operand.
     self.last_target_invalid = false;
-    if (name.len < 128) {
-        for (ushort i = 0; i < name.len; i++) self.last_lhs_name_buf[i] = name[i];
-        self.last_lhs_name_len = (ushort)name.len;
-    } else {
-        self.last_lhs_name_len = 0;
-    }
+    self.last_lhs_name = name;
 }
 
 // Bookkeeping for a resolved-by-name identifier that turned out to be
@@ -436,15 +431,15 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
 
     // ES5 §11.13.1 strict mode: assigning to 'eval' or 'arguments' is a
     // SyntaxError. Only fires for a bare identifier target, member
-    // expressions never reach here with last_lhs_name_len set
+    // expressions never reach here with last_lhs_name set
     // (save_lhs_ident_name is called only from identifier resolution).
     // `await` is reserved in this position only when the [Await] grammar
     // parameter says so, i.e. inside an async function/arrow/method, a
     // module, or a class static block; outside those scopes `await = 1` is a
     // legal simple assignment. `yield` is reserved unconditionally (strict-
     // only engine), which is the helper's default.
-    if (!self.last_was_member() && self.last_lhs_name_len > 0
-        && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
+    if (!self.last_was_member() && self.last_lhs_name.len > 0
+        && is_restricted_name(self.last_lhs_name,
                               self.await_reserved_here(),
                               self.is_user_generator || self.forbid_yield,
                               strict: self.lexer.reserved_words_strict)) {
@@ -526,13 +521,12 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     Opcode member_store_op = self.member_is_super() ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP;
     // Save the LHS identifier text for SetFunctionName (below) before it
     // gets clobbered by RHS parsing.
-    char[128] lhs_ident_name_buf = self.last_lhs_name_buf;
+
     // A parenthesized LHS keeps its AssignmentTargetType (so the eval /
     // arguments check above still ran) but is not an IsIdentifierRef, so it
     // must not drive NamedEvaluation: `(fn) = function(){}` leaves the
     // function anonymous.
-    ushort lhs_ident_name_len = self.last_lhs_name_parenthesized
-        ? 0 : self.last_lhs_name_len;
+    char[] lhs_ident_name = self.last_lhs_name_parenthesized ? "" : self.last_lhs_name;
 
     // Peek for a literal-1 RHS: `<var> -= 1` → DEC.
     // The `+= 1` optimization (INC) was removed because it bypasses ADD's
@@ -590,12 +584,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         NameEvalFrame _la_frame = self.save_name_eval();
         defer self.restore_name_eval(_la_frame);
         if (!lhs_was_member && (lhs_was_getvar || lhs_was_local_var)
-            && lhs_ident_name_len > 0) {
+            && lhs_ident_name.len > 0) {
             self.has_inferred_name = true;
-            self.inferred_name_len = lhs_ident_name_len;
-            for (ushort i = 0; i < lhs_ident_name_len; i++) {
-                self.inferred_name_buf[i] = lhs_ident_name_buf[i];
-            }
+            self.inferred_name = lhs_ident_name;
         }
         // For member expressions, allocate a result register for the assigned value.
         // The short-circuit path returns the original LHS (left); the assign path returns RHS.
@@ -821,9 +812,8 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                 || (lhs_last.op == Opcode.GETGLOBAL
                     && self.is_declared_global(lhs_getvar_name_idx))
                 || (lhs_last.op == Opcode.GETVAR
-                    && lhs_ident_name_len > 0
-                    && self.is_statically_resolvable_local(
-                           lhs_ident_name_buf[:lhs_ident_name_len]));
+                    && lhs_ident_name.len > 0
+                    && self.is_statically_resolvable_local(lhs_ident_name));
             if (is_assign) {
                 if (statically_resolvable) {
                     self.code_count--;
@@ -853,12 +843,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     NameEvalFrame _assign_nef = self.save_name_eval();
     defer self.restore_name_eval(_assign_nef);
     if (is_assign && !lhs_was_member && (lhs_was_getvar || lhs_was_local_var)
-        && lhs_ident_name_len > 0) {
+        && lhs_ident_name.len > 0) {
         self.has_inferred_name = true;
-        self.inferred_name_len = lhs_ident_name_len;
-        for (ushort i = 0; i < lhs_ident_name_len; i++) {
-            self.inferred_name_buf[i] = lhs_ident_name_buf[i];
-        }
+        self.inferred_name = lhs_ident_name;
     } else {
         // This assignment supplies no inferred name, so clear any left by an
         // EARLIER one. The name is consumed lazily by whichever anonymous
@@ -867,7 +854,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         // predecessor's name: `(w = 2) * (w = 3); (fn) = function(){}` named
         // the function "w".
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
     }
 
     // Materialize the compound target's OLD VALUE before the RHS runs.
@@ -1175,7 +1162,7 @@ fn ushort? CompilerContext.conditional_expr(&self) {
         // neither branch may take the enclosing assignment's inferred name
         // (§14.1.20): `var c = x ? function(){} : 1` leaves the name "".
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
 
         // Allocate result register
         ushort result_reg = self.alloc_reg();
@@ -1368,7 +1355,7 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         // function(){}` leaves the name "". The enclosing seed site's
         // save/restore bracket puts the hint back for anything that follows.
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
 
         // ES2024 §13.6:
         //   ExponentiationExpression :
@@ -1938,7 +1925,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                         self.del_opt_getprop_idx = -1;
                         self.del_opt_short_idx = -1;
                         self.clear_ref_markers();
-                        self.last_lhs_name_len = 0;
+                        self.last_lhs_name = {};
                         return op_del;
                     }
                 }
@@ -1990,7 +1977,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 // markers left over from the operand still made it look like a
                 // valid assignment target.
                 self.clear_ref_markers();
-                self.last_lhs_name_len = 0;
+                self.last_lhs_name = {};
                 // op_del is the A register of the patched DELPROP (boolean).
                 return op_del;
             } else if (self.last_was_getvar || self.last_was_local_var) {
@@ -2088,8 +2075,8 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // ES5 §11.4.4 strict mode: ++eval / ++arguments is a SyntaxError.
             // `await`/`yield` are reserved only in their respective async /
             // generator contexts; see the matching check in assignment_expr.
-            if (!self.last_was_member() && self.last_lhs_name_len > 0
-                && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
+            if (!self.last_was_member() && self.last_lhs_name.len > 0
+                && is_restricted_name(self.last_lhs_name,
                                       self.await_reserved_here(),
                                       self.is_user_generator || self.forbid_yield,
                                       strict: self.lexer.reserved_words_strict)) {
@@ -2199,8 +2186,8 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // ES5 §11.4.5 strict mode: --eval / --arguments is a SyntaxError.
             // `await`/`yield` are reserved only in their respective async /
             // generator contexts; see the matching check in assignment_expr.
-            if (!self.last_was_member() && self.last_lhs_name_len > 0
-                && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
+            if (!self.last_was_member() && self.last_lhs_name.len > 0
+                && is_restricted_name(self.last_lhs_name,
                                       self.await_reserved_here(),
                                       self.is_user_generator || self.forbid_yield,
                                       strict: self.lexer.reserved_words_strict)) {
@@ -2412,8 +2399,8 @@ fn ushort? CompilerContext.postfix_expr(&self) {
         // ES5 §11.3.1/§11.3.2 strict mode: eval++ / arguments-- is a SyntaxError.
         // `await`/`yield` are reserved only in their respective async /
         // generator contexts; see the matching check in assignment_expr.
-        if (!self.last_was_member() && self.last_lhs_name_len > 0
-            && is_restricted_name(self.last_lhs_name_buf[:self.last_lhs_name_len],
+        if (!self.last_was_member() && self.last_lhs_name.len > 0
+            && is_restricted_name(self.last_lhs_name,
                                   self.await_reserved_here(),
                                   self.is_user_generator || self.forbid_yield,
                                   strict: self.lexer.reserved_words_strict)) {
@@ -4759,7 +4746,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (self.last_was_getvar || self.last_was_local_var) {
                     self.last_lhs_name_parenthesized = true;
                 } else {
-                    self.last_lhs_name_len = 0;
+                    self.last_lhs_name = {};
                 }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
@@ -4930,7 +4917,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (self.last_was_getvar || self.last_was_local_var) {
                     self.last_lhs_name_parenthesized = true;
                 } else {
-                    self.last_lhs_name_len = 0;
+                    self.last_lhs_name = {};
                 }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
@@ -4994,7 +4981,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (self.last_was_getvar || self.last_was_local_var) {
                     self.last_lhs_name_parenthesized = true;
                 } else {
-                    self.last_lhs_name_len = 0;
+                    self.last_lhs_name = {};
                 }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
@@ -5030,7 +5017,7 @@ fn ushort? CompilerContext.primary_expr(&self) {
                 if (self.last_was_getvar || self.last_was_local_var) {
                     self.last_lhs_name_parenthesized = true;
                 } else {
-                    self.last_lhs_name_len = 0;
+                    self.last_lhs_name = {};
                 }
                 // A parenthesized arrow is a CoverParenthesizedExpression,
                 // a PrimaryExpression, so it IS legal as a binary operand
@@ -5932,7 +5919,7 @@ fn ushort? CompilerContext.object_literal(&self) {
     // must not leak into a later, unrelated anonymous function expression
     // (ES2015 §12.15.4 NamedEvaluation only applies to the RHS itself).
     self.has_inferred_name = false;
-    self.inferred_name_len = 0;
+    self.inferred_name = {};
     self.expect(TokenType.LBRACE)!;
 
     // ES2015 §14.3.9: super.x in object literal methods resolves to
@@ -6168,17 +6155,12 @@ fn ushort? CompilerContext.object_literal(&self) {
                         // The per-iteration bracket at the loop top owns the
                         // slot; the body compile below runs inside it.
                         char[] prefix = is_obj_getter ? "get " : "set ";
-                        usz prop_len = prop_tok.str_value.len;
-                        if (prefix.len + prop_len < 128) {
-                            self.has_inferred_name = true;
-                            self.inferred_name_len = (ushort)(prefix.len + prop_len);
-                            for (usz i = 0; i < prefix.len; i++) {
-                                self.inferred_name_buf[i] = prefix[i];
-                            }
-                            for (usz i = 0; i < prop_len; i++) {
-                                self.inferred_name_buf[prefix.len + i] = prop_tok.str_value[i];
-                            }
-                        }
+                        char[] prop = prop_tok.str_value;
+                        char[] accessor_name = self.lexer.arena_alloc(prefix.len + prop.len);
+                        accessor_name[:prefix.len] = prefix[..];
+                        accessor_name[prefix.len..] = prop[..];
+                        self.has_inferred_name = true;
+                        self.inferred_name = accessor_name;
                     }
 
                     // Compile the getter/setter function body, pass the
@@ -6255,12 +6237,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // The per-iteration bracket at the loop top closes the seed when
                 // this property is done.
                 self.has_inferred_name = true;
-                self.inferred_name_len = (ushort)key_tok.str_value.len;
-                if (key_tok.str_value.len < 128) {
-                    for (ushort i = 0; i < self.inferred_name_len; i++) {
-                        self.inferred_name_buf[i] = key_tok.str_value[i];
-                    }
-                }
+                self.inferred_name = key_tok.str_value;
             } else if (key_tt == TokenType.NUMBER) {
                 Token key_tok = self.advance()!;
 
@@ -6285,7 +6262,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // name is the empty string for computed keys).
                 is_computed_key = true;
                 self.has_inferred_name = false;
-                self.inferred_name_len = 0;
+                self.inferred_name = {};
                 // For plain computed methods `[expr](){}`, update key_src_start to
                 // the `[` so toString returns `[ expr ]() {}`.  For generator methods
                 // `* [expr](){}` and async methods `async [expr](){}` the span must
@@ -6429,7 +6406,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                     // `__proto__: fn` is a prototype-set, not a property
                     // definition, no NamedEvaluation (§12.2.6.8 step 5).
                     self.has_inferred_name = false;
-                    self.inferred_name_len = 0;
+                    self.inferred_name = {};
                 } else if (is_computed_key) {
                     // ES2015 §12.2.6.9 step 6: `IsAnonymousFunctionDefinition`
                     // is a static check on the value expression, independent of
@@ -6443,7 +6420,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                     // stays set afterward, that's the signal used below to
                     // choose INITPROPN vs plain INITPROP.
                     self.has_inferred_name = true;
-                    self.inferred_name_len = 0;
+                    self.inferred_name = {};
                 }
                 ushort val_reg = self.assignment_expr()!;
                 bool computed_val_is_anon_fn_def = is_computed_key && !is_proto_key && !self.has_inferred_name;
@@ -6497,7 +6474,7 @@ fn ushort? CompilerContext.array_literal(&self) {
     // so it doesn't leak into an unrelated later function expression.
     // See the matching comment in object_literal.
     self.has_inferred_name = false;
-    self.inferred_name_len = 0;
+    self.inferred_name = {};
     self.expect(TokenType.LBRACKET)!;
 
     ushort arr_reg = self.alloc_reg();

@@ -1777,16 +1777,11 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
         first = false;
     }
 
-    // Build name slice. C3's .. is inclusive, so [0..buf_len-1] gives buf_len bytes.
-    //
-    // NOTE: callers MUST treat this slice as a borrow only, ident_buf is a
-    // per-Lexer scratch reused by every subsequent scan, so the parser can
-    // only use the slice until the next token is scanned. Anything kept
-    // across scans (PrivateNameEntry.name, scope_stack[i].name, label names,
-    // module imports, etc.) MUST be interned at the storage site via
-    // str_intern / add_string_constant so it points at stable heap memory.
+    // Copy the decoded name out of ident_buf, which the next scan reuses, so
+    // an identifier's text stays valid for the whole compile like a slice of
+    // the source does.
     if (buf_len > 0) {
-        return self.ident_buf[0..buf_len-1];
+        return self.arena_dup(&self.ident_buf[0], (usz)buf_len);
     }
     return {};
 }

@@ -156,6 +156,25 @@ check("a declared function with \"use strict\" many directives in",
 check("a long sloppy prologue",
     run("(function(){ " + directives + " return typeof this })()"), "object");
 
+// Inferred and bound function names are kept whole however long they are.
+var hugeName = "h".repeat(200);
+check("a long assigned name", run("var " + hugeName + "; " + hugeName + " = function(){}; " + hugeName + ".name"), hugeName);
+check("a long var-initializer name", run("(function(){ var " + hugeName + " = () => 0; return " + hugeName + ".name })()"), hugeName);
+check("a long let-initializer name", run("(function(){ let " + hugeName + " = class {}; return " + hugeName + ".name })()"), hugeName);
+check("a long method name", run("({ " + hugeName + "(){} })." + hugeName + ".name"), hugeName);
+check("a long property function name", run("({ " + hugeName + ": function(){} })." + hugeName + ".name"), hugeName);
+check("a long getter name",
+    run("Object.getOwnPropertyDescriptor({ get " + hugeName + "(){} }, '" + hugeName + "').get.name"), "get " + hugeName);
+check("a long class field name", run("new (class { " + hugeName + " = function(){} })()." + hugeName + ".name"), hugeName);
+check("a long private field name",
+    run("new (class { #" + hugeName + " = function(){}; n() { return this.#" + hugeName + ".name } })().n()"), "#" + hugeName);
+check("a long escaped identifier name",
+    run("(function(){ var \\u0068" + hugeName + " = function(){}; return h" + hugeName + ".name })()"), "h" + hugeName);
+check("a long bound name", run("var " + hugeName + " = function(){}; " + hugeName + ".bind().name"), "bound " + hugeName);
+check("a bound name that ends in a multibyte character",
+    run("var o = { " + "x".repeat(119) + "\u00e9: function(){} }; o." + "x".repeat(119) + "\u00e9.bind().name"),
+    "bound " + "x".repeat(119) + "\u00e9");
+
 // Nesting deep enough to exhaust the native stack is an error, not a crash.
 function throwsOnDeepNesting(src) {
     try { run(src); return false; } catch (e) { return e instanceof SyntaxError || e instanceof RangeError; }
