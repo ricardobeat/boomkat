@@ -53,3 +53,7 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
     collector does.
 11. [ ] **Script mode shares global slots across scripts incorrectly.** A later script can resolve a
     name to a slot another script assigned.
+12. [ ] **BigInt keys hash by address (to verify).** `coll_hash_key` (`src/builtins/core.c3`) hashes a
+    BigInt from its allocation address, but `same_value_zero` compares BigInts by value. Past the
+    hash-index threshold, a Map/Set lookup can miss an equal BigInt key or insert a duplicate. Hash
+    the numeric contents instead.
