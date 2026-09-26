@@ -112,19 +112,11 @@ fn void builtin_map_proto_getOrInsertComputed(BuiltinContext* ctx) {
 
 // ============================================================================
 // Map.prototype.size getter, ES6 §23.1.3.10
-// Counts non-deleted entries (deleted slots use TAG_DELETED sentinel).
 // ============================================================================
 fn void builtin_map_proto_size_get(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
     if (map == null) return;
-    uint count = 0;
-    TVal* arr = map.array_part();
-    if (arr != null) {
-        for (uint i = 0; i + 1 < map.array_used; i += 2) {
-            if (!arr[i].is_deleted()) count++;
-        }
-    }
-    ctx.result.set_fastint((long)count);
+    ctx.result.set_fastint((long)(*map.extra_ptr()).coll.live_count);
 }
 
 // ============================================================================
@@ -182,6 +174,7 @@ fn void builtin_map_proto_clear(BuiltinContext* ctx) {
         map.array_part()[i].set_undefined();
     }
     map.array_used = 0;
+    (*map.extra_ptr()).coll.live_count = 0;
 
     ctx.result.set_undefined();
 }

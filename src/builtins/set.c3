@@ -23,18 +23,7 @@ fn int set_find_value(HObject* set, TVal val, heap::Heap* h) {
     return coll_find(set, val, 1, h);
 }
 
-// Counts non-deleted entries, same logic as the .size getter, factored out
-// for the set-methods algorithms that need this.size as a plain number.
-fn uint set_live_count(HObject* set) {
-    uint count = 0;
-    TVal* arr = set.array_part();
-    if (arr != null) {
-        for (uint i = 0; i < set.array_used; i++) {
-            if (!arr[i].is_deleted()) count++;
-        }
-    }
-    return count;
-}
+fn uint set_live_count(HObject* set) => (*set.extra_ptr()).coll.live_count;
 
 // ============================================================================
 // Set methods proposal (ES2025 §24.2.4), shared helpers
@@ -282,9 +271,7 @@ fn HObject* set_new_result(BuiltinContext* ctx) {
 // when the caller already knows the value isn't a duplicate (union copy,
 // fresh Set with only unique values found so far).
 fn void set_result_append(HObject* result, TVal value, Heap* h) {
-    uint idx = result.array_used;
-    result.set_array_idx(idx, value, h);
-    if (result.array_used <= idx) result.array_used = (uint)(idx + 1);
+    coll_append_entry(result, value, value, 1, h);
 }
 
 // Copies every live (non-deleted) entry of `set` into a freshly-allocated
@@ -377,19 +364,11 @@ fn void builtin_set_proto_add(BuiltinContext* ctx) {
 
 // ============================================================================
 // Set.prototype.size getter, ES6 §23.2.3.9
-// Counts non-deleted entries (deleted slots use TAG_DELETED sentinel).
 // ============================================================================
 fn void builtin_set_proto_size_get(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
     if (set == null) return;
-    uint count = 0;
-    TVal* arr = set.array_part();
-    if (arr != null) {
-        for (uint i = 0; i < set.array_used; i++) {
-            if (!arr[i].is_deleted()) count++;
-        }
-    }
-    ctx.result.set_fastint((long)count);
+    ctx.result.set_fastint((long)(*set.extra_ptr()).coll.live_count);
 }
 
 // ============================================================================
@@ -429,6 +408,7 @@ fn void builtin_set_proto_clear(BuiltinContext* ctx) {
         set.array_part()[i].set_undefined();
     }
     set.array_used = 0;
+    (*set.extra_ptr()).coll.live_count = 0;
 
     ctx.result.set_undefined();
 }
@@ -663,6 +643,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
                 if (has) {
                     ctx.heap.decref_tval(&result_arr[index]);
                     result_arr[index].set_deleted();
+                    (*result.extra_ptr()).coll.live_count--;
                 }
             }
             index++;
@@ -683,6 +664,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             if (found >= 0) {
                 ctx.heap.decref_tval(&result.array_part()[(uint)found]);
                 result.array_part()[(uint)found].set_deleted();
+                (*result.extra_ptr()).coll.live_count--;
             }
         }
         ctx.result.set_object(result);
@@ -730,6 +712,7 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
             if (found >= 0) {
                 ctx.heap.decref_tval(&result.array_part()[(uint)found]);
                 result.array_part()[(uint)found].set_deleted();
+                (*result.extra_ptr()).coll.live_count--;
             }
         } else {
             if (found < 0) set_result_append(result, next_value, ctx.heap);

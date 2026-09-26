@@ -514,7 +514,9 @@ Six `FixedBlockPool` allocators serve object classes with similar storage needs:
 Each class reports its own logical size through `alloc_size_for_class()`, even
 when its pool block is larger. `pool_for_class()` selects the physical pool.
 The four collection classes keep their lookup index in a class payload, so
-other objects do not pay for it in the common header. Pool pages fit within a
+other objects do not pay for it in the common header. Map and Set also keep a live
+entry count in that payload for constant-time size reads; their entry-log length
+continues to bound iteration. Pool pages fit within a
 64 KB allocator size class. The small pool uses a measured 152-byte stride:
 its smaller 144-byte layout slowed a retained-Date workload.
 

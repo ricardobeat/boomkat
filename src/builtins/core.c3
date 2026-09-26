@@ -2036,17 +2036,35 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
 // Collection mutator helpers (shared by Map/Set/WeakMap/WeakSet .set/.add/.delete)
 // ============================================================================
 
+// Reserve both Map slots before writing either, so a failed growth cannot
+// publish half an entry. Counts belong to iterable collections only.
+fn bool coll_append_entry(HObject* coll, TVal key, TVal value, uint stride, Heap* h) {
+    uint start = coll.array_used;
+    if (start > 0xFFFFFFFFu - stride) return false;
+    uint needed = start + stride;
+    if (needed > coll.array_size) {
+        uint capacity = coll.array_size == 0 ? hobject::ARRAY_INITIAL_SIZE : coll.array_size;
+        while (capacity < needed) {
+            if (capacity >= 0x80000000u) return false;
+            capacity *= 2;
+        }
+        coll.grow_array(capacity, h);
+        if (needed > coll.array_size) return false;
+    }
+    coll.set_array_idx(start, key, h);
+    if (stride == 2) coll.set_array_idx(start + 1, value, h);
+    coll.array_used = needed;
+    if (coll.get_class() == hobject::ObjClass.MAP || coll.get_class() == hobject::ObjClass.SET) {
+        (*coll.extra_ptr()).coll.live_count++;
+    }
+    return true;
+}
+
 // Shared body for Map.prototype.set / WeakMap.prototype.set (ES6 §23.1.3.9 / §23.3.3.5).
 // require_object_key: true for WeakMap (throws "Invalid value used as weak map key"
 // unless CanBeHeldWeakly(key), object or non-registered symbol), false for Map
 // (any key allowed).
-// grow_hwm: true for Map (array_used is a high-water mark that must include slots
-// with undefined keys/values for iteration), false for WeakMap (not iterable).
-// array_used is always widened to include the value slot regardless of
-// grow_hwm, set_array_idx only tracks non-undefined writes, so a value of
-// undefined (a valid Map/WeakMap value) would otherwise leave array_used
-// short of the slot just written, corrupting find_in_array_part's scan
-// bound for every later insert.
+// The entry log includes undefined keys and values in its high-water mark.
 fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool require_object_key,
                         char[] invalid_key_msg, bool grow_hwm) {
     if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
@@ -2073,11 +2091,9 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
         ctx.heap.decref_tval(v_slot);
         *v_slot = value;
     } else {
-        uint cnt = coll.array_used;
-        coll.set_array_idx(cnt, key, ctx.heap);
-        coll.set_array_idx(cnt + 1, value, ctx.heap);
-        if (coll.array_used <= cnt + 1) {
-            coll.array_used = (uint)(cnt + 2);
+        if (!coll_append_entry(coll, key, value, 2, ctx.heap)) {
+            ctx.result.set_undefined();
+            return;
         }
     }
     ctx.result.set_object(coll);
@@ -2098,7 +2114,7 @@ fn TVal canonicalize_keyed_collection_key(TVal key) {
 
 // Shared body for Map.prototype.getOrInsert / WeakMap.prototype.getOrInsert
 // (ES2025 §24.1.3.9 / §24.3.3.6). require_weak_key: true for WeakMap (throws
-// unless CanBeHeldWeakly(key)), false for Map. grow_hwm: see coll_set_entry.
+// unless CanBeHeldWeakly(key)), false for Map.
 fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak_key,
                             char[] invalid_key_msg, bool grow_hwm) {
     if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
@@ -2115,11 +2131,9 @@ fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak
         *ctx.result = coll.array_part()[(uint)found + 1];
         return;
     }
-    uint cnt = coll.array_used;
-    coll.set_array_idx(cnt, key, ctx.heap);
-    coll.set_array_idx(cnt + 1, value, ctx.heap);
-    if (coll.array_used <= cnt + 1) {
-        coll.array_used = (uint)(cnt + 2);
+    if (!coll_append_entry(coll, key, value, 2, ctx.heap)) {
+        ctx.result.set_undefined();
+        return;
     }
     *ctx.result = value;
 }
@@ -2186,11 +2200,9 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
         ctx.heap.decref_tval(v_slot);
         *v_slot = value;
     } else {
-        uint cnt = coll.array_used;
-        coll.set_array_idx(cnt, key, ctx.heap);
-        coll.set_array_idx(cnt + 1, value, ctx.heap);
-        if (coll.array_used <= cnt + 1) {
-            coll.array_used = (uint)(cnt + 2);
+        if (!coll_append_entry(coll, key, value, 2, ctx.heap)) {
+            ctx.result.set_undefined();
+            return;
         }
     }
     *ctx.result = value;
@@ -2200,8 +2212,6 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
 // require_object_value: true for WeakSet (throws "Invalid value used in weak set"
 // unless CanBeHeldWeakly(value), object or non-registered symbol), false for Set
 // (any value allowed).
-// grow_hwm: true for Set (array_used high-water mark must include undefined slots
-// for iteration), false for WeakSet (not iterable).
 fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_value,
                         char[] invalid_value_msg, bool grow_hwm) {
     TVal value; value.set_undefined();
@@ -2216,10 +2226,9 @@ fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_v
     value = canonicalize_keyed_collection_key(value);
     int found = coll_find(coll, value, 1, ctx.heap);
     if (found < 0) {
-        uint idx = coll.array_used;
-        coll.set_array_idx(idx, value, ctx.heap);
-        if (grow_hwm && coll.array_used <= idx) {
-            coll.array_used = (uint)(idx + 1);
+        if (!coll_append_entry(coll, value, value, 1, ctx.heap)) {
+            ctx.result.set_undefined();
+            return;
         }
     }
     ctx.result.set_object(coll);
@@ -2234,6 +2243,7 @@ fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, b
     int found = coll_find(coll, key, stride, ctx.heap);
     if (found < 0) { ctx.result.set_boolean(false); return; }
     if (tombstone) {
+        (*coll.extra_ptr()).coll.live_count--;
         for (uint i = 0; i < stride; i++) {
             TVal* slot = &coll.array_part()[(uint)found + i];
             ctx.heap.decref_tval(slot);
@@ -2302,12 +2312,7 @@ fn bool group_by_append_map(BuiltinContext* ctx, HObject* map, TVal key, TVal va
             TVal* v_slot = &map.array_part()[(uint)found + 1];
             *v_slot = arr_tv;
         } else {
-            uint cnt = map.array_used;
-            map.set_array_idx(cnt, key, ctx.heap);
-            map.set_array_idx(cnt + 1, arr_tv, ctx.heap);
-            if (map.array_used <= cnt + 1) {
-                map.array_used = (uint)(cnt + 2);
-            }
+            if (!coll_append_entry(map, key, arr_tv, 2, ctx.heap)) return false;
         }
     }
     uint idx = *group_arr.array_len_ptr();

@@ -1,6 +1,6 @@
 # 093: CPU performance prototypes
 
-Status: planned; source investigation complete, prototypes and measurements pending.
+Status: in progress; track A measured and validated, remaining tracks pending.
 Baseline inspected: `ba8610c8` on `speed`, matching local `main` at setup.
 
 ## Objective and scope
@@ -465,7 +465,7 @@ commit the useful summaries and reproducible benchmark/validation instructions.
 
 | Track | Evidence gathered | Prototype | Semantic checks | Timing / memory | Decision |
 |---|---|---|---|---|---|
-| A | source only | pending | pending | pending | pending |
+| A | mutation paths audited | live count + shared append | passed; see results below | interleaved A/B | keep |
 | B | source only | pending | pending | pending | pending |
 | C | source only | pending | pending | pending | pending |
 | D | source only | gated | pending | pending | pending |
@@ -477,3 +477,65 @@ commit the useful summaries and reproducible benchmark/validation instructions.
 Completion means every track has a supported decision, retained changes have
 combined validation, and results distinguish throughput, latency, memory, and
 workload coverage. A rejected prototype is a completed experiment.
+
+
+## Track A results: maintained collection counts
+
+Decision: keep. Map/Set size reads use a collection-payload live count.
+Insertion publishes a complete reserved entry before incrementing the count;
+replacement is count-neutral. Delete, clear, groupBy, get-or-insert, and direct
+Set-operation result mutations maintain it. Iterator bounds use the entry log.
+Weak collections share append reservation but do not maintain a live count.
+
+The count enlarges the logical collection payload; the existing small-pool block
+still accommodates it, so the physical pool stride is unchanged. This is not a
+claim of zero overhead for pool-bypass allocations or other value layouts.
+
+Release baseline: `fa9cad5e` (engine sources match `ba8610c8`). Seven alternating
+A/B pairs after one warmup pair, with the leading binary swapped each pair.
+Times include process startup, compilation, and execution on macOS ARM64,
+using C3 0.8.3 with LLVM 22.1.8 and the project release target.
+Short fixtures expose the startup floor; the large scan removal is clear, while
+small control differences are not attributed to this change.
+
+| Checked workload | Baseline median | Candidate median | Time change |
+|---|---:|---:|---:|
+| map_size_1024 | 0.0379s | 0.0089s | -76.5% |
+| map_size_8192 | 0.2309s | 0.0093s | -96.0% |
+| map_grow_size | 0.0416s | 0.0068s | -83.6% |
+| map_insert_has | 0.0874s | 0.0865s | -1.0% |
+| map_retained_small | 0.0427s | 0.0423s | -0.9% |
+| set_size_1024 | 0.0381s | 0.0085s | -77.7% |
+| set_size_8192 | 0.2304s | 0.0091s | -96.0% |
+| set_grow_size | 0.0418s | 0.0067s | -83.9% |
+| set_insert_has | 0.0815s | 0.0806s | -1.1% |
+| set_retained_small | 0.0421s | 0.0418s | -0.7% |
+| map_deleted_size | 0.2356s | 0.0093s | -96.1% |
+| set_deleted_size | 0.2334s | 0.0092s | -96.1% |
+
+The 25 unchanged ES5/ES6 control fixtures range from -2.4% to +1.8% runtime.
+Outputs match; only elapsed-millisecond fields in Date/RegExp output are
+normalized. Interleaved baseline/baseline insertion controls differ by +0.7%
+(Map) and -0.2% (Set), so small insertion changes are treated as noise.
+For 100,000 retained two-entry collections, median peak RSS is 38,256,640 bytes
+for both Map builds and 38,240,256 versus 38,273,024 bytes for Set (effectively flat).
+
+Validation: 809 selected Map/Set/WeakMap/WeakSet test262 cases pass, with four
+scope skips and no failures; 42 Rosetta cases; 465 local scripts and all local
+auxiliary suites. The focused live-count fixture also passes in Node and in a
+fresh ASAN + GC_STRESS + POOL_BYPASS build. The focused fixture and existing collection hash-index fixture also pass in
+a freshly built NONANBOX engine; the release build is restored. The fixture checks threshold crossings, replacement/deletion,
+undefined/NaN/zero, groupBy, reentrant computed insertion, Set result mutation,
+iterator/forEach mutation, object keys, and named collection properties.
+
+Artifacts: `/tmp/boomkat-perf-093/A/` contains immutable baseline/candidate
+binaries, per-run JSON with RSS and output, generated checked workloads, and
+validation logs. Reproduce timing with:
+
+```sh
+python3 scripts/bench_collection_counts.py /path/to/baseline /path/to/candidate --out /tmp/collection-counts --controls
+python3 scripts/bench_collection_counts.py /path/to/baseline /path/to/baseline --out /tmp/collection-counts-aa --only '*insert_has'
+```
+
+Every timing comparison, including noise controls, must remain interleaved.
+The runner uses macOS `/usr/bin/time -l`; cross-platform timings remain unmeasured.

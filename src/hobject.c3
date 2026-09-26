@@ -777,11 +777,12 @@ struct HObjectProxy {
 
 // The lookup index MAP, SET, WEAKMAP, and WEAKSET keep over their dense part,
 // null until the collection is large enough to want one. These four keep their
-// entries in array_part, so this is the only payload they need; every other
-// class used to pay for the pointer. It is not the same thing as prop_hash,
+// entries in array_part. Map and Set also track the number of live entries.
+// This is separate from prop_hash,
 // which indexes named properties and can be live on a Map at the same time.
 struct HObjectCollHash {
     CollHashInfo* info;
+    uint live_count; // MAP/SET entries; array_used retains iterator positions.
 }
 
 // A getter and setter pair, boxed in a GETTER_SETTER object. A prop_values[]
