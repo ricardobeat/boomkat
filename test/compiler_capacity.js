@@ -142,6 +142,20 @@ check("a sloppy duplicate past many parameters binds the last",
 check("distinct long parameter names sharing a prefix",
     run("'use strict'; (function(" + longName + "a, " + longName + "b){ return " + longName + "b })(1, 2)"), 2);
 
+// A "use strict" late in a long directive prologue still applies to the whole
+// body: to octal escapes before it and to the parameter list.
+var directives = "'d';".repeat(20);
+check("an octal escape many directives before \"use strict\"",
+    isSyntaxError("(function(){ '\\07'; " + directives + " 'use strict'; })"), true);
+check("an eval parameter with \"use strict\" many directives in",
+    isSyntaxError("(function(eval){ " + directives + " 'use strict'; })"), true);
+check("a duplicate parameter with \"use strict\" many directives in",
+    isSyntaxError("(function(a, a){ " + directives + " 'use strict'; })"), true);
+check("a declared function with \"use strict\" many directives in",
+    isSyntaxError("function f(eval){ " + directives + " 'use strict'; }"), true);
+check("a long sloppy prologue",
+    run("(function(){ " + directives + " return typeof this })()"), "object");
+
 // Nesting deep enough to exhaust the native stack is an error, not a crash.
 function throwsOnDeepNesting(src) {
     try { run(src); return false; } catch (e) { return e instanceof SyntaxError || e instanceof RangeError; }

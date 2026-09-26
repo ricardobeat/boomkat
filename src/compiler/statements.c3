@@ -816,19 +816,27 @@ fn bool CompilerContext.params_are_simple(&self) {
         && !self.has_destructured_param;
 }
 
-// True when any directive-prologue member recorded since `base` decoded
-// shorter than its raw source span: a sloppy-lexed octal escape, which a
-// later "use strict" retroactively makes a SyntaxError (ES2024 §12.9.4.1).
-// The base slices the cumulative ring to this body's own prologue; the ring
-// wraps at 16, so bases older than that are clamped to the visible window.
-fn bool CompilerContext.prologue_has_shrunk_directive(&self, uint base) {
-    uint total = self.prologue_dir_count - base;
-    if (total > 16) total = 16;
-    for (uint k = 0; k < total; k++) {
-        uint i = (base + k) % 16;
-        if (self.prologue_octal[i]) return true;
+// Consume a function body's `{` and its directive prologue, reporting whether
+// the prologue holds a "use strict". The caller peeks with this and restores
+// the lexer, so it only needs to know the body's strictness early.
+fn bool? CompilerContext.scan_prologue_for_use_strict(&self) {
+    Token lbrace = self.advance()!;
+    if (lbrace.type != TokenType.LBRACE) {
+        return self.fail("expected '{' to start function body")~;
     }
-    return false;
+    bool found = false;
+    while (self.check(TokenType.STRING)) {
+        Token str_tok = self.advance()!;
+        bool terminated = self.check(TokenType.SEMICOLON)
+            || self.lexer.seen_line_term
+            || self.check(TokenType.RBRACE);
+        // A string that continues into an expression (`"a" + b`) ends the
+        // prologue and is not itself a directive.
+        if (!terminated) break;
+        if (is_use_strict_directive(str_tok)) found = true;
+        if (self.check(TokenType.SEMICOLON)) self.advance()!;
+    }
+    return found;
 }
 
 // Parse directive prologue statements at the start of a function body or program.
@@ -846,9 +854,7 @@ fn void? CompilerContext.parse_directives(&self) {
         // scan decoded it, so a following "use strict" can still reject the
         // whole prologue (ES2024 §12.9.4.1).
         bool octal_escape = str_tok.has_octal_escape || str_tok.has_decoded_octal;
-        uint pslot = self.prologue_dir_count % 16;
-        self.prologue_octal[pslot] = octal_escape;
-        self.prologue_dir_count++;
+        if (octal_escape) self.prologue_octal_count++;
 
         // Strict code rejects a legacy octal escape anywhere, directive
         // prologue members included — including a directive that is not
@@ -2392,15 +2398,15 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     }
 
     if (check_directives) {
-        uint prologue_base = self.prologue_dir_count;
+        uint prologue_base = self.prologue_octal_count;
         self.parse_directives()!;
         // A "use strict" in the prologue makes the WHOLE body strict,
         // including the directives before it. The prologue was lexed in the
         // outer mode (sloppy until this flip), which DECODES octal escapes
         // instead of flagging them — so a shrunk raw-vs-decoded length on
         // any prologue directive proves one was present (ES2024 §12.9.4.1).
-        // Only this body's own prologue counts: prologue_dir_count is
-        // cumulative on the shared context, so slice from the pre-parse
+        // Only this body's own prologue counts: prologue_octal_count is
+        // cumulative on the shared context, so compare with the pre-parse
         // base (a nested block's directives belong to its own body).
         if (self.saw_use_strict) {
             self.lexer.set_strict(true);
@@ -2413,7 +2419,7 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
             if (self.cur_with_depth > 0) {
                 return self.fail("'with' statement is not allowed in strict mode")~;
             }
-            if (self.prologue_has_shrunk_directive(prologue_base)) {
+            if (self.prologue_octal_count > prologue_base) {
                 return self.fail("octal escape sequences are not allowed in strict mode")~;
             }
         }
