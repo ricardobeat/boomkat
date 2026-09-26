@@ -1875,7 +1875,8 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 ushort obj_reg = self.member_obj();
                 ushort prop_reg = self.member_prop();
                 bool obj_is_local = self.member_obj_is_local();
-                self.member.clear();
+                // A typeof result is never a Reference.
+                self.clear_ref_markers();
                 if (obj_is_local) {
                     // obj_reg is a live local variable (e.g. `typeof d.value`):
                     // it must NOT be clobbered, writing the TYPEOF result into
@@ -1894,6 +1895,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             ushort res_typeof = self.alloc_reg();
             self.emit_abc(Opcode.TYPEOF, (uint)res_typeof, (uint)op_typeof, 0);
             self.free_reg(op_typeof);
+            self.clear_ref_markers();
             return res_typeof;
 
         case TokenType.VOID:
@@ -1902,10 +1904,9 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             ushort res_void = self.alloc_reg();
             self.emit_abc(Opcode.VOID, (uint)res_void, (uint)op_void, 0);
             self.free_reg(op_void);
-            // void result is never a Reference, clear tracking so
-            // `delete void x.prop` returns true instead of patching DELPROP.
-            self.member.clear();
-            self.last_was_getvar = false;
+            // A void result is never a Reference: `delete void x.prop` and
+            // `delete void x` return true rather than deleting the operand.
+            self.clear_ref_markers();
             return res_void;
 
         case TokenType.DELETE:
