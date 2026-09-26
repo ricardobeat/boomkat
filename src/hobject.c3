@@ -3121,6 +3121,10 @@ struct VarICEntry {
     uint    recycle_epoch;
     // Property index within bindings.props[].
     uint    prop_idx;
+    // The property's flags, so a hit needs no shape walk. A flag change
+    // privatizes the shape under a new id, so the shape_id and recycle_epoch
+    // checks that guard every hit also keep these current.
+    PropFlags prop_flags;
     // The interned key this entry was filled for.
     void*   key;
     // act.lex_env at population time; a hit requires the same chain head
@@ -3146,6 +3150,7 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     vic.bindings = bindings;
     vic.shape_id = shape_id;
     vic.prop_idx = prop_idx;
+    vic.prop_flags = bindings != null ? ((HObject*)bindings).get_prop_flags(prop_idx, h) : (PropFlags){};
     vic.recycle_epoch = h.shape_recycle_epoch;
     // Retain the new key before releasing the old so replacing a key with
     // itself is safe when the entry is its only counted owner.
@@ -3165,6 +3170,7 @@ fn void var_ic_clear(VarICEntry* vic, heap::Heap* h) {
     vic.bindings = null;
     vic.shape_id = 0;
     vic.prop_idx = 0;
+    vic.prop_flags = {};
     vic.recycle_epoch = 0;
     vic.key = null;
     vic.search_head = null;

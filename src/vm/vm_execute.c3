@@ -4765,7 +4765,7 @@ fn TVal? Vm.run(Vm* vm) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                                if (b.get_prop_flags(vic.prop_idx, vm.heap).is_accessor) {
+                                if (vic.prop_flags.is_accessor) {
                                     // Accessor property: fall through to slow path which invokes getter
                                 } else {
                                     TVal v = b.prop_values()[vic.prop_idx];
@@ -5934,7 +5934,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 // Accessor properties store a getter/setter pair, not the
                                 // actual value.  Fall through to slow path which invokes the getter.
-                                if (b.get_prop_flags(vic.prop_idx, vm.heap).is_accessor) {
+                                if (vic.prop_flags.is_accessor) {
                                     // Invalidate the IC and let the slow path handle it.
                                 } else {
                                     TVal v = b.prop_values()[vic.prop_idx];
@@ -6242,7 +6242,7 @@ fn TVal? Vm.run(Vm* vm) {
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 TVal* pv = &b.prop_values()[vic.prop_idx];
-                                hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx, vm.heap);
+                                hobject::PropFlags fl = vic.prop_flags;
                                 if (!env::is_tdz_sentinel(pv) && fl.writable && !fl.is_accessor) {
                                     // Move ra's value into the slot: decref the old
                                     // slot value, take ra's reference, clear ra. Net

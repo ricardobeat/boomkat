@@ -703,7 +703,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
             HObject* b = (HObject*)vic.bindings;
             if (b.shape_id == vic.shape_id
                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                if (!b.get_prop_flags(vic.prop_idx, ds.vm.heap).is_accessor) {
+                if (!vic.prop_flags.is_accessor) {
                     TVal v = b.prop_values()[vic.prop_idx];
                     if (!env::is_tdz_sentinel(&v)) {
                         if (is_global_bindings(vm, b)) {
