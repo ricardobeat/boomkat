@@ -198,6 +198,12 @@ A builtin calling back into JS, a getter, or a coercion hook can re-enter
 `MAX_RUN_DEPTH` (128). Saved frame pointers must be relocated if the growable
 value stack moves during re-entry.
 
+Threaded handlers execute common guarded operations, including fast-integer
+increments and decrements. Other value types return to the switch before any
+mutation. Backward branches retain the GC and interrupt budget checks. Diagnostic
+`OP_PROFILE` builds use the switch for all instructions to obtain complete logical
+opcode counts; their timing does not represent threaded dispatch performance.
+
 ### Frames
 
 An `Activation` records its function, parent frame, variable and lexical

@@ -50,6 +50,8 @@ fn void init_threaded_handlers() {
     }
     // --- Tight-loop arith ops ---
     g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
+    g_threaded_handlers[Opcode.INC.ordinal]    = &th_inc;
+    g_threaded_handlers[Opcode.DEC.ordinal]    = &th_dec;
     g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
     g_threaded_handlers[Opcode.JMP_LT.ordinal] = &th_jmp_lt;
 
@@ -143,6 +145,21 @@ macro bool th_bwd_edge_needs_safepoint(ColdCtx* cold) {
     // handler installed is the one-compare fast path.
     if (cold.vm.heap.interrupt_due) return true;
     return cold.vm.heap.bwd_gc_budget <= 1;
+}
+
+// Heap values and numeric coercion stay on the switch ownership path.
+fn Instruction* th_inc(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal* value = regs + pc.a;
+    if (!value.is_fastint()) return pc;
+    value.set_fastint(value.get_fastint() + 1L);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_dec(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal* value = regs + pc.a;
+    if (!value.is_fastint()) return pc;
+    value.set_fastint(value.get_fastint() - 1L);
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
@@ -906,7 +923,12 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
 // the resume pc (== pc if the first opcode isn't in the hot set). Never sets
 // needs_restart/halt -- the switch loop re-decodes from the returned pc.
 fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    if (pc >= code_end) return pc;
-    Instruction first = *pc;
-    return g_threaded_handlers[first.op.ordinal](pc, code_end, regs, cold);
+    $if $feat(OP_PROFILE):
+        // Count each logical instruction once in the switch profiler.
+        return pc;
+    $else
+        if (pc >= code_end) return pc;
+        Instruction first = *pc;
+        return g_threaded_handlers[first.op.ordinal](pc, code_end, regs, cold);
+    $endif
 }

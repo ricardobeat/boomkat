@@ -1,6 +1,6 @@
 # 093: CPU performance prototypes
 
-Status: in progress; tracks A/B/C measured and validated, D archived, E validated; F–H pending.
+Status: in progress; tracks A/B/C measured and validated, D archived, E/F validated; G/H pending.
 Baseline inspected: `ba8610c8` on `speed`, matching local `main` at setup.
 
 ## Objective and scope
@@ -470,7 +470,7 @@ commit the useful summaries and reproducible benchmark/validation instructions.
 | C | bounded straight-line literals | shared shape + direct slots | passed | checked construction -19.2%; RSS nearly flat | keep |
 | D | leaf register spans + existing fast-call path | trailing-frame trim | checked checksums | -2.7% repeat on trimmed case; common controls flat | stash; wider stages gated |
 | E | ordinary-arrow var/parameter exclusion | extend existing compact cells | passed | paired -13% to -14% on checked capture loop | keep |
-| F | source only | gated | pending | pending | pending |
+| F | complete switch-only opcode profile | threaded fast-integer INC/DEC | passed | -5.7% checked; -23% arithmetic; -20% monomorphic | keep |
 | G | source only | gated | pending | pending | pending |
 | H | source only | gated | pending | pending | pending |
 
@@ -682,3 +682,43 @@ E decision: keep. Fresh ASAN/GC_STRESS/POOL_BYPASS and NONANBOX pass the focused
 fixture. All 468 local scripts and auxiliary suites, 42 Rosetta cases, and 31
 bytecode goldens with optimization-disabled checks pass. The immutable release
 candidate is restored after NONANBOX validation.
+
+
+## Track F results: keep integer updates inside threaded dispatch
+
+The diagnostic OP_PROFILE build routes through the switch so its counter sees
+every logical opcode once. This is an instruction-frequency tool, not a timing
+model of threaded execution. A known 1,000-iteration loop records exactly 1,000
+INC, 1,000 ADD, and 1,001 JMP_LT operations (3,017 total dispatches including
+setup/checks). The unchanged loop benchmark records 2,000,000 INC in 7,000,027
+logical instructions. Plain INC/DEC have no threaded handlers in the parent.
+
+The prototype adds fast-integer handlers using the same update operation as the
+switch. Other representations bail before mutation to the existing coercion,
+BigInt, ownership, and exception path. No opcode encoding or compiler rewriting
+changes. Branch handlers retain the GC and interrupt budgets. This reduces
+threaded-to-switch transitions; logical instruction count is unchanged.
+
+Against `27e90cb6`, seven alternating pairs give these median adjacent changes:
+checked fast-integer loop -5.7% (IQR -9.1% to -2.3%), arithmetic -23.0%,
+monomorphic IC -20.0%, prototype IC -7.0%, calls -7.8%, and let_loop -6.6%.
+The original checked loop grows its sum beyond fast-integer range and is noisy
+(-2.5%, IQR -15.5% to +5.8%); it does not establish a material gain. The unchanged
+loop fixture also stays roughly flat (-0.9%). Across all 25 controls the largest
+paired median slowdown is property_lookup +2.4%. Outputs match and representative
+RSS is flat within one page. These workload percentages must not be added.
+
+F1 therefore chooses the smaller dispatch-coverage change before a new fused
+opcode. F2 block predecoding remains gated: this profile exposes an avoidable
+interpreter transition but supplies no hardware-counter evidence that a block
+cache's construction, storage, and invalidation would repay its costs.
+Hardware instruction/cache counters and second-platform timings are unmeasured.
+Artifacts: `/tmp/boomkat-perf-093/F/`.
+
+
+F decision: keep. All 142 increment/decrement test262 cases, 469 local scripts
+plus auxiliary suites, and 42 Rosetta cases pass. The focused fixture passes in
+Node, release, and NONANBOX, including coercion reentry, abrupt completion, BigInt,
+number fallbacks, and long forward/backward loops. No bytecode encoding changes.
+The release candidate is restored after NONANBOX. Combined sanitizer validation
+is scheduled after the remaining experiments.
