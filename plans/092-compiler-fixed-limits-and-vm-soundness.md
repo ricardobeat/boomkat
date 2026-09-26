@@ -40,8 +40,10 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
    rejected (the `prologue_octal` ring).
 7. [x] **Long names are cut.** A function assigned to a name over 128 characters gets an empty `.name`
    (`inferred_name_buf`). `bind()` cuts the bound name at 126 bytes and can split a UTF-8 character.
-8. [ ] **Remaining fixed-size tables.** Audit the rest; the lexical-declaration pre-scan stops at 64
-   names.
+8. [x] **Remaining fixed-size tables.** The audit found tagged templates past 32 parts and optional
+   chains past 16 links crashing, escaped literals past 64 KB and escaped identifiers past 4 KB
+   rejected, and private names past 96 bytes colliding. The lexical-declaration pre-scan and the
+   primordial-global tables degrade safely.
 9. [ ] **Compiled functions live until heap teardown.** Every successful `eval` run in a loop keeps
    about 10 KB. Freeing them needs function templates to be owned and released, which is an
    architectural change.
