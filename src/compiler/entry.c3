@@ -38,6 +38,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
+    defer ctx.cleanup();
     ctx.is_global = true;
     ctx.eval_mode = want_completion;
     // Top-level scripts default to sloppy (ES2024 §16.2.1.1: script bodies
@@ -218,6 +219,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
+    defer ctx.cleanup();
     ctx.is_global = true;
     ctx.eval_mode = true;
     ctx.in_eval_code = true;
@@ -423,31 +425,21 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Return the accumulated eval result (or undefined if no expression)
     ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0);
 
-    // Snapshot the collected names before finish(): ctx.cleanup() inside
-    // finish() frees eval_var_coll_idxs, so the attach below reads the
-    // snapshot copy instead.
-    uint* eval_var_snapshot = null;
+    CompiledFunction* func = ctx.finish()!;
+    // Eval code must NOT get its own scope, var declarations must go
+    // to the enclosing scope (global env), not a fresh function scope.
+    func.flags.needs_env = false;
     if (eval_var_count > 0) {
+        // The function outlives this context, so it takes its own copy.
         Heap* h = (Heap*)heap;
-        eval_var_snapshot = (uint*)h.alloc_func(h.heap_udata, (usz)eval_var_count * 4);
-        if (eval_var_snapshot != null) {
-            for (uint i = 0; i < eval_var_count; i++) {
-                eval_var_snapshot[i] = ctx.eval_var_coll_idxs[i];
-            }
-        }
-    }
-
-    CompiledFunction*? result = ctx.finish()!;
-    if (try func = result) {
-        // Eval code must NOT get its own scope, var declarations must go
-        // to the enclosing scope (global env), not a fresh function scope.
-        func.flags.needs_env = false;
-        if (eval_var_snapshot != null) {
-            func.eval_var_idxs = eval_var_snapshot;
+        uint* idxs = (uint*)h.alloc_func(h.heap_udata, (usz)eval_var_count * 4);
+        if (idxs != null) {
+            for (uint i = 0; i < eval_var_count; i++) idxs[i] = ctx.eval_var_coll_idxs[i];
+            func.eval_var_idxs = idxs;
             func.eval_var_count = eval_var_count;
         }
     }
-    return result;
+    return func;
 }
 
 // Compile a function expression or declaration.
@@ -467,6 +459,7 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
+    defer ctx.cleanup();
     // Phase 1 (plans/083): both dynamic and non-dynamic function bodies
     // default to sloppy (ES2024 §16.2.1.1/§20.2.1.1). Dynamic bodies are
     // sloppy by spec; non-dynamic function bodies inherit strictness from
@@ -505,6 +498,7 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
+    defer ctx.cleanup();
     // Phase 1 (plans/083): same default as compile_function() above:
     // both dynamic and non-dynamic function bodies default to sloppy.
     ctx.is_strict = false;
@@ -542,6 +536,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     lex.err_col  = 0;
     CompilerContext ctx;
     ctx.init(lex, heap);
+    defer ctx.cleanup();
     ctx.is_global = true;
     ctx.is_module = true;
     ctx.module_goal = true;
