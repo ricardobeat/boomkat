@@ -1461,6 +1461,9 @@ const uint SHAPE_INITIAL_CAP   = 64;
 const uint SHAPE_NONE          = 0xFFFF_FFFF;
 const uint SHAPE_TRANS_INITIAL = 16;   // must be a power of 2
 const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
+// Property count from which a shape no second object has reached stops
+// registering its transitions. See transition_shape_new_flags.
+const uint SHAPE_SOLITARY_MIN_PROPS = 64;
 
 // Set on a shapes[] entry that is a free-list link rather than a shape
 // pointer. The top address bit is never set on a real allocation.
@@ -1677,6 +1680,15 @@ fn uint Heap.transition_shape_new(&self, uint cur_shape_id, void* key) {
 // on one shape. That holds for non-default flags too, such as every instance of
 // a class installing the same private field. Differing flags for the same key
 // produce separate shapes.
+//
+// An object with SHAPE_SOLITARY_MIN_PROPS properties on a shape no other
+// object has reached is being used as a dictionary: nothing will follow its
+// path, so the table would only grow with entries never looked up again.
+// Its transitions skip the table, which saves a probe and an insert that
+// both miss cache once the table holds every key such objects ever added.
+// A second object built the same way gets shapes of its own past that
+// point, which costs nothing but sharing.
+//
 // Returns SHAPE_NONE when no shape could be produced. The caller must treat
 // that as a hard failure: continuing with the unchanged shape would store a
 // value the shape does not describe, which reads back as a missing property.
@@ -1691,10 +1703,13 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     // Another object may already have taken this transition. Reaching one that
     // exists is exactly the second user arriving, so the shape is now shared
     // and a hash table built for it will serve every later arrival too.
-    uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
-    if (existing != SHAPE_NONE) {
-        if (self.shape_slot_live(existing)) self.shapes[existing].shared = true;
-        return existing;
+    bool solitary = !cur.shared && cur.offset + cur.own_count >= SHAPE_SOLITARY_MIN_PROPS;
+    if (!solitary) {
+        uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
+        if (existing != SHAPE_NONE) {
+            if (self.shape_slot_live(existing)) self.shapes[existing].shared = true;
+            return existing;
+        }
     }
 
     hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags, self);
@@ -1707,7 +1722,7 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     }
 
     self.store_new_shape(new_id, ns);
-    self.insert_transition(cur_shape_id, key, raw_flags, new_id);
+    if (!solitary) self.insert_transition(cur_shape_id, key, raw_flags, new_id);
     return new_id;
 }
 

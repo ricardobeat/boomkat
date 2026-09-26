@@ -403,6 +403,12 @@ Including the flags in that key matters: every instance of a class installing
 the same private field can share a shape, while the same key added with
 different attributes gets its own.
 
+An object used as a dictionary would fill the table with transitions no other
+object follows. Once an object on a shape no second object has reached holds
+`SHAPE_SOLITARY_MIN_PROPS` properties, its further transitions skip the
+table: each added key still gets a new shape, but nothing looks it up or
+stores it there.
+
 Some operations need a shape that belongs to one object alone.
 `make_shape_private` flattens the chain into a standalone shape and leaves it
 out of the transition table, which is how `seal`, `freeze`, and per-property
