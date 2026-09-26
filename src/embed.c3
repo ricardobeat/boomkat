@@ -562,9 +562,11 @@ fn int register_host_fn(Runtime* rt, char[] name, void* cfn, void* udata,
 // Eval
 // ============================================================================
 
-// Compiles and runs `src`, writing the completion value to `*out`.
+// Compiles and runs `src`, writing the completion value to `*out`. Sets
+// `*out_owned` when `*out` carries a reference the caller must release.
 // Returns a BK_* status.
-fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out) {
+fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_owned) {
+    *out_owned = false;
     clear_err(rt);
     if (name.len != 0) set_script_name(rt, &name[0], name.len);
     // Reset interrupt state before starting execution.
@@ -596,6 +598,33 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out) {
     CompiledFunction* f = fr;
 
     rt.heap.has_error = false;
+    if (rt.vm.run_depth > 0) {
+        // A host callback is evaluating source while a script runs. The
+        // top-level entry would take over activations[0] under the running
+        // script, so run it as a nested global Script, as $262.evalScript does.
+        HObject* pending = null;
+        TVal completion;
+        completion.set_undefined();
+        bool? ok = rt.vm.execute_module_nested(f, rt.vm.global_env, &pending, &completion);
+        lex.free_arena();
+        if (catch ok) {
+            set_err(rt, BK_ERR_INTERNAL, "internal VM error");
+            return BK_ERR_INTERNAL;
+        }
+        if (!ok) {
+            rt.heap.has_error = false;
+            rt.vm.has_error = false;
+            if (rt.heap.uncatchable_throw) {
+                set_err(rt, BK_ERR_INTERRUPT, "interrupted");
+                return BK_ERR_INTERRUPT;
+            }
+            describe_error(rt, &rt.heap.error_value);
+            return BK_ERR_THROW;
+        }
+        *out = completion;
+        *out_owned = true;
+        return BK_OK;
+    }
     TVal? res = rt.vm.execute(f);
     lex.free_arena();
 

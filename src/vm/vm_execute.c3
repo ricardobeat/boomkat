@@ -1976,12 +1976,16 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         act.async_promise = null;
     }
 
-    // A Module Environment Record's HasThisBinding() is true but
-    // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4), so this
-    // entry point is module-execution only, so `this` at module top level is
-    // unconditionally undefined, never globalThis.
+    // A global Script's `this` is the global object (ES2024 §9.4.4.4). A
+    // Module Environment Record's GetThisBinding() returns undefined
+    // (§9.1.1.5.4), so `this` at module top level is undefined. The binding
+    // is not owned (no ACT_FLAG_THIS_OWNED): the global object outlives it.
     TVal this_val;
-    this_val.set_undefined();
+    if (env == vm.global_env && env.bindings != null) {
+        this_val.set_object(env.bindings);
+    } else {
+        this_val.set_undefined();
+    }
     // Raw assign: the slot still holds stale bits from the memcpy'd-out
     // outer activation (see the zeroing comment above), so a tval_copy_ref
     // here would incorrectly decref garbage.

@@ -114,10 +114,13 @@ fn ulong bk_eval_named(void* ctxp, char* src, usz len, char* name, usz name_len)
     Runtime* rt = rt_of(ctxp);
     if (rt == null || src == null) return 0;
     TVal res;
+    bool owned;
     int rc = embed::eval_source(rt, src[:len],
-                                name != null ? name[:name_len] : (char[])"<eval>", &res);
+                                name != null ? name[:name_len] : (char[])"<eval>", &res, &owned);
     if (rc != BK_OK) return 0;
-    return store(rt, res);
+    ulong id = store(rt, res);
+    if (owned) rt.heap.decref_tval(&res);
+    return id;
 }
 
 fn ulong bk_eval(void* ctxp, char* src, usz len) @export("bk_eval") {

@@ -291,6 +291,34 @@ static void doubled(bk_ctx ctx, void *udata) {
     bk_return_number(ctx, d * 2.0);
 }
 
+/* Evaluates its argument as a separate script, the way a host `load()` or
+ * test262's $262.evalScript does. */
+static void h_eval_script(bk_ctx ctx, void *udata) {
+    size_t len = 0;
+    const char *src = bk_cstr(ctx, bk_arg(ctx, 0), &len);
+    (void)udata;
+    bk_value v = bk_eval(ctx, src, len);
+    if (v) bk_free(ctx, v);
+}
+
+/* A host callback can evaluate a script while another is running. It runs
+ * as its own global Script: its declarations land on the global object and
+ * its `this` is the global object. */
+static void test_nested_eval(bk_ctx rt) {
+    static const char src[] =
+        "evalScript('function nested() { return this === globalThis }'); nested() && typeof nested";
+    if (bk_register_fn(rt, 0, "evalScript", h_eval_script, 1, 0u, NULL) != BK_OK) {
+        printf("FAIL: register evalScript: %s\n", bk_error(rt)); failures++; return;
+    }
+    bk_value v = bk_eval(rt, src, strlen(src));
+    if (!v) { printf("FAIL: nested eval: %s\n", bk_error(rt)); failures++; return; }
+    if (strcmp(bk_cstr(rt, v, NULL), "function") != 0) {
+        printf("FAIL: nested eval: got %s\n", bk_cstr(rt, v, NULL)); failures++;
+    }
+    bk_free(rt, v);
+    printf("PASS: nested eval\n");
+}
+
 static void test_call_rt(bk_ctx rt) {
     bk_value fn = 0, a = 0, b = 0, out = 0;
     if (!(fn = bk_eval(rt, "function add(a,b){return a+b;} add", strlen("function add(a,b){return a+b;} add")))) {
@@ -391,6 +419,7 @@ int main(void) {
     test_enumeration(rt);
     test_call_rt(rt);
     test_locations(rt);
+    test_nested_eval(rt);
 
     bk_close(rt);
     if (failures) {
