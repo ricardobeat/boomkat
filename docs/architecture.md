@@ -163,6 +163,15 @@ The `prim_globals.c3` pre-scan proves that some script globals remain primitive
 and cannot be changed through dynamic access. Those reads and writes use
 opcodes without heap ownership checks; uncertainty keeps the guarded path.
 
+The same file's `pre_scan_global_var_slots` gives a top-level `var` a register
+when nothing outside the top-level code can name it: no nested function refers
+to it, no `with` is in scope, and no destructuring pattern writes it. A script
+also needs no `this` or other global-object observer, and syncs these registers
+to the global object when it ends. A module keeps an exported var or any var
+under direct `eval` in its environment, since an importer or the eval'd code
+reads it there; the rest need no sync because nothing else can reach them. V8
+and JavaScriptCore allocate module variables with the same rule.
+
 ## The virtual machine
 
 ### The dispatch loop
