@@ -899,12 +899,10 @@ int  cur_with_depth;
     bool saw_use_strict;
     // A "use strict" prologue makes the WHOLE prologue strict, including
     // directives lexed before it while the context was still sloppy. The
-    // lexer then DECODES octal escapes instead of flagging them, so each
-    // prologue directive records whether it decoded one here (ring of 16;
-    // any single hit proves a violation) for block() to check once
-    // saw_use_strict confirms the prologue is strict after all.
-    bool[16] prologue_octal;
-    uint prologue_dir_count;
+    // lexer then DECODES octal escapes instead of flagging them, so this
+    // counts the prologue directives that decoded one, for block() to check
+    // once saw_use_strict confirms the prologue is strict after all.
+    uint prologue_octal_count;
 
     // arguments tracking
     bool uses_arguments;        // true when 'arguments' is referenced in function body

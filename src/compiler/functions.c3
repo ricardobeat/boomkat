@@ -4076,7 +4076,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // Function body reaches this path; source functions go through
     // compile_inner_function, which has the same treatment), restore the lexer
     // to just before the body's `{`, and let block() consume the directives for
-    // real (it owns prologue_dir_count for the legacy-escape check).
+    // real (it owns prologue_octal_count for the legacy-escape check).
     {
         uint pr_pos = self.lexer.pos;
         uint pr_line = self.lexer.line;
@@ -4088,25 +4088,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
         bool pr_has_pb = self.lexer.has_pushed_back;
         bool pr_slt = self.lexer.seen_line_term;
 
-        Token[8] pr_buf;
-        uint pr_count = 0;
-        Token lbrace = self.advance()!;
-        if (lbrace.type != TokenType.LBRACE) {
-            return self.fail("expected '{' to start function body")~;
-        }
-        pr_buf[pr_count++] = lbrace;
-        while (pr_count < pr_buf.len && self.check(TokenType.STRING)) {
-            Token str_tok = self.advance()!;
-            pr_buf[pr_count++] = str_tok;
-            if (!self.check(TokenType.SEMICOLON)
-                && !self.lexer.seen_line_term
-                && !self.check(TokenType.RBRACE)) {
-                break;
-            }
-            if (self.check(TokenType.SEMICOLON)) {
-                pr_buf[pr_count++] = self.advance()!;
-            }
-        }
+        bool pr_use_strict = self.scan_prologue_for_use_strict()!;
         self.lexer.pos = pr_pos;
         self.lexer.line = pr_line;
         self.lexer.col = pr_col;
@@ -4117,16 +4099,13 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
         self.lexer.has_pushed_back = pr_has_pb;
         self.lexer.seen_line_term = pr_slt;
 
-        for (uint i = 1; i < pr_count; i++) {
-            if (!is_use_strict_directive(pr_buf[i])) continue;
-            // A non-simple parameter list keeps the outer mode here; block()'s
-            // parse_directives then reports the Illegal 'use strict' error.
-            if (!self.params_are_simple()) break;
+        // A non-simple parameter list keeps the outer mode here; block()'s
+        // parse_directives then reports the Illegal 'use strict' error.
+        if (pr_use_strict && self.params_are_simple()) {
             self.is_strict = true;
             self.lexer.set_strict(true);
             if (self.current_func != null) self.current_func.flags.is_strict = true;
             self.saw_use_strict = true;
-            break;
         }
     }
 
@@ -5023,7 +5002,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // lexer.next_token() directly, NOT via advance()) still sees the body's
     // opening brace and increments its brace_depth. block() then re-consumes
     // the `{` via its own expect() and runs its own parse_directives (which
-    // owns prologue_dir_count for the legacy-escape shrink check). Only the
+    // owns prologue_octal_count for the legacy-escape check). Only the
     // strictness flag is set early here.
     uint prologue_pos = inner_ctx.lexer.pos;
     uint prologue_line = inner_ctx.lexer.line;
@@ -5035,26 +5014,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     bool prologue_has_pb = inner_ctx.lexer.has_pushed_back;
     bool prologue_slt = inner_ctx.lexer.seen_line_term;
 
-    Token[8] prologue_buf;
-    uint prologue_count = 0;
-    Token lbrace = inner_ctx.advance()!;
-    if (lbrace.type != TokenType.LBRACE) {
-        return self.fail("expected '{' to start function body")~;
-    }
-    prologue_buf[0] = lbrace;
-    prologue_count = 1;
-    while (prologue_count < prologue_buf.len && inner_ctx.check(TokenType.STRING)) {
-        Token str_tok = inner_ctx.advance()!;
-        prologue_buf[prologue_count++] = str_tok;
-        if (!inner_ctx.check(TokenType.SEMICOLON)
-            && !inner_ctx.lexer.seen_line_term
-            && !inner_ctx.check(TokenType.RBRACE)) {
-            break;
-        }
-        if (inner_ctx.check(TokenType.SEMICOLON)) {
-            prologue_buf[prologue_count++] = inner_ctx.advance()!;
-        }
-    }
+    bool prologue_use_strict = inner_ctx.scan_prologue_for_use_strict()!;
     // Restore lexer state to before the `{` so hoist_decls's lexer.next_token()
     // (which doesn't read CompilerContext.pushback_stack) still sees the `{`.
     inner_ctx.lexer.pos = prologue_pos;
@@ -5068,17 +5028,12 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.lexer.seen_line_term = prologue_slt;
     // Set is_strict if any directive was "use strict" on a simple parameter
     // list. The check mirrors parse_directives().
-    bool prologue_made_strict = false;
-    for (uint i = 1; i < prologue_count; i++) {
-        Token t = prologue_buf[i];
-        if (!is_use_strict_directive(t)) continue;
-        if (inner_ctx.params_are_simple()) {
-            inner_ctx.is_strict = true;
-            inner_ctx.lexer.set_strict(true);
-            if (inner_ctx.current_func != null) inner_ctx.current_func.flags.is_strict = true;
-            inner_ctx.saw_use_strict = true;
-            prologue_made_strict = true;
-        }
+    bool prologue_made_strict = prologue_use_strict && inner_ctx.params_are_simple();
+    if (prologue_made_strict) {
+        inner_ctx.is_strict = true;
+        inner_ctx.lexer.set_strict(true);
+        if (inner_ctx.current_func != null) inner_ctx.current_func.flags.is_strict = true;
+        inner_ctx.saw_use_strict = true;
     }
     // ES2024 §15.2.1 / §15.2.2 strict early errors that the param/name parser
     // couldn't enforce when it ran (it only knew the OUTER strictness). A
