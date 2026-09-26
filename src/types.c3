@@ -573,6 +573,18 @@ $endif
     if (ptr != null) { ((HeapHeader*)ptr).incref(); }
 }
 
+// Store an object without taking a reference, for a slot that some other
+// owner keeps alive for as long as the slot is read and that is never
+// released through.
+macro void TVal.set_object_borrowed(&self, void* ptr) {
+$if USE_NANBOX:
+    self.bits = nanbox_encode_tagged(TAG_OBJECT, (usz)ptr);
+$else
+    self.tag     = OBJECT;
+    self.pointer = ptr;
+$endif
+}
+
 macro void TVal.set_buffer(&self, void* ptr) {
 $if USE_NANBOX:
     self.bits = nanbox_encode_tagged(TAG_BUFFER, (usz)ptr);

@@ -255,6 +255,11 @@ const uint ACT_FLAG_THIS_VALID     = 1u << 9;
 // BindThisValue step 3 then throws once the superclass constructor has run.
 const uint ACT_FLAG_SUPER_REBIND   = 1u << 10;
 
+// The flags a frame may carry and still return through RET's and RETUNDEF's
+// fast paths. Each of the others asks the pop for work only the general path
+// does.
+const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+
 // Write this_binding as a BORROWED value: the caller holds the owning
 // reference for the whole call, so nothing is incref'd here and nothing is
 // decref'd on pop.
@@ -279,6 +284,19 @@ macro void Activation.set_this_owned(&self, void* heap, TVal val) {
     TVal tmp = val;
     ((heap::Heap*)heap).tval_copy_ref(&self.this_binding, &tmp);
     self.flags |= ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+}
+
+// Release an owned this_binding as the frame pops, and clear the slot.
+// Activation slots are pooled by depth index and reused without zeroing, and
+// the next owned write (tval_copy_ref) decrefs whatever it finds there, so
+// stale bits would release the same reference a second time, or read freed
+// memory if the object has since been swept. Callers run this after the
+// result is written, since a construct return may still read this_binding.
+macro void Activation.release_this(&self, void* heap) {
+    if ((self.flags & ACT_FLAG_THIS_OWNED) != 0) {
+        ((heap::Heap*)heap).decref_tval(&self.this_binding);
+        self.this_binding.set_undefined();
+    }
 }
 
 // ============================================================================
