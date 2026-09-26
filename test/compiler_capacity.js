@@ -108,4 +108,21 @@ var arms = range(3000, i => "case " + i + ": return " + i + ";").join(" ");
 check("a switch with many cases",
     run("(function(x){ switch (x) { " + arms + " } })(2999)"), 2999);
 
+// Nesting deep enough to exhaust the native stack is an error, not a crash.
+function throwsOnDeepNesting(src) {
+    try { run(src); return false; } catch (e) { return e instanceof SyntaxError || e instanceof RangeError; }
+}
+[["blocks", "{".repeat(100000)],
+ ["parentheses", "(".repeat(100000)],
+ ["unary operators", "!".repeat(100000) + "1"],
+ ["assignments", "a=".repeat(100000) + "1"],
+ ["conditionals", "1?".repeat(50000) + "1" + ":1".repeat(50000)],
+ ["arrows", "()=>".repeat(100000) + "1"],
+ ["functions", "(function(){".repeat(10000) + "})()".repeat(10000)],
+ ["classes", "(class{m(){return ".repeat(10000) + "1" + "}})".repeat(10000)]].forEach(function (c) {
+    check("deeply nested " + c[0], throwsOnDeepNesting(c[1]), true);
+});
+check("moderately nested functions",
+    run("(function(){return ".repeat(60) + "7" + "})()".repeat(60)), 7);
+
 print("compiler_capacity: " + passed + " passed");

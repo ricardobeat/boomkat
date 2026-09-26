@@ -334,6 +334,7 @@ fn bool CompilerContext.peek2_starts_binding(&self, bool ignore_line_term = fals
 // After the statement completes, reclaim_stmt_regs releases any temporaries
 // stranded above the statement's base watermark by non-LIFO free patterns.
 fn void? CompilerContext.statement(&self) {
+    self.check_stack()!;
     ushort stmt_base = self.next_reg;
     TokenType tt = self.peek_type();
 

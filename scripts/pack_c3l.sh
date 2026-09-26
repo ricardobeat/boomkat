@@ -71,7 +71,8 @@ cat > "$C3L_DIR/manifest.json" <<'MANIFEST'
         "vendor/dtoa/cutils.c",
         "vendor/dtoa/dtoa.c",
         "src/dtoa_wrapper.c",
-        "src/date_math.c"
+        "src/date_math.c",
+        "src/native_stack.c"
     ],
     "cflags": "-O2",
     "c-include-dirs": [

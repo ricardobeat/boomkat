@@ -175,6 +175,7 @@ fn void? CompilerContext.note_arguments_reference(&self, char[] name) {
 // every resolved identifier clears the flag (an IdentifierReference is a valid
 // target). `x = y` would set the verdict and then have `y` immediately wipe it.
 fn ushort? CompilerContext.assignment_expr(&self) {
+    self.check_stack()!;
     bool saw_assign_op = false;
     ushort r = self.assignment_expr_inner(&saw_assign_op)!;
     if (saw_assign_op) {
@@ -1600,6 +1601,7 @@ fn void CompilerContext.clear_ref_markers(&self) {
 
 // Parse a unary expression.
 fn ushort? CompilerContext.unary_expr(&self) {
+    self.check_stack()!;
     TokenType tt = self.peek_type();
 
     // Every operand is parsed through here, so this is where the previous
@@ -4375,11 +4377,7 @@ fn PartKind CompilerContext.part_producer_kind(&self, uint start, uint end,
 // Parse primary expressions: literals, identifiers, grouping, etc.
 fn ushort? CompilerContext.primary_expr(&self) {
     self.last_was_bare_arrow = false;
-    self.expr_depth++;
-    defer self.expr_depth--;
-    if (self.expr_depth > MAX_EXPR_DEPTH) {
-        return self.fail("expression nested too deeply")~;
-    }
+    self.check_stack()!;
 
     TokenType tt = self.peek_type();
 
