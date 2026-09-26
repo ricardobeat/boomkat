@@ -13,6 +13,7 @@ import boomkat::unicode_bindings;
 import boomkat::heap;
 import std::math;
 import std::io;
+import std::collections::list;
 
 // ============================================================================
 // Fault codes
@@ -29,7 +30,6 @@ faultdef NOT_A_KEYWORD;
 // ============================================================================
 
 // Maximum size for the string escape-processing buffer.
-const uint STRING_BUF_SIZE = 65536;
 
 // Default payload size of a token-string arena block. Escape-decoded string
 // and template bodies are copied here so their `char[]` slices point at
@@ -401,38 +401,30 @@ fn bool is_whitespace(char c) {
 // UTF-8 encoding helper
 // ============================================================================
 
-// Encode a Unicode codepoint as UTF-8 into the buffer at the given offset.
-// Returns the new offset.
-fn uint encode_utf8_to_buf(char[STRING_BUF_SIZE]* buf, uint offset, uint cp) {
+// Append a Unicode codepoint to the buffer as UTF-8.
+fn void encode_utf8_push(List{char}* buf, uint cp) {
     if (cp < 0x80) {
-        (*buf)[offset] = (char)cp;
-        return offset + 1;
+        buf.push((char)cp);
+        return;
     }
     if (cp < 0x800) {
-        (*buf)[offset]     = (char)(0xC0 | (cp >> 6));
-        (*buf)[offset + 1] = (char)(0x80 | (cp & 0x3F));
-        return offset + 2;
+        buf.push((char)(0xC0 | (cp >> 6)));
+        buf.push((char)(0x80 | (cp & 0x3F)));
+        return;
     }
     if (cp < 0x10000) {
-        (*buf)[offset]     = (char)(0xE0 | (cp >> 12));
-        (*buf)[offset + 1] = (char)(0x80 | ((cp >> 6) & 0x3F));
-        (*buf)[offset + 2] = (char)(0x80 | (cp & 0x3F));
-        return offset + 3;
+        buf.push((char)(0xE0 | (cp >> 12)));
+        buf.push((char)(0x80 | ((cp >> 6) & 0x3F)));
+        buf.push((char)(0x80 | (cp & 0x3F)));
+        return;
     }
     // Supplementary plane: ECMAScript strings are UTF-16 code unit
     // sequences (spec §6.1.4), encode `\u{H+}` astral escapes as a
     // surrogate pair (CESU-8 storage: each half gets its own 3-byte UTF-8
     // sequence) so `"\u{1F600}".length === 2`, matching a real JS engine.
     uint v = cp - 0x1_0000;
-    uint high = 0xD800 + (v >> 10);
-    uint low  = 0xDC00 + (v & 0x3FF);
-    (*buf)[offset]     = (char)(0xE0 | (high >> 12));
-    (*buf)[offset + 1] = (char)(0x80 | ((high >> 6) & 0x3F));
-    (*buf)[offset + 2] = (char)(0x80 | (high & 0x3F));
-    (*buf)[offset + 3] = (char)(0xE0 | (low >> 12));
-    (*buf)[offset + 4] = (char)(0x80 | ((low >> 6) & 0x3F));
-    (*buf)[offset + 5] = (char)(0x80 | (low & 0x3F));
-    return offset + 6;
+    encode_utf8_push(buf, 0xD800 + (v >> 10));
+    encode_utf8_push(buf, 0xDC00 + (v & 0x3FF));
 }
 
 // ============================================================================
@@ -1454,12 +1446,12 @@ fn Token? Lexer.scan_string(&self) {
         return tok;
     }
 
-    // Slow path: build the decoded string in a transient stack buffer, then
-    // copy it into the lexer's arena so the returned slice outlives this frame.
-    // (A raw slice into `buf` would be a use-after-return: the token's
-    // `str_value` stays live while later tokens are lexed.)
-    char[STRING_BUF_SIZE] buf;
-    uint buf_len = 0;
+    // Slow path: build the decoded string in a scratch list, then copy it into
+    // the lexer's arena: the token's `str_value` stays live while later tokens
+    // are lexed, after `buf` is freed.
+    List{char} buf;
+    buf.init(mem);
+    defer buf.free();
     bool found_octal = false;
     bool decoded_octal = false;
     // Raw source bytes consumed between the quotes (escapes unexpanded).
@@ -1475,15 +1467,15 @@ fn Token? Lexer.scan_string(&self) {
         if (ch == quote) {
             self.advance_char(); // consume closing quote
             Token tok = make_token(TokenType.STRING, start_line, start_col);
-            if (buf_len > 0) {
-                tok.str_value = self.arena_dup(&buf[0], (usz)buf_len);
+            if (buf.len() > 0) {
+                tok.str_value = self.arena_dup(&buf[0], (usz)buf.len());
             } else {
                 tok.str_value = {};
             }
             tok.has_octal_escape = found_octal;
             tok.has_decoded_octal = decoded_octal;
             // Raw span between the quotes: raw_len counts every source byte
-            // consumed, buf_len the decoded length. Sliced from the
+            // consumed, buf the decoded bytes. Sliced from the
             // arena-backed source (stable for the token's lifetime); empty
             // when the literal held no escapes at all.
             if (raw_len > 0) {
@@ -1504,12 +1496,12 @@ fn Token? Lexer.scan_string(&self) {
 
             char esc = self.advance_char();
             switch (esc) {
-                case 'n':  buf[buf_len] = '\n'; buf_len++;
-                case 'r':  buf[buf_len] = '\r'; buf_len++;
-                case 't':  buf[buf_len] = '\t'; buf_len++;
-                case 'b':  buf[buf_len] = 0x08; buf_len++;
-                case 'f':  buf[buf_len] = 0x0C; buf_len++;
-                case 'v':  buf[buf_len] = 0x0B; buf_len++;
+                case 'n':  buf.push('\n');
+                case 'r':  buf.push('\r');
+                case 't':  buf.push('\t');
+                case 'b':  buf.push(0x08);
+                case 'f':  buf.push(0x0C);
+                case 'v':  buf.push(0x0B);
                 case '0':
                     // Sloppy Annex B: \0 followed by an octal digit is an
                     // octal escape (\01 === \x01). Strict latches found_octal
@@ -1526,17 +1518,16 @@ fn Token? Lexer.scan_string(&self) {
                             raw_len++;
                             oval = oval * 8 + (uint)(od - '0');
                         }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, oval);
+                        encode_utf8_push(&buf, oval);
                     } else {
-                        buf[buf_len] = 0;
-                        buf_len++;
+                        buf.push(0);
                     }
                     if (self.strict_mode && !self.at_end() && self.peek_char() >= '0' && self.peek_char() <= '9') {
                         found_octal = true;
                     }
-                case '\'': buf[buf_len] = '\''; buf_len++;
-                case '"':  buf[buf_len] = '"';  buf_len++;
-                case '\\': buf[buf_len] = '\\'; buf_len++;
+                case '\'': buf.push('\'');
+                case '"':  buf.push('"');
+                case '\\': buf.push('\\');
 
                 case 'x':
                     // \xHH, Unicode codepoint U+00HH, encoded as UTF-8.
@@ -1549,7 +1540,7 @@ fn Token? Lexer.scan_string(&self) {
                     raw_len += 2;
                     if (!is_hex_digit(h1) || !is_hex_digit(h2)) return LEX_ERROR~;
                     uint hval = hex_value(h1) * 16 + hex_value(h2);
-                    buf_len = encode_utf8_to_buf(&buf, buf_len, hval);
+                    encode_utf8_push(&buf, hval);
 
                 case 'u':
                     if (self.at_end()) return LEX_ERROR~;
@@ -1570,7 +1561,7 @@ fn Token? Lexer.scan_string(&self) {
                         if (self.at_end() || udigits == 0) return LEX_ERROR~;
                         self.advance_char(); // consume }
                         raw_len++;
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, ucp);
+                        encode_utf8_push(&buf, ucp);
                     } else {
                         // \uHHHH, exactly 4 hex digits
                         if (self.remaining() < 4) return LEX_ERROR~;
@@ -1581,7 +1572,7 @@ fn Token? Lexer.scan_string(&self) {
                             if (!is_hex_digit(hc)) return LEX_ERROR~;
                             ucp4 = ucp4 * 16 + hex_value(hc);
                         }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, ucp4);
+                        encode_utf8_push(&buf, ucp4);
                     }
 
                 case '\n':
@@ -1610,8 +1601,7 @@ fn Token? Lexer.scan_string(&self) {
                         self.advance_char(); // consume 0xA8 or 0xA9
                         raw_len += 2;
                     } else {
-                        buf[buf_len] = esc;
-                        buf_len++;
+                        buf.push(esc);
                     }
 
                 default:
@@ -1633,26 +1623,21 @@ fn Token? Lexer.scan_string(&self) {
                             raw_len++;
                             oval2 = oval2 * 8 + (uint)(od2 - '0');
                         }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, oval2);
+                        encode_utf8_push(&buf, oval2);
                         break;
                     }
                     if (self.strict_mode && esc >= '1' && esc <= '9') {
                         found_octal = true;
                     }
-                    buf[buf_len] = esc;
-                    buf_len++;
+                    buf.push(esc);
             }
         } else {
             // Regular character
-            buf[buf_len] = ch;
-            buf_len++;
+            buf.push(ch);
             raw_len++;
             self.advance_char();
         }
 
-        if (buf_len >= STRING_BUF_SIZE - 6) {
-            return LEX_ERROR~;
-        }
     }
 
     // Reached end of source without closing quote
@@ -2156,34 +2141,18 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
         return {};
     }
 
-    // Slow path: build decoded (cooked) and raw text in parallel stack buffers.
+    // Slow path: build decoded (cooked) and raw text in parallel scratch lists.
     // The raw buffer mirrors the source text exactly except that bare CR and
     // CRLF sequences are normalized to LF, per the TRV of LineTerminatorSequence
     // (ES2015 11.8.6.1), which applies to raw text just as much as cooked.
-    char[STRING_BUF_SIZE] buf;
-    uint buf_len = 0;
-    char[STRING_BUF_SIZE] raw_buf;
-    uint raw_len = 0;
+    List{char} buf;
+    buf.init(mem);
+    defer buf.free();
+    List{char} raw_buf;
+    raw_buf.init(mem);
+    defer raw_buf.free();
 
     while (!self.at_end()) {
-        // Both buffers are fixed-size stack arrays, and every write below is
-        // an unguarded `buf[buf_len] = ...; buf_len++`. scan_string carries
-        // the same check (search STRING_BUF_SIZE - 6 there); this function did
-        // not, so a template part longer than the buffer wrote past the end of
-        // a stack array and corrupted the compiler's own frame. On typescript
-        // 5.4.5 that landed as a jump into string data (PC = 0x6e694c656c676e69,
-        // ASCII text) rather than any diagnosable error.
-        //
-        // The -6 margin matches scan_string's: a single iteration can append
-        // up to 4 bytes for a \uXXXX escape encoded as UTF-8, and the raw
-        // buffer can take several bytes for one escape sequence, so the check
-        // has to leave room for the widest single step rather than one byte.
-        // Checked once at the top of the loop, which dominates every write in
-        // the body.
-        if (buf_len >= STRING_BUF_SIZE - 6 || raw_len >= STRING_BUF_SIZE - 6) {
-            return LEX_ERROR~;
-        }
-
         char ch = self.peek_char();
 
         if (ch == '`') {
@@ -2199,8 +2168,8 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
             if (ch == '\r' && !self.at_end() && self.peek_char() == '\n') {
                 self.advance_char();
             }
-            buf[buf_len] = '\n'; buf_len++;
-            raw_buf[raw_len] = '\n'; raw_len++;
+            buf.push('\n');
+            raw_buf.push('\n');
             continue;
         }
 
@@ -2217,8 +2186,8 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
             // Line continuation: \<LF> or \<CR><LF>
             if (esc == '\n') {
                 self.advance_char();
-                raw_buf[raw_len] = '\\'; raw_len++;
-                raw_buf[raw_len] = '\n'; raw_len++;
+                raw_buf.push('\\');
+                raw_buf.push('\n');
                 continue;
             }
             if (esc == '\r') {
@@ -2226,8 +2195,8 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                 if (!self.at_end() && self.peek_char() == '\n') {
                     self.advance_char();
                 }
-                raw_buf[raw_len] = '\\'; raw_len++;
-                raw_buf[raw_len] = '\n'; raw_len++;
+                raw_buf.push('\\');
+                raw_buf.push('\n');
                 continue;
             }
             // Line continuation: \<LS> or \<PS> (UTF-8: E2 80 A8 / E2 80 A9).
@@ -2236,10 +2205,10 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
             if (esc == (char)0xE2 && self.remaining() >= 3
                 && self.peek_char_at(1) == (char)0x80
                 && (self.peek_char_at(2) == (char)0xA8 || self.peek_char_at(2) == (char)0xA9)) {
-                raw_buf[raw_len] = '\\'; raw_len++;
-                raw_buf[raw_len] = self.advance_char(); raw_len++;
-                raw_buf[raw_len] = self.advance_char(); raw_len++;
-                raw_buf[raw_len] = self.advance_char(); raw_len++;
+                raw_buf.push('\\');
+                raw_buf.push(self.advance_char());
+                raw_buf.push(self.advance_char());
+                raw_buf.push(self.advance_char());
                 continue;
             }
 
@@ -2252,18 +2221,18 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
 
             self.advance_char(); // consume escape char
             switch (esc) {
-                case 'n':  buf[buf_len] = '\n'; buf_len++;
-                case 'r':  buf[buf_len] = '\r'; buf_len++;
-                case 't':  buf[buf_len] = '\t'; buf_len++;
-                case 'b':  buf[buf_len] = 0x08; buf_len++;
-                case 'f':  buf[buf_len] = 0x0C; buf_len++;
-                case 'v':  buf[buf_len] = 0x0B; buf_len++;
-                case '0':  buf[buf_len] = 0; buf_len++;
-                case '\'': buf[buf_len] = '\''; buf_len++;
-                case '"':  buf[buf_len] = '"';  buf_len++;
-                case '\\': buf[buf_len] = '\\'; buf_len++;
-                case '`':  buf[buf_len] = '`';  buf_len++;
-                case '$':  buf[buf_len] = '$';  buf_len++;
+                case 'n':  buf.push('\n');
+                case 'r':  buf.push('\r');
+                case 't':  buf.push('\t');
+                case 'b':  buf.push(0x08);
+                case 'f':  buf.push(0x0C);
+                case 'v':  buf.push(0x0B);
+                case '0':  buf.push(0);
+                case '\'': buf.push('\'');
+                case '"':  buf.push('"');
+                case '\\': buf.push('\\');
+                case '`':  buf.push('`');
+                case '$':  buf.push('$');
 
                 case 'x':
                     // \xHH in template literals, same UTF-8 encoding fix as
@@ -2278,7 +2247,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                         char h1 = self.advance_char();
                         char h2 = self.advance_char();
                         uint hval = hex_value(h1) * 16 + hex_value(h2);
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, hval);
+                        encode_utf8_push(&buf, hval);
                     }
 
                 case 'u':
@@ -2307,7 +2276,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                             self.advance_char();
                         }
                         self.advance_char(); // }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, ucp);
+                        encode_utf8_push(&buf, ucp);
                     } else {
                         if (self.remaining() < 4 ||
                             !is_hex_digit(self.peek_char()) ||
@@ -2322,26 +2291,26 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                             char hc = self.advance_char();
                             ucp4 = ucp4 * 16 + hex_value(hc);
                         }
-                        buf_len = encode_utf8_to_buf(&buf, buf_len, ucp4);
+                        encode_utf8_push(&buf, ucp4);
                     }
 
                 default:
                     // Other non-standard escape (e.g. \q), emit the character as-is.
-                    buf[buf_len] = esc; buf_len++;
+                    buf.push(esc);
             }
             if (*has_invalid_escape) break;
             // Raw text mirrors the literal escape sequence verbatim (backslash
             // plus whatever followed it), since none of the cases above are
             // LineTerminatorSequences (already handled earlier as \<LF>/\<CR>).
             for (uint ri = esc_start; ri < self.pos; ri++) {
-                raw_buf[raw_len] = self.source[ri]; raw_len++;
+                raw_buf.push(self.source[ri]);
             }
             continue;
         }
 
         char plain = self.advance_char();
-        buf[buf_len] = plain; buf_len++;
-        raw_buf[raw_len] = plain; raw_len++;
+        buf.push(plain);
+        raw_buf.push(plain);
     }
 
     if (*has_invalid_escape) {
@@ -2367,29 +2336,22 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
         if (raw_end > start_pos) {
             // Normalize CR / CRLF to LF in the raw text (TRV of
             // LineTerminatorSequence), same as the cooked-scanning path above.
-            // Same bound as the cooked loop above: out_len grows with the
-            // source span, which is unbounded, while raw_buf is a fixed stack
-            // array. Checked before each write rather than once, since this
-            // loop copies straight from source with no other exit.
-            uint out_len = 0;
+            raw_buf.clear();
             uint ri = start_pos;
             while (ri < raw_end) {
-                if (out_len >= STRING_BUF_SIZE - 6) {
-                    return LEX_ERROR~;
-                }
                 char rc = self.source[ri];
                 if (rc == '\r') {
-                    raw_buf[out_len] = '\n'; out_len++;
+                    raw_buf.push('\n');
                     ri++;
                     if (ri < raw_end && self.source[ri] == '\n') { ri++; }
                     continue;
                 }
-                raw_buf[out_len] = rc; out_len++;
+                raw_buf.push(rc);
                 ri++;
             }
             char[] slice = self.source[start_pos..raw_end - 1];
-            if (out_len > 0) {
-                *raw_out = self.arena_dup(&raw_buf[0], (usz)out_len);
+            if (raw_buf.len() > 0) {
+                *raw_out = self.arena_dup(&raw_buf[0], (usz)raw_buf.len());
             } else {
                 *raw_out = {};
             }
@@ -2400,14 +2362,14 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
 
     *has_escapes = true;
     *end_char = (self.at_end()) ? 0 : self.peek_char();
-    // Copy cooked and raw bodies out of the transient stack buffers into the
+    // Copy cooked and raw bodies out of the scratch lists into the
     // arena so the returned/`raw_out` slices survive past this frame (a token's
     // str_value/raw_value stays live while later template parts are lexed).
-    if (raw_len > 0) {
-        *raw_out = self.arena_dup(&raw_buf[0], (usz)raw_len);
+    if (raw_buf.len() > 0) {
+        *raw_out = self.arena_dup(&raw_buf[0], (usz)raw_buf.len());
     }
-    if (buf_len > 0) {
-        return self.arena_dup(&buf[0], (usz)buf_len);
+    if (buf.len() > 0) {
+        return self.arena_dup(&buf[0], (usz)buf.len());
     }
     return {};
 }

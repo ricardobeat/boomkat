@@ -210,4 +210,9 @@ function throwsOnDeepNesting(src) {
 check("moderately nested functions",
     run("(function(){return ".repeat(60) + "7" + "})()".repeat(60)), 7);
 
+// Escaped string and template literals decode into growable buffers.
+check("long escaped string", run('"' + "\\n".repeat(100000) + '"').length, 100000);
+check("long escaped template", run('`' + "\\n".repeat(100000) + '`').length, 100000);
+check("long raw template", run('String.raw`' + "\\n\\t".repeat(100000) + '`').length, 400000);
+
 print("compiler_capacity: " + passed + " passed");
