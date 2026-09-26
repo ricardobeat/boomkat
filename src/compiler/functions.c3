@@ -3707,7 +3707,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
     // function-level let/const go into a scope that outlives inner blocks.
     // Skip when there are no default parameters (the only case that needs
     // a function-level scope distinct from the block scope).
-    bool has_func_lex = self.default_count > 0;
+    bool has_func_lex = self.defaults.len() > 0;
     if (has_func_lex) {
         self.emit_simple(Opcode.PUSH_LEX);
 
@@ -3736,10 +3736,10 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
     }
 
     // Emit default parameter checks (must run before body, after PUSH_LEX)
-    for (ushort di = 0; di < self.default_count; di++) {
-        ushort pr = self.defaults[di].param_reg;
-        uint name_idx = self.defaults[di].param_name_idx;
-        uint func_idx = self.defaults[di].default_func_idx;
+    foreach (d : self.defaults) {
+        ushort pr = d.param_reg;
+        uint name_idx = d.param_name_idx;
+        uint func_idx = d.default_func_idx;
 
         // Check if param != undefined; if so, skip default evaluation
         ushort undef_reg = self.alloc_reg();
@@ -3798,8 +3798,8 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
             if (ni == NO_PARAM_NAME) { ai++; continue; }
             // Check if this param has a default (was already handled above).
             bool is_default_param = false;
-            for (ushort di = 0; di < self.default_count; di++) {
-                if (self.defaults[di].param_name_idx == ni) {
+            foreach (d : self.defaults) {
+                if (d.param_name_idx == ni) {
                     is_default_param = true;
                     break;
                 }
@@ -3992,13 +3992,11 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 self.in_formal_params = saved_ifp;
 
                 // Add to inner functions table
-                if (self.default_count < MAX_PARAMS) {
-                    uint def_idx = self.add_inner_func(default_func);
-                    self.defaults[self.default_count].param_reg = param_reg;
-                    self.defaults[self.default_count].param_name_idx = param_name_idx;
-                    self.defaults[self.default_count].default_func_idx = def_idx;
-                    self.default_count++;
-                }
+                self.defaults.push({
+                    .param_reg = param_reg,
+                    .param_name_idx = param_name_idx,
+                    .default_func_idx = self.add_inner_func(default_func),
+                });
 
                 // Track first default index (0-based arg index)
                 if (first_default_idx == 0xFFFF) {
@@ -4050,7 +4048,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
     // Mirrors the prologue's own condition: the matching POP_LEX (and the
     // body's PUSH_VAR/POP_VAR) are emitted downstream by each caller.
-    bool has_func_lex = self.default_count > 0;
+    bool has_func_lex = self.defaults.len() > 0;
     self.emit_param_prologue(arg_count, first_default_idx, param_name_view(&param_name_indices, arg_count))!;
 
     // Emit destructuring code for destructured function parameters.
@@ -4944,13 +4942,11 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 inner_ctx.in_formal_params = saved_ifp_i;
 
                 // Add to inner functions table
-                if (inner_ctx.default_count < MAX_PARAMS) {
-                    uint def_idx = inner_ctx.add_inner_func(default_func);
-                    inner_ctx.defaults[inner_ctx.default_count].param_reg = param_reg;
-                    inner_ctx.defaults[inner_ctx.default_count].param_name_idx = param_name_idx;
-                    inner_ctx.defaults[inner_ctx.default_count].default_func_idx = def_idx;
-                    inner_ctx.default_count++;
-                }
+                inner_ctx.defaults.push({
+                    .param_reg = param_reg,
+                    .param_name_idx = param_name_idx,
+                    .default_func_idx = inner_ctx.add_inner_func(default_func),
+                });
 
                 // Track first default index (0-based arg index)
                 if (first_default_idx == 0xFFFF) {
@@ -4990,7 +4986,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // Declare destructured bindings as variables (skip synthetics).
     inner_ctx.declare_param_pattern(inner_destruct_binds.array_view());
 
-    bool inner_has_func_lex = inner_ctx.default_count > 0;
+    bool inner_has_func_lex = inner_ctx.defaults.len() > 0;
     inner_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_view(&param_name_indices, arg_count))!;
 
     // Emit deferred outer-default checks for destructured parameters, now
@@ -5781,13 +5777,11 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 arrow_ctx.in_formal_params = saved_ifp_a;
 
                 // Add to inner functions table
-                if (arrow_ctx.default_count < MAX_PARAMS) {
-                    uint def_idx = arrow_ctx.add_inner_func(default_func);
-                    arrow_ctx.defaults[arrow_ctx.default_count].param_reg = param_reg;
-                    arrow_ctx.defaults[arrow_ctx.default_count].param_name_idx = param_name_idx;
-                    arrow_ctx.defaults[arrow_ctx.default_count].default_func_idx = def_idx;
-                    arrow_ctx.default_count++;
-                }
+                arrow_ctx.defaults.push({
+                    .param_reg = param_reg,
+                    .param_name_idx = param_name_idx,
+                    .default_func_idx = arrow_ctx.add_inner_func(default_func),
+                });
 
                 // Track first default index (0-based arg index)
                 if (first_default_idx == 0xFFFF) {
@@ -5836,7 +5830,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.forbid_await = false;
     arrow_ctx.forbid_yield = false;
 
-    bool has_func_lex = arrow_ctx.default_count > 0;
+    bool has_func_lex = arrow_ctx.defaults.len() > 0;
     arrow_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_view(&param_name_indices, arg_count))!;
 
     // Emit deferred outer-default checks for destructured parameters, now

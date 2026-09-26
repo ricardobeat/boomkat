@@ -62,4 +62,19 @@ check("a pattern binding with a long name",
 check("the inferred name of a long pattern default",
     run("(function({" + longName + " = function(){}}){ return " + longName + ".name })({})"), longName);
 
+var defaulted = range(40, i => "p" + i + " = " + i).join(",");
+var defaultedSum = range(40, i => "p" + i).join("+");
+check("a function with many parameter defaults",
+    run("(function(" + defaulted + "){ return " + defaultedSum + " })()"), sumTo(40));
+check("an arrow with many parameter defaults",
+    run("((" + defaulted + ") => " + defaultedSum + ")()"), sumTo(40));
+check("a method with many parameter defaults",
+    run("(class { m(" + defaulted + "){ return " + defaultedSum + " } })").prototype.m(), sumTo(40));
+var patternDefaults = range(40, i => "[d" + i + "] = [" + i + "]").join(",");
+var patternSum = range(40, i => "d" + i).join("+");
+check("a function with many pattern parameter defaults",
+    run("(function(" + patternDefaults + "){ return " + patternSum + " })()"), sumTo(40));
+check("an arrow with many pattern parameter defaults",
+    run("((" + patternDefaults + ") => " + patternSum + ")()"), sumTo(40));
+
 print("compiler_capacity: " + passed + " passed");

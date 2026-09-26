@@ -132,7 +132,7 @@ fn void build_await_liveness(CompilerContext* ctx, CompiledFunction* func, Heap*
         || func.num_regs > AWAIT_LIVE_MAX_REGS || func.code_count > AWAIT_LIVE_MAX_CODE
         || ctx.has_direct_eval || ctx.has_with_stmt || ctx.outer_with
         || ctx.uses_arguments || ctx.has_captured_local || ctx.inner_func_count != 0
-        || ctx.has_rest || ctx.default_count != 0 || ctx.destruct_default_count != 0
+        || ctx.has_rest || ctx.defaults.len() != 0 || ctx.destruct_defaults.len() != 0
         || ctx.has_destructured_param || func.code_count == 0) return;
 
     uint await_count = 0;

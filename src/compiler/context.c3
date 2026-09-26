@@ -722,16 +722,14 @@ struct CompilerContext {
     uint pushback_count;
 
     // Default parameter tracking
-    ParamDefault[MAX_PARAMS] defaults;
-    ushort default_count;
+    List{ParamDefault} defaults;
 
     // Destructured-parameter outer-default tracking (deferred emission)
-    DestructParamDefault[MAX_PARAMS] destruct_defaults;
-    ushort destruct_default_count;
+    List{DestructParamDefault} destruct_defaults;
 
     // Set while parsing FormalParameters when a parameter is a destructuring
     // pattern (`function f([a]) {}` / `function f({a}) {}`). Together with
-    // `has_rest` and `default_count` this is IsSimpleParameterList = false
+    // `has_rest` and `defaults` this is IsSimpleParameterList = false
     // (ES §15.1.3) — see `params_are_simple`.
     bool has_destructured_param;
 
@@ -1442,6 +1440,8 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.direct_eval_offsets.allocator = mem;
     self.bindings.allocator = mem;
     self.captured_names.allocator = mem;
+    self.defaults.allocator = mem;
+    self.destruct_defaults.allocator = mem;
 
     // Phase 3 (plans/083): do NOT default the lexer to strict mode here. Each
     // compilation entry point (compile/compile_eval/compile_function/etc.) is
@@ -1484,6 +1484,8 @@ fn void CompilerContext.cleanup(&self) {
     self.bindings.free();
     foreach (name : self.captured_names) { mem::free(name.ptr); }
     self.captured_names.free();
+    self.defaults.free();
+    self.destruct_defaults.free();
 }
 
 // Borrow the private-names table from an enclosing context (a method,
@@ -1733,11 +1735,7 @@ fn bool? CompilerContext.parse_destruct_param_default(&self, ushort arg_slot) {
     CompiledFunction* default_func = self.compile_default_expr()!;
     uint func_idx = self.add_inner_func(default_func);
 
-    if (self.destruct_default_count < MAX_PARAMS) {
-        self.destruct_defaults[self.destruct_default_count].arg_slot = arg_slot;
-        self.destruct_defaults[self.destruct_default_count].default_func_idx = func_idx;
-        self.destruct_default_count++;
-    }
+    self.destruct_defaults.push({ .arg_slot = arg_slot, .default_func_idx = func_idx });
 
     return true;
 }
@@ -1747,9 +1745,9 @@ fn bool? CompilerContext.parse_destruct_param_default(&self, ushort arg_slot) {
 // all arg-slot registers) have been parsed, so scratch register allocation
 // here can never clobber a later parameter's live argument.
 fn void CompilerContext.emit_destruct_param_defaults(&self) {
-    for (ushort di = 0; di < self.destruct_default_count; di++) {
-        ushort arg_slot = self.destruct_defaults[di].arg_slot;
-        uint func_idx = self.destruct_defaults[di].default_func_idx;
+    foreach (d : self.destruct_defaults) {
+        ushort arg_slot = d.arg_slot;
+        uint func_idx = d.default_func_idx;
 
         // Compare the arg slot vs undefined. If equal, take the default.
         ushort undef_reg = self.alloc_reg();
@@ -1817,8 +1815,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     bool can_remove_empty_arrow_scopes = self.is_arrow
                                    && self.num_args == 0
                                    && !self.has_rest
-                                   && self.default_count == 0
-                                   && self.destruct_default_count == 0
+                                   && self.defaults.len() == 0
+                                   && self.destruct_defaults.len() == 0
                                    && !self.has_destructured_param
                                    && !self.has_local_bindings
                                    && !self.has_lexical_bindings
@@ -2186,7 +2184,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         me_pinned.clear();
         bool me_has_pinned = false;
         if (!self.is_strict && self.uses_arguments && !self.has_rest
-            && self.default_count == 0 && self.destruct_default_count == 0
+            && self.defaults.len() == 0 && self.destruct_defaults.len() == 0
             && !self.has_destructured_param && !self.is_arrow && !self.eval_mode) {
             // Parameters occupy r0..r(num_args-1) in declaration order (see
             // emit_param_prologue).
@@ -2533,8 +2531,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // the flag only guarantees an object exists for the eval body, and the
     // eval body is not this function's own parameter scope.
     func.flags.mapped_arguments = !self.is_strict && self.uses_arguments
-                             && !self.has_rest && self.default_count == 0
-                             && self.destruct_default_count == 0
+                             && !self.has_rest && self.defaults.len() == 0
+                             && self.destruct_defaults.len() == 0
                              && !self.has_destructured_param
                              && !self.is_arrow && !self.eval_mode;
     // Direct eval must run in the caller's lexical environment: the CALL
@@ -2557,7 +2555,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     //     in default expressions don't see body var declarations)
     // Functions with var declarations but no closures, eval, or arguments
     // can reuse the parent's env directly.
-    bool has_params_needing_env = self.has_rest || self.default_count > 0;
+    bool has_params_needing_env = self.has_rest || self.defaults.len() > 0;
     bool needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
                           || self.uses_arguments
                           || self.has_direct_eval;
@@ -2613,7 +2611,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.num_args = self.num_args;
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;
-    } else if (self.default_count > 0) {
+    } else if (self.defaults.len() > 0) {
         // First default param doesn't count toward .length; formals before it do.
         func.num_formals = self.formal_count;
     } else {
