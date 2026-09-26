@@ -555,8 +555,8 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     if (!self.cell_frame_reserved && !self.disable_optimize && !self.is_global
         && !self.is_arrow && !self.is_generator && !self.is_async
         && !self.in_class_body && !self.is_named_func_expr
-        && !self.has_rest && self.default_count == 0
-        && self.destruct_default_count == 0 && !self.has_destructured_param
+        && !self.has_rest && self.defaults.len() == 0
+        && self.destruct_defaults.len() == 0 && !self.has_destructured_param
         && !self.capture_all && self.captured_names.len() > 0) {
         self.cell_frame_reg = self.alloc_persistent_reg();
         self.cell_frame_reserved = true;

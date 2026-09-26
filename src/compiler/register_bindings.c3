@@ -47,7 +47,7 @@ fn bool register_promotion_eligible(CompilerContext* ctx) {
     return !ctx.disable_optimize && !ctx.has_wide && !ctx.is_global
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
         && !ctx.capture_all && !ctx.uses_arguments && !ctx.has_rest
-        && ctx.default_count == 0 && ctx.destruct_default_count == 0
+        && ctx.defaults.len() == 0 && ctx.destruct_defaults.len() == 0
         && !ctx.has_destructured_param && !ctx.is_named_func_expr
         && !ctx.in_class_body && !ctx.is_arrow
         && !ctx.is_async && !ctx.is_generator;

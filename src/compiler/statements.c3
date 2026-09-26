@@ -810,8 +810,8 @@ fn bool is_restricted_name(char[] name,
 // formals and leaves all three signals at their zero values.
 fn bool CompilerContext.params_are_simple(&self) {
     return !self.has_rest
-        && self.default_count == 0
-        && self.destruct_default_count == 0
+        && self.defaults.len() == 0
+        && self.destruct_defaults.len() == 0
         && !self.has_destructured_param;
 }
 
