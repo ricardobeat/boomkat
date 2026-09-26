@@ -770,12 +770,9 @@ struct CompilerContext {
     // across classes within the same function scope.
     uint super_class_counter;
 
-    // Private class members (ES2022), name resolution.  Stack of declared
-    // private names across nested class bodies; private_scope_start marks
-    // where each class body's names begin so pop_private_scope can trim
-    // back to the enclosing class's names on exit. Growable (a class body
-    // may declare arbitrarily many distinct private names).
-    // Shared private-name stack (see PrivateNameTable). Every context in one
+    // Private class members (ES2022), name resolution: the declared names of
+    // every open class body, with the bodies themselves in
+    // PrivateNameTable.scopes. Shared private-name stack (see PrivateNameTable). Every context in one
     // class compile points at the SAME table, so an in-place realloc during
     // growth is visible to all borrowers, no stale `entries` pointer. The
     // table struct itself is heap-allocated and reference-counted-by-ownership:
@@ -785,12 +782,6 @@ struct CompilerContext {
     // context via adopt_private_names, such a context must not free the
     // shared table in cleanup().
     bool owns_private_names;
-    uint[MAX_CLASS_NESTING] private_scope_start;
-    // Compile-time class id per open class body (parallel to
-    // private_scope_start), makes each class's slot binding names unique
-    // ("#priv:<id>:foo") so sibling/nested classes never share bindings.
-    uint[MAX_CLASS_NESTING] private_class_id;
-    uint private_scope_depth;
     // True while compiling a private field initializer body (__field_init__).
     // `arguments` is a SyntaxError there (ES2022 §15.7.14): the initializer
     // is its own function body but has no arguments object of its own.
@@ -1407,6 +1398,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     pnt.entries = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
     pnt.count = 0;
     pnt.cap = INITIAL_PRIVATE_NAMES;
+    pnt.scopes.init(mem);
     self.private_name_table = pnt;
     self.owns_private_names = true;
 
@@ -1457,6 +1449,7 @@ fn void CompilerContext.cleanup(&self) {
         if (self.private_name_table.entries != null) {
             h.free_func(h.heap_udata, self.private_name_table.entries);
         }
+        self.private_name_table.scopes.free();
         h.free_func(h.heap_udata, self.private_name_table);
     }
     self.private_name_table = null;
@@ -1487,6 +1480,7 @@ fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
         if (self.private_name_table.entries != null) {
             h.free_func(h.heap_udata, self.private_name_table.entries);
         }
+        self.private_name_table.scopes.free();
         h.free_func(h.heap_udata, self.private_name_table);
     }
     // Borrow the parent's shared table by pointer. A nested class in a field
@@ -2812,9 +2806,6 @@ const uint INITIAL_PRIVATE_NAMES = 64;
 // compiler tables' *_HARD caps.
 const uint MAX_PRIVATE_NAMES_HARD = 1 << 20;
 
-// Maximum nesting depth of class bodies (for private-name scoping).
-const uint MAX_CLASS_NESTING = 16;
-
 // Shared, heap-allocated backing store for the private-names stack. A single
 // class compile involves many CompilerContexts (the class-enclosing `self`
 // plus per-element field/method/arrow/block bodies), all of which resolve,
@@ -2828,6 +2819,18 @@ struct PrivateNameTable {
     PrivateNameEntry* entries;
     uint count;
     uint cap;
+    // Open class bodies, innermost last. Each class pushes one around its body
+    // and pops it before the context that pushed it resumes, so every context
+    // sharing the table sees the class nesting at its own point in the source.
+    List{PrivateScope} scopes;
+}
+
+// One open class body: where its names begin in `entries` (pop trims back to
+// here) and its compile-time class id, which makes its slot binding names
+// ("#priv:<id>:foo") distinct from every sibling and nested class's.
+struct PrivateScope {
+    uint start;
+    uint class_id;
 }
 
 // One declared private name (`#foo`) within a class body. `slot` is the

@@ -100,20 +100,21 @@ fn void CompilerContext.declare_priv_slot(&self, char[] name) {
 
 // Push a fresh private-name scope for a class body about to be parsed.
 fn void CompilerContext.push_private_scope(&self) {
-    if (self.private_scope_depth < MAX_CLASS_NESTING) {
-        self.private_scope_start[self.private_scope_depth] = self.private_name_table.count;
-        Heap* hp = (Heap*)self.heap;
-        self.private_class_id[self.private_scope_depth] = hp.priv_class_id++;
-        self.private_scope_depth++;
-    }
+    Heap* hp = (Heap*)self.heap;
+    self.private_name_table.scopes.push({ self.private_name_table.count, hp.priv_class_id++ });
 }
 
 // Pop the innermost private-name scope, discarding names declared inside it.
 fn void CompilerContext.pop_private_scope(&self) {
-    if (self.private_scope_depth > 0) {
-        self.private_scope_depth--;
-        self.private_name_table.count = self.private_scope_start[self.private_scope_depth];
+    if (try scope = self.private_name_table.scopes.pop()) {
+        self.private_name_table.count = scope.start;
     }
+}
+
+// The innermost open class body, or a zero scope (start 0, class id 0) when
+// none is open, as in an eval that inherited its caller's names.
+fn PrivateScope CompilerContext.innermost_private_scope(&self) {
+    return self.private_name_table.scopes.last() ?? {};
 }
 
 // Declare a private name in the innermost (current) class scope.  Returns
@@ -137,8 +138,7 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     // makes a follow-up `resolve_private_name` miss the entry).
     char[] stable_name = self.intern_slot_name(name);
     PrivateNameTable* t = self.private_name_table;
-    uint scope_begin = self.private_scope_depth > 0
-        ? self.private_scope_start[self.private_scope_depth - 1] : 0;
+    uint scope_begin = self.innermost_private_scope().start;
     for (uint i = scope_begin; i < t.count; i++) {
         if (str_eq(t.entries[i].name, stable_name)) {
             return COMPILE_ERROR~;  // duplicate declaration
@@ -179,8 +179,7 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     // declare_priv_slot marks the binding as lexical (so the class's lex
     // env isn't elided, PUTLEX still creates the binding at runtime) but
     // consumes no register and no scope_stack slot.
-    uint class_id = self.private_scope_depth > 0
-        ? self.private_class_id[self.private_scope_depth - 1] : 0;
+    uint class_id = self.innermost_private_scope().class_id;
     char[96] slot_name_buf;
     char[] slot_name = self.intern_slot_name(
         format_private_slot_name(slot_name_buf[..], class_id, stable_name));
@@ -203,8 +202,7 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
 // enclosing scope, so it must not consume a register (test262
 // start-unicode-*.js blow past the 512-register limit if it did).
 fn char[] CompilerContext.declare_class_brand(&self) {
-    uint class_id = self.private_scope_depth > 0
-        ? self.private_class_id[self.private_scope_depth - 1] : 0;
+    uint class_id = self.innermost_private_scope().class_id;
     char[96] brand_name_buf;
     char[] brand_name = self.intern_slot_name(
         format_private_slot_name(brand_name_buf[..], class_id, "brand"));
@@ -218,8 +216,7 @@ fn char[] CompilerContext.declare_class_brand(&self) {
 // resolved via `resolve_private_name`. Same register-free treatment as
 // declare_class_brand; see its comment for why.
 fn char[] CompilerContext.declare_class_static_brand(&self) {
-    uint class_id = self.private_scope_depth > 0
-        ? self.private_class_id[self.private_scope_depth - 1] : 0;
+    uint class_id = self.innermost_private_scope().class_id;
     char[96] sbrand_name_buf;
     char[] sbrand_name = self.intern_slot_name(
         format_private_slot_name(sbrand_name_buf[..], class_id, "sbrand"));
@@ -435,8 +432,7 @@ fn void? CompilerContext.prescan_private_names(&self) {
 // setter of the same kind) is a duplicate-declaration error.
 fn void? CompilerContext.declare_or_merge_private_accessor(&self, char[] name, bool is_getter, bool is_setter, bool is_static_decl) {
     PrivateNameTable* t = self.private_name_table;
-    uint scope_begin = self.private_scope_depth > 0
-        ? self.private_scope_start[self.private_scope_depth - 1] : 0;
+    uint scope_begin = self.innermost_private_scope().start;
     for (uint i = scope_begin; i < t.count; i++) {
         if (str_eq(t.entries[i].name, name)) {
             PrivateNameEntry* e = &t.entries[i];

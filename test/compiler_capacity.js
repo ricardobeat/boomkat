@@ -108,6 +108,20 @@ var arms = range(3000, i => "case " + i + ": return " + i + ";").join(" ");
 check("a switch with many cases",
     run("(function(x){ switch (x) { " + arms + " } })(2999)"), 2999);
 
+// Private names resolve through any depth of nested classes: each class reads
+// its own #v and the outermost class's #root.
+var classDepth = 30;
+var nestedClasses = "";
+for (var d = classDepth - 1; d >= 0; d--) {
+    var inner = d == classDepth - 1 ? "0" : "new (" + nestedClasses + ")().m(o)";
+    nestedClasses = "class { #v = " + d + (d == 0 ? "; #root = 100" : "") + "; m(o) { return this.#v + o.#root + " + inner + " } }";
+}
+check("private names in deeply nested classes",
+    run("(function(){ var C = " + nestedClasses + "; var o = new C(); return o.m(o) })()"),
+    sumTo(classDepth) + 100 * classDepth);
+check("the same private name in deeply nested classes",
+    run("(function(){ return " + "new (class { #x = 1; m() { return this.#x + ".repeat(20) + "0" + " } })().m()".repeat(20) + " })()"), 20);
+
 // Duplicate parameter names are found however long the list or the names are.
 function isSyntaxError(src) {
     try { run(src); return false; } catch (e) { return e instanceof SyntaxError; }

@@ -4309,8 +4309,6 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
         def_ctx.home_object_name_idx = def_ctx.add_string_constant(home_object_hstr.get_data());
     }
     def_ctx.adopt_private_names(self);
-    def_ctx.private_scope_start = self.private_scope_start;
-    def_ctx.private_scope_depth = self.private_scope_depth;
     // A parameter default value is part of the enclosing function/arrow's
     // own definition site, not a nested function body it "crosses into".
     // ContainsAwait/ContainsArguments still apply here when the parameter
@@ -4534,8 +4532,6 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     // `[self.#f] = 1; #f = 2;` (private-field-is-visible-in-computed-
     // properties.js) and `[this.#m()] = 1` referencing a sibling method.
     key_ctx.adopt_private_names(self);
-    key_ctx.private_scope_start = self.private_scope_start;
-    key_ctx.private_scope_depth = self.private_scope_depth;
 
     key_ctx.emit_simple(Opcode.PUSH_LEX);
     ushort expr_reg = key_ctx.assignment_expr()!;
@@ -4604,8 +4600,6 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     block_ctx.forbid_await = true;
     block_ctx.forbid_yield = true;
     block_ctx.adopt_private_names(self);
-    block_ctx.private_scope_start = self.private_scope_start;
-    block_ctx.private_scope_depth = self.private_scope_depth;
 
     // No parameter list to parse, go straight to the body, same shape as
     // compile_inner_function's zero-param tail.
@@ -4744,8 +4738,6 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // body's declared names, resolve_private_name reads these fields
     // directly, so they must be copied (not just in_class_body).
     inner_ctx.adopt_private_names(self);
-    inner_ctx.private_scope_start = self.private_scope_start;
-    inner_ctx.private_scope_depth = self.private_scope_depth;
 
     // We're inside FormalParameters (inner function-method context); turn on
     // the gate so destructuring default values are correctly forbidden from
@@ -5553,8 +5545,6 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     }
     arrow_ctx.is_constructable = self.is_constructable;
     arrow_ctx.adopt_private_names(self);
-    arrow_ctx.private_scope_start = self.private_scope_start;
-    arrow_ctx.private_scope_depth = self.private_scope_depth;
     // Arrows have no `arguments` binding of their own, an `arguments`
     // reference inside an arrow body resolves the ENCLOSING function's
     // binding, so the enclosing body's ContainsArguments restriction
@@ -6157,8 +6147,6 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     }
     arrow_ctx.is_constructable = self.is_constructable;
     arrow_ctx.adopt_private_names(self);
-    arrow_ctx.private_scope_start = self.private_scope_start;
-    arrow_ctx.private_scope_depth = self.private_scope_depth;
     // Arrows have no `arguments` binding of their own, an `arguments`
     // reference inside an arrow body resolves the ENCLOSING function's
     // binding, so the enclosing body's ContainsArguments restriction
