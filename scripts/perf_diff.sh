@@ -110,6 +110,16 @@ BASE_BIN="$WT/out/boomkat"
 NEW_BIN="$PROJ_DIR/out/boomkat"
 [ -x "$NEW_BIN" ] || { echo "ERROR: $NEW_BIN missing — run: just build boomkat" >&2; exit 1; }
 
+# The CLI runs its input as a module unless given --script, and the benchmarks
+# are classic scripts: module code keeps top-level vars in the module
+# environment, which times differently. Baselines that predate the flag reject
+# it and already run scripts, so probe each binary for it.
+PROBE="$WT/probe.js"
+: >"$PROBE"
+script_flag() { "$1" --script "$PROBE" >/dev/null 2>&1 && echo --script || true; }
+BASE_FLAG="$(script_flag "$BASE_BIN")"
+NEW_FLAG="$(script_flag "$NEW_BIN")"
+
 # --- pick workloads -----------------------------------------------------------
 if [ $# -gt 0 ]; then
     SCRIPTS=("$@")
@@ -130,7 +140,7 @@ printf "%-24s %10s %10s %9s\n" "------------------------" "----------" "--------
 # every workload into "(failed)" instead of a measurement.
 run_once() {
     local t
-    t=$( { TIMEFORMAT=%R; time "$1" "$2" >/dev/null 2>&1; } 2>&1 ) || return 1
+    t=$( { TIMEFORMAT=%R; time "$1" ${2:+"$2"} "$3" >/dev/null 2>&1; } 2>&1 ) || return 1
     echo "$t"
 }
 
@@ -140,8 +150,8 @@ for s in "${SCRIPTS[@]}"; do
     b_best=""; n_best=""
     for _ in $(seq "$RUNS"); do
         # Alternate within the iteration so drift hits both sides equally.
-        b=$(run_once "$BASE_BIN" "$s") || continue
-        n=$(run_once "$NEW_BIN"  "$s") || continue
+        b=$(run_once "$BASE_BIN" "$BASE_FLAG" "$s") || continue
+        n=$(run_once "$NEW_BIN"  "$NEW_FLAG"  "$s") || continue
         b_best=$(awk -v a="$b" -v c="${b_best:-999}" 'BEGIN{print (a<c)?a:c}')
         n_best=$(awk -v a="$n" -v c="${n_best:-999}" 'BEGIN{print (a<c)?a:c}')
     done
