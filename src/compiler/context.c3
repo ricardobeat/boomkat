@@ -40,12 +40,34 @@ const uint INITIAL_INNER_FUNCS = 16;
 const uint MAX_CODE_HARD        = 1 << 22;  // 4M instructions
 const uint MAX_CONSTANTS_HARD   = 1 << 20;  // 1M constants
 const uint MAX_INNER_FUNCS_HARD = 1 << 16;  // 65K inner functions
-// Cap on primary_expr recursion depth (nested `[[[`, `((((`, etc). The
-// recursive-descent parser has no other bound and a deeply nested literal
-// overflows the native stack (measured: 500 levels fine, 1000 crashes with
-// SIGSEGV before this guard existed). 256 leaves real headroom below the
-// measured crash point while comfortably covering realistic source.
-const uint MAX_EXPR_DEPTH = 256;
+// Native stack the parser keeps free below its deepest check. It covers the
+// frames between two checks (one nesting level of a function body runs about
+// 50 KB of parser frames) plus the error path that unwinds from the check.
+const usz COMPILE_STACK_RESERVE = 256 * 1024;
+// Stack a compile may use on a platform that cannot report its stack bounds,
+// measured from the first compile on the thread.
+const usz COMPILE_STACK_FALLBACK = 512 * 1024;
+
+extern fn uptr boomkat_stack_low();
+
+// Lowest stack address the parser may reach on this thread; 0 until the
+// first check computes it. Stack bounds are per thread and fixed for its life.
+tlocal uptr g_compile_stack_floor;
+
+// The parser recurses once per nesting level of the source, so deeply nested
+// code (`((((`, `{{{{`, `!!!!`, nested functions) would overflow the native
+// stack. Every recursive parse entry calls this first and turns an imminent
+// overflow into a SyntaxError.
+fn void? CompilerContext.check_stack(&self) {
+    char marker;
+    uptr sp = (uptr)&marker;
+    if (g_compile_stack_floor == 0) {
+        uptr low = boomkat_stack_low();
+        g_compile_stack_floor = low != 0 ? low + COMPILE_STACK_RESERVE
+                                         : sp - COMPILE_STACK_FALLBACK;
+    }
+    if (sp < g_compile_stack_floor) return self.fail("code nested too deeply")~;
+}
 // Initial capacity of the hoisted-function-name table; grows on the heap from
 // here (see ensure_hoisted_fn_cap), so there is no fixed ceiling.
 const uint INITIAL_HOISTED_FNS = 128;
@@ -372,13 +394,6 @@ struct CompilerContext {
     // Register allocation
     ushort next_reg;
     ushort max_reg;
-
-    // Recursion depth of primary_expr, guarded against MAX_EXPR_DEPTH to
-    // turn a deeply nested literal (`[[[...`, `((((...`) into a catchable
-    // SyntaxError instead of a native stack overflow (SIGSEGV). Incremented
-    // on entry and decremented via `defer` so every exit path, including
-    // error returns, restores it.
-    uint expr_depth;
 
     // Constant pool (growable)
     TVal* constants;
