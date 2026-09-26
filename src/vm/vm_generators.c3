@@ -737,7 +737,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 reject_tv.set_object(reject_fn);
 
                 // 4. Create reaction and add to the pending Promise
-                HObject*? rxn_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+                TVal rxn_downstream; rxn_downstream.set_undefined();
+                HObject*? rxn_raw = builtins::promise_new_reaction(vm.heap, resume_tv, reject_tv, rxn_downstream);
                 if (catch _e3 = rxn_raw) {
                     // Clear both callbacks' async_state so the GC won't
                     // dereference the freed GeneratorState via var_env, and hand
@@ -751,11 +752,6 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
                 HObject* rxn = rxn_raw;
-                rxn.prototype = vm.heap.object_proto;
-                HString* ff_key = builtins::builtin_intern_string(vm.heap, "onFulfilled");
-                HString* rj_key = builtins::builtin_intern_string(vm.heap, "onRejected");
-                if (ff_key != null) rxn.put_prop(ff_key, resume_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                if (rj_key != null) rxn.put_prop(rj_key, reject_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                 builtins::promise_add_reaction(await_obj, rxn, vm.heap);
                 if (await_was_settled) {
                     // Promise was already fulfilled/rejected: enqueue the

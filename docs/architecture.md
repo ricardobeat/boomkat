@@ -797,3 +797,13 @@ microtask drain that cannot pump itself.
 Host integration goes through `ModuleHostHooks`: specifier resolution, source
 loading, and load and evaluation callbacks, so an embedder decides what a
 specifier means.
+
+
+### Internal Promise reactions
+
+Ordinary then/await reactions use four traced dense slots on a private plain
+object: fulfillment handler, rejection handler, downstream promise, and next
+reaction. Custom-capability reactions use named properties. Pending Promise
+marking follows either link representation, and generic object teardown releases
+the stored values. Settlement queues the existing microtask triples; reaction
+storage does not change job ordering.

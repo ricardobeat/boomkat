@@ -466,7 +466,7 @@ commit the useful summaries and reproducible benchmark/validation instructions.
 | Track | Evidence gathered | Prototype | Semantic checks | Timing / memory | Decision |
 |---|---|---|---|---|---|
 | A | mutation paths audited | live count + shared append | passed; see results below | interleaved A/B | keep |
-| B | source only | pending | pending | pending | pending |
+| B | reaction property paths audited | dense traced slots | passed with baseline ASAN exception | -18% to -24% time; +4% to +5% RSS | keep speed/memory tradeoff |
 | C | source only | pending | pending | pending | pending |
 | D | source only | gated | pending | pending | pending |
 | E | source only | gated | pending | pending | pending |
@@ -539,3 +539,40 @@ python3 scripts/bench_collection_counts.py /path/to/baseline /path/to/baseline -
 
 Every timing comparison, including noise controls, must remain interleaved.
 The runner uses macOS `/usr/bin/time -l`; cross-platform timings remain unmeasured.
+
+
+## Track B results: direct reaction slots
+
+B1 keeps ordinary then/await reactions in four dense traced TVal slots on an
+internal plain object with zero named-property capacity. Slots contain fulfillment,
+rejection, downstream, and next. Custom capability records retain named storage;
+other reaction producers can coexist in the same linked list. The microtask queue
+and observable job boundaries retain their existing representation and order.
+Generic object tracing and teardown own the dense values. Pending Promise marking
+walks either link representation. B2 queue replacement remains gated: these results
+establish a reaction-access benefit, not a queue bottleneck.
+
+Seven interleaved A/B pairs against `cc8deb08`, alternating the leading binary:
+checked chain/await/fan-out takes 0.1213s to 0.0928s (-23.5%), unchanged Promise
+benchmark 0.4626s to 0.3784s (-18.2%). Object/call controls change +1.2%/-0.3%.
+Peak RSS grows 57,917,440 to 60,768,256 bytes in the checked workload (+4.9%) and
+269,893,632 to 279,560,192 in the Promise benchmark (+3.6%). Keep for throughput;
+this representation does not claim a memory reduction. A dedicated inline record
+could address the extra dense allocation in a later measured experiment.
+
+Validation: 642 selected Promise tests and 74 async-function tests pass; the 90
+Promise skips follow existing scope. Focused fixture passes in Node and release.
+Fresh ASAN/GC-stress baseline and candidate both pass the intrinsic fixture.
+The mixed fixture's Promise-subclass case triggers the same activation-root
+use-after-free in both freshly built baseline and candidate. It is a baseline
+limitation, with logs preserved, and is excluded only from the clean ASAN claim.
+466 local scripts and all auxiliary suites pass, as do 42 Rosetta cases and
+the focused fixture in NONANBOX. The normal release build is restored.
+A second interleaved run over all 25 unchanged ES5/ES6 controls shows Promise
+time -17.1%; other fixtures range from -1.7% to +1.8%.
+
+Artifacts: `/tmp/boomkat-perf-093/B/`, including exact baseline and candidate
+ASAN binaries and logs, paired time/RSS samples, and checked workload. Use
+`scripts/bench_interleaved.py` with explicit binaries and fixture paths to repeat.
+Git stash lists are shared by worktrees: archive experiments by immutable object
+ID and pin experiment refs rather than using a moving `stash@{0}` to restore.

@@ -3348,9 +3348,8 @@ fn void Heap.drain_gray(&self) {
                 break;
             case ObjClass.PROMISE:
                 // The settled value and the list of pending reaction records.
-                // A reaction's link to the next one is a hidden TVal property
-                // (Heap.promise_reaction_next_key, written by
-                // builtins::reaction_set_next). HeapHeader.next threads the
+                // Reaction links live in dense slot 3 or a hidden TVal property.
+                // HeapHeader.next threads the
                 // heap_allocated GC list instead, so walking it here would
                 // follow unrelated objects.
                 self.mark_tval(&(*obj.extra_ptr()).promise.result);
@@ -3358,7 +3357,10 @@ fn void Heap.drain_gray(&self) {
                 while (reaction != null) {
                     self.mark_hobject(reaction);
                     HObject* next_reaction = null;
-                    if (self.promise_reaction_next_key != null) {
+                    if (reaction.prop_capacity == 0 && reaction.array_used == 4) {
+                        TVal nv = reaction.array_part()[3];
+                        if (nv.is_object()) next_reaction = (HObject*)nv.get_heapptr();
+                    } else if (self.promise_reaction_next_key != null) {
                         if (try nv = reaction.get_prop(self.promise_reaction_next_key, self)) {
                             if (nv.is_object() && nv.get_heapptr() != null) {
                                 next_reaction = (HObject*)nv.get_heapptr();

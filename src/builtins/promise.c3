@@ -66,9 +66,30 @@ fn TVal promise_get_result(HObject* promise) {
     return (*promise.extra_ptr()).promise.result;
 }
 
+// Internal reactions use four traced slots: fulfill, reject, downstream, next.
+// Named-property records remain available for custom capabilities.
+fn HObject*? promise_new_reaction(Heap* heap, TVal fulfill, TVal reject, TVal downstream) {
+    HObject* reaction = heap.alloc_object(hobject::ObjClass.OBJECT)!;
+    reaction.prop_capacity = 0;
+    reaction.grow_array(4, heap);
+    if (reaction.array_size < 4) return hobject::PROP_NOT_FOUND~;
+    reaction.array_used = 4;
+    heap.tval_copy_ref(&reaction.array_part()[0], &fulfill);
+    heap.tval_copy_ref(&reaction.array_part()[1], &reject);
+    heap.tval_copy_ref(&reaction.array_part()[2], &downstream);
+    return reaction;
+}
+
+// Only internal reaction records reach these helpers; named records retain property capacity.
+fn bool reaction_is_dense(HObject* reaction) @inline => reaction.prop_capacity == 0 && reaction.array_used == 4;
+
 // Get the "next" pointer in the reaction linked list.
 fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
     if (reaction == null) return null;
+    if (reaction_is_dense(reaction)) {
+        TVal next = reaction.array_part()[3];
+        return next.is_object() ? (HObject*)next.get_heapptr() : null;
+    }
     HString* key = builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY);
     if (key == null) return null;
     if (try nv = reaction.get_prop(key, heap)) {
@@ -82,6 +103,12 @@ fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
 // Set the "next" pointer in the reaction linked list.
 fn void reaction_set_next(HObject* reaction, HObject* next, Heap* heap) {
     if (reaction == null) return;
+    if (reaction_is_dense(reaction)) {
+        TVal nv; nv.set_undefined();
+        if (next != null) nv.set_object(next);
+        heap.tval_copy_ref(&reaction.array_part()[3], &nv);
+        return;
+    }
     HString* key = builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY);
     if (key == null) return;
     TVal nv;
@@ -158,48 +185,58 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
         // attached to whatever new promise the handler returns to.
         reaction_set_next(reaction, null, heap);
 
-        // Get handler: onFulfilled for fulfilled, onRejected for rejected
-        char[] handler_prop = (state == PROMISE_FULFILLED) ? "onFulfilled" : "onRejected";
-        HString* handler_key = builtin_intern_string(heap, handler_prop);
-        TVal? handler_opt = reaction.get_prop(handler_key, heap);
-        TVal handler;
-        if (try h = handler_opt) {
-            handler = h;
-        } else {
-            handler.set_undefined();
-        }
-
-        // Get the downstream promise to resolve/reject
-        HString* downstream_key = builtin_intern_string(heap, "downstream");
-        TVal downstream_val;
+        TVal handler, downstream_val, cap_resolve, cap_reject;
         downstream_val.set_undefined();
-        HObject* downstream = null;
-        if (try dv = reaction.get_prop(downstream_key, heap)) {
-            if (dv.is_object() && dv.get_heapptr() != null) {
-                HObject* d = (HObject*)dv.get_heapptr();
-                if (d.flags.obj_class == hobject::ObjClass.PROMISE) {
-                    downstream = d;
-                    downstream_val = dv;
+        cap_resolve.set_undefined();
+        cap_reject.set_undefined();
+        bool has_cap = false;
+        if (reaction_is_dense(reaction)) {
+            handler = reaction.array_part()[state == PROMISE_FULFILLED ? 0 : 1];
+            downstream_val = reaction.array_part()[2];
+        } else {
+            // Get handler: onFulfilled for fulfilled, onRejected for rejected
+            char[] handler_prop = (state == PROMISE_FULFILLED) ? "onFulfilled" : "onRejected";
+            HString* handler_key = builtin_intern_string(heap, handler_prop);
+            TVal? handler_opt = reaction.get_prop(handler_key, heap);
+
+            if (try h = handler_opt) {
+                handler = h;
+            } else {
+                handler.set_undefined();
+            }
+
+            // Get the downstream promise to resolve/reject
+            HString* downstream_key = builtin_intern_string(heap, "downstream");
+
+            downstream_val.set_undefined();
+            HObject* downstream = null;
+            if (try dv = reaction.get_prop(downstream_key, heap)) {
+                if (dv.is_object() && dv.get_heapptr() != null) {
+                    HObject* d = (HObject*)dv.get_heapptr();
+                    if (d.flags.obj_class == hobject::ObjClass.PROMISE) {
+                        downstream = d;
+                        downstream_val = dv;
+                    }
                 }
             }
-        }
 
-        // Check for capability resolve/reject stored on the reaction
-        // (set when then() used a custom SpeciesConstructor via NewPromiseCapability).
-        HString* cr_key = builtin_intern_string(heap, "\xFFcap_resolve_tv");
-        HString* cj_key = builtin_intern_string(heap, "\xFFcap_reject_tv");
-        TVal cap_resolve; cap_resolve.set_undefined();
-        TVal cap_reject; cap_reject.set_undefined();
-        bool has_cap = false;
-        if (cr_key != null) {
-            if (try crv = reaction.get_prop(cr_key, heap)) {
-                cap_resolve = crv;
-                has_cap = true;
+            // Check for capability resolve/reject stored on the reaction
+            // (set when then() used a custom SpeciesConstructor via NewPromiseCapability).
+            HString* cr_key = builtin_intern_string(heap, "\xFFcap_resolve_tv");
+            HString* cj_key = builtin_intern_string(heap, "\xFFcap_reject_tv");
+
+
+
+            if (cr_key != null) {
+                if (try crv = reaction.get_prop(cr_key, heap)) {
+                    cap_resolve = crv;
+                    has_cap = true;
+                }
             }
-        }
-        if (cj_key != null) {
-            if (try cjv = reaction.get_prop(cj_key, heap)) {
-                cap_reject = cjv;
+            if (cj_key != null) {
+                if (try cjv = reaction.get_prop(cj_key, heap)) {
+                    cap_reject = cjv;
+                }
             }
         }
 
@@ -1198,41 +1235,51 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
         // Fall through with use_capability = true.
     }
 
-    // Build reaction object
-    HObject*? reaction_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = reaction_raw) {
-        ctx.result.set_undefined();
-        return;
-    }
-    HObject* reaction = reaction_raw;
-
-    HString* onf_key = builtin_intern_string(ctx.heap, "onFulfilled");
-    reaction.put_prop(onf_key, on_fulfilled, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    HString* onr_key = builtin_intern_string(ctx.heap, "onRejected");
-    reaction.put_prop(onr_key, on_rejected, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    HString* downstream_key = builtin_intern_string(ctx.heap, "downstream");
-    TVal downstream_val;
-    if (use_capability || new_promise == null) {
-        downstream_val.set_undefined();
+    HObject* reaction;
+    if (!use_capability) {
+        TVal downstream; downstream.set_undefined();
+        if (new_promise != null) downstream.set_object(new_promise);
+        HObject*? raw = promise_new_reaction(ctx.heap, on_fulfilled, on_rejected, downstream);
+        if (catch raw) { ctx.result.set_undefined(); return; }
+        reaction = raw;
     } else {
-        downstream_val.set_object(new_promise);
-    }
-    reaction.put_prop(downstream_key, downstream_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    // For custom capabilities, store cap_resolve and cap_reject on the reaction.
-    if (use_capability) {
-        HString* cr_key = builtin_intern_string(ctx.heap, "\xFFcap_resolve_tv");
-        HString* cj_key = builtin_intern_string(ctx.heap, "\xFFcap_reject_tv");
-        HString* cp_key = builtin_intern_string(ctx.heap, "\xFFcap_promise_tv");
-        if (cr_key != null) reaction.put_prop(cr_key, cap_resolve_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        if (cj_key != null) reaction.put_prop(cj_key, cap_reject_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        if (cp_key != null) {
-            // Store the cap_promise ref (already set in *ctx.result above).
-            TVal cp_tv = *ctx.result;
-            reaction.put_prop(cp_key, cp_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+        // Build reaction object
+        HObject*? reaction_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+        if (catch err = reaction_raw) {
+            ctx.result.set_undefined();
+            return;
         }
+        reaction = reaction_raw;
+
+        HString* onf_key = builtin_intern_string(ctx.heap, "onFulfilled");
+        reaction.put_prop(onf_key, on_fulfilled, hobject::PROP_FLAGS_WEC, ctx.heap);
+
+        HString* onr_key = builtin_intern_string(ctx.heap, "onRejected");
+        reaction.put_prop(onr_key, on_rejected, hobject::PROP_FLAGS_WEC, ctx.heap);
+
+        HString* downstream_key = builtin_intern_string(ctx.heap, "downstream");
+        TVal downstream_val;
+        if (use_capability || new_promise == null) {
+            downstream_val.set_undefined();
+        } else {
+            downstream_val.set_object(new_promise);
+        }
+        reaction.put_prop(downstream_key, downstream_val, hobject::PROP_FLAGS_WEC, ctx.heap);
+
+        // For custom capabilities, store cap_resolve and cap_reject on the reaction.
+        if (use_capability) {
+            HString* cr_key = builtin_intern_string(ctx.heap, "\xFFcap_resolve_tv");
+            HString* cj_key = builtin_intern_string(ctx.heap, "\xFFcap_reject_tv");
+            HString* cp_key = builtin_intern_string(ctx.heap, "\xFFcap_promise_tv");
+            if (cr_key != null) reaction.put_prop(cr_key, cap_resolve_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+            if (cj_key != null) reaction.put_prop(cj_key, cap_reject_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+            if (cp_key != null) {
+                // Store the cap_promise ref (already set in *ctx.result above).
+                TVal cp_tv = *ctx.result;
+                reaction.put_prop(cp_key, cp_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+            }
+        }
+
     }
 
     uint state = promise_get_state(promise, PROMISE_PENDING);
