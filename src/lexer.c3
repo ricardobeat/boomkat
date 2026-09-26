@@ -401,6 +401,19 @@ fn bool is_whitespace(char c) {
 // UTF-8 encoding helper
 // ============================================================================
 
+// Append a Unicode codepoint to the buffer as standard UTF-8, four bytes for
+// the supplementary planes, matching how such a character reads in source.
+fn void push_utf8(List{char}* buf, uint cp) {
+    if (cp < 0x10000) {
+        encode_utf8_push(buf, cp);
+        return;
+    }
+    buf.push((char)(0xF0 | (cp >> 18)));
+    buf.push((char)(0x80 | ((cp >> 12) & 0x3F)));
+    buf.push((char)(0x80 | ((cp >> 6) & 0x3F)));
+    buf.push((char)(0x80 | (cp & 0x3F)));
+}
+
 // Append a Unicode codepoint to the buffer as UTF-8.
 fn void encode_utf8_push(List{char}* buf, uint cp) {
     if (cp < 0x80) {
@@ -540,7 +553,6 @@ struct Lexer {
     // copies, freed by `free_arena()` at the end of the owning compilation.
     LexArena* arena;
 
-    char[4096] ident_buf;
 }
 
 // ============================================================================
@@ -575,7 +587,7 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     lex.ts_mode = false;
     lex.heap = heap;
     // C3 zero-initialises the rest of the struct, so err_msg/err_line/err_col
-    // and ident_buf start clear; the top-level compile entries also reset the
+    // start clear; the top-level compile entries also reset the
     // error fields explicitly before each compilation.
     // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null
@@ -1681,7 +1693,7 @@ fn Token? Lexer.scan_identifier(&self) {
         return tok;
     }
 
-    // Slow path: rewind and decode into ident_buf.
+    // Slow path: rewind and decode.
     self.pos = start_pos;
     char[] name = self.scan_ident_body_decoded()!;
 
@@ -1705,16 +1717,18 @@ fn Token? Lexer.scan_identifier(&self) {
 }
 
 // Decode an identifier body (possibly containing \uXXXX / \u{H+} escapes)
-// from the current lexer position into `ident_buf`, re-encoding each
+// from the current lexer position, re-encoding each
 // escaped or literal codepoint as UTF-8. Used by both plain identifiers
 // and private names (`#name`) since both allow Unicode escapes per spec.
 // Every codepoint (escaped or not) is validated against
 // is_identifier_start/is_identifier_part as it is decoded.
 fn char[]? Lexer.scan_ident_body_decoded(&self) {
-    uint buf_len = 0;
+    List{char} buf;
+    buf.init(mem);
+    defer buf.free();
     bool first = true;
 
-    while (!self.at_end() && buf_len < 4090) {
+    while (!self.at_end()) {
         uint cp = self.peek_codepoint();
         if (cp == 0x5C) {
             self.read_codepoint();
@@ -1746,27 +1760,20 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
             }
             if (first) { if (!is_identifier_start(ucp)) return LEX_ERROR~; }
             else { if (!is_identifier_part(ucp)) return LEX_ERROR~; }
-            if (ucp < 0x80) { self.ident_buf[buf_len++] = (char)ucp; }
-            else if (ucp < 0x800) { self.ident_buf[buf_len]=(char)(0xC0|(ucp>>6)); self.ident_buf[buf_len+1]=(char)(0x80|(ucp&0x3F)); buf_len+=2; }
-            else if (ucp < 0x10000) { self.ident_buf[buf_len]=(char)(0xE0|(ucp>>12)); self.ident_buf[buf_len+1]=(char)(0x80|((ucp>>6)&0x3F)); self.ident_buf[buf_len+2]=(char)(0x80|(ucp&0x3F)); buf_len+=3; }
-            else { self.ident_buf[buf_len]=(char)(0xF0|(ucp>>18)); self.ident_buf[buf_len+1]=(char)(0x80|((ucp>>12)&0x3F)); self.ident_buf[buf_len+2]=(char)(0x80|((ucp>>6)&0x3F)); self.ident_buf[buf_len+3]=(char)(0x80|(ucp&0x3F)); buf_len+=4; }
+            push_utf8(&buf, ucp);
         } else if (is_identifier_part(cp)) {
             self.read_codepoint();
-            if (cp < 0x80) { self.ident_buf[buf_len++] = (char)cp; }
-            else if (cp < 0x800) { self.ident_buf[buf_len]=(char)(0xC0|(cp>>6)); self.ident_buf[buf_len+1]=(char)(0x80|(cp&0x3F)); buf_len+=2; }
-            else if (cp < 0x10000) { self.ident_buf[buf_len]=(char)(0xE0|(cp>>12)); self.ident_buf[buf_len+1]=(char)(0x80|((cp>>6)&0x3F)); self.ident_buf[buf_len+2]=(char)(0x80|(cp&0x3F)); buf_len+=3; }
-            else { self.ident_buf[buf_len]=(char)(0xF0|(cp>>18)); self.ident_buf[buf_len+1]=(char)(0x80|((cp>>12)&0x3F)); self.ident_buf[buf_len+2]=(char)(0x80|((cp>>6)&0x3F)); self.ident_buf[buf_len+3]=(char)(0x80|(cp&0x3F)); buf_len+=4; }
+            push_utf8(&buf, cp);
         } else {
             break;
         }
         first = false;
     }
 
-    // Copy the decoded name out of ident_buf, which the next scan reuses, so
-    // an identifier's text stays valid for the whole compile like a slice of
-    // the source does.
-    if (buf_len > 0) {
-        return self.arena_dup(&self.ident_buf[0], (usz)buf_len);
+    // Copy the decoded name into the arena so an identifier's text stays
+    // valid for the whole compile like a slice of the source does.
+    if (buf.len() > 0) {
+        return self.arena_dup(&buf[0], (usz)buf.len());
     }
     return {};
 }

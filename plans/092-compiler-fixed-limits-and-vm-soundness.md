@@ -31,7 +31,7 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
    - The switch and jump-patch tables are fixed-size too.
 3. [x] **Deep nesting crashes the compiler.** Guarded by `check_stack()` against the thread's real
    stack bounds (`src/native_stack.c`); deep nesting is now a SyntaxError. Follow-up: one nested
-   function level costs about 50 KB of parser frames, partly from whole-`Lexer` copies (4.9 KB) used
+   function level costs about 50 KB of parser frames, partly from whole-`Lexer` copies used
    for lookahead, so functions and classes stop at 100-150 levels on an 8 MB stack.
 4. [x] **Strict duplicate parameters.** Duplicates past the 32nd parameter are accepted, and names of 64
    or more characters escape the check (`SeenParams`).

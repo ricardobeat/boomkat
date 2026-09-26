@@ -2583,10 +2583,7 @@ fn void? CompilerContext.var_declaration(&self) {
             // expect_binding_identifier owns that decision, including the
             // escaped-spelling rules.
             Token name_tok = self.expect_binding_identifier(is_lexical)!;
-            // Intern now: an escaped identifier borrows the lexer's shared
-            // ident_buf scratch, which the initializer or a later declarator
-            // in this same statement will overwrite. declare_var stores this
-            // slice into scope_stack, which outlives the current token.
+            // Intern the name so every later use shares one canonical copy.
             name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
             self.try_skip_ts_definite_marker()!;
             self.try_skip_ts_type_annotation()!;
@@ -3862,10 +3859,7 @@ fn void? CompilerContext.for_statement(&self) {
                     head_names.clear();
                     if (nt != TokenType.LBRACKET && nt != TokenType.LBRACE) {
                         Token extra_name = self.expect(TokenType.IDENTIFIER)!;
-                        // Intern now: escaped identifier borrows the lexer's
-                        // shared ident_buf scratch, which the initializer
-                        // expression will overwrite. declare_var stores this
-                        // slice into scope_stack, which outlives this token.
+                        // Intern the name so every later use shares one canonical copy.
                         char[] extra_name2 = ((Heap*)self.heap).str_intern(extra_name.str_value).get_data();
                         self.check_var_lex_conflict(extra_name2, decl_kind)!;
                         self.try_skip_ts_type_annotation()!;
@@ -3904,11 +3898,7 @@ fn void? CompilerContext.for_statement(&self) {
             // ForDeclaration must not contain "let"), which sloppy `var` heads
             // still allow.
             Token name_tok = self.expect_binding_identifier(is_lexical)!;
-            // Intern now: an escaped for-head binding name borrows the
-            // lexer's shared ident_buf scratch, which the head's RHS
-            // expression and the loop body parsed below will overwrite.
-            // declare_var stores this slice into scope_stack, which
-            // outlives the current token.
+            // Intern the name so every later use shares one canonical copy.
             name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
             self.try_skip_ts_type_annotation()!;
 
@@ -4221,11 +4211,7 @@ fn void? CompilerContext.for_statement(&self) {
                 }
                 if (nt2 != TokenType.LBRACKET && nt2 != TokenType.LBRACE) {
                     Token extra_name = self.expect(TokenType.IDENTIFIER)!;
-                    // Intern now: escaped identifier borrows the lexer's
-                    // shared ident_buf scratch, which the initializer
-                    // expression and later declarators/body will overwrite.
-                    // declare_var stores this slice into scope_stack, which
-                    // outlives this token.
+                    // Intern the name so every later use shares one canonical copy.
                     char[] extra_name2 = ((Heap*)self.heap).str_intern(extra_name.str_value).get_data();
                     self.check_var_lex_conflict(extra_name2, decl_kind)!;
                     self.try_skip_ts_type_annotation()!;
@@ -6516,10 +6502,7 @@ fn void? CompilerContext.function_declaration(&self, bool is_async_decl = false,
         self.is_constructable = saved_is_constructable;
         return;
     }
-    // Intern now: an escaped function name borrows the lexer's shared
-    // ident_buf scratch, which compile_inner_function below will overwrite
-    // while scanning the parameter list and body. declare_var stores this
-    // slice into scope_stack, which outlives the current token.
+    // Intern the name so every later use shares one canonical copy.
     HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok.str_value);
     char[] fn_name2 = fn_name_hstr.get_data();
 
@@ -6986,10 +6969,7 @@ fn void? CompilerContext.import_declaration(&self) {
     char[] default_local = {};
     if (tt == TokenType.IDENTIFIER) {
         Token name_tok = self.advance()!;
-        // Intern now: default_local is stored in the module's import table
-        // and read back at link time, long after the rest of the module
-        // (and any later escaped identifiers) has been lexed. An escaped
-        // identifier's str_value borrows the lexer's transient ident_buf.
+        // Intern the name so every later use shares one canonical copy.
         default_local = self.intern_slot_name(name_tok.str_value);
         has_default = true;
 
@@ -7178,11 +7158,7 @@ fn void? CompilerContext.export_declaration(&self) {
             bool is_named = false;
             if (self.peek_type() == TokenType.IDENTIFIER) {
                 Token name_tok = self.advance()!;
-                // Intern now: an escaped function name borrows the lexer's
-                // shared ident_buf scratch, which compile_inner_function
-                // below will overwrite while scanning the parameter list and
-                // body. declare_var stores this slice into scope_stack,
-                // which outlives this token.
+                // Intern the name so every later use shares one canonical copy.
                 fn_name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
                 is_named = true;
             } else {
@@ -7478,10 +7454,7 @@ fn void? CompilerContext.export_declaration(&self) {
         self.is_async = false;
 
         Token name_tok = self.expect(TokenType.IDENTIFIER)!;
-        // Intern now: an escaped function name borrows the lexer's shared
-        // ident_buf scratch, which compile_inner_function below will
-        // overwrite while scanning the parameter list and body. declare_var
-        // stores this slice into scope_stack, which outlives this token.
+        // Intern the name so every later use shares one canonical copy.
         HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok.str_value);
         char[] fn_name2 = fn_name_hstr.get_data();
 
@@ -7584,10 +7557,7 @@ fn void? CompilerContext.export_declaration(&self) {
             if (is_restricted_name(name_tok.str_value, strict: self.is_strict)) {
                 return self.fail("reserved word cannot be used as a binding identifier")~;
             }
-            // Intern now: an escaped identifier borrows the lexer's shared
-            // ident_buf scratch, which the initializer or a later declarator
-            // in this same statement will overwrite. declare_var stores this
-            // slice into scope_stack, which outlives the current token.
+            // Intern the name so every later use shares one canonical copy.
             name_tok.str_value = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
             if (self.lexer.ts_mode) {
                 self.try_skip_ts_definite_marker()!;

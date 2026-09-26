@@ -107,7 +107,7 @@ struct DestructBind {
     // a lexer snapshot here; emit_destruct_bindings re-parses the target at the
     // point of use via emit_deferred_target, so its registers are allocated at
     // the emission watermark and cannot collide with live destructuring state.
-    // Heap-allocated (a Lexer embeds a 4KB ident_buf); null = not deferred.
+    // Heap-allocated because a Lexer is large; null = not deferred.
     // Owned by the bind from collect until emit_deferred_target frees it.
     DeferredTarget* deferred_target;
     // Deferred computed-key evaluation for OBJECT ASSIGNMENT patterns only
@@ -213,7 +213,6 @@ fn char[] CompilerContext.bind_name(&self, DestructBind* b) {
 
 // Lexer position captured by collect_assign_target for a deferred member
 // target, restored into the same Lexer object by emit_deferred_target.
-// (Restoring in place keeps token str_value slices into ident_buf valid.)
 struct DeferredTarget {
     Lexer lexer;
     Token[4] pushback;
@@ -2051,10 +2050,7 @@ fn void CompilerContext.record_eval_var_name(&self, char[] raw_name) {
 
 fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_global, bool b33_record = false) {
     if (self.eval_mode) { self.record_eval_var_name(raw_name); }
-    // Intern now: raw_name may borrow the lexer's shared ident_buf scratch
-    // (escaped identifier), which the next declarator in this statement (or a
-    // later var statement in the same hoisting pass) will overwrite.
-    // declare_var stores this slice into scope_stack, which outlives the token.
+    // Intern the name so every later use shares one canonical copy.
     HString* var_hstr = ((Heap*)self.heap).str_intern(raw_name);
     char[] var_name = var_hstr.get_data();
     // A var whose name is already a parameter is NOT re-initialized: per
@@ -2913,10 +2909,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
                 if (!dup_known) {
                     self.ensure_hoisted_defer_cap();
                     if (self.hoisted_defer_count < self.hoisted_defer_cap) {
-                        // Intern before storing: an escaped name borrows the
-                        // lexer's shared ident_buf scratch, which the rest of
-                        // this pass overwrites, and this slice has to stay
-                        // valid until block() and function_declaration read it.
+                        // Intern the name so every later use shares one canonical copy.
                         HString* dup_hstr = ((Heap*)self.heap).str_intern(fn_name);
                         self.hoisted_defer_names[self.hoisted_defer_count] = dup_hstr.get_data();
                         self.hoisted_defer_count++;
@@ -2976,13 +2969,7 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
             Token name_tok2 = self.expect_binding_identifier()!;
             self.is_generator = gen_here;
             self.is_user_generator = user_gen_here;
-            // Intern the name now: name_tok2.str_value may be a borrow into
-            // the lexer's shared ident_buf scratch (escaped identifiers like
-            // `a` decode through the slow path, see scan_identifier),
-            // which compile_inner_function below will overwrite while
-            // scanning the parameter list and body. Every subsequent use
-            // must go through this stable, interned slice instead of the
-            // raw token.
+            // Intern the name so every later use shares one canonical copy.
             HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok2.str_value);
             char[] fn_name2 = fn_name_hstr.get_data();
 
@@ -3605,13 +3592,7 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
             Token name_tok2 = self.expect_binding_identifier()!;
             self.is_generator = gen_here;
             self.is_user_generator = user_gen_here;
-            // Intern the name now: name_tok2.str_value may be a borrow into
-            // the lexer's shared ident_buf scratch (escaped identifiers like
-            // `a` decode through the slow path, see scan_identifier),
-            // which compile_inner_function below will overwrite while
-            // scanning the parameter list and body. Every subsequent use
-            // must go through this stable, interned slice instead of the
-            // raw token.
+            // Intern the name so every later use shares one canonical copy.
             HString* fn_name_hstr = ((Heap*)self.heap).str_intern(name_tok2.str_value);
             char[] fn_name2 = fn_name_hstr.get_data();
 
@@ -3911,10 +3892,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                     // restricted-name test must not re-reject it.
                     seen_params.declare(rest_param.str_value,
                                         rest_param.type != TokenType.IDENTIFIER)!;
-                    // Intern now: rest_param.str_value may borrow the lexer's
-                    // shared ident_buf scratch (escaped identifier), which the
-                    // body parsed below will overwrite. declare_var stores this
-                    // slice into scope_stack, which outlives the current token.
+                    // Intern the name so every later use shares one canonical copy.
                     HString* rest_hstr = ((Heap*)self.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
                     ushort rest_reg = self.declare_var(rest_name2, VAR, true);
@@ -3964,10 +3942,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
             Token param = self.expect_binding_identifier()!;
             seen_params.declare(param.str_value, param.type != TokenType.IDENTIFIER)!;
-            // Intern now: param.str_value may borrow the lexer's shared
-            // ident_buf scratch (escaped identifier), which later params, the
-            // default expression, or the body will overwrite. declare_var
-            // stores this slice into scope_stack, which outlives this token.
+            // Intern the name so every later use shares one canonical copy.
             HString* param_hstr = ((Heap*)self.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
             // TypeScript: optional `?` then optional `: T` after param name.
@@ -4810,10 +4785,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 if (rest_param.str_value.len > 0) {
                     inner_seen.declare(rest_param.str_value,
                                        rest_param.type != TokenType.IDENTIFIER)!;
-                    // Intern now: rest_param.str_value may borrow the lexer's
-                    // shared ident_buf scratch (escaped identifier), which the
-                    // body parsed below will overwrite. declare_var stores this
-                    // slice into scope_stack, which outlives the current token.
+                    // Intern the name so every later use shares one canonical copy.
                     HString* rest_hstr = ((Heap*)inner_ctx.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
                     ushort rest_reg = inner_ctx.declare_var(rest_name2, VAR, true);
@@ -4885,10 +4857,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
             // a class static block, inner_ctx does not inherit forbid_await.
             Token param = inner_ctx.expect_binding_identifier()!;
             inner_seen.declare(param.str_value, param.type != TokenType.IDENTIFIER)!;
-            // Intern now: param.str_value may borrow the lexer's shared
-            // ident_buf scratch (escaped identifier), which later params, the
-            // default expression, or the body will overwrite. declare_var
-            // stores this slice into scope_stack, which outlives this token.
+            // Intern the name so every later use shares one canonical copy.
             HString* param_hstr = ((Heap*)inner_ctx.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
             // TypeScript: optional `?` then optional `: T` on param name.
@@ -5298,11 +5267,7 @@ fn ushort? CompilerContext.function_expr(&self, bool is_async_expr = false) {
         have_name_tok = true;
     }
     if (have_name_tok) {
-        // Intern now: an escaped function-expression name borrows the
-        // lexer's shared ident_buf scratch. compile_inner_function below
-        // copies `name` into the CompiledFunction only AFTER compiling the
-        // whole body (params, locals, nested escaped identifiers), by which
-        // point an un-interned borrow would already be overwritten.
+        // Intern the name so every later use shares one canonical copy.
         name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
         has_name = true;
         name_is_explicit = true;
@@ -5626,10 +5591,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                     // convention as the simple parameters below.
                     arrow_seen.declare(rest_param.str_value,
                                        rest_param.type != TokenType.IDENTIFIER)!;
-                    // Intern now: rest_param.str_value may borrow the lexer's
-                    // shared ident_buf scratch (escaped identifier), which the
-                    // body parsed below will overwrite. declare_var stores this
-                    // slice into scope_stack, which outlives the current token.
+                    // Intern the name so every later use shares one canonical copy.
                     HString* rest_hstr = ((Heap*)arrow_ctx.heap).str_intern(rest_param.str_value);
                     char[] rest_name2 = rest_hstr.get_data();
                     ushort rest_reg = arrow_ctx.declare_var(rest_name2, VAR, true);
@@ -5690,10 +5652,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
             // grammar still allows them as identifiers.
             Token param = arrow_ctx.expect_binding_identifier()!;
             arrow_seen.declare(param.str_value, param.type != TokenType.IDENTIFIER)!;
-            // Intern now: param.str_value may borrow the lexer's shared
-            // ident_buf scratch (escaped identifier), which later params, the
-            // default expression, or the body will overwrite. declare_var
-            // stores this slice into scope_stack, which outlives this token.
+            // Intern the name so every later use shares one canonical copy.
             HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(param.str_value);
             char[] param_name2 = param_hstr.get_data();
             if (arrow_ctx.lexer.ts_mode) {
@@ -6134,11 +6093,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // instead of polluting the parent's bindings.
     arrow_ctx.emit_simple(Opcode.PUSH_VAR);
     for (ushort i = 0; i < param_count; i++) {
-        // Intern now: params[i] may borrow the lexer's shared ident_buf
-        // scratch (escaped identifier, e.g. bare-identifier arrow params
-        // `\u{62} => ...`), which the body parsed below will overwrite.
-        // declare_var stores this slice into scope_stack, which outlives
-        // the current token.
+        // Intern the name so every later use shares one canonical copy.
         HString* param_hstr = ((Heap*)arrow_ctx.heap).str_intern(params[i]);
         char[] name = param_hstr.get_data();
         // ArrowParameters inherit the ENCLOSING [Await]/[Yield], so both

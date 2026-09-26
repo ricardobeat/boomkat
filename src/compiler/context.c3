@@ -2748,9 +2748,8 @@ struct NameSpan {
     // it through the ordinary statement path at block entry and restore the
     // scan position afterwards. Only meaningful when `is_fn` is set.
     //
-    // Just the cursor, not a whole Lexer: at 64 spans a struct copy of Lexer
-    // (with its err_msg and ident_buf scratch) is 300 KB of stack per block,
-    // and block() recurses once per nesting level. Everything else in the
+    // Just the cursor, not a whole Lexer: 64 Lexer copies would cost a lot of
+    // stack per block, and block() recurses once per nesting level. Everything else in the
     // Lexer is either per-compilation state that must NOT be rewound
     // (err_msg, arena, heap, ts_mode, ...) or token state that is empty at
     // the statement boundary a declaration starts on. See

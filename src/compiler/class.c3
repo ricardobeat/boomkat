@@ -293,14 +293,7 @@ fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool 
     self.lexer.refresh_token_start();
     uint class_decl_src_start = self.lexer.token_start;
     self.expect(TokenType.CLASS)!;
-    // Per ES2024 §15.7.1, BindingIdentifier may be `await` (in non-module)
-    // or `yield` (in non-generator). Accept these contextual keywords.
-    // When allow_anonymous is set (`export default class ... {}`), a missing
-    // name is legal, the class binds to `*default*` (§16.2.3.7).
-    // Intern the name immediately: an escaped class name (`class \u{43} {}`)
-    // borrows the lexer's shared ident_buf scratch, which the extends clause
-    // and class body parsed below will overwrite. declare_var stores this
-    // slice into scope_stack, which outlives the current token.
+    // Intern the name so every later use shares one canonical copy.
     char[] class_name;
     TokenType name_tt = self.peek_type();
     if (name_tt == TokenType.IDENTIFIER) {
@@ -425,10 +418,7 @@ fn ushort? CompilerContext.class_expression(&self) {
         // BindingIdentifier position: an escaped `await` is a plain name, not
         // the terminal, so it is consumed as an IdentifierName (§5.1.5).
         Token name_tok = self.advance(true)!;
-        // Intern now: an escaped class name borrows the lexer's shared
-        // ident_buf scratch, which the extends clause and class body parsed
-        // below will overwrite. declare_var stores this slice into
-        // scope_stack, which outlives the current token.
+        // Intern the name so every later use shares one canonical copy.
         name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
         if (self.class_name_is_restricted(name)) return COMPILE_ERROR~;
         // For named class expressions, track the name on the scope stack so
@@ -1720,12 +1710,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             }
         }
 
-        // Capture the plain (undecorated) method name NOW, before compiling
-        // the body below: an escaped identifier's str_value borrows the
-        // lexer's shared ident_buf scratch, which the method's own params
-        // and nested escaped identifiers will overwrite. `methods[]` outlives
-        // this element (read again once every sibling has been parsed), so
-        // it must not hold a raw token borrow.
+        // Capture the plain (undecorated) method name before compiling the
+        // body below; `methods[]` is read again once every sibling is parsed.
         char[] method_key_name = self.intern_slot_name(method_name.str_value);
 
         // Static methods' `super.x` resolves HomeObject = the constructor

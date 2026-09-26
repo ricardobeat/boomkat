@@ -149,13 +149,8 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
         return COMPILE_ERROR~;
     }
     uint idx = t.count;
-    // `stable_name` points at interned HString data, since the source
-    // `name` may itself point into the lexer's per-call ident_buf scratch
-    // (for the slow HASH_IDENT path via scan_ident_body_decoded), which
-    // gets overwritten on the next scan. Interning before storing fixes
-    // the lifetime AND the form problem above. For raw UTF-8 names from
-    // the fast path (source.slice), the slice was already stable, so
-    // str_intern is essentially a no-op for them but harmless.
+    // `stable_name` points at interned HString data, which settles the form
+    // problem above for decoded and source-slice names alike.
     t.entries[idx].name = stable_name;
     t.entries[idx].is_method = false;
     t.entries[idx].has_getter = false;
