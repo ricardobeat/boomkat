@@ -230,9 +230,13 @@ struct DeferredTarget {
 // it, so `(a, a) => a` and `(eval) => 1` cannot slip through an omitted copy
 // of the sequence.
 struct SeenParams {
-    char[64][MAX_PARAMS] names;
-    ushort[MAX_PARAMS]   lens;
-    uint count;
+    // Every bound name in order, packed into one buffer. The names are copied
+    // because a token's text can live in lexer scratch space.
+    List{char} name_bytes;
+    List{ParamNameSpan} names;
+    // Some name was declared twice. Sloppy simple lists accept that, so the
+    // verdict is kept for check_no_duplicates and a later "use strict".
+    bool has_duplicate;
     // Strictness of the code the parameter list belongs to. `eval`/`arguments`
     // and the FutureReservedWords are only restricted binding targets in
     // strict code, so a non-strict eval/Function body accepts them. Set from
@@ -258,19 +262,34 @@ struct SeenParams {
     bool has_complex_params;
 }
 
-// True if `name` is already a BoundName of this parameter list.
+struct ParamNameSpan {
+    uint start;
+    uint len;
+}
+
+fn void SeenParams.init(&self) {
+    self.name_bytes.init(mem);
+    self.names.init(mem);
+}
+
+fn void SeenParams.free(&self) {
+    self.name_bytes.free();
+    self.names.free();
+}
+
+fn sz SeenParams.len(&self) => self.names.len();
+
+fn char[] SeenParams.name(&self, sz i) {
+    ParamNameSpan span = self.names[i];
+    return self.name_bytes.array_view()[span.start:span.len];
+}
+
+// True if `name` is already a BoundName of this parameter list. A linear scan:
+// parameter lists are short, and a hash set would cost an allocation per
+// function to save nothing on them.
 fn bool SeenParams.contains(&self, char[] name) {
-    for (uint i = 0; i < self.count; i++) {
-        if (self.lens[i] == name.len) {
-            bool match = true;
-            for (usz j = 0; j < name.len; j++) {
-                if (self.names[i][j] != name[j]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) return true;
-        }
+    for (sz i = 0; i < self.len(); i++) {
+        if (str_eq(self.name(i), name)) return true;
     }
     return false;
 }
@@ -283,11 +302,6 @@ fn bool SeenParams.contains(&self, char[] name) {
 // (`await`/`yield` accepted as an identifier by `expect_binding_identifier`),
 // where the enclosing-grammar check has already decided the name is legal
 // here.
-//
-// Names longer than 63 chars or beyond MAX_PARAMS entries are checked but
-// not recorded: the table is a fixed-size fast path, and overflow only
-// weakens duplicate detection for pathological parameter lists; it never
-// accepts a restricted name.
 fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
     if (!allow_restricted && is_restricted_name(name, strict: self.restricted_strict)) return COMPILE_ERROR~;
     // Phase 1 (plans/083): sloppy mode allows duplicate simple parameter
@@ -296,14 +310,12 @@ fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
     // destructuring); otherwise FunctionDeclarationInstantiation's parameter
     // map disagrees with the iterator-binding walk. The parser keeps the
     // last binding; the VM honours it.
-    if ((self.strict || self.has_complex_params) && self.contains(name)) return COMPILE_ERROR~;
-    if (self.count < MAX_PARAMS && name.len < 64) {
-        for (usz k = 0; k < name.len; k++) {
-            self.names[self.count][k] = name[k];
-        }
-        self.lens[self.count] = (ushort)name.len;
-        self.count++;
+    if (self.contains(name)) {
+        if (self.strict || self.has_complex_params) return COMPILE_ERROR~;
+        self.has_duplicate = true;
     }
+    self.names.push({ (uint)self.name_bytes.len(), (uint)name.len });
+    self.name_bytes.push_all(name);
 }
 
 // Apply the same early errors to the BoundNames produced by destructuring
@@ -329,22 +341,8 @@ fn void? SeenParams.declare_destructured(&self, CompilerContext* ctx, DestructBi
 // pair -- `function f(a, a, ...b)` -- and at that point the two `a`s have
 // already been accepted. Run the pairwise scan once here, where the whole list
 // has been seen and has_complex_params is final.
-//
-// Names the table could not record (over MAX_PARAMS, or 64+ chars) were never
-// checked by `declare` either; the scan inherits that same weakening rather
-// than introducing a new one.
 fn void? SeenParams.check_no_duplicates(&self) {
-    if (!self.strict && !self.has_complex_params) return;
-    for (uint i = 0; i < self.count; i++) {
-        for (uint j = i + 1; j < self.count; j++) {
-            if (self.lens[i] != self.lens[j]) continue;
-            bool match = true;
-            for (usz k = 0; k < self.lens[i]; k++) {
-                if (self.names[i][k] != self.names[j][k]) { match = false; break; }
-            }
-            if (match) return COMPILE_ERROR~;
-        }
-    }
+    if ((self.strict || self.has_complex_params) && self.has_duplicate) return COMPILE_ERROR~;
 }
 
 // Declare a parameter pattern's leaves as function-scope variables. Synthetic
@@ -3850,6 +3848,8 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams seen_params;
+    seen_params.init();
+    defer seen_params.free();
     seen_params.strict = self.is_strict;
     seen_params.restricted_strict = self.is_strict;
 
@@ -4153,20 +4153,16 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // is non-simple (ES2024 §14.1.2). The same re-validation runs for
     // source functions in compile_inner_function.
     if (!seen_params.strict && self.is_strict) {
-        for (uint pi = 0; pi < seen_params.count; pi++) {
-            char[] pname = seen_params.names[pi][:seen_params.lens[pi]];
-            if (is_restricted_name(pname,
+        for (sz pi = 0; pi < seen_params.len(); pi++) {
+            if (is_restricted_name(seen_params.name(pi),
                     in_async_or_module: self.is_async || self.module_goal || self.forbid_await,
                     in_generator_or_blocked_yield: true,
                     strict: true)) {
                 return self.fail("parameter name is not allowed in strict mode")~;
             }
-            for (uint pj = pi + 1; pj < seen_params.count; pj++) {
-                char[] other = seen_params.names[pj][:seen_params.lens[pj]];
-                if (seen_params.lens[pi] == other.len && str_eq(pname, other)) {
-                    return self.fail("duplicate parameter names in strict mode")~;
-                }
-            }
+        }
+        if (seen_params.has_duplicate) {
+            return self.fail("duplicate parameter names in strict mode")~;
         }
     }
 
@@ -4778,6 +4774,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     // BoundNames of this parameter list, with the FormalParameters early errors.
     SeenParams inner_seen;
+    inner_seen.init();
+    defer inner_seen.free();
     // Phase 1 (plans/083): object-literal MethodDefinitions and class
     // MethodDefinitions use the UniqueFormalParameters grammar (ES2024 §14.3 /
     // §15.4.5), which forbids duplicate names regardless of strictness.
@@ -5113,20 +5111,16 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         // with the OUTER strictness; a "use strict" prologue can promote
         // the body to strict and turn FutureReservedWords into restricted
         // binding targets.
-        for (ushort pi = 0; pi < inner_seen.count; pi++) {
-            char[] pname = inner_seen.names[pi][:inner_seen.lens[pi]];
-            if (is_restricted_name(pname,
+        for (sz pi = 0; pi < inner_seen.len(); pi++) {
+            if (is_restricted_name(inner_seen.name(pi),
                     in_async_or_module: inner_ctx.is_async || inner_ctx.module_goal || inner_ctx.forbid_await,
                     in_generator_or_blocked_yield: true,
                     strict: true)) {
                 return self.fail("parameter name is not allowed in strict mode")~;
             }
-            for (ushort pj = pi + 1; pj < inner_seen.count; pj++) {
-                char[] other = inner_seen.names[pj][:inner_seen.lens[pj]];
-                if (inner_seen.lens[pi] == other.len && str_eq(pname, other)) {
-                    return self.fail("duplicate parameter names in strict mode")~;
-                }
-            }
+        }
+        if (inner_seen.has_duplicate) {
+            return self.fail("duplicate parameter names in strict mode")~;
         }
     }
 
@@ -5639,6 +5633,8 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // FormalParameters (ES2015 §14.2.1): `(a, a) => a` and `(eval) => 1` are
     // SyntaxErrors here too.
     SeenParams arrow_seen;
+    arrow_seen.init();
+    defer arrow_seen.free();
     // ES2015 §14.2.1: ArrowParameters have no Annex B.3.1 sloppy-duplicates
     // exemption, so even a plain `(a, a) => 1` is a SyntaxError regardless of
     // enclosing strictness. Set strict=true so SeenParams enforces the

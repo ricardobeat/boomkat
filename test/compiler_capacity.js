@@ -108,6 +108,26 @@ var arms = range(3000, i => "case " + i + ": return " + i + ";").join(" ");
 check("a switch with many cases",
     run("(function(x){ switch (x) { " + arms + " } })(2999)"), 2999);
 
+// Duplicate parameter names are found however long the list or the names are.
+function isSyntaxError(src) {
+    try { run(src); return false; } catch (e) { return e instanceof SyntaxError; }
+}
+var paramList = range(40, i => "q" + i).join(",");
+check("a strict duplicate past many parameters",
+    isSyntaxError("'use strict'; (function(" + paramList + ", q39){})"), true);
+check("a duplicate past many parameters before a later \"use strict\"",
+    isSyntaxError("(function(" + paramList + ", q39){ 'use strict' })"), true);
+check("an arrow duplicate past many parameters",
+    isSyntaxError("((" + paramList + ", q39) => 0)"), true);
+check("a method duplicate past many parameters",
+    isSyntaxError("({ m(" + paramList + ", q39){} })"), true);
+check("a strict duplicate long parameter name",
+    isSyntaxError("'use strict'; (function(" + longName + ", " + longName + "){})"), true);
+check("a sloppy duplicate past many parameters binds the last",
+    run("(function(" + paramList + ", q39){ return q39 })(" + range(41, i => i).join(",") + ")"), 40);
+check("distinct long parameter names sharing a prefix",
+    run("'use strict'; (function(" + longName + "a, " + longName + "b){ return " + longName + "b })(1, 2)"), 2);
+
 // Nesting deep enough to exhaust the native stack is an error, not a crash.
 function throwsOnDeepNesting(src) {
     try { run(src); return false; } catch (e) { return e instanceof SyntaxError || e instanceof RangeError; }
