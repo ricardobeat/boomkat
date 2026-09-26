@@ -341,7 +341,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             hobject::PropFlags nfl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
                             bool act_strict = ds.act.func != null
                                 && ((CompiledFunction*)ds.act.func).is_strict();
-                            if (nfl.immut_nonstrict && !act_strict) {
+                            // A read-only property of an object record (the global
+                            // object) fails like any [[Set]]: sloppy code drops the
+                            // write, as env_try_put_lex's -4 does.
+                            if ((nfl.immut_nonstrict || !cur.flags.is_declarative) && !act_strict) {
                                 if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
                                     return e~;
                                 }
@@ -490,7 +493,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         hobject::PropFlags nfl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
                         bool act_strict = ds.act.func != null
                             && ((CompiledFunction*)ds.act.func).is_strict();
-                        if (nfl.immut_nonstrict && !act_strict) {
+                        // A read-only property of an object record (the global
+                        // object) fails like any [[Set]]: sloppy code drops the
+                        // write, as env_try_put_lex's -4 does.
+                        if ((nfl.immut_nonstrict || !cur.flags.is_declarative) && !act_strict) {
                             if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
                                 return e~;
                             }
@@ -668,7 +674,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (!fl.writable) {
                         bool act_strict = ds.act.func != null
                             && ((CompiledFunction*)ds.act.func).is_strict();
-                        if (fl.immut_nonstrict && !act_strict) {
+                        // A read-only property of an object record (the global
+                        // object) fails like any [[Set]]: sloppy code drops the
+                        // write, as env_try_put_lex's -4 does.
+                        if ((fl.immut_nonstrict || !cur.flags.is_declarative) && !act_strict) {
                             if (catch e = incdec_compute_no_write(ds, old_val, is_inc, ra)) {
                                 return e~;
                             }
