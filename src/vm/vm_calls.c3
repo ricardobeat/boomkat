@@ -579,14 +579,12 @@ fn HObject* super_walk_new_target(Vm* vm, Activation* act) {
     }
 }
 
-// True when `b` is the bindings object of a permanent global environment
-// record (the global object record or the top-level declarative record).
-// A binding in either is a permanent GC root for the life of the realm, so
-// a callee resolved there can be safely borrowed into a register
-// without an owning reference.
-fn bool is_global_bindings(Vm* vm, HObject* b) @inline {
-    return (vm.global_env != null && b == vm.global_env.bindings)
-        || (vm.global_lex_env != null && b == vm.global_lex_env.bindings);
+// True when `env` lives as long as the VM: the global object record, the
+// top-level declarative record, or a module environment, which the module
+// cache roots. A callee resolved from a binding there can be borrowed into
+// a register without an owning reference.
+fn bool is_permanent_env(Vm* vm, EnvRecord* env) @inline {
+    return env == vm.global_env || env == vm.global_lex_env || env.flags.is_module;
 }
 
 // Resolve an unqualified name that the environment chain did not bind, by
@@ -706,7 +704,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 if (!vic.prop_flags.is_accessor) {
                     TVal v = b.prop_values()[vic.prop_idx];
                     if (!env::is_tdz_sentinel(&v)) {
-                        if (is_global_bindings(vm, b)) {
+                        if (is_permanent_env(vm, (EnvRecord*)vic.env)) {
                             // Borrow: permanent global root, no incref/track.
                             *ra = v;
                             *borrowed = true;
@@ -862,7 +860,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                     ic_prop_idx = idx;
                 }
             } else {
-                if (is_global_bindings(vm, cur.bindings)) {
+                if (is_permanent_env(vm, cur)) {
                     *ra = v_raw;
                     *borrowed = true;
                 } else {
@@ -907,7 +905,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                     }
                 } else {
                     TVal v2 = vcur.bindings.prop_values()[vidx];
-                    if (is_global_bindings(vm, vcur.bindings)) {
+                    if (is_permanent_env(vm, vcur)) {
                         *ra = v2;
                         *borrowed = true;
                         found = true;
@@ -1046,7 +1044,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
                     found = true;
                 }
             } else {
-                if (is_global_bindings(vm, cur.bindings)) {
+                if (is_permanent_env(vm, cur)) {
                     *ra = v_raw;
                     *borrowed = true;
                 } else {
@@ -1093,7 +1091,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
                     track_heap_store(ds.act, ra, callee_reg);
                 } else {
                     TVal v2 = vcur.bindings.prop_values()[vidx];
-                    if (is_global_bindings(vm, vcur.bindings)) {
+                    if (is_permanent_env(vm, vcur)) {
                         *ra = v2;
                         *borrowed = true;
                     } else {

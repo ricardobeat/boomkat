@@ -30,6 +30,7 @@ TESTS=(
   "t16_error_identity:a failed module re-reports one cached error object"
   "t17_import_types:import attribute types (json/text/bytes)"
   "t18_var_residency:module-level vars in registers unless exported, captured, or eval-visible"
+  "t19_module_callee:calls borrow their callee from the module environment"
 )
 
 for entry in "${TESTS[@]}"; do

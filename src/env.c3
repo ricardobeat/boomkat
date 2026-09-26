@@ -29,6 +29,9 @@ bitstruct EnvFlags : char {
     bool allocated         : 4;
     bool mark_epoch        : 5;
     bool temproot          : 6;
+    // A module's own environment. The module cache roots it for the life of
+    // the VM, like the two global records.
+    bool is_module         : 7;
 }
 
 // One link in the scope chain. `bindings` holds the binding key-value pairs;
