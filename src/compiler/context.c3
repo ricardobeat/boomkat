@@ -1788,6 +1788,27 @@ fn void CompilerContext.emit_destruct_param_defaults(&self) {
     }
 }
 
+// Whether the finished code of `func` and its inner functions read `func`'s
+// own `this`, apart from direct eval, which the caller rules out. See
+// CallFlags.ignores_this for the readers.
+fn bool body_ignores_this(CompiledFunction* func) {
+    for (uint i = 0; i < func.code_count; i++) {
+        switch (func.code[i].op) {
+            case Opcode.LDTHIS:
+            case Opcode.GETPROP_SUPER:
+            case Opcode.PUTPROP_SUPER:
+            case Opcode.SUPER_CALL:
+            case Opcode.SUPER_CALL_S:
+                return false;
+            default:
+        }
+    }
+    for (uint i = 0; i < func.inner_count; i++) {
+        if (func.inner_funcs[i] != null && func.inner_funcs[i].is_arrow()) return false;
+    }
+    return true;
+}
+
 // Finalise compilation: allocate a CompiledFunction and copy code/constants.
 fn CompiledFunction*? CompilerContext.finish(&self) {
     // A binding-free zero-parameter arrow can use its captured environment
@@ -2523,6 +2544,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.has_home_object = self.in_class_body || self.super_is_home_object;
     func.flags.super_is_home_object = self.super_is_home_object;
     func.flags.forbid_arguments = self.forbid_arguments;
+    func.call_flags.ignores_this = !self.has_direct_eval && body_ignores_this(func);
 
     // `needs_env` controls whether the CALL fast path allocates a fresh
     // env record + bindings object per call (2 allocations).  We only need

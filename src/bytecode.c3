@@ -1594,6 +1594,18 @@ struct AwaitLiveEntry {
     ulong mask;
 }
 
+// Call-path facts about a function, kept apart from FuncFlags, whose bits are
+// all assigned. Zero is the conservative value of every flag, so a function
+// built outside CompilerContext.finish needs no setup.
+bitstruct CallFlags : ushort {
+    // Nothing the body runs can observe its own `this`: no LDTHIS, no super
+    // property access or super() call (each reads the frame's this_binding
+    // directly), no arrow function (which captures it when created), and no
+    // direct eval. A sloppy callee reached by a plain call then skips
+    // coercing its undefined receiver to the global object.
+    bool ignores_this : 0;
+}
+
 struct CompiledFunction {
     // ---- Inline HeapHeader (binary-compatible with HeapHeader*) ----------
 
@@ -1647,6 +1659,8 @@ struct CompiledFunction {
     // The formal count `Function.length` reports, which differs from
     // `num_args` when a rest parameter or a default value is present.
     ushort          num_formals;
+    // Facts the call paths test on entry that FuncFlags has no bits left for.
+    CallFlags       call_flags;
 
     // ---- Source-level debug info ----------------------------------------
 
@@ -1847,6 +1861,12 @@ macro bool CompiledFunction.is_class_ctor(&self) {
 // makes returning anything but an object or undefined a TypeError.
 macro bool CompiledFunction.is_derived_ctor(&self) {
     return self.flags.is_derived_ctor;
+}
+
+// Returns `true` when nothing the function runs can observe its `this`. See
+// CallFlags.ignores_this.
+macro bool CompiledFunction.ignores_this(&self) {
+    return self.call_flags.ignores_this;
 }
 
 // Returns `true` when the function accesses its own environment bindings, so
