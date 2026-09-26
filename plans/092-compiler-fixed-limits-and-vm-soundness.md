@@ -21,7 +21,7 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
 
 ## Compiler
 
-1. [ ] **Per-iteration environments in `let`/`const` loop heads.** A for-in pattern with 9 or more
+1. [x] **Per-iteration environments in `let`/`const` loop heads.** A for-in pattern with 9 or more
    captured names overflows an 8-entry stack array, which is memory-unsafe. Only the first 8 names
    get a fresh binding on each iteration.
 2. [ ] **Nested control flow.**

@@ -77,4 +77,16 @@ check("a function with many pattern parameter defaults",
 check("an arrow with many pattern parameter defaults",
     run("((" + patternDefaults + ") => " + patternSum + ")()"), sumTo(40));
 
+// Every lexical head binding gets a fresh copy per iteration, so each closure
+// sees the values of its own iteration.
+var heads = range(20, i => "h" + i + " = " + i).join(",");
+var headList = range(20, i => "h" + i).join(",");
+check("a for-loop head with many captured bindings",
+    run("(function(){ var fs = []; for (let " + heads + "; h0 < 3; h0++, h19++) fs.push(() => [" + headList + "].join()); " +
+        "return fs.map(f => f()).join('|') })()"),
+    [0, 1, 2].map(k => range(20, i => i == 0 ? k : i == 19 ? 19 + k : i).join()).join("|"));
+check("a for-in head pattern with many captured bindings",
+    run("(function(){ var fs = []; for (let [" + names + "] in {ab: 0, cd: 0}) fs.push(() => a0 + a1 + (a99 === undefined)); " +
+        "return fs.map(f => f()).join() })()"), "abtrue,cdtrue");
+
 print("compiler_capacity: " + passed + " passed");
