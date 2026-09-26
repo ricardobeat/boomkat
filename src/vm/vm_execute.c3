@@ -866,7 +866,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 if (!target.is_arrow() && !target.is_strict()) {
                     if (this_val.is_undefined() || this_val.is_null()) {
                         if (vm.global_env != null && vm.global_env.bindings != null) {
-                            coerced_this.set_object(vm.global_env.bindings);
+                            coerced_this.set_object_borrowed(vm.global_env.bindings);
                             this_val = coerced_this;
                         }
                     } else if (!this_val.is_object()) {
@@ -4098,22 +4098,27 @@ fn TVal? Vm.run(Vm* vm) {
             //                        returns null immediately on a null chain)
             //                        and catcher_chain_walk
             //   forin == null        free_forin_chain
-            //   heap_reg_count == 0  decref_callee_regs
-            //   flags & ~BORROWED    CONSTRUCT/DERIVED (the two derived-ctor
+            //   heap_reg_count == 0  decref_callee_regs's register sweep
+            //   !mapped_arguments    decref_callee_regs's mapped-arguments
+            //                        freeze, which runs whatever the count
+            //   flags                CONSTRUCT/DERIVED (the two derived-ctor
             //                        throws and the construct write-back),
-            //                        ASYNC (promise resolve), THIS_OWNED (the
-            //                        this_binding release), SUPER_CTOR (the
-            //                        whole super()-binding tail). Only
-            //                        BORROWED_CALLEE is allowed through, and
-            //                        it is handled explicitly below.
+            //                        ASYNC (promise resolve), SUPER_CTOR (the
+            //                        whole super()-binding tail). The flags
+            //                        allowed through are BORROWED_CALLEE and
+            //                        THIS_OWNED, handled explicitly below,
+            //                        and THIS_VALID, which asks nothing of a
+            //                        pop.
             //   !val.is_heap_...     the val pin/unpin, the tval_copy_ref
             //                        write-back, and the track_heap_store call
             //                        (whose own guard is this same predicate)
             //   activation_count > 1 the outermost-frame return
             //   retval != null       the null-result-register case
             //
-            // The one piece of real work left is the write-back, which must
-            // still release whatever the destination register held. That is
+            // The real work left is releasing an owned `this` (every method
+            // call, and every sloppy call, whose `this` is the global object)
+            // and the write-back, which must still release whatever the
+            // destination register held. That is
             // the `pres.is_heap_allocated()` test: a borrowed callee slot is
             // NOT owned by this frame and must be raw-overwritten (see
             // ACT_FLAG_BORROWED_CALLEE), so it is excluded from the decref and
@@ -4124,7 +4129,8 @@ fn TVal? Vm.run(Vm* vm) {
                 if (!vm.heap.gc_pending
                     && fa.cat == null && fa.forin == null
                     && fa.heap_reg_count == 0
-                    && (fa.flags & ~ACT_FLAG_BORROWED_CALLEE) == 0
+                    && !((CompiledFunction*)fa.func).mapped_arguments()
+                    && (fa.flags & ~RET_FAST_FLAGS) == 0
                     && !fval.is_heap_allocated()
                     && vm.activation_count > 1
                     && fa.retval != null) {
@@ -4136,6 +4142,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vm.heap.decref_tval(fres);
                     }
                     *fres = fval;
+                    fa.release_this(vm.heap);
                     vm.activation_count--;
                     // Derive the caller frame the same way the general path
                     // does rather than following fa.parent. The two agree for
@@ -4322,18 +4329,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             }
             if (val_pinned) vm.heap.decref_tval(&val);
-            // Release the this_binding reference AFTER the result has been written
-            // (construct returns above may still read callee_act.this_binding to
-            // produce the result value). Activation slots are pooled by depth index
-            // and reused without zeroing: the next call landing on this same slot
-            // writes a new this_binding via tval_copy_ref, whose own dst-decref
-            // would otherwise fire on these stale bits a second time, or, if this
-            // object has since become unreachable and been swept, read freed memory.
-            // Mirrors handle_return's (out-of-line) release/clear in vm_core.c3.
-            if ((callee_act.flags & ACT_FLAG_THIS_OWNED) != 0) {
-                vm.heap.decref_tval(&callee_act.this_binding);
-                callee_act.this_binding.set_undefined();
-            }
+            callee_act.release_this(vm.heap);
             // Restore the caller state inline, skipping the outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;
@@ -4440,7 +4436,8 @@ fn TVal? Vm.run(Vm* vm) {
                 if (!vm.heap.gc_pending
                     && ua.cat == null && ua.forin == null
                     && ua.heap_reg_count == 0
-                    && (ua.flags & ~ACT_FLAG_BORROWED_CALLEE) == 0
+                    && !((CompiledFunction*)ua.func).mapped_arguments()
+                    && (ua.flags & ~RET_FAST_FLAGS) == 0
                     && vm.activation_count > 1
                     && ua.retval != null) {
                     TVal* ures = ua.retval;
@@ -4449,6 +4446,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vm.heap.decref_tval(ures);
                     }
                     ures.set_undefined();
+                    ua.release_this(vm.heap);
                     vm.activation_count--;
                     ds.act = &vm.activations[vm.activation_count - 1];
                     vm.valstack_bottom = ds.act.bottom;
@@ -4554,16 +4552,7 @@ fn TVal? Vm.run(Vm* vm) {
                     *callee_result = undef_val;
                 }
             }
-            // Release the this_binding reference AFTER the result has been written
-            // (the ACT_FLAG_CONSTRUCT branch above may still read callee_act.this_binding
-            // to produce the result value). See the matching RET handler above and
-            // handle_return (vm_core.c3) for why the slot must also be cleared here,
-            // not just decref'd, since activation slots are pooled by depth index and
-            // reused without zeroing.
-            if ((callee_act.flags & ACT_FLAG_THIS_OWNED) != 0) {
-                vm.heap.decref_tval(&callee_act.this_binding);
-                callee_act.this_binding.set_undefined();
-            }
+            callee_act.release_this(vm.heap);
             // Restore the caller state inline, skipping the outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;

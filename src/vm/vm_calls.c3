@@ -1593,7 +1593,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         if (!target_fast.is_arrow() && !target_fast.is_strict()) {
                             if (this_src.is_undefined() || this_src.is_null()) {
                                 if (vm.global_env != null && vm.global_env.bindings != null) {
-                                    coerced_this.set_object(vm.global_env.bindings);
+                                    coerced_this.set_object_borrowed(vm.global_env.bindings);
                                     this_src = &coerced_this;
                                 }
                             } else if (!this_src.is_object()) {
