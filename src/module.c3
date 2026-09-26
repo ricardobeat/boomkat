@@ -1028,6 +1028,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         EnvRecord*? env_opt = env::env_create_declarative(heap, null);
         if (catch err = env_opt) return MODULE_ERROR~;
         mod.env = env_opt;
+        mod.env.flags.is_module = true;
         if (mod.env.bindings != null) {
             heap.register_gc_root(mod.env.bindings.as_header());
         }
@@ -1438,6 +1439,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     EnvRecord*? env_opt = env::env_create_declarative(heap, global_env);
     if (catch err = env_opt) return false;
     mod.env = env_opt;
+    mod.env.flags.is_module = true;
     // Register the env bindings as a GC root so objects stored in the module
     // env (imported bindings, and, below, eagerly instantiated exported
     // function closures) survive collection between link and evaluation.
@@ -2335,6 +2337,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         EnvRecord*? env_opt = env::env_create_declarative(heap, vm.global_env);
         if (catch err = env_opt) return false;
         mod.env = env_opt;
+        mod.env.flags.is_module = true;
         if (mod.env.bindings != null) {
             heap.register_gc_root(mod.env.bindings.as_header());
         }
