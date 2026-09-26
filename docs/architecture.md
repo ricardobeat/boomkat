@@ -125,8 +125,8 @@ gain the name later, access checks for a nearer binding and falls back to name
 lookup when one appears. GC traces descriptor owners alongside the captured
 environment chain.
 
-Eligible captured var and parameter bindings can instead share a private dense
-cell array. `NEWCELLS` allocates it, and `GETCELL`, `SETCELL`, and `MOVECELL`
+Eligible captured var and parameter bindings, including those owned by ordinary
+arrows, can instead share a private dense cell array. `NEWCELLS` allocates it, and `GETCELL`, `SETCELL`, and `MOVECELL`
 serve accesses in the defining function. Child descriptors point into the same
 array. Its persistent register stays below temporary call windows. TDZ, const,
 dynamic scope, ambiguous names, and captures without a direct mapping retain

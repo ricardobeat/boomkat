@@ -41,7 +41,12 @@ for path in a.files:
         raise RuntimeError(f'{path}: output mismatch: {outputs}')
     medians = [statistics.median(t) for t in times]
     delta = 100 * (medians[1] / medians[0] - 1)
+    paired = [100 * (b / a - 1) for a, b in zip(*times)]
+    paired_median = statistics.median(paired)
+    quartiles = statistics.quantiles(paired, n=4) if len(paired) >= 2 else [paired_median] * 3
     rows.append(dict(file=str(path), seconds=times, median=medians,
+                     paired_change_percent=paired, paired_median_percent=paired_median,
+                     paired_iqr_percent=[quartiles[0], quartiles[2]],
                      change_percent=delta, rss=rss, outputs=[sorted(s) for s in outputs]))
     (a.out / 'results.json').write_text(json.dumps(rows, indent=2))
-    print(f'{path.name}: {medians[0]:.4f} -> {medians[1]:.4f}s ({delta:+.1f}%)', flush=True)
+    print(f'{path.name}: {medians[0]:.4f} -> {medians[1]:.4f}s ({delta:+.1f}%; paired {paired_median:+.1f}%, IQR {quartiles[0]:+.1f}..{quartiles[2]:+.1f}%)', flush=True)

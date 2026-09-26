@@ -1,6 +1,6 @@
 # 093: CPU performance prototypes
 
-Status: in progress; tracks A/B/C measured and validated, D–H pending.
+Status: in progress; tracks A/B/C measured and validated, D archived, E validated; F–H pending.
 Baseline inspected: `ba8610c8` on `speed`, matching local `main` at setup.
 
 ## Objective and scope
@@ -468,8 +468,8 @@ commit the useful summaries and reproducible benchmark/validation instructions.
 | A | mutation paths audited | live count + shared append | passed; see results below | interleaved A/B | keep |
 | B | reaction property paths audited | dense traced slots | passed with baseline ASAN exception | -18% to -24% time; +4% to +5% RSS | keep speed/memory tradeoff |
 | C | bounded straight-line literals | shared shape + direct slots | passed | checked construction -19.2%; RSS nearly flat | keep |
-| D | source only | gated | pending | pending | pending |
-| E | source only | gated | pending | pending | pending |
+| D | leaf register spans + existing fast-call path | trailing-frame trim | checked checksums | -2.7% repeat on trimmed case; common controls flat | stash; wider stages gated |
+| E | ordinary-arrow var/parameter exclusion | extend existing compact cells | passed | paired -13% to -14% on checked capture loop | keep |
 | F | source only | gated | pending | pending | pending |
 | G | source only | gated | pending | pending | pending |
 | H | source only | gated | pending | pending | pending |
@@ -607,3 +607,78 @@ checks pass. The focused fixture passes in Node, release, fresh ASAN with GC_STR
 and POOL_BYPASS, and fresh NONANBOX. It covers deletion/redefinition without template
 corruption, inherited setters, key order, object-valued slots, fallback forms,
 and allocation stress. Artifacts: `/tmp/boomkat-perf-093/C/`.
+
+
+## Track D results: bounded leaf-frame trimming
+
+Archive: `refs/experiments/093-d-frame-trim`, stash object
+`f2b6c9819cadd9a0db4bdea973f070d7b86df3f1`, parent `1eaa7fb0`.
+The prototype scans supported final leaf bytecode and reduces trailing register
+space, preserving argument slots and excluding scope/capture/call metadata.
+Diagnostic builds show no reduction for the existing empty/identity/add call
+benchmark or the arithmetic fixture (9 registers). A source-variant sweep finds
+1–2 trailing slots in some leaf functions; the checked trimmed case uses 5
+rather than 7 registers.
+
+Seven alternating pairs show checked arithmetic -0.1%, calls -0.2%, recursion
++0.1%, valstack-copy +0.9%. The verified trimmed workload improves 3.5%, then
+2.7% in fifteen alternating pairs. Its A/A control differs +0.3%. This is a small
+real opportunity, but below the initial materiality threshold and limited to a
+selected leaf shape; stash rather than adding a compiler pass for it now.
+Checked outputs match. Broad semantic validation was not run for this rejected
+prototype. Artifacts: `/tmp/boomkat-perf-093/D/`.
+
+D2 remains gated: the experiment establishes little removable tail space in
+common leaf calls. General remapping needs pinned call windows and binding-aware
+metadata rewriting; it is not supported by this measurement. D3 remains gated:
+CALL/CALL_VAR/CALL_GLOBAL already enter `try_fast_compiled_call` directly in the
+switch loop, use sliding argument windows, and skip environments for eligible
+functions. No separate measured classification bottleneck justifies a second
+callee cache. These are evidence gates, not claims of optimal call performance.
+
+
+## Track E results: arrow-owned capture cells
+
+The bounded prototype extends existing var/parameter cell lowering to ordinary
+arrows. It keeps dynamic scope, arguments, rest/default parameters, classes,
+ambiguous bindings, and unsupported consumers on their existing paths. Persistent
+cell storage is reserved below call windows. Disassembly confirms NEWCELLS and
+GETCELL/SETCELL/MOVECELL in the owner, with GETCAP in its child.
+
+Two seven-pair interleaved comparisons against `1eaa7fb0` show a median adjacent
+pair improvement of 13.9% and 13.2% on a checked three-million-access workload.
+Every pair improves (ranges -21.8% to -7.6%, then -15.3% to -11.0%). Peak RSS is
+4,702,208 versus 4,718,592 bytes. Separate overall medians give -16.1% and -13.6%.
+
+The full 25-control sweep experiences substantial host-load changes. Apparent
+regressions trigger a predefined fifteen-pair confirmation on closure_capture,
+let_loop, regexp, string, and Promise. Their median adjacent changes are -6.4%,
+-0.7%, +0.6%, approximately 0%, and +0.2%; the first two remain noisy and do not
+establish a benefit. A/A closure/loop controls differ +0.6%/-0.4% by overall
+medians. All benchmark outputs match. Raw times remain in the artifacts.
+
+Reporting correction: compare adjacent A/B ratios as well as independent overall
+medians. During let_loop's confirmation the machine transitions from roughly
+0.33s to 0.15s per run. One middle pair straddles that transition: independent
+medians misleadingly suggest +54.6%, while the median paired difference is -0.7%.
+The runner records individual paired ratios and their interquartile range.
+This does not remove outliers or discard unfavorable runs.
+
+The focused fixture's constructor/lexical-arrow combination reports an unresolved
+parameter in both baseline and candidate. Its full source is preserved separately;
+it is outside the clean regression-fixture claim. Ordinary lexical this/arguments,
+new.target on calls, retained mutations, shadowing, eval/with, and per-iteration
+bindings pass in both builds and Node. The narrow arrow suite passes 343 cases.
+Artifacts: `/tmp/boomkat-perf-093/E/`.
+
+E1/E2 broader forwarding and lexical cells remain gated on explicit lexical-scope
+identity. Existing indexed descriptors already reach an environment owner through
+intermediate closures; shadow guards protect scopes that can gain a nearer binding.
+The arrow result supports reusing proven unique var/parameter lowering. It does
+not establish that removing those guards or flattening lexical owners is safe,
+nor that their extra representation cost pays off. No such broad change is kept.
+
+E decision: keep. Fresh ASAN/GC_STRESS/POOL_BYPASS and NONANBOX pass the focused
+fixture. All 468 local scripts and auxiliary suites, 42 Rosetta cases, and 31
+bytecode goldens with optimization-disabled checks pass. The immutable release
+candidate is restored after NONANBOX validation.

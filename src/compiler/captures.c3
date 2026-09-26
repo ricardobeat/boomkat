@@ -552,7 +552,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     // Reserve before body temporaries: the VM places callees in sliding
     // argument windows, so persistent storage must sit below those windows.
     if (!self.cell_frame_reserved && !self.disable_optimize && !self.is_global
-        && !self.is_arrow && !self.is_generator && !self.is_async
+        && !self.is_generator && !self.is_async
         && !self.in_class_body && !self.is_named_func_expr
         && !self.has_rest && self.defaults.len() == 0
         && self.destruct_defaults.len() == 0 && !self.has_destructured_param

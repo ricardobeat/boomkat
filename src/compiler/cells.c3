@@ -144,7 +144,7 @@ fn void rewrite_immediate_guards(CompiledFunction* child,
 fn bool cell_lowering_eligible(CompilerContext* ctx, CompiledFunction* func) {
     return !ctx.disable_optimize && !ctx.has_wide && !ctx.is_global
         && ctx.cell_frame_reserved && ctx.cell_frame_reg < 256
-        && !ctx.is_arrow && !ctx.is_async && !ctx.is_generator
+        && !ctx.is_async && !ctx.is_generator
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
         && !ctx.capture_all && !ctx.uses_arguments && !ctx.has_rest
         && ctx.defaults.len() == 0 && ctx.destruct_defaults.len() == 0
