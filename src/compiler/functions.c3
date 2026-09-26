@@ -4249,6 +4249,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // Create a new CompilerContext for the default expression
     CompilerContext def_ctx;
     def_ctx.init(self.lexer, self.heap);
+    defer def_ctx.cleanup();
     // A with-env from the enclosing body is captured by this closure's scope
     // chain, so its name resolution stays dynamic (see in_with).
     def_ctx.outer_with = self.in_with();
@@ -4488,6 +4489,7 @@ fn void CompilerContext.mark_default_expr_captures(&self, CompiledFunction* func
 fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
     CompilerContext key_ctx;
     key_ctx.init(self.lexer, self.heap);
+    defer key_ctx.cleanup();
     // A with-env from the enclosing body is captured by this closure's scope
     // chain, so its name resolution stays dynamic (see in_with).
     key_ctx.outer_with = self.in_with();
@@ -4561,6 +4563,7 @@ fn CompiledFunction*? CompilerContext.compile_key_expr(&self) {
 fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     CompilerContext block_ctx;
     block_ctx.init(self.lexer, self.heap);
+    defer block_ctx.cleanup();
     // A with-env from the enclosing body is captured by this closure's scope
     // chain, so its name resolution stays dynamic (see in_with).
     block_ctx.outer_with = self.in_with();
@@ -4646,6 +4649,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
     inner_ctx.init(self.lexer, self.heap);
+    defer inner_ctx.cleanup();
     // A with-env from the enclosing body is captured by this closure's scope
     // chain, so its name resolution stays dynamic (see in_with).
     inner_ctx.outer_with = self.in_with();
@@ -5509,6 +5513,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     // Create a new CompilerContext for the arrow function
     CompilerContext arrow_ctx;
     arrow_ctx.init(self.lexer, self.heap);
+    defer arrow_ctx.cleanup();
     // A with-env from the enclosing body is captured by this closure's scope
     // chain, so its name resolution stays dynamic (see in_with).
     arrow_ctx.outer_with = self.in_with();
@@ -6110,6 +6115,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner(&self, char[]* params,
     // Create a new CompilerContext for the arrow function
     CompilerContext arrow_ctx;
     arrow_ctx.init(self.lexer, self.heap);
+    defer arrow_ctx.cleanup();
     // A with-env from the enclosing body is captured by this closure's scope
     // chain, so its name resolution stays dynamic (see in_with).
     arrow_ctx.outer_with = self.in_with();

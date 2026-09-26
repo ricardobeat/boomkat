@@ -1451,7 +1451,9 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     // mem::clear zeros is_strict) or get clobbered anyway by every caller.
 }
 
-// Free heap-allocated compiler buffers.  Call after finish() or on error.
+// Free the compiler's scratch buffers; the CompiledFunction from finish() owns
+// its own copies. The context's owner defers this where it declares the
+// context, so an error unwinding past it frees them too.
 fn void CompilerContext.cleanup(&self) {
     Heap* h = (Heap*)self.heap;
     if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
@@ -1939,7 +1941,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // heap dependencies.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (gp_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        if (gp_jump_targets == null) return COMPILE_ERROR~;
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         h.free_func(h.heap_udata, gp_jump_targets);
     }
@@ -1954,7 +1956,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // bitset, allocate it here to keep fusion.c3 free of heap dependencies.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        if (jump_targets == null) return COMPILE_ERROR~;
         run_cmp_branch_fusion(self.code, self.code_count, jump_targets);
         h.free_func(h.heap_udata, jump_targets);
     }
@@ -1995,7 +1997,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // correctness gain; golden_bytecode/loop_addi covers that.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (cp_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        if (cp_jump_targets == null) return COMPILE_ERROR~;
         build_jump_targets(self.code, self.code_count, cp_jump_targets);
         for (uint i = 0; i + 1 < self.code_count; i++) {
             if (cp_jump_targets[i + 1]) { continue; }
@@ -2106,7 +2108,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // code_count-sized bool scratch.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (addi_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        if (addi_jump_targets == null) return COMPILE_ERROR~;
         fuse_addi_subi(self.code, self.code_count, addi_jump_targets);
         h.free_func(h.heap_udata, addi_jump_targets);
     }
@@ -2153,7 +2155,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             if (me_ret_out != null) { h.free_func(h.heap_udata, me_ret_out); }
             if (me_ret_in != null) { h.free_func(h.heap_udata, me_ret_in); }
             if (me_words != null) { h.free_func(h.heap_udata, me_words); }
-            self.cleanup();
             return COMPILE_ERROR~;
         }
         for (usz i = 0; i < n; i++) {
@@ -2228,7 +2229,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // code_count-sized bool scratch for the jump-target bitset.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* mgg_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (mgg_jump_targets == null) { self.cleanup(); return COMPILE_ERROR~; }
+        if (mgg_jump_targets == null) return COMPILE_ERROR~;
         run_move_gg_fusion(self.code, self.code_count, mgg_jump_targets);
         // Fuse GETGLOBAL_PRIM + JMP_LT -> JMP_LT_G (loop-bound compare). Runs
         // after compare-branch fusion has already installed the JMP_LT, and
@@ -2259,7 +2260,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         if (!self.disable_optimize) {
             // Step 1: mark TRY jump slots as non-removable.
             nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-            if (nop_keep == null) { self.cleanup(); return COMPILE_ERROR~; }
+            if (nop_keep == null) return COMPILE_ERROR~;
             mem::clear(nop_keep, (sz)((usz)self.code_count));
             for (uint i = 0; i < self.code_count; i++) {
                 if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
@@ -2281,7 +2282,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             // Step 2: build pc_map[old_pc] → new_pc.
             // NOP slots that are not kept map to the new_pc of the next kept slot.
             pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_cap + 1) * (long)uint::size));
-            if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); self.cleanup(); return COMPILE_ERROR~; }
+            if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); return COMPILE_ERROR~; }
             for (uint i = 0; i < self.code_count; i++) {
                 pc_map[i] = new_count;
                 if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
@@ -2658,8 +2659,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Direct-eval private-name snapshot (ES2022 §8.7.1): if this function has
     // `direct eval` calls AND inherited private names from a parent class body,
     // copy the table into a heap-tracked buffer so builtin_eval can later
-    // hand it to compile_eval. cleanup() below would otherwise free the
-    // scratch buffer; the snapshot needs to outlive this context.
+    // hand it to compile_eval. cleanup() frees the scratch buffer, and the
+    // snapshot needs to outlive this context.
     //
     // Only snapshot when the table was ADOPTED from a parent, `owns_private_names
     // == false` means an outer class compiled the entries. A table owned by
@@ -2713,9 +2714,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
     self.collect_capture_candidates(func);
     lower_captured_var_cells(self, func, hp);
-
-    // Free compiler scratch buffers, the CompiledFunction owns its own copies.
-    self.cleanup();
 
     return func;
 }

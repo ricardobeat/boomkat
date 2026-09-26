@@ -846,6 +846,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // position) because private instance methods/accessors need it too,
     // see immediately below.
     CompilerContext field_init_ctx;
+    // Initialized on first use; cleanup() skips anything never allocated.
+    defer field_init_ctx.cleanup();
     bool has_field_init = false;
     uint field_count = 0;
 
@@ -956,6 +958,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // `this` = the constructor (spec: static field initializers run at
     // ClassDefinitionEvaluation time, not per-instance).
     CompilerContext static_init_ctx;
+    // Initialized on first use; cleanup() skips anything never allocated.
+    defer static_init_ctx.cleanup();
     bool has_static_init = false;
     uint static_field_count = 0;
 
