@@ -13,28 +13,16 @@ import std::io;
 // ============================================================================
 
 // Add a patch address to a chain. Returns the new head.
-//
-// Overflow sets a flag that finish() turns into a compile error. Callers
-// still get a usable chain head so parsing can continue to a clean stop
-// rather than compounding the failure here. Returning the chain unchanged
-// would leave `addr` unrecorded: patch_chain never patched it, it executed
-// as `JUMP 0`, and the fall-through passed without any diagnostic at all.
 fn uint CompilerContext.add_patch(&self, uint chain_head, uint addr) {
-    if (self.patch_count >= MAX_PATCHES) {
-        self.patch_overflow = true;
-        return chain_head;
-    }
-    uint idx = self.patch_count;
-    self.patches[idx].addr = addr;
-    self.patches[idx].next = chain_head;
-    self.patch_count++;
+    uint idx = (uint)self.patches.len();
+    self.patches.push({ addr, chain_head });
     return idx;
 }
 
 // Patch all jumps in a patch chain to point to the current code position.
 fn void CompilerContext.patch_chain(&self, uint chain_head) {
     uint current = chain_head;
-    while (current != NO_PATCH && current < self.patch_count) {
+    while (current != NO_PATCH) {
         uint addr = self.patches[current].addr;
         self.patch_jump(addr);
         current = self.patches[current].next;
@@ -45,22 +33,24 @@ fn void CompilerContext.patch_chain(&self, uint chain_head) {
 // Loop stack management
 // ============================================================================
 
+fn uint CompilerContext.loop_depth(&self) => (uint)self.loop_stack.len();
+
+fn LoopInfo* CompilerContext.innermost_loop(&self) => &self.loop_stack[^1];
+
 fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
-    if (self.loop_depth < MAX_LOOP_DEPTH) {
-        self.loop_stack[self.loop_depth].continue_target = continue_target;
-        self.loop_stack[self.loop_depth].break_patch_head = NO_PATCH;
-        self.loop_stack[self.loop_depth].continue_patch_head = NO_PATCH;
-        self.loop_stack[self.loop_depth].is_loop = is_loop;
-        // Capture the lex_env depth AT loop entry, so break/continue can
-        // emit the right number of POP_LEXes to unwind back to the loop's
-        // lex_env. Any nested block with a PUSH_LEX adds to cur_lex_depth;
-        // the break/continue must pop those extras before jumping.
-        self.loop_stack[self.loop_depth].saved_lex_depth = self.cur_lex_depth;
-        self.loop_stack[self.loop_depth].saved_with_depth = self.cur_with_depth;
-        self.loop_stack[self.loop_depth].iter_close_reg = -1;
-        self.loop_stack[self.loop_depth].saved_try_depth = self.try_depth;
-        self.loop_depth++;
-    }
+    // saved_lex_depth is the lex_env depth AT loop entry, so break/continue
+    // can emit the right number of POP_LEXes to unwind back to the loop's
+    // lex_env: any nested block with a PUSH_LEX adds to cur_lex_depth.
+    self.loop_stack.push({
+        .continue_target = continue_target,
+        .break_patch_head = NO_PATCH,
+        .continue_patch_head = NO_PATCH,
+        .is_loop = is_loop,
+        .saved_lex_depth = self.cur_lex_depth,
+        .saved_with_depth = self.cur_with_depth,
+        .iter_close_reg = -1,
+        .saved_try_depth = self.try_depth,
+    });
 }
 
 // The jump opcode a break/continue targeting `loop_idx` must use.
@@ -74,7 +64,7 @@ fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
 // silently dropping the completion parked there -- so `try { throw e }
 // finally { while (1) break; }` swallowed `e` instead of rethrowing it.
 fn Opcode CompilerContext.loop_jump_op(&self, uint loop_idx, Opcode crossing_op) {
-    if (loop_idx < self.loop_depth && self.loop_stack[loop_idx].saved_try_depth >= self.try_depth) {
+    if (loop_idx < self.loop_depth() && self.loop_stack[loop_idx].saved_try_depth >= self.try_depth) {
         return Opcode.JUMP;
     }
     return crossing_op;
@@ -94,22 +84,17 @@ fn void CompilerContext.patch_continue_chain(&self, uint head, uint target) {
 }
 
 fn void CompilerContext.pop_loop(&self) {
-    if (self.loop_depth > 0) {
-        self.loop_depth--;
-        // Patch all continue jumps to their target (if any pending)
-        if (self.loop_stack[self.loop_depth].continue_patch_head != NO_PATCH) {
-            self.patch_continue_chain(
-                self.loop_stack[self.loop_depth].continue_patch_head,
-                self.loop_stack[self.loop_depth].continue_target);
+    if (try loop = self.loop_stack.pop()) {
+        if (loop.continue_patch_head != NO_PATCH) {
+            self.patch_continue_chain(loop.continue_patch_head, loop.continue_target);
         }
-        // Patch all break jumps to current position
-        self.patch_chain(self.loop_stack[self.loop_depth].break_patch_head);
+        self.patch_chain(loop.break_patch_head);
     }
 }
 
 fn void CompilerContext.add_break_patch(&self, uint addr) {
-    if (self.loop_depth > 0) {
-        uint top = self.loop_depth - 1;
+    if (self.loop_depth() > 0) {
+        uint top = self.loop_depth() - 1;
         self.loop_stack[top].break_patch_head =
             self.add_patch(self.loop_stack[top].break_patch_head, addr);
     }

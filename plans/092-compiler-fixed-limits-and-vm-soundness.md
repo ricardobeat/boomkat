@@ -24,7 +24,7 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
 1. [x] **Per-iteration environments in `let`/`const` loop heads.** A for-in pattern with 9 or more
    captured names overflows an 8-entry stack array, which is memory-unsafe. Only the first 8 names
    get a fresh binding on each iteration.
-2. [ ] **Nested control flow.**
+2. [x] **Nested control flow.**
    - A `break` inside the 9th nested `try` skips its `finally`.
    - With 17 or more nested loops, `continue outer` breaks; 200 nested loops crash.
    - More than 16 nested labels gives a SyntaxError with no message.

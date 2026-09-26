@@ -46,18 +46,6 @@ const uint MAX_INNER_FUNCS_HARD = 1 << 16;  // 65K inner functions
 // SIGSEGV before this guard existed). 256 leaves real headroom below the
 // measured crash point while comfortably covering realistic source.
 const uint MAX_EXPR_DEPTH = 256;
-const uint MAX_LOOP_DEPTH  = 16;
-const uint MAX_TRY_DEPTH   = 8;
-const uint MAX_LABELS       = 16;
-// Break/continue forward-patch slots per FUNCTION (8 bytes each, so 16 KB).
-// Not per loop: the pool is never reset mid-function, so this bounds the
-// total number of break/continue statements in one function body.
-//
-// Sized to stay within c3c's 64 KB stack-object limit — CompilerContext is a
-// stack local (see entry.c3 / class.c3), so this array's size is charged
-// directly against that budget. 2048 comfortably exceeds MAX_SWITCH_CLAUSES
-// (1024), which is the realistic driver.
-const uint MAX_PATCHES      = 2048;
 // Initial capacity of the hoisted-function-name table; grows on the heap from
 // here (see ensure_hoisted_fn_cap), so there is no fixed ceiling.
 const uint INITIAL_HOISTED_FNS = 128;
@@ -226,11 +214,6 @@ int  saved_with_depth;   ///< cur_with_depth at loop entry, break/continue WITH_
     // stays inside that same finally discards the completion it is carrying
     // (including a parked exception).
     uint saved_try_depth;
-}
-
-struct TryInfo {
-    uint catch_addr;
-    uint finally_addr;
 }
 
 struct LabelInfo {
@@ -438,31 +421,16 @@ struct CompilerContext {
     ushort cell_frame_reg;
     bool cell_frame_reserved;
 
-    // Loop/break/continue tracking
-    LoopInfo[MAX_LOOP_DEPTH] loop_stack;
-    uint loop_depth;
-
-    // Try/catch tracking
-    TryInfo[MAX_TRY_DEPTH] try_stack;
+    // Enclosing loops and switches, innermost last.
+    List{LoopInfo} loop_stack;
+    // Number of enclosing try statements. A break/continue compares it with its
+    // target loop's saved_try_depth to decide whether it crosses a finally.
     uint try_depth;
-
-    // Label tracking
-    LabelInfo[MAX_LABELS] labels;
-    uint label_count;
-
-    // Patch list pool for break/continue forward patches.
-    //
-    // This is a per-FUNCTION pool that is never reset mid-function, so the
-    // bound is the total number of break/continue statements in one function,
-    // not the depth of any single loop. The old bound was 256 and overflowing
-    // it made add_patch return SILENTLY: the jump was never recorded, never
-    // patched, and stayed `JUMP 0`. A switch with more than 256 clauses
-    // therefore fell through to `default` for every arm past the 256th, with
-    // no diagnostic — see MAX_PATCHES's use in patches.c3.
-    PatchEntry[MAX_PATCHES] patches;
-    uint patch_count;
-    // Set when add_patch overflowed; finish() turns this into a compile error.
-    bool patch_overflow;
+    // Labels in scope, innermost last.
+    List{LabelInfo} labels;
+    // Break/continue forward-patch chains for the whole function. Entries are
+    // never removed mid-function; each chain links through PatchEntry.next.
+    List{PatchEntry} patches;
     // Set when the scope stack overflowed; finish() turns this into a compile
     // error. A dropped scope entry makes a declaration invisible to
     // shadowing/TDZ/duplicate checks rather than reporting anything.
@@ -1382,11 +1350,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.code_count = 0;
     self.inner_func_count = 0;
     self.scope_depth = 0;
-    self.loop_depth = 0;
     self.try_depth = 0;
-    self.label_count = 0;
-    self.patch_count = 0;
-    self.patch_overflow = false;
     self.scope_overflow = false;
     self.const_hash_count = 0;
     self.call_prop_obj_reg = REG_NONE;
@@ -1442,6 +1406,9 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.captured_names.allocator = mem;
     self.defaults.allocator = mem;
     self.destruct_defaults.allocator = mem;
+    self.loop_stack.allocator = mem;
+    self.labels.allocator = mem;
+    self.patches.allocator = mem;
 
     // Phase 3 (plans/083): do NOT default the lexer to strict mode here. Each
     // compilation entry point (compile/compile_eval/compile_function/etc.) is
@@ -1488,6 +1455,9 @@ fn void CompilerContext.cleanup(&self) {
     self.captured_names.free();
     self.defaults.free();
     self.destruct_defaults.free();
+    self.loop_stack.free();
+    self.labels.free();
+    self.patches.free();
 }
 
 // Borrow the private-names table from an enclosing context (a method,
@@ -1831,9 +1801,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                                    && !self.is_async;
     if (self.reg_overflow) {
         return self.fail("register limit exceeded")~;
-    }
-    if (self.patch_overflow) {
-        return self.fail("too many break/continue targets in one function")~;
     }
     if (self.scope_overflow) {
         return self.fail("too many nested scopes or declarations in one function")~;

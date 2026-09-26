@@ -3031,8 +3031,8 @@ fn void? CompilerContext.while_statement(&self) {
     // Step 6: cond_label, patch initial JUMP and update continue_target.
     // ----------------------------------------------------------------
     uint cond_label = self.code_count;
-    if (self.loop_depth > 0) {
-        self.loop_stack[self.loop_depth - 1].continue_target = cond_label;
+    if (self.loop_depth() > 0) {
+        self.innermost_loop().continue_target = cond_label;
     }
     if (!is_const_true) {
         self.patch_jump(cond_jump);
@@ -3109,6 +3109,11 @@ fn void? CompilerContext.while_statement(&self) {
 // (ES2015 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
 // before the old environment is popped: after the pop, later bindings in a
 // multi-declarator head are unreachable.
+struct SwitchClause {
+    uint body_addr;
+    uint ft_jump_addr;   // fall-through JUMP at the end of the body, patched to the next body
+}
+
 struct PerIterBinding {
     uint name_idx;
     bool is_const;
@@ -3793,7 +3798,7 @@ fn void? CompilerContext.for_statement(&self) {
                 if (fd_periter.len() > 0) {
                     self.emit_create_per_iteration_env(fd_periter.array_view());
                 }
-                self.loop_stack[self.loop_depth - 1].continue_target = cycle_label;
+                self.innermost_loop().continue_target = cycle_label;
 
                 int back_offset = (int)loop_start - (int)self.code_count - 1;
                 self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
@@ -4051,7 +4056,7 @@ fn void? CompilerContext.for_statement(&self) {
                     PerIterBinding[1] cycle = { { forin_name_idx, is_const } };
                     self.emit_create_per_iteration_env(cycle[..]);
                 }
-                self.loop_stack[self.loop_depth - 1].continue_target = cycle_label;
+                self.innermost_loop().continue_target = cycle_label;
 
                 // Jump back to loop start
                 int back_offset = (int)loop_start - (int)self.code_count - 1;
@@ -4511,8 +4516,8 @@ fn void? CompilerContext.for_statement(&self) {
         self.emit_create_per_iteration_env(
             periterenv.array_view());
     }
-    if (self.loop_depth > 0) {
-        self.loop_stack[self.loop_depth - 1].continue_target = incr_label;
+    if (self.loop_depth() > 0) {
+        self.innermost_loop().continue_target = incr_label;
     }
 
     if (has_incr) {
@@ -4757,7 +4762,7 @@ fn void? CompilerContext.emit_bare_forin_loop(&self, char[] var_name, ushort obj
     self.lexer.note_block_close();
     self.statement_body()!;
 
-    self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
+    self.innermost_loop().continue_target = self.code_count;
     int back_offset = (int)loop_start - (int)self.code_count - 1;
     self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
 
@@ -5025,8 +5030,8 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
 
     uint loop_start = self.code_count;
     self.push_loop(loop_start, true);
-    self.loop_stack[self.loop_depth - 1].iter_close_reg = (int)rec.method_reg;
-    self.loop_stack[self.loop_depth - 1].is_await_loop = is_await;
+    self.innermost_loop().iter_close_reg = (int)rec.method_reg;
+    self.innermost_loop().is_await_loop = is_await;
 
     if (needs_per_iter_env) {
         self.emit_simple(Opcode.PUSH_LEX);
@@ -5078,7 +5083,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
         self.cur_lex_depth--;
     }
 
-    self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
+    self.innermost_loop().continue_target = self.code_count;
     int back_offset = (int)loop_start - (int)self.code_count - 1;
     self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
 
@@ -5321,7 +5326,7 @@ fn void? CompilerContext.emit_forin_loop_member(&self, ForLhsSnapshot lhs_snap, 
     self.lexer.note_block_close();
     self.statement_body()!;
 
-    self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
+    self.innermost_loop().continue_target = self.code_count;
     int back_offset = (int)loop_start - (int)self.code_count - 1;
     self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
 
@@ -5380,8 +5385,8 @@ fn void? CompilerContext.do_while_statement(&self) {
     self.statement_body()!;
 
     // Fix the continue target to point to the condition
-    if (self.loop_depth > 0) {
-        self.loop_stack[self.loop_depth - 1].continue_target = self.code_count;
+    if (self.loop_depth() > 0) {
+        self.innermost_loop().continue_target = self.code_count;
     }
 
     self.expect(TokenType.WHILE)!;
@@ -5446,7 +5451,7 @@ fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
 // A return exits all loops in the function, so each loop's iterator must be
 // closed (§14.7.5.7, abrupt loop completions call IteratorClose).
 fn void CompilerContext.emit_return_iter_closes(&self) {
-    for (int li = (int)self.loop_depth - 1; li >= 0; li--) {
+    for (int li = (int)self.loop_depth() - 1; li >= 0; li--) {
         if (self.loop_stack[li].iter_close_reg >= 0) {
             self.emit_unwind_iter_close((uint)li);
         }
@@ -5561,12 +5566,7 @@ fn void? CompilerContext.try_statement(&self) {
     // Jump slot, the VM reads this word for the finally_offset (BC field)
     uint jump_slot_addr = self.emit_a_bc(Opcode.NOP, 0, 0);
 
-    // Push try info
-    if (self.try_depth < MAX_TRY_DEPTH) {
-        self.try_stack[self.try_depth].catch_addr = try_addr;
-        self.try_stack[self.try_depth].finally_addr = NO_PATCH;
-        self.try_depth++;
-    }
+    self.try_depth++;
 
     // In eval mode, reset eval_acc_reg to undefined so that an empty try
     // block (or one whose body has no expressions) contributes undefined
@@ -5865,22 +5865,10 @@ fn void? CompilerContext.switch_statement(&self) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
 
-    // Track all body entries (cases and default) in source order.
-    //
-    // These are fixed stack arrays and every write below is unguarded, so a
-    // switch with more clauses than this wrote past the end of the compiler's
-    // own frame. The old bound was 64, which real code exceeds easily — a
-    // tokenizer or an AST visitor dispatching on a node kind routinely has
-    // hundreds of cases, and typescript 5.4.5 has several. It corrupted the
-    // stack SILENTLY: a 100-case switch still produced correct output while
-    // writing 36 entries past the end.
-    //
-    // 1024 covers any plausible hand-written or generated switch; past that
-    // the guard below reports a SyntaxError rather than corrupting memory.
-    const uint MAX_SWITCH_CLAUSES = 1024;
-    uint[MAX_SWITCH_CLAUSES] body_addrs;
-    uint[MAX_SWITCH_CLAUSES] ft_jump_addrs;
-    uint body_count = 0;
+    // Body entries (cases and default) in source order.
+    List{SwitchClause} clauses;
+    clauses.init(mem);
+    defer clauses.free();
     bool has_default = false;
     uint default_body_idx = 0;
     bool default_not_last = false;
@@ -5975,12 +5963,6 @@ fn void? CompilerContext.switch_statement(&self) {
     }
 
     while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
-        // Both clause kinds below write body_addrs[body_count] and
-        // ft_jump_addrs[body_count]. One check here dominates both, and fails
-        // before any of the clause is compiled.
-        if (body_count >= MAX_SWITCH_CLAUSES) {
-            return self.fail("too many clauses in a switch statement")~;
-        }
         if (self.match(TokenType.CASE)) {
             // Compile case expression.
             //
@@ -6012,7 +5994,7 @@ fn void? CompilerContext.switch_statement(&self) {
 
             // Patch the match jump to here (the body)
             self.patch_jump(match_jump);
-            body_addrs[body_count] = self.code_count;
+            uint body_addr = self.code_count;
 
             // Compile case body statements
             while (!self.check(TokenType.CASE) && !self.check(TokenType.DEFAULT) &&
@@ -6021,9 +6003,7 @@ fn void? CompilerContext.switch_statement(&self) {
             }
 
             // Emit fall-through redirect jump (patched later to next body)
-            uint ft_jump = self.emit_jump(Opcode.JUMP);
-            ft_jump_addrs[body_count] = ft_jump;
-            body_count++;
+            clauses.push({ body_addr, self.emit_jump(Opcode.JUMP) });
 
             // Patch skip jump to after the fall-through redirect
             self.patch_jump(skip_jump);
@@ -6036,14 +6016,14 @@ fn void? CompilerContext.switch_statement(&self) {
             self.expect(TokenType.COLON)!;
 
             has_default = true;
-            default_body_idx = body_count;
+            default_body_idx = (uint)clauses.len();
 
             // Emit preamble JUMP over default body (placeholder).
             // If more clauses follow, this skips the default body for the
             // case-checking path. If default is last, it becomes a no-op.
             uint default_preamble = self.emit_jump(Opcode.JUMP);
 
-            body_addrs[body_count] = self.code_count;
+            uint body_addr = self.code_count;
 
             // Compile default body
             while (!self.check(TokenType.CASE) && !self.check(TokenType.DEFAULT) &&
@@ -6052,9 +6032,7 @@ fn void? CompilerContext.switch_statement(&self) {
             }
 
             // Emit fall-through redirect for default
-            uint ft_jump = self.emit_jump(Opcode.JUMP);
-            ft_jump_addrs[body_count] = ft_jump;
-            body_count++;
+            clauses.push({ body_addr, self.emit_jump(Opcode.JUMP) });
 
             // Check if anything follows this default clause
             TokenType next = self.peek_type();
@@ -6065,7 +6043,7 @@ fn void? CompilerContext.switch_statement(&self) {
             } else {
                 // Default is last: patch preamble to fall through to body
                 // (offset 0 = jump to next instruction = body start)
-                int ft_offset = (int)(body_addrs[default_body_idx]) -
+                int ft_offset = (int)(clauses[default_body_idx].body_addr) -
                                 (int)(default_preamble) - 1;
                 self.code[default_preamble] =
                     bytecode::make_sabc(Opcode.JUMP, ft_offset);
@@ -6118,25 +6096,18 @@ fn void? CompilerContext.switch_statement(&self) {
 
     // Patch the 'no match' redirect to the default body
     if (redirect_addr > 0) {
-        int offset = (int)(body_addrs[default_body_idx]) -
+        int offset = (int)(clauses[default_body_idx].body_addr) -
                      (int)(redirect_addr) - 1;
         self.code[redirect_addr] =
             bytecode::make_sabc(Opcode.JUMP, offset);
     }
 
     // Patch all fall-through redirect jumps in source order
-    for (uint i = 0; i < body_count; i++) {
-        uint target;
-        if (i + 1 < body_count) {
-            // Fall through to next body in source order
-            target = body_addrs[i + 1];
-        } else {
-            // Last body: fall through to end of switch
-            target = end_addr;
-        }
-        int offset = (int)(target) - (int)(ft_jump_addrs[i]) - 1;
-        self.code[ft_jump_addrs[i]] =
-            bytecode::make_sabc(Opcode.JUMP, offset);
+    foreach (i, clause : clauses) {
+        // The last body falls through to the end of the switch.
+        uint target = i + 1 < clauses.len() ? clauses[i + 1].body_addr : end_addr;
+        int offset = (int)target - (int)clause.ft_jump_addr - 1;
+        self.code[clause.ft_jump_addr] = bytecode::make_sabc(Opcode.JUMP, offset);
     }
 
     if (!disc_is_local) {
@@ -6159,20 +6130,18 @@ fn void? CompilerContext.labeled_statement(&self, char[] name, uint mask) {
     if (!self.is_strict && (mask & DECL_FUNC_LABEL)) {
         item_mask = DECL_FUNC | DECL_FUNC_LABEL;
     }
-    uint saved_label_count = self.label_count;
+    sz saved_label_count = self.labels.len();
 
     // Check for duplicate labels
-    for (uint i = 0; i < self.label_count; i++) {
-        if (str_eq(self.labels[i].name, name)) {
+    foreach (label : self.labels) {
+        if (str_eq(label.name, name)) {
             return COMPILE_ERROR~;
         }
     }
 
     // Register the label
-    uint label_idx = self.label_count;
-    if (label_idx >= MAX_LABELS) return COMPILE_ERROR~;
-    self.labels[label_idx].name = name;
-    self.label_count++;
+    sz label_idx = self.labels.len();
+    self.labels.push({ .name = name });
 
     // Look ahead to determine if the inner statement is a loop, skipping any
     // nested labels (`target1: target2: while (...)` — both labels name the
@@ -6200,14 +6169,14 @@ fn void? CompilerContext.labeled_statement(&self, char[] name, uint mask) {
 
     if (next == TokenType.FOR || next == TokenType.WHILE || next == TokenType.DO) {
         // The label refers to a loop. The loop will be pushed at index
-        // self.loop_depth (the current depth before the loop's push_loop).
-        self.labels[label_idx].loop_index = self.loop_depth;
+        // self.loop_depth() (the current depth before the loop's push_loop).
+        self.labels[label_idx].loop_index = self.loop_depth();
         self.labels[label_idx].is_loop = true;
         self.statement_body(item_mask)!;
     } else {
         // Non-loop label, push a virtual loop entry so break can target it.
         self.push_loop(self.code_count, false);
-        self.labels[label_idx].loop_index = self.loop_depth - 1;
+        self.labels[label_idx].loop_index = self.loop_depth() - 1;
         self.labels[label_idx].is_loop = false;
         self.statement_body(item_mask)!;
         self.pop_loop(); // patches all breaks targeting this label
@@ -6217,7 +6186,7 @@ fn void? CompilerContext.labeled_statement(&self, char[] name, uint mask) {
     // Keeping completed labels in the function-wide table incorrectly rejects
     // later statements that reuse the same label name (ES5 for-loop tests do
     // this several times in one script).
-    self.label_count = saved_label_count;
+    while (self.labels.len() > saved_label_count) self.labels.remove_last()!!;
 }
 
 // Parse break statement.
@@ -6233,9 +6202,9 @@ fn void? CompilerContext.break_statement(&self) {
         Token label_tok = self.advance(true)!;
         char[] label_name = label_tok.str_value;
 
-        for (uint i = 0; i < self.label_count; i++) {
-            if (str_eq(self.labels[i].name, label_name)) {
-                uint loop_idx = self.labels[i].loop_index;
+        foreach (label : self.labels) {
+            if (str_eq(label.name, label_name)) {
+                uint loop_idx = label.loop_index;
                 // Unwind the lex_env stack back to the labeled loop's depth.
                 // Same pattern as the unlabeled break below. Without this,
                 // a `break label` inside a labeled block with a `let`
@@ -6253,7 +6222,7 @@ fn void? CompilerContext.break_statement(&self) {
                 // first, down to AND INCLUDING the labeled loop (a labeled break
                 // exits loop_idx itself). For for-await loops this awaits the
                 // AsyncIteratorClose (§7.4.11).
-                for (int li = (int)self.loop_depth - 1; li >= (int)loop_idx; li--) {
+                for (int li = (int)self.loop_depth() - 1; li >= (int)loop_idx; li--) {
                     if (self.loop_stack[li].iter_close_reg >= 0) {
                         self.emit_unwind_iter_close((uint)li);
                     }
@@ -6273,13 +6242,13 @@ fn void? CompilerContext.break_statement(&self) {
     // ES6 §13.13.1 BreakStatement : break ;, must be enclosed by an
     // IterationStatement or SwitchStatement. If there is none, this is a
     // SyntaxError (the BREAK opcode would otherwise dangle with no patch).
-    if (self.loop_depth == 0) {
+    if (self.loop_depth() == 0) {
         return self.fail("'break' is only valid inside a loop or switch")~;
     }
     // Unwind the lex_env stack back to the loop's depth. Any nested blocks
     // that pushed PUSH_LEX must be popped before the break jumps, otherwise
     // the loop's outer-scope GETVARs will resolve to the wrong env.
-    int loop_idx = (int)self.loop_depth - 1;
+    int loop_idx = (int)self.loop_depth() - 1;
     int target_lex = self.loop_stack[loop_idx].saved_lex_depth;
     while (self.cur_lex_depth > target_lex) {
         self.emit_simple(Opcode.POP_LEX);
@@ -6313,13 +6282,13 @@ fn void? CompilerContext.continue_statement(&self) {
         Token label_tok = self.advance(true)!;
         char[] label_name = label_tok.str_value;
 
-        for (uint i = 0; i < self.label_count; i++) {
-            if (str_eq(self.labels[i].name, label_name)) {
-                if (!self.labels[i].is_loop) {
+        foreach (label : self.labels) {
+            if (str_eq(label.name, label_name)) {
+                if (!label.is_loop) {
                     // continue on a non-loop label is a syntax error
                     return self.fail("'continue' may only target a loop label")~;
                 }
-                uint loop_idx = self.labels[i].loop_index;
+                uint loop_idx = label.loop_index;
                 // Unwind lex_env stack back to the labeled loop's depth.
                 int target_lex = self.loop_stack[loop_idx].saved_lex_depth;
                 while (self.cur_lex_depth > target_lex) {
@@ -6328,7 +6297,7 @@ fn void? CompilerContext.continue_statement(&self) {
                 }
                 // IteratorClose: emit for any for-of loops being exited
                 // (all loops from innermost down to but NOT including loop_idx).
-                for (int li = (int)self.loop_depth - 1; li > (int)loop_idx; li--) {
+                for (int li = (int)self.loop_depth() - 1; li > (int)loop_idx; li--) {
                     if (self.loop_stack[li].iter_close_reg >= 0) {
                         self.emit_unwind_iter_close((uint)li);
                     }
@@ -6349,7 +6318,7 @@ fn void? CompilerContext.continue_statement(&self) {
 
     // Unlabeled continue, jump to continue target of the innermost *real* loop
     // (skip switch pseudo-loops that only handle break)
-    int loop_idx = (int)self.loop_depth - 1;
+    int loop_idx = (int)self.loop_depth() - 1;
     while (loop_idx >= 0 && !self.loop_stack[loop_idx].is_loop) {
         loop_idx--;
     }
