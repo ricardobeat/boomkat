@@ -2732,8 +2732,7 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
             // A node whose count reaches zero while a live register still holds
             // it means some opcode dropped a reference it did not own. Report it
             // here, at the release, rather than in whichever opcode later reads
-            // the recycled block. This is how the GETGLOBAL_PRIM bare-decref bug
-            // was found.
+            // the recycled block.
             {
                 uint bad_frame;
                 uint bad_slot;

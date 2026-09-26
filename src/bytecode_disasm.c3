@@ -41,14 +41,7 @@ $if $feat(TRACE_VM):
     switch (fmt) {
         case ABC:
             // Fused compare-branch ops encode A as a signed 8-bit offset, not a register.
-            if (op == Opcode.JMP_LT_G) {
-                // Two-word: A = signed offset, B = register operand; the
-                // global's name index lives in the trailing word's BC.
-                pos = write_int(buf, pos, (int)(ichar)self.a);
-                pos = write_str(buf, pos, ", r");
-                pos = write_uint(buf, pos, self.b);
-                pos = write_str(buf, pos, ", g[..]");
-            } else if (op == Opcode.JMP_NLT || op == Opcode.JMP_NLE
+            if (op == Opcode.JMP_NLT || op == Opcode.JMP_NLE
                 || op == Opcode.JMP_NGT || op == Opcode.JMP_NGE
                 || op == Opcode.JMP_LT  || op == Opcode.JMP_LE
                 || op == Opcode.JMP_GT  || op == Opcode.JMP_GE) {
@@ -138,12 +131,7 @@ $if $feat(TRACE_VM):
 
     switch (fmt) {
         case ABC:
-            if (op == Opcode.JMP_LT_G) {
-                pos = write_int(buf, pos, (int)(ichar)self.a);
-                pos = write_str(buf, pos, ", r");
-                pos = write_uint(buf, pos, self.b);
-                pos = write_str(buf, pos, ", g[..]");
-            } else if (op == Opcode.JMP_NLT || op == Opcode.JMP_NLE
+            if (op == Opcode.JMP_NLT || op == Opcode.JMP_NLE
                 || op == Opcode.JMP_NGT || op == Opcode.JMP_NGE
                 || op == Opcode.JMP_LT  || op == Opcode.JMP_LE
                 || op == Opcode.JMP_GT  || op == Opcode.JMP_GE) {
@@ -298,9 +286,6 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.DECLVAR_HOIST.ordinal] = "DECLVAR_HOIST",
     [Opcode.GETGLOBAL.ordinal]   = "GETGLOBAL",
     [Opcode.PUTGLOBAL.ordinal]   = "PUTGLOBAL",
-    [Opcode.GETGLOBAL_PRIM.ordinal] = "GETGLOBAL_PRIM",
-    [Opcode.PUTGLOBAL_PRIM.ordinal] = "PUTGLOBAL_PRIM",
-    [Opcode.MOVE_GG.ordinal]     = "MOVE_GG",
     [Opcode.DELVAR.ordinal]      = "DELVAR",
     [Opcode.WITH_START.ordinal]  = "WITH_START",
     [Opcode.WITH_END.ordinal]    = "WITH_END",
@@ -385,7 +370,6 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.JMP_NGT.ordinal]      = "JMP_NGT",
     [Opcode.JMP_NGE.ordinal]      = "JMP_NGE",
     [Opcode.JMP_LT.ordinal]       = "JMP_LT",
-    [Opcode.JMP_LT_G.ordinal]     = "JMP_LT_G",
     [Opcode.JMP_LE.ordinal]       = "JMP_LE",
     [Opcode.JMP_GT.ordinal]       = "JMP_GT",
     [Opcode.JMP_GE.ordinal]       = "JMP_GE",

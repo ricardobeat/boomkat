@@ -520,10 +520,6 @@ struct CompilerContext {
     // (true global scope, no nested lexical env). The assignment write-back
     // then emits PUTGLOBAL instead of PUTVAR_ASSIGN.
     bool last_was_getglobal;
-    // Set alongside last_was_getglobal when the read was emitted as the
-    // guard-free GETGLOBAL_PRIM (name proven primitive-only). The assignment
-    // write-back then emits PUTGLOBAL_PRIM instead of PUTGLOBAL.
-    bool last_was_getglobal_prim;
     // Set when the last primary_expr returned a bare (unparenthesized) arrow
     // function. An ArrowFunction is an AssignmentExpression, not a
     // LeftHandSideExpression, so no `.x`/`[x]`/`(...)`/tagged-template suffix
@@ -1061,17 +1057,6 @@ int  cur_with_depth;
     // thread allocator; freed in cleanup().
     List{uint} declared_global_name_idxs;
 
-    // Constant-pool indices of top-level `var`/`function` globals that a
-    // whole-program pre-scan proved PRIMITIVE-ONLY: every assignment to the
-    // name anywhere in the unit (including nested function bodies) stores a
-    // provably-primitive value, and the unit has no eval/globalThis/Function/
-    // with observability that could inject a heap value out of the compiler's
-    // view. Reads/writes of such a global emit GETGLOBAL_PRIM/PUTGLOBAL_PRIM,
-    // which skip the is_heap/refcount machinery entirely. Populated by
-    // pre_scan_prim_globals at Script global scope only; empty otherwise so the
-    // guarded GETGLOBAL/PUTGLOBAL path is used by default (conservative).
-    List{uint} prim_only_name_idxs;
-
     // Constant-pool indices of a module's top-level `var`s that
     // pre_scan_global_var_slots proved REGISTER-RESIDENT: reads and writes
     // compile to the name's home register, a live slot for the whole body.
@@ -1393,7 +1378,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     // Persistent (non-temp) allocator for the declared-global name-index set so
     // entries survive the whole compile; freed in cleanup().
     self.declared_global_name_idxs.allocator = mem;
-    self.prim_only_name_idxs.allocator = mem;
     self.slot_global_name_idxs.allocator = mem;
     self.direct_eval_offsets.allocator = mem;
     self.bindings.allocator = mem;
@@ -1441,7 +1425,6 @@ fn void CompilerContext.cleanup(&self) {
     }
     self.private_name_table = null;
     self.declared_global_name_idxs.free();
-    self.prim_only_name_idxs.free();
     self.slot_global_name_idxs.free();
     self.direct_eval_offsets.free();
     self.bindings.free();
@@ -2180,26 +2163,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
     prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
 
-    // --- Peephole: fuse GETGLOBAL_PRIM + PUTGLOBAL_PRIM -> MOVE_GG ---
-    // A plain `a = b` between two proven primitive-only globals compiles to a
-    // GETGLOBAL_PRIM rX,S / PUTGLOBAL_PRIM rX,D pair (scratch round-trip, two
-    // dispatches). Fuse the adjacent pair into one two-word MOVE_GG (dst name in
-    // word 1's BC, src name in a kept trailing NOP's BC), halving the op count.
-    // Runs after every register-elision pass so the pair is in its final form,
-    // and before the NOP compaction pass so the trailing word is protected by
-    // nop_keep[] (see below) exactly like TRY's finally slot. Needs a
-    // code_count-sized bool scratch for the jump-target bitset.
-    if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        bool* mgg_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (mgg_jump_targets == null) return COMPILE_ERROR~;
-        run_move_gg_fusion(self.code, self.code_count, mgg_jump_targets);
-        // Fuse GETGLOBAL_PRIM + JMP_LT -> JMP_LT_G (loop-bound compare). Runs
-        // after compare-branch fusion has already installed the JMP_LT, and
-        // before NOP compaction so the trailing name word is kept.
-        run_jmp_lt_g_fusion(self.code, self.code_count, mgg_jump_targets);
-        h.free_func(h.heap_udata, mgg_jump_targets);
-    }
-
     // --- NOP Compaction Pass ---
     // Physically remove NOP instructions and remap all pc-relative offsets.
     // Must run last, after all other peepholes have introduced NOPs.
@@ -2226,17 +2189,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             mem::clear(nop_keep, (sz)((usz)self.code_count));
             for (uint i = 0; i < self.code_count; i++) {
                 if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
-                    nop_keep[i + 1] = true;
-                }
-                // MOVE_GG's trailing word (a NOP holding the source name index in
-                // its BC) is read by the VM as the second half of the two-word
-                // instruction; keep it through compaction like TRY's finally slot.
-                if (self.code[i].op == Opcode.MOVE_GG && i + 1 < self.code_count) {
-                    nop_keep[i + 1] = true;
-                }
-                // JMP_LT_G's trailing word (a NOP holding the global's name index
-                // in its BC) is the second half of the two-word instruction.
-                if (self.code[i].op == Opcode.JMP_LT_G && i + 1 < self.code_count) {
                     nop_keep[i + 1] = true;
                 }
             }
@@ -2295,18 +2247,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                         int tgt_new = (int)pc_map[(uint)tgt_old];
                         int new_off = tgt_new - ((int)pc_map[i] + 1);
                         // Offset must still fit in signed 8 bits (removal only shrinks gaps).
-                        $assert $defined(new_off);
-                        self.code[i].a = (uint)(char)new_off;
-                    }
-                    case Opcode.JMP_LT_G: {
-                        // Two-word ABC: signed 8-bit offset in field A, applied by
-                        // the VM after BOTH words are consumed, so the target is
-                        // (pc + 2) + off, and the new base is likewise the slot
-                        // after the kept trailing word.
-                        int off = (int)(ichar)self.code[i].a;
-                        int tgt_old = (int)i + 2 + off;
-                        int tgt_new = (int)pc_map[(uint)tgt_old];
-                        int new_off = tgt_new - ((int)pc_map[i] + 2);
                         $assert $defined(new_off);
                         self.code[i].a = (uint)(char)new_off;
                     }

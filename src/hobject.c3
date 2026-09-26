@@ -3130,7 +3130,7 @@ struct VarICEntry {
     // act.lex_env at population time; a hit requires the same chain head
     // so entries never serve a different activation's environment.
     void*   search_head;
-    // Set for PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL/MOVE_GG slots whose property is
+    // Set for PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL slots whose property is
     // a writable but non-configurable data property (ES §9.3.4
     // CreateGlobalVarBinding): such a descriptor can never become an accessor
     // or turn read-only, so the store fast path skips re-checking writability.

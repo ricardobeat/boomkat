@@ -450,7 +450,6 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // Save LHS info (will be overwritten by RHS evaluation)
     bool lhs_was_getvar = self.last_was_getvar;
     bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
-    bool lhs_was_getglobal_prim = lhs_was_getglobal && self.last_was_getglobal_prim;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
     // Bytecode index of the GETVAR that read the LHS identifier, or
     // 0xFFFFFFFF when the LHS was not a bare identifier read (member,
@@ -497,11 +496,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         self.code[lhs_getvar_code_pos] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         self.emit_a_bc(Opcode.WITHBASE, (uint)lhs_with_base_reg, lhs_getvar_name_idx);
     }
-    // The opcode that writes back a bare-identifier LHS: PUTGLOBAL_PRIM for a
-    // proven primitive-only global (guard-free), PUTGLOBAL at true global scope
-    // (mirrors GETGLOBAL), else PUTVAR_ASSIGN.
-    Opcode ident_store_op = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+    // The opcode that writes back a bare-identifier LHS: PUTGLOBAL at true
+    // global scope (mirrors GETGLOBAL), else PUTVAR_ASSIGN.
+    Opcode ident_store_op = lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
     ushort lhs_ref_reg = REG_NONE;
     bool lhs_was_member = self.last_was_member();
     // Snapshot the operands only when a member is recorded. Every use below is
@@ -548,8 +545,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
                     uint getvar_reg = self.code[self.code_count - 1].a;
                     self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, getvar_reg, name_idx);
                 } else if (lhs_was_getglobal && self.code_count > 0
-                    && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
-                        || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
+                    && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
                     uint name_idx = self.code[self.code_count - 1].get_bc();
                     uint getglobal_reg = self.code[self.code_count - 1].a;
                     self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
@@ -800,17 +796,15 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     if ((is_assign || is_compound) && lhs_was_getvar && self.code_count > 0
         && !(self.in_with() && !lhs_was_getglobal)) {
         Instruction lhs_last = self.code[self.code_count - 1];
-        if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL
-             || lhs_last.op == Opcode.GETGLOBAL_PRIM)
+        if ((lhs_last.op == Opcode.GETVAR || lhs_last.op == Opcode.GETGLOBAL)
             && (ushort)lhs_last.a == left) {
             // A statically resolvable LHS (a global this unit hoisted via
-            // CHKGLOBALVAR/CHKGLOBALFUNC, a GETGLOBAL_PRIM, or a local of the
+            // CHKGLOBALVAR/CHKGLOBALFUNC, or a local of the
             // current function) cannot be unresolvable at runtime, and no RHS
             // can introduce a more local binding that shadows it: skip the
             // probe. Undeclared globals keep it, e.g. `undeclared = (this.undeclared = 5)`
             // must still throw even though the RHS would create the global.
-            bool statically_resolvable = lhs_last.op == Opcode.GETGLOBAL_PRIM
-                || (lhs_last.op == Opcode.GETGLOBAL
+            bool statically_resolvable = (lhs_last.op == Opcode.GETGLOBAL
                     && self.is_declared_global(lhs_getvar_name_idx))
                 || (lhs_last.op == Opcode.GETVAR
                     && lhs_ident_name.len > 0
@@ -2001,7 +1995,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 // before DELVAR could return its true Annex B.3.1 result).
                 ushort del_result = self.alloc_reg();
                 // Resolve the operand's name constant. Three cases:
-                //   * GETVAR/GETGLOBAL/GETGLOBAL_PRIM: read BC from that
+                //   * GETVAR/GETGLOBAL: read BC from that
                 //     instruction directly (and NOP it so its throw on an
                 //     unresolved binding doesn't pre-empt DELVAR).
                 //   * register-resident local (parameter / let / const / var):
@@ -2011,7 +2005,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 uint name_idx = 0;
                 if (self.code_count > 0 && self.code[self.code_count - 1].a == (ushort)op_del) {
                     Opcode prev = self.code[self.code_count - 1].op;
-                    if (prev == Opcode.GETVAR || prev == Opcode.GETGLOBAL || prev == Opcode.GETGLOBAL_PRIM) {
+                    if (prev == Opcode.GETVAR || prev == Opcode.GETGLOBAL) {
                         name_idx = self.code[self.code_count - 1].get_bc();
                         self.emit_a_bc(Opcode.DELVAR, (uint)del_result, name_idx);
                         // NOP the operand load — DELVAR does its own env walk
@@ -2092,7 +2086,6 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // GETVAR), so the GETVAR branch would also miss its target.
             bool inc_was_getvar = self.last_was_getvar;
             bool inc_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
-            bool inc_was_getglobal_prim = inc_was_getglobal && self.last_was_getglobal_prim;
             uint inc_getvar_name_idx = self.last_getvar_name_idx;
             bool inc_was_member = self.last_was_member();
             // Guarded for the same reason as assignment_expr's snapshot: the
@@ -2138,11 +2131,8 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
                 self.emit_abc(Opcode.WTWR, (uint)op_inc, (uint)base_reg, inc_getvar_name_idx);
             } else if (inc_was_getglobal && self.code_count > 0
-                && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
-                    || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
-                // Replace GETGLOBAL/GETGLOBAL_PRIM with INC_GLOBAL: 1 lean
-                // dispatch. INC_GLOBAL's in-place numeric update is correct for
-                // any global (prim or not), so it subsumes the PRIM read too.
+                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
+                // Replace GETGLOBAL with INC_GLOBAL: 1 lean dispatch.
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_GLOBAL, getglobal_reg, name_idx);
@@ -2156,8 +2146,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 } else {
                     self.emit_abc(Opcode.INC, (uint)op_inc, 0, 0);
                     if (inc_was_getvar) {
-                        Opcode inc_store = inc_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                            : (inc_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                        Opcode inc_store = inc_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
                         self.emit_a_bc(inc_store, (uint)op_inc, inc_getvar_name_idx);
                     }
                 }
@@ -2197,7 +2186,6 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
             // See INC case above for why member takes priority over getvar.
             bool dec_was_getvar = self.last_was_getvar;
             bool dec_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
-            bool dec_was_getglobal_prim = dec_was_getglobal && self.last_was_getglobal_prim;
             uint dec_getvar_name_idx = self.last_getvar_name_idx;
             bool dec_was_member = self.last_was_member();
             // Guarded for the same reason as assignment_expr's snapshot: the
@@ -2236,8 +2224,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
                 self.emit_abc(Opcode.WTWR, (uint)op_dec, (uint)base_reg, dec_getvar_name_idx);
             } else if (dec_was_getglobal && self.code_count > 0
-                && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
-                    || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
+                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
@@ -2251,8 +2238,7 @@ fn ushort? CompilerContext.unary_expr_inner(&self, TokenType tt, bool yield_ok) 
                 } else {
                     self.emit_abc(Opcode.DEC, (uint)op_dec, 0, 0);
                     if (dec_was_getvar) {
-                        Opcode dec_store = dec_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                            : (dec_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                        Opcode dec_store = dec_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
                         self.emit_a_bc(dec_store, (uint)op_dec, dec_getvar_name_idx);
                     }
                 }
@@ -2363,7 +2349,6 @@ fn ushort? CompilerContext.postfix_expr(&self) {
 
     bool lhs_was_getvar = self.last_was_getvar;
     bool lhs_was_getglobal = self.last_was_getvar && self.last_was_getglobal;
-    bool lhs_was_getglobal_prim = lhs_was_getglobal && self.last_was_getglobal_prim;
     uint lhs_getvar_name_idx = self.last_getvar_name_idx;
 
     // Note: self.last_was_getvar / self.last_was_member() remain set so that
@@ -2447,8 +2432,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
                 self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
             } else if (lhs_was_getglobal && self.code_count > 0
-                && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
-                    || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
+                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.INC_GLOBAL, getglobal_reg, name_idx);
@@ -2465,8 +2449,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 } else {
                     self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
                     if (lhs_was_getvar) {
-                        Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                            : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                        Opcode pf_store = lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
                         self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
                     }
                 }
@@ -2530,8 +2513,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 }
                 if (!handled) {
                     self.emit_abc(Opcode.INC, (uint)operand, 0, 0);
-                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    Opcode pf_store = lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
                     self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
                 }
             } else if (lhs_was_getvar) {
@@ -2583,8 +2565,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
                 self.emit_abc(Opcode.WTWR, (uint)operand, (uint)base_reg, lhs_getvar_name_idx);
             } else if (lhs_was_getglobal && self.code_count > 0
-                && (self.code[self.code_count - 1].op == Opcode.GETGLOBAL
-                    || self.code[self.code_count - 1].op == Opcode.GETGLOBAL_PRIM)) {
+                && self.code[self.code_count - 1].op == Opcode.GETGLOBAL) {
                 uint name_idx = self.code[self.code_count - 1].get_bc();
                 uint getglobal_reg = self.code[self.code_count - 1].a;
                 self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, getglobal_reg, name_idx);
@@ -2598,8 +2579,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 } else {
                     self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
                     if (lhs_was_getvar) {
-                        Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                            : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                        Opcode pf_store = lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
                         self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
                     }
                 }
@@ -2653,8 +2633,7 @@ fn ushort? CompilerContext.postfix_expr(&self) {
                 }
                 if (!handled) {
                     self.emit_abc(Opcode.DEC, (uint)operand, 0, 0);
-                    Opcode pf_store = lhs_was_getglobal_prim ? Opcode.PUTGLOBAL_PRIM
-                        : (lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN);
+                    Opcode pf_store = lhs_was_getglobal ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
                     self.emit_a_bc(pf_store, (uint)operand, lhs_getvar_name_idx);
                 }
             } else if (lhs_was_getvar) {
@@ -3056,10 +3035,8 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
         && self.code[self.last_getvar_code_pos].a == callee_reg
         && self.last_getvar_name_idx <= bytecode::MAX_C;
     // CALL_GLOBAL fusion candidate: the global-scope analog. The callee read
-    // was emitted as plain GETGLOBAL (true global slot scope, non-prim-only
-    // binding, GETGLOBAL_PRIM globals are never functions, so a callee is
-    // always plain GETGLOBAL) and is still the last instruction targeting this
-    // exact callee register. Fuses into CALL_GLOBAL, which reloads the callee
+    // was emitted as GETGLOBAL (true global slot scope) and is still the last
+    // instruction targeting this exact callee register. Fuses into CALL_GLOBAL, which reloads the callee
     // via GETGLOBAL's varref IC and calls in one dispatch.
     // last_was_getglobal (unlike last_was_getvar) is only cleared inside
     // emit_ident_read, so it can stay stale-true through a member-access
@@ -4607,7 +4584,6 @@ fn ushort? CompilerContext.primary_expr(&self) {
                     if (try var_reg = self.resolve_slot_global(id_tok.str_value)) {
                         self.last_was_getvar = false;
                         self.last_was_getglobal = false;
-                        self.last_was_getglobal_prim = false;
                         self.last_was_local_var = true;
                         self.last_ref = RefKind.REF_SIMPLE;
                         self.last_local_var_reg = var_reg;

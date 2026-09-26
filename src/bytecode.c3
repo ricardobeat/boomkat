@@ -317,29 +317,6 @@ enum Opcode : char {
     // throws) but specialized to the two global objects, with the same slot
     // inline cache as GETGLOBAL for the write-back.
     PUTGLOBAL,
-    // `A = global[constants[BC]]`: read a top-level global binding that a
-    // whole-program compile-time proof classified as primitive-only (every
-    // assignment anywhere in the unit, including nested functions, stores a
-    // provably-primitive value; no eval/globalThis/Function/with observability).
-    // Because the slot can never hold a heap value at runtime, the read is a
-    // raw `*dst = *slot`: no is_heap check, no refcount, no track_heap_store.
-    // Shares GETGLOBAL's varref slot IC for stable-pointer resolution.
-    GETGLOBAL_PRIM,
-    // `global[constants[BC]] = A`: write to a proven primitive-only global
-    // (see GETGLOBAL_PRIM). A raw `*slot = A` with no decref of the overwritten
-    // value (provably primitive) and no incref/track of the stored value.
-    PUTGLOBAL_PRIM,
-    // `global[dst] = global[src]`: fused copy between two proven
-    // primitive-only globals (the GETGLOBAL_PRIM + PUTGLOBAL_PRIM pair for a
-    // plain `a = b` assignment). A two-word instruction: this word (A-BC) holds
-    // the destination name index in BC; the immediately-following word (a NOP,
-    // preserved through compaction like TRY's finally slot) holds the source
-    // name index in its BC. The VM reads both words, advances PC by 2, and does
-    // a raw `*dst_slot = *src_slot`: both slots provably primitive, so no
-    // is_heap check, no refcount, no track_heap_store. Uses two adjacent
-    // per-PC VarICEntry slots: pc_off (dst, write IC) and pc_off+1 (src, read
-    // IC); the trailing word's IC slot is otherwise unused.
-    MOVE_GG,
     // `A = typeof identifier`: typeof on a variable name (A-BC format).
     // Returns "undefined" for unresolvable references per ES5 §11.4.3.
     TYPEOFIDENT,
@@ -814,23 +791,6 @@ enum Opcode : char {
     // Fused strict-inequality branch: branch if (rB !== rC).
     JMP_SNEQ,
 
-    // Fused `GETGLOBAL_PRIM rC, S` + `JMP_LT off, rB, rC`: branch if
-    // (rB < global[S]), loading the primitive-only global operand inline
-    // instead of round-tripping it through a scratch register.
-    // A two-word instruction mirroring MOVE_GG: this word is ABC (A = signed
-    // 8-bit jump offset, B = the register operand, C unused); the
-    // immediately-following word is a NOP whose BC holds the global's name
-    // index. The VM reads both words and advances PC by 2, so the trailing
-    // word is preserved through NOP compaction via `nop_keep`.
-    // The loaded value never reaches a register, since fusion requires
-    // the original scratch register to be dead after the branch on both the
-    // fall-through and taken paths.
-    // Offset convention matches JMP_LT: relative to the instruction after the
-    // *pair* (pc has already advanced by 2).
-    // Reuses the per-PC VarICEntry slot at pc_off+1 (the trailing word) as the
-    // global's read IC, exactly like MOVE_GG's source-slot IC.
-    JMP_LT_G,
-
     // Fused two-hop property access: A=dst_temp, B=src, C=key1_const_idx.
     // The second key and final register are stored in the NEXT instruction slot (which becomes NOP).
     // Format: insn[i]  = GETPROPC2 A=dst_temp, B=src, C=key1
@@ -1164,9 +1124,6 @@ fn OpFormat get_op_format(Opcode op) {
         case DECLB33GLOBAL: return A_BC;
         case GETGLOBAL: return A_BC;
         case PUTGLOBAL: return A_BC;
-        case GETGLOBAL_PRIM: return A_BC;
-        case PUTGLOBAL_PRIM: return A_BC;
-        case MOVE_GG: return A_BC;
         case DELVAR:    return A_BC;
         case WITH_START: return A_BC;
         case WITH_END:   return ABC;

@@ -98,8 +98,6 @@ fn bool await_liveness_opcode_allowed(Opcode op) {
         case Opcode.DECLB33GLOBAL:
         case Opcode.GETGLOBAL:
         case Opcode.PUTGLOBAL:
-        case Opcode.GETGLOBAL_PRIM:
-        case Opcode.PUTGLOBAL_PRIM:
         case Opcode.TYPEOFIDENT:
         case Opcode.DELVAR:
         case Opcode.GETBOUND:

@@ -102,7 +102,6 @@ fn uint? CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
         if (try ushort home = self.resolve_slot_global_by_index(name_idx)) {
             self.last_was_getvar = false;
             self.last_was_getglobal = false;
-            self.last_was_getglobal_prim = false;
             self.last_was_local_var = true;
             self.last_local_var_reg = home;
             return self.emit_abc(Opcode.LDREG, reg, (uint)home, 0);
@@ -110,15 +109,9 @@ fn uint? CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
     }
     if (self.at_global_slot_scope()) {
         self.last_was_getglobal = true;
-        if (self.is_prim_only_global(name_idx)) {
-            self.last_was_getglobal_prim = true;
-            return self.emit_a_bc(Opcode.GETGLOBAL_PRIM, reg, name_idx);
-        }
-        self.last_was_getglobal_prim = false;
         return self.emit_a_bc(Opcode.GETGLOBAL, reg, name_idx);
     }
     self.last_was_getglobal = false;
-    self.last_was_getglobal_prim = false;
     return self.emit_a_bc(Opcode.GETVAR, reg, name_idx);
 }
 

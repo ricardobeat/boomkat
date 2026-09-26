@@ -71,10 +71,6 @@ fn void init_threaded_handlers() {
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_handlers[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
     g_threaded_handlers[Opcode.PUTGLOBAL.ordinal]  = &th_putglobal;
-    g_threaded_handlers[Opcode.GETGLOBAL_PRIM.ordinal] = &th_getglobal_prim;
-    g_threaded_handlers[Opcode.PUTGLOBAL_PRIM.ordinal] = &th_putglobal_prim;
-    g_threaded_handlers[Opcode.MOVE_GG.ordinal] = &th_move_gg;
-    g_threaded_handlers[Opcode.JMP_LT_G.ordinal] = &th_jmp_lt_g;
     g_threaded_handlers[Opcode.INC_GLOBAL.ordinal] = &th_inc_global;
     g_threaded_handlers[Opcode.DEC_GLOBAL.ordinal] = &th_dec_global;
 
@@ -354,48 +350,6 @@ fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs
     return th_next(pc, code_end, regs, cold);
 }
 
-// Fused `GETGLOBAL_PRIM rX, S` + `JMP_LT off, rB, rX`. Two-word: pc holds the
-// jump offset in A and the surviving register operand in B; pc+1 (a NOP) holds
-// the global's name index. The IC slot sits at the trailing word's offset, one
-// past this handler's own, which is where the switch populates it: it computes
-// the index after advancing past both words.
-//
-// A guard miss returns pc unconsumed, leaving the switch to resolve the global
-// by env walk, fill the IC, and advance pc itself.
-fn Instruction* th_jmp_lt_g(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint name_off = (uint)(pc + 1 - cold.code_base);
-    hobject::VarICEntry* gic = vic_base + name_off;
-    HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
-    TVal* gval = &gb.prop_values()[gic.prop_idx];
-    if (env::is_tdz_sentinel(gval)) return pc;
-
-    TVal* rb = regs + insn.b;
-    bool cmp_lt;
-    if (types::both_fastint(rb, gval)) {
-        cmp_lt = rb.get_fastint() < gval.get_fastint();
-    } else if ((rb.is_fastint() || rb.is_number()) && (gval.is_fastint() || gval.is_number())) {
-        cmp_lt = tval_numeric_to_double(rb) < tval_numeric_to_double(gval);
-    } else {
-        return pc; // relational coercion may call user code / throw -> switch
-    }
-    // The fused offset is based on the resume point past BOTH words.
-    if (cmp_lt) {
-        if ((ichar)insn.a < 0) {
-            if (th_bwd_edge_needs_safepoint(cold)) return pc;
-            cold.vm.heap.bwd_gc_budget--;
-        }
-        pc += (sz)(2 + (int)(ichar)insn.a);
-    } else {
-        pc += 2;
-    }
-    return th_next(pc, code_end, regs, cold);
-}
-
 // --- Global-slot access (perf-all VarRef fast path). ---
 //
 // pc points AT the current instruction (unlike the switch loop, where curr_pc
@@ -428,74 +382,6 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
     pc++;
-    return th_next(pc, code_end, regs, cold);
-}
-
-// Proven primitive-only global read (see GETGLOBAL_PRIM in bytecode.c3): the
-// slot can never hold a heap value, so no source incref, no track_heap_store.
-// A destination register still holding a stale heap ref needs a decref, which
-// is a real call; taking it here would make this handler non-leaf and cost
-// every hit a five-pair register save/restore, so that case bails to the
-// switch instead (see the leaf-handler note above th_next).
-fn Instruction* th_getglobal_prim(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint pc_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* gic = vic_base + pc_off;
-    HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
-    TVal* pv = &gb.prop_values()[gic.prop_idx];
-    if (env::is_tdz_sentinel(pv)) return pc;
-    TVal* ra = regs + insn.a;
-    if (ra.is_heap_allocated()) return pc;
-    *ra = *pv;
-    pc++;
-    return th_next(pc, code_end, regs, cold);
-}
-
-// Proven primitive-only global write: the overwritten slot value is provably
-// primitive (no decref) and the stored value is provably primitive (no incref/
-// track). Raw slot write.
-fn Instruction* th_putglobal_prim(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint pc_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* gic = vic_base + pc_off;
-    HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
-    TVal* ra = regs + insn.a;
-    TVal* pv = &gb.prop_values()[gic.prop_idx];
-    *pv = *ra;
-    ra.set_undefined();
-    pc++;
-    return th_next(pc, code_end, regs, cold);
-}
-
-// Fused primitive-only global-to-global copy (`a = b`). Two-word instruction:
-// pc holds the destination name (BC); pc+1 (a NOP) holds the source name (BC).
-// Two inline caches: the dst write at pc_off and the src read at pc_off+1. The
-// hot path only,
-// any miss bails to the switch VM, which resolves the cold path AND advances
-// pc past both words. On hit, advance pc by 2.
-fn Instruction* th_move_gg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint dst_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* dic = vic_base + dst_off;
-    hobject::VarICEntry* sic = vic_base + dst_off + 1;
-    HObject* dgb = (HObject*)dic.bindings;
-    HObject* sgb = (HObject*)sic.bindings;
-    if (dgb == null || dic.search_head != (void*)cold.act.lex_env || dgb.shape_id != dic.shape_id || !dic.varref_store_ok) return pc;
-    if (sgb == null || sic.search_head != (void*)cold.act.lex_env || sgb.shape_id != sic.shape_id) return pc;
-    TVal* spv = &sgb.prop_values()[sic.prop_idx];
-    if (env::is_tdz_sentinel(spv)) return pc;
-    // Both slots provably primitive: raw copy, no refcount.
-    dgb.prop_values()[dic.prop_idx] = *spv;
-    pc += 2;
     return th_next(pc, code_end, regs, cold);
 }
 

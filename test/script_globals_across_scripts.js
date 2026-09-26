@@ -14,6 +14,8 @@ check("an earlier script's write is visible",
     "$262.evalScript('function bump() { y1 = 5; }'); var y1 = 1; bump(); y1", 5);
 check("an object stored by another script",
     "var a1 = 1, b1 = 1; $262.evalScript('b1 = {v: 42}'); a1 = b1; b1 = 0; a1.v", 42);
+check("a global made read-only by another script",
+    "var n1 = 0; $262.evalScript('Object.defineProperty(globalThis, \"n1\", {writable: false})'); n1 = 7; n1", 0);
 
 print(fail === 0 ? "script_globals_across_scripts: all passed"
                  : "script_globals_across_scripts: " + fail + " FAILED");

@@ -302,14 +302,6 @@ fn void dump_function(bytecode::CompiledFunction f) {
 $if $feat(TRACE_VM):
     char[200] line_buf;
     for (uint i = 0; i < f.code_count; i++) {
-        // MOVE_GG is a two-word instruction: word 1 BC is destination, word 2 BC is source.
-        if (f.code[i].op == bytecode::Opcode.MOVE_GG && i + 1 < f.code_count) {
-            io::printfn("[%3d] MOVE_GG         g[%d] <- g[%d]",
-                        i, f.code[i].get_bc(), f.code[i + 1].get_bc());
-            io::printfn("[%3d]   (src-word)", i + 1);
-            i++;
-            continue;
-        }
         // WIDE prefix carries the high bytes of the next instruction's operands.
         if (f.code[i].op == bytecode::Opcode.WIDE && i + 1 < f.code_count) {
             bytecode::Instruction wide = f.code[i];

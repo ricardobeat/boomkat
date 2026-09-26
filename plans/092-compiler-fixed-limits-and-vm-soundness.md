@@ -53,15 +53,15 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
 10. [ ] **Reference counts never reach zero for new objects.** An object starts at refcount 1 and gains
     another reference when stored, so reference counting never frees it and only the cycle
     collector does.
-11. [ ] **Script mode shares global slots across scripts incorrectly.** Two whole-program proofs
+11. [x] **Script mode shares global slots across scripts incorrectly.** Two whole-program proofs
     treat a Script as the whole program, but its globals are shared with every other script: an
     earlier script's function, or one evaluated mid-run by the host, reads and writes them at any
     call.
     - [x] Register-resident `var`s, synced only when the script ended, gave other scripts stale
       values and lost their writes. Residency is now module-only.
-    - [ ] The primitive-only proof writes through `PUTGLOBAL_PRIM`/`MOVE_GG` without checking
-      writability or reference counts, so a global another script made read-only or set to an
-      object is written wrongly.
+    - [x] The primitive-only proof wrote through unchecked global opcodes, so a global another
+      script made read-only or set to an object was written wrongly. The proof and its opcodes
+      are removed.
 12. [x] **BigInt keys hash by address.** `coll_hash_key` (`src/builtins/core.c3`) hashes a
     BigInt from its allocation address, but `same_value_zero` compares BigInts by value. Past the
     hash-index threshold, a Map/Set lookup can miss an equal BigInt key or insert a duplicate. Hash

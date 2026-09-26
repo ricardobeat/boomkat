@@ -27,18 +27,18 @@ churn();
 for (var i = 0; i < 100000; i++) { g = g + 1; }
 check(g === 100000, "global inc loop after churn");
 
-// MOVE_GG: `a = b` between two globals, both directions.
+// `a = b` between two globals, both directions.
 var ga = 7, gb = 0;
 churn();
 for (var i = 0; i < 100000; i++) { gb = ga; ga = gb; }
-check(ga === 7 && gb === 7, "MOVE_GG loop after churn");
+check(ga === 7 && gb === 7, "global copy loop after churn");
 
-// JMP_LT_G: compare a register against a global inside a loop.
+// Compare a register against a global inside a loop.
 var limit = 50000;
 var n = 0;
 churn();
 for (var i = 0; i < 100000; i++) { if (i < limit) n++; }
-check(n === 50000, "JMP_LT_G loop after churn");
+check(n === 50000, "global compare loop after churn");
 
 // INC_VAR / DEC_VAR on a function-local env variable.
 function counter() {

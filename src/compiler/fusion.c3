@@ -224,9 +224,6 @@ fn int fusion_conditional_branch_target(Instruction* code, uint j) {
         case Opcode.JMP_SEQ:
         case Opcode.JMP_SNEQ:
             off = (int)(ichar)ins.a;
-        case Opcode.JMP_LT_G:
-            // Two-word form: the offset applies once both words are consumed.
-            return (int)j + 2 + (int)(ichar)ins.a;
         default:
             return -1;
     }
@@ -247,9 +244,8 @@ fn int fusion_conditional_branch_target(Instruction* code, uint j) {
 //
 // Every pc-relative branch form belongs in the switch below, including ones
 // no in-compiler caller can currently observe. The set is JUMP/BREAK/CONTINUE
-// (WIDE_SABC), IF_TRUE/IF_FALSE (A_SBX), the JMP_* compare-branch family and
-// JMP_LT_G (ABC, 8-bit offset in field A), and TRY's catch and finally
-// offsets. Handler entries reached without an offset need no arm here: a
+// (WIDE_SABC), IF_TRUE/IF_FALSE (A_SBX), the JMP_* compare-branch family
+// (ABC, 8-bit offset in field A), and TRY's catch and finally offsets. Handler entries reached without an offset need no arm here: a
 // finally's ENDFINALLY is found by a runtime scan, and its slot always holds
 // a real ENDFINALLY, which no fusion pass can turn into a data word.
 fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_targets) {
@@ -283,19 +279,6 @@ fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_target
                 // ABC form: signed 8-bit offset in field A.
                 int off = (int)(ichar)ins.a;
                 int tgt = (int)i + 1 + off;
-                if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
-            }
-            case Opcode.JMP_LT_G: {
-                // Two-word ABC form: the offset is applied once both words are
-                // consumed, so the base is i+2 rather than i+1.
-                //
-                // JMP_LT_G is installed after every pass in finish() that reads
-                // this bitset, so within the compiler the arm below never fires.
-                // It is here for peephole_scan, which runs on final code where
-                // JMP_LT_G does exist and whose GETPROPC2 fusion turns a slot
-                // into a data word that a branch must never land on.
-                int off = (int)(ichar)ins.a;
-                int tgt = (int)i + 2 + off;
                 if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
             }
             case Opcode.TRY: {
@@ -828,121 +811,5 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
 
         code[i]     = bytecode::make_abc(fused_op, (uint)(char)fused_off, rB, rC);
         code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
-    }
-}
-
-// Fuse the `GETGLOBAL_PRIM rX, S` + `PUTGLOBAL_PRIM rX, D` pair emitted for a
-// plain `a = b` assignment between two proven primitive-only globals into a
-// single two-word `MOVE_GG` superinstruction (word 1: A-BC, BC = dst name D;
-// word 2: a kept NOP whose BC = src name S). This halves the op count for
-// global-to-global copies: no scratch round-trip, one dispatch.
-//
-// `jump_targets` is a caller-provided scratch buffer of at least `code_count`
-// bools (kept out of this module so fusion.c3 stays heap-free).
-//
-// Two-word layout invariant: MOVE_GG's VM handler reads the IMMEDIATELY-next
-// word as the source name, so the pair must be strictly adjacent (j == i+1).
-// Jump-target safety: the MOVE_GG word (i) may itself be a jump target, a
-// loop back-edge landing on it re-executes the full copy, which is correct.
-// But the trailing word (i+1) must NOT be a jump target: a jump landing there
-// would skip the read half. We also require the source register to be a dead
-// scratch temp after the pair (PUTGLOBAL_PRIM consumes it), so nothing
-// downstream reads the value the fused op no longer materializes in a register.
-fn void run_move_gg_fusion(Instruction* code, uint code_count, bool* jump_targets) {
-    if (code_count < 2) { return; }
-
-    // --- Build the jump-target bitset (all branch/handler forms). ---
-    build_jump_targets(code, code_count, jump_targets);
-
-    // --- Fuse each strictly-adjacent GETGLOBAL_PRIM + PUTGLOBAL_PRIM pair. ---
-    for (uint i = 0; i + 1 < code_count; i++) {
-        if (code[i].op != Opcode.GETGLOBAL_PRIM) { continue; }
-        if (code[i + 1].op != Opcode.PUTGLOBAL_PRIM) { continue; }
-
-        // Same scratch register: GETGLOBAL_PRIM writes rX (field A),
-        // PUTGLOBAL_PRIM reads rX (field A).
-        uint rX = (uint)code[i].a;
-        if ((uint)code[i + 1].a != rX) { continue; }
-
-        // The trailing word (i+1) must not be a jump target, landing there
-        // would skip the MOVE_GG read half.
-        if (jump_targets[i + 1]) { continue; }
-
-        // rX must be dead after the pair: PUTGLOBAL_PRIM sets it undefined and
-        // the fused op writes no register, so any later read would see garbage.
-        // Uses the shared scan (which owns the WIDE-format A-is-not-a-register
-        // rule) rather than a private copy, since a hand-copied liveness scan here
-        // is exactly how the shared helper came to be missing that guard.
-        if (fusion_reg_live_from(code, code_count, i + 2, rX)) { continue; }
-
-        uint dst_name = code[i + 1].get_bc();   // D, destination global
-        uint src_name = code[i].get_bc();        // S, source global
-
-        // Word 1: MOVE_GG, BC = dst name. Word 2: kept NOP, BC = src name.
-        code[i]     = bytecode::make_a_bc(Opcode.MOVE_GG, 0, dst_name);
-        code[i + 1] = bytecode::make_a_bc(Opcode.NOP, 0, src_name);
-    }
-}
-
-// Fuse `GETGLOBAL_PRIM rX, S` + `JMP_LT off, rB, rX` into a single two-word
-// `JMP_LT_G` (word 1: ABC, A = the jump offset, B = the surviving register
-// operand; word 2: a kept NOP whose BC = the global's name index S). The
-// loop-bound global is read straight into the comparison instead of being
-// materialized in a scratch register, saving a dispatch per iteration on the
-// hottest loop shape in the suite.
-//
-// `jump_targets` is a caller-provided scratch buffer of at least `code_count`
-// bools (kept out of this module so fusion.c3 stays heap-free).
-//
-// Safety, mirroring run_move_gg_fusion:
-//   - strictly adjacent (the VM reads the immediately-next word as the name)
-//   - the trailing word must NOT be a jump target: landing there would skip
-//     the load half and misread the name word as an instruction. The
-//     JMP_LT_G word itself MAY be a target, re-executing the pair is correct.
-//   - `rX` must be dead after the pair on BOTH the fall-through and the
-//     taken-branch paths, since the fused op materializes no register. The
-//     backward-branch (loop back-edge) case is covered because the scan from
-//     the target runs over the whole loop body.
-//   - the offset carries over unchanged: the original JMP_LT sits one slot
-//     later and branches relative to (i+1)+1, while JMP_LT_G branches
-//     relative to i+2 after consuming both words, the same base.
-fn void run_jmp_lt_g_fusion(Instruction* code, uint code_count, bool* jump_targets) {
-    if (code_count < 2) { return; }
-
-    build_jump_targets(code, code_count, jump_targets);
-
-    for (uint i = 0; i + 1 < code_count; i++) {
-        if (code[i].op != Opcode.GETGLOBAL_PRIM) { continue; }
-        if (code[i + 1].op != Opcode.JMP_LT) { continue; }
-
-        // The branch's C operand must be exactly the register the load wrote.
-        uint rX = (uint)code[i].a;
-        if ((uint)code[i + 1].c != rX) { continue; }
-        // A self-comparison (`rB` is the same scratch) has no register operand
-        // left once the load is folded away; leave it to the plain path.
-        if ((uint)code[i + 1].b == rX) { continue; }
-
-        if (jump_targets[i + 1]) { continue; }
-
-        // The offset needs no re-basing: the original JMP_LT sits at slot i+1
-        // and branches relative to (i+1)+1, while the fused JMP_LT_G sits at
-        // slot i and branches relative to i+2 after consuming both words,
-        // the same base, so the stored offset carries over unchanged.
-        int off = (int)(ichar)code[i + 1].a;
-
-        // rX must be dead on the fall-through path...
-        if (fusion_reg_live_from(code, code_count, i + 2, rX)) { continue; }
-        // ...and on the taken-branch path.
-        int tgt = (int)i + 2 + off;
-        if (tgt < 0 || (uint)tgt >= code_count) { continue; }
-        if (fusion_reg_live_from(code, code_count, (uint)tgt, rX)) { continue; }
-
-        uint name_idx = code[i].get_bc();
-
-        // Word 1: JMP_LT_G, A = re-based offset, B = surviving register operand.
-        // Word 2: kept NOP, BC = the global's name index.
-        code[i]     = bytecode::make_abc(Opcode.JMP_LT_G, (uint)(char)(ichar)off,
-                                         (uint)code[i + 1].b, 0);
-        code[i + 1] = bytecode::make_a_bc(Opcode.NOP, 0, name_idx);
     }
 }

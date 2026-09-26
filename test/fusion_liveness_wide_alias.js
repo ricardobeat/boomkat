@@ -170,9 +170,7 @@ function compound(n) {
 eq(compound(4), 12, 'compound assignment scratch across branchy loop body');
 eq(compound(5), 11, 'compound assignment scratch across branchy loop body, odd n');
 
-// --- MOVE_GG axis: run_move_gg_fusion used to carry its own hand-copied
-// liveness scan; it now calls the shared helper. Global-to-global copies
-// interleaved with branches exercise it.
+// --- Global-to-global copies interleaved with branches.
 var ga = 1, gb = 2, gc = 3;
 function move_gg_driver(n) {
     var out = [];
@@ -183,7 +181,7 @@ function move_gg_driver(n) {
     }
     return out.join('|');
 }
-eq(move_gg_driver(4), '1/3/0|3/3/1|3/1/2|1/1/3', 'MOVE_GG pair across a branchy loop');
+eq(move_gg_driver(4), '1/3/0|3/3/1|3/1/2|1/1/3', 'global copies across a branchy loop');
 
 print('fusion_liveness_wide_alias: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }
