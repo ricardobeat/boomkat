@@ -267,7 +267,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                         TVal old_val = b.prop_values()[vic.prop_idx];
                         if (!env::is_tdz_sentinel(&old_val)
-                            && b.get_prop_flags(vic.prop_idx, ds.vm.heap).writable) {
+                            && vic.prop_flags.writable) {
                             // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
                             // lex_env == parent env, so a hit here is a legitimate parent
                             // lookup, not own-local. Own-local leaks surface as 'not defined'

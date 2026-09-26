@@ -638,7 +638,7 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    if (b.get_prop_flags(vic.prop_idx, cold.vm.heap).is_accessor) return pc; // getter -> switch
+    if (vic.prop_flags.is_accessor) return pc; // getter -> switch
     TVal v = b.prop_values()[vic.prop_idx];
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
@@ -681,7 +681,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     TVal* pv = &b.prop_values()[vic.prop_idx];
-    hobject::PropFlags fl = b.get_prop_flags(vic.prop_idx, cold.vm.heap);
+    hobject::PropFlags fl = vic.prop_flags;
     if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
     // Inline release, as in th_getvar: keeps the handler leaf without pushing
@@ -709,7 +709,7 @@ fn Instruction* th_putvar_snap_number(Instruction* pc, Instruction* code_end, TV
     HObject* bindings = owner.bindings;
     if (bindings.shape_id != vic.shape_id
         || cold.vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    hobject::PropFlags flags = bindings.get_prop_flags(vic.prop_idx, cold.vm.heap);
+    hobject::PropFlags flags = vic.prop_flags;
     if (!flags.writable || flags.is_accessor) return pc;
     TVal* slot = &bindings.prop_values()[vic.prop_idx];
     if (!slot.is_fastint() && !slot.is_number()) return pc;
@@ -737,7 +737,7 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     TVal old_val = b.prop_values()[vic.prop_idx];
-    if (env::is_tdz_sentinel(&old_val) || !b.get_prop_flags(vic.prop_idx, cold.vm.heap).writable) return pc;
+    if (env::is_tdz_sentinel(&old_val) || !vic.prop_flags.writable) return pc;
     if (!old_val.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
     long v = old_val.get_fastint() + 1L;
