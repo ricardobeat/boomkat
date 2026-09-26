@@ -3109,23 +3109,30 @@ fn void? CompilerContext.while_statement(&self) {
 // (ES2015 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
 // before the old environment is popped: after the pop, later bindings in a
 // multi-declarator head are unreachable.
-fn void CompilerContext.emit_create_per_iteration_env(&self,
-    uint[] name_idxs, bool[] is_const, uint count)
+struct PerIterBinding {
+    uint name_idx;
+    bool is_const;
+}
+
+alias PerIterBindings = List{PerIterBinding};
+
+fn void CompilerContext.emit_create_per_iteration_env(&self, PerIterBinding[] bindings)
 {
-    ushort[8] temps;
-    for (uint i = 0; i < count; i++) {
-        temps[i] = self.alloc_reg();
-        self.emit_a_bc(Opcode.GETVAR, (uint)temps[i], name_idxs[i]);
+    List{ushort} temps;
+    temps.init(mem, bindings.len);
+    defer temps.free();
+    foreach (b : bindings) {
+        ushort reg = self.alloc_reg();
+        temps.push(reg);
+        self.emit_a_bc(Opcode.GETVAR, (uint)reg, b.name_idx);
     }
     self.emit_simple(Opcode.POP_LEX);
     self.emit_simple(Opcode.PUSH_LEX);
-    for (uint i = 0; i < count; i++) {
-        Opcode store_op = is_const[i] ? Opcode.PUTLEX_C : Opcode.PUTLEX;
-        self.emit_a_bc(store_op, (uint)temps[i], name_idxs[i]);
+    foreach (i, b : bindings) {
+        Opcode store_op = b.is_const ? Opcode.PUTLEX_C : Opcode.PUTLEX;
+        self.emit_a_bc(store_op, (uint)temps[i], b.name_idx);
     }
-    for (uint i = count; i > 0; i--) {
-        self.free_reg(temps[i - 1]);
-    }
+    foreach_r (reg : temps.array_view()) self.free_reg(reg);
 }
 
 // Annex B.3.5 detection: the lexer is at the `=` of a `for (var x = ...)` head.
@@ -3260,10 +3267,9 @@ fn void? CompilerContext.for_statement(&self) {
     // (env-resident); at global scope primary_expr always uses GETVAR and i++
     // compiles to INC_VAR via a peephole, keeping the env in sync.
     bool needs_periterenv = false;
-    char[][8] periterenv_names;
-    uint[8] periterenv_name_idxs;
-    bool[8] periterenv_is_const;
-    uint periterenv_count = 0;
+    PerIterBindings periterenv;
+    periterenv.init(mem);
+    defer periterenv.free();
 
     // Check for for-in / for-of
     TokenType next_tt = self.peek_type();
@@ -3733,15 +3739,12 @@ fn void? CompilerContext.for_statement(&self) {
                 defer free_destruct_binds(&fdbinds);
                 bool is_object_pattern = self.declare_pattern(&fdbinds, decl_kind, is_lexical)!;
                 // Captured lexical leaves get a fresh binding per iteration.
-                List{uint} fd_periter_name_idxs;
-                List{bool} fd_periter_is_const;
-                fd_periter_name_idxs.init(mem);
-                fd_periter_is_const.init(mem);
-                defer { fd_periter_name_idxs.free(); fd_periter_is_const.free(); }
+                PerIterBindings fd_periter;
+                fd_periter.init(mem);
+                defer fd_periter.free();
                 foreach (&b : fdbinds) {
                     if (b.is_synthetic || !is_lexical || !self.is_captured_name(self.bind_name(b))) continue;
-                    fd_periter_name_idxs.push(b.name_idx);
-                    fd_periter_is_const.push(is_const);
+                    fd_periter.push({ b.name_idx, is_const });
                 }
 
                 self.expect(TokenType.IN)!;
@@ -3787,10 +3790,8 @@ fn void? CompilerContext.for_statement(&self) {
                 // replacing the current environment so closures from this body
                 // retain the values for this iteration.
                 uint cycle_label = self.code_count;
-                if (fd_periter_name_idxs.len() > 0) {
-                    self.emit_create_per_iteration_env(fd_periter_name_idxs.array_view(),
-                                                       fd_periter_is_const.array_view(),
-                                                       (uint)fd_periter_name_idxs.len());
+                if (fd_periter.len() > 0) {
+                    self.emit_create_per_iteration_env(fd_periter.array_view());
                 }
                 self.loop_stack[self.loop_depth - 1].continue_target = cycle_label;
 
@@ -3831,12 +3832,9 @@ fn void? CompilerContext.for_statement(&self) {
                 defer head_names.free();
                 self.destructure_declaration(decl_kind, is_lexical, is_const, &head_names)!;
                 if (is_lexical) {
-                    for (uint hi = 0; hi < head_names.len() && periterenv_count < 8; hi++) {
+                    for (uint hi = 0; hi < head_names.len(); hi++) {
                         if (self.is_captured_name(head_names[hi])) needs_periterenv = true;
-                        periterenv_names[periterenv_count] = head_names[hi];
-                        periterenv_name_idxs[periterenv_count] = self.add_string_constant(head_names[hi]);
-                        periterenv_is_const[periterenv_count] = is_const;
-                        periterenv_count++;
+                        periterenv.push({ self.add_string_constant(head_names[hi]), is_const });
                     }
                 }
                 head_names.clear();
@@ -3850,12 +3848,9 @@ fn void? CompilerContext.for_statement(&self) {
                     // Register a comma-separated pattern's leaves for the
                     // per-iteration env, same as the first declarator above.
                     if (is_lexical && (nt == TokenType.LBRACKET || nt == TokenType.LBRACE)) {
-                        for (uint hi = 0; hi < head_names.len() && periterenv_count < 8; hi++) {
+                        for (uint hi = 0; hi < head_names.len(); hi++) {
                             if (self.is_captured_name(head_names[hi])) needs_periterenv = true;
-                            periterenv_names[periterenv_count] = head_names[hi];
-                            periterenv_name_idxs[periterenv_count] = self.add_string_constant(head_names[hi]);
-                            periterenv_is_const[periterenv_count] = is_const;
-                            periterenv_count++;
+                            periterenv.push({ self.add_string_constant(head_names[hi]), is_const });
                         }
                     }
                     head_names.clear();
@@ -3887,11 +3882,8 @@ fn void? CompilerContext.for_statement(&self) {
                         if (is_lexical && self.is_captured_name(extra_name2)) {
                             needs_periterenv = true;
                         }
-                        if (is_lexical && periterenv_count < 8) {
-                            periterenv_names[periterenv_count] = extra_name2;
-                            periterenv_name_idxs[periterenv_count] = extra_name_idx;
-                            periterenv_is_const[periterenv_count] = is_const;
-                            periterenv_count++;
+                        if (is_lexical) {
+                            periterenv.push({ extra_name_idx, is_const });
                         }
                     }
                 }
@@ -4056,11 +4048,8 @@ fn void? CompilerContext.for_statement(&self) {
                 // in this body therefore retain this iteration's environment.
                 uint cycle_label = self.code_count;
                 if (needs_forin_periter) {
-                    uint[1] cycle_name_idxs;
-                    bool[1] cycle_is_const;
-                    cycle_name_idxs[0] = forin_name_idx;
-                    cycle_is_const[0] = is_const;
-                    self.emit_create_per_iteration_env(cycle_name_idxs[..], cycle_is_const[..], 1);
+                    PerIterBinding[1] cycle = { { forin_name_idx, is_const } };
+                    self.emit_create_per_iteration_env(cycle[..]);
                 }
                 self.loop_stack[self.loop_depth - 1].continue_target = cycle_label;
 
@@ -4181,11 +4170,8 @@ fn void? CompilerContext.for_statement(&self) {
             if (is_lexical && self.is_captured_name(name_tok.str_value)) {
                 needs_periterenv = true;
             }
-            if (is_lexical && periterenv_count < 8) {
-                periterenv_names[periterenv_count] = name_tok.str_value;
-                periterenv_name_idxs[periterenv_count] = for_var_name_idx;
-                periterenv_is_const[periterenv_count] = is_const;
-                periterenv_count++;
+            if (is_lexical) {
+                periterenv.push({ for_var_name_idx, is_const });
             }
             if (is_lexical) { self.emit_simple(Opcode.PUSH_LEX); self.cur_lex_depth++; }
             if (self.match(TokenType.ASSIGN)) {
@@ -4230,12 +4216,9 @@ fn void? CompilerContext.for_statement(&self) {
                     self.destructure_declaration(decl_kind, is_lexical, is_const, &extra_names)!;
                 }
                 if (is_lexical && (nt2 == TokenType.LBRACKET || nt2 == TokenType.LBRACE)) {
-                    for (uint ei = 0; ei < extra_names.len() && periterenv_count < 8; ei++) {
+                    for (uint ei = 0; ei < extra_names.len(); ei++) {
                         if (self.is_captured_name(extra_names[ei])) needs_periterenv = true;
-                        periterenv_names[periterenv_count] = extra_names[ei];
-                        periterenv_name_idxs[periterenv_count] = self.add_string_constant(extra_names[ei]);
-                        periterenv_is_const[periterenv_count] = is_const;
-                        periterenv_count++;
+                        periterenv.push({ self.add_string_constant(extra_names[ei]), is_const });
                     }
                 }
                 if (nt2 != TokenType.LBRACKET && nt2 != TokenType.LBRACE) {
@@ -4278,11 +4261,8 @@ fn void? CompilerContext.for_statement(&self) {
                     if (is_lexical && self.is_captured_name(extra_name2)) {
                         needs_periterenv = true;
                     }
-                    if (is_lexical && periterenv_count < 8) {
-                        periterenv_names[periterenv_count] = extra_name2;
-                        periterenv_name_idxs[periterenv_count] = extra_name_idx;
-                        periterenv_is_const[periterenv_count] = is_const;
-                        periterenv_count++;
+                    if (is_lexical) {
+                        periterenv.push({ extra_name_idx, is_const });
                     }
                 }
             }
@@ -4432,7 +4412,7 @@ fn void? CompilerContext.for_statement(&self) {
     // created by the test and first body iteration.
     if (needs_periterenv) {
         self.emit_create_per_iteration_env(
-            periterenv_name_idxs[..], periterenv_is_const[..], periterenv_count);
+            periterenv.array_view());
     }
 
     // ----------------------------------------------------------------
@@ -4529,7 +4509,7 @@ fn void? CompilerContext.for_statement(&self) {
     uint incr_label = self.code_count;
     if (needs_periterenv) {
         self.emit_create_per_iteration_env(
-            periterenv_name_idxs[..], periterenv_is_const[..], periterenv_count);
+            periterenv.array_view());
     }
     if (self.loop_depth > 0) {
         self.loop_stack[self.loop_depth - 1].continue_target = incr_label;
