@@ -6135,6 +6135,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                         // computed-key branch below) so an abrupt completion
                         // (e.g. Object.create(null) with no toString/valueOf)
                         // throws here rather than being silently accepted.
+                        key_reg = self.shield_computed_key(key_reg);
                         self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
                     } else {
                         Token prop_tok;
@@ -6314,7 +6315,10 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // expression reads) or a ToPropertyKey abrupt completion is
                 // observed at the right point, rather than deferred to the
                 // INITGET/INITSET/INITPROP opcode after the value has already
-                // been evaluated.
+                // been evaluated. A key that is a variable's own register is
+                // copied first, so the coercion and the value expression
+                // cannot change the variable or the key.
+                key_reg = self.shield_computed_key(key_reg);
                 self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
             } else if (self.match(TokenType.ELLIPSIS)) {
                 // Object spread: ...expr
