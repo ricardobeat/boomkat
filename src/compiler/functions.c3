@@ -13,9 +13,6 @@ import std::io;
 // Function compilation
 // ============================================================================
 
-// Maximum number of bindings collected from destructuring function parameters.
-const uint MAX_DESTRUCT_BINDS = 64;
-
 // A parameter slot that records no name: destructuring patterns bind their
 // own leaves, so they never contribute a string constant. Out of constant-
 // pool range, so emit_param_prologue can skip these slots.
@@ -70,12 +67,11 @@ enum DestructStoreMode {
     ASSIGN_TARGET,
 }
 
-// Collected info for a single destructured binding from a function parameter.
+// One element of a destructuring pattern: a leaf target, the synthetic
+// extraction point of a nested pattern, or an elision hole.
 struct DestructBind {
-    uint name_idx;       // constant index of the binding name (0xFFFFFFFF for synthetic)
+    uint name_idx;       // constant index of a leaf's name (see bind_name); unused by synthetics
     uint key_idx;        // constant index of the property key (for object patterns)
-    char[64] name_buf;   // binding name string buffer (for declare_var)
-    ushort name_len;     // length of the binding name
     ushort arg_idx;      // which formal parameter index this belongs to
     ushort index;        // for array patterns: the element index
     bool is_object;      // true = object pattern, false = array pattern
@@ -162,6 +158,57 @@ struct DestructBind {
     // emit_private_access is NOT safe to hold onto past that point: a getter
     // call writes its `this` argument at [result_reg + 1], which can land on
     // an arbitrary earlier temp.
+    //
+    // Registers, both 0xFFFF until assigned. group_reg holds a synthetic's
+    // extracted value, the source its children read from. binding_reg is a
+    // leaf's destination: the caller sets it to a declared or resolved
+    // variable, or leaves it for emit_destruct_bindings to allocate.
+    ushort group_reg;
+    ushort binding_reg;
+}
+
+// A destructuring pattern flattened in source order. A child's parent_idx is
+// its synthetic's index in the same list, so a pattern holds at most 0xFFFF
+// binds (0xFFFF itself means "no parent").
+alias DestructBinds = List{DestructBind};
+
+// Append `b` to a pattern with its registers unassigned, returning its index.
+// The pattern takes ownership of b's deferred snapshots, freeing them here if
+// the append fails.
+fn ushort? CompilerContext.add_bind(&self, DestructBinds* binds, DestructBind b) {
+    if (binds.len() >= 0xFFFF) {
+        if (b.deferred_target != null) mem::free(b.deferred_target);
+        if (b.deferred_computed_key != null) mem::free(b.deferred_computed_key);
+        return self.fail("destructuring pattern has too many elements")~;
+    }
+    b.group_reg = 0xFFFF;
+    b.binding_reg = 0xFFFF;
+    binds.push(b);
+    return (ushort)(binds.len() - 1);
+}
+
+// Move a snapshot out of the variable that owns it, for handing to add_bind.
+fn DeferredTarget* take_deferred(DeferredTarget** owner) {
+    DeferredTarget* d = *owner;
+    *owner = null;
+    return d;
+}
+
+// Release a pattern, including any deferred snapshot a compile error left
+// unconsumed (emit_deferred_target and emit_deferred_computed_key free the
+// ones they replay).
+fn void free_destruct_binds(DestructBinds* binds) {
+    foreach (&b : binds) {
+        if (b.deferred_target != null) mem::free(b.deferred_target);
+        if (b.deferred_computed_key != null) mem::free(b.deferred_computed_key);
+    }
+    binds.free();
+}
+
+// The name a leaf bind declares or assigns. It lives in the constant pool of
+// the context that collected the pattern, interned and stable for the compile.
+fn char[] CompilerContext.bind_name(&self, DestructBind* b) {
+    return ((HString*)self.constants[b.name_idx].get_heapptr()).get_data();
 }
 
 // Lexer position captured by collect_assign_target for a deferred member
@@ -269,10 +316,10 @@ fn void? SeenParams.declare(&self, char[] name, bool allow_restricted = false) {
 // vice versa). Instead every prologue calls this once, after the whole list is
 // parsed, with the same SeenParams the simple parameters populated. Synthetic
 // binds (intermediate extraction points) and elision holes are not BoundNames.
-fn void? SeenParams.declare_destructured(&self, DestructBind[] binds, uint count) {
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].is_synthetic || binds[i].is_hole || binds[i].is_member_target) continue;
-        self.declare(binds[i].name_buf[:binds[i].name_len])!;
+fn void? SeenParams.declare_destructured(&self, CompilerContext* ctx, DestructBind[] binds) {
+    foreach (&b : binds) {
+        if (b.is_synthetic || b.is_hole || b.is_member_target) continue;
+        self.declare(ctx.bind_name(b))!;
     }
 }
 
@@ -300,11 +347,21 @@ fn void? SeenParams.check_no_duplicates(&self) {
     }
 }
 
+// Declare a parameter pattern's leaves as function-scope variables. Synthetic
+// binds are extraction points and declare nothing.
+fn void CompilerContext.declare_param_pattern(&self, DestructBind[] binds) {
+    foreach (&b : binds) {
+        if (b.is_synthetic) continue;
+        b.binding_reg = self.declare_var(self.bind_name(b), VAR, true);
+        self.emit_a_bc(Opcode.DECLVAR, (uint)b.binding_reg, b.name_idx);
+    }
+}
+
 // Parse an object destructuring pattern within a function parameter list.
 // The '{' token has already been consumed.
-// Collects all leaf-level binding names into the provided arrays.
+// Appends the pattern's binds to `binds`.
 fn void? CompilerContext.collect_obj_param_binds(&self,
-    DestructBind[] binds, uint* count, ushort src_reg, ushort parent_idx)
+    DestructBinds* binds, ushort src_reg, ushort parent_idx)
 {
     // Note: this function is shared between formal-parameter destructuring
     // (where the FormalParameter's default-value gate at compile_default_expr
@@ -337,17 +394,13 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
         // Rest element: {...rest}
         if (self.match(TokenType.ELLIPSIS)) {
             Token rest_tok = self.expect_binding_identifier()!;
-            if (*count < binds.len) {
-                binds[*count].name_idx = self.add_string_constant(rest_tok.str_value);
-                binds[*count].key_idx = 0xFFFF;
-                binds[*count].is_object = true;
-                binds[*count].arg_idx = src_reg;
-                binds[*count].parent_idx = parent_idx;
-                ushort nl = (ushort)(rest_tok.str_value.len < 63 ? rest_tok.str_value.len : 63);
-                binds[*count].name_len = nl;
-                for (int j = 0; j < nl; j++) { binds[*count].name_buf[j] = rest_tok.str_value[j]; }
-                (*count)++;
-            }
+            self.add_bind(binds, {
+                .name_idx = self.add_string_constant(rest_tok.str_value),
+                .key_idx = 0xFFFF,
+                .is_object = true,
+                .arg_idx = src_reg,
+                .parent_idx = parent_idx,
+            })!;
             // BindingRestProperty must be last (ES2018 §13.3.3): no trailing
             // comma may follow, so `{...a,}` is an early SyntaxError.
             if (self.check(TokenType.COMMA)) return COMPILE_ERROR~;
@@ -365,7 +418,9 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
         // destructuring on the key itself.)
         if (self.check(TokenType.LBRACKET)) {
             self.advance()!; // consume '['
+            // The snapshot is ours until add_bind hands it to the pattern.
             DeferredTarget* deferred_ck = null;
+            defer catch { if (deferred_ck != null) mem::free(deferred_ck); }
             ushort ck_reg = 0xFFFF;
             if (self.in_formal_params) {
                 // Evaluate the key expression NOW into a persistent register;
@@ -399,56 +454,49 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             if (self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET)) {
                 // Computed key with a nested pattern target: { [k]: {x} }.
                 bool is_obj = self.check(TokenType.LBRACE);
-                if (*count < binds.len) {
-                    binds[*count].is_computed_key = true;
-                    binds[*count].computed_key_reg = ck_reg;
-                    binds[*count].deferred_computed_key = deferred_ck;
-                    binds[*count].is_object = true;
-                    binds[*count].arg_idx = src_reg;
-                    binds[*count].parent_idx = parent_idx;
-                    binds[*count].is_synthetic = true;
-                    (*count)++;
-                } else {
-                    if (deferred_ck != null) { mem::free(deferred_ck); }
-                }
-                ushort synth_idx = (ushort)(*count - 1);
+                ushort synth_idx = self.add_bind(binds, {
+                    .is_computed_key = true,
+                    .computed_key_reg = ck_reg,
+                    .deferred_computed_key = take_deferred(&deferred_ck),
+                    .is_object = true,
+                    .arg_idx = src_reg,
+                    .parent_idx = parent_idx,
+                    .is_synthetic = true,
+                })!;
                 outer_synth_idx = synth_idx;
                 last_was_synth = true;
                 self.advance()!; // consume '{' or '['
                 if (is_obj) {
-                    self.collect_obj_param_binds(binds, count, src_reg, synth_idx)!;
+                    self.collect_obj_param_binds(binds, src_reg, synth_idx)!;
                 } else {
-                    self.collect_arr_param_binds(binds, count, src_reg, synth_idx)!;
+                    self.collect_arr_param_binds(binds, src_reg, synth_idx)!;
                 }
                 // Default after a computed-key nested pattern:
                 // `{ [k]: { x } = d }` — the default belongs to the
                 // synthetic binding (this branch exits the loop directly,
                 // skipping the shared default handling below).
                 if (self.match(TokenType.ASSIGN)) {
-                    if (*count > 0) {
-                        binds[synth_idx].has_default = true;
-                        binds[synth_idx].default_func_idx =
-                            self.add_inner_func(self.compile_default_expr()!);
-                    }
+                    uint def_idx = self.add_inner_func(self.compile_default_expr()!);
+                    DestructBind* sb = binds.get_ref(synth_idx);
+                    sb.has_default = true;
+                    sb.default_func_idx = def_idx;
                 }
             } else {
                 Token bind = self.expect_binding_identifier()!;
-                if (*count < binds.len) {
-                    binds[*count].name_idx = self.add_string_constant(bind.str_value);
-                    binds[*count].is_computed_key = true;
-                    binds[*count].computed_key_reg = ck_reg;
-                    binds[*count].deferred_computed_key = deferred_ck;
-                    binds[*count].is_object = true;
-                    binds[*count].arg_idx = src_reg;
-                    binds[*count].parent_idx = parent_idx;
-                    if (self.match(TokenType.ASSIGN)) {
-                        binds[*count].has_default = true;
-                        binds[*count].default_func_idx =
-                            self.add_inner_func(self.compile_default_expr(bind.str_value)!);
-                    }
-                    (*count)++;
-                } else {
-                    if (deferred_ck != null) { mem::free(deferred_ck); }
+                ushort leaf = self.add_bind(binds, {
+                    .name_idx = self.add_string_constant(bind.str_value),
+                    .is_computed_key = true,
+                    .computed_key_reg = ck_reg,
+                    .deferred_computed_key = take_deferred(&deferred_ck),
+                    .is_object = true,
+                    .arg_idx = src_reg,
+                    .parent_idx = parent_idx,
+                })!;
+                if (self.match(TokenType.ASSIGN)) {
+                    CompiledFunction* df = self.compile_default_expr(bind.str_value)!;
+                    DestructBind* lb = binds.get_ref(leaf);
+                    lb.has_default = true;
+                    lb.default_func_idx = self.add_inner_func(df);
                 }
                 last_was_synth = false;
             }
@@ -468,36 +516,30 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
                 // Create a synthetic binding for the intermediate extraction
                 // e.g. {a: {x,y}} → synthetic for "a" extracts the nested object
                 bool is_obj = self.check(TokenType.LBRACE);
-                if (*count < binds.len) {
-                    binds[*count].key_idx = prop_key_idx;
-                    binds[*count].is_object = true;
-                    binds[*count].arg_idx = src_reg;
-                    binds[*count].parent_idx = parent_idx;
-                    binds[*count].is_synthetic = true;
-                    (*count)++;
-                }
-                ushort synth_idx = (ushort)(*count - 1);
+                ushort synth_idx = self.add_bind(binds, {
+                    .key_idx = prop_key_idx,
+                    .is_object = true,
+                    .arg_idx = src_reg,
+                    .parent_idx = parent_idx,
+                    .is_synthetic = true,
+                })!;
                 outer_synth_idx = synth_idx;
                 last_was_synth = true;
                 self.advance()!; // consume '{' or '['
                 if (is_obj) {
-                    self.collect_obj_param_binds(binds, count, src_reg, synth_idx)!;
+                    self.collect_obj_param_binds(binds, src_reg, synth_idx)!;
                 } else {
-                    self.collect_arr_param_binds(binds, count, src_reg, synth_idx)!;
+                    self.collect_arr_param_binds(binds, src_reg, synth_idx)!;
                 }
             } else {
                 Token bind = self.expect_binding_identifier()!;
-                if (*count < binds.len) {
-                    binds[*count].name_idx = self.add_string_constant(bind.str_value);
-                    binds[*count].key_idx = prop_key_idx;
-                    binds[*count].is_object = true;
-                    binds[*count].arg_idx = src_reg;
-                    binds[*count].parent_idx = parent_idx;
-                    ushort nl = (ushort)(bind.str_value.len < 63 ? bind.str_value.len : 63);
-                    binds[*count].name_len = nl;
-                    for (int j = 0; j < nl; j++) { binds[*count].name_buf[j] = bind.str_value[j]; }
-                    (*count)++;
-                }
+                self.add_bind(binds, {
+                    .name_idx = self.add_string_constant(bind.str_value),
+                    .key_idx = prop_key_idx,
+                    .is_object = true,
+                    .arg_idx = src_reg,
+                    .parent_idx = parent_idx,
+                })!;
             }
         } else {
             // Shorthand: {a}, direct child of this destructuring param.
@@ -526,33 +568,29 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
             if (prop_key_tt == TokenType.IDENTIFIER && is_restricted_name(prop_key, strict: self.is_strict)) {
                 return COMPILE_ERROR~;
             }
-            if (*count < binds.len) {
-                binds[*count].name_idx = prop_key_idx;
-                binds[*count].key_idx = prop_key_idx;
-                binds[*count].is_object = true;
-                binds[*count].arg_idx = src_reg;
-                binds[*count].parent_idx = parent_idx;
-                ushort nl = (ushort)(prop_key.len < 63 ? prop_key.len : 63);
-                binds[*count].name_len = nl;
-                for (int j = 0; j < nl; j++) { binds[*count].name_buf[j] = prop_key[j]; }
-                (*count)++;
-            }
+            self.add_bind(binds, {
+                .name_idx = prop_key_idx,
+                .key_idx = prop_key_idx,
+                .is_object = true,
+                .arg_idx = src_reg,
+                .parent_idx = parent_idx,
+            })!;
         }
 
         // Default: {a = expr} or {a: pattern = expr}, compile as a thunk
         // function like regular defaults. When the previous element was a
         // nested pattern, the default belongs to the synthetic binding.
         if (self.match(TokenType.ASSIGN)) {
-            if (*count > 0) {
-                ushort target_idx = last_was_synth ? outer_synth_idx : (ushort)(*count - 1);
-                binds[target_idx].has_default = true;
-                // Pass the binding name through so NamedEvaluation tags an
-                // anonymous fn/arrow/class/gen default with the binding name.
-                // (ES2015 §13.3.3.7 step 3 / §14.1.20 SetFunctionName.)
-                CompiledFunction* default_func = self.compile_default_expr(binds[target_idx].name_buf[:(uint)binds[target_idx].name_len])!;
-                uint def_idx = self.add_inner_func(default_func);
-                binds[target_idx].default_func_idx = def_idx;
-            }
+            ushort target_idx = last_was_synth ? outer_synth_idx : (ushort)(binds.len() - 1);
+            // Pass the binding name through so NamedEvaluation tags an
+            // anonymous fn/arrow/class/gen default with the binding name.
+            // (ES2015 §13.3.3.7 step 3 / §14.1.20 SetFunctionName.) A nested
+            // pattern has no name to give.
+            char[] default_name = last_was_synth ? "" : self.bind_name(binds.get_ref(target_idx));
+            CompiledFunction* default_func = self.compile_default_expr(default_name)!;
+            DestructBind* tb = binds.get_ref(target_idx);
+            tb.has_default = true;
+            tb.default_func_idx = self.add_inner_func(default_func);
         }
 
         if (!self.match(TokenType.COMMA)) break;
@@ -564,13 +602,13 @@ fn void? CompilerContext.collect_obj_param_binds(&self,
 }
 
 // Parse an array destructuring pattern. The '[' token has already been
-// consumed. Collects all leaf-level binding names into the provided arrays.
+// consumed. Appends the pattern's binds to `binds`.
 //
 // Shared between formal-parameter destructuring and statement destructuring,
 // the caller is responsible for setting `in_formal_params` correctly before
 // invoking us (see `collect_obj_param_binds` for the rationale).
 fn void? CompilerContext.collect_arr_param_binds(&self,
-    DestructBind[] binds, uint* count, ushort src_reg, ushort parent_idx)
+    DestructBinds* binds, ushort src_reg, ushort parent_idx)
 {
     // See collect_obj_param_binds for why we don't touch in_formal_params here,
     // and for why the IsSimpleParameterList signal is gated on it.
@@ -583,16 +621,12 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
     // would emit no code at all and `f([])` would silently accept a
     // non-iterable (ES2015 §13.3.3 IteratorBindingInitialization).
     if (self.check(TokenType.RBRACKET)) {
-        if (*count < binds.len) {
-            binds[*count].key_idx = 0;
-            binds[*count].index = 0;
-            binds[*count].is_object = false;
-            binds[*count].arg_idx = src_reg;
-            binds[*count].parent_idx = parent_idx;
-            binds[*count].is_synthetic = true;
-            binds[*count].is_empty_pattern = true;
-            (*count)++;
-        }
+        self.add_bind(binds, {
+            .arg_idx = src_reg,
+            .parent_idx = parent_idx,
+            .is_synthetic = true,
+            .is_empty_pattern = true,
+        })!;
     }
 
     for (;;) {
@@ -606,16 +640,13 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
         if (self.match(TokenType.COMMA)) {
             // Elision: record a hole so emit_destruct_bindings advances the
             // iterator at this position per IteratorBindingInitialization §13.3.3.
-            if (*count < binds.len) {
-                binds[*count].key_idx = 0;
-                binds[*count].index = elem_idx;
-                binds[*count].is_object = false;
-                binds[*count].arg_idx = src_reg;
-                binds[*count].parent_idx = parent_idx;
-                binds[*count].is_synthetic = true;
-                binds[*count].is_hole = true;
-                (*count)++;
-            }
+            self.add_bind(binds, {
+                .index = elem_idx,
+                .arg_idx = src_reg,
+                .parent_idx = parent_idx,
+                .is_synthetic = true,
+                .is_hole = true,
+            })!;
             elem_idx++;
             continue;
         }
@@ -625,38 +656,30 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
             // Nested rest pattern: create a synthetic for the rest then recurse
             if (self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET)) {
                 bool is_obj = self.check(TokenType.LBRACE);
-                if (*count < binds.len) {
-                    binds[*count].key_idx = 0xFFFF;
-                    binds[*count].index = elem_idx;
-                    binds[*count].is_object = false;
-                    binds[*count].arg_idx = src_reg;
-                    binds[*count].parent_idx = parent_idx;
-                    binds[*count].is_synthetic = true;
-                    (*count)++;
-                }
-                ushort synth_idx = (ushort)(*count - 1);
+                ushort synth_idx = self.add_bind(binds, {
+                    .key_idx = 0xFFFF,
+                    .index = elem_idx,
+                    .arg_idx = src_reg,
+                    .parent_idx = parent_idx,
+                    .is_synthetic = true,
+                })!;
                 outer_synth_idx = synth_idx;
                 last_was_synth = true;
                 self.advance()!;
                 if (is_obj) {
-                    self.collect_obj_param_binds(binds, count, src_reg, synth_idx)!;
+                    self.collect_obj_param_binds(binds, src_reg, synth_idx)!;
                 } else {
-                    self.collect_arr_param_binds(binds, count, src_reg, synth_idx)!;
+                    self.collect_arr_param_binds(binds, src_reg, synth_idx)!;
                 }
             } else {
                 Token rest_tok = self.expect_binding_identifier()!;
-                if (*count < binds.len) {
-                    binds[*count].name_idx = self.add_string_constant(rest_tok.str_value);
-                    binds[*count].key_idx = 0xFFFF;
-                    binds[*count].index = elem_idx;
-                    binds[*count].is_object = false;
-                    binds[*count].arg_idx = src_reg;
-                    binds[*count].parent_idx = parent_idx;
-                    ushort nl = (ushort)(rest_tok.str_value.len < 63 ? rest_tok.str_value.len : 63);
-                    binds[*count].name_len = nl;
-                    for (int j = 0; j < nl; j++) { binds[*count].name_buf[j] = rest_tok.str_value[j]; }
-                    (*count)++;
-                }
+                self.add_bind(binds, {
+                    .name_idx = self.add_string_constant(rest_tok.str_value),
+                    .key_idx = 0xFFFF,
+                    .index = elem_idx,
+                    .arg_idx = src_reg,
+                    .parent_idx = parent_idx,
+                })!;
             }
             // BindingRestElement must be last (ES2022 §13.3.3): no element and
             // no trailing comma/elision may follow, so `[...a,]` is an early
@@ -668,54 +691,44 @@ fn void? CompilerContext.collect_arr_param_binds(&self,
         // Nested pattern: create a synthetic binding for the intermediate extraction
         if (self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET)) {
             bool is_obj = self.check(TokenType.LBRACE);
-            if (*count < binds.len) {
-                binds[*count].key_idx = 0;
-                binds[*count].index = elem_idx;
-                binds[*count].is_object = false;
-                binds[*count].arg_idx = src_reg;
-                binds[*count].parent_idx = parent_idx;
-                binds[*count].is_synthetic = true;
-                (*count)++;
-            }
-            ushort synth_idx = (ushort)(*count - 1);
+            ushort synth_idx = self.add_bind(binds, {
+                .index = elem_idx,
+                .arg_idx = src_reg,
+                .parent_idx = parent_idx,
+                .is_synthetic = true,
+            })!;
             outer_synth_idx = synth_idx;
             last_was_synth = true;
             self.advance()!;
             if (is_obj) {
-                self.collect_obj_param_binds(binds, count, src_reg, synth_idx)!;
+                self.collect_obj_param_binds(binds, src_reg, synth_idx)!;
             } else {
-                self.collect_arr_param_binds(binds, count, src_reg, synth_idx)!;
+                self.collect_arr_param_binds(binds, src_reg, synth_idx)!;
             }
         } else {
             Token bind = self.expect_binding_identifier()!;
-            if (*count < binds.len) {
-                binds[*count].name_idx = self.add_string_constant(bind.str_value);
-                binds[*count].key_idx = 0;  // use index instead
-                binds[*count].index = elem_idx;
-                binds[*count].is_object = false;
-                binds[*count].arg_idx = src_reg;
-                binds[*count].parent_idx = parent_idx;
-                ushort nl = (ushort)(bind.str_value.len < 63 ? bind.str_value.len : 63);
-                binds[*count].name_len = nl;
-                for (int j = 0; j < nl; j++) { binds[*count].name_buf[j] = bind.str_value[j]; }
-                (*count)++;
-            }
+            self.add_bind(binds, {
+                .name_idx = self.add_string_constant(bind.str_value),
+                .index = elem_idx,
+                .arg_idx = src_reg,
+                .parent_idx = parent_idx,
+            })!;
         }
 
         // Default: [a = expr] or [pattern = expr], compile as a thunk
         // function like regular defaults. When the previous element was a
         // nested pattern, the default belongs to the synthetic binding.
         if (self.match(TokenType.ASSIGN)) {
-            if (*count > 0) {
-                ushort target_idx = last_was_synth ? outer_synth_idx : (ushort)(*count - 1);
-                binds[target_idx].has_default = true;
-                // Pass the binding name through so NamedEvaluation tags an
-                // anonymous fn/arrow/class/gen default with the binding name.
-                // (ES2015 §13.3.3.7 step 3 / §14.1.20 SetFunctionName.)
-                CompiledFunction* default_func = self.compile_default_expr(binds[target_idx].name_buf[:(uint)binds[target_idx].name_len])!;
-                uint def_idx = self.add_inner_func(default_func);
-                binds[target_idx].default_func_idx = def_idx;
-            }
+            ushort target_idx = last_was_synth ? outer_synth_idx : (ushort)(binds.len() - 1);
+            // Pass the binding name through so NamedEvaluation tags an
+            // anonymous fn/arrow/class/gen default with the binding name.
+            // (ES2015 §13.3.3.7 step 3 / §14.1.20 SetFunctionName.) A nested
+            // pattern has no name to give.
+            char[] default_name = last_was_synth ? "" : self.bind_name(binds.get_ref(target_idx));
+            CompiledFunction* default_func = self.compile_default_expr(default_name)!;
+            DestructBind* tb = binds.get_ref(target_idx);
+            tb.has_default = true;
+            tb.default_func_idx = self.add_inner_func(default_func);
         }
 
         elem_idx++;
@@ -962,13 +975,13 @@ fn bool destruct_bind_within(DestructBind[] binds, uint di, ushort anc) {
 //
 // Clearing method_reg afterwards makes the finally's second close a no-op, the
 // same encoding of [[done]] that exhausting the iterator uses.
-fn void CompilerContext.close_finished_iter(&self, DestructBind[] binds, uint count, uint di,
+fn void CompilerContext.close_finished_iter(&self, DestructBind[] binds, uint di,
                                             DestructIterState[] states, uint* iter_count) {
     for (ushort owner = binds[di].parent_idx; owner != 0xFFFF;
          owner = binds[owner].parent_idx) {
         // A later bind still inside this pattern means it has not finished.
         bool finished = true;
-        for (uint dj = di + 1; dj < count; dj++) {
+        for (uint dj = di + 1; dj < binds.len; dj++) {
             if (destruct_bind_within(binds, dj, owner)) { finished = false; break; }
         }
         if (!finished) return;
@@ -1030,12 +1043,12 @@ fn void CompilerContext.emit_destruct_default(&self, uint func_idx, ushort dest_
 // Emit object-rest collection into dest_reg: `dest = CopyDataProperties(src,
 // excludedNames)` where excludedNames names every sibling explicit key (own
 // key list minus the rest target), per ES2018 §13.3.3 RestBindingInitialization
-// / DestructuringAssignment §7.3.24 CopyDataProperties. `binds`/`count`
-// describe the full pattern; `rest_di` is the rest bind whose siblings (same
-// parent_idx) name the properties to exclude.
+// / DestructuringAssignment §7.3.24 CopyDataProperties. `binds` is the full
+// pattern; `rest_di` is the rest bind whose siblings (same parent_idx) name
+// the properties to exclude.
 fn void CompilerContext.emit_object_rest(&self,
     ushort dest_reg, ushort src_reg,
-    DestructBind[] binds, uint count, uint rest_di)
+    DestructBind[] binds, uint rest_di)
 {
     ushort parent = binds[rest_di].parent_idx;
 
@@ -1045,7 +1058,7 @@ fn void CompilerContext.emit_object_rest(&self,
     ushort excl_reg = self.alloc_reg();
     self.emit_abc(Opcode.NEWARR, (uint)excl_reg, 0, 0);
     uint excl_count = 0;
-    for (uint j = 0; j < count; j++) {
+    for (uint j = 0; j < binds.len; j++) {
         if (j == rest_di) continue;
         if (binds[j].parent_idx != parent) continue;
         if (binds[j].is_object == false) continue;   // array siblings can't share an object parent
@@ -1082,16 +1095,20 @@ fn void CompilerContext.emit_object_rest(&self,
 
 // Walks binds in declaration order, resolving source registers from arg slots
 // or parent group temps, and emits GETPROP (object patterns) or iterator
-// protocol (array patterns) to extract values into group_regs / binding_regs.
+// protocol (array patterns) to extract values into each bind's group_reg /
+// binding_reg.
 fn void CompilerContext.emit_destruct_bindings(&self,
-    DestructBind[] binds, uint count,
-    ushort[] group_regs, ushort[] binding_regs,
+    DestructBind[] binds,
     DestructStoreMode store_mode = PARAM_SYNC,
     bool is_lexical = false, bool is_const = false)
 {
-    if (count == 0) return;
+    if (binds.len == 0) return;
+    uint count = (uint)binds.len;
 
-    DestructIterState[MAX_DESTRUCT_BINDS] iter_states;
+    // Each array pattern opens at most one iterator, so a pattern needs no
+    // more states than it has binds.
+    DestructIterState[] iter_states = mem::new_array(DestructIterState, count);
+    defer mem::free(iter_states);
     uint iter_count = 0;
 
     // The expected iterator index for each bind's source register is computed
@@ -1099,7 +1116,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     // can be anywhere in the up-to-65535 register space, so a flat
     // register-indexed table is wasteful and easy to OOB.
 
-    // Pre-scan: allocate group_regs for rest synthetics before any iterator
+    // Pre-scan: allocate group_reg for rest synthetics before any iterator
     // setup, so they land below callee_reg and survive the per-iteration CALL
     // frame overlay (see plan 042/043). alloc_persistent_reg documents that
     // these registers must outlive the collection-loop calls.
@@ -1110,7 +1127,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
         binds[di].resolve_probe_reg = 0xFFFF;
         binds[di].rest_array_reg    = 0xFFFF;
         if (binds[di].is_synthetic && !binds[di].is_object && binds[di].key_idx == 0xFFFF) {
-            group_regs[di] = self.alloc_persistent_reg();
+            binds[di].group_reg = self.alloc_persistent_reg();
         }
         if (binds[di].deferred_target != null && !binds[di].is_object
             && binds[di].key_idx == 0xFFFF && !binds[di].is_synthetic) {
@@ -1180,7 +1197,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
         if (binds[di].parent_idx == 0xFFFF) {
             src_reg = binds[di].arg_idx;
         } else {
-            src_reg = group_regs[binds[di].parent_idx];
+            src_reg = binds[binds[di].parent_idx].group_reg;
         }
 
         // ---- Hole / elision: advance iterator past gaps ----
@@ -1199,7 +1216,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 if (binds[dj].parent_idx == 0xFFFF) {
                     dj_src = binds[dj].arg_idx;
                 } else {
-                    dj_src = group_regs[binds[dj].parent_idx];
+                    dj_src = binds[binds[dj].parent_idx].group_reg;
                 }
                 if (dj_src != src_reg) continue;
                 ushort after = (ushort)(binds[dj].index + 1);
@@ -1208,7 +1225,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             ushort target = binds[di].index;
             while (ei < target) {
                 ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
-                                                          iter_states[..], &iter_count);
+                                                          iter_states, &iter_count);
                 ushort hole_reg = self.alloc_reg();
                 self.emit_destruct_iter_next(&iter_states[iter_idx], hole_reg);
                 self.free_reg(hole_reg);
@@ -1222,13 +1239,13 @@ fn void CompilerContext.emit_destruct_bindings(&self,
         // ArrayBindingPattern performs.
         if (binds[di].is_empty_pattern) {
             self.open_destruct_iter(src_reg, binds[di].parent_idx,
-                                    iter_states[..], &iter_count);
+                                    iter_states, &iter_count);
         } else if (binds[di].is_hole) {
             // Elision: advance the iterator once and bind nothing. Per
             // IteratorBindingInitialization §13.3.3 each elision calls
             // IteratorStep and propagates abrupt completions.
             ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
-                                                      iter_states[..], &iter_count);
+                                                      iter_states, &iter_count);
             ushort hole_reg = self.alloc_reg();
             self.emit_destruct_iter_next(&iter_states[iter_idx], hole_reg);
             self.free_reg(hole_reg);
@@ -1236,10 +1253,10 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             // Use pre-allocated group_reg for rest synthetics, allocate now for others.
             ushort group_reg;
             if (binds[di].key_idx == 0xFFFF) {
-                group_reg = group_regs[di];
+                group_reg = binds[di].group_reg;
             } else {
                 group_reg = self.alloc_reg();
-                group_regs[di] = group_reg;
+                binds[di].group_reg = group_reg;
             }
 
             if (binds[di].is_object) {
@@ -1260,7 +1277,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 self.emit_abc(Opcode.NEWARR, (uint)group_reg, 0, 0);
 
                 ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
-                                                          iter_states[..], &iter_count);
+                                                          iter_states, &iter_count);
                 DestructIterState* state = &iter_states[iter_idx];
 
                 // [[Done]] may already be latched by an earlier element that
@@ -1347,7 +1364,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             } else {
                 // Array pattern element: single iterator advance.
                 ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
-                                                          iter_states[..], &iter_count);
+                                                          iter_states, &iter_count);
                 self.emit_destruct_iter_next(&iter_states[iter_idx], group_reg);
             }
 
@@ -1387,7 +1404,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             // everything above), so bind_reg must be allocated *after*, i.e. at
             // a higher register number than, any live persistent register or
             // the getter call would clobber it. Allocate it fresh here instead.
-            ushort bind_reg = binding_regs[di];
+            ushort bind_reg = binds[di].binding_reg;
             if (bind_reg == 0xFFFF) {
                 // An array rest into a member target uses the pre-scan
                 // register instead, which sits below the iterator's callee
@@ -1395,7 +1412,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 bind_reg = binds[di].rest_array_reg != 0xFFFF
                          ? binds[di].rest_array_reg
                          : self.alloc_reg();
-                binding_regs[di] = bind_reg;
+                binds[di].binding_reg = bind_reg;
             }
             uint ni = binds[di].name_idx;
 
@@ -1411,9 +1428,9 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             // step 1 runs before KeyedBindingInitialization's ResolveBinding).
             // The value is then extracted into a register ABOVE the probe:
             // GETPROP's accessor frame sits at its result register and reuses
-            // everything above it, so binding_regs[di] (declared before any of
-            // this, hence below the probe) would let the getter destroy the
-            // probe before the store reads it. The register must stay high for
+            // everything above it, so the bind's binding_reg (declared before
+            // any of this, hence below the probe) would let the getter destroy
+            // the probe before the store reads it. The register must stay high for
             // the whole bind: retargeting the GETPROP down to a low register
             // (moveelim's producer retarget) would move the getter's frame back
             // over the probe.
@@ -1427,7 +1444,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                         self.emit_a_bc(Opcode.RESOLVEVAR, (uint)binds[di].resolve_probe_reg, ni);
                         bind_reg = self.alloc_reg();
                     }
-                    self.emit_object_rest(bind_reg, src_reg, binds, count, di);
+                    self.emit_object_rest(bind_reg, src_reg, binds, di);
                 } else if (binds[di].is_computed_key) {
                     if (binds[di].deferred_computed_key != null) {
                         self.emit_deferred_computed_key(&binds[di]);
@@ -1476,7 +1493,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     self.emit_abc(Opcode.NEWARR, (uint)bind_reg, 0, 0);
 
                     ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
-                                                              iter_states[..], &iter_count);
+                                                              iter_states, &iter_count);
                     DestructIterState* state = &iter_states[iter_idx];
 
                     // Emit the deferred rest member-target evaluation now, AFTER
@@ -1567,7 +1584,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                 } else {
                     // Array pattern: use iterator protocol
                     ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
-                                                              iter_states[..], &iter_count);
+                                                              iter_states, &iter_count);
                     // Emit the deferred member-target evaluation BEFORE
                     // IteratorStep, per ES2022 §13.15.5.6: the target lref is
                     // evaluated before IteratorStep, so any throw here triggers
@@ -1655,7 +1672,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             }
         }
 
-        self.close_finished_iter(binds, count, di, iter_states[..], &iter_count);
+        self.close_finished_iter(binds, di, iter_states, &iter_count);
     }
 
     // Close the TRY guard and emit the IteratorClose finally block.
@@ -3837,10 +3854,8 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     seen_params.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
-    DestructBind[MAX_DESTRUCT_BINDS] destruct_binds;
-    uint destruct_count = 0;
-    ushort[MAX_DESTRUCT_BINDS] destruct_binding_regs;
-    ushort[MAX_DESTRUCT_BINDS] destruct_group_regs;
+    DestructBinds destruct_binds = { .allocator = mem };
+    defer free_destruct_binds(&destruct_binds);
 
     if (!self.check(TokenType.RPAREN)) {
         for (;;) {
@@ -3876,12 +3891,12 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 if (self.check(TokenType.LBRACE)) {
                     self.advance()!;
                     self.alloc_reg();
-                    self.collect_obj_param_binds(destruct_binds[..], &destruct_count, (ushort)arg_count, 0xFFFF)!;
+                    self.collect_obj_param_binds(&destruct_binds, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {}; // mark as destructured
                 } else if (self.check(TokenType.LBRACKET)) {
                     self.advance()!;
                     self.alloc_reg();
-                    self.collect_arr_param_binds(destruct_binds[..], &destruct_count, (ushort)arg_count, 0xFFFF)!;
+                    self.collect_arr_param_binds(&destruct_binds, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else {
                     rest_param = self.expect_binding_identifier()!;
@@ -3924,7 +3939,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 self.alloc_reg();
                 // Emit REQUIRE_OBJ to throw TypeError if null/undefined.
                 self.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_count, 0, 0);
-                self.collect_obj_param_binds(destruct_binds[..], &destruct_count, (ushort)arg_count, 0xFFFF)!;
+                self.collect_obj_param_binds(&destruct_binds, (ushort)arg_count, 0xFFFF)!;
                 self.try_skip_ts_type_annotation()!;
                 arg_count++;
                 if (first_default_idx == 0xFFFF) { formal_count++; }
@@ -3938,7 +3953,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 self.alloc_reg();
                 // Emit REQUIRE_OBJ to throw TypeError if null/undefined.
                 self.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_count, 0, 0);
-                self.collect_arr_param_binds(destruct_binds[..], &destruct_count, (ushort)arg_count, 0xFFFF)!;
+                self.collect_arr_param_binds(&destruct_binds, (ushort)arg_count, 0xFFFF)!;
                 self.try_skip_ts_type_annotation()!;
                 arg_count++;
                 if (first_default_idx == 0xFFFF) { formal_count++; }
@@ -4025,22 +4040,12 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     // Destructured leaves are BoundNames too: `function f([a], {a})` is a
     // duplicate-parameter SyntaxError. Checked here, once the whole list is
     // known, so a pattern can collide with a simple param in either order.
-    seen_params.declare_destructured(destruct_binds[..], destruct_count)!;
+    seen_params.declare_destructured(self, destruct_binds.array_view())!;
     seen_params.check_no_duplicates()!;
 
     // Declare destructured bindings as variables.
     // Synthetics don't get variables, they're intermediate extraction points.
-    for (uint i = 0; i < destruct_count; i++) {
-        if (destruct_binds[i].is_synthetic) {
-            destruct_binding_regs[i] = 0xFFFF;
-            continue;
-        }
-        uint ni = destruct_binds[i].name_idx;
-        char[] name = destruct_binds[i].name_buf[:destruct_binds[i].name_len];
-        ushort dreg = self.declare_var(name, VAR, true);
-        destruct_binding_regs[i] = dreg;
-        self.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
-    }
+    self.declare_param_pattern(destruct_binds.array_view());
 
 
     // Mirrors the prologue's own condition: the matching POP_LEX (and the
@@ -4049,8 +4054,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
     self.emit_param_prologue(arg_count, first_default_idx, param_name_view(&param_name_indices, arg_count))!;
 
     // Emit destructuring code for destructured function parameters.
-    self.emit_destruct_bindings(destruct_binds[..], destruct_count,
-                                destruct_group_regs[..], destruct_binding_regs[..]);
+    self.emit_destruct_bindings(destruct_binds.array_view());
 
     // Generator functions (sync and async): emit GEN_START after all parameter
     // initialization so the VM can run eagerly up to this point on the initial
@@ -4787,10 +4791,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_seen.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
-    DestructBind[MAX_DESTRUCT_BINDS] inner_destruct_binds;
-    uint inner_destruct_count = 0;
-    ushort[MAX_DESTRUCT_BINDS] inner_destruct_binding_regs;
-    ushort[MAX_DESTRUCT_BINDS] inner_destruct_group_regs;
+    DestructBinds inner_destruct_binds = { .allocator = mem };
+    defer free_destruct_binds(&inner_destruct_binds);
 
     if (!inner_ctx.check(TokenType.RPAREN)) {
         for (;;) {
@@ -4824,12 +4826,12 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 if (inner_ctx.check(TokenType.LBRACE)) {
                     inner_ctx.advance()!;
                     inner_ctx.alloc_reg();
-                    inner_ctx.collect_obj_param_binds(inner_destruct_binds[..], &inner_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                    inner_ctx.collect_obj_param_binds(&inner_destruct_binds, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else if (inner_ctx.check(TokenType.LBRACKET)) {
                     inner_ctx.advance()!;
                     inner_ctx.alloc_reg();
-                    inner_ctx.collect_arr_param_binds(inner_destruct_binds[..], &inner_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                    inner_ctx.collect_arr_param_binds(&inner_destruct_binds, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else {
                     rest_param = inner_ctx.expect_binding_identifier()!;
@@ -4873,7 +4875,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 // deferred (see emit_destruct_param_defaults) until every
                 // parameter's arg slot is known, so its scratch registers
                 // can't clobber a later parameter's live argument.
-                inner_ctx.collect_obj_param_binds(inner_destruct_binds[..], &inner_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                inner_ctx.collect_obj_param_binds(&inner_destruct_binds, (ushort)arg_count, 0xFFFF)!;
                 inner_ctx.try_skip_ts_type_annotation()!;
                 bool has_default = inner_ctx.parse_destruct_param_default((ushort)arg_count)!;
                 if (!has_default) {
@@ -4893,7 +4895,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 // Reserve the formal parameter register slot (see LBRACE above).
                 inner_ctx.alloc_reg();
                 // Same shape as the LBRACE branch above.
-                inner_ctx.collect_arr_param_binds(inner_destruct_binds[..], &inner_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                inner_ctx.collect_arr_param_binds(&inner_destruct_binds, (ushort)arg_count, 0xFFFF)!;
                 inner_ctx.try_skip_ts_type_annotation()!;
                 bool has_default = inner_ctx.parse_destruct_param_default((ushort)arg_count)!;
                 if (!has_default) {
@@ -4982,21 +4984,11 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.try_skip_ts_type_annotation()!;
 
     // Destructured leaves are BoundNames too (see parse_function_body).
-    inner_seen.declare_destructured(inner_destruct_binds[..], inner_destruct_count)!;
+    inner_seen.declare_destructured(&inner_ctx, inner_destruct_binds.array_view())!;
     inner_seen.check_no_duplicates()!;
 
     // Declare destructured bindings as variables (skip synthetics).
-    for (uint i = 0; i < inner_destruct_count; i++) {
-        if (inner_destruct_binds[i].is_synthetic) {
-            inner_destruct_binding_regs[i] = 0xFFFF;
-            continue;
-        }
-        uint ni = inner_destruct_binds[i].name_idx;
-        char[] bind_name = inner_destruct_binds[i].name_buf[:inner_destruct_binds[i].name_len];
-        ushort dreg = inner_ctx.declare_var(bind_name, VAR, true);
-        inner_destruct_binding_regs[i] = dreg;
-        inner_ctx.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
-    }
+    inner_ctx.declare_param_pattern(inner_destruct_binds.array_view());
 
     bool inner_has_func_lex = inner_ctx.default_count > 0;
     inner_ctx.emit_param_prologue(arg_count, first_default_idx, param_name_view(&param_name_indices, arg_count))!;
@@ -5007,8 +4999,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     inner_ctx.emit_destruct_param_defaults();
 
     // Emit destructuring code for inner function parameters.
-    inner_ctx.emit_destruct_bindings(inner_destruct_binds[..], inner_destruct_count,
-                                     inner_destruct_group_regs[..], inner_destruct_binding_regs[..]);
+    inner_ctx.emit_destruct_bindings(inner_destruct_binds.array_view());
 
     // Generator functions (sync and async): emit GEN_START after all parameter
     // initialization so the VM can run eagerly up to this point on the initial
@@ -5658,10 +5649,8 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_seen.restricted_strict = self.is_strict;
 
     // Destructured parameter binding tracking
-    DestructBind[MAX_DESTRUCT_BINDS] arrow_destruct_binds;
-    uint arrow_destruct_count = 0;
-    ushort[MAX_DESTRUCT_BINDS] arrow_destruct_binding_regs;
-    ushort[MAX_DESTRUCT_BINDS] arrow_destruct_group_regs;
+    DestructBinds arrow_destruct_binds = { .allocator = mem };
+    defer free_destruct_binds(&arrow_destruct_binds);
 
     if (!arrow_ctx.check(TokenType.RPAREN)) {
         for (;;) {
@@ -5674,12 +5663,12 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 if (arrow_ctx.check(TokenType.LBRACE)) {
                     arrow_ctx.advance()!;
                     arrow_ctx.alloc_reg();
-                    arrow_ctx.collect_obj_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                    arrow_ctx.collect_obj_param_binds(&arrow_destruct_binds, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else if (arrow_ctx.check(TokenType.LBRACKET)) {
                     arrow_ctx.advance()!;
                     arrow_ctx.alloc_reg();
-                    arrow_ctx.collect_arr_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                    arrow_ctx.collect_arr_param_binds(&arrow_destruct_binds, (ushort)arg_count, 0xFFFF)!;
                     rest_param.str_value = {};
                 } else {
                     // A BindingRestElement's binding is a BindingIdentifier,
@@ -5723,7 +5712,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 arrow_seen.has_complex_params = true;
                 arrow_ctx.advance()!;
                 arrow_ctx.alloc_reg();
-                arrow_ctx.collect_obj_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                arrow_ctx.collect_obj_param_binds(&arrow_destruct_binds, (ushort)arg_count, 0xFFFF)!;
                 if (arrow_ctx.lexer.ts_mode) arrow_ctx.try_skip_ts_type_annotation()!;
                 bool has_default = arrow_ctx.parse_destruct_param_default((ushort)arg_count)!;
                 if (!has_default) {
@@ -5741,7 +5730,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 arrow_seen.has_complex_params = true;
                 arrow_ctx.advance()!;
                 arrow_ctx.alloc_reg();
-                arrow_ctx.collect_arr_param_binds(arrow_destruct_binds[..], &arrow_destruct_count, (ushort)arg_count, 0xFFFF)!;
+                arrow_ctx.collect_arr_param_binds(&arrow_destruct_binds, (ushort)arg_count, 0xFFFF)!;
                 if (arrow_ctx.lexer.ts_mode) arrow_ctx.try_skip_ts_type_annotation()!;
                 bool has_default = arrow_ctx.parse_destruct_param_default((ushort)arg_count)!;
                 if (!has_default) {
@@ -5830,21 +5819,11 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     if (arrow_ctx.lexer.ts_mode) arrow_ctx.try_skip_ts_type_annotation()!;
 
     // Destructured leaves are BoundNames too (see parse_function_body).
-    arrow_seen.declare_destructured(arrow_destruct_binds[..], arrow_destruct_count)!;
+    arrow_seen.declare_destructured(&arrow_ctx, arrow_destruct_binds.array_view())!;
     arrow_seen.check_no_duplicates()!;
 
     // Declare destructured bindings as variables (skip synthetics).
-    for (uint i = 0; i < arrow_destruct_count; i++) {
-        if (arrow_destruct_binds[i].is_synthetic) {
-            arrow_destruct_binding_regs[i] = 0xFFFF;
-            continue;
-        }
-        uint ni = arrow_destruct_binds[i].name_idx;
-        char[] bind_name = arrow_destruct_binds[i].name_buf[:arrow_destruct_binds[i].name_len];
-        ushort dreg = arrow_ctx.declare_var(bind_name, VAR, true);
-        arrow_destruct_binding_regs[i] = dreg;
-        arrow_ctx.emit_a_bc(Opcode.DECLVAR, (uint)dreg, ni);
-    }
+    arrow_ctx.declare_param_pattern(arrow_destruct_binds.array_view());
 
     // Consume the => token
     arrow_ctx.expect(TokenType.ARROW)!;
@@ -5866,8 +5845,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
     arrow_ctx.emit_destruct_param_defaults();
 
     // Emit destructuring code for arrow function parameters.
-    arrow_ctx.emit_destruct_bindings(arrow_destruct_binds[..], arrow_destruct_count,
-                                     arrow_destruct_group_regs[..], arrow_destruct_binding_regs[..]);
+    arrow_ctx.emit_destruct_bindings(arrow_destruct_binds.array_view());
 
     // Per ES2015 §9.2.10 step 27: when hasParameterExpressions is true,
     // a separate VariableEnvironment is needed for the function body so
