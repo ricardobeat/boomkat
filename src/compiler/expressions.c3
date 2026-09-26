@@ -5960,6 +5960,7 @@ fn ushort? CompilerContext.object_literal(&self) {
     self.static_super_name_idx = 0xFFFFFFFF;
 
     ushort obj_reg = self.alloc_reg();
+    uint literal_start = self.code_count;
     self.emit_abc(Opcode.NEWOBJ, (uint)obj_reg, 0, 0);
     // The __super__ binding costs a register, so it is created lazily on the
     // first concise method / accessor, plain data literals skip it entirely
@@ -6465,6 +6466,7 @@ fn ushort? CompilerContext.object_literal(&self) {
     // marker clearing array_literal already does for `([a]) = ...
     self.clear_ref_markers();
     self.last_was_optional_chain = false;
+    self.specialize_literal_shape(literal_start, obj_reg);
     return obj_reg;
 }
 

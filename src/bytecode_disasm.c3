@@ -41,7 +41,14 @@ $if $feat(TRACE_VM):
     switch (fmt) {
         case ABC:
             // Fused compare-branch ops encode A as a signed 8-bit offset, not a register.
-            if (op == Opcode.JMP_LT_G) {
+            if (op == Opcode.INIT_SLOT) {
+                pos = write_str(buf, pos, "r");
+                pos = write_uint(buf, pos, self.a);
+                pos = write_str(buf, pos, ", slot=");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", r");
+                pos = write_uint(buf, pos, self.c);
+            } else if (op == Opcode.JMP_LT_G) {
                 // Two-word: A = signed offset, B = register operand; the
                 // global's name index lives in the trailing word's BC.
                 pos = write_int(buf, pos, (int)(ichar)self.a);
@@ -263,6 +270,8 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.GETPROPC.ordinal]    = "GETPROPC",
     [Opcode.PUTPROP.ordinal]     = "PUTPROP",
     [Opcode.DELPROP.ordinal]     = "DELPROP",
+    [Opcode.NEWOBJ_SHAPE.ordinal] = "NEWOBJ_SHAPE",
+    [Opcode.INIT_SLOT.ordinal] = "INIT_SLOT",
     [Opcode.NEWOBJ.ordinal]      = "NEWOBJ",
     [Opcode.NEWARR.ordinal]      = "NEWARR",
     [Opcode.SETALEN.ordinal]     = "SETALEN",

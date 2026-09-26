@@ -89,6 +89,13 @@ The `boomkat_memberstrict` build traps a read of an absent member or a register
 outside the live window at the point of compilation. Shipping builds omit
 these checks.
 
+Straight-line object literals with up to sixteen unique non-index data keys can
+use a shared shape template stored in the function's traced constant pool.
+`NEWOBJ_SHAPE` allocates undefined property slots with that layout; `INIT_SLOT`
+writes each value in source order. The compiler rejects calls, object escape,
+control flow, duplicate keys, and unsupported initializer forms. Shared shapes
+remain protected when an instance deletes or redefines a property.
+
 ### Registers and scopes
 
 The compiler allocates temporary registers from the top of a stack and releases

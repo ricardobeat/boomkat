@@ -44,7 +44,7 @@ DEBUG_BIN = os.path.join(REPO_ROOT, "out", "boomkat_debug")
 # (the disable_optimize invariant: fusion is a pure no-op when disabled).
 FUSED_OPCODES = ("ADDI", "SUBI", "INC_VAR", "DEC_VAR", "GETPROPC", "GETPROPC2",
                   "JMP_NLT", "JMP_NLE", "JMP_NGT", "JMP_NGE", "JMP_NEQ", "JMP_NNE",
-                  "MOVE_GG", "JMP_LT_G")
+                  "MOVE_GG", "JMP_LT_G", "NEWOBJ_SHAPE", "INIT_SLOT")
 
 
 def discover_goldens(names=None):

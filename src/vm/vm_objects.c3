@@ -441,6 +441,33 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
 fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
+        case Opcode.NEWOBJ_SHAPE: {
+            ra.set_undefined();
+            HObject* shape_template = (HObject*)ds.constants[insn.get_bc()].get_heapptr();
+            HObject*? raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+            if (catch raw) return (TVal){};
+            HObject* obj = raw;
+            obj.prototype = vm.heap.object_proto;
+            ra.set_object(obj);
+            track_heap_store(ds.act, ra, (uint)insn.a);
+            while (obj.prop_capacity < shape_template.prop_count) {
+                uint old_capacity = obj.prop_capacity;
+                obj.grow_props(vm.heap);
+                if (obj.prop_capacity == old_capacity) return (TVal){};
+            }
+            for (uint i = 0; i < shape_template.prop_count; i++) obj.prop_values()[i].set_undefined();
+            // All slots remain undefined until their initializer executes.
+            obj.shape_id = shape_template.shape_id;
+            obj.prop_count = shape_template.prop_count;
+            return (TVal){};
+        }
+        case Opcode.INIT_SLOT: {
+            if (ra.is_object()) {
+                HObject* obj = (HObject*)ra.get_heapptr();
+                if (insn.b < obj.prop_count) vm.heap.tval_copy_ref(&obj.prop_values()[insn.b], rc);
+            }
+            return (TVal){};
+        }
         case Opcode.NEWOBJ: {
             // Clear ra before the allocation so an alloc-triggered GC cannot
             // scan a stale pointer.  The old contents are not decref'd: the

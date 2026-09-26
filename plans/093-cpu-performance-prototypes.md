@@ -1,6 +1,6 @@
 # 093: CPU performance prototypes
 
-Status: in progress; track A measured and validated, remaining tracks pending.
+Status: in progress; tracks A/B/C measured and validated, D–H pending.
 Baseline inspected: `ba8610c8` on `speed`, matching local `main` at setup.
 
 ## Objective and scope
@@ -467,7 +467,7 @@ commit the useful summaries and reproducible benchmark/validation instructions.
 |---|---|---|---|---|---|
 | A | mutation paths audited | live count + shared append | passed; see results below | interleaved A/B | keep |
 | B | reaction property paths audited | dense traced slots | passed with baseline ASAN exception | -18% to -24% time; +4% to +5% RSS | keep speed/memory tradeoff |
-| C | source only | pending | pending | pending | pending |
+| C | bounded straight-line literals | shared shape + direct slots | passed | checked construction -19.2%; RSS nearly flat | keep |
 | D | source only | gated | pending | pending | pending |
 | E | source only | gated | pending | pending | pending |
 | F | source only | gated | pending | pending | pending |
@@ -576,3 +576,34 @@ ASAN binaries and logs, paired time/RSS samples, and checked workload. Use
 `scripts/bench_interleaved.py` with explicit binaries and fixture paths to repeat.
 Git stash lists are shared by worktrees: archive experiments by immutable object
 ID and pin experiment refs rather than using a moving `stash@{0}` to restore.
+
+
+## Track C results: shared literal shapes
+
+Decision: keep the bounded literal specialization against parent `2cbeae5a`.
+Unique constant non-index keys in straight-line literals share a traced object
+template. Allocation installs its protected shared shape and undefined slots;
+initializers write directly by slot. Unsupported operations retain INITPROP.
+The allow-list permits simple loads, including statically known computed string
+keys; it rejects calls, methods, nested allocation, duplicate keys, and prototype
+syntax. Every template belongs to its compiling heap and remains in the function's
+constant pool. No register remapping or wider initializer lifetime is introduced.
+Class construction remains gated: this experiment establishes no safe shortcut
+for observable constructor initialization.
+
+Seven interleaved pairs: the checked four-key construction loop falls from
+0.3427s to 0.2770s (-19.2%). Peak RSS is 4,816,896 versus 4,833,280 bytes.
+The initial object/shape/destructuring controls range from -1.5% to +1.3%;
+class time changes -3.0%, without attributing that small change to this patch.
+The second sweep of all 25 unchanged controls ranges from -2.8% to +1.3%,
+with matching outputs.
+Each eligible literal adds one traced template object and constant-pool entry;
+this is a throughput optimization with per-site metadata cost. Many-site compile
+cost and second-platform performance remain unmeasured.
+
+Validation: 1,170 object-expression test262 cases, 467 local scripts plus auxiliary
+suites, 42 Rosetta cases, and 31 bytecode goldens including optimization-disabled
+checks pass. The focused fixture passes in Node, release, fresh ASAN with GC_STRESS
+and POOL_BYPASS, and fresh NONANBOX. It covers deletion/redefinition without template
+corruption, inherited setters, key order, object-valued slots, fallback forms,
+and allocation stress. Artifacts: `/tmp/boomkat-perf-093/C/`.

@@ -2,10 +2,10 @@
 [  0] CHKGLOBALFUNC       r0, 0
 [  1] CLOSURE             r0, 0
 [  2] DECLGLOBALFUNC      r0, 0
-[  3] NEWOBJ              r2 = r0, r0
+[  3] NEWOBJ_SHAPE        r2, 2
 [  4] LDCONST             r3, 1
 [  5] LDINT               r4, +42
-[  6] INITPROP            r2 = r3, r4
+[  6] INIT_SLOT           r2, slot=0, r4
 [  7] CALL_GLOBAL         r0, argc=1, K[0]
 [  8] RETUNDEF            
 

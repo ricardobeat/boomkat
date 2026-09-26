@@ -3879,6 +3879,8 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         // === OBJECT / ARRAY CREATION ===
+        case Opcode.NEWOBJ_SHAPE:
+        case Opcode.INIT_SLOT:
         case Opcode.NEWOBJ:
         case Opcode.NEWARR:
         case Opcode.NEWREGEXP:
