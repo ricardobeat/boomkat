@@ -213,6 +213,12 @@ check("moderately nested functions",
 // Escaped string and template literals decode into growable buffers.
 check("an escaped identifier past 4 KB",
     run("var \\u0078" + "y".repeat(5000) + " = 5; x" + "y".repeat(5000)), 5);
+check("long private methods that share a prefix",
+    run("new (class { #" + hugeName + "a() { return 1 } #" + hugeName + "b() { return 2 } " +
+        "f() { return this.#" + hugeName + "a() * 10 + this.#" + hugeName + "b() } })().f()"), 12);
+check("long static private fields that share a prefix",
+    run("(class { static #" + hugeName + "a = 1; static #" + hugeName + "b = 2; " +
+        "static f() { return this.#" + hugeName + "a * 10 + this.#" + hugeName + "b } }).f()"), 12);
 check("long escaped string", run('"' + "\\n".repeat(100000) + '"').length, 100000);
 check("long escaped template", run('`' + "\\n".repeat(100000) + '`').length, 100000);
 check("long raw template", run('String.raw`' + "\\n\\t".repeat(100000) + '`').length, 400000);

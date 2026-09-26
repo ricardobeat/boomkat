@@ -28,8 +28,10 @@ import std::io;
 // freshness of the symbols themselves comes from NEW_PRIV_SYM at runtime;
 // this id only keeps compile-time bindings distinct.
 
-// Build the lexical binding name for a private slot into `buf`:
-// "#priv:<id>:<name>". Returns the filled prefix of `buf`.
+// Build the lexical binding name for a private slot into `buf`, which must
+// hold PRIVATE_SLOT_PREFIX_MAX + name.len bytes: "#priv:<id>:<name>".
+// Returns the filled prefix of `buf`.
+const usz PRIVATE_SLOT_PREFIX_MAX = 17; // "#priv:", ten digits, ':'
 fn char[] format_private_slot_name(char[] buf, uint class_id, char[] name) {
     char[] prefix = "#priv:";
     usz pos = 0;
@@ -44,6 +46,12 @@ fn char[] format_private_slot_name(char[] buf, uint class_id, char[] name) {
     if (pos < buf.len) buf[pos++] = ':';
     for (usz i = 0; i < name.len && pos < buf.len; i++) buf[pos++] = name[i];
     return buf[:pos];
+}
+
+// Build and intern the slot binding name for `name` in class `class_id`.
+fn char[] CompilerContext.private_slot_name(&self, uint class_id, char[] name) {
+    char[] buf = self.lexer.arena_alloc(PRIVATE_SLOT_PREFIX_MAX + name.len);
+    return self.intern_slot_name(format_private_slot_name(buf, class_id, name));
 }
 
 // Intern a slot binding name and return its stable byte slice, safe to
@@ -175,9 +183,7 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     // env isn't elided, PUTLEX still creates the binding at runtime) but
     // consumes no register and no scope_stack slot.
     uint class_id = self.innermost_private_scope().class_id;
-    char[96] slot_name_buf;
-    char[] slot_name = self.intern_slot_name(
-        format_private_slot_name(slot_name_buf[..], class_id, stable_name));
+    char[] slot_name = self.private_slot_name(class_id, stable_name);
 
     self.declare_priv_slot(slot_name);
     t.entries[idx].slot_name = slot_name;
@@ -198,9 +204,7 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
 // start-unicode-*.js blow past the 512-register limit if it did).
 fn char[] CompilerContext.declare_class_brand(&self) {
     uint class_id = self.innermost_private_scope().class_id;
-    char[96] brand_name_buf;
-    char[] brand_name = self.intern_slot_name(
-        format_private_slot_name(brand_name_buf[..], class_id, "brand"));
+    char[] brand_name = self.private_slot_name(class_id, "brand");
     self.declare_priv_slot(brand_name);
     return brand_name;
 }
@@ -212,9 +216,7 @@ fn char[] CompilerContext.declare_class_brand(&self) {
 // declare_class_brand; see its comment for why.
 fn char[] CompilerContext.declare_class_static_brand(&self) {
     uint class_id = self.innermost_private_scope().class_id;
-    char[96] sbrand_name_buf;
-    char[] sbrand_name = self.intern_slot_name(
-        format_private_slot_name(sbrand_name_buf[..], class_id, "sbrand"));
+    char[] sbrand_name = self.private_slot_name(class_id, "sbrand");
     self.declare_priv_slot(sbrand_name);
     return sbrand_name;
 }
