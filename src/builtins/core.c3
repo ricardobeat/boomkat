@@ -1700,7 +1700,7 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
     // A full rebuild is only for the cases incremental catch-up cannot serve --
     // no index yet, a shrunk array (delete-compaction in the Weak collections),
     // or a load factor that has crept too high.
-    if (ci != null && ci.built < obj.array_used && ci.used * 2 <= ci.mask) {
+    if (ci != null && ci.built < obj.array_used && ci.used <= (ci.mask + 1) / 2) {
         TVal* ap_add = obj.array_part();
         if (ap_add != null) {
             for (uint i = ci.built; i < obj.array_used; i += stride) {
@@ -1717,7 +1717,8 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
         }
     }
 
-    if (ci == null || ci.built != obj.array_used || ci.used * 2 > ci.mask) {
+    // Equality is a valid half-full table; the mask is one less than capacity.
+    if (ci == null || ci.built != obj.array_used || ci.used > (ci.mask + 1) / 2) {
         coll_hash_build(obj, stride, h);
         ci = *obj.coll_hash_ptr();
         if (ci == null) return find_in_array_part(obj, val, stride);

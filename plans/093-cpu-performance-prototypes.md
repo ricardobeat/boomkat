@@ -1,6 +1,6 @@
 # 093: CPU performance prototypes
 
-Status: in progress; tracks A/B/C measured and validated, D archived, E/F validated; G/H pending.
+Status: in progress; tracks A/B/C measured and validated, D archived, E/F validated; G archived; H in progress.
 Baseline inspected: `ba8610c8` on `speed`, matching local `main` at setup.
 
 ## Objective and scope
@@ -471,8 +471,8 @@ commit the useful summaries and reproducible benchmark/validation instructions.
 | D | leaf register spans + existing fast-call path | trailing-frame trim | checked checksums | -2.7% repeat on trimmed case; common controls flat | stash; wider stages gated |
 | E | ordinary-arrow var/parameter exclusion | extend existing compact cells | passed | paired -13% to -14% on checked capture loop | keep |
 | F | complete switch-only opcode profile | threaded fast-integer INC/DEC | passed | -5.7% checked; -23% arithmetic; -20% monomorphic | keep |
-| G | source only | gated | pending | pending | pending |
-| H | source only | gated | pending | pending | pending |
+| G | recycled blocks cleared twice | skip redundant clear + counters | benchmark checksums pass | -3.1% churn; other controls flat | stash; wider policies gated |
+| H | occupancy boundary + historical index sizing | threshold fix; churn next | threshold checks in progress | ~94% less lookup time at exact half capacity | threshold winner; churn pending |
 
 Completion means every track has a supported decision, retained changes have
 combined validation, and results distinguish throughput, latency, memory, and
@@ -722,3 +722,48 @@ Node, release, and NONANBOX, including coercion reentry, abrupt completion, BigI
 number fallbacks, and long forward/backward loops. No bytecode encoding changes.
 The release candidate is restored after NONANBOX. Combined sanitizer validation
 is scheduled after the remaining experiments.
+
+
+## Track G results: redundant recycled-block clearing
+
+Archive: `refs/experiments/093-g-clearing`, stash object
+`9825e3b4f19da2639686ff59da9b9d062f7b04e4`, parent `fe1a5d66`.
+C3 0.8.3 FixedBlockPool.alloc clears the entire recycled block; its bump path
+returns uninitialized storage. The prototype checks the freelist before allocation
+and skips Boomkat's own clear only for recycled pool blocks. Allocator fallback
+and POOL_BYPASS retain the full clear. A separate GC_PROFILE build counts avoided
+work, without adding counters to timed release binaries.
+
+The checked churn fixture allocates 1,500,904 objects, reuses 1,499,092 blocks,
+and avoids 155,905,568 duplicate clear bytes. The retained fixture allocates
+200,903 objects with no recycled blocks and avoids zero bytes. Seven alternating
+pairs give churn -3.1% (IQR -3.8% to -1.7%), retention -0.1%, memory-heavy +0.4%,
+object -0.5%, and Promise +0.8%. Outputs match. This is measurable but below the
+initial materiality threshold even with almost every churn object recycled;
+stash the patch. No broad semantic/sanitizer claim is made for a rejected change.
+Artifacts: `/tmp/boomkat-perf-093/G/`.
+
+G2/G3 remain gated. The counters show repeated clearing work, but do not identify
+a growth-copy or cache-miss bottleneck that justifies changing another buffer or
+class layout. Current pooled layouts and named-property sharing remain the base;
+plan 091's rejected layout proposals are not repeated. An Allocator adapter alone
+would be maintenance work, not a demonstrated performance improvement.
+
+
+## Track H, experiment 1: correct the occupancy boundary
+
+The index uses a mask equal to capacity minus one. Comparing twice the occupied
+count against that mask treats exactly half capacity as overloaded, so a stable
+power-of-two-sized collection rebuilds on every lookup. Compare occupancy with
+half the actual capacity, accepting equality. No representation or hashing change.
+
+Seven alternating pairs against `fe1a5d66`: 256-entry Map lookup changes 0.3504s
+to 0.0222s (paired -93.6%, IQR -93.7% to -93.6%); Set changes 0.3474s to 0.0220s
+(paired -93.8%, IQR -93.9% to -93.3%). Both 257-entry controls have paired median
+changes of -0.5%. Outputs match; RSS stays around 4.7 MB. This isolates the
+threshold from deletion-state and live-sizing changes. Artifacts and exact
+binaries: `/tmp/boomkat-perf-093/H/threshold*`.
+
+H1 decision: keep independently. All 809 selected Map/Set/WeakMap/WeakSet tests
+pass, with four existing scope skips. The focused threshold and existing hash
+fixtures pass. Full local, NONANBOX, and sanitizer checks follow the churn decision.
