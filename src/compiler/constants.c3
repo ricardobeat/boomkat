@@ -97,6 +97,11 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     // would intern under two different byte encodings and fail `===`.
     Heap* hp = (Heap*)self.heap;
     HString* hstr = hp.str_intern(str);
+    // str_intern leaves strings over MAX_INTERN_BYTES un-interned, but a
+    // constant can name a variable or property, and those are matched by
+    // pointer. Canonicalize it the way runtime property keys are. The fresh
+    // copy this may drop is still on the large-string registry, which frees it.
+    if (hstr != null) hstr = hp.ensure_interned(hstr);
 
     TVal tv;
     if (hstr != null) {
