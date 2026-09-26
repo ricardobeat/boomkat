@@ -1698,28 +1698,6 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             target_ctx.free_reg(this_reg);
             target_ctx.free_reg(init_reg);
 
-            // Record a pseudo-method entry so the install loop (after the
-            // class body, where computed key values are bound into the class
-            // env in source order) handles computed-key install. For
-            // non-computed public fields, the key is a literal constant
-            // known at compile time; the install loop uses the literal-name
-            // path and `is_field_key` is unnecessary, skip the entry.
-            if (has_computed_key && method_count < MAX_CLASS_METHODS) {
-                methods[method_count].name = {};
-                methods[method_count].inner_idx = 0xFFFFFFFF;
-                methods[method_count].is_static = is_static;
-                methods[method_count].is_getter = false;
-                methods[method_count].is_setter = false;
-                methods[method_count].name_is_number = false;
-                methods[method_count].name_is_bigint = false;
-                methods[method_count].computed_key_inner_idx = 0xFFFFFFFF;
-                methods[method_count].computed_key_reg = 0xFFFF;
-                methods[method_count].is_private = false;
-                methods[method_count].is_field_key = true;
-                methods[method_count].field_key_slot_name = fkey_slot;
-                method_count++;
-            }
-
             if (is_static) { static_field_count++; } else { field_count++; }
             continue;
         }
