@@ -167,14 +167,8 @@ fn void? CompilerContext.set_numeric_inferred_name(&self, Token key_tok, bool is
     char[48] bigbuf;
     char[] name = method_name_source_name(self, key_tok, is_number, num_value,
                                           is_bigint, bigint_src, numbuf[..], bigbuf[..])!;
-    if (name.len == 0 || name.len >= 128) {
-        self.has_inferred_name = false;
-        self.inferred_name_len = 0;
-        return;
-    }
-    self.has_inferred_name = true;
-    self.inferred_name_len = (ushort)name.len;
-    for (usz i = 0; i < name.len; i++) { self.inferred_name_buf[i] = name[i]; }
+    self.has_inferred_name = name.len > 0;
+    self.inferred_name = self.keep_name(name);
 }
 
 // Create a default constructor CompiledFunction without using the lexer.
@@ -445,16 +439,16 @@ fn ushort? CompilerContext.class_expression(&self) {
         // Explicit name overrides any inferred name (clear the flag so a
         // following anonymous class does not inherit it stale).
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
     } else if (self.has_inferred_name) {
         // ES2015 §14.5.14 SetFunctionName / NamedEvaluation: an anonymous
         // class expression picks up the inferred name from an enclosing
         // `var f = class {}` or `{ p: class {} }` assignment context.
         // The name is display-only, it does NOT create a scope binding,
         // so we set `name` but leave `has_name` false.
-        name = self.inferred_name_buf[:(uint)self.inferred_name_len];
+        name = self.inferred_name;
         self.has_inferred_name = false;
-        self.inferred_name_len = 0;
+        self.inferred_name = {};
     }
 
     // Push classScope unconditionally. Beyond the immutable class-name
@@ -1091,18 +1085,13 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 // function definition initializer gets SetFunctionName with
                 // the private name, "#field" (hash included).
                 target_ctx.has_inferred_name = true;
-                if (priv_name.len + 1 < 128) {
-                    target_ctx.inferred_name_buf[0] = '#';
-                    for (usz i = 0; i < priv_name.len; i++) {
-                        target_ctx.inferred_name_buf[i + 1] = priv_name[i];
-                    }
-                    target_ctx.inferred_name_len = (ushort)(priv_name.len + 1);
-                } else {
-                    target_ctx.inferred_name_len = 0;
-                }
+                char[] hashed = self.lexer.arena_alloc(priv_name.len + 1);
+                hashed[0] = '#';
+                hashed[1..] = priv_name[..];
+                target_ctx.inferred_name = hashed;
                 init_reg = target_ctx.assignment_expr()!;
                 target_ctx.has_inferred_name = false;
-                target_ctx.inferred_name_len = 0;
+                target_ctx.inferred_name = {};
             } else {
                 init_reg = target_ctx.alloc_reg();
                 target_ctx.emit_abc(Opcode.LDUNDEF, (uint)init_reg, 0, 0);
@@ -1572,16 +1561,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // INITPROPN over INITPROP. Same scheme as object literals.
             bool use_inferred = !has_computed_key;
             target_ctx.has_inferred_name = true;
-            if (!use_inferred) {
-                target_ctx.inferred_name_len = 0;
-            } else if (field_propname.len < 128) {
-                for (usz i = 0; i < field_propname.len; i++) {
-                    target_ctx.inferred_name_buf[i] = field_propname[i];
-                }
-                target_ctx.inferred_name_len = (ushort)field_propname.len;
-            } else {
-                target_ctx.inferred_name_len = 0;
-            }
+            target_ctx.inferred_name = use_inferred ? self.keep_name(field_propname) : "";
 
             ushort init_reg;
             // TypeScript: optional `?`/`!` markers and `: T` annotation on the
@@ -1603,7 +1583,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // was empty, so the install must patch it from the runtime key.
             bool computed_init_is_anon_fn = has_computed_key && !target_ctx.has_inferred_name;
             target_ctx.has_inferred_name = false;
-            target_ctx.inferred_name_len = 0;
+            target_ctx.inferred_name = {};
 
             // Field terminator: explicit `;`, the class body's `}`, or ASI at
             // a line terminator (ES2024 §12.10.1). A same-line token with no

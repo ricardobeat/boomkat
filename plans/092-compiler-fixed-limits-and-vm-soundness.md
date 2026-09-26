@@ -38,7 +38,7 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
 5. [x] **Nested classes.** 17 or more give a spurious "private name is not declared" error.
 6. [x] **Octal escapes before `"use strict"`.** One that sits more than 16 directives earlier is not
    rejected (the `prologue_octal` ring).
-7. [ ] **Long names are cut.** A function assigned to a name over 128 characters gets an empty `.name`
+7. [x] **Long names are cut.** A function assigned to a name over 128 characters gets an empty `.name`
    (`inferred_name_buf`). `bind()` cuts the bound name at 126 bytes and can split a UTF-8 character.
 8. [ ] **Remaining fixed-size tables.** Audit the rest; the lexical-declaration pre-scan stops at 64
    names.

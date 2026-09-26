@@ -2669,13 +2669,7 @@ fn void? CompilerContext.var_declaration(&self) {
                 NameEvalFrame _nef = self.save_name_eval();
                 defer self.restore_name_eval(_nef);
                 self.has_inferred_name = true;
-                ushort nlen = (ushort)name_tok.str_value.len;
-                if (nlen < 128) {
-                    for (ushort i = 0; i < nlen; i++) self.inferred_name_buf[i] = name_tok.str_value[i];
-                    self.inferred_name_len = nlen;
-                } else {
-                    self.has_inferred_name = false;
-                }
+                self.inferred_name = name_tok.str_value;
                 ushort val_reg = self.assignment_expr()!;
                 if (val_reg != reg) {
                     self.emit_abc(Opcode.LDREG, (uint)reg, (uint)val_reg, 0);
@@ -3988,15 +3982,7 @@ fn void? CompilerContext.for_statement(&self) {
                         NameEvalFrame _nef = self.save_name_eval();
                         defer self.restore_name_eval(_nef);
                         self.has_inferred_name = true;
-                        ushort nlen = (ushort)name_tok.str_value.len;
-                        if (nlen < 128) {
-                            for (ushort i = 0; i < nlen; i++) {
-                                self.inferred_name_buf[i] = name_tok.str_value[i];
-                            }
-                            self.inferred_name_len = nlen;
-                        } else {
-                            self.has_inferred_name = false;
-                        }
+                        self.inferred_name = name_tok.str_value;
                         init_val = self.assignment_expr()!;
                     }
                     self.forbid_in = false;
@@ -7302,9 +7288,7 @@ fn void? CompilerContext.export_declaration(&self) {
         NameEvalFrame _nef = self.save_name_eval();
         defer self.restore_name_eval(_nef);
         self.has_inferred_name = true;
-        self.inferred_name_len = 7; // "default"
-        char[] dflt_infer = "default";
-        for (ushort i = 0; i < 7; i++) self.inferred_name_buf[i] = dflt_infer[i];
+        self.inferred_name = "default";
         ushort val_reg = self.assignment_expr()!;
         uint def_name_idx = self.add_string_constant("*default*");
         self.emit_a_bc(Opcode.DECLVAR, (uint)val_reg, def_name_idx);

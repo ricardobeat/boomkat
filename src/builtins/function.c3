@@ -1009,12 +1009,8 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     // Per spec: Get(target, "name"), must invoke accessor getters and
     // propagate any abrupt completion (throw) before creating the bound fn.
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
-    char[128] name_buf;
-    int name_pos = 0;
-    // Copy "bound " prefix
-    char[] prefix = "bound ";
-    for (usz i = 0; i < prefix.len; i++) name_buf[name_pos++] = prefix[i];
-
+    // A non-string targetName (or a Symbol) leaves nothing after "bound ".
+    char[] target_name = "";
     if (downstream.is_object()) {
         HObject* tobj = (HObject*)downstream.get_heapptr();
         if (tobj != null) {
@@ -1029,19 +1025,17 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
                     HString* tn_str = (HString*)tn.get_heapptr();
                     // Symbols are stored as HString with is_symbol flag;
                     // per spec Type(targetName) must be String (not Symbol).
-                    if (!tn_str.is_symbol()) {
-                        char* tn_data = tn_str.get_cstr();
-                        uint tn_len = tn_str.blen;
-                        for (usz i = 0; i < tn_len && name_pos < 126; i++) {
-                            name_buf[name_pos++] = tn_data[i];
-                        }
-                    }
+                    if (!tn_str.is_symbol()) target_name = tn_str.get_cstr()[:tn_str.blen];
                 }
-                // Non-string targetName (or Symbol) → use "" (nothing after "bound ")
             }
         }
     }
-    HString* bound_name = builtin_intern_string(ctx.heap, name_buf[:name_pos]);
+    char[] prefix = "bound ";
+    char[] name_buf = mem::alloc_array(char, prefix.len + target_name.len);
+    defer mem::free(name_buf.ptr);
+    name_buf[:prefix.len] = prefix[..];
+    name_buf[prefix.len..] = target_name[..];
+    HString* bound_name = builtin_intern_string(ctx.heap, name_buf);
     if (bound_name != null) {
         TVal name_tv; name_tv.set_string(bound_name);
         bound_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
