@@ -1573,7 +1573,10 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // (ES5 §10.4.3), observable as `Function('return this;')()`
                     // for dynamic bodies and as the script top-level `this` for
                     // ordinary sloppy functions.
-                    if (undef_this && !target_fast.is_arrow() && target_fast.is_strict()) {
+                    // A sloppy callee that cannot observe its `this` skips the
+                    // coercion the same way.
+                    if (undef_this && !target_fast.is_arrow()
+                            && (target_fast.is_strict() || target_fast.ignores_this())) {
                         new_act.this_binding.set_undefined();
                     } else {
                     TVal arrow_live_this;
