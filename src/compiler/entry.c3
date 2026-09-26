@@ -565,6 +565,11 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     // Hoist function declarations at the module level.
     ctx.hoist_global_fn_decls()!;
 
+    // Keep top-level `var`s that no importer, closure, or eval can observe in
+    // registers. Runs between the two hoists for the reason compile_program
+    // gives: it reads the hoisted function names, and the var hoist reads it.
+    ctx.pre_scan_global_var_slots();
+
     // Hoist var declarations at the module level.
     ctx.hoist_decls(true)!;
 

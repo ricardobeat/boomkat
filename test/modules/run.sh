@@ -29,6 +29,7 @@ TESTS=(
   "t15_hoist_asi:function decl after ASI'd statement must be hoisted/exported"
   "t16_error_identity:a failed module re-reports one cached error object"
   "t17_import_types:import attribute types (json/text/bytes)"
+  "t18_var_residency:module-level vars in registers unless exported, captured, or eval-visible"
 )
 
 for entry in "${TESTS[@]}"; do
