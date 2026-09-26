@@ -8,6 +8,7 @@ import boomkat::hobject;
 import boomkat::heap;
 import boomkat::re_bindings;
 import std::io;
+import std::collections::list;
 
 // ============================================================================
 // Expression parsing
@@ -2726,9 +2727,10 @@ fn ushort? CompilerContext.call_expr(&self) {
         self.call_prop_obj_reg = REG_NONE;
     }
 
-    // Optional chaining short-circuit jump tracking
-    uint[16] opt_jump_addrs;
-    int opt_jump_count = 0;
+    // Short-circuit jumps of every `?.` in the chain, patched past its end.
+    List{uint} opt_jumps;
+    opt_jumps.init(mem);
+    defer opt_jumps.free();
 
     for (;;) {
         // TypeScript call-site type arguments: `f<T>(x)`. The `<` after a
@@ -2775,7 +2777,7 @@ fn ushort? CompilerContext.call_expr(&self) {
             // A tagged template is not a CallExpression target.
             self.last_ref = RefKind.REF_NONE;
             // Template literal after optional chain is a SyntaxError (early error)
-            if (opt_jump_count > 0) {
+            if (opt_jumps.len() > 0) {
                 self.fail("Template literal after optional chain is not supported");
                 return COMPILE_ERROR~;
             }
@@ -2845,7 +2847,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.call_prop_obj_reg = callee;
                 // Inside an optional chain this is the chain's final member
                 // access when nothing else follows, so it is the delete target.
-                if (self.del_mode && opt_jump_count > 0) {
+                if (self.del_mode && opt_jumps.len() > 0) {
                     self.del_opt_getprop_idx = (int)(self.code_count - 1);
                 }
             }
@@ -2883,7 +2885,7 @@ fn ushort? CompilerContext.call_expr(&self) {
                 self.member.set(MemberKind.PLAIN, callee, idx_reg, callee_is_base_local);
                 self.last_ref = RefKind.REF_MEMBER;
                 self.call_prop_obj_reg = callee;
-                if (self.del_mode && opt_jump_count > 0) {
+                if (self.del_mode && opt_jumps.len() > 0) {
                     self.del_opt_getprop_idx = (int)(self.code_count - 1);
                 }
             }
@@ -2910,8 +2912,8 @@ fn ushort? CompilerContext.call_expr(&self) {
             uint undef_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)cmp_reg);
             self.free_reg(cmp_reg);
 
-            opt_jump_addrs[opt_jump_count++] = null_jump;
-            opt_jump_addrs[opt_jump_count++] = undef_jump;
+            opt_jumps.push(null_jump);
+            opt_jumps.push(undef_jump);
 
             self.last_was_optional_chain = true;
 
@@ -3002,11 +3004,9 @@ fn ushort? CompilerContext.call_expr(&self) {
     }
 
     // Patch optional chaining short-circuit jumps
-    if (opt_jump_count > 0) {
+    if (opt_jumps.len() > 0) {
         uint skip = self.emit_jump(Opcode.JUMP);
-        for (int i = 0; i < opt_jump_count; i++) {
-            self.patch_jump(opt_jump_addrs[i]);
-        }
+        foreach (jump : opt_jumps) self.patch_jump(jump);
         // A nested chain remains a value expression even inside delete. The
         // delete handler patches this to LDTRUE only for its direct operand.
         if (self.del_mode) self.del_opt_short_idx = (int)self.code_count;

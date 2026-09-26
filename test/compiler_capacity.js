@@ -185,6 +185,10 @@ check("a long property name", run("({ " + giantName + ": 4 })." + giantName), 4)
 check("a long property name from a computed key", run("({ " + giantName + ": 5 })['" + giantName + "']"), 5);
 check("a long global function name", run("function " + giantName + "(){ return 6 } " + giantName + "()"), 6);
 
+check("a long optional chain", run("(function(){ var o = {}; o.a = o; return o" + "?.a".repeat(40) + " === o })()"), true);
+check("a long optional chain that short-circuits", run("(function(){ var n = null; return n" + "?.a".repeat(40) + " })()"), undefined);
+check("a long optional call chain", run("(function(){ var f = () => f; return f" + "?.()".repeat(40) + " === f })()"), true);
+
 // Nesting deep enough to exhaust the native stack is an error, not a crash.
 function throwsOnDeepNesting(src) {
     try { run(src); return false; } catch (e) { return e instanceof SyntaxError || e instanceof RangeError; }
