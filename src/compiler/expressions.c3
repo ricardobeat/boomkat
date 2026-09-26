@@ -3347,6 +3347,16 @@ fn ushort? CompilerContext.emit_call(&self, ushort callee_reg) {
 //   callee_reg + 2  = arg 1 (template object array)
 //   callee_reg + 3  = arg 2 (expr 1)
 //   ...
+struct TemplatePart {
+    uint str_idx;   // cooked string constant
+    uint raw_idx;   // raw string constant
+    bool invalid;   // an invalid escape leaves the cooked string undefined
+}
+
+fn TemplatePart CompilerContext.template_part(&self, Token tok, bool invalid) {
+    return { self.add_string_constant(tok.str_value), self.add_string_constant(tok.raw_value), invalid };
+}
+
 fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     // Save the member expression object (if any) for 'this' binding
     ushort obj_reg = REG_NONE;
@@ -3355,16 +3365,14 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
         self.call_prop_obj_reg = REG_NONE;
     }
 
-    // Maximum number of template parts (head + middle*s + tail)
-    const uint MAX_TEMPLATE_PARTS = 32;
-
-    // Collect string parts and expression registers
-    uint[MAX_TEMPLATE_PARTS] str_indices;
-    uint[MAX_TEMPLATE_PARTS] raw_indices;
-    bool[MAX_TEMPLATE_PARTS] part_invalid;
-    ushort[MAX_TEMPLATE_PARTS] expr_regs;
-    uint part_count = 0;
-    uint expr_count = 0;
+    // Cooked and raw strings of each part (head, middles, tail) and the
+    // registers of the substitutions between them.
+    List{TemplatePart} parts;
+    parts.init(mem);
+    defer parts.free();
+    List{ushort} expr_regs;
+    expr_regs.init(mem);
+    defer expr_regs.free();
 
     TokenType tt = self.peek_type();
 
@@ -3374,41 +3382,27 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
         if (!str_tok.is_template) {
             return COMPILE_ERROR~;
         }
-        str_indices[0] = self.add_string_constant(str_tok.str_value);
-        raw_indices[0] = self.add_string_constant(str_tok.raw_value);
-        part_invalid[0] = str_tok.has_invalid_escape;
-        part_count = 1;
+        parts.push(self.template_part(str_tok, str_tok.has_invalid_escape));
     } else if (tt == TokenType.TEMPLATE) {
         // Legacy TEMPLATE token (should not normally appear, but handle gracefully)
         Token tmpl_tok = self.advance()!;
-        str_indices[0] = self.add_string_constant(tmpl_tok.str_value);
-        raw_indices[0] = self.add_string_constant(tmpl_tok.raw_value);
-        part_invalid[0] = false;
-        part_count = 1;
+        parts.push(self.template_part(tmpl_tok, false));
     } else if (tt == TokenType.TEMPLATE_HEAD) {
         // Template with substitutions: `text${expr}text${expr}text`
         Token head_tok = self.advance()!;
-        str_indices[0] = self.add_string_constant(head_tok.str_value);
-        raw_indices[0] = self.add_string_constant(head_tok.raw_value);
-        part_invalid[0] = head_tok.has_invalid_escape;
-        part_count = 1;
+        parts.push(self.template_part(head_tok, head_tok.has_invalid_escape));
 
         // Compile first expression, then consume its closing `}` and scan
         // the following template part (B23 fix: parser-driven close).
-        expr_regs[0] = self.expression()!;
-        expr_count = 1;
+        expr_regs.push(self.expression()!);
         self.expect(TokenType.RBRACE)!;
         Token next_tok = self.lexer.scan_template_after_expr()!;
 
         // Handle TEMPLATE_MIDDLE / TEMPLATE_TAIL chain
         while (next_tok.type == TokenType.TEMPLATE_MIDDLE) {
-            str_indices[part_count] = self.add_string_constant(next_tok.str_value);
-            raw_indices[part_count] = self.add_string_constant(next_tok.raw_value);
-            part_invalid[part_count] = next_tok.has_invalid_escape;
-            part_count++;
+            parts.push(self.template_part(next_tok, next_tok.has_invalid_escape));
 
-            expr_regs[expr_count] = self.expression()!;
-            expr_count++;
+            expr_regs.push(self.expression()!);
 
             self.expect(TokenType.RBRACE)!;
             next_tok = self.lexer.scan_template_after_expr()!;
@@ -3417,10 +3411,7 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
         if (next_tok.type != TokenType.TEMPLATE_TAIL) {
             return COMPILE_ERROR~;
         }
-        str_indices[part_count] = self.add_string_constant(next_tok.str_value);
-        raw_indices[part_count] = self.add_string_constant(next_tok.raw_value);
-        part_invalid[part_count] = next_tok.has_invalid_escape;
-        part_count++;
+        parts.push(self.template_part(next_tok, next_tok.has_invalid_escape));
     } else {
         return COMPILE_ERROR~;
     }
@@ -3447,12 +3438,12 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     self.emit_abc(Opcode.NEWARR, (uint)tmpl_arr_reg, 0, 0);
 
     // Fill with string parts (cooked values; undefined for invalid escapes)
-    for (uint i = 0; i < part_count; i++) {
+    foreach (i, part : parts) {
         ushort elem_reg = self.alloc_reg();
-        if (part_invalid[i]) {
+        if (part.invalid) {
             self.emit_abc(Opcode.LDUNDEF, (uint)elem_reg, 0, 0);
         } else {
-            self.emit_a_bc(Opcode.LDCONST, (uint)elem_reg, str_indices[i]);
+            self.emit_a_bc(Opcode.LDCONST, (uint)elem_reg, part.str_idx);
         }
         ushort idx_reg = self.alloc_reg();
         self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)i);
@@ -3460,22 +3451,22 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
         self.free_reg(elem_reg);
         self.free_reg(idx_reg);
     }
-    self.emit_a_bc(Opcode.SETALEN, (uint)tmpl_arr_reg, part_count);
+    self.emit_a_bc(Opcode.SETALEN, (uint)tmpl_arr_reg, (uint)parts.len());
 
     // Create raw array (uncooked source text of each part)
     ushort raw_arr_reg = self.alloc_reg();
     self.emit_abc(Opcode.NEWARR, (uint)raw_arr_reg, 0, 0);
 
-    for (uint i = 0; i < part_count; i++) {
+    foreach (i, part : parts) {
         ushort str_reg = self.alloc_reg();
-        self.emit_a_bc(Opcode.LDCONST, (uint)str_reg, raw_indices[i]);
+        self.emit_a_bc(Opcode.LDCONST, (uint)str_reg, part.raw_idx);
         ushort idx_reg = self.alloc_reg();
         self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)i);
         self.emit_abc(Opcode.PUTPROP, (uint)raw_arr_reg, (uint)idx_reg, (uint)str_reg);
         self.free_reg(str_reg);
         self.free_reg(idx_reg);
     }
-    self.emit_a_bc(Opcode.SETALEN, (uint)raw_arr_reg, part_count);
+    self.emit_a_bc(Opcode.SETALEN, (uint)raw_arr_reg, (uint)parts.len());
 
     // Set .raw property on template array, a real but non-enumerable data
     // property (ES2015 §12.2.9.3 step 8: CreateDataProperty, then step 9
@@ -3528,16 +3519,16 @@ fn ushort? CompilerContext.emit_tagged_template(&self, ushort callee_reg) {
     self.free_reg(tmpl_arr_reg);
 
     // Place expression arguments in consecutive registers after template array
-    for (uint i = 0; i < expr_count; i++) {
+    foreach (i, reg : expr_regs) {
         ushort expected = first_arg + 1 + (ushort)i;
-        if (expr_regs[i] != expected) {
-            self.emit_abc(Opcode.LDREG, (uint)expected, (uint)expr_regs[i], 0);
-            self.free_reg(expr_regs[i]);
+        if (reg != expected) {
+            self.emit_abc(Opcode.LDREG, (uint)expected, (uint)reg, 0);
+            self.free_reg(reg);
         }
     }
 
     // Update next_reg past all arguments
-    ushort total_args = 1 + (ushort)expr_count;  // template array + expressions
+    ushort total_args = 1 + (ushort)expr_regs.len();  // template array + expressions
     self.next_reg = first_arg + total_args;
     if (self.next_reg > self.max_reg) {
         self.max_reg = self.next_reg;

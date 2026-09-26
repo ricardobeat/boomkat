@@ -189,6 +189,10 @@ check("a long optional chain", run("(function(){ var o = {}; o.a = o; return o" 
 check("a long optional chain that short-circuits", run("(function(){ var n = null; return n" + "?.a".repeat(40) + " })()"), undefined);
 check("a long optional call chain", run("(function(){ var f = () => f; return f" + "?.()".repeat(40) + " === f })()"), true);
 
+check("a tagged template with many substitutions",
+    run("(function(s, ...a){ return s.length + ':' + s.raw.length + ':' + a.join('') })`" + range(100, i => "${" + (i % 10) + "}\\x").join("") + "`"),
+    "101:101:" + range(100, i => i % 10).join(""));
+
 // Nesting deep enough to exhaust the native stack is an error, not a crash.
 function throwsOnDeepNesting(src) {
     try { run(src); return false; } catch (e) { return e instanceof SyntaxError || e instanceof RangeError; }
