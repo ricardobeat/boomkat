@@ -1603,8 +1603,14 @@ fn uint coll_hash_key(TVal v, heap::Heap* h) {
     if (v.is_undefined()) return 0xC2B2AE35u;
     if (v.is_null()) return 0x27D4EB2Fu;
     if (v.is_bigint()) {
-        long b = (long)v.get_bigint();
-        return ((uint)b) ^ ((uint)(b >> 32));
+        // Equal BigInts are separate allocations with the same normalized
+        // limbs, so hash the limbs (FNV-1a).
+        HBigInt* b = (HBigInt*)v.get_bigint();
+        uint hash = 0x811C9DC5u;
+        for (int i = 0; i < b.len; i++) {
+            hash = (hash ^ (uint)b.limbs()[i]) * 0x01000193u;
+        }
+        return hash;
     }
     // Objects and symbols are compared by identity, so they hash by it too.
     ulong p = (ulong)(uptr)v.get_heapptr();

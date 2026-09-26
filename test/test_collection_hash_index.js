@@ -143,6 +143,14 @@ eq("mixed types size", mixed.size, 26);
 eq("number vs string key", mixed.has(1) && mixed.has("1"), true);
 eq("null vs undefined key", mixed.has(null) && mixed.has(undefined), true);
 
+// Equal BigInts are separate allocations and must hash alike.
+var big = new Map();
+for (var i = 0; i < 40; i++) { big.set(BigInt(i) * 10n ** 30n, i); }
+eq("BigInt key lookup", big.get(BigInt("17" + "0".repeat(30))), 17);
+big.set(BigInt(5) * 10n ** 30n, -1);
+eq("BigInt key overwrite", big.size, 40);
+eq("negative BigInt key", new Set(Array.from({length: 20}, (_, i) => -BigInt(i))).has(-7n), true);
+
 // WeakMap/WeakSet share the same lookup path.
 var wsKeys = [];
 var ws = new WeakSet();
