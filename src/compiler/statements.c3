@@ -136,16 +136,13 @@ struct ForOfHead {
     bool   is_lexical;     // let/const (needs per-iteration env)
     bool   is_const;
 
-    // DESTRUCTURE: extract the value through a pattern via emit_destruct_bindings.
-    // The bind arrays are owned by the caller (stack) and pointed at val_slot
-    // per iteration. store_mode is DECLARE (let/const/var decl) or ASSIGN_TARGET
-    // (bare assignment pattern). is_array_pattern selects REQUIRE_OBJ vs empty-arr.
+    // DESTRUCTURE: extract the value through a pattern via emit_destructure.
+    // The caller owns the binds, which are pointed at val_slot per iteration.
+    // store_mode is DECLARE (let/const/var decl) or ASSIGN_TARGET (bare
+    // assignment pattern).
     DestructBind[] binds;
-    uint           bind_count;
-    ushort[]       group_regs;
-    ushort[]       binding_regs;
     DestructStoreMode store_mode;
-    bool           is_array_pattern;
+    bool           is_object_pattern;
 
     // MEMBER: re-parse and store into a member reference each iteration.
     ForLhsSnapshot lhs_snap;
@@ -2568,13 +2565,8 @@ fn void? CompilerContext.var_declaration(&self) {
     for (;;) {
         TokenType next = self.peek_type();
 
-        if (next == TokenType.LBRACKET) {
-            self.advance()!; // consume '['
-            self.array_destructure(kind, is_lexical, is_const)!;
-            self.try_skip_ts_type_annotation()!;
-        } else if (next == TokenType.LBRACE) {
-            self.advance()!; // consume '{'
-            self.object_destructure(kind, is_lexical, is_const)!;
+        if (next == TokenType.LBRACKET || next == TokenType.LBRACE) {
+            self.destructure_declaration(kind, is_lexical, is_const)!;
             self.try_skip_ts_type_annotation()!;
         } else {
             // ES2024 §13.3.1: BindingIdentifier is an Identifier, or one of
@@ -3587,13 +3579,12 @@ fn void? CompilerContext.for_statement(&self) {
         self.restore_lhs_snapshot(bare_snap);
 
         if (is_bare_destr) {
-            bool is_array_pattern = (next_tt == TokenType.LBRACKET);
             // Bare form: bindings are VAR-scoped, no PUSH_LEX/POP_LEX per iteration.
             if (bare_is_of) {
-                self.emit_bare_forof_destruct_loop(is_array_pattern, saved_scope, saved_reg, for_is_await)!;
+                self.emit_bare_forof_destruct_loop(saved_scope, saved_reg, for_is_await)!;
             } else {
                 if (for_is_await) return self.fail("'for await' requires 'of', not 'in'")~;
-                self.emit_bare_forin_destruct_loop(is_array_pattern, saved_scope, saved_reg)!;
+                self.emit_bare_forin_destruct_loop(saved_scope, saved_reg)!;
             }
             return;
         }
@@ -3673,45 +3664,13 @@ fn void? CompilerContext.for_statement(&self) {
 
             if (is_forof_destr) {
                 // for (let [a, b] of arr) or for (let {x, y} of arr)
-                bool is_array_pattern = (after_decl == TokenType.LBRACKET);
                 ushort iter_reg = 0;
 
-                // Parse the destructuring pattern inline.
-                // We parse bindings here and emit iterator-based extraction
-                // into the loop body below, avoiding lexer state issues with
-                // destructure_for_value (which can't re-parse after the header
-                // has been consumed).
-
-                DestructBind[MAX_DESTRUCT_BINDS] dbinds;
-                ushort[MAX_DESTRUCT_BINDS] dgroup_regs;
-                ushort[MAX_DESTRUCT_BINDS] dbinding_regs;
-                uint bind_count = 0;
-                for (uint i = 0; i < MAX_DESTRUCT_BINDS; i++) { dgroup_regs[i] = 0xFFFF; dbinding_regs[i] = 0xFFFF; }
-
-                // Parse the pattern into the shared DestructBind model, then
-                // declare each leaf binding in the loop's scope. The extraction
-                // itself is emitted per-iteration in the loop body below.
-                // The collectors consume their closing ']' / '}' themselves; the
-                // caller consumes only the opening bracket.
-                self.advance()!; // consume '[' or '{'
-                if (is_array_pattern) {
-                    self.collect_arr_param_binds(dbinds[..], &bind_count, 0, 0xFFFF)!;
-                } else {
-                    self.collect_obj_param_binds(dbinds[..], &bind_count, 0, 0xFFFF)!;
-                }
-                // A `let`/`const` ForDeclaration's BoundNames must be unique
-                // (§14.7.5.1). A `var` head is exempt: the repeated names all
-                // denote the same var binding.
-                if (is_lexical) {
-                    self.check_pattern_bound_names_unique(dbinds[..], bind_count)!;
-                }
-                for (uint i = 0; i < bind_count; i++) {
-                    if (dbinds[i].is_synthetic) continue;
-                    HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
-                    self.check_var_lex_conflict(hs.get_data(), decl_kind)!;
-                    ushort dreg = self.declare_binding_var(hs.get_data(), decl_kind);
-                    dbinding_regs[i] = dreg;
-                }
+                // Declare the pattern's leaves in the loop's scope; the
+                // extraction is emitted per iteration in the loop body.
+                DestructBinds dbinds = { .allocator = mem };
+                defer free_destruct_binds(&dbinds);
+                bool is_object_pattern = self.declare_pattern(&dbinds, decl_kind, is_lexical)!;
 
                 // Consume "of" (contextual keyword - lexed as IDENTIFIER)
                 {
@@ -3725,16 +3684,14 @@ fn void? CompilerContext.for_statement(&self) {
                 // Before evaluating the RHS expression, a TDZ environment is
                 // created for the ForDeclaration names so that any reference
                 // to them inside the RHS throws a ReferenceError.
-                bool has_head_tdz = is_lexical && bind_count > 0;
+                bool has_head_tdz = is_lexical && dbinds.len() > 0;
                 if (has_head_tdz) {
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
-                    for (uint i = 0; i < bind_count; i++) {
-                        if (dbinds[i].is_synthetic) continue;
-                        HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
-                        char[] bname = hs.get_data();
-                        uint name_idx = self.add_string_constant(bname);
-                        self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
+                    foreach (&b : dbinds) {
+                        if (b.is_synthetic) continue;
+                        char[] bname = self.bind_name(b);
+                        self.emit_a_bc(Opcode.INITTZ, 0, b.name_idx);
                         // Mark outer scope entry as captured so the compiler
                         // emits GETVAR instead of LDREG, prevents bypassing
                         // the TDZ sentinel in the new lex_env.
@@ -3760,12 +3717,9 @@ fn void? CompilerContext.for_statement(&self) {
 
                 ForOfHead head;
                 head.kind = DESTRUCTURE;
-                head.binds = dbinds[..];
-                head.bind_count = bind_count;
-                head.group_regs = dgroup_regs[..];
-                head.binding_regs = dbinding_regs[..];
+                head.binds = dbinds.array_view();
                 head.store_mode = DestructStoreMode.DECLARE;
-                head.is_array_pattern = is_array_pattern;
+                head.is_object_pattern = is_object_pattern;
                 head.is_lexical = is_lexical;
                 head.is_const = is_const;
                 self.emit_forof(head, iter_reg, saved_scope, saved_reg, for_is_await)!;
@@ -3773,50 +3727,29 @@ fn void? CompilerContext.for_statement(&self) {
             } else if (is_forin_destr) {
                 if (for_is_await) return self.fail("'for await' requires 'of', not 'in'")~;
                 // for-in with destructuring: for (let {x, y} in obj) or for (let [a, b] in obj)
-                bool is_array_pattern = (after_decl == TokenType.LBRACKET);
                 ushort obj_reg = 0;
 
-                // Collect the pattern with the shared param collectors.
-                DestructBind[MAX_DESTRUCT_BINDS] fdbinds;
-                uint fdcount = 0;
-                self.advance()!; // consume '[' or '{'
-                if (is_array_pattern) {
-                    self.collect_arr_param_binds(fdbinds[..], &fdcount, 0, 0xFFFF)!;
-                } else {
-                    self.collect_obj_param_binds(fdbinds[..], &fdcount, 0, 0xFFFF)!;
-                }
-                // §14.7.5.1, as for the for-of head above.
-                if (is_lexical) {
-                    self.check_pattern_bound_names_unique(fdbinds[..], fdcount)!;
-                }
-                ushort[MAX_DESTRUCT_BINDS] fdgroup_regs;
-                ushort[MAX_DESTRUCT_BINDS] fdbinding_regs;
-                uint[MAX_DESTRUCT_BINDS] fd_periter_name_idxs;
-                bool[MAX_DESTRUCT_BINDS] fd_periter_is_const;
-                uint fd_periter_count = 0;
-                bool fd_needs_periter = false;
-                for (uint i = 0; i < fdcount; i++) { fdgroup_regs[i] = 0xFFFF; fdbinding_regs[i] = 0xFFFF; }
-                for (uint i = 0; i < fdcount; i++) {
-                    if (fdbinds[i].is_synthetic) continue;
-                    HString* hs = (HString*)self.constants[fdbinds[i].name_idx].get_heapptr();
-                    self.check_var_lex_conflict(hs.get_data(), decl_kind)!;
-                    fdbinding_regs[i] = self.declare_binding_var(hs.get_data(), decl_kind);
-                    if (is_lexical && self.is_captured_name(hs.get_data())) {
-                        fd_periter_name_idxs[fd_periter_count] = fdbinds[i].name_idx;
-                        fd_periter_is_const[fd_periter_count] = is_const;
-                        fd_periter_count++;
-                        fd_needs_periter = true;
-                    }
+                DestructBinds fdbinds = { .allocator = mem };
+                defer free_destruct_binds(&fdbinds);
+                bool is_object_pattern = self.declare_pattern(&fdbinds, decl_kind, is_lexical)!;
+                // Captured lexical leaves get a fresh binding per iteration.
+                List{uint} fd_periter_name_idxs;
+                List{bool} fd_periter_is_const;
+                fd_periter_name_idxs.init(mem);
+                fd_periter_is_const.init(mem);
+                defer { fd_periter_name_idxs.free(); fd_periter_is_const.free(); }
+                foreach (&b : fdbinds) {
+                    if (b.is_synthetic || !is_lexical || !self.is_captured_name(self.bind_name(b))) continue;
+                    fd_periter_name_idxs.push(b.name_idx);
+                    fd_periter_is_const.push(is_const);
                 }
 
                 self.expect(TokenType.IN)!;
                 if (is_lexical) {
                     self.emit_simple(Opcode.PUSH_LEX);
                     self.cur_lex_depth++;
-                    for (uint i = 0; i < fdcount; i++) {
-                        if (fdbinds[i].is_synthetic) continue;
-                        HString* hs = (HString*)self.constants[fdbinds[i].name_idx].get_heapptr();
-                        self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(hs.get_data()));
+                    foreach (&b : fdbinds) {
+                        if (!b.is_synthetic) self.emit_a_bc(Opcode.INITTZ, 0, b.name_idx);
                     }
                 }
                 obj_reg = self.expression()!;
@@ -3842,16 +3775,8 @@ fn void? CompilerContext.for_statement(&self) {
                 self.free_reg(has_next);
 
                 // Destructure each enumerated key via the shared emitter.
-                if (!is_array_pattern) {
-                    self.emit_abc(Opcode.REQUIRE_OBJ, (uint)key_reg, 0, 0);
-                }
-                for (uint bi = 0; bi < fdcount; bi++) {
-                    if (fdbinds[bi].parent_idx == 0xFFFF) fdbinds[bi].arg_idx = key_reg;
-                }
-                if (fdcount > 0) {
-                    self.emit_destruct_bindings(fdbinds[..], fdcount, fdgroup_regs[..], fdbinding_regs[..],
-                                                DestructStoreMode.DECLARE, is_lexical, is_const);
-                }
+                self.emit_destructure(fdbinds.array_view(), is_object_pattern, key_reg,
+                                      DestructStoreMode.DECLARE, is_lexical, is_const);
 
                 // The head's `)` closes the for-in clause, not an operand, so a
                 // following `/` must start a RegularExpressionLiteral (B2).
@@ -3862,9 +3787,10 @@ fn void? CompilerContext.for_statement(&self) {
                 // replacing the current environment so closures from this body
                 // retain the values for this iteration.
                 uint cycle_label = self.code_count;
-                if (fd_needs_periter) {
-                    self.emit_create_per_iteration_env(fd_periter_name_idxs[..],
-                                                       fd_periter_is_const[..], fd_periter_count);
+                if (fd_periter_name_idxs.len() > 0) {
+                    self.emit_create_per_iteration_env(fd_periter_name_idxs.array_view(),
+                                                       fd_periter_is_const.array_view(),
+                                                       (uint)fd_periter_name_idxs.len());
                 }
                 self.loop_stack[self.loop_depth - 1].continue_target = cycle_label;
 
@@ -3899,50 +3825,40 @@ fn void? CompilerContext.for_statement(&self) {
                 // Collect the pattern's leaf names: a captured lexical head
                 // binding needs a fresh env per iteration (§14.7.4.2), fed to
                 // the shared periterenv prologue below like a plain `let`
-                // head. The buffer is reused by comma-separated extras.
-                char[][MAX_DESTRUCT_BINDS] head_names;
-                uint head_count = 0;
-                if (after_decl == TokenType.LBRACKET) {
-                    self.advance()!; // consume '['
-                    self.array_destructure(decl_kind, is_lexical, is_const, &head_names[0], &head_count)!;
-                } else {
-                    self.advance()!; // consume '{'
-                    self.object_destructure(decl_kind, is_lexical, is_const, &head_names[0], &head_count)!;
-                }
+                // head. The list is reused by comma-separated extras.
+                List{char[]} head_names;
+                head_names.init(mem);
+                defer head_names.free();
+                self.destructure_declaration(decl_kind, is_lexical, is_const, &head_names)!;
                 if (is_lexical) {
-                    for (uint hi = 0; hi < head_count && periterenv_count < 8; hi++) {
+                    for (uint hi = 0; hi < head_names.len() && periterenv_count < 8; hi++) {
                         if (self.is_captured_name(head_names[hi])) needs_periterenv = true;
                         periterenv_names[periterenv_count] = head_names[hi];
                         periterenv_name_idxs[periterenv_count] = self.add_string_constant(head_names[hi]);
                         periterenv_is_const[periterenv_count] = is_const;
                         periterenv_count++;
                     }
-                    head_count = 0;
                 }
-                // BISECT2: unconditional needs_periterenv
+                head_names.clear();
 
                 // More declarations? (var [a]=x, b=y)
                 while (self.match(TokenType.COMMA)) {
                     TokenType nt = self.peek_type();
-                    if (nt == TokenType.LBRACKET) {
-                        self.advance()!;
-                        self.array_destructure(decl_kind, is_lexical, is_const, &head_names[0], &head_count)!;
-                    } else if (nt == TokenType.LBRACE) {
-                        self.advance()!;
-                        self.object_destructure(decl_kind, is_lexical, is_const, &head_names[0], &head_count)!;
+                    if (nt == TokenType.LBRACKET || nt == TokenType.LBRACE) {
+                        self.destructure_declaration(decl_kind, is_lexical, is_const, &head_names)!;
                     }
                     // Register a comma-separated pattern's leaves for the
                     // per-iteration env, same as the first declarator above.
                     if (is_lexical && (nt == TokenType.LBRACKET || nt == TokenType.LBRACE)) {
-                        for (uint hi = 0; hi < head_count && periterenv_count < 8; hi++) {
+                        for (uint hi = 0; hi < head_names.len() && periterenv_count < 8; hi++) {
                             if (self.is_captured_name(head_names[hi])) needs_periterenv = true;
                             periterenv_names[periterenv_count] = head_names[hi];
                             periterenv_name_idxs[periterenv_count] = self.add_string_constant(head_names[hi]);
                             periterenv_is_const[periterenv_count] = is_const;
                             periterenv_count++;
                         }
-                        head_count = 0;
                     }
+                    head_names.clear();
                     if (nt != TokenType.LBRACKET && nt != TokenType.LBRACE) {
                         Token extra_name = self.expect(TokenType.IDENTIFIER)!;
                         // Intern now: escaped identifier borrows the lexer's
@@ -4307,17 +4223,14 @@ fn void? CompilerContext.for_statement(&self) {
                 TokenType nt2 = self.peek_type();
                 // A comma-separated pattern's leaves join the per-iteration
                 // env like the first declarator's (see head_names above).
-                char[][MAX_DESTRUCT_BINDS] extra_names;
-                uint extra_count = 0;
-                if (nt2 == TokenType.LBRACKET) {
-                    self.advance()!;
-                    self.array_destructure(decl_kind, is_lexical, is_const, &extra_names[0], &extra_count)!;
-                } else if (nt2 == TokenType.LBRACE) {
-                    self.advance()!;
-                    self.object_destructure(decl_kind, is_lexical, is_const, &extra_names[0], &extra_count)!;
+                List{char[]} extra_names;
+                extra_names.init(mem);
+                defer extra_names.free();
+                if (nt2 == TokenType.LBRACKET || nt2 == TokenType.LBRACE) {
+                    self.destructure_declaration(decl_kind, is_lexical, is_const, &extra_names)!;
                 }
                 if (is_lexical && (nt2 == TokenType.LBRACKET || nt2 == TokenType.LBRACE)) {
-                    for (uint ei = 0; ei < extra_count && periterenv_count < 8; ei++) {
+                    for (uint ei = 0; ei < extra_names.len() && periterenv_count < 8; ei++) {
                         if (self.is_captured_name(extra_names[ei])) needs_periterenv = true;
                         periterenv_names[periterenv_count] = extra_names[ei];
                         periterenv_name_idxs[periterenv_count] = self.add_string_constant(extra_names[ei]);
@@ -5239,10 +5152,8 @@ fn bool CompilerContext.forof_head_is_captured(&self, ForOfHead head) {
         case DESTRUCTURE:
             // Any captured leaf forces the env for the whole head: the binds
             // share one iteration, so they share its lifetime.
-            for (uint i = 0; i < head.bind_count; i++) {
-                if (head.binds[i].is_synthetic) continue;
-                HString* hs = (HString*)self.constants[head.binds[i].name_idx].get_heapptr();
-                if (self.is_captured_name(hs.get_data())) return true;
+            foreach (&b : head.binds) {
+                if (!b.is_synthetic && self.is_captured_name(self.bind_name(b))) return true;
             }
             return false;
         case MEMBER:
@@ -5257,11 +5168,8 @@ fn void CompilerContext.emit_head_inittz(&self, ForOfHead head) {
         case IDENT:
             self.emit_a_bc(Opcode.INITTZ, 0, head.id_name_idx);
         case DESTRUCTURE:
-            for (uint i = 0; i < head.bind_count; i++) {
-                if (head.binds[i].is_synthetic) continue;
-                HString* hs = (HString*)self.constants[head.binds[i].name_idx].get_heapptr();
-                uint name_idx = self.add_string_constant(hs.get_data());
-                self.emit_a_bc(Opcode.INITTZ, 0, name_idx);
+            foreach (&b : head.binds) {
+                if (!b.is_synthetic) self.emit_a_bc(Opcode.INITTZ, 0, b.name_idx);
             }
         case MEMBER:
             // no head bindings
@@ -5296,15 +5204,8 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
                     head.id_walk_chain);
             }
         case DESTRUCTURE:
-            // Object patterns reject null/undefined even when empty.
-            if (!head.is_array_pattern) {
-                self.emit_abc(Opcode.REQUIRE_OBJ, (uint)val_slot, 0, 0);
-            }
-            for (uint bi = 0; bi < head.bind_count; bi++) {
-                if (head.binds[bi].parent_idx == 0xFFFF) head.binds[bi].arg_idx = val_slot;
-            }
-            self.emit_destruct_bindings(head.binds, head.bind_count, head.group_regs,
-                head.binding_regs, head.store_mode, head.is_lexical, head.is_const);
+            self.emit_destructure(head.binds, head.is_object_pattern, val_slot, head.store_mode,
+                                  head.is_lexical, head.is_const);
         case MEMBER:
             self.emit_member_lhs_store(head.lhs_snap, val_slot)!;
     }
@@ -5312,49 +5213,14 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
 
 // Emit a for-of loop with a bare destructuring pattern LHS:
 // `for ([a, b] of arr) { ... }` or `for ({x, y} of arr) { ... }`.
-// Bindings are VAR-scoped and persist across iterations (no per-iter
-// block scope). The '[' or '{' has NOT been consumed on entry.
-fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_pattern, uint saved_scope, ushort saved_reg, bool is_await = false) {
-    // Collect the assignment pattern with the shared collectors.
-    // Bare for-of (`for ([a] of ...)` / `for ({x} of ...)`) assigns to existing
-    // lvalues, so this uses the assignment collectors (full LHS grammar) and
-    // emits via emit_destruct_bindings(ASSIGN_TARGET), one algorithm shared
-    // with array/object destructuring assignment.
-    //
-    // The pattern's default values are AssignmentExpressions (ES2022
-    // §13.15.5.2/§13.15.5.3), so the in_formal_params gate on await/yield in
-    // compile_default_expr must not apply while collecting (see
-    // array_destructure_assign).
-    bool saved_in_fp = self.in_formal_params;
-    self.in_formal_params = false;
-    defer self.in_formal_params = saved_in_fp;
-
-    DestructBind[MAX_DESTRUCT_BINDS] dbinds;
-    uint dcount = 0;
-    self.advance()!; // consume '[' or '{'
-    if (is_array_pattern) {
-        self.collect_arr_assign_binds(dbinds[..], &dcount)!;
-    } else {
-        self.collect_obj_assign_binds(dbinds[..], &dcount)!;
-    }
-
-    ushort[MAX_DESTRUCT_BINDS] dgroup_regs;
-    ushort[MAX_DESTRUCT_BINDS] dbinding_regs;
-    for (uint i = 0; i < dcount; i++) { dgroup_regs[i] = 0xFFFF; dbinding_regs[i] = 0xFFFF; }
-    // Allocate a binding register per leaf: member targets and unresolvable
-    // identifiers get a fresh temp; resolvable locals reuse their slot.
-    for (uint i = 0; i < dcount; i++) {
-        if (dbinds[i].is_synthetic) continue;
-        if (dbinds[i].is_member_target) { dbinding_regs[i] = self.alloc_reg(); continue; }
-        HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
-        char[] name = hs.get_data();
-        if (!self.is_global) {
-            if (try existing = self.resolve_var(name)) { dbinding_regs[i] = existing; continue; }
-        }
-        // Env-resident target: temp + forced PUTVAR so const-assignment throws.
-        dbinding_regs[i] = self.alloc_reg();
-        dbinds[i].assign_needs_putvar = true;
-    }
+// The pattern assigns to existing lvalues (full LHS grammar) with no
+// per-iteration scope, through the same collector and ASSIGN_TARGET store as
+// destructuring assignment. The '[' or '{' has NOT been consumed on entry.
+fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, uint saved_scope, ushort saved_reg, bool is_await = false) {
+    DestructBinds dbinds = { .allocator = mem };
+    defer free_destruct_binds(&dbinds);
+    bool is_object_pattern = self.collect_assign_pattern(&dbinds)!;
+    self.resolve_assign_targets(dbinds.array_view());
 
     // Consume "of" (lexed as IDENTIFIER)
     {
@@ -5370,12 +5236,9 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
     // Bare assignment pattern: VAR-scoped (no per-iter env), ASSIGN_TARGET store.
     ForOfHead head;
     head.kind = DESTRUCTURE;
-    head.binds = dbinds[..];
-    head.bind_count = dcount;
-    head.group_regs = dgroup_regs[..];
-    head.binding_regs = dbinding_regs[..];
+    head.binds = dbinds.array_view();
     head.store_mode = DestructStoreMode.ASSIGN_TARGET;
-    head.is_array_pattern = is_array_pattern;
+    head.is_object_pattern = is_object_pattern;
     head.is_lexical = false;
     head.is_const = false;
     self.emit_forof(head, iter_reg, saved_scope, saved_reg, is_await)!;
@@ -5384,47 +5247,16 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, bool is_array_patt
 // Emit a for-in loop with a bare destructuring pattern LHS:
 // `for ([a, b] in obj) { ... }` or `for ({x, y} in obj) { ... }`.
 // The '[' or '{' has NOT been consumed.
-fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_pattern, uint saved_scope, ushort saved_reg) {
+fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, uint saved_scope, ushort saved_reg) {
     // A bare pattern in a for-in head is an AssignmentPattern (ES2024
     // §14.7.5.1, same as the for-of form): it assigns to existing lvalues
     // rather than declaring, so member-expression targets like
     // `for ({length: obj.p} in o)` are legal and the restricted-name early
     // errors (`yield`, `eval`, `arguments`) apply to its identifier leaves.
-    // Use the assignment collectors and the ASSIGN_TARGET store mode, exactly
-    // as emit_bare_forof_destruct_loop does.
-    //
-    // The pattern's default values are AssignmentExpressions, not
-    // FormalParameter defaults, so the in_formal_params await/yield gate must
-    // not apply while collecting (see array_destructure_assign).
-    bool saved_in_fp = self.in_formal_params;
-    self.in_formal_params = false;
-    defer self.in_formal_params = saved_in_fp;
-
-    DestructBind[MAX_DESTRUCT_BINDS] dbinds;
-    uint dcount = 0;
-    self.advance()!; // consume '[' or '{'
-    if (is_array_pattern) {
-        self.collect_arr_assign_binds(dbinds[..], &dcount)!;
-    } else {
-        self.collect_obj_assign_binds(dbinds[..], &dcount)!;
-    }
-    ushort[MAX_DESTRUCT_BINDS] dgroup_regs;
-    ushort[MAX_DESTRUCT_BINDS] dbinding_regs;
-    for (uint i = 0; i < dcount; i++) { dgroup_regs[i] = 0xFFFF; dbinding_regs[i] = 0xFFFF; }
-    // Allocate a binding register per leaf: member targets and unresolvable
-    // identifiers get a fresh temp; resolvable locals reuse their slot.
-    for (uint i = 0; i < dcount; i++) {
-        if (dbinds[i].is_synthetic) continue;
-        if (dbinds[i].is_member_target) { dbinding_regs[i] = self.alloc_reg(); continue; }
-        HString* hs = (HString*)self.constants[dbinds[i].name_idx].get_heapptr();
-        char[] name = hs.get_data();
-        if (!self.is_global) {
-            if (try existing = self.resolve_var(name)) { dbinding_regs[i] = existing; continue; }
-        }
-        // Env-resident target: temp + forced PUTVAR so const-assignment throws.
-        dbinding_regs[i] = self.alloc_reg();
-        dbinds[i].assign_needs_putvar = true;
-    }
+    DestructBinds dbinds = { .allocator = mem };
+    defer free_destruct_binds(&dbinds);
+    bool is_object_pattern = self.collect_assign_pattern(&dbinds)!;
+    self.resolve_assign_targets(dbinds.array_view());
 
     self.expect(TokenType.IN)!;
     ushort obj_reg = self.expression()!;
@@ -5448,16 +5280,8 @@ fn void? CompilerContext.emit_bare_forin_destruct_loop(&self, bool is_array_patt
 
     // Destructure each enumerated key via the shared emitter. The head is an
     // AssignmentPattern, so the leaves store through ASSIGN_TARGET.
-    if (!is_array_pattern) {
-        self.emit_abc(Opcode.REQUIRE_OBJ, (uint)key_reg, 0, 0);
-    }
-    for (uint bi = 0; bi < dcount; bi++) {
-        if (dbinds[bi].parent_idx == 0xFFFF) dbinds[bi].arg_idx = key_reg;
-    }
-    if (dcount > 0) {
-        self.emit_destruct_bindings(dbinds[..], dcount, dgroup_regs[..], dbinding_regs[..],
-                                    DestructStoreMode.ASSIGN_TARGET, false, false);
-    }
+    self.emit_destructure(dbinds.array_view(), is_object_pattern, key_reg,
+                          DestructStoreMode.ASSIGN_TARGET);
 
     // The head's `)` closes the for-in clause, not an operand, so a following
     // `/` must start a RegularExpressionLiteral (B2).
@@ -5807,7 +5631,6 @@ fn void? CompilerContext.try_statement(&self) {
                 // Catch destructuring: catch ([a, b]) or catch ({x, y})
                 // Bindings have block scope (LET).  Allocate a temp for
                 // the thrown value via CATCH, then extract per-binding.
-                self.advance()!; // consume '[' or '{'
                 ushort catch_val_reg = self.alloc_reg();
                 self.emit_abc(Opcode.CATCH, (uint)catch_val_reg, 0, 0);
                 // Catch bindings live in their own lexical scope so they
@@ -5819,19 +5642,7 @@ fn void? CompilerContext.try_statement(&self) {
                 self.emit_a_bc(Opcode.PUSH_LEX, 1, 0);
                 self.cur_lex_depth++;
                 catch_binding_scope = true;
-
-                // Per spec: the thrown value must be object-coercible
-                // (null/undefined throws TypeError) for object patterns
-                //, even empty `{}` patterns, per ES2019 §13.15.1.5.
-                // Array patterns also throw if the value isn't iterable,
-                // but iterator-protocol .next() already produces a TypeError
-                // for null/undefined via GetMethod's ToObject step.
-                if (ct == TokenType.LBRACE) {
-                    self.emit_abc(Opcode.REQUIRE_OBJ, (uint)catch_val_reg, 0, 0);
-                    self.compile_catch_object_pattern(catch_val_reg)!;
-                } else {
-                    self.compile_catch_array_pattern(catch_val_reg)!;
-                }
+                self.compile_catch_pattern(catch_val_reg)!;
                 if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
                 self.expect(TokenType.RPAREN)!;
                 self.free_reg(catch_val_reg);
@@ -7817,16 +7628,12 @@ fn void? CompilerContext.export_declaration(&self) {
         // machinery, collecting the declared leaf names to register as exports.
         TokenType pat = self.peek_type();
         if (pat == TokenType.LBRACE || pat == TokenType.LBRACKET) {
-            char[][MAX_DESTRUCT_BINDS] export_names;
-            uint export_names_count = 0;
-            self.advance()!;  // consume '{' or '['
-            if (pat == TokenType.LBRACE) {
-                self.object_destructure(kind, is_lexical, is_const, &export_names[0], &export_names_count)!;
-            } else {
-                self.array_destructure(kind, is_lexical, is_const, &export_names[0], &export_names_count)!;
-            }
-            for (uint i = 0; i < export_names_count; i++) {
-                self.register_export(mod, export_names[i], export_names[i], false, 0, is_lexical, true)!;
+            List{char[]} export_names;
+            export_names.init(mem);
+            defer export_names.free();
+            self.destructure_declaration(kind, is_lexical, is_const, &export_names)!;
+            foreach (name : export_names) {
+                self.register_export(mod, name, name, false, 0, is_lexical, true)!;
             }
             self.match(TokenType.SEMICOLON);
             return;
@@ -7891,75 +7698,28 @@ fn void? CompilerContext.export_declaration(&self) {
 // Catch-clause destructuring (ES2019 §13.15.1)
 //
 // `catch ([a, b])` and `catch ({x, y})` are syntactically a parameter list
-// in the catch clause.  Each binding is block-scoped to the catch block.
-// The thrown value is captured by the CATCH opcode into a temp register
-// passed in; this function parses the rest of the pattern (the opening
-// '[' or '{' has already been consumed) and emits per-binding GETPROP
-// extractions from that register, with default-value support.
+// in the catch clause. Each binding is block-scoped to the catch block.
+// The CATCH opcode captures the thrown value into the register passed in.
 // ============================================================================
 
-// Array catch pattern. The '[' has already been consumed.
-// Uses the iterator protocol on catch_val_reg to extract elements.
-// Array catch pattern (`catch ([a, b]) {}`). The '[' has already been consumed.
-// Collects via the shared collector, declares each leaf LET-scoped in the catch
-// scope, and extracts through emit_destruct_bindings (iterator protocol,
-// defaults, rest, IteratorClose), the single destructuring algorithm.
-fn void? CompilerContext.compile_catch_array_pattern(&self, ushort catch_val_reg) {
-    DestructBind[MAX_DESTRUCT_BINDS] binds;
-    uint count = 0;
-    self.collect_arr_param_binds(binds[..], &count, catch_val_reg, 0xFFFF)!;
-    self.emit_catch_pattern(binds[..], count, catch_val_reg)!;
-}
-
-// The BoundNames of a destructuring pattern must contain no duplicates
-// wherever the pattern introduces LEXICAL bindings: a CatchParameter
-// (§14.15.1) and a `let`/`const` ForDeclaration (§14.7.5.1). A `var` pattern
-// is exempt, its repeated names all denote the same var binding, so
-// `for (var [x, x] of ...)` is legal.
-//
-// SeenParams already implements exactly this check for FormalParameters, so
-// this reuses it rather than growing a second duplicate-name walk.
-fn void? CompilerContext.check_pattern_bound_names_unique(&self, DestructBind[] binds, uint count) {
-    SeenParams seen;
-    // ES2024 §13.7.5.11 / §14.15.1: duplicate BoundNames in a `let`/`const`
-    // ForDeclaration or a CatchParameter are a SyntaxError regardless of the
-    // enclosing strictness (no Annex B exemption). Set strict=true so
-    // SeenParams always enforces the duplicate-name check, in sloppy and
-    // strict alike.
-    seen.strict = true;
-    // The restricted-name check (eval/arguments/let) follows the surrounding
-    // strictness; sloppy catch parameters accept `eval`/`arguments` per
-    // Annex B.3.1.
-    seen.restricted_strict = self.is_strict;
-    seen.declare_destructured(binds, count)!;
-}
-
-// Shared tail for both catch patterns: declare LET leaves, then emit.
-fn void? CompilerContext.emit_catch_pattern(&self, DestructBind[] binds, uint count, ushort src_reg) {
-    self.check_pattern_bound_names_unique(binds, count)!;
-    ushort[MAX_DESTRUCT_BINDS] group_regs;
-    ushort[MAX_DESTRUCT_BINDS] binding_regs;
-    for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].is_synthetic) continue;
-        HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
+// Catch parameter pattern (`catch ([a, b]) {}` / `catch ({e}) {}`), starting
+// at its '[' or '{'. Declares each leaf LET-scoped in the catch scope, then
+// destructures the thrown value in catch_val_reg through emit_destructure.
+fn void? CompilerContext.compile_catch_pattern(&self, ushort catch_val_reg) {
+    DestructBinds binds = { .allocator = mem };
+    defer free_destruct_binds(&binds);
+    bool is_object = self.peek_type() == TokenType.LBRACE;
+    self.advance()!; // consume '[' or '{'
+    if (is_object) {
+        self.collect_obj_param_binds(&binds, catch_val_reg, 0xFFFF)!;
+    } else {
+        self.collect_arr_param_binds(&binds, catch_val_reg, 0xFFFF)!;
+    }
+    self.check_lexical_bound_names(binds.array_view(), forbid_let: false)!;
+    foreach (&b : binds) {
         // A destructured leaf is still a CatchParameter BoundName, so the
         // catch block's lexical declarations may not redeclare it (§14.15.1).
-        binding_regs[i] = self.declare_var(hs.get_data(), ScopeKind.LET, true);
+        if (!b.is_synthetic) b.binding_reg = self.declare_var(self.bind_name(b), ScopeKind.LET, true);
     }
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].parent_idx == 0xFFFF) binds[i].arg_idx = src_reg;
-    }
-    self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
-                                DestructStoreMode.DECLARE, true, false);
-}
-
-// Object catch pattern (`catch ({e}) {}`). The '{' has already been consumed.
-// The caller emits RequireObjectCoercible on catch_val_reg. Collects via the
-// shared collector and extracts through emit_destruct_bindings.
-fn void? CompilerContext.compile_catch_object_pattern(&self, ushort catch_val_reg) {
-    DestructBind[MAX_DESTRUCT_BINDS] binds;
-    uint count = 0;
-    self.collect_obj_param_binds(binds[..], &count, catch_val_reg, 0xFFFF)!;
-    self.emit_catch_pattern(binds[..], count, catch_val_reg)!;
+    self.emit_destructure(binds.array_view(), is_object, catch_val_reg, DestructStoreMode.DECLARE, true);
 }

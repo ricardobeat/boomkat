@@ -8,6 +8,7 @@ import boomkat::hobject;
 import boomkat::heap;
 import boomkat::hbigint;
 import std::io;
+import std::collections::list;
 
 // ============================================================================
 // Destructuring patterns (array and object)
@@ -130,8 +131,62 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
     return COMPILE_ERROR~;
 }
 
-// Parse array destructuring pattern: [a, b, ...rest] = rhs
-// The '[' has already been consumed.
+// The early errors on the BoundNames of a pattern that introduces lexical
+// bindings: no name may repeat (ES2024 §14.3.1.1 LexicalDeclaration, §14.7.5.1
+// ForDeclaration, §14.15.1 CatchParameter), in any mode, while a `var`
+// pattern allows repeats. A LexicalDeclaration or ForDeclaration also may not
+// bind `let`, which a CatchParameter may in sloppy code. The collectors
+// already applied the restricted-name rules to each leaf.
+fn void? CompilerContext.check_lexical_bound_names(&self, DestructBind[] binds, bool forbid_let = true) {
+    foreach (i, &bi : binds) {
+        if (bi.is_synthetic) continue;
+        if (forbid_let && str_eq(self.bind_name(bi), "let")) {
+            return self.fail("'let' cannot be a lexically bound name")~;
+        }
+        // Interning gives each distinct name one constant-pool index.
+        foreach (&bj : binds[i + 1..]) {
+            if (!bj.is_synthetic && bj.name_idx == bi.name_idx) {
+                return self.fail("duplicate binding in lexical declaration")~;
+            }
+        }
+    }
+}
+
+// Collect a declaration's pattern, starting at its '[' or '{', and declare
+// every leaf in `kind`, returning whether it is an object pattern. A lexical
+// pattern is checked before anything is declared, so a failure leaves no
+// partial bindings behind.
+fn bool? CompilerContext.declare_pattern(&self, DestructBinds* binds, ScopeKind kind, bool is_lexical) {
+    // A declaration is not a function-parameter list. `collect_*_param_binds`
+    // is shared with the parameter-list path and gates `await`/`yield` out of
+    // default values while `in_formal_params` is set, but a declaration's
+    // defaults are AssignmentExpressions (ES2018 §13.3.3), which DO permit
+    // await in async contexts and yield in generator contexts.
+    bool saved_in_fp = self.in_formal_params;
+    self.in_formal_params = false;
+    defer self.in_formal_params = saved_in_fp;
+
+    // The source register (arg_idx) of top-level binds is patched once the
+    // value is known; nested binds read from their parent group instead.
+    bool is_object = self.peek_type() == TokenType.LBRACE;
+    self.advance()!; // consume '[' or '{'
+    if (is_object) {
+        self.collect_obj_param_binds(binds, 0, 0xFFFF)!;
+    } else {
+        self.collect_arr_param_binds(binds, 0, 0xFFFF)!;
+    }
+    if (is_lexical) self.check_lexical_bound_names(binds.array_view())!;
+    foreach (&b : binds) {
+        if (b.is_synthetic) continue;
+        char[] name = self.bind_name(b);
+        self.check_var_lex_conflict(name, kind)!;
+        b.binding_reg = self.declare_binding_var(name, kind);
+    }
+    return is_object;
+}
+
+// Parse a destructuring declaration: `[a, b, ...rest] = rhs` or
+// `{a, b: c, x = d} = rhs`, starting at the pattern's '[' or '{'.
 //
 // Uses the ES2015 §13.3.3 iterator protocol via the shared, recursive
 // `emit_destruct_bindings` emitter, the same machinery the function-parameter
@@ -139,86 +194,34 @@ fn char[]? CompilerContext.destructuring_property_key(&self) {
 // (generators, custom iterables), at arbitrary nesting depth, not just Arrays.
 // See plan 044; mirrors QuickJS's OP_for_of_start/OP_for_of_next lowering.
 //
-// A lexical (let/const) pattern must not repeat a bound name (ES2024 §13.3.1:
-// BoundNames of a LexicalDeclaration contains no duplicates) — `let [z, z]`
-// is an early error in any mode, while `var` patterns allow repeats.
-fn void? CompilerContext.check_destruct_no_dup(&self, DestructBind[] binds, uint count) {
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].is_synthetic) continue;
-        HString* hi = (HString*)self.constants[binds[i].name_idx].get_heapptr();
-        char[] ni = hi.get_data();
-        for (uint j = i + 1; j < count; j++) {
-            if (binds[j].is_synthetic) continue;
-            HString* hj = (HString*)self.constants[binds[j].name_idx].get_heapptr();
-            if (str_eq(ni, hj.get_data())) {
-                return self.fail("duplicate binding in lexical declaration")~;
-            }
-        }
-    }
-    return;
-}
-fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexical, bool is_const,
-                                            char[]* out_names = null, uint* out_count = null) {
-    DestructBind[MAX_DESTRUCT_BINDS] binds;
-    uint count = 0;
-
-    // We're parsing a destructuring STATEMENT/LHS (`let`/`const`/`var`/`for-in`/
-    // `for-of`/`export var`), not a function-parameter list. `collect_*_param_binds`
-    // is shared with the parameter-list path and toggles `in_formal_params` on
-    // entry, which would gate `await`/`yield` out of default-value expressions
-    // incorrectly here (per ES2018 §13.3.3, destructuring default values are
-    // AssignmentExpressions, which DO permit await in async contexts and yield
-    // in generator contexts). Force the flag off for the duration of the collect
-    // so the gate in `compile_default_expr` does not mis-apply.
-    bool saved_in_fp = self.in_formal_params;
-    self.in_formal_params = false;
-    defer self.in_formal_params = saved_in_fp;
-
-    // Parse the pattern into the recursive DestructBind model. The source
-    // register (arg_idx) for top-level binds is patched to the RHS register
-    // once it is known (RHS is parsed after the pattern). Nested binds carry a
-    // parent_idx instead and resolve their source from the parent group temp.
-    self.collect_arr_param_binds(binds[..], &count, 0, 0xFFFF)!;
-
-    // Lexical patterns reject duplicate bound names before anything is
-    // declared, so a failure leaves no partial bindings behind.
-    if (is_lexical) self.check_destruct_no_dup(binds[..], count)!;
-
-    ushort[MAX_DESTRUCT_BINDS] group_regs;
-    ushort[MAX_DESTRUCT_BINDS] binding_regs;
-    for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
-
-    // Declare each non-synthetic (leaf) binding as a variable in the requested
-    // scope. Synthetics are intermediate extraction points, no variable.
-    // The scope entry keeps the name slice alive for the rest of the enclosing
-    // function body, so it must not point into the stack-local `binds` array.
-    // Use the interned constant-pool string bytes, stable for the compilation.
+// Declares every leaf in `kind` and, when `out_names` is set, appends each leaf
+// name (interned, so it outlives the pattern) for callers that register the
+// names elsewhere: `export var {a} = o` exports them, and a for-loop head gives
+// them per-iteration environments.
+fn void? CompilerContext.destructure_declaration(&self, ScopeKind kind, bool is_lexical, bool is_const,
+                                                  List{char[]}* out_names = null) {
+    DestructBinds binds = { .allocator = mem };
+    defer free_destruct_binds(&binds);
     ushort pre_decl_next = self.next_reg;
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].is_synthetic) continue;
-        HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
-        self.check_var_lex_conflict(hs.get_data(), kind)!;
-        ushort dreg = self.declare_binding_var(hs.get_data(), kind);
-        binding_regs[i] = dreg;
-        // Surface each leaf binding name (interned, stable) so `export var
-        // [ a, b ] = ...` can register them as exports.
-        if (out_names != null && out_count != null) {
-            out_names[*out_count] = hs.get_data();
-            (*out_count)++;
+    bool is_object = self.declare_pattern(&binds, kind, is_lexical)!;
+    if (out_names) {
+        foreach (&b : binds) {
+            if (!b.is_synthetic) out_names.push(self.bind_name(b));
         }
     }
 
-    // No initializer (`var [a, b];`): bind everything to undefined.
-    // A `const` pattern always requires one (ES2024 §13.3.1).
     if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
 
+    // No initializer (`var [a, b];`): bind everything to undefined. Only a
+    // for-in/of head accepts this, and RequireObjectCoercible does not apply
+    // without a source value. A `const` pattern always requires one
+    // (ES2024 §13.3.1).
     if (!self.match(TokenType.ASSIGN)) {
         if (is_const) return self.fail("const declaration requires an initializer")~;
-        for (uint i = 0; i < count; i++) {
-            if (binds[i].is_synthetic) continue;
-            ushort dreg = binding_regs[i];
-            self.emit_abc(Opcode.LDUNDEF, (uint)dreg, 0, 0);
-            self.emit_var_store(dreg, binds[i].name_idx, is_lexical, is_const);
+        foreach (&b : binds) {
+            if (b.is_synthetic) continue;
+            self.emit_abc(Opcode.LDUNDEF, (uint)b.binding_reg, 0, 0);
+            self.emit_var_store(b.binding_reg, b.name_idx, is_lexical, is_const);
         }
         return;
     }
@@ -231,13 +234,8 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     ushort saved_next = self.next_reg;
     ushort rhs_reg = self.assignment_expr()!;
 
-    // Patch top-level binds to read from the RHS register.
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].parent_idx == 0xFFFF) binds[i].arg_idx = rhs_reg;
-    }
-
-    self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
-                                DestructStoreMode.DECLARE, is_lexical, is_const);
+    self.emit_destructure(binds.array_view(), is_object, rhs_reg, DestructStoreMode.DECLARE,
+                          is_lexical, is_const);
 
     self.free_regs_to(saved_next);
 
@@ -247,96 +245,6 @@ fn void? CompilerContext.array_destructure(&self, ScopeKind kind, bool is_lexica
     if (self.is_global && !is_lexical) {
         self.free_regs_to(pre_decl_next);
     }
-    return;
-}
-
-// Parse object destructuring pattern: {a, b: c, x = default} = rhs
-// The '{' has already been consumed.
-fn void? CompilerContext.object_destructure(&self, ScopeKind kind, bool is_lexical, bool is_const,
-                                             char[]* out_names = null, uint* out_count = null) {
-    // We're parsing a destructuring STATEMENT/LHS (`let`/`const`/`var`/`for-in`/
-    // `for-of`/`export var`), not a function-parameter list. `collect_*_param_binds`
-    // is shared with the parameter-list path and toggles `in_formal_params` on
-    // entry, which would gate `await`/`yield` out of default-value expressions
-    // incorrectly here (per ES2018 §13.3.3, destructuring default values are
-    // AssignmentExpressions, which DO permit await in async contexts and yield
-    // in generator contexts). Force the flag off for the duration of the collect
-    // so the gate in `compile_default_expr` does not mis-apply.
-    bool saved_in_fp = self.in_formal_params;
-    self.in_formal_params = false;
-    defer self.in_formal_params = saved_in_fp;
-
-    // Collect the pattern into the shared DestructBind model, then declare each
-    // leaf and emit via the single emit_destruct_bindings, the same machinery
-    // used by array_destructure, function parameters, and for-of. The '{' has
-    // already been consumed; collect_obj_param_binds consumes its own '}'.
-    DestructBind[MAX_DESTRUCT_BINDS] binds;
-    uint count = 0;
-    self.collect_obj_param_binds(binds[..], &count, 0, 0xFFFF)!;
-
-    // Same duplicate-bound-names rule as array patterns (see
-    // check_destruct_no_dup): lexical only, `var` repeats stay legal.
-    if (is_lexical) self.check_destruct_no_dup(binds[..], count)!;
-
-    ushort[MAX_DESTRUCT_BINDS] group_regs;
-    ushort[MAX_DESTRUCT_BINDS] binding_regs;
-    for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
-
-    // Declare each non-synthetic leaf binding in the requested scope. The name
-    // slice must outlive the enclosing body, so use the interned constant-pool
-    // bytes rather than the stack-local binds array.
-    ushort pre_decl_next = self.next_reg;
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].is_synthetic) continue;
-        HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
-        self.check_var_lex_conflict(hs.get_data(), kind)!;
-        ushort dreg = self.declare_binding_var(hs.get_data(), kind);
-        binding_regs[i] = dreg;
-        // Surface each leaf binding name (interned, stable) so `export var
-        // { a, b } = ...` can register them as exports.
-        if (out_names != null && out_count != null) {
-            out_names[*out_count] = hs.get_data();
-            (*out_count)++;
-        }
-    }
-
-    // No initializer (`var {a};`, only valid via for-in/of heads, but keep the
-    // path): bind everything to undefined. RequireObjectCoercible does not apply
-    // without a source value. A `const` pattern always requires one.
-    if (self.lexer.ts_mode) self.try_skip_ts_type_annotation()!;
-
-    if (!self.match(TokenType.ASSIGN)) {
-        if (is_const) return self.fail("const declaration requires an initializer")~;
-        for (uint i = 0; i < count; i++) {
-            if (binds[i].is_synthetic) continue;
-            self.emit_abc(Opcode.LDUNDEF, (uint)binding_regs[i], 0, 0);
-            self.emit_var_store(binding_regs[i], binds[i].name_idx, is_lexical, is_const);
-        }
-        return;
-    }
-
-    ushort saved_next = self.next_reg;
-    ushort rhs_reg = self.assignment_expr()!;
-
-    // RequireObjectCoercible: an object pattern rejects null/undefined even when
-    // empty (§13.3.3.6).
-    self.emit_abc(Opcode.REQUIRE_OBJ, (uint)rhs_reg, 0, 0);
-
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].parent_idx == 0xFFFF) binds[i].arg_idx = rhs_reg;
-    }
-
-    self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
-                                DestructStoreMode.DECLARE, is_lexical, is_const);
-
-    self.free_regs_to(saved_next);
-
-    // At global scope, var bindings are env-resident; free their registers to
-    // prevent drift (matching array_destructure).
-    if (self.is_global && !is_lexical) {
-        self.free_regs_to(pre_decl_next);
-    }
-    return;
 }
 
 // ============================================================================
@@ -744,40 +652,26 @@ fn void CompilerContext.emit_deferred_computed_key(&self, DestructBind* bind)
     self.free_regs_to(pre_reg);
 }
 
-// Parse array destructuring assignment: [a, b, ...rest] = rhs
-// The '[' has already been consumed.
-// Returns the RHS register (destructuring assignment evaluates to RHS value).
-//
-// Targets may be identifiers or member expressions (§13.15.5
-// DestructuringAssignmentTarget = LeftHandSideExpression). Member targets are
-// parsed eagerly to capture the object/key registers before the RHS iterator
-// is set up; the emission machinery stores PUTPROP instead of PUTVAR.
 // Collect an array assignment pattern into the shared DestructBind model.
-// Accepts the full LeftHandSideExpression grammar at top level and in rest
-// (identifiers, member expressions, nested array/object patterns, defaults,
-// elision holes). Consumes through the closing ']'. Shared by
-// array_destructure_assign and the bare for-of loop.
-fn void? CompilerContext.collect_arr_assign_binds(&self,
-    DestructBind[] binds_arg, uint* count_ptr, ushort parent_idx = 0xFFFF)
+// Targets may be identifiers or member expressions (§13.15.5
+// DestructuringAssignmentTarget = LeftHandSideExpression), at the top level,
+// in rest, and inside nested array/object patterns, alongside defaults and
+// elision holes. Member targets are deferred (see collect_assign_target).
+// The '[' has already been consumed; this consumes its own ']'.
+fn void? CompilerContext.collect_arr_assign_binds(&self, DestructBinds* binds, ushort parent_idx = 0xFFFF)
 {
-    DestructBind[] binds = binds_arg;
-    uint count = *count_ptr;
     ushort elem_idx = 0;
 
     // `[]` binds nothing but still performs GetIterator and IteratorClose, so
     // it gets a bind of its own -- see is_empty_pattern. Without one the
     // pattern emits no code and a non-iterable RHS is silently accepted.
     if (self.check(TokenType.RBRACKET)) {
-        if (count < (uint)MAX_DESTRUCT_BINDS) {
-            binds[count].key_idx = 0;
-            binds[count].index = 0;
-            binds[count].is_object = false;
-            binds[count].arg_idx = 0xFFFF;          // patched to rhs_reg later
-            binds[count].parent_idx = parent_idx;
-            binds[count].is_synthetic = true;
-            binds[count].is_empty_pattern = true;
-            count++;
-        }
+        self.add_bind(binds, {
+            .arg_idx = 0xFFFF,
+            .parent_idx = parent_idx,
+            .is_synthetic = true,
+            .is_empty_pattern = true,
+        })!;
     }
 
     for (;;) {
@@ -787,16 +681,13 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
         // emit_destruct_bindings calls IteratorStep at this position per
         // IteratorBindingInitialization §13.3.3 (matching collect_arr_param_binds).
         if (self.match(TokenType.COMMA)) {
-            if (count < (uint)MAX_DESTRUCT_BINDS) {
-                binds[count].key_idx    = 0;
-                binds[count].index      = elem_idx;
-                binds[count].is_object  = false;
-                binds[count].arg_idx    = 0xFFFF;          // patched to rhs_reg later
-                binds[count].parent_idx = parent_idx;
-                binds[count].is_synthetic = true;
-                binds[count].is_hole    = true;
-                count++;
-            }
+            self.add_bind(binds, {
+                .index = elem_idx,
+                .arg_idx = 0xFFFF,
+                .parent_idx = parent_idx,
+                .is_synthetic = true,
+                .is_hole = true,
+            })!;
             elem_idx++;
             continue;
         }
@@ -805,46 +696,30 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
         if (self.match(TokenType.ELLIPSIS)) {
             // Nested rest pattern: `...[a, b]` or `...{a}`, but only when
             // the `{`/`[` is not a MemberExpression primary like `...{}.x`.
-            // Delegates to the assign-bind collectors (not the param-only
-            // ones) so member-expression leaves are accepted and deferred at
-            // any nesting depth (ES2022 §13.15.5).
             if ((self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET))
                 && !self.primary_is_member_target()) {
                 bool is_obj = self.check(TokenType.LBRACE);
-                if (count < (uint)MAX_DESTRUCT_BINDS) {
-                    binds[count].key_idx    = 0xFFFF;  // rest synthetic
-                    binds[count].index      = elem_idx;
-                    binds[count].is_object  = false;
-                    binds[count].arg_idx    = 0xFFFF;
-                    binds[count].parent_idx = parent_idx;
-                    binds[count].is_synthetic = true;
-                    count++;
-                }
-                ushort synth_idx = (ushort)(count - 1);
+                ushort synth_idx = self.add_bind(binds, {
+                    .key_idx = 0xFFFF,  // rest synthetic
+                    .index = elem_idx,
+                    .arg_idx = 0xFFFF,
+                    .parent_idx = parent_idx,
+                    .is_synthetic = true,
+                })!;
                 self.advance()!;  // consume '{' or '['
                 if (is_obj) {
-                    self.collect_obj_assign_binds(binds[..], &count, synth_idx)!;
+                    self.collect_obj_assign_binds(binds, synth_idx)!;
                 } else {
-                    self.collect_arr_assign_binds(binds[..], &count, synth_idx)!;
+                    self.collect_arr_assign_binds(binds, synth_idx)!;
                 }
             } else {
-                // Leaf rest target: identifier or member expression (member
-                // targets are deferred, see collect_assign_target).
-                DestructBind overflow;
-                DestructBind* b = count < (uint)MAX_DESTRUCT_BINDS ? &binds[count] : &overflow;
-                self.collect_assign_target(b)!;
-                if (b == &overflow && overflow.deferred_target != null) {
-                    mem::free(overflow.deferred_target);
-                }
-                if (count < (uint)MAX_DESTRUCT_BINDS) {
-                    binds[count].key_idx    = 0xFFFF;   // 0xFFFF = rest sentinel
-                    binds[count].index      = elem_idx;
-                    binds[count].is_object  = false;
-                    binds[count].arg_idx    = 0xFFFF;
-                    binds[count].parent_idx = parent_idx;
-                    binds[count].name_len   = 0;
-                    count++;
-                }
+                DestructBind b;
+                self.collect_assign_target(&b)!;
+                b.key_idx = 0xFFFF;  // rest sentinel
+                b.index = elem_idx;
+                b.arg_idx = 0xFFFF;
+                b.parent_idx = parent_idx;
+                self.add_bind(binds, b)!;
             }
 
             // AssignmentRestElement must be the last element of an
@@ -859,70 +734,46 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
         // Nested pattern: `[pattern]` or `{pattern}`, but only when the
         // `{`/`[` is NOT the start of a MemberExpression primary such as
         // `{}.x` or `[1][0]`. Scan ahead to distinguish the two cases.
-        // Delegates to the assign-bind collectors so member-expression leaves
-        // nested at any depth (e.g. `[[x[yield]]] = v`) are accepted and
-        // deferred, not just identifiers.
         if ((self.check(TokenType.LBRACE) || self.check(TokenType.LBRACKET))
             && !self.primary_is_member_target()) {
             bool is_obj = self.check(TokenType.LBRACE);
-            if (count < (uint)MAX_DESTRUCT_BINDS) {
-                binds[count].key_idx    = (uint)elem_idx;  // array index
-                binds[count].index      = elem_idx;
-                binds[count].is_object  = false;
-                binds[count].arg_idx    = 0xFFFF;
-                binds[count].parent_idx = parent_idx;
-                binds[count].is_synthetic = true;
-                count++;
-            }
-            ushort synth_idx = (ushort)(count - 1);
+            ushort synth_idx = self.add_bind(binds, {
+                .key_idx = elem_idx,
+                .index = elem_idx,
+                .arg_idx = 0xFFFF,
+                .parent_idx = parent_idx,
+                .is_synthetic = true,
+            })!;
             self.advance()!;  // consume '{' or '['
             if (is_obj) {
-                self.collect_obj_assign_binds(binds[..], &count, synth_idx)!;
+                self.collect_obj_assign_binds(binds, synth_idx)!;
             } else {
-                self.collect_arr_assign_binds(binds[..], &count, synth_idx)!;
+                self.collect_arr_assign_binds(binds, synth_idx)!;
             }
 
-            // Default for the nested pattern: `[a] = default`
+            // Default for the nested pattern: `[[a] = default]`
             if (self.match(TokenType.ASSIGN)) {
-                if (count > 0) {
-                    binds[synth_idx].has_default = true;
-                    CompiledFunction* default_func = self.compile_default_expr()!;
-                    uint def_idx = self.add_inner_func(default_func);
-                    binds[synth_idx].default_func_idx = def_idx;
-                }
+                uint def_idx = self.add_inner_func(self.compile_default_expr()!);
+                DestructBind* sb = binds.get_ref(synth_idx);
+                sb.has_default = true;
+                sb.default_func_idx = def_idx;
             }
         } else {
-            // Leaf assignment target: identifier or member expression (member
-            // targets are deferred, see collect_assign_target).
-            DestructBind overflow;
-            DestructBind* b = count < (uint)MAX_DESTRUCT_BINDS ? &binds[count] : &overflow;
-            self.collect_assign_target(b)!;
-            if (b == &overflow && overflow.deferred_target != null) {
-                mem::free(overflow.deferred_target);
-            }
-            if (count < (uint)MAX_DESTRUCT_BINDS) {
-                binds[count].key_idx           = (uint)elem_idx;  // array index
-                binds[count].index             = elem_idx;
-                binds[count].is_object         = false;
-                binds[count].arg_idx           = 0xFFFF;
-                binds[count].parent_idx        = parent_idx;
-                binds[count].name_len          = 0;
-                count++;
-            }
+            DestructBind b;
+            self.collect_assign_target(&b)!;
+            b.key_idx = elem_idx;
+            b.index = elem_idx;
+            b.arg_idx = 0xFFFF;
+            b.parent_idx = parent_idx;
+            ushort leaf_idx = self.add_bind(binds, b)!;
 
             // Default: `[a = expr]`, NamedEvaluation for identifier targets.
             if (self.match(TokenType.ASSIGN)) {
-                if (count > 0) {
-                    binds[count - 1].has_default = true;
-                    char[] iname = "";
-                    if (!b.is_member_target) {
-                        HString* nhs = (HString*)self.constants[b.name_idx].get_heapptr();
-                        iname = nhs.get_data();
-                    }
-                    CompiledFunction* default_func = self.compile_default_expr(iname)!;
-                    uint def_idx = self.add_inner_func(default_func);
-                    binds[count - 1].default_func_idx = def_idx;
-                }
+                char[] iname = b.is_member_target ? "" : self.bind_name(&b);
+                uint def_idx = self.add_inner_func(self.compile_default_expr(iname)!);
+                DestructBind* lb = binds.get_ref(leaf_idx);
+                lb.has_default = true;
+                lb.default_func_idx = def_idx;
             }
         }
 
@@ -931,135 +782,14 @@ fn void? CompilerContext.collect_arr_assign_binds(&self,
     }
 
     self.expect(TokenType.RBRACKET)!;
-    *count_ptr = count;
 }
 
-fn ushort? CompilerContext.array_destructure_assign(&self) {
-    DestructBind[MAX_DESTRUCT_BINDS] binds;
-    uint count = 0;
-
-    // We're parsing a destructuring ASSIGNMENT pattern (`[x = yield] = []`),
-    // not a function-parameter list. `collect_arr_assign_binds`/nested
-    // `collect_*_param_binds` calls default-value compilation through
-    // `compile_default_expr`, which gates `await`/`yield` on
-    // `in_formal_params`. Per ES2022 §13.15.5.2/§13.15.5.3, an assignment
-    // pattern's default value is an AssignmentExpression, which DOES permit
-    // await in async contexts and yield in generator contexts, the gate
-    // must not apply here. Force it off for the duration of the collect (see
-    // array_destructure/object_destructure for the declaration-path analog).
-    bool saved_in_fp = self.in_formal_params;
-    self.in_formal_params = false;
-    defer self.in_formal_params = saved_in_fp;
-
-    // Parse the array assignment pattern. Each element may be:
-    //   - a plain identifier (`a`)
-    //   - a member-expression target (`obj.x`, `arr[i]`, `{}[f()]`)
-    //   - a nested array or object assignment pattern (`[a]`, `{a}`)
-    //   - a rest element with any of the above targets (`...a`, `...obj.x`)
-    //   - a hole (elision: leading or interior commas)
-    //
-    // Member-expression targets are deferred (see collect_assign_target):
-    // collection only parses past the target, and `emit_destruct_bindings`
-    // re-parses and evaluates it after the RHS iterator is opened, storing
-    // the object/key in `binds[i].member_obj_reg` / `member_prop_reg` and
-    // emitting PUTPROP instead of PUTVAR for these entries.
-    //
-    // Nested patterns are handled by delegating back to the shared
-    // `collect_arr_param_binds` / `collect_obj_param_binds` machinery (which
-    // only accepts identifier leaf targets within the nested sub-pattern).
-    // Top-level and rest targets accept the full LHS grammar.
-
-    self.collect_arr_assign_binds(binds[..], &count)!;
-
-    ushort[MAX_DESTRUCT_BINDS] group_regs;
-    ushort[MAX_DESTRUCT_BINDS] binding_regs;
-    for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
-
-    // Allocate binding registers for each leaf target.
-    // For member-expression targets, allocate a fresh temp to hold the
-    // extracted value (PUTPROP is emitted by emit_destruct_bindings).
-    // For identifier targets, resolve to the local register if possible.
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].is_synthetic) continue;
-        if (binds[i].is_member_target) {
-            // Do NOT pre-allocate here: emit_destruct_bindings allocates a
-            // fresh bind_reg at emission time, after its pre-scan places any
-            // persistent member_obj_reg/member_prop_reg for this bind, an
-            // accessor-getter call triggered while extracting the iterator
-            // result (`.next()`/`.done`/`.value`) lands its call frame AT the
-            // result register (reusing it and everything above), so bind_reg
-            // must be the highest live register at that point, not
-            // pre-allocated below the persistent ones. See emit_destruct_bindings.
-            binding_regs[i] = 0xFFFF;
-            continue;
-        }
-        // Build a char[] slice into name_buf for resolve_var.
-        // For assignment targets parsed via parse_assign_target_lhs, the name
-        // is stored only as name_idx (constant-pool entry). Reconstruct the
-        // slice from the constant pool so resolve_var can match it.
-        char[] name;
-        if (binds[i].name_len > 0) {
-            name = binds[i].name_buf[:binds[i].name_len];
-        } else {
-            // Use the constant-pool string directly.
-            HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
-            name = hs.get_data();
-        }
-        if (!self.is_global) {
-            if (try existing = self.resolve_var(name)) {
-                binding_regs[i] = existing;
-                continue;
-            }
-        }
-        // Env-resident target: temp + forced PUTVAR so const-assignment throws.
-        binding_regs[i] = self.alloc_reg();
-        binds[i].assign_needs_putvar = true;
-    }
-
-    // Consume the '=' separating pattern from RHS (the caller verified it via
-    // lookahead but did not consume it), then evaluate the RHS.
-    self.expect(TokenType.ASSIGN)!;
-    ushort rhs_reg = self.assignment_expr()!;
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].parent_idx == 0xFFFF) binds[i].arg_idx = rhs_reg;
-    }
-
-    // Assignment (not declaration): register-resident targets are written
-    // directly by the extraction; env-resident targets get a bare PUTVAR;
-    // member-expression targets get PUTPROP (handled in emit_destruct_bindings
-    // via is_member_target).
-    self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
-                                DestructStoreMode.ASSIGN_TARGET);
-
-    // Release all destructuring temporaries above the RHS register (iterator
-    // state + per-element scratch), keeping rhs_reg live so the destructuring
-    // assignment can evaluate to the RHS value. Prevents register drift across
-    // successive destructuring statements.
-    self.free_regs_to((ushort)(rhs_reg + 1));
-
-    // Destructuring assignment evaluates to the RHS value.
-    // Copy rhs_reg to a fresh temp so the outer assignment's free_reg(right)
-    // doesn't clobber a live variable register.  Without this, a pattern like
-    //   result = [x = yield] = vals
-    // frees vals's register (rhs_reg) after LDREG, and the subsequent
-    // statement's register allocator reuses it, corrupting the variable.
-    ushort result_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDREG, (uint)result_reg, (uint)rhs_reg, 0);
-    return result_reg;
-}
-
-// Parse object destructuring assignment: {a, b: c, x = default} = rhs
-// The '{' has already been consumed.
-// Returns the RHS register (destructuring assignment evaluates to RHS value).
 // Collect an object assignment pattern into the shared DestructBind model.
 // Handles: shorthand `{a}`, `{key: target}`, computed keys `{[e]: t}`,
-// member-expression targets (`{a: obj.x}`), nested array/object targets
-// (delegated to the param collectors, identifier leaves only), defaults
-// (`{a = d}`, `{a: t = d}`), and object rest (`{...target}`). Targets accept
-// the full LeftHandSideExpression grammar at the top level and in rest.
+// member-expression targets (`{a: obj.x}`), nested array/object targets,
+// defaults (`{a = d}`, `{a: t = d}`), and object rest (`{...target}`).
 // The '{' has already been consumed; this consumes its own '}'.
-fn void? CompilerContext.collect_obj_assign_binds(&self,
-    DestructBind[] binds, uint* count, ushort parent_idx = 0xFFFF)
+fn void? CompilerContext.collect_obj_assign_binds(&self, DestructBinds* binds, ushort parent_idx = 0xFFFF)
 {
     if (self.check(TokenType.RBRACE)) { self.advance()!; return; }
 
@@ -1069,27 +799,23 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
         // Object rest: `{...target}`, must be last.
         if (self.match(TokenType.ELLIPSIS)) {
             AssignTarget tgt = self.parse_assign_target_lhs()!;
-            bool is_member = tgt.is_member;
-            uint tgt_name = tgt.name_idx;
-            if (!is_member) {
-                HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
+            if (!tgt.is_member) {
+                HString* hs = (HString*)self.constants[tgt.name_idx].get_heapptr();
                 if (is_restricted_name(hs.get_data(),
                                        self.await_reserved_here(),
                                        self.is_generator || self.forbid_yield,
                                        strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
             }
-            if (*count < binds.len) {
-                binds[*count].name_idx         = tgt_name;
-                binds[*count].key_idx          = 0xFFFF;   // object-rest sentinel
-                binds[*count].is_object        = true;
-                binds[*count].arg_idx          = 0xFFFF;
-                binds[*count].parent_idx       = parent_idx;
-                binds[*count].is_member_target = is_member;
-                binds[*count].member_obj_reg   = tgt.obj_reg;
-                binds[*count].member_prop_reg  = tgt.key_reg;
-                binds[*count].name_len         = 0;
-                (*count)++;
-            }
+            self.add_bind(binds, {
+                .name_idx = tgt.name_idx,
+                .key_idx = 0xFFFF,  // object-rest sentinel
+                .is_object = true,
+                .arg_idx = 0xFFFF,
+                .parent_idx = parent_idx,
+                .is_member_target = tgt.is_member,
+                .member_obj_reg = tgt.obj_reg,
+                .member_prop_reg = tgt.key_reg,
+            })!;
             break;  // rest is the last property
         }
 
@@ -1099,28 +825,25 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
         // not at pattern-parse time. Defer via lexer snapshot + re-parse at
         // emission (see collect_assign_target and emit_deferred_computed_key).
         // Collection here only advances the lexer past `[expr]`, discarding
-        // its code and registers.
+        // its code and registers. The snapshot is ours until add_bind hands
+        // it to the pattern.
         bool is_computed = false;
-        ushort computed_key_reg = 0xFFFF;
         uint key_idx = 0xFFFFFFFF;
         TokenType key_tt = TokenType.IDENTIFIER;
         DeferredTarget* deferred_key = null;
+        defer catch { if (deferred_key != null) mem::free(deferred_key); }
         if (self.check(TokenType.LBRACKET)) {
             self.advance()!; // consume '['
             DeferredTarget* snap = (DeferredTarget*)alloc::malloc_try(mem, (sz)(DeferredTarget::size)) ?? null;
             snap.lexer = *self.lexer;
             snap.pushback = self.pushback_stack;
             snap.pushback_count = self.pushback_count;
+            deferred_key = snap;
             uint pre_code = self.code_count;
             ushort pre_reg = self.next_reg;
-            ushort? key_expr_res = self.assignment_expr();
-            if (catch err = key_expr_res) {
-                mem::free(snap);
-                return err~;
-            }
+            self.assignment_expr()!;
             self.code_count = pre_code;
             self.free_regs_to(pre_reg);
-            deferred_key = snap;
             self.expect(TokenType.RBRACKET)!;
             self.expect(TokenType.COLON)!;
             is_computed = true;
@@ -1147,21 +870,19 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
                                    self.await_reserved_here(),
                                    self.is_generator || self.forbid_yield,
                                    strict: self.lexer.reserved_words_strict)) return COMPILE_ERROR~;
-            if (*count < binds.len) {
-                binds[*count].name_idx    = key_idx;
-                binds[*count].key_idx     = key_idx;
-                binds[*count].is_object   = true;
-                binds[*count].arg_idx     = 0xFFFF;
-                binds[*count].parent_idx  = parent_idx;
-                binds[*count].name_len    = 0;
-                (*count)++;
-            }
+            ushort leaf_idx = self.add_bind(binds, {
+                .name_idx = key_idx,
+                .key_idx = key_idx,
+                .is_object = true,
+                .arg_idx = 0xFFFF,
+                .parent_idx = parent_idx,
+            })!;
             if (self.match(TokenType.ASSIGN)) {
-                binds[*count - 1].has_default = true;
                 // NamedEvaluation: `{a = fn}` names the anonymous fn "a".
-                HString* nhs = (HString*)self.constants[key_idx].get_heapptr();
-                CompiledFunction* df = self.compile_default_expr(nhs.get_data())!;
-                binds[*count - 1].default_func_idx = self.add_inner_func(df);
+                uint def_idx = self.add_inner_func(self.compile_default_expr(hs.get_data())!);
+                DestructBind* lb = binds.get_ref(leaf_idx);
+                lb.has_default = true;
+                lb.default_func_idx = def_idx;
             }
         } else if ((self.check(TokenType.LBRACKET) || self.check(TokenType.LBRACE))
                    && !self.primary_is_member_target()) {
@@ -1171,30 +892,27 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             // depth (e.g. `{k: [x[yield]]}`) are accepted and deferred, not
             // just identifiers.
             bool nested_is_obj = self.check(TokenType.LBRACE);
-            uint synth = *count;
-            if (*count < binds.len) {
-                binds[*count].key_idx     = key_idx;
-                binds[*count].is_object   = true;
-                binds[*count].is_computed_key = is_computed;
-                binds[*count].computed_key_reg = computed_key_reg;
-                binds[*count].deferred_computed_key = deferred_key;
-                binds[*count].arg_idx     = 0xFFFF;
-                binds[*count].parent_idx  = parent_idx;
-                binds[*count].is_synthetic = true;
-                (*count)++;
-            } else if (deferred_key != null) {
-                mem::free(deferred_key);
-            }
+            ushort synth_idx = self.add_bind(binds, {
+                .key_idx = key_idx,
+                .is_object = true,
+                .is_computed_key = is_computed,
+                .computed_key_reg = 0xFFFF,
+                .deferred_computed_key = take_deferred(&deferred_key),
+                .arg_idx = 0xFFFF,
+                .parent_idx = parent_idx,
+                .is_synthetic = true,
+            })!;
             self.advance()!; // consume '[' or '{'
             if (nested_is_obj) {
-                self.collect_obj_assign_binds(binds, count, (ushort)synth)!;
+                self.collect_obj_assign_binds(binds, synth_idx)!;
             } else {
-                self.collect_arr_assign_binds(binds, count, (ushort)synth)!;
+                self.collect_arr_assign_binds(binds, synth_idx)!;
             }
             if (self.match(TokenType.ASSIGN)) {
-                binds[synth].has_default = true;
-                CompiledFunction* df = self.compile_default_expr()!;
-                binds[synth].default_func_idx = self.add_inner_func(df);
+                uint def_idx = self.add_inner_func(self.compile_default_expr()!);
+                DestructBind* sb = binds.get_ref(synth_idx);
+                sb.has_default = true;
+                sb.default_func_idx = def_idx;
             }
         } else {
             // `key: target`, target is an identifier or member expression.
@@ -1205,52 +923,23 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
             // read (or the RHS, since collect happens before the RHS is
             // parsed at all, deferral makes it re-evaluate at emission time,
             // after both the RHS and the source property read).
-            DestructBind tgt_bind;
-            if (catch err = self.collect_assign_target(&tgt_bind)) {
-                if (deferred_key != null) mem::free(deferred_key);
-                return err~;
-            }
-            bool is_member = tgt_bind.is_member_target;
-            uint tgt_name = tgt_bind.name_idx;
-            if (!is_member) {
-                HString* hs = (HString*)self.constants[tgt_name].get_heapptr();
-                if (is_restricted_name(hs.get_data(),
-                                       self.await_reserved_here(),
-                                       self.is_generator || self.forbid_yield,
-                                       strict: self.lexer.reserved_words_strict)) {
-                    if (deferred_key != null) mem::free(deferred_key);
-                    return COMPILE_ERROR~;
-                }
-            }
-            if (*count < binds.len) {
-                binds[*count].name_idx         = tgt_name;
-                binds[*count].key_idx          = key_idx;
-                binds[*count].is_object        = true;
-                binds[*count].is_computed_key  = is_computed;
-                binds[*count].computed_key_reg = computed_key_reg;
-                binds[*count].deferred_computed_key = deferred_key;
-                binds[*count].arg_idx          = 0xFFFF;
-                binds[*count].parent_idx       = parent_idx;
-                binds[*count].is_member_target = is_member;
-                binds[*count].member_obj_reg   = tgt_bind.member_obj_reg;
-                binds[*count].member_prop_reg  = tgt_bind.member_prop_reg;
-                binds[*count].deferred_target  = tgt_bind.deferred_target;
-                binds[*count].name_len         = 0;
-                (*count)++;
-            } else {
-                if (deferred_key != null) mem::free(deferred_key);
-                if (tgt_bind.deferred_target != null) mem::free(tgt_bind.deferred_target);
-            }
+            DestructBind b;
+            self.collect_assign_target(&b)!;
+            b.key_idx = key_idx;
+            b.is_object = true;
+            b.is_computed_key = is_computed;
+            b.computed_key_reg = 0xFFFF;
+            b.deferred_computed_key = take_deferred(&deferred_key);
+            b.arg_idx = 0xFFFF;
+            b.parent_idx = parent_idx;
+            ushort leaf_idx = self.add_bind(binds, b)!;
             if (self.match(TokenType.ASSIGN)) {
-                binds[*count - 1].has_default = true;
                 // NamedEvaluation for `{k: t = fn}`, only identifier targets.
-                char[] iname = "";
-                if (!is_member) {
-                    HString* nhs = (HString*)self.constants[tgt_name].get_heapptr();
-                    iname = nhs.get_data();
-                }
-                CompiledFunction* df = self.compile_default_expr(iname)!;
-                binds[*count - 1].default_func_idx = self.add_inner_func(df);
+                char[] iname = b.is_member_target ? "" : self.bind_name(&b);
+                uint def_idx = self.add_inner_func(self.compile_default_expr(iname)!);
+                DestructBind* lb = binds.get_ref(leaf_idx);
+                lb.has_default = true;
+                lb.default_func_idx = def_idx;
             }
         }
 
@@ -1260,71 +949,93 @@ fn void? CompilerContext.collect_obj_assign_binds(&self,
     self.expect(TokenType.RBRACE)!;
 }
 
-// Parse object destructuring assignment: {a, b: c, x = default} = rhs
-// The '{' has already been consumed.
-// Returns the RHS register (destructuring assignment evaluates to RHS value).
-fn ushort? CompilerContext.object_destructure_assign(&self) {
-    DestructBind[MAX_DESTRUCT_BINDS] binds;
-    uint count = 0;
-
-    // See array_destructure_assign: this is an assignment-pattern default
-    // value (an AssignmentExpression), not a FormalParameter default, so the
-    // in_formal_params gate on await/yield must not apply while collecting.
+// Collect an assignment pattern starting at its '[' or '{', returning whether
+// it is an object pattern. Used by destructuring assignment and by the bare
+// patterns of for-in/of heads.
+fn bool? CompilerContext.collect_assign_pattern(&self, DestructBinds* binds) {
+    // The pattern's default values are AssignmentExpressions (ES2022
+    // §13.15.5.2/§13.15.5.3), which DO permit await in async contexts and
+    // yield in generator contexts, so the in_formal_params gate in
+    // compile_default_expr must not apply while collecting.
     bool saved_in_fp = self.in_formal_params;
     self.in_formal_params = false;
     defer self.in_formal_params = saved_in_fp;
 
-    self.collect_obj_assign_binds(binds[..], &count)!;
-
-    ushort[MAX_DESTRUCT_BINDS] group_regs;
-    ushort[MAX_DESTRUCT_BINDS] binding_regs;
-    for (uint i = 0; i < count; i++) { group_regs[i] = 0xFFFF; binding_regs[i] = 0xFFFF; }
-
-    // Allocate a binding register per leaf: member targets and unresolvable
-    // identifiers get a fresh temp; resolvable locals reuse their slot.
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].is_synthetic) continue;
-        if (binds[i].is_member_target) {
-            // Do NOT pre-allocate here: emit_destruct_bindings allocates a
-            // fresh bind_reg at emission time, after its pre-scan places any
-            // persistent member_obj_reg/member_prop_reg/computed_key_reg for
-            // this bind, GETPROP's accessor-getter call frame lands at the
-            // GETPROP result register (and reuses everything above it), so
-            // bind_reg must be the highest live register at that point, not
-            // pre-allocated below the persistent ones. See emit_destruct_bindings.
-            binding_regs[i] = 0xFFFF;
-            continue;
-        }
-        HString* hs = (HString*)self.constants[binds[i].name_idx].get_heapptr();
-        char[] name = hs.get_data();
-        if (!self.is_global) {
-            if (try existing = self.resolve_var(name)) { binding_regs[i] = existing; continue; }
-        }
-        // Env-resident target (global, or captured/undeclared from a nested
-        // scope): use a temp and force PUTVAR so the const-assignment check runs.
-        binding_regs[i] = self.alloc_reg();
-        binds[i].assign_needs_putvar = true;
+    bool is_object = self.peek_type() == TokenType.LBRACE;
+    self.advance()!; // consume '[' or '{'
+    if (is_object) {
+        self.collect_obj_assign_binds(binds)!;
+    } else {
+        self.collect_arr_assign_binds(binds)!;
     }
+    return is_object;
+}
 
+// Give each identifier leaf of an assignment pattern its binding register. A
+// local reuses its own register; any other name (global, captured, or
+// undeclared) gets a temp plus a forced PUTVAR, so assigning to a const
+// throws. A member target gets no register here: emit_destruct_bindings
+// allocates one at emission time, above the persistent object/key registers
+// its pre-scan places, because the GETPROP extracting the value may run an
+// accessor getter whose call frame lands at the result register and reuses
+// every register above it.
+fn void CompilerContext.resolve_assign_targets(&self, DestructBind[] binds) {
+    foreach (&b : binds) {
+        if (b.is_synthetic || b.is_member_target) continue;
+        if (!self.is_global) {
+            if (try existing = self.resolve_var(self.bind_name(b))) {
+                b.binding_reg = existing;
+                continue;
+            }
+        }
+        b.binding_reg = self.alloc_reg();
+        b.assign_needs_putvar = true;
+    }
+}
+
+// Destructure `src_reg` through a collected pattern: an object pattern first
+// applies RequireObjectCoercible, which rejects null/undefined even when the
+// pattern is empty (§13.3.3.6), then every top-level bind reads from src_reg.
+fn void CompilerContext.emit_destructure(&self, DestructBind[] binds, bool is_object, ushort src_reg,
+                                         DestructStoreMode store_mode, bool is_lexical = false,
+                                         bool is_const = false) {
+    if (is_object) self.emit_abc(Opcode.REQUIRE_OBJ, (uint)src_reg, 0, 0);
+    foreach (&b : binds) {
+        if (b.parent_idx == 0xFFFF) b.arg_idx = src_reg;
+    }
+    self.emit_destruct_bindings(binds, store_mode, is_lexical, is_const);
+}
+
+// Parse a destructuring assignment `[a, b] = rhs` or `{a, b: c} = rhs`,
+// starting at the pattern's '[' or '{'. Returns a register holding the RHS
+// value, which the assignment evaluates to.
+fn ushort? CompilerContext.destructure_assign(&self) {
+    DestructBinds binds = { .allocator = mem };
+    defer free_destruct_binds(&binds);
+    bool is_object = self.collect_assign_pattern(&binds)!;
+    self.resolve_assign_targets(binds.array_view());
+
+    // Consume the '=' separating pattern from RHS (the caller verified it via
+    // lookahead but did not consume it), then evaluate the RHS.
     self.expect(TokenType.ASSIGN)!;
     ushort rhs_reg = self.assignment_expr()!;
 
-    // RequireObjectCoercible on the source (object pattern rejects null/undefined
-    // even when empty).
-    self.emit_abc(Opcode.REQUIRE_OBJ, (uint)rhs_reg, 0, 0);
+    // Assignment (not declaration): register-resident targets are written
+    // directly by the extraction; env-resident targets get a bare PUTVAR;
+    // member-expression targets get PUTPROP.
+    self.emit_destructure(binds.array_view(), is_object, rhs_reg, DestructStoreMode.ASSIGN_TARGET);
 
-    for (uint i = 0; i < count; i++) {
-        if (binds[i].parent_idx == 0xFFFF) binds[i].arg_idx = rhs_reg;
-    }
-
-    if (count > 0) {
-        self.emit_destruct_bindings(binds[..], count, group_regs[..], binding_regs[..],
-                                    DestructStoreMode.ASSIGN_TARGET);
-    }
-
+    // Release all destructuring temporaries above the RHS register (iterator
+    // state + per-element scratch), keeping rhs_reg live so the destructuring
+    // assignment can evaluate to the RHS value. Prevents register drift across
+    // successive destructuring statements.
     self.free_regs_to((ushort)(rhs_reg + 1));
+
     // Copy rhs_reg to a fresh temp so the outer assignment's free_reg(right)
-    // doesn't clobber a live variable register (same fix as array_destructure_assign).
+    // doesn't clobber a live variable register. Without this, a pattern like
+    //   result = [x = yield] = vals
+    // frees vals's register (rhs_reg) after LDREG, and the subsequent
+    // statement's register allocator reuses it, corrupting the variable.
     ushort result_reg = self.alloc_reg();
     self.emit_abc(Opcode.LDREG, (uint)result_reg, (uint)rhs_reg, 0);
     return result_reg;

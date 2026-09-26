@@ -207,7 +207,6 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     // Check for destructuring assignment: [a, b] = expr or {x, y} = expr
     TokenType first_tt = self.peek_type();
     if (first_tt == TokenType.LBRACKET || first_tt == TokenType.LBRACE) {
-        bool is_array = (first_tt == TokenType.LBRACKET);
         // Save lexer state to look ahead for '=' after the pattern
         uint _pos   = self.lexer.pos;
         uint _line  = self.lexer.line;
@@ -268,13 +267,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
             self.last_was_getvar = false;
             self.member.clear();
 
-            if (is_array) {
-                self.advance()!; // consume '['
-                return self.array_destructure_assign()!;
-            } else {
-                self.advance()!; // consume '{'
-                return self.object_destructure_assign()!;
-            }
+            return self.destructure_assign()!;
         }
         // Not destructuring assignment, fall through to normal expression parsing
     }
