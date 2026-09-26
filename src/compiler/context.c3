@@ -2799,13 +2799,6 @@ struct ClassMethod {
     // instead of LDCONST from `name`/`computed_key_*`.
     bool   is_private;
     char[] priv_slot_name;          // e.g. "#priv:3:foo", the name's own symbol
-    // Public computed-key FIELD (P7): pseudo-entry, not a method. The install
-    // loop evaluates the key once at class-definition time (in source order,
-    // interleaved with method-key evaluation) and PUTLEXes it into this
-    // hidden slot; __field_init__/__static_init__ reads it back per instance
-    // via GETVAR. Only computed_key_inner_idx/computed_key_reg are meaningful.
-    bool   is_field_key;
-    char[] field_key_slot_name;     // e.g. "#priv:3:fkey0"
 }
 
 // ============================================================================
