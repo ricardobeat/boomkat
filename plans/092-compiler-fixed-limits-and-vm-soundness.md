@@ -12,9 +12,9 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
 - `List{T}` for every table used as a stack or append log: loop, label, `try`/`finally`,
   private-name scopes, loop-head names, switch and jump-patch tables, `prologue_octal` (cleared when
   the prologue ends). Allocated in `init()`, freed in `cleanup()`, which runs through `defer`.
-- `HashSet{uint}` keyed by the name's constant-pool index for duplicate detection (`SeenParams`, the
-  lexical-declaration pre-scan). Fall back to a `List{uint}` with a linear scan if the set's setup
-  shows up when compiling ordinary code.
+- Duplicate detection (`SeenParams`, the lexical-declaration pre-scan) keeps its linear scan over a
+  growable list: `SeenParams` packs every name into one byte buffer. A `HashSet` would cost an
+  allocation per function to speed up lists that are almost always a handful of names.
 - `DString` for names built by concatenation (`inferred_name_buf`, the `bind()` name).
 - Not used: `FixedList` and `RingBuffer` keep a fixed capacity; the temp allocator leaves each
   outgrown buffer behind until the pool ends.
@@ -33,7 +33,7 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
    stack bounds (`src/native_stack.c`); deep nesting is now a SyntaxError. Follow-up: one nested
    function level costs about 50 KB of parser frames, partly from whole-`Lexer` copies (4.9 KB) used
    for lookahead, so functions and classes stop at 100-150 levels on an 8 MB stack.
-4. [ ] **Strict duplicate parameters.** Duplicates past the 32nd parameter are accepted, and names of 64
+4. [x] **Strict duplicate parameters.** Duplicates past the 32nd parameter are accepted, and names of 64
    or more characters escape the check (`SeenParams`).
 5. [ ] **Nested classes.** 17 or more give a spurious "private name is not declared" error.
 6. [ ] **Octal escapes before `"use strict"`.** One that sits more than 16 directives earlier is not
