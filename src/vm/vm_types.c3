@@ -210,7 +210,10 @@ struct Activation {
     // non-null check alone. Push through activation_begin() rather than
     // setting the field directly.
     void* async_gen_state;
-    // The callee as a TVal, borrowed, which lightfuncs need.
+    // The callee as a TVal: undefined for a script or module body. It is a
+    // plain copy of the caller's callee register unless ACT_FLAG_CALLEE_OWNED
+    // says the frame holds its own reference. Every push writes it, because a
+    // borrowed call compares it with its own callee to detect a self-call.
     TVal tv_func;
     // The caller's valstack_top at CALL time, restored on RET without recomputing.
     TVal* caller_valstack_top;
@@ -230,10 +233,14 @@ const uint ACT_FLAG_DERIVED        = 1u << 6;
 // The activation came from SUPER_CALL, so on return its constructed object
 // initializes the pending derived-constructor this_binding up the chain.
 const uint ACT_FLAG_SUPER_CTOR     = 1u << 7;
-// The callee was borrowed from a permanent global binding: copied into the
-// caller's callee register, which for CALL_VAR is also the retval slot, with no
-// incref and no track_heap_store. The return value overwrites that same slot,
-// so the write-back must not decref what it finds there. See resolve_call_var.
+// The callee was borrowed from a permanent binding: copied into the caller's
+// callee register, which for CALL_VAR is also the retval slot, with no incref
+// and no track_heap_store. The return value overwrites that same slot, so the
+// write-back must not decref what it finds there. See resolve_call_var.
+// The binding can be reassigned while the call runs, so such a frame also
+// carries ACT_FLAG_CALLEE_OWNED, and its tv_func reference is the one that
+// keeps the borrowed slot's function alive. A function calling itself skips the
+// reference: its caller's frame runs the same closure and keeps it alive.
 const uint ACT_FLAG_BORROWED_CALLEE = 1u << 8;
 // The activation's this_binding holds a live value that the frame BORROWED
 // rather than incref'd: the caller keeps the owning reference for the whole
@@ -254,11 +261,17 @@ const uint ACT_FLAG_THIS_VALID     = 1u << 9;
 // overwritten by the first call's flush) and carried here. §8.1.1.3.1
 // BindThisValue step 3 then throws once the superclass constructor has run.
 const uint ACT_FLAG_SUPER_REBIND   = 1u << 10;
+// tv_func holds a reference the frame took, released when the frame pops. A
+// frame needs one whenever nothing older keeps its function alive: the callee
+// register was borrowed (ACT_FLAG_BORROWED_CALLEE) from a binding the call can
+// reassign, or a tail call slid the frame down over the register that held it.
+const uint ACT_FLAG_CALLEE_OWNED   = 1u << 11;
 
 // The flags a frame may carry and still return through RET's and RETUNDEF's
 // fast paths. Each of the others asks the pop for work only the general path
 // does.
-const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
+    | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
 
 // Write this_binding as a BORROWED value: the caller holds the owning
 // reference for the whole call, so nothing is incref'd here and nothing is
@@ -297,6 +310,32 @@ macro void Activation.release_this(&self, void* heap) {
         ((heap::Heap*)heap).decref_tval(&self.this_binding);
         self.this_binding.set_undefined();
     }
+}
+
+// Release an owned callee as the frame pops. The reference may be the last one
+// to a function whose binding the body reassigned, so it drops only once the
+// borrowed retval slot no longer holds that function. That is the only way the
+// count reaches zero here, so every other release is a plain decrement kept
+// inline: this runs on each return of a call through a global binding.
+macro void Activation.release_callee(&self, void* heap) {
+    if ((self.flags & ACT_FLAG_CALLEE_OWNED) != 0) {
+        self.flags &= ~ACT_FLAG_CALLEE_OWNED;
+        HeapHeader* callee = (HeapHeader*)self.tv_func.get_heapptr();
+        if (callee.refcount > 1) {
+            callee.refcount--;
+        } else {
+            ((heap::Heap*)heap).decref(callee);
+        }
+    }
+}
+
+// Release every reference the frame owns as it pops, after its result is
+// written. The outermost frame of a Vm.run is the exception: its re-entrant
+// caller reads this_binding after the run returns, so it releases only the
+// callee.
+macro void Activation.release_refs(&self, void* heap) {
+    self.release_this(heap);
+    self.release_callee(heap);
 }
 
 // ============================================================================

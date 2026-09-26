@@ -1763,6 +1763,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     }
     entry_act.async_promise = mod_promise;
     entry_act.async_gen_state = null;
+    entry_act.tv_func.set_undefined();
 
     // A Module Environment Record's HasThisBinding() is true but
     // GetThisBinding() always returns undefined (ECMA-262 §8.1.1.5.4), so this
@@ -1962,6 +1963,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     act.forin = null;
     act.curr_pc = func.code;
     act.async_gen_state = null;
+    act.tv_func.set_undefined();
     act.bottom = frame;
     act.retval = null;
     act.heap_reg_count = 0;
@@ -4142,7 +4144,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vm.heap.decref_tval(fres);
                     }
                     *fres = fval;
-                    fa.release_this(vm.heap);
+                    fa.release_refs(vm.heap);
                     vm.activation_count--;
                     // Derive the caller frame the same way the general path
                     // does rather than following fa.parent. The two agree for
@@ -4291,6 +4293,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (vm.activation_count == 0) {
                 vm.heap.tval_copy_ref(&vm.return_val, &val);
                 if (val_pinned) vm.heap.decref_tval(&val);
+                callee_act.release_callee(vm.heap);
                 return vm.return_val;
             }
             // Write return value to caller's result register
@@ -4329,7 +4332,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             }
             if (val_pinned) vm.heap.decref_tval(&val);
-            callee_act.release_this(vm.heap);
+            callee_act.release_refs(vm.heap);
             // Restore the caller state inline, skipping the outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;
@@ -4446,7 +4449,7 @@ fn TVal? Vm.run(Vm* vm) {
                         vm.heap.decref_tval(ures);
                     }
                     ures.set_undefined();
-                    ua.release_this(vm.heap);
+                    ua.release_refs(vm.heap);
                     vm.activation_count--;
                     ds.act = &vm.activations[vm.activation_count - 1];
                     vm.valstack_bottom = ds.act.bottom;
@@ -4535,6 +4538,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (vm.activation_count == 0) {
                 vm.heap.tval_copy_ref(&vm.return_val, &undef_val);
                 if (async_ret) vm.heap.decref_tval(&undef_val);
+                callee_act.release_callee(vm.heap);
                 return vm.return_val;
             }
             // Write return value to caller's result register
@@ -4552,7 +4556,7 @@ fn TVal? Vm.run(Vm* vm) {
                     *callee_result = undef_val;
                 }
             }
-            callee_act.release_this(vm.heap);
+            callee_act.release_refs(vm.heap);
             // Restore the caller state inline, skipping the outer loop restart.
             ds.act = &vm.activations[vm.activation_count - 1];
             vm.valstack_bottom = ds.act.bottom;
