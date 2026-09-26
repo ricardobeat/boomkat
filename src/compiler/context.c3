@@ -2797,8 +2797,6 @@ struct LexerPos {
     bool seen_line_term;
 }
 
-const uint MAX_CLASS_METHODS = 32;
-
 struct ClassMethod {
     char[] name;
     uint   inner_idx;

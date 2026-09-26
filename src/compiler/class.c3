@@ -10,6 +10,7 @@ import boomkat::hbigint;
 import boomkat::dtoa_bindings;
 import std::io;
 import std::math;
+import std::collections::list;
 
 // ============================================================================
 // Class parsing (ES6)
@@ -942,9 +943,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // Parse class body
     self.expect(TokenType.LBRACE)!;
 
-    // Track methods found in the class body
-    ClassMethod[MAX_CLASS_METHODS] methods;
-    ushort method_count = 0;
+    // Methods found in the class body, installed once the whole body is parsed.
+    List{ClassMethod} methods;
+    methods.init(mem);
+    defer methods.free();
     // Per-class-body counter for computed public-field-key hidden slots
     // (P7), combined with the class id to build unique binding names.
     uint computed_field_key_count = 0;
@@ -1783,27 +1785,29 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
         if (is_constructor) {
             ctor_inner_idx = inner_idx;
-        } else if (method_count < MAX_CLASS_METHODS) {
-            methods[method_count].name = method_key_name;
-            methods[method_count].inner_idx = inner_idx;
-            methods[method_count].is_static = is_static;
-            methods[method_count].is_getter = is_getter;
-            methods[method_count].is_setter = is_setter;
-            methods[method_count].name_is_number = method_name_is_number;
-            methods[method_count].name_num_value = method_name_num_value;
-            methods[method_count].name_is_bigint = method_name_is_bigint;
-            methods[method_count].name_bigint_src = method_name_bigint_src;
-            methods[method_count].computed_key_inner_idx = computed_key_inner_idx;
-            methods[method_count].computed_key_reg = (uint)computed_key_reg;
-            methods[method_count].is_private = is_private_member;
+        } else {
+            ClassMethod m = {
+                .name = method_key_name,
+                .inner_idx = inner_idx,
+                .is_static = is_static,
+                .is_getter = is_getter,
+                .is_setter = is_setter,
+                .name_is_number = method_name_is_number,
+                .name_num_value = method_name_num_value,
+                .name_is_bigint = method_name_is_bigint,
+                .name_bigint_src = method_name_bigint_src,
+                .computed_key_inner_idx = computed_key_inner_idx,
+                .computed_key_reg = (uint)computed_key_reg,
+                .is_private = is_private_member,
+            };
             if (is_private_member) {
                 PrivateNameEntry* pe = self.resolve_private_name(priv_member_name)!;
-                methods[method_count].priv_slot_name = pe.slot_name;
+                m.priv_slot_name = pe.slot_name;
             }
             if (is_static && !is_private_member && method_key_name == "name") {
                 class_has_static_name = true;
             }
-            method_count++;
+            methods.push(m);
         }
     }
 
@@ -1999,8 +2003,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     }
 
     // Install methods on prototype or constructor (static)
-    for (ushort mi = 0; mi < method_count; mi++) {
-        uint mi_idx = methods[mi].inner_idx;
+    foreach (&m : methods) {
+        uint mi_idx = m.inner_idx;
         ushort method_reg = self.alloc_reg();
         self.emit_a_bc(Opcode.CLOSURE, (uint)method_reg, mi_idx);
 
@@ -2012,8 +2016,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // / setter_closure_slot_name doc comments (context.c3). A plain
         // method uses method_closure_slot_name; an accessor's getter/setter
         // are two separate ClassMethod/CLOSURE sites, each with its own slot.
-        if (methods[mi].is_private && !methods[mi].is_static) {
-            // methods[mi].priv_slot_name IS the owning PrivateNameEntry's
+        if (m.is_private && !m.is_static) {
+            // m.priv_slot_name IS the owning PrivateNameEntry's
             // slot_name (assigned when the ClassMethod was recorded, from
             // `pe.slot_name` where pe = resolve_private_name(...)), find
             // that same entry back by matching slot_name (a stable,
@@ -2022,9 +2026,9 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             char[] mclo_slot = "";
             for (uint pei = 0; pei < self.private_name_table.count; pei++) {
                 PrivateNameEntry* pme_install = &self.private_name_table.entries[pei];
-                if (pme_install.slot_name.ptr != methods[mi].priv_slot_name.ptr) continue;
-                mclo_slot = methods[mi].is_getter ? pme_install.getter_closure_slot_name
-                    : (methods[mi].is_setter ? pme_install.setter_closure_slot_name
+                if (pme_install.slot_name.ptr != m.priv_slot_name.ptr) continue;
+                mclo_slot = m.is_getter ? pme_install.getter_closure_slot_name
+                    : (m.is_setter ? pme_install.setter_closure_slot_name
                        : pme_install.method_closure_slot_name);
                 break;
             }
@@ -2032,27 +2036,27 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 self.add_string_constant(mclo_slot));
         }
 
-        ushort target_reg = methods[mi].is_static ? ctor_reg : proto_reg;
+        ushort target_reg = m.is_static ? ctor_reg : proto_reg;
 
         // Get the key register, either from computed key expression, static
         // name, or (P3/P4) the private name's own runtime symbol slot.
         ushort key_reg;
-        if (methods[mi].is_private) {
+        if (m.is_private) {
             key_reg = self.alloc_reg();
             self.emit_a_bc(Opcode.GETVAR, (uint)key_reg,
-                self.add_string_constant(methods[mi].priv_slot_name));
-        } else if (methods[mi].computed_key_inner_idx == 0xFFFFFFFE) {
+                self.add_string_constant(m.priv_slot_name));
+        } else if (m.computed_key_inner_idx == 0xFFFFFFFE) {
             // Inline-compiled computed key (yield/await in generator/async).
             // The expression was compiled inline during parsing and the result
             // register was stored in computed_key_reg.
             key_reg = self.alloc_reg();
-            self.emit_abc(Opcode.LDREG, (uint)key_reg, methods[mi].computed_key_reg, 0);
-        } else if (methods[mi].computed_key_inner_idx != 0xFFFFFFFF) {
+            self.emit_abc(Opcode.LDREG, (uint)key_reg, m.computed_key_reg, 0);
+        } else if (m.computed_key_inner_idx != 0xFFFFFFFF) {
             // Computed key: CLOSURE + CALL to evaluate key expression
             // CALL convention: CALL result_reg, callee_reg, nargs
             // this must be at callee_reg + 1, args at callee_reg + 2, ...
             key_reg = self.alloc_reg();
-            self.emit_a_bc(Opcode.CLOSURE, (uint)key_reg, methods[mi].computed_key_inner_idx);
+            self.emit_a_bc(Opcode.CLOSURE, (uint)key_reg, m.computed_key_inner_idx);
             ushort this_slot = self.alloc_reg(); // must be key_reg + 1
             self.emit_a_bc(Opcode.LDTHIS, (uint)this_slot, 0);
             self.emit_abc(Opcode.CALL, (uint)key_reg, (uint)key_reg, 0);
@@ -2063,20 +2067,20 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // proper string representation (e.g. 0x10 → "16"). BIGINT tokens
             // follow the same pattern (e.g. `1n() {}` → key "1").
             uint key_idx;
-            if (methods[mi].name_is_number) {
-                key_idx = self.add_number_constant(methods[mi].name_num_value);
-            } else if (methods[mi].name_is_bigint) {
-                key_idx = self.add_bigint_constant(methods[mi].name_bigint_src)!;
+            if (m.name_is_number) {
+                key_idx = self.add_number_constant(m.name_num_value);
+            } else if (m.name_is_bigint) {
+                key_idx = self.add_bigint_constant(m.name_bigint_src)!;
             } else {
-                key_idx = self.add_string_constant(methods[mi].name);
+                key_idx = self.add_string_constant(m.name);
             }
             key_reg = self.alloc_reg();
             self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, key_idx);
         }
 
-        if (methods[mi].is_getter) {
+        if (m.is_getter) {
             self.emit_abc(Opcode.CLASS_INITGET, (uint)target_reg, (uint)key_reg, (uint)method_reg);
-        } else if (methods[mi].is_setter) {
+        } else if (m.is_setter) {
             self.emit_abc(Opcode.CLASS_INITSET, (uint)target_reg, (uint)key_reg, (uint)method_reg);
         } else {
             // Both static and instance methods use CLASS_INITPROP
