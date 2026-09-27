@@ -4076,16 +4076,18 @@ $endif
 
 /**
  * Walk heap_allocated, unlink and free everything the mark phase did not reach,
- * and clear the reachable flag on the survivors ready for the next cycle.
+ * and clear the reachable flag on the survivors ready for the next cycle. With
+ * `drop_temproots`, temporary roots no longer keep a node alive and survivors
+ * lose the flag; otherwise an unmarked temproot survives.
  *
  * The work runs in three phases so that a dying object's teardown can never
  * read or re-free a sibling this same sweep is also collecting.
  */
-fn void Heap.sweep(&self) {
-    // Phase A: unlink every dying node, meaning unmarked and not a temproot,
-    // and thread it onto a local list through its now-unused .next pointer.
-    // Nothing is freed yet, so every dying header and mark bit stays readable
-    // through phases B and C.
+fn void Heap.sweep(&self, bool drop_temproots) {
+    // Phase A: unlink every dying node and thread it onto a local list through
+    // its now-unused .next pointer. Nothing is freed yet, so every dying header
+    // stays readable through phases B and C. Survivors' marks clear here, which
+    // is what lets the next cycle start marking without a clearing walk.
     HeapHeader* cur = self.heap_allocated;
     HeapHeader* prev = null;
     HeapHeader* dying = null;
@@ -4093,7 +4095,7 @@ fn void Heap.sweep(&self) {
 
     while (cur != null) {
         HeapHeader* next = cur.next;
-        if (!cur.is_reachable() && !cur.is_temproot()) {
+        if (!cur.is_reachable() && (drop_temproots || !cur.is_temproot())) {
             if (prev != null) {
                 prev.next = next;
             } else {
@@ -4119,6 +4121,8 @@ fn void Heap.sweep(&self) {
             dying = cur;
         } else {
             // A survivor: either reachable, or an unmarked temproot being kept.
+            cur.clear_reachable();
+            if (drop_temproots) { cur.clear_temproot(); }
             prev = cur;
             kept++;
         }
@@ -4146,12 +4150,6 @@ fn void Heap.sweep(&self) {
             self.free_func(self.heap_udata, d);
         }
         d = dnext;
-    }
-
-    // Pins last until mark_and_sweep's quiescent safepoint, even when a node
-    // is also reachable through a callback's registers during this collection.
-    for (HeapHeader* s = self.heap_allocated; s != null; s = s.next) {
-        s.clear_reachable();
     }
 
     self.live_obj_count = kept;
@@ -4184,11 +4182,29 @@ fn void Heap.sweep_strings(&self) {
             self.str_table[i] = STR_TABLE_TOMBSTONE;
             if (self.str_table_used > 0) { self.str_table_used--; }
             self.free_string(entry);
+        } else {
+            ((HeapHeader*)entry).clear_reachable();
         }
     }
 
     if (self.str_table_used < self.str_table_size / 4 && self.str_table_size > INITIAL_STR_TABLE_SIZE) {
         self.str_table_shrink();
+    }
+}
+
+/**
+ * Clear the marks on interned and large strings when the string sweeps cannot
+ * run, so the next cycle starts with every mark clear.
+ */
+fn void Heap.clear_string_marks(&self) {
+    for (uint i = 0; i < self.str_table_size; i++) {
+        HString* entry = self.str_table[i];
+        if (entry != null && entry != STR_TABLE_TOMBSTONE) {
+            ((HeapHeader*)entry).clear_reachable();
+        }
+    }
+    for (uint i = 0; i < self.large_string_count; i++) {
+        ((HeapHeader*)self.large_strings[i]).clear_reachable();
     }
 }
 
@@ -4211,6 +4227,7 @@ fn void Heap.sweep_large_strings(&self) {
     for (uint i = 0; i < self.large_string_count; i++) {
         HString* s = self.large_strings[i];
         if (((HeapHeader*)s).is_reachable()) {
+            ((HeapHeader*)s).clear_reachable();
             // Survivors compact downward.
             self.large_strings[kept] = s;
             kept++;
@@ -4225,15 +4242,16 @@ fn void Heap.sweep_large_strings(&self) {
 /**
  * Run a full mark-and-sweep garbage collection.
  *
- * 1. Clear all reachable flags.
+ * 1. Seed temporary roots, when this collection keeps them.
  * 2. Mark all reachable objects starting from roots (built-in prototypes,
  *    registered GC roots, and the string table).
- * 3. Sweep unmarked (unreachable) objects, freeing their memory.
+ * 3. Sweep unmarked (unreachable) objects, freeing their memory and clearing
+ *    the survivors' marks for the next cycle.
  * 4. Reset the GC trigger counter based on the new live-object count.
  *
  * The gc_running guard makes this non-re-entrant.
  *
- * With `safepoint` true, phase 1 also clears temproot flags so newly allocated
+ * With `safepoint` true, the sweep also drops temproot flags so newly allocated
  * objects become collectable. A collection outside a safepoint keeps temproots
  * so in-flight allocations survive.
  *
@@ -4256,32 +4274,17 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
 
     bool clear_temproots = safepoint && self.native_frame_depth == 0;
 
-    // Phase 1: reset marks and seed temporary roots in the same heap walk.
-    // Only enqueue here: tracing an edge before its target's mark is reset
-    // would lose that mark. mark_roots drains the gray stack after this pass.
-    {
-        HeapHeader* cur = self.heap_allocated;
-        while (cur != null) {
-            cur.clear_reachable();
-            if (clear_temproots) {
-                cur.clear_temproot();
-            } else if (cur.is_temproot()) {
+    // Phase 1: every mark is clear here, because the previous cycle's sweeps
+    // cleared each survivor's as they passed it. A collection that keeps
+    // temporary roots seeds them now; at a quiescent safepoint the sweep drops
+    // their flags instead, so this walk is skipped. Only enqueue here:
+    // mark_roots drains the gray stack.
+    if (!clear_temproots) {
+        for (HeapHeader* cur = self.heap_allocated; cur != null; cur = cur.next) {
+            if (cur.is_temproot()) {
                 cur.set_reachable();
                 if (cur.is_object()) { self.gray_push((HObject*)cur); }
             }
-            cur = cur.next;
-        }
-        // Interned strings are not on the heap_allocated list, so their marks
-        // clear through the string table and sweep_strings sees fresh bits.
-        for (uint i = 0; i < self.str_table_size; i++) {
-            HString* s = self.str_table[i];
-            if (s != null && s != STR_TABLE_TOMBSTONE) {
-                ((HeapHeader*)s).clear_reachable();
-            }
-        }
-        // Large strings are in neither list, so the registry clears theirs.
-        for (uint i = 0; i < self.large_string_count; i++) {
-            ((HeapHeader*)self.large_strings[i]).clear_reachable();
         }
     }
 
@@ -4301,7 +4304,7 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
     self.prune_var_ic_entries();
 
     // Phase 3: sweep objects.
-    self.sweep();
+    self.sweep(clear_temproots);
 
     // Phase 3b: reclaim dead environment cells, after object teardown so the
     // cells' bindings pointers may already be freed. Runs before the string
@@ -4316,6 +4319,8 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
     if (self.string_sweep_safe) {
         self.sweep_strings();
         self.sweep_large_strings();
+    } else {
+        self.clear_string_marks();
     }
 
     // Phase 4: scale the next trigger to the surviving heap. Under GC_STRESS the
