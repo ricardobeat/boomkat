@@ -294,7 +294,7 @@ fn EnvRecord*? env_create_with_object(Heap* heap, EnvRecord* parent, HObject* bi
         // still request collections.
         heap.env_alloc_budget--;
         if (heap.env_alloc_budget <= 0) {
-            heap.gc_pending = true;
+            heap.request_gc();
         }
         return env;
     }

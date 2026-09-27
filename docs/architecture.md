@@ -525,9 +525,13 @@ a count could never safely reach zero. Strings use their intern table or
 non-interned registry rather than the object list; their sweeps also use
 reachability.
 
-`Heap.sweep()` unlinks every dead node first, runs each teardown next, and
-frees headers last, because one dead object's teardown can read another, as a
-typed array does when it unlinks from its buffer's view list.
+The object sweep is lazy. A collection marks, sweeps the interned strings and
+the environment pool, then arms a cursor at the head of the object list; each
+later safepoint sweeps `SWEEP_STEP_NODES` nodes from the cursor, and the next
+collection finishes any remainder before it marks. Objects allocated meanwhile
+go on the list head, ahead of the cursor, so the sweep never judges them by the
+stale marks. Freeing node by node is sound because a teardown reads no other
+heap node: it releases only strings and memory the node owns.
 
 Marking is tri-colour with an explicit gray stack rather than recursion, so a
 deep object graph cannot overflow the C stack. `mark_roots()` seeds it, and
@@ -576,13 +580,6 @@ leaving the outermost native frame schedules it for the next VM safepoint, after
 the return value is anchored. Callback collections can reset the allocation
 budget without postponing pin expiry across successive native calls.
 
-The sweep itself runs in three phases so that no teardown can touch memory
-another teardown already freed:
-
-1. unlink every dying node onto a private list, freeing nothing
-2. run each node's teardown while all of that memory is still valid
-3. release the header memory
-
 ### Strings
 
 The string table is open-addressed with linear probing and tombstones, hashed
@@ -603,7 +600,12 @@ for reachability.
 
 Both sweeps run only when `string_sweep_safe` is set, since a GC can trigger from
 any allocation, including one made while an opcode holds a freshly interned
-string that nothing roots yet.
+string that nothing roots yet. The interned sweep runs in the pause: a dead
+object the lazy sweep has not reached still holds a counted reference to each
+string it stores, which keeps that string above the table's own count. The
+registry sweep frees by mark alone, so it waits for the lazy object sweep to
+end and runs only if both moments were quiescent; a large string created in
+between is born marked.
 
 Two caches sit alongside: pre-interned built-in strings, and `HString*` for the
 integer keys 0 to 255. Both are *pinned*, so refcounting and sweep never free

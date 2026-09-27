@@ -587,7 +587,17 @@ struct Heap {
 
     // GC state
     long  gc_trigger_counter;
-    bool  gc_pending;            /// Deferred GC requested by alloc/realloc
+    bool  gc_pending;            /// The next safepoint has collector work: a collection or a sweep step
+    bool  gc_requested;          /// A collection is due; see request_gc
+    // Lazy sweep state. After marking, the pause leaves the unswept part of the
+    // object list, from sweep_cursor to the tail, for safepoints to sweep in
+    // steps. Nodes allocated since then sit ahead of the cursor, so the sweep
+    // never visits them.
+    HeapHeader* sweep_cursor;
+    bool  sweep_active;
+    bool  sweep_drop_temproots;  /// The pause was quiescent: temproots keep nothing alive
+    bool  sweep_large_strings_ok; /// The pause could sweep strings; see finish_sweep_cycle
+    uint  marked_obj_count;      /// Objects marked this cycle, counted in gray_push
     bool  gc_quiescent_pending;  /// A collection retained native temporary roots
     uint  bwd_gc_budget;         /// Countdown to the next backward-jump GC safepoint
     // Nesting depth of native builtin frames on the C3 stack. Non-zero means a
@@ -1777,9 +1787,9 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
-    // Teardown frees everything directly, so object teardown must skip its RC
-    // decref loop: mixing decref with the str_table backshift-delete would
-    // corrupt the table for the sweep below.
+    // Teardown frees everything directly, so object teardown must skip its
+    // string decref loop: mixing decref with the str_table backshift-delete
+    // would corrupt the table for the sweep below.
     self.tearing_down = true;
 
     HeapHeader* cur = self.heap_allocated;
@@ -2080,7 +2090,10 @@ fn void Heap.reset(&self) {
     self.gc_running       = false;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
     self.gc_pending       = false;
+    self.gc_requested     = false;
     self.gc_quiescent_pending = false;
+    self.sweep_cursor     = null;
+    self.sweep_active     = false;
     self.bwd_gc_budget    = BWD_GC_INTERVAL;
     self.native_frame_depth = 0;
     self.gray_count       = 0;
@@ -2497,7 +2510,7 @@ fn void Heap.free_module_cache(&self) {
 fn void*? Heap.alloc(&self, usz size) {
     self.gc_trigger_counter--;
     if (self.gc_trigger_counter <= 0) {
-        self.gc_pending = true;
+        self.request_gc();
     }
 
     void* ptr = self.alloc_func(self.heap_udata, size);
@@ -2533,7 +2546,7 @@ fn void*? Heap.alloc_no_gc(&self, usz size) {
     if (size > 1024) {
         self.gc_trigger_counter -= (long)(size >> 10);
         if (self.gc_trigger_counter <= 0) {
-            self.gc_pending = true;
+            self.request_gc();
         }
     }
     int cls = pool_class_index(size);
@@ -2601,7 +2614,7 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls) {
         self.gc_trigger_counter--;
         gcprofile::gcprof_alloc();
         if (self.gc_trigger_counter <= 0) {
-            self.gc_pending = true;
+            self.request_gc();
         }
     }
     return result;
@@ -2614,7 +2627,7 @@ fn void*? Heap.realloc(&self, void* ptr, usz new_size) {
     gcprofile::gcprof_realloc();
     self.gc_trigger_counter--;
     if (self.gc_trigger_counter <= 0) {
-        self.gc_pending = true;
+        self.request_gc();
     }
 
     void* new_ptr = self.realloc_func(self.heap_udata, ptr, new_size);
@@ -2889,6 +2902,7 @@ fn void Heap.join_visited_pop(&self) {
  * growing the stack when it is full.
  */
 fn void Heap.gray_push(&self, HObject* obj) {
+    self.marked_obj_count++;
     if (self.gray_count >= self.gray_capacity) {
         usz new_cap = self.gray_capacity > 0
                       ? (usz)self.gray_capacity * 2
@@ -4074,36 +4088,30 @@ $endif
 // GC sweep
 // ============================================================================
 
-/**
- * Walk heap_allocated, unlink and free everything the mark phase did not reach,
- * and clear the reachable flag on the survivors ready for the next cycle. With
- * `drop_temproots`, temporary roots no longer keep a node alive and survivors
- * lose the flag; otherwise an unmarked temproot survives.
- *
- * The work runs in three phases so that a dying object's teardown can never
- * read or re-free a sibling this same sweep is also collecting.
- */
-fn void Heap.sweep(&self, bool drop_temproots) {
-    // Phase A: unlink every dying node and thread it onto a local list through
-    // its now-unused .next pointer. Nothing is freed yet, so every dying header
-    // stays readable through phases B and C. Survivors' marks clear here, which
-    // is what lets the next cycle start marking without a clearing walk.
-    HeapHeader* cur = self.heap_allocated;
-    HeapHeader* prev = null;
-    HeapHeader* dying = null;
-    uint kept = 0;
+// Nodes one sweep step visits. At roughly 70 ns a node this keeps a step
+// near 0.3 ms, well inside a frame.
+const uint SWEEP_STEP_NODES = 4096;
 
-    while (cur != null) {
+/**
+ * Sweep up to `budget` nodes of the unswept object list, freeing each one the
+ * mark phase did not reach and clearing the survivors' marks for the next
+ * cycle. With sweep_drop_temproots, temporary roots keep nothing alive and
+ * survivors lose the flag; otherwise an unmarked temproot survives. Ends the
+ * cycle when the cursor reaches the tail.
+ *
+ * Freeing one dead node before another is sound because teardown reads no
+ * other heap node: it releases only strings, which the sweep does not free,
+ * and memory the node owns. A dead node is unreachable, so nothing the
+ * mutator runs between steps can reach it either.
+ */
+fn void Heap.sweep_step(&self, uint budget, bool strings_safe) {
+    // Teardown can reach an allocator; a collection must not start mid-step.
+    bool was_running = self.gc_running;
+    self.gc_running = true;
+    HeapHeader* cur = self.sweep_cursor;
+    for (uint n = 0; cur != null && n < budget; n++) {
         HeapHeader* next = cur.next;
-        if (!cur.is_reachable() && (drop_temproots || !cur.is_temproot())) {
-            if (prev != null) {
-                prev.next = next;
-            } else {
-                self.heap_allocated = next;
-            }
-            if (next != null) {
-                next.prev = prev;
-            }
+        if (!cur.is_reachable() && (self.sweep_drop_temproots || !cur.is_temproot())) {
             $if $feat(HEAP_VERIFY):
                 if (self.is_in_generator_saved_regs(cur)) {
                     io::eprintf("[HEAP_VERIFY]   SWEEP WARNING: freeing %p (htype=%d) which is in a generator's saved_regs!\n",
@@ -4116,43 +4124,56 @@ fn void Heap.sweep(&self, bool drop_temproots) {
                                 cur, (int)cur.get_type(), bad_frame, bad_slot);
                 }
             $endif
-            // The node is off the live list, so .next can thread the dying list.
-            cur.next = dying;
-            dying = cur;
+            cur.unlink(&self.heap_allocated);
+            if (cur.is_object()) {
+                hobject::hobject_free((HObject*)cur, (void*)self, true);
+            } else {
+                // A BigInt box or buffer, both leaves.
+                self.free_func(self.heap_udata, cur);
+            }
+            if (self.live_obj_count > 0) { self.live_obj_count--; }
         } else {
-            // A survivor: either reachable, or an unmarked temproot being kept.
             cur.clear_reachable();
-            if (drop_temproots) { cur.clear_temproot(); }
-            prev = cur;
-            kept++;
+            if (self.sweep_drop_temproots) { cur.clear_temproot(); }
         }
         cur = next;
     }
+    self.sweep_cursor = cur;
+    if (cur == null) { self.finish_sweep_cycle(strings_safe); }
+    self.gc_running = was_running;
+}
 
-    // Phase B: run each dying node's teardown while all of that memory is still
-    // valid. hobject_free can read a neighbour that is itself dying, such as a
-    // typed array unlinking from its buffer's view list.
-    for (HeapHeader* d = dying; d != null; d = d.next) {
-        if (d.is_object()) {
-            hobject::hobject_free((HObject*)d, (void*)self, false);
-        }
+/**
+ * End a sweep cycle once every object is swept. Only now can the large-string
+ * sweep run: it frees by mark alone, and until the last dead object is torn
+ * down, one of them may still hold a counted reference to an unmarked large
+ * string. It runs only if both the pause and this moment were free of raw
+ * string pointers in native locals; otherwise the marks clear and the next
+ * cycle reconsiders those strings.
+ */
+fn void Heap.finish_sweep_cycle(&self, bool strings_safe) {
+    self.sweep_active = false;
+    if (self.sweep_large_strings_ok && strings_safe) {
+        self.sweep_large_strings();
+    } else {
+        self.clear_large_string_marks();
     }
+}
 
-    // Phase C: release each dying node's header memory. Doing this last means no
-    // phase B teardown could have touched already-freed memory.
-    HeapHeader* d = dying;
-    while (d != null) {
-        HeapHeader* dnext = d.next;
-        if (d.is_object()) {
-            hobject::hobject_free_header((HObject*)d, (void*)self);
-        } else {
-            // A BigInt box or other non-object leaf.
-            self.free_func(self.heap_udata, d);
-        }
-        d = dnext;
-    }
+/**
+ * Sweep whatever the lazy sweep has left, so a new mark phase starts from a
+ * list with every mark clear.
+ */
+fn void Heap.finish_sweep(&self, bool strings_safe) {
+    if (self.sweep_active) { self.sweep_step(uint::max, strings_safe); }
+}
 
-    self.live_obj_count = kept;
+/**
+ * Ask the next safepoint to collect.
+ */
+fn void Heap.request_gc(&self) @inline {
+    self.gc_requested = true;
+    self.gc_pending = true;
 }
 
 /**
@@ -4193,16 +4214,22 @@ fn void Heap.sweep_strings(&self) {
 }
 
 /**
- * Clear the marks on interned and large strings when the string sweeps cannot
- * run, so the next cycle starts with every mark clear.
+ * Clear the marks on interned strings when their sweep cannot run, so the
+ * next cycle starts with every mark clear.
  */
-fn void Heap.clear_string_marks(&self) {
+fn void Heap.clear_interned_string_marks(&self) {
     for (uint i = 0; i < self.str_table_size; i++) {
         HString* entry = self.str_table[i];
         if (entry != null && entry != STR_TABLE_TOMBSTONE) {
             ((HeapHeader*)entry).clear_reachable();
         }
     }
+}
+
+/**
+ * Clear the marks on large strings when their sweep cannot run.
+ */
+fn void Heap.clear_large_string_marks(&self) {
     for (uint i = 0; i < self.large_string_count; i++) {
         ((HeapHeader*)self.large_strings[i]).clear_reachable();
     }
@@ -4263,7 +4290,9 @@ fn void Heap.sweep_large_strings(&self) {
  */
 fn void Heap.mark_and_sweep(&self, bool safepoint) {
     if (self.gc_running) { return; }
+    self.finish_sweep(self.string_sweep_safe);
     self.gc_running = true;
+    self.marked_obj_count = 0;
     // Reset before the mark phase so mark_work_last describes THIS cycle when
     // the trigger is recomputed at the end of it.
     self.mark_work_last = 0;
@@ -4303,25 +4332,32 @@ fn void Heap.mark_and_sweep(&self, bool safepoint) {
     // before their env cells can be recycled.
     self.prune_var_ic_entries();
 
-    // Phase 3: sweep objects.
-    self.sweep(clear_temproots);
+    // Phase 3: start the lazy object sweep. Safepoints sweep the object list
+    // in steps from here; see sweep_step.
+    self.sweep_cursor = self.heap_allocated;
+    self.sweep_active = self.sweep_cursor != null;
+    self.sweep_drop_temproots = clear_temproots;
+    self.sweep_large_strings_ok = self.string_sweep_safe;
 
-    // Phase 3b: reclaim dead environment cells, after object teardown so the
-    // cells' bindings pointers may already be freed. Runs before the string
-    // sweep; it dereferences no outgoing pointer, only cell bytes.
+    // Phase 3b: reclaim dead environment cells. It dereferences no outgoing
+    // pointer, only cell bytes, and object teardown reads no environment cell.
     hobject::env_pool_sweep(self);
 
-    // Phase 3c: sweep unreachable strings, only where the caller guarantees no
-    // raw interned-string pointer is live. Any allocation can trigger a GC,
-    // including one made while builtin init or an opcode holds a freshly
-    // interned HString* in a local that nothing roots, such as between
+    // Phase 3c: sweep unreachable interned strings, only where the caller
+    // guarantees no raw interned-string pointer is live. Any allocation can
+    // trigger a GC, including one made while builtin init or an opcode holds a
+    // freshly interned HString* in a local that nothing roots, such as between
     // str_intern and put_prop. Sweeping then would free that in-flight string.
+    // A dead object not yet swept still holds a counted reference to each
+    // string it stores, which keeps that string's count above the table's
+    // own, so this sweep cannot free it early. Large strings wait for the end
+    // of the lazy sweep; see finish_sweep_cycle.
     if (self.string_sweep_safe) {
         self.sweep_strings();
-        self.sweep_large_strings();
     } else {
-        self.clear_string_marks();
+        self.clear_interned_string_marks();
     }
+    if (!self.sweep_active) { self.finish_sweep_cycle(self.string_sweep_safe); }
 
     // Phase 4: scale the next trigger to the surviving heap. Under GC_STRESS the
     // trigger stops scaling, so the next allocation collects again and every
@@ -4346,7 +4382,7 @@ $else
     //
     // Taking the larger of the two keeps the old behaviour whenever nodes
     // dominate, and lets the budget follow mark cost when contents dominate.
-    long by_nodes = (long)self.live_obj_count * GC_TRIGGER_GROW_FACTOR;
+    long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;
     long by_work  = (long)self.mark_work_last / GC_MARK_WORK_DIVISOR;
     long new_trigger = by_work > by_nodes ? by_work : by_nodes;
     if (new_trigger < GC_INITIAL_TRIGGER) {
@@ -4377,10 +4413,11 @@ $endif
     // another collection at each callback safepoint.
     self.gc_quiescent_pending = !clear_temproots;
     if (self.gc_quiescent_pending && self.native_frame_depth == 0) {
-        self.gc_pending = true;
+        self.request_gc();
     }
-    gcprofile::gcprof_cycle((ulong)self.live_obj_count);
+    gcprofile::gcprof_cycle((ulong)self.marked_obj_count);
     self.gc_running = false;
+    if (self.sweep_active) { self.gc_pending = true; }
 }
 
 // Schedule rather than collect here: the native return value must first be
@@ -4388,7 +4425,7 @@ $endif
 fn void Heap.leave_native_frame(&self) @inline {
     self.native_frame_depth--;
     if (self.native_frame_depth == 0 && self.gc_quiescent_pending) {
-        self.gc_pending = true;
+        self.request_gc();
     }
 }
 
@@ -4413,10 +4450,17 @@ fn void Heap.trigger_gc(&self) {
  */
 fn void Heap.safepoint_gc(&self) {
     bool quiescent = self.native_frame_depth == 0;
+    if (!self.gc_requested) {
+        // Only sweep work is pending: take one step.
+        self.sweep_step(SWEEP_STEP_NODES, quiescent);
+        self.gc_pending = self.sweep_active;
+        return;
+    }
+    self.gc_requested = false;
     self.string_sweep_safe = quiescent;
     self.mark_and_sweep(true);
     self.string_sweep_safe = false;
-    self.gc_pending = false;
+    self.gc_pending = self.gc_requested || self.sweep_active;
 }
 
 // ============================================================================
@@ -4653,6 +4697,9 @@ fn void Heap.large_string_register(&self, HString* s) {
     self.large_strings[self.large_string_count] = s;
     self.large_string_count++;
     s.registry_slot = self.large_string_count;
+    // The large-string sweep runs when the lazy sweep ends, against marks from
+    // a mark phase this string postdates, so it is born marked.
+    if (self.sweep_active) { ((HeapHeader*)s).set_reachable(); }
 }
 
 /**

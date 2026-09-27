@@ -2515,34 +2515,26 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         h.decref_tval(&(*obj.extra_ptr()).gs.setter);
     }
 
-    // Release [[BoundTargetFunction]], [[BoundThis]], and [[BoundArguments]].
-    // A bound function never sets captured_this, so this cannot overlap with the
+    // Release [[BoundTargetFunction]] and [[BoundThis]] if they are strings.
+    // [[BoundArguments]] is an object, which the collector reclaims; a lazy
+    // sweep may already have freed it, so teardown never reads it. A bound
+    // function never sets captured_this, so this cannot overlap with the
     // arrow-capture release below.
     if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && !hp.tearing_down) {
         heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).func.bound_target);
         h.decref_tval(&(*obj.extra_ptr()).func.bound_this);
-        if ((*obj.extra_ptr()).func.bound_args != null) {
-            h.decref((types::HeapHeader*)(*obj.extra_ptr()).func.bound_args);
-        }
     } else if (obj.flags.obj_class == ObjClass.FUNCTION && !hp.tearing_down) {
         // Decref an arrow function's captured lexical `this`.
         heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
     }
 
-    // Compiled closures own the descriptor vector and one reference per
-    // resolved owner. Builtins, bound functions, and async-state callbacks
-    // leave capture_refs null.
+    // Compiled closures own the descriptor vector. The owners it names are
+    // traced, not counted. Builtins, bound functions, and async-state
+    // callbacks leave capture_refs null.
     if (obj.flags.obj_class == ObjClass.FUNCTION && !obj.flags.is_async_state
         && (*obj.extra_ptr()).func.capture_refs != null) {
-        if (!hp.tearing_down && (*obj.extra_ptr()).func.comp_func != null) {
-            uint count = (*obj.extra_ptr()).func.comp_func.capture_count;
-            CaptureRef* refs = (*obj.extra_ptr()).func.capture_refs;
-            for (uint i = 0; i < count; i++) {
-                if (refs[i].owner != null) hp.decref((types::HeapHeader*)refs[i].owner);
-            }
-        }
         hp.free_func(hp.heap_udata, (*obj.extra_ptr()).func.capture_refs);
         (*obj.extra_ptr()).func.capture_refs = null;
     }
@@ -2551,16 +2543,6 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     if (obj.flags.obj_class == ObjClass.ERROR && !hp.tearing_down) {
         heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).err.captured_stack);
-    }
-
-    // Release the owned collection target held by array/map/set iterators.
-    if ((obj.flags.obj_class == ObjClass.ARRAY_ITERATOR
-        || obj.flags.obj_class == ObjClass.MAP_ITERATOR
-        || obj.flags.obj_class == ObjClass.SET_ITERATOR)
-        && !hp.tearing_down && (*obj.extra_ptr()).iter.target != null) {
-        heap::Heap* h = hp;
-        h.decref((types::HeapHeader*)(*obj.extra_ptr()).iter.target);
-        (*obj.extra_ptr()).iter.target = null;
     }
 
     // Release this object's reference to its GeneratorState. A single gs can
