@@ -676,14 +676,14 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
             if (ctx.should_throw) return;
 
             HObject*? raw = heap.alloc_object(obj_class);
-            if (catch err = raw) { ctx.result.set_undefined(); return; }
+            if (catch err = raw) { ctx.result_undefined(); return; }
             HObject* obj = raw;
             obj.prototype = instance_proto;
             (*obj.extra_ptr()).view.byte_offset = off;
             (*obj.extra_ptr()).view.byte_length = view_len_bytes;
             (*obj.extra_ptr()).view.length_tracking = length_tracking;
             typedarray_link_view(ctx.heap, arg_obj, obj);
-            ctx.result.set_object(obj);
+            ctx.result_object(obj);
             return;
         }
 
@@ -768,7 +768,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
 
                 uint cap = 4;
                 TVal* items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)cap * TVal::size);
-                if (items == null) { ctx.result.set_undefined(); return; }
+                if (items == null) { ctx.result_undefined(); return; }
                 uint count = 0;
 
                 HString* next_key = builtin_intern_string(heap, "next");
@@ -835,7 +835,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                     if (count == cap) {
                         uint new_cap = cap * 2;
                         TVal* new_items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)new_cap * TVal::size);
-                        if (new_items == null) { heap.free_func(heap.heap_udata, items); ctx.result.set_undefined(); return; }
+                        if (new_items == null) { heap.free_func(heap.heap_udata, items); ctx.result_undefined(); return; }
                         mem::copy(new_items, items, (sz)((usz)count * TVal::size));
                         heap.free_func(heap.heap_udata, items);
                         items = new_items;
@@ -905,13 +905,13 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
     if (ctx.should_throw) return;
 
     HObject*? raw = heap.alloc_object(obj_class);
-    if (catch err = raw) { ctx.result.set_undefined(); return; }
+    if (catch err = raw) { ctx.result_undefined(); return; }
     HObject* obj = raw;
     obj.prototype = instance_proto;
     (*obj.extra_ptr()).view.byte_offset = byte_offset;
     (*obj.extra_ptr()).view.byte_length = byte_length;
     typedarray_link_view(ctx.heap, buf, obj);
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // ============================================================================
@@ -984,7 +984,7 @@ fn void builtin_typedarray_proto_length_get(BuiltinContext* ctx) {
         arraybuffer_throw_type_error(ctx, "TypedArray.prototype.length called on incompatible receiver");
         return;
     }
-    ctx.result.set_fastint((long)ta_element_count(obj));
+    ctx.result_fastint((long)ta_element_count(obj));
 }
 
 fn void builtin_typedarray_proto_bytelength_get(BuiltinContext* ctx) {
@@ -993,7 +993,7 @@ fn void builtin_typedarray_proto_bytelength_get(BuiltinContext* ctx) {
         arraybuffer_throw_type_error(ctx, "TypedArray.prototype.byteLength called on incompatible receiver");
         return;
     }
-    ctx.result.set_fastint((long)view_effective_byte_length(obj));
+    ctx.result_fastint((long)view_effective_byte_length(obj));
 }
 
 fn void builtin_typedarray_proto_byteoffset_get(BuiltinContext* ctx) {
@@ -1004,10 +1004,10 @@ fn void builtin_typedarray_proto_byteoffset_get(BuiltinContext* ctx) {
     }
     // Per §23.2.3.3: 0 when the view is out of bounds (or detached).
     if (view_is_out_of_bounds(obj)) {
-        ctx.result.set_fastint(0);
+        ctx.result_fastint(0);
         return;
     }
-    ctx.result.set_fastint((long)(*obj.extra_ptr()).view.byte_offset);
+    ctx.result_fastint((long)(*obj.extra_ptr()).view.byte_offset);
 }
 
 fn void builtin_typedarray_proto_buffer_get(BuiltinContext* ctx) {
@@ -1018,10 +1018,10 @@ fn void builtin_typedarray_proto_buffer_get(BuiltinContext* ctx) {
     }
     HObject* buf = (*obj.extra_ptr()).view.buffer;
     if (buf == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    ctx.result.set_object(buf);
+    ctx.result_object(buf);
 }
 
 // [Symbol.toStringTag] getter, returns the class name for TA receivers,
@@ -1029,15 +1029,15 @@ fn void builtin_typedarray_proto_buffer_get(BuiltinContext* ctx) {
 fn void builtin_typedarray_proto_tostringtag_get(BuiltinContext* ctx) {
     HObject* obj = ta_this_receiver(ctx);
     if (obj == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HString* name = builtin_intern_string(ctx.heap, ta_class_name(obj.flags.obj_class));
     if (name == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    ctx.result.set_string(name);
+    ctx.result_string(name);
 }
 
 // ============================================================================
@@ -1376,7 +1376,7 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
                     }
                 }
             }
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
     }
@@ -1435,7 +1435,7 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
                 if (copy_len >= one.len) copy_len = one.len - 1;
                 for (usz j = 0; j < copy_len; j++) { one[j] = data[byte_start + j]; }
                 HString*? ch_raw = builtin_intern_string(heap, one[:copy_len]);
-                if (try ch = ch_raw) { elem.set_string(ch); }
+                if (try ch = ch_raw) { elem.set_string_borrowed(ch); }
             }
         } else {
             HString* idx_key = heap.int_to_hstring((long)i);
@@ -1458,7 +1458,7 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
             ta_store_scalar(dp, dst_cls, &sv);
         }
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ---- subarray ----
@@ -1575,18 +1575,18 @@ fn void builtin_ta_proto_subarray(BuiltinContext* ctx) {
             arraybuffer_throw_type_error(ctx, "TypedArray.subarray: species constructor did not return a TypedArray");
             return;
         }
-        ctx.result.set_object(result_obj);
+        ctx.result_object(result_obj);
     } else {
         // Default: allocate same-class view sharing the same buffer.
         HObject*? raw = heap.alloc_object(cls);
-        if (catch err = raw) { ctx.result.set_undefined(); return; }
+        if (catch err = raw) { ctx.result_undefined(); return; }
         HObject* sub = raw;
         sub.prototype = obj.prototype != null ? obj.prototype : heap.typedarray_proto;
         (*sub.extra_ptr()).view.byte_offset = new_byte_off;
         (*sub.extra_ptr()).view.byte_length = new_byte_len;
         (*sub.extra_ptr()).view.length_tracking = result_tracking;
         typedarray_link_view(ctx.heap, buf, sub);
-        ctx.result.set_object(sub);
+        ctx.result_object(sub);
     }
 }
 
@@ -1666,7 +1666,7 @@ fn void builtin_ta_proto_fill(BuiltinContext* ctx) {
         }
     }
 
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // ---- copyWithin ----
@@ -1734,7 +1734,7 @@ fn void builtin_ta_proto_copyWithin(BuiltinContext* ctx) {
         mem::move(base + (to << shift), base + (from << shift), (sz)((usz)(count << shift)));
     }
 
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // ---- slice ----
@@ -1817,7 +1817,7 @@ fn void builtin_ta_proto_slice(BuiltinContext* ctx) {
         }
     }
 
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // ============================================================================
@@ -2026,7 +2026,7 @@ fn void builtin_ta_proto_indexOf(BuiltinContext* ctx) {
     char* base = (*buf.extra_ptr()).ab.data + byte_off;
 
     // Spec: if len == 0 return -1 immediately, before evaluating fromIndex.
-    if (len == 0) { ctx.result.set_fastint(-1); return; }
+    if (len == 0) { ctx.result_fastint(-1); return; }
 
     TVal search_arg; search_arg.set_undefined();
     if (ctx.argc >= 1) search_arg = ctx.regs[ctx.base_reg];
@@ -2042,9 +2042,9 @@ fn void builtin_ta_proto_indexOf(BuiltinContext* ctx) {
         // is NOT re-derived, a grow adds elements we never look at, and a shrink
         // makes the tail read as undefined (handled by ta_read_element_checked).
         // Only detach short-circuits to -1.
-        if (ta_buffer_truly_detached(obj)) { ctx.result.set_fastint(-1); return; }
+        if (ta_buffer_truly_detached(obj)) { ctx.result_fastint(-1); return; }
         if (from_d != from_d) from_d = 0.0;
-        if (from_d >= (double)len) { ctx.result.set_fastint(-1); return; }
+        if (from_d >= (double)len) { ctx.result_fastint(-1); return; }
         if (from_d < 0.0) {
             double v = (double)len + from_d;
             from = v < 0.0 ? 0u : (uint)(long)v;
@@ -2064,11 +2064,11 @@ fn void builtin_ta_proto_indexOf(BuiltinContext* ctx) {
         if (!ta_is_valid_integer_index(obj, (double)i)) continue;
         TVal elem = ta_read_element_checked(ctx.heap, obj, i);
         if (vm::strict_eq(&search_arg, &elem)) {
-            ctx.result.set_fastint((long)i);
+            ctx.result_fastint((long)i);
             return;
         }
     }
-    ctx.result.set_fastint(-1);
+    ctx.result_fastint(-1);
 }
 
 // %TypedArray%.prototype.lastIndexOf(searchElement, fromIndex=length-1), §23.2.3.18.
@@ -2082,7 +2082,7 @@ fn void builtin_ta_proto_lastIndexOf(BuiltinContext* ctx) {
     uint len = ta_element_count(obj);
     char* base = (*buf.extra_ptr()).ab.data + byte_off;
 
-    if (len == 0) { ctx.result.set_fastint(-1); return; }
+    if (len == 0) { ctx.result_fastint(-1); return; }
 
     TVal search_arg; search_arg.set_undefined();
     if (ctx.argc >= 1) search_arg = ctx.regs[ctx.base_reg];
@@ -2096,7 +2096,7 @@ fn void builtin_ta_proto_lastIndexOf(BuiltinContext* ctx) {
         if (ctx.should_throw) return;
         // Length is captured before fromIndex coercion and NOT re-derived (spec
         // §23.2.3.17); only detach short-circuits. Shrunk indices read undefined.
-        if (ta_buffer_truly_detached(obj)) { ctx.result.set_fastint(-1); return; }
+        if (ta_buffer_truly_detached(obj)) { ctx.result_fastint(-1); return; }
         // Handle NaN and the infinities before casting: (long)NaN and
         // (long)±Infinity are UB and x86 miscompiles them at -O2. Spec
         // §23.2.3.17: NaN → 0 (starts at index 0), +Infinity clamps to the last
@@ -2104,7 +2104,7 @@ fn void builtin_ta_proto_lastIndexOf(BuiltinContext* ctx) {
         if (from_d != from_d) {
             from = 0;
         } else if (from_d == -1.0 / 0.0) {
-            ctx.result.set_fastint(-1); return;
+            ctx.result_fastint(-1); return;
         } else if (from_d == 1.0 / 0.0) {
             from = (long)len - 1;
         } else if (from_d < 0.0) {
@@ -2122,11 +2122,11 @@ fn void builtin_ta_proto_lastIndexOf(BuiltinContext* ctx) {
         if (!ta_is_valid_integer_index(obj, (double)i)) continue;
         TVal elem = ta_read_element_checked(ctx.heap, obj, (uint)i);
         if (vm::strict_eq(&search_arg, &elem)) {
-            ctx.result.set_fastint(i);
+            ctx.result_fastint(i);
             return;
         }
     }
-    ctx.result.set_fastint(-1);
+    ctx.result_fastint(-1);
 }
 
 // %TypedArray%.prototype.includes(searchElement, fromIndex=0), §23.2.3.13.
@@ -2142,7 +2142,7 @@ fn void builtin_ta_proto_includes(BuiltinContext* ctx) {
     char* base = (*buf.extra_ptr()).ab.data + byte_off;
 
     // Spec: if len == 0 return false immediately, before evaluating fromIndex.
-    if (len == 0) { ctx.result.set_boolean(false); return; }
+    if (len == 0) { ctx.result_boolean(false); return; }
 
     TVal search_arg; search_arg.set_undefined();
     if (ctx.argc >= 1) search_arg = ctx.regs[ctx.base_reg];
@@ -2161,7 +2161,7 @@ fn void builtin_ta_proto_includes(BuiltinContext* ctx) {
         // returns false once detached), so SameValueZero(undefined, undefined)
         // matches at every index, do NOT special-case detach here.
         if (from_d != from_d) from_d = 0.0;
-        if (from_d >= (double)len) { ctx.result.set_boolean(false); return; }
+        if (from_d >= (double)len) { ctx.result_boolean(false); return; }
         if (from_d < 0.0) {
             double v = (double)len + from_d;
             from = v < 0.0 ? 0u : (uint)(long)v;
@@ -2174,9 +2174,9 @@ fn void builtin_ta_proto_includes(BuiltinContext* ctx) {
     // matches BigInt; the numeric/BigInt split is handled inside same_value_zero.
     for (uint i = from; i < len; i++) {
         TVal elem = ta_read_element_checked(ctx.heap, obj, i);
-        if (same_value_zero(search_arg, elem)) { ctx.result.set_boolean(true); return; }
+        if (same_value_zero(search_arg, elem)) { ctx.result_boolean(true); return; }
     }
-    ctx.result.set_boolean(false);
+    ctx.result_boolean(false);
 }
 
 // %TypedArray%.prototype.join(separator=","), §23.2.3.15.
@@ -2198,7 +2198,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
         TVal sep_arg = ctx.regs[ctx.base_reg];
         if (!sep_arg.is_undefined()) {
             sep_hs = builtin_to_string_vm(ctx, &sep_arg);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
             if (sep_hs != null) {
                 ((types::HeapHeader*)sep_hs).incref();
                 sep = sep_hs.get_data();
@@ -2209,7 +2209,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
     if (len == 0) {
         if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
         HString* empty = (HString*)heap.strs[heap::BuiltinStr.EMPTY];
-        if (empty != null) ctx.result.set_string(empty);
+        if (empty != null) ctx.result_string(empty);
         return;
     }
 
@@ -2223,7 +2223,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
         heap_strs = (HString**)heap.alloc_func(heap.heap_udata, HString*::size * len);
         if (heap_strs == null) {
             if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         elem_strs = heap_strs[:len];
@@ -2257,7 +2257,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
         if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
         for (uint i = 0; i < len; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
         if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -2277,7 +2277,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
     uint hash = heap.hash_string(rbuf[:total_len]);
     HString*? hs_raw = hstring::hstring_alloc(heap, rbuf[:total_len], hash);
     heap.free_func(heap.heap_udata, rbuf);
-    if (catch err = hs_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = hs_raw) { ctx.result_undefined(); return; }
     HString* hs = hs_raw;
     // Return the join result as a transient (non-interned) string. It must NOT
     // be inserted into the string table without also taking the table's owning
@@ -2286,7 +2286,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
     // still in the table, double-freeing at heap reset. String === compares by
     // content (equals_hstring), so interning is not required for correctness;
     // store_builtin_result handles the refcount-1 transient.
-    ctx.result.set_string(hs);
+    ctx.result_string(hs);
 }
 
 // %TypedArray%.prototype.forEach(callbackFn, thisArg?), §23.2.3.12.
@@ -2307,16 +2307,16 @@ fn void builtin_ta_proto_forEach(BuiltinContext* ctx) {
     if (ctx.argc >= 2) this_arg = ctx.regs[ctx.base_reg + 1];
 
     for (uint i = 0; i < len; i++) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         // Spec: a callback may have resized/detached the buffer; element reads at
         // now-invalid indices yield undefined (do NOT break, the loop runs for
         // the full original length). ta_read_element_checked re-derives the data
         // pointer each read so a realloc from a grow is followed correctly.
         TVal elem = ta_read_element_checked(ctx.heap, obj, i);
         ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // %TypedArray%.prototype.every(callbackFn, thisArg?), §23.2.3.7.
@@ -2337,17 +2337,17 @@ fn void builtin_ta_proto_every(BuiltinContext* ctx) {
     if (ctx.argc >= 2) this_arg = ctx.regs[ctx.base_reg + 1];
 
     for (uint i = 0; i < len; i++) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem;
         elem = ta_read_element_checked(ctx.heap, obj, i);
         TVal test = ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (!builtin_to_boolean(&test)) {
-            ctx.result.set_boolean(false);
+            ctx.result_boolean(false);
             return;
         }
     }
-    ctx.result.set_boolean(true);
+    ctx.result_boolean(true);
 }
 
 // %TypedArray%.prototype.some(callbackFn, thisArg?), §23.2.3.28.
@@ -2368,17 +2368,17 @@ fn void builtin_ta_proto_some(BuiltinContext* ctx) {
     if (ctx.argc >= 2) this_arg = ctx.regs[ctx.base_reg + 1];
 
     for (uint i = 0; i < len; i++) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem;
         elem = ta_read_element_checked(ctx.heap, obj, i);
         TVal test = ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (builtin_to_boolean(&test)) {
-            ctx.result.set_boolean(true);
+            ctx.result_boolean(true);
             return;
         }
     }
-    ctx.result.set_boolean(false);
+    ctx.result_boolean(false);
 }
 
 // %TypedArray%.prototype.reduce(callbackFn, initialValue?), §23.2.3.22.
@@ -2411,7 +2411,7 @@ fn void builtin_ta_proto_reduce(BuiltinContext* ctx) {
 
     TVal undef_this; undef_this.set_undefined();
     for (; k < len; k++) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem;
         elem = ta_read_element_checked(ctx.heap, obj, k);
         TVal[4] args;
@@ -2425,11 +2425,11 @@ fn void builtin_ta_proto_reduce(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = ctx.heap.error_value;
             ctx.heap.has_error = false;
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
     }
-    (*ctx.result) = acc;
+    ctx.copy_result(acc);
 }
 
 // %TypedArray%.prototype.reduceRight(callbackFn, initialValue?), §23.2.3.23.
@@ -2464,7 +2464,7 @@ fn void builtin_ta_proto_reduceRight(BuiltinContext* ctx) {
 
     TVal undef_this; undef_this.set_undefined();
     for (; k >= 0; k--) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem;
         elem = ta_read_element_checked(ctx.heap, obj, (uint)k);
         TVal[4] args;
@@ -2478,11 +2478,11 @@ fn void builtin_ta_proto_reduceRight(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = ctx.heap.error_value;
             ctx.heap.has_error = false;
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
     }
-    (*ctx.result) = acc;
+    ctx.copy_result(acc);
 }
 
 // %TypedArray%.prototype.map(callbackFn, thisArg?), §23.2.3.19.
@@ -2514,20 +2514,20 @@ fn void builtin_ta_proto_map(BuiltinContext* ctx) {
     char* res_base = (*res_buf.extra_ptr()).ab.data + res_byte_off;
 
     for (uint i = 0; i < len; i++) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem;
         elem = ta_read_element_checked(ctx.heap, obj, i);
         TVal mapped = ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (!ta_is_detached(result) && !view_is_out_of_bounds(result) && i < ta_element_count(result)) {
             HObject* cur_res_buf = (*result.extra_ptr()).view.buffer;
             char* cur_res_base = (*cur_res_buf.extra_ptr()).ab.data + (*result.extra_ptr()).view.byte_offset;
             char* dp = cur_res_base + (i << result_shift);
             ta_write_element(dp, result_cls, &mapped, ctx);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
         }
     }
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // %TypedArray%.prototype.filter(callbackFn, thisArg?), §23.2.3.9.
@@ -2560,7 +2560,7 @@ fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
     for (uint i = 0; i < len; i++) {
         if (ctx.should_throw) {
             if (scratch != null) heap.free_func(heap.heap_udata, scratch);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         TVal elem;
@@ -2568,7 +2568,7 @@ fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
         TVal test = ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
         if (ctx.should_throw) {
             if (scratch != null) heap.free_func(heap.heap_udata, scratch);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (builtin_to_boolean(&test)) {
@@ -2594,12 +2594,12 @@ fn void builtin_ta_proto_filter(BuiltinContext* ctx) {
         ta_write_element(dp, result_cls, &scratch[i], ctx);
         if (ctx.should_throw) {
             heap.free_func(heap.heap_udata, scratch);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
     }
     if (scratch != null) heap.free_func(heap.heap_udata, scratch);
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // %TypedArray%.prototype.find(predicate, thisArg?), §23.2.3.10.
@@ -2620,16 +2620,16 @@ fn void builtin_ta_proto_find(BuiltinContext* ctx) {
     if (ctx.argc >= 2) this_arg = ctx.regs[ctx.base_reg + 1];
 
     for (uint i = 0; i < len; i++) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem = ta_read_element_checked(ctx.heap, obj, i);
         TVal test = ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (builtin_to_boolean(&test)) {
-            (*ctx.result) = elem;
+            ctx.copy_result(elem);
             return;
         }
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // %TypedArray%.prototype.findIndex(predicate, thisArg?), §23.2.3.11.
@@ -2650,16 +2650,16 @@ fn void builtin_ta_proto_findIndex(BuiltinContext* ctx) {
     if (ctx.argc >= 2) this_arg = ctx.regs[ctx.base_reg + 1];
 
     for (uint i = 0; i < len; i++) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem = ta_read_element_checked(ctx.heap, obj, i);
         TVal test = ta_call_callback(ctx, cb_val, this_arg, elem, i, obj);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (builtin_to_boolean(&test)) {
-            ctx.result.set_fastint((long)i);
+            ctx.result_fastint((long)i);
             return;
         }
     }
-    ctx.result.set_fastint(-1);
+    ctx.result_fastint(-1);
 }
 
 // %TypedArray%.prototype.findLast(predicate, thisArg?), §23.2.3.12.
@@ -2680,16 +2680,16 @@ fn void builtin_ta_proto_findLast(BuiltinContext* ctx) {
     if (ctx.argc >= 2) this_arg = ctx.regs[ctx.base_reg + 1];
 
     for (long i = (long)len - 1; i >= 0; i--) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem = ta_read_element_checked(ctx.heap, obj, (uint)i);
         TVal test = ta_call_callback(ctx, cb_val, this_arg, elem, (uint)i, obj);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (builtin_to_boolean(&test)) {
-            (*ctx.result) = elem;
+            ctx.copy_result(elem);
             return;
         }
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // %TypedArray%.prototype.findLastIndex(predicate, thisArg?), §23.2.3.13.
@@ -2710,16 +2710,16 @@ fn void builtin_ta_proto_findLastIndex(BuiltinContext* ctx) {
     if (ctx.argc >= 2) this_arg = ctx.regs[ctx.base_reg + 1];
 
     for (long i = (long)len - 1; i >= 0; i--) {
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal elem = ta_read_element_checked(ctx.heap, obj, (uint)i);
         TVal test = ta_call_callback(ctx, cb_val, this_arg, elem, (uint)i, obj);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (builtin_to_boolean(&test)) {
-            ctx.result.set_fastint(i);
+            ctx.result_fastint(i);
             return;
         }
     }
-    ctx.result.set_fastint(-1);
+    ctx.result_fastint(-1);
 }
 
 // %TypedArray%.prototype.reverse(), §23.2.3.23. Mutates in place.
@@ -2747,7 +2747,7 @@ fn void builtin_ta_proto_reverse(BuiltinContext* ctx) {
         lo++;
         hi--;
     }
-    (*ctx.result) = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // %TypedArray%.prototype.toReversed(), §23.2.3.30. Returns new reversed TA.
@@ -2771,7 +2771,7 @@ fn void builtin_ta_proto_toReversed(BuiltinContext* ctx) {
     for (uint i = 0; i < len; i++) {
         mem::copy(dst + i * elem_sz, src + (len - 1 - i) * elem_sz, (sz)((usz)elem_sz));
     }
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // %TypedArray%.prototype.at(index), §23.2.3.1.
@@ -2795,18 +2795,18 @@ fn void builtin_ta_proto_at(BuiltinContext* ctx) {
     if (idx_d >= 9007199254740991.0) {
         idx = (long)len;
     } else if (idx_d <= -9007199254740991.0) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     } else {
         idx = (long)idx_d;
     }
 
     if (idx < 0) idx = (long)len + idx;
-    if (idx < 0) { ctx.result.set_undefined(); return; }
+    if (idx < 0) { ctx.result_undefined(); return; }
     // Validate against the CURRENT length (the index coercion may have resized
     // the buffer) and read through the re-derived pointer. Negative indices are
     // still normalized against the pre-coercion length per spec §23.2.3.1.
-    (*ctx.result) = ta_read_element_checked(ctx.heap, obj, (uint)idx);
+    ctx.copy_result(ta_read_element_checked(ctx.heap, obj, (uint)idx));
 }
 
 // Numeric comparator for TA sort (spec §23.2.3.29.1).
@@ -2934,7 +2934,7 @@ fn void builtin_ta_proto_sort(BuiltinContext* ctx) {
         }
     }
 
-    if (len <= 1) { (*ctx.result) = ctx.this_val; return; }
+    if (len <= 1) { ctx.copy_result(ctx.this_val); return; }
 
     // Copy elements into a scratch TVal array, sort, write back. Element TVals
     // (BigInt kinds already boxed) make the sort element-type agnostic.
@@ -2982,8 +2982,8 @@ fn void builtin_ta_proto_sort(BuiltinContext* ctx) {
     }
 
     if (heap_scratch != null) heap.free_func(heap.heap_udata, heap_scratch);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-    (*ctx.result) = ctx.this_val;
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
+    ctx.copy_result(ctx.this_val);
 }
 
 // %TypedArray%.prototype.toSorted(compareFn?), §23.2.3.32. Returns new sorted TA.
@@ -3022,7 +3022,7 @@ fn void builtin_ta_proto_toSorted(BuiltinContext* ctx) {
     // Copy source bytes into result, then sort result in place.
     if (len > 0) mem::copy(dst, src, (sz)((usz)(len * elem_sz)));
 
-    if (len <= 1) { ctx.result.set_object(result); return; }
+    if (len <= 1) { ctx.result_object(result); return; }
 
     // Two equal-length buffers: the elements themselves and the merge scratch.
     // One allocation covers both so there is a single failure path and a single
@@ -3060,8 +3060,8 @@ fn void builtin_ta_proto_toSorted(BuiltinContext* ctx) {
     }
 
     if (heap_scratch != null) heap.free_func(heap.heap_udata, heap_scratch);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-    ctx.result.set_object(result);
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
+    ctx.result_object(result);
 }
 
 // %TypedArray%.prototype.with(index, value), §23.2.3.33.
@@ -3152,7 +3152,7 @@ fn void builtin_ta_proto_with(BuiltinContext* ctx) {
         ta_store_scalar(dp, cls, &scalar);
     }
 
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // %TypedArray%.prototype.toString(), delegates to join with ",".
@@ -3177,7 +3177,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
 
     if (len == 0) {
         HString* empty = (HString*)heap.strs[heap::BuiltinStr.EMPTY];
-        if (empty != null) ctx.result.set_string(empty);
+        if (empty != null) ctx.result_string(empty);
         return;
     }
 
@@ -3193,7 +3193,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
         elem_strs = stack_strs[:len];
     } else {
         heap_strs = (HString**)heap.alloc_func(heap.heap_udata, HString*::size * len);
-        if (heap_strs == null) { ctx.result.set_undefined(); return; }
+        if (heap_strs == null) { ctx.result_undefined(); return; }
         elem_strs = heap_strs[:len];
     }
 
@@ -3228,7 +3228,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
             if (ctx.should_throw) {
                 for (uint j = 0; j < done; j++) heap.decref((types::HeapHeader*)elem_strs[j]);
                 if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
             if (try meth = meth_opt) {
@@ -3241,7 +3241,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
                         heap.has_error = false;
                         for (uint j = 0; j < done; j++) heap.decref((types::HeapHeader*)elem_strs[j]);
                         if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-                        ctx.result.set_undefined();
+                        ctx.result_undefined();
                         return;
                     }
                 }
@@ -3258,7 +3258,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
             if (ctx.should_throw) {
                 for (uint j = 0; j < done; j++) heap.decref((types::HeapHeader*)elem_strs[j]);
                 if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
         } else {
@@ -3279,7 +3279,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
     if (rbuf == null) {
         for (uint i = 0; i < done; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
         if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -3299,9 +3299,9 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
     uint hash = heap.hash_string(rbuf[:total_len]);
     HString*? hs_raw = hstring::hstring_alloc(heap, rbuf[:total_len], hash);
     heap.free_func(heap.heap_udata, rbuf);
-    if (catch err2 = hs_raw) { ctx.result.set_undefined(); return; }
+    if (catch err2 = hs_raw) { ctx.result_undefined(); return; }
     HString* result_hs = hs_raw;
-    ctx.result.set_string(result_hs);
+    ctx.result_string(result_hs);
 }
 
 // ---- %TypedArray% intrinsic abstract constructor ----
@@ -3313,7 +3313,7 @@ fn void builtin_typedarray_intrinsic(BuiltinContext* ctx) {
 
 // get %TypedArray%[@@species], §22.2.2.4. Returns `this`.
 fn void builtin_ta_species_get(BuiltinContext* ctx) {
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // ---- Static: %TypedArray%.of / %TypedArray%.from ----
@@ -3405,7 +3405,7 @@ fn void builtin_ta_of(BuiltinContext* ctx) {
         // destination buffer, then re-derive the data pointer and bounds
         // before storing (write is skipped for indices now out of bounds).
         TAScalar sc = ta_coerce_element(cls, &item, ctx);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (!ta_is_detached(result) && !view_is_out_of_bounds(result)
             && i < ta_element_count(result)) {
             char* base = (*res_buf.extra_ptr()).ab.data
@@ -3413,7 +3413,7 @@ fn void builtin_ta_of(BuiltinContext* ctx) {
             ta_store_scalar(base + (i << shift), cls, &sc);
         }
     }
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // %TypedArray%.from(source, mapFn?, thisArg?), §23.2.2.1.
@@ -3459,7 +3459,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
         HObject* src_for_iter = to_object_for_lookup(heap, source);
         if (src_for_iter != null) {
             TVal? im = builtins_generic_get(src_for_iter, iter_sym, ctx);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
             if (try imv = im) {
                 if (!imv.is_undefined() && !imv.is_null()) {
                     iter_method = imv;
@@ -3477,7 +3477,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
              ((HObject*)iter_method.get_heapptr()).is_callable());
         if (!im_callable || heap.call_fn == null || ctx.vm == null) {
             arraybuffer_throw_type_error(ctx, "TypedArray.from: @@iterator is not callable");
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
 
@@ -3487,12 +3487,12 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
             ctx.should_throw = true;
             ctx.throw_value = heap.error_value;
             heap.has_error = false;
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (!iterator.is_object() || iterator.get_heapptr() == null) {
             arraybuffer_throw_type_error(ctx, "TypedArray.from: @@iterator did not return an object");
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         // Protect the iterator from GC: C-local TVal values are not GC roots.
@@ -3509,7 +3509,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
 
         uint cap = 8;
         TVal* items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)cap * TVal::size);
-        if (items == null) { ctx.result.set_undefined(); return; }
+        if (items == null) { ctx.result_undefined(); return; }
         uint count = 0;
 
         // §7.4.2 GetIterator reads `next` ONCE, when the iterator is obtained;
@@ -3521,7 +3521,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
         TVal? next_method_opt = builtins_generic_get(iter_obj, next_key, ctx);
         if (ctx.should_throw) {
             heap.free_func(heap.heap_udata, items);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         TVal next_method;
@@ -3549,7 +3549,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 ctx.throw_value = heap.error_value;
                 heap.has_error = false;
                 heap.free_func(heap.heap_udata, items);
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
             if (!step_result.is_object() || step_result.get_heapptr() == null) {
@@ -3562,7 +3562,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
             TVal? done_opt = builtins_generic_get(result_obj, done_key, ctx);
             if (ctx.should_throw) {
                 heap.free_func(heap.heap_udata, items);
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
             bool done = false;
@@ -3572,7 +3572,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
             TVal? value_opt = builtins_generic_get(result_obj, value_key, ctx);
             if (ctx.should_throw) {
                 heap.free_func(heap.heap_udata, items);
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
             TVal next_value; next_value.set_undefined();
@@ -3583,7 +3583,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 TVal* new_items = (TVal*)heap.alloc_func(heap.heap_udata, (usz)new_cap * TVal::size);
                 if (new_items == null) {
                     heap.free_func(heap.heap_udata, items);
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
                 mem::copy(new_items, items, (sz)((usz)count * TVal::size));
@@ -3621,7 +3621,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                     ctx.throw_value = heap.error_value;
                     heap.has_error = false;
                     heap.free_func(heap.heap_udata, items);
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
             }
@@ -3634,14 +3634,14 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 ta_write_element(dp, res_cls, &mapped, ctx);
                 if (ctx.should_throw) {
                     heap.free_func(heap.heap_udata, items);
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
             }
         }
 
         heap.free_func(heap.heap_udata, items);
-        ctx.result.set_object(target_obj);
+        ctx.result_object(target_obj);
         return;
     }
 
@@ -3692,7 +3692,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
             if (!arr_get_elem_vm(src_obj, (ulong)i, heap, ctx, &elem)) {
                 elem.set_undefined();
             }
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
         }
 
         TVal final_elem = elem;
@@ -3705,7 +3705,7 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 ctx.should_throw = true;
                 ctx.throw_value = heap.error_value;
                 heap.has_error = false;
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
         }
@@ -3716,10 +3716,10 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
             char* res_base3 = (*res_buf3.extra_ptr()).ab.data + (*target_obj2.extra_ptr()).view.byte_offset;
             char* dp2 = res_base3 + (i << res_shift2);
             ta_write_element(dp2, res_cls2, &final_elem, ctx);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
         }
     }
-    ctx.result.set_object(target_obj2);
+    ctx.result_object(target_obj2);
 }
 
 // ============================================================================
@@ -4011,7 +4011,7 @@ fn void b64_make_read_written(BuiltinContext* ctx, uint read, uint written) {
     TVal written_tv; written_tv.set_fastint((long)written);
     obj.put_prop(read_key, read_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     obj.put_prop(written_key, written_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Uint8Array.fromBase64(string [, options]), receiver ignored.
@@ -4045,7 +4045,7 @@ fn void builtin_uint8array_from_base64(BuiltinContext* ctx) {
         mem::copy(dst, buf, (sz)((usz)res.written));
     }
     ctx.heap.free_func(ctx.heap.heap_udata, buf);
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // Uint8Array.fromHex(string), receiver ignored.
@@ -4072,7 +4072,7 @@ fn void builtin_uint8array_from_hex(BuiltinContext* ctx) {
         mem::copy(dst, buf, (sz)((usz)res.written));
     }
     ctx.heap.free_func(ctx.heap.heap_udata, buf);
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // Uint8Array.prototype.toBase64([options])
@@ -4136,7 +4136,7 @@ fn void builtin_uint8array_proto_to_base64(BuiltinContext* ctx) {
     HString* result = ctx.heap.str_intern(out[:j]);
     ctx.heap.free_func(ctx.heap.heap_udata, out);
     if (result == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // Uint8Array.prototype.toHex()
@@ -4162,7 +4162,7 @@ fn void builtin_uint8array_proto_to_hex(BuiltinContext* ctx) {
     HString* result = ctx.heap.str_intern(out[:out_len]);
     ctx.heap.free_func(ctx.heap.heap_udata, out);
     if (result == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // Uint8Array.prototype.setFromBase64(string [, options])
@@ -4245,7 +4245,7 @@ fn bool register_typedarray_accessor(HObject* proto, Heap* heap, char[] name, ui
     HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
     if (fn_name != null) {
         TVal name_tv;
-        name_tv.set_string(fn_name);
+        name_tv.set_string_borrowed(fn_name);
         HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
@@ -4288,7 +4288,7 @@ fn bool register_typedarray_symbol_accessor(HObject* proto, Heap* heap, HString*
     HString* name_key2 = heap.str(heap::BuiltinStr.NAME);
     HString* name_val2 = builtin_intern_string(heap, "get [Symbol.toStringTag]");
     if (name_key2 != null && name_val2 != null) {
-        TVal name_tv2; name_tv2.set_string(name_val2);
+        TVal name_tv2; name_tv2.set_string_borrowed(name_val2);
         func_obj.put_prop(name_key2, name_tv2, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -4322,7 +4322,7 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     HString* name_val = builtin_intern_string(heap, name);
     if (name_key != null && name_val != null) {
         TVal name_tv;
-        name_tv.set_string(name_val);
+        name_tv.set_string_borrowed(name_val);
         ctor.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -4547,7 +4547,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
                 HString* gname_key = heap.str(heap::BuiltinStr.NAME);
                 HString* gname_val = builtin_intern_string(heap, "get [Symbol.species]");
                 if (gname_key != null && gname_val != null) {
-                    TVal gname_tv; gname_tv.set_string(gname_val);
+                    TVal gname_tv; gname_tv.set_string_borrowed(gname_val);
                     getter.put_prop(gname_key, gname_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 HString* glen_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];

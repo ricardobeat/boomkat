@@ -26,7 +26,7 @@ int g_fails;
 // Returns 42, ignoring arguments. The minimal proof that dispatch lands.
 fn void host_answer(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
-    ctx.result.set_fastint(42);
+    ctx.result_fastint(42);
 }
 
 // Sums its first two arguments, exercising argument access from the register
@@ -38,26 +38,26 @@ fn void host_add(builtins::BuiltinContext* ctx, void* udata) {
         TVal a = ctx.regs[ctx.base_reg + i];
         if (a.is_numeric()) sum += a.get_number_or_fastint();
     }
-    ctx.result.set_number(sum);
+    ctx.result_number(sum);
 }
 
 // Returns the `this` receiver's .x, proving this_val is delivered.
 fn void host_get_x(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     if (!ctx.this_val.is_object()) return;
     HObject* o = (HObject*)ctx.this_val.get_heapptr();
     HString* key = ctx.heap.str_intern("x");
     if (key == null) return;
-    TVal? v = o.get_prop(key);
+    TVal? v = o.get_prop(key, ctx.heap);
     if (catch v) return;
-    *ctx.result = v;
+    ctx.copy_result(v);
 }
 
 // Reads the udata pointer through as an int, proving passthrough.
 fn void host_udata(builtins::BuiltinContext* ctx, void* udata) {
     g_calls++;
-    ctx.result.set_fastint(udata == null ? -1 : (long)*(int*)udata);
+    ctx.result_fastint(udata == null ? -1 : (long)*(int*)udata);
 }
 
 // A constructor: sets this.tag = 7.
@@ -68,10 +68,10 @@ fn void host_ctor(builtins::BuiltinContext* ctx, void* udata) {
         HString* key = ctx.heap.str_intern("tag");
         if (key != null) {
             TVal v; v.set_fastint(7);
-            o.put_prop(key, v, hobject::PROP_FLAGS_WEC);
+            o.put_prop(key, v, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // Comparator for Array.prototype.sort: descending. Exercises a builtin
@@ -82,7 +82,7 @@ fn void host_cmp(builtins::BuiltinContext* ctx, void* udata) {
     double b = 0;
     if (ctx.argc > 0) { TVal t = ctx.regs[ctx.base_reg]; if (t.is_numeric()) a = t.get_number_or_fastint(); }
     if (ctx.argc > 1) { TVal t = ctx.regs[ctx.base_reg + 1]; if (t.is_numeric()) b = t.get_number_or_fastint(); }
-    ctx.result.set_number(b - a);
+    ctx.result_number(b - a);
 }
 
 // --- harness --------------------------------------------------------------
@@ -114,7 +114,7 @@ fn void check_num(Heap* hp, Vm* v, String label, String src, double want) {
         if (hp.has_error && hp.error_value.is_object()) {
             HObject* eo = (HObject*)hp.error_value.get_heapptr();
             HString* mk = hp.str_intern("message");
-            TVal? mv = eo.get_prop(mk);
+            TVal? mv = eo.get_prop(mk, hp);
             if (try m = mv) {
                 if (m.is_string()) {
                     HString* ms = (HString*)m.get_heapptr();

@@ -27,7 +27,7 @@ fn void builtin_set_bigint_result(BuiltinContext* ctx, hbigint::HBigInt* box) {
         arr_throw_range_error(ctx, "BigInt is too large to allocate");
         return;
     }
-    ctx.result.set_bigint(box);
+    ctx.result_bigint(box);
 }
 
 // ============================================================================
@@ -247,7 +247,7 @@ fn void builtin_bigint_proto_toString(BuiltinContext* ctx) {
         ctx.regs[ctx.base_reg].get_tag() == types::TValTag.UNDEFINED;
     if (!radix_undefined) {
         double radix_d = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (radix_d < 2 || radix_d > 36) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "radix must be an integer between 2 and 36");
             return;
@@ -280,7 +280,7 @@ fn void builtin_bigint_proto_toString(BuiltinContext* ctx) {
         return;
     }
     HString* hs = builtin_intern_string(ctx.heap, s);
-    ctx.result.set_string(hs);
+    ctx.result_string(hs);
 }
 
 fn void builtin_bigint_proto_valueOf(BuiltinContext* ctx) {
@@ -309,7 +309,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "BigInt"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "BigInt"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

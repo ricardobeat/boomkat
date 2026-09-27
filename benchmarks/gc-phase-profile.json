@@ -1,0 +1,4744 @@
+{
+  "uncapped/scene_10000": {
+    "runs": [
+      {
+        "minor/finish_previous_sweep": {
+          "count": 64,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 64,
+          "total_ms": 0.004,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 64,
+          "total_ms": 1.065,
+          "max_ms": 0.058,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 64,
+          "total_ms": 4.8,
+          "max_ms": 0.581,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 64,
+          "total_ms": 0.042,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 64,
+          "total_ms": 3.811,
+          "max_ms": 0.829,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 64,
+          "total_ms": 0.004,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 64,
+          "total_ms": 4.22,
+          "max_ms": 0.159,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 64,
+          "total_ms": 13.947,
+          "max_ms": 1.141,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 6,
+          "total_ms": 5.529,
+          "max_ms": 1.125,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 6,
+          "total_ms": 0.018,
+          "max_ms": 0.006,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 6,
+          "total_ms": 0.155,
+          "max_ms": 0.064,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 6,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 6,
+          "total_ms": 0.114,
+          "max_ms": 0.043,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 6,
+          "total_ms": 5.816,
+          "max_ms": 1.169,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 86,
+          "total_ms": 4.565,
+          "max_ms": 0.179,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 64,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 64,
+          "total_ms": 0.003,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 64,
+          "total_ms": 0.961,
+          "max_ms": 0.033,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 64,
+          "total_ms": 4.315,
+          "max_ms": 0.432,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 64,
+          "total_ms": 0.038,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 64,
+          "total_ms": 3.493,
+          "max_ms": 0.784,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 64,
+          "total_ms": 0.004,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 64,
+          "total_ms": 4.17,
+          "max_ms": 0.146,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 64,
+          "total_ms": 12.984,
+          "max_ms": 1.064,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 6,
+          "total_ms": 4.851,
+          "max_ms": 1.179,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 6,
+          "total_ms": 0.013,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 6,
+          "total_ms": 0.121,
+          "max_ms": 0.034,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 6,
+          "total_ms": 0.072,
+          "max_ms": 0.025,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 6,
+          "total_ms": 5.058,
+          "max_ms": 1.213,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 86,
+          "total_ms": 3.588,
+          "max_ms": 0.139,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 64,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 64,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 64,
+          "total_ms": 0.939,
+          "max_ms": 0.03,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 64,
+          "total_ms": 4.097,
+          "max_ms": 0.4,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 64,
+          "total_ms": 0.039,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 64,
+          "total_ms": 3.168,
+          "max_ms": 0.757,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 64,
+          "total_ms": 0.003,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 64,
+          "total_ms": 3.287,
+          "max_ms": 0.085,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 64,
+          "total_ms": 11.537,
+          "max_ms": 1.08,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 6,
+          "total_ms": 4.698,
+          "max_ms": 1.055,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 6,
+          "total_ms": 0.013,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 6,
+          "total_ms": 0.105,
+          "max_ms": 0.025,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 6,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 6,
+          "total_ms": 0.076,
+          "max_ms": 0.024,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 6,
+          "total_ms": 4.892,
+          "max_ms": 1.073,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 86,
+          "total_ms": 3.325,
+          "max_ms": 0.122,
+          "over_4ms": 0
+        }
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.003,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 0.961,
+        "max_ms": 0.058,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 4.315,
+        "max_ms": 0.581,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.039,
+        "max_ms": 0.002,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 3.493,
+        "max_ms": 0.829,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.004,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "minor/strings": {
+        "median_total_ms": 4.17,
+        "max_ms": 0.159,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 12.984,
+        "max_ms": 1.141,
+        "over_4ms": 0,
+        "counts": [
+          64,
+          64,
+          64
+        ]
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 4.851,
+        "max_ms": 1.179,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.013,
+        "max_ms": 0.006,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/young_sweep": {
+        "median_total_ms": 0.121,
+        "max_ms": 0.064,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/strings": {
+        "median_total_ms": 0.076,
+        "max_ms": 0.043,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/collection_pause": {
+        "median_total_ms": 5.058,
+        "max_ms": 1.213,
+        "over_4ms": 0,
+        "counts": [
+          6,
+          6,
+          6
+        ]
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 3.588,
+        "max_ms": 0.179,
+        "over_4ms": 0,
+        "counts": [
+          86,
+          86,
+          86
+        ]
+      }
+    }
+  },
+  "uncapped/scene_100000_long": {
+    "runs": [
+      {
+        "minor/finish_previous_sweep": {
+          "count": 374,
+          "total_ms": 0.004,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 374,
+          "total_ms": 0.065,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 374,
+          "total_ms": 7.02,
+          "max_ms": 0.057,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 374,
+          "total_ms": 54.102,
+          "max_ms": 3.738,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 374,
+          "total_ms": 0.26,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 374,
+          "total_ms": 80.335,
+          "max_ms": 14.793,
+          "over_4ms": 6
+        },
+        "minor/env_sweep": {
+          "count": 374,
+          "total_ms": 0.023,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 374,
+          "total_ms": 353.657,
+          "max_ms": 1.643,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 374,
+          "total_ms": 495.487,
+          "max_ms": 18.188,
+          "over_4ms": 7
+        },
+        "major/finish_previous_sweep": {
+          "count": 9,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 9,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 9,
+          "total_ms": 91.397,
+          "max_ms": 20.514,
+          "over_4ms": 6
+        },
+        "major/remembered_graph": {
+          "count": 9,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 9,
+          "total_ms": 0.102,
+          "max_ms": 0.043,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 9,
+          "total_ms": 1.067,
+          "max_ms": 0.776,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 9,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 9,
+          "total_ms": 0.256,
+          "max_ms": 0.037,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 9,
+          "total_ms": 92.826,
+          "max_ms": 20.617,
+          "over_4ms": 6
+        },
+        "major/lazy_sweep_pause": {
+          "count": 805,
+          "total_ms": 59.207,
+          "max_ms": 1.428,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 374,
+          "total_ms": 0.003,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 374,
+          "total_ms": 0.062,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 374,
+          "total_ms": 7.031,
+          "max_ms": 0.071,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 374,
+          "total_ms": 52.651,
+          "max_ms": 3.743,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 374,
+          "total_ms": 0.258,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 374,
+          "total_ms": 79.855,
+          "max_ms": 14.956,
+          "over_4ms": 6
+        },
+        "minor/env_sweep": {
+          "count": 374,
+          "total_ms": 0.025,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 374,
+          "total_ms": 352.655,
+          "max_ms": 1.465,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 374,
+          "total_ms": 492.556,
+          "max_ms": 18.413,
+          "over_4ms": 7
+        },
+        "major/finish_previous_sweep": {
+          "count": 9,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 9,
+          "total_ms": 0.002,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 9,
+          "total_ms": 92.888,
+          "max_ms": 20.066,
+          "over_4ms": 6
+        },
+        "major/remembered_graph": {
+          "count": 9,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 9,
+          "total_ms": 0.107,
+          "max_ms": 0.038,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 9,
+          "total_ms": 1.05,
+          "max_ms": 0.748,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 9,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 9,
+          "total_ms": 0.256,
+          "max_ms": 0.035,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 9,
+          "total_ms": 94.305,
+          "max_ms": 20.145,
+          "over_4ms": 6
+        },
+        "major/lazy_sweep_pause": {
+          "count": 805,
+          "total_ms": 60.295,
+          "max_ms": 1.589,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 374,
+          "total_ms": 0.004,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 374,
+          "total_ms": 0.063,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 374,
+          "total_ms": 7.041,
+          "max_ms": 0.058,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 374,
+          "total_ms": 52.385,
+          "max_ms": 3.454,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 374,
+          "total_ms": 0.268,
+          "max_ms": 0.006,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 374,
+          "total_ms": 79.197,
+          "max_ms": 14.592,
+          "over_4ms": 6
+        },
+        "minor/env_sweep": {
+          "count": 374,
+          "total_ms": 0.023,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 374,
+          "total_ms": 363.284,
+          "max_ms": 1.595,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 374,
+          "total_ms": 502.285,
+          "max_ms": 18.03,
+          "over_4ms": 7
+        },
+        "major/finish_previous_sweep": {
+          "count": 9,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 9,
+          "total_ms": 0.002,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 9,
+          "total_ms": 91.303,
+          "max_ms": 20.509,
+          "over_4ms": 6
+        },
+        "major/remembered_graph": {
+          "count": 9,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 9,
+          "total_ms": 0.111,
+          "max_ms": 0.041,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 9,
+          "total_ms": 1.095,
+          "max_ms": 0.797,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 9,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 9,
+          "total_ms": 0.279,
+          "max_ms": 0.051,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 9,
+          "total_ms": 92.793,
+          "max_ms": 20.609,
+          "over_4ms": 6
+        },
+        "major/lazy_sweep_pause": {
+          "count": 805,
+          "total_ms": 60.814,
+          "max_ms": 1.631,
+          "over_4ms": 0
+        }
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.004,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.063,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 7.031,
+        "max_ms": 0.071,
+        "over_4ms": 0,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 52.651,
+        "max_ms": 3.743,
+        "over_4ms": 0,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.26,
+        "max_ms": 0.006,
+        "over_4ms": 0,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 79.855,
+        "max_ms": 14.956,
+        "over_4ms": 18,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.023,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "minor/strings": {
+        "median_total_ms": 353.657,
+        "max_ms": 1.643,
+        "over_4ms": 0,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 495.487,
+        "max_ms": 18.413,
+        "over_4ms": 21,
+        "counts": [
+          374,
+          374,
+          374
+        ]
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 91.397,
+        "max_ms": 20.514,
+        "over_4ms": 18,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.107,
+        "max_ms": 0.043,
+        "over_4ms": 0,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/young_sweep": {
+        "median_total_ms": 1.067,
+        "max_ms": 0.797,
+        "over_4ms": 0,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/strings": {
+        "median_total_ms": 0.256,
+        "max_ms": 0.051,
+        "over_4ms": 0,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/collection_pause": {
+        "median_total_ms": 92.826,
+        "max_ms": 20.617,
+        "over_4ms": 18,
+        "counts": [
+          9,
+          9,
+          9
+        ]
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 60.295,
+        "max_ms": 1.631,
+        "over_4ms": 0,
+        "counts": [
+          805,
+          805,
+          805
+        ]
+      }
+    }
+  },
+  "uncapped/scene_300000_long": {
+    "runs": [
+      {
+        "minor/finish_previous_sweep": {
+          "count": 139,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 139,
+          "total_ms": 0.027,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 139,
+          "total_ms": 2.519,
+          "max_ms": 0.054,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 139,
+          "total_ms": 62.958,
+          "max_ms": 13.945,
+          "over_4ms": 4
+        },
+        "minor/weak_caches": {
+          "count": 139,
+          "total_ms": 0.099,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 139,
+          "total_ms": 57.867,
+          "max_ms": 21.325,
+          "over_4ms": 4
+        },
+        "minor/env_sweep": {
+          "count": 139,
+          "total_ms": 0.012,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 139,
+          "total_ms": 424.225,
+          "max_ms": 3.898,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 139,
+          "total_ms": 547.712,
+          "max_ms": 33.009,
+          "over_4ms": 8
+        },
+        "major/finish_previous_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 7,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 7,
+          "total_ms": 123.332,
+          "max_ms": 41.36,
+          "over_4ms": 4
+        },
+        "major/remembered_graph": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 7,
+          "total_ms": 0.174,
+          "max_ms": 0.083,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 7,
+          "total_ms": 5.338,
+          "max_ms": 4.611,
+          "over_4ms": 1
+        },
+        "major/env_sweep": {
+          "count": 7,
+          "total_ms": 0.002,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 7,
+          "total_ms": 0.231,
+          "max_ms": 0.053,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 7,
+          "total_ms": 129.079,
+          "max_ms": 41.431,
+          "over_4ms": 4
+        },
+        "major/lazy_sweep_pause": {
+          "count": 1083,
+          "total_ms": 50.224,
+          "max_ms": 4.14,
+          "over_4ms": 1
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 139,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 139,
+          "total_ms": 0.032,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 139,
+          "total_ms": 2.446,
+          "max_ms": 0.048,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 139,
+          "total_ms": 61.832,
+          "max_ms": 13.676,
+          "over_4ms": 4
+        },
+        "minor/weak_caches": {
+          "count": 139,
+          "total_ms": 0.102,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 139,
+          "total_ms": 58.158,
+          "max_ms": 21.308,
+          "over_4ms": 3
+        },
+        "minor/env_sweep": {
+          "count": 139,
+          "total_ms": 0.009,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 139,
+          "total_ms": 428.789,
+          "max_ms": 3.968,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 139,
+          "total_ms": 551.374,
+          "max_ms": 32.039,
+          "over_4ms": 8
+        },
+        "major/finish_previous_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 7,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 7,
+          "total_ms": 123.375,
+          "max_ms": 42.271,
+          "over_4ms": 4
+        },
+        "major/remembered_graph": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 7,
+          "total_ms": 0.166,
+          "max_ms": 0.074,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 7,
+          "total_ms": 5.359,
+          "max_ms": 4.725,
+          "over_4ms": 1
+        },
+        "major/env_sweep": {
+          "count": 7,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 7,
+          "total_ms": 0.207,
+          "max_ms": 0.045,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 7,
+          "total_ms": 129.109,
+          "max_ms": 42.362,
+          "over_4ms": 4
+        },
+        "major/lazy_sweep_pause": {
+          "count": 1083,
+          "total_ms": 50.113,
+          "max_ms": 3.883,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 139,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 139,
+          "total_ms": 0.031,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 139,
+          "total_ms": 2.406,
+          "max_ms": 0.038,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 139,
+          "total_ms": 62.47,
+          "max_ms": 14.175,
+          "over_4ms": 4
+        },
+        "minor/weak_caches": {
+          "count": 139,
+          "total_ms": 0.1,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 139,
+          "total_ms": 56.021,
+          "max_ms": 20.875,
+          "over_4ms": 3
+        },
+        "minor/env_sweep": {
+          "count": 139,
+          "total_ms": 0.01,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 139,
+          "total_ms": 426.845,
+          "max_ms": 4.025,
+          "over_4ms": 1
+        },
+        "minor/collection_pause": {
+          "count": 139,
+          "total_ms": 547.89,
+          "max_ms": 32.601,
+          "over_4ms": 8
+        },
+        "major/finish_previous_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 7,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 7,
+          "total_ms": 119.965,
+          "max_ms": 41.603,
+          "over_4ms": 4
+        },
+        "major/remembered_graph": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 7,
+          "total_ms": 0.152,
+          "max_ms": 0.069,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 7,
+          "total_ms": 5.502,
+          "max_ms": 4.867,
+          "over_4ms": 1
+        },
+        "major/env_sweep": {
+          "count": 7,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 7,
+          "total_ms": 0.197,
+          "max_ms": 0.043,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 7,
+          "total_ms": 125.818,
+          "max_ms": 41.674,
+          "over_4ms": 4
+        },
+        "major/lazy_sweep_pause": {
+          "count": 1083,
+          "total_ms": 50.241,
+          "max_ms": 3.879,
+          "over_4ms": 0
+        }
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.031,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 2.446,
+        "max_ms": 0.054,
+        "over_4ms": 0,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 62.47,
+        "max_ms": 14.175,
+        "over_4ms": 12,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.1,
+        "max_ms": 0.003,
+        "over_4ms": 0,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 57.867,
+        "max_ms": 21.325,
+        "over_4ms": 10,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.01,
+        "max_ms": 0.002,
+        "over_4ms": 0,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "minor/strings": {
+        "median_total_ms": 426.845,
+        "max_ms": 4.025,
+        "over_4ms": 1,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 547.89,
+        "max_ms": 33.009,
+        "over_4ms": 24,
+        "counts": [
+          139,
+          139,
+          139
+        ]
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 123.332,
+        "max_ms": 42.271,
+        "over_4ms": 12,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.166,
+        "max_ms": 0.083,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/young_sweep": {
+        "median_total_ms": 5.359,
+        "max_ms": 4.867,
+        "over_4ms": 3,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/strings": {
+        "median_total_ms": 0.207,
+        "max_ms": 0.053,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/collection_pause": {
+        "median_total_ms": 129.079,
+        "max_ms": 42.362,
+        "over_4ms": 12,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 50.224,
+        "max_ms": 4.14,
+        "over_4ms": 1,
+        "counts": [
+          1083,
+          1083,
+          1083
+        ]
+      }
+    }
+  },
+  "uncapped/vdom_heavy": {
+    "runs": [
+      {
+        "minor/finish_previous_sweep": {
+          "count": 199,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 199,
+          "total_ms": 0.029,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 199,
+          "total_ms": 1.309,
+          "max_ms": 0.027,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 199,
+          "total_ms": 79.777,
+          "max_ms": 0.754,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 199,
+          "total_ms": 0.159,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 199,
+          "total_ms": 17.09,
+          "max_ms": 0.14,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 199,
+          "total_ms": 0.013,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 199,
+          "total_ms": 45.621,
+          "max_ms": 0.48,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 199,
+          "total_ms": 144.011,
+          "max_ms": 1.293,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 98,
+          "total_ms": 0.011,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 98,
+          "total_ms": 42.932,
+          "max_ms": 0.713,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 98,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 98,
+          "total_ms": 0.454,
+          "max_ms": 0.008,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 98,
+          "total_ms": 8.226,
+          "max_ms": 0.131,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 98,
+          "total_ms": 0.007,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 98,
+          "total_ms": 0.35,
+          "max_ms": 0.007,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 98,
+          "total_ms": 51.984,
+          "max_ms": 0.856,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 966,
+          "total_ms": 168.238,
+          "max_ms": 0.417,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 199,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 199,
+          "total_ms": 0.036,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 199,
+          "total_ms": 1.294,
+          "max_ms": 0.028,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 199,
+          "total_ms": 80.455,
+          "max_ms": 0.743,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 199,
+          "total_ms": 0.151,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 199,
+          "total_ms": 17.55,
+          "max_ms": 0.147,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 199,
+          "total_ms": 0.012,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 199,
+          "total_ms": 45.861,
+          "max_ms": 0.485,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 199,
+          "total_ms": 145.367,
+          "max_ms": 1.317,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 98,
+          "total_ms": 0.017,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 98,
+          "total_ms": 43.797,
+          "max_ms": 0.783,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 98,
+          "total_ms": 0.475,
+          "max_ms": 0.009,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 98,
+          "total_ms": 8.51,
+          "max_ms": 0.137,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 98,
+          "total_ms": 0.007,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 98,
+          "total_ms": 0.348,
+          "max_ms": 0.007,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 98,
+          "total_ms": 53.158,
+          "max_ms": 0.935,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 966,
+          "total_ms": 169.947,
+          "max_ms": 0.532,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 199,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 199,
+          "total_ms": 0.031,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 199,
+          "total_ms": 1.274,
+          "max_ms": 0.03,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 199,
+          "total_ms": 80.846,
+          "max_ms": 0.734,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 199,
+          "total_ms": 0.144,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 199,
+          "total_ms": 17.56,
+          "max_ms": 0.139,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 199,
+          "total_ms": 0.013,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 199,
+          "total_ms": 46.058,
+          "max_ms": 0.486,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 199,
+          "total_ms": 145.934,
+          "max_ms": 1.278,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 98,
+          "total_ms": 0.014,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 98,
+          "total_ms": 43.979,
+          "max_ms": 0.932,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 98,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 98,
+          "total_ms": 0.47,
+          "max_ms": 0.009,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 98,
+          "total_ms": 8.477,
+          "max_ms": 0.143,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 98,
+          "total_ms": 0.007,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 98,
+          "total_ms": 0.346,
+          "max_ms": 0.006,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 98,
+          "total_ms": 53.297,
+          "max_ms": 1.086,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 966,
+          "total_ms": 174.055,
+          "max_ms": 0.531,
+          "over_4ms": 0
+        }
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.031,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 1.294,
+        "max_ms": 0.03,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 80.455,
+        "max_ms": 0.754,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.151,
+        "max_ms": 0.002,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 17.55,
+        "max_ms": 0.147,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.013,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/strings": {
+        "median_total_ms": 45.861,
+        "max_ms": 0.486,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 145.367,
+        "max_ms": 1.317,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.014,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 43.797,
+        "max_ms": 0.932,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.47,
+        "max_ms": 0.009,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/young_sweep": {
+        "median_total_ms": 8.477,
+        "max_ms": 0.143,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.007,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/strings": {
+        "median_total_ms": 0.348,
+        "max_ms": 0.007,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/collection_pause": {
+        "median_total_ms": 53.158,
+        "max_ms": 1.086,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 169.947,
+        "max_ms": 0.532,
+        "over_4ms": 0,
+        "counts": [
+          966,
+          966,
+          966
+        ]
+      }
+    }
+  },
+  "capped/scene_10000": {
+    "runs": [
+      {
+        "minor/finish_previous_sweep": {
+          "count": 91,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 91,
+          "total_ms": 0.006,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 91,
+          "total_ms": 1.32,
+          "max_ms": 0.03,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 91,
+          "total_ms": 5.439,
+          "max_ms": 0.382,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 91,
+          "total_ms": 0.053,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 91,
+          "total_ms": 2.715,
+          "max_ms": 0.376,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 91,
+          "total_ms": 0.005,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 91,
+          "total_ms": 4.519,
+          "max_ms": 0.193,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 91,
+          "total_ms": 14.06,
+          "max_ms": 0.693,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 7,
+          "total_ms": 5.638,
+          "max_ms": 1.078,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 7,
+          "total_ms": 0.015,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 7,
+          "total_ms": 0.131,
+          "max_ms": 0.024,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 7,
+          "total_ms": 0.087,
+          "max_ms": 0.024,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 7,
+          "total_ms": 5.872,
+          "max_ms": 1.107,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 108,
+          "total_ms": 5.169,
+          "max_ms": 0.209,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 91,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 91,
+          "total_ms": 0.004,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 91,
+          "total_ms": 1.301,
+          "max_ms": 0.032,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 91,
+          "total_ms": 5.385,
+          "max_ms": 0.426,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 91,
+          "total_ms": 0.055,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 91,
+          "total_ms": 2.419,
+          "max_ms": 0.183,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 91,
+          "total_ms": 0.005,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 91,
+          "total_ms": 4.166,
+          "max_ms": 0.114,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 91,
+          "total_ms": 13.337,
+          "max_ms": 0.568,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 7,
+          "total_ms": 5.665,
+          "max_ms": 1.044,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 7,
+          "total_ms": 0.018,
+          "max_ms": 0.004,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 7,
+          "total_ms": 0.131,
+          "max_ms": 0.027,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 7,
+          "total_ms": 0.113,
+          "max_ms": 0.025,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 7,
+          "total_ms": 5.928,
+          "max_ms": 1.074,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 108,
+          "total_ms": 4.468,
+          "max_ms": 0.133,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 91,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 91,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 91,
+          "total_ms": 1.307,
+          "max_ms": 0.03,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 91,
+          "total_ms": 5.344,
+          "max_ms": 0.404,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 91,
+          "total_ms": 0.052,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 91,
+          "total_ms": 2.292,
+          "max_ms": 0.163,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 91,
+          "total_ms": 0.005,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 91,
+          "total_ms": 3.856,
+          "max_ms": 0.095,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 91,
+          "total_ms": 12.86,
+          "max_ms": 0.534,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 7,
+          "total_ms": 5.587,
+          "max_ms": 1.073,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 7,
+          "total_ms": 0.014,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 7,
+          "total_ms": 0.121,
+          "max_ms": 0.021,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 7,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 7,
+          "total_ms": 0.081,
+          "max_ms": 0.024,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 7,
+          "total_ms": 5.805,
+          "max_ms": 1.106,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 108,
+          "total_ms": 4.026,
+          "max_ms": 0.108,
+          "over_4ms": 0
+        }
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.004,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 1.307,
+        "max_ms": 0.032,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 5.385,
+        "max_ms": 0.426,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.053,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 2.419,
+        "max_ms": 0.376,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.005,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "minor/strings": {
+        "median_total_ms": 4.166,
+        "max_ms": 0.193,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 13.337,
+        "max_ms": 0.693,
+        "over_4ms": 0,
+        "counts": [
+          91,
+          91,
+          91
+        ]
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 5.638,
+        "max_ms": 1.078,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.015,
+        "max_ms": 0.004,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/young_sweep": {
+        "median_total_ms": 0.131,
+        "max_ms": 0.027,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/strings": {
+        "median_total_ms": 0.087,
+        "max_ms": 0.025,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/collection_pause": {
+        "median_total_ms": 5.872,
+        "max_ms": 1.107,
+        "over_4ms": 0,
+        "counts": [
+          7,
+          7,
+          7
+        ]
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 4.468,
+        "max_ms": 0.209,
+        "over_4ms": 0,
+        "counts": [
+          108,
+          108,
+          108
+        ]
+      }
+    }
+  },
+  "capped/scene_100000_long": {
+    "runs": [
+      {
+        "minor/finish_previous_sweep": {
+          "count": 1111,
+          "total_ms": 0.01,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 1111,
+          "total_ms": 0.136,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 1111,
+          "total_ms": 20.235,
+          "max_ms": 0.068,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 1111,
+          "total_ms": 104.088,
+          "max_ms": 1.683,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 1111,
+          "total_ms": 0.716,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 1111,
+          "total_ms": 44.189,
+          "max_ms": 0.867,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 1111,
+          "total_ms": 0.058,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 1111,
+          "total_ms": 524.367,
+          "max_ms": 0.99,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 1111,
+          "total_ms": 693.829,
+          "max_ms": 2.352,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 21,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 21,
+          "total_ms": 0.003,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 21,
+          "total_ms": 262.055,
+          "max_ms": 21.36,
+          "over_4ms": 17
+        },
+        "major/remembered_graph": {
+          "count": 21,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 21,
+          "total_ms": 0.177,
+          "max_ms": 0.015,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 21,
+          "total_ms": 0.812,
+          "max_ms": 0.062,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 21,
+          "total_ms": 0.004,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 21,
+          "total_ms": 0.552,
+          "max_ms": 0.033,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 21,
+          "total_ms": 263.603,
+          "max_ms": 21.452,
+          "over_4ms": 18
+        },
+        "major/lazy_sweep_pause": {
+          "count": 2337,
+          "total_ms": 184.359,
+          "max_ms": 1.043,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 1111,
+          "total_ms": 0.008,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 1111,
+          "total_ms": 0.067,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 1111,
+          "total_ms": 20.385,
+          "max_ms": 0.056,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 1111,
+          "total_ms": 102.208,
+          "max_ms": 1.565,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 1111,
+          "total_ms": 0.712,
+          "max_ms": 0.004,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 1111,
+          "total_ms": 44.117,
+          "max_ms": 0.979,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 1111,
+          "total_ms": 0.051,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 1111,
+          "total_ms": 539.667,
+          "max_ms": 1.037,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 1111,
+          "total_ms": 707.24,
+          "max_ms": 2.191,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 21,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 21,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 21,
+          "total_ms": 264.39,
+          "max_ms": 21.605,
+          "over_4ms": 18
+        },
+        "major/remembered_graph": {
+          "count": 21,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 21,
+          "total_ms": 0.185,
+          "max_ms": 0.016,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 21,
+          "total_ms": 0.838,
+          "max_ms": 0.08,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 21,
+          "total_ms": 0.003,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 21,
+          "total_ms": 0.549,
+          "max_ms": 0.035,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 21,
+          "total_ms": 265.968,
+          "max_ms": 21.697,
+          "over_4ms": 18
+        },
+        "major/lazy_sweep_pause": {
+          "count": 2337,
+          "total_ms": 186.66,
+          "max_ms": 1.244,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 1111,
+          "total_ms": 0.011,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 1111,
+          "total_ms": 0.091,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 1111,
+          "total_ms": 19.909,
+          "max_ms": 0.057,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 1111,
+          "total_ms": 100.573,
+          "max_ms": 1.586,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 1111,
+          "total_ms": 0.705,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 1111,
+          "total_ms": 43.537,
+          "max_ms": 0.914,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 1111,
+          "total_ms": 0.056,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 1111,
+          "total_ms": 559.254,
+          "max_ms": 1.192,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 1111,
+          "total_ms": 724.158,
+          "max_ms": 2.187,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 21,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 21,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 21,
+          "total_ms": 261.589,
+          "max_ms": 21.612,
+          "over_4ms": 18
+        },
+        "major/remembered_graph": {
+          "count": 21,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 21,
+          "total_ms": 0.191,
+          "max_ms": 0.017,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 21,
+          "total_ms": 0.879,
+          "max_ms": 0.073,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 21,
+          "total_ms": 0.003,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 21,
+          "total_ms": 0.608,
+          "max_ms": 0.045,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 21,
+          "total_ms": 263.272,
+          "max_ms": 21.718,
+          "over_4ms": 18
+        },
+        "major/lazy_sweep_pause": {
+          "count": 2337,
+          "total_ms": 185.598,
+          "max_ms": 1.122,
+          "over_4ms": 0
+        }
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.01,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.091,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 20.235,
+        "max_ms": 0.068,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 102.208,
+        "max_ms": 1.683,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.712,
+        "max_ms": 0.004,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 44.117,
+        "max_ms": 0.979,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.056,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "minor/strings": {
+        "median_total_ms": 539.667,
+        "max_ms": 1.192,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 707.24,
+        "max_ms": 2.352,
+        "over_4ms": 0,
+        "counts": [
+          1111,
+          1111,
+          1111
+        ]
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 262.055,
+        "max_ms": 21.612,
+        "over_4ms": 53,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.185,
+        "max_ms": 0.017,
+        "over_4ms": 0,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/young_sweep": {
+        "median_total_ms": 0.838,
+        "max_ms": 0.08,
+        "over_4ms": 0,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.003,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/strings": {
+        "median_total_ms": 0.552,
+        "max_ms": 0.045,
+        "over_4ms": 0,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/collection_pause": {
+        "median_total_ms": 263.603,
+        "max_ms": 21.718,
+        "over_4ms": 54,
+        "counts": [
+          21,
+          21,
+          21
+        ]
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 185.598,
+        "max_ms": 1.244,
+        "over_4ms": 0,
+        "counts": [
+          2337,
+          2337,
+          2337
+        ]
+      }
+    }
+  },
+  "capped/scene_300000_long": {
+    "runs": [
+      {
+        "minor/finish_previous_sweep": {
+          "count": 1154,
+          "total_ms": 0.017,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 1154,
+          "total_ms": 0.208,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 1154,
+          "total_ms": 21.7,
+          "max_ms": 0.076,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 1154,
+          "total_ms": 255.589,
+          "max_ms": 5.397,
+          "over_4ms": 7
+        },
+        "minor/weak_caches": {
+          "count": 1154,
+          "total_ms": 0.901,
+          "max_ms": 0.01,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 1154,
+          "total_ms": 55.972,
+          "max_ms": 1.445,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 1154,
+          "total_ms": 0.084,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 1154,
+          "total_ms": 1987.073,
+          "max_ms": 3.053,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 1154,
+          "total_ms": 2321.604,
+          "max_ms": 6.908,
+          "over_4ms": 26
+        },
+        "major/finish_previous_sweep": {
+          "count": 23,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 23,
+          "total_ms": 0.004,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 23,
+          "total_ms": 648.995,
+          "max_ms": 42.402,
+          "over_4ms": 20
+        },
+        "major/remembered_graph": {
+          "count": 23,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 23,
+          "total_ms": 0.228,
+          "max_ms": 0.015,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 23,
+          "total_ms": 1.019,
+          "max_ms": 0.073,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 23,
+          "total_ms": 0.006,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 23,
+          "total_ms": 0.742,
+          "max_ms": 0.041,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 23,
+          "total_ms": 650.997,
+          "max_ms": 42.511,
+          "over_4ms": 20
+        },
+        "major/lazy_sweep_pause": {
+          "count": 5963,
+          "total_ms": 301.986,
+          "max_ms": 2.539,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 1154,
+          "total_ms": 0.014,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 1154,
+          "total_ms": 0.221,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 1154,
+          "total_ms": 22.265,
+          "max_ms": 0.068,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 1154,
+          "total_ms": 253.723,
+          "max_ms": 4.281,
+          "over_4ms": 8
+        },
+        "minor/weak_caches": {
+          "count": 1154,
+          "total_ms": 0.906,
+          "max_ms": 0.004,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 1154,
+          "total_ms": 55.236,
+          "max_ms": 1.055,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 1154,
+          "total_ms": 0.083,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 1154,
+          "total_ms": 2036.845,
+          "max_ms": 3.489,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 1154,
+          "total_ms": 2369.348,
+          "max_ms": 6.145,
+          "over_4ms": 25
+        },
+        "major/finish_previous_sweep": {
+          "count": 23,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 23,
+          "total_ms": 0.004,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 23,
+          "total_ms": 651.574,
+          "max_ms": 43.01,
+          "over_4ms": 20
+        },
+        "major/remembered_graph": {
+          "count": 23,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 23,
+          "total_ms": 0.221,
+          "max_ms": 0.016,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 23,
+          "total_ms": 0.966,
+          "max_ms": 0.068,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 23,
+          "total_ms": 0.006,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 23,
+          "total_ms": 0.715,
+          "max_ms": 0.043,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 23,
+          "total_ms": 653.488,
+          "max_ms": 43.121,
+          "over_4ms": 20
+        },
+        "major/lazy_sweep_pause": {
+          "count": 5963,
+          "total_ms": 306.403,
+          "max_ms": 3.403,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 1154,
+          "total_ms": 0.018,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 1154,
+          "total_ms": 0.197,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 1154,
+          "total_ms": 21.621,
+          "max_ms": 0.079,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 1154,
+          "total_ms": 248.622,
+          "max_ms": 4.162,
+          "over_4ms": 4
+        },
+        "minor/weak_caches": {
+          "count": 1154,
+          "total_ms": 0.905,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 1154,
+          "total_ms": 53.731,
+          "max_ms": 0.95,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 1154,
+          "total_ms": 0.084,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 1154,
+          "total_ms": 1978.754,
+          "max_ms": 2.351,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 1154,
+          "total_ms": 2303.992,
+          "max_ms": 5.946,
+          "over_4ms": 26
+        },
+        "major/finish_previous_sweep": {
+          "count": 23,
+          "total_ms": 0.0,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 23,
+          "total_ms": 0.006,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 23,
+          "total_ms": 643.462,
+          "max_ms": 42.412,
+          "over_4ms": 19
+        },
+        "major/remembered_graph": {
+          "count": 23,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 23,
+          "total_ms": 0.211,
+          "max_ms": 0.015,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 23,
+          "total_ms": 0.981,
+          "max_ms": 0.07,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 23,
+          "total_ms": 0.005,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 23,
+          "total_ms": 0.719,
+          "max_ms": 0.043,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 23,
+          "total_ms": 645.385,
+          "max_ms": 42.533,
+          "over_4ms": 20
+        },
+        "major/lazy_sweep_pause": {
+          "count": 5963,
+          "total_ms": 300.447,
+          "max_ms": 2.425,
+          "over_4ms": 0
+        }
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.017,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.208,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 21.7,
+        "max_ms": 0.079,
+        "over_4ms": 0,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 253.723,
+        "max_ms": 5.397,
+        "over_4ms": 19,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.905,
+        "max_ms": 0.01,
+        "over_4ms": 0,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 55.236,
+        "max_ms": 1.445,
+        "over_4ms": 0,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.084,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "minor/strings": {
+        "median_total_ms": 1987.073,
+        "max_ms": 3.489,
+        "over_4ms": 0,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 2321.604,
+        "max_ms": 6.908,
+        "over_4ms": 77,
+        "counts": [
+          1154,
+          1154,
+          1154
+        ]
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.004,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 648.995,
+        "max_ms": 43.01,
+        "over_4ms": 59,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.221,
+        "max_ms": 0.016,
+        "over_4ms": 0,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/young_sweep": {
+        "median_total_ms": 0.981,
+        "max_ms": 0.073,
+        "over_4ms": 0,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.006,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/strings": {
+        "median_total_ms": 0.719,
+        "max_ms": 0.043,
+        "over_4ms": 0,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/collection_pause": {
+        "median_total_ms": 650.997,
+        "max_ms": 43.121,
+        "over_4ms": 60,
+        "counts": [
+          23,
+          23,
+          23
+        ]
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 301.986,
+        "max_ms": 3.403,
+        "over_4ms": 0,
+        "counts": [
+          5963,
+          5963,
+          5963
+        ]
+      }
+    }
+  },
+  "capped/vdom_heavy": {
+    "runs": [
+      {
+        "minor/finish_previous_sweep": {
+          "count": 199,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 199,
+          "total_ms": 0.033,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 199,
+          "total_ms": 1.336,
+          "max_ms": 0.028,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 199,
+          "total_ms": 75.397,
+          "max_ms": 0.763,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 199,
+          "total_ms": 0.147,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 199,
+          "total_ms": 16.298,
+          "max_ms": 0.142,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 199,
+          "total_ms": 0.012,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 199,
+          "total_ms": 44.278,
+          "max_ms": 0.447,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 199,
+          "total_ms": 137.509,
+          "max_ms": 1.302,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 98,
+          "total_ms": 0.014,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 98,
+          "total_ms": 40.812,
+          "max_ms": 0.774,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 98,
+          "total_ms": 0.439,
+          "max_ms": 0.007,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 98,
+          "total_ms": 7.777,
+          "max_ms": 0.121,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 98,
+          "total_ms": 0.006,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 98,
+          "total_ms": 0.332,
+          "max_ms": 0.007,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 98,
+          "total_ms": 49.384,
+          "max_ms": 0.908,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 966,
+          "total_ms": 165.128,
+          "max_ms": 0.413,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 199,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 199,
+          "total_ms": 0.035,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 199,
+          "total_ms": 1.25,
+          "max_ms": 0.027,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 199,
+          "total_ms": 74.705,
+          "max_ms": 0.718,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 199,
+          "total_ms": 0.148,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 199,
+          "total_ms": 16.204,
+          "max_ms": 0.168,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 199,
+          "total_ms": 0.013,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 199,
+          "total_ms": 43.596,
+          "max_ms": 0.484,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 199,
+          "total_ms": 135.96,
+          "max_ms": 1.203,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 98,
+          "total_ms": 0.002,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 98,
+          "total_ms": 0.016,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 98,
+          "total_ms": 41.293,
+          "max_ms": 0.828,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 98,
+          "total_ms": 0.439,
+          "max_ms": 0.008,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 98,
+          "total_ms": 7.871,
+          "max_ms": 0.142,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 98,
+          "total_ms": 0.007,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 98,
+          "total_ms": 0.344,
+          "max_ms": 0.007,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 98,
+          "total_ms": 49.974,
+          "max_ms": 0.975,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 966,
+          "total_ms": 163.614,
+          "max_ms": 0.399,
+          "over_4ms": 0
+        }
+      },
+      {
+        "minor/finish_previous_sweep": {
+          "count": 199,
+          "total_ms": 0.003,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/seed_pins": {
+          "count": 199,
+          "total_ms": 0.032,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "minor/roots_and_graph": {
+          "count": 199,
+          "total_ms": 1.38,
+          "max_ms": 0.028,
+          "over_4ms": 0
+        },
+        "minor/remembered_graph": {
+          "count": 199,
+          "total_ms": 73.964,
+          "max_ms": 0.712,
+          "over_4ms": 0
+        },
+        "minor/weak_caches": {
+          "count": 199,
+          "total_ms": 0.153,
+          "max_ms": 0.002,
+          "over_4ms": 0
+        },
+        "minor/young_sweep": {
+          "count": 199,
+          "total_ms": 15.969,
+          "max_ms": 0.126,
+          "over_4ms": 0
+        },
+        "minor/env_sweep": {
+          "count": 199,
+          "total_ms": 0.013,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "minor/strings": {
+          "count": 199,
+          "total_ms": 43.019,
+          "max_ms": 0.432,
+          "over_4ms": 0
+        },
+        "minor/collection_pause": {
+          "count": 199,
+          "total_ms": 134.539,
+          "max_ms": 1.239,
+          "over_4ms": 0
+        },
+        "major/finish_previous_sweep": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/seed_pins": {
+          "count": 98,
+          "total_ms": 0.014,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/roots_and_graph": {
+          "count": 98,
+          "total_ms": 41.957,
+          "max_ms": 0.794,
+          "over_4ms": 0
+        },
+        "major/remembered_graph": {
+          "count": 98,
+          "total_ms": 0.001,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/weak_caches": {
+          "count": 98,
+          "total_ms": 0.439,
+          "max_ms": 0.008,
+          "over_4ms": 0
+        },
+        "major/young_sweep": {
+          "count": 98,
+          "total_ms": 7.83,
+          "max_ms": 0.126,
+          "over_4ms": 0
+        },
+        "major/env_sweep": {
+          "count": 98,
+          "total_ms": 0.007,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "major/strings": {
+          "count": 98,
+          "total_ms": 0.344,
+          "max_ms": 0.006,
+          "over_4ms": 0
+        },
+        "major/collection_pause": {
+          "count": 98,
+          "total_ms": 50.593,
+          "max_ms": 0.921,
+          "over_4ms": 0
+        },
+        "major/lazy_sweep_pause": {
+          "count": 966,
+          "total_ms": 166.776,
+          "max_ms": 0.402,
+          "over_4ms": 0
+        }
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.033,
+        "max_ms": 0.001,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 1.336,
+        "max_ms": 0.028,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 74.705,
+        "max_ms": 0.763,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.148,
+        "max_ms": 0.002,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 16.204,
+        "max_ms": 0.168,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.013,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/strings": {
+        "median_total_ms": 43.596,
+        "max_ms": 0.484,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 135.96,
+        "max_ms": 1.302,
+        "over_4ms": 0,
+        "counts": [
+          199,
+          199,
+          199
+        ]
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.014,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 41.293,
+        "max_ms": 0.828,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.439,
+        "max_ms": 0.008,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/young_sweep": {
+        "median_total_ms": 7.83,
+        "max_ms": 0.142,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.007,
+        "max_ms": 0.0,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/strings": {
+        "median_total_ms": 0.344,
+        "max_ms": 0.007,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/collection_pause": {
+        "median_total_ms": 49.974,
+        "max_ms": 0.975,
+        "over_4ms": 0,
+        "counts": [
+          98,
+          98,
+          98
+        ]
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 165.128,
+        "max_ms": 0.413,
+        "over_4ms": 0,
+        "counts": [
+          966,
+          966,
+          966
+        ]
+      }
+    }
+  },
+  "_warmup_repeat": {
+    "scene_10000": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.003,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 0.898,
+        "max_ms": 0.031,
+        "over_4ms": 0
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 3.993,
+        "max_ms": 0.416,
+        "over_4ms": 0
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.036,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 2.962,
+        "max_ms": 0.609,
+        "over_4ms": 0
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.004,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/strings": {
+        "median_total_ms": 3.299,
+        "max_ms": 0.109,
+        "over_4ms": 0
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 11.172,
+        "max_ms": 0.857,
+        "over_4ms": 0
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 4.52,
+        "max_ms": 1.146,
+        "over_4ms": 0
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.013,
+        "max_ms": 0.003,
+        "over_4ms": 0
+      },
+      "major/young_sweep": {
+        "median_total_ms": 0.096,
+        "max_ms": 0.022,
+        "over_4ms": 0
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/strings": {
+        "median_total_ms": 0.072,
+        "max_ms": 0.024,
+        "over_4ms": 0
+      },
+      "major/collection_pause": {
+        "median_total_ms": 4.702,
+        "max_ms": 1.167,
+        "over_4ms": 0
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 3.394,
+        "max_ms": 0.142,
+        "over_4ms": 0
+      }
+    },
+    "scene_100000_long": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.003,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.056,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 7.02,
+        "max_ms": 0.06,
+        "over_4ms": 0
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 52.92,
+        "max_ms": 3.82,
+        "over_4ms": 0
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.246,
+        "max_ms": 0.003,
+        "over_4ms": 0
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 78.931,
+        "max_ms": 14.975,
+        "over_4ms": 18
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.02,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/strings": {
+        "median_total_ms": 359.84,
+        "max_ms": 1.708,
+        "over_4ms": 0
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 499.07,
+        "max_ms": 18.28,
+        "over_4ms": 21
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 91.228,
+        "max_ms": 21.147,
+        "over_4ms": 18
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.104,
+        "max_ms": 0.044,
+        "over_4ms": 0
+      },
+      "major/young_sweep": {
+        "median_total_ms": 1.055,
+        "max_ms": 0.784,
+        "over_4ms": 0
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/strings": {
+        "median_total_ms": 0.248,
+        "max_ms": 0.038,
+        "over_4ms": 0
+      },
+      "major/collection_pause": {
+        "median_total_ms": 92.619,
+        "max_ms": 21.235,
+        "over_4ms": 18
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 59.798,
+        "max_ms": 1.819,
+        "over_4ms": 0
+      }
+    },
+    "scene_300000_long": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.003,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.033,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 2.531,
+        "max_ms": 0.039,
+        "over_4ms": 0
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 58.687,
+        "max_ms": 13.668,
+        "over_4ms": 12
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.106,
+        "max_ms": 0.003,
+        "over_4ms": 0
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 54.784,
+        "max_ms": 20.847,
+        "over_4ms": 9
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.013,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/strings": {
+        "median_total_ms": 397.799,
+        "max_ms": 18.097,
+        "over_4ms": 2
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 515.257,
+        "max_ms": 31.198,
+        "over_4ms": 24
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 120.478,
+        "max_ms": 41.745,
+        "over_4ms": 12
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.153,
+        "max_ms": 0.078,
+        "over_4ms": 0
+      },
+      "major/young_sweep": {
+        "median_total_ms": 5.226,
+        "max_ms": 4.644,
+        "over_4ms": 3
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/strings": {
+        "median_total_ms": 0.211,
+        "max_ms": 0.039,
+        "over_4ms": 0
+      },
+      "major/collection_pause": {
+        "median_total_ms": 125.925,
+        "max_ms": 41.817,
+        "over_4ms": 12
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 47.902,
+        "max_ms": 4.262,
+        "over_4ms": 1
+      }
+    },
+    "vdom_heavy": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.005,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.041,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 1.355,
+        "max_ms": 0.031,
+        "over_4ms": 0
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 79.553,
+        "max_ms": 1.013,
+        "over_4ms": 0
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.149,
+        "max_ms": 0.003,
+        "over_4ms": 0
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 17.219,
+        "max_ms": 0.223,
+        "over_4ms": 0
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.017,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/strings": {
+        "median_total_ms": 45.179,
+        "max_ms": 0.493,
+        "over_4ms": 0
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 143.351,
+        "max_ms": 1.712,
+        "over_4ms": 0
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.019,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 42.586,
+        "max_ms": 0.848,
+        "over_4ms": 0
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.448,
+        "max_ms": 0.013,
+        "over_4ms": 0
+      },
+      "major/young_sweep": {
+        "median_total_ms": 8.336,
+        "max_ms": 0.15,
+        "over_4ms": 0
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.008,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "major/strings": {
+        "median_total_ms": 0.356,
+        "max_ms": 0.009,
+        "over_4ms": 0
+      },
+      "major/collection_pause": {
+        "median_total_ms": 51.756,
+        "max_ms": 1.004,
+        "over_4ms": 0
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 169.921,
+        "max_ms": 0.405,
+        "over_4ms": 0
+      }
+    }
+  }
+}

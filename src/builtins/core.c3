@@ -149,7 +149,7 @@ struct BuiltinContext {
     TVal* regs;
     ushort base_reg;
     ushort argc;
-    TVal* result;
+    BuiltinResultSlot result;
     Heap* heap;
     TVal  this_val;
     bool  is_constructor;
@@ -180,6 +180,82 @@ struct BuiltinContext {
     // another host function leaves a deeper scope on top, and the outer
     // handler must keep addressing its own.
     uint host_scope_slot;
+}
+
+// A borrowed descriptor for an owned result slot. Nested builtin contexts may
+// share the descriptor; the value has one owner at the destination address.
+struct BuiltinResultSlot {
+    TVal* value;
+}
+
+fn BuiltinResultSlot result_slot(TVal* value) @inline {
+    return { value };
+}
+
+fn TVal BuiltinResultSlot.get(self) @inline {
+    return *self.value;
+}
+
+fn TVal* BuiltinResultSlot.view(self) @inline {
+    return self.value;
+}
+
+fn void BuiltinContext.copy_result(&self, TVal value) @inline {
+    self.heap.tval_copy_ref(self.result.view(), &value);
+}
+
+fn void BuiltinContext.take_result(&self, TVal* value) @inline {
+    TVal* destination = self.result.view();
+    if (destination == value) return;
+    self.heap.decref_tval(destination);
+    *destination = *value;
+    value.set_undefined();
+}
+
+fn void BuiltinContext.result_string(&self, void* value) @inline {
+    self.heap.set_reg_string(self.result.view(), (HString*)value);
+}
+
+fn void BuiltinContext.result_undefined(&self) @inline {
+    TVal result;
+    result.set_undefined();
+    self.copy_result(result);
+}
+
+fn void BuiltinContext.result_null(&self) @inline {
+    TVal result;
+    result.set_null();
+    self.copy_result(result);
+}
+
+fn void BuiltinContext.result_object(&self, void* value) @inline {
+    TVal result;
+    result.set_object(value);
+    self.copy_result(result);
+}
+
+fn void BuiltinContext.result_number(&self, double value) @inline {
+    TVal result;
+    result.set_number(value);
+    self.copy_result(result);
+}
+
+fn void BuiltinContext.result_boolean(&self, bool value) @inline {
+    TVal result;
+    result.set_boolean(value);
+    self.copy_result(result);
+}
+
+fn void BuiltinContext.result_fastint(&self, long value) @inline {
+    TVal result;
+    result.set_fastint(value);
+    self.copy_result(result);
+}
+
+fn void BuiltinContext.result_bigint(&self, void* value) @inline {
+    TVal result;
+    result.set_bigint(value);
+    self.copy_result(result);
 }
 
 alias BuiltinFunc = fn void(BuiltinContext*);
@@ -962,49 +1038,13 @@ fn bool builtins_generic_set(BuiltinContext* ctx, HObject* obj, HString* key, TV
 // Shared helpers
 // ============================================================================
 
-// ToObject(value) for property lookup only (ES2015 §7.1.13). Objects are
-// returned as-is; a primitive is wrapped in a throwaway object whose
-// prototype is chosen from the primitive's own type, so user-installed
-// methods on String/Number/Boolean/BigInt.prototype stay reachable.
-// undefined/null return null, callers decide whether that is a TypeError.
-// The wrapper is only for reading; it is not exposed to script.
+// Property lookup boxes primitives with the same ownership as ToObject.
 fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
-    if (value.is_object() && value.get_heapptr() != null) {
-        return (HObject*)value.get_heapptr();
-    }
-    if (value.is_undefined() || value.is_null()) return null;
-    HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch wrapped) return null;
-    HObject* obj = wrapped;
-    HObject* wrap_proto = heap.string_proto;
-    if (is_symbol_val(value)) {
-        wrap_proto = heap.symbol_proto;
-    } else if (value.is_string()) {
-        // Retained so String.prototype methods relying on the primitive
-        // (e.g. the @@iterator returned here) see the right value.
-        heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, value);
-        // Symbols are string-tagged TVals whose HString carries the symbol
-        // flag; box them against symbol_proto, not string_proto.
-        if (((HString*)value.get_heapptr()).is_symbol()) {
-            wrap_proto = heap.symbol_proto;
-        }
-    } else if (value.is_fastint() || value.is_number()) {
-        wrap_proto = heap.number_proto;
-    } else if (value.is_boolean()) {
-        wrap_proto = heap.bool_proto;
-    } else if (value.is_bigint()) {
-        wrap_proto = heap.bigint_proto;
-    }
-    obj.prototype = wrap_proto;
-    return obj;
+    return to_object_wrapper(heap, value);
 }
 
-// ToObject(value) as a proper exotic wrapper object (ES2015 §7.1.13), used for
-// the receiver a sloppy call binds to a primitive. Unlike to_object_for_lookup
-// this sets the wrapper's class and String-exotic flag, so String.prototype
-// .valueOf and Object.prototype.toString recognise it, the way the wrappers
-// Object()/Function.prototype.call build do. Objects are returned as-is,
-// undefined/null return null (the caller has already substituted the global).
+// ToObject (ES2015 §7.1.13). Wrapper classes own their primitive payloads;
+// strings also expose the indexed properties of a String exotic object.
 fn HObject* to_object_wrapper(Heap* heap, TVal value) {
     if (value.is_object() && value.get_heapptr() != null) {
         return (HObject*)value.get_heapptr();
@@ -1455,7 +1495,7 @@ fn TVal to_primitive_value_local(TVal* val) @public {
         if (cls == hobject::ObjClass.STRING &&
             (*obj.extra_ptr()).prim.primitive_value.is_string()) {
             TVal result;
-            result.set_string((*obj.extra_ptr()).prim.primitive_value.get_heapptr());
+            result.set_string_borrowed((*obj.extra_ptr()).prim.primitive_value.get_heapptr());
             return result;
         }
         // Symbol wrapper → unwrap directly
@@ -1464,7 +1504,7 @@ fn TVal to_primitive_value_local(TVal* val) @public {
             HString* s = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
             if (s != null && s.is_symbol()) {
                 TVal result;
-                result.set_string(s);
+                result.set_string_borrowed(s);
                 return result;
             }
         }
@@ -1526,7 +1566,7 @@ fn HObject* check_collection_class(BuiltinContext* ctx, hobject::ObjClass want, 
         HString* msg_str = builtin_intern_string(ctx.heap, type_name);
         if (msg_str != null) {
             TVal msg_val;
-            msg_val.set_string(msg_str);
+            msg_val.set_string_borrowed(msg_str);
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, ctx.heap);
         }
@@ -1753,7 +1793,7 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
 // Throws a TypeError built from `msg` and marks ctx to throw / return undefined.
 // Allocs an Error object with the given prototype and message, then marks
 // ctx to throw it. Does not touch ctx.result, callers that need
-// ctx.result.set_undefined() (the common case for builtin call handlers)
+// ctx.result_undefined() (the common case for builtin call handlers)
 // should call builtin_throw() instead.
 fn void builtin_throw_no_result_change(BuiltinContext* ctx, HObject* proto, char[] msg) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
@@ -1761,7 +1801,7 @@ fn void builtin_throw_no_result_change(BuiltinContext* ctx, HObject* proto, char
         err.prototype = proto;
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         if (msg_str != null) {
-            TVal msg_val; msg_val.set_string(msg_str);
+            TVal msg_val; msg_val.set_string_borrowed(msg_str);
             err.put_prop(ctx.heap.str(heap::BuiltinStr.MESSAGE), msg_val, hobject::PROP_FLAGS_WC, ctx.heap);
         }
         ctx.should_throw = true;
@@ -1774,7 +1814,7 @@ fn void builtin_throw_no_result_change(BuiltinContext* ctx, HObject* proto, char
 // builtin call handlers that bail out immediately after throwing).
 fn void builtin_throw(BuiltinContext* ctx, HObject* proto, char[] msg) {
     builtin_throw_no_result_change(ctx, proto, msg);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 fn void coll_throw(BuiltinContext* ctx, char[] msg) {
@@ -1800,7 +1840,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
     }
     HObject*? obj_raw = ctx.heap.alloc_object(obj_class);
     if (catch err = obj_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* coll = obj_raw;
@@ -1809,31 +1849,10 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
     if (ctx.argc >= 1) {
         TVal arg = ctx.regs[ctx.base_reg];
         if (!arg.is_null() && !arg.is_undefined()) {
-            // Wrap primitives in a throwaway object whose [[Prototype]] is the
-            // matching wrapper prototype, so the @@iterator lookup walks the
-            // real prototype chain. This matches group_by_shared's pattern.
-            HObject* iterable_obj = null;
-            if (arg.is_object() && arg.get_heapptr() != null) {
-                iterable_obj = (HObject*)arg.get_heapptr();
-            } else {
-                HObject*? wrapped = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-                if (catch err = wrapped) {
-                    ctx.result.set_undefined();
-                    return;
-                }
-                iterable_obj = wrapped;
-                if (is_symbol_val(arg)) {
-                    iterable_obj.prototype = ctx.heap.symbol_proto;
-                } else if (arg.is_string()) {
-                    ctx.heap.@set_edge(iterable_obj, (*iterable_obj.extra_ptr()).prim.primitive_value, arg);
-                    iterable_obj.prototype = ctx.heap.string_proto;
-                } else if (arg.is_boolean()) {
-                    iterable_obj.prototype = ctx.heap.bool_proto;
-                } else if (arg.is_number() || arg.is_fastint()) {
-                    iterable_obj.prototype = ctx.heap.number_proto;
-                } else if (arg.is_bigint()) {
-                    iterable_obj.prototype = ctx.heap.bigint_proto;
-                }
+            HObject* iterable_obj = to_object_wrapper(ctx.heap, arg);
+            if (iterable_obj == null) {
+                ctx.result_undefined();
+                return;
             }
 
             // Get(coll, adder_name); must throw/return abruptly per spec.
@@ -1847,7 +1866,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
             if (adder_key != null) {
                 TVal? adder_opt = builtins::builtins_generic_get(coll, adder_key, ctx);
                 if (catch err = adder_opt) {
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
                 adder = adder_opt;
@@ -1860,7 +1879,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                 return;
             }
             HString* iter_sym = ensure_iterator_symbol(ctx.heap);
-            if (iter_sym == null) { ctx.result.set_undefined(); return; }
+            if (iter_sym == null) { ctx.result_undefined(); return; }
             TVal iter_fn;
             iter_fn.set_undefined();
             if (try found_iter_fn = iterable_obj.get_prop_proto(iter_sym, ctx.heap)) { iter_fn = found_iter_fn; }
@@ -1881,7 +1900,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                 ctx.should_throw = true;
                 ctx.throw_value = ctx.heap.error_value;
                 ctx.heap.has_error = false;
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
             // ES2015 §7.4.1 GetIterator step 5: the result of calling
@@ -1894,7 +1913,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
             }
             HObject* iter_obj = (HObject*)iterator.get_heapptr();
             HString* next_key = builtin_intern_string(ctx.heap, "next");
-            if (next_key == null) { ctx.result.set_undefined(); return; }
+            if (next_key == null) { ctx.result_undefined(); return; }
 
             if (coll != null) ((HeapHeader*)coll).set_temproot();
             if (iter_obj != null) ((HeapHeader*)iter_obj).set_temproot();
@@ -1913,7 +1932,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
             TVal next_fn;
             next_fn.set_undefined();
             if (try found_next_fn = builtins_generic_get(iter_obj, next_key, ctx)) { next_fn = found_next_fn; }
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
             bool next_ok = next_fn.is_lightfunc()
                 || (next_fn.is_object() && next_fn.get_heapptr() != null
                     && ((HObject*)next_fn.get_heapptr()).is_callable());
@@ -1925,7 +1944,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     ctx.should_throw = true;
                     ctx.throw_value = ctx.heap.error_value;
                     ctx.heap.has_error = false;
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
                 if (!result.is_object() || result.get_heapptr() == null) {
@@ -1934,7 +1953,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     // IfAbruptCloseIterator, so the iterator is closed first.
                     coll_throw(ctx, "Iterator result is not an object");
                     arr_iterator_close_after_throw(ctx, iterator);
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
                 HObject* res_obj = (HObject*)result.get_heapptr();
@@ -1952,7 +1971,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     // the iterator is already in an abrupt completion of its
                     // own step and IteratorClose does not run (§7.4.6 is only
                     // reached from the loop body). Propagate without closing.
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
                 if (done_val.is_boolean() && done_val.get_boolean()) break;
@@ -1967,7 +1986,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                     // Likewise IteratorValue: a throwing value getter is the
                     // iterator's own abrupt completion, not the loop body's,
                     // so the iterator is not closed.
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
                 if (is_pair) {
@@ -1986,7 +2005,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                         if (ctx.should_throw) {
                             // Getter for key[0] threw, close iterator then propagate.
                             arr_iterator_close_after_throw(ctx, iterator);
-                            ctx.result.set_undefined();
+                            ctx.result_undefined();
                             return;
                         }
                         if (key1 != null) {
@@ -1995,7 +2014,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                         if (ctx.should_throw) {
                             // Getter for key[1] threw, close iterator then propagate.
                             arr_iterator_close_after_throw(ctx, iterator);
-                            ctx.result.set_undefined();
+                            ctx.result_undefined();
                             return;
                         }
                         TVal[2] adder_args = { k, v };
@@ -2007,14 +2026,14 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                             ctx.heap.has_error = false;
                             // adder threw, close iterator then propagate.
                             arr_iterator_close_after_throw(ctx, iterator);
-                            ctx.result.set_undefined();
+                            ctx.result_undefined();
                             return;
                         }
                     } else {
                         // pair entry is not an object, ES2022 §23.1.1.1 step 9f requires TypeError.
                         coll_throw(ctx, "Iterator value must be an object");
                         arr_iterator_close_after_throw(ctx, iterator);
-                        ctx.result.set_undefined();
+                        ctx.result_undefined();
                         return;
                     }
                 } else {
@@ -2027,7 +2046,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                         ctx.heap.has_error = false;
                         // adder threw, close iterator then propagate.
                         arr_iterator_close_after_throw(ctx, iterator);
-                        ctx.result.set_undefined();
+                        ctx.result_undefined();
                         return;
                     }
                 }
@@ -2035,7 +2054,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
         }
     }
 
-    ctx.result.set_object(coll);
+    ctx.result_object(coll);
 }
 
 // ============================================================================
@@ -2055,11 +2074,11 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
 // bound for every later insert.
 fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool require_object_key,
                         char[] invalid_key_msg, bool grow_hwm) {
-    if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_undefined(); return; }
     TVal key = ctx.regs[ctx.base_reg];
     if (require_object_key && !can_be_held_weakly(ctx.heap, key)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, invalid_key_msg);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     TVal value = ctx.regs[ctx.base_reg + 1];  // undefined if not provided
@@ -2081,7 +2100,7 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
             coll.array_used = (uint)(cnt + 2);
         }
     }
-    ctx.result.set_object(coll);
+    ctx.result_object(coll);
 }
 
 // CanonicalizeKeyedCollectionKey (ES2025 §24.1.1.3): -0 -> +0, otherwise unchanged.
@@ -2102,7 +2121,7 @@ fn TVal canonicalize_keyed_collection_key(TVal key) {
 // unless CanBeHeldWeakly(key)), false for Map. grow_hwm: see coll_set_entry.
 fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak_key,
                             char[] invalid_key_msg, bool grow_hwm) {
-    if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_undefined(); return; }
     TVal key = ctx.regs[ctx.base_reg];
     if (require_weak_key && !can_be_held_weakly(ctx.heap, key)) {
         builtin_throw(ctx, ctx.heap.type_err_proto, invalid_key_msg);
@@ -2113,7 +2132,7 @@ fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak
 
     int found = coll_find(coll, key, 2, ctx.heap);
     if (found >= 0) {
-        *ctx.result = coll.array_part()[(uint)found + 1].get();
+        ctx.copy_result(coll.array_part()[(uint)found + 1].get());
         return;
     }
     uint cnt = coll.array_used;
@@ -2122,7 +2141,7 @@ fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak
     if (coll.array_used <= cnt + 1) {
         coll.array_used = (uint)(cnt + 2);
     }
-    *ctx.result = value;
+    ctx.copy_result(value);
 }
 
 // Shared body for Map.prototype.getOrInsertComputed / WeakMap.prototype.
@@ -2135,7 +2154,7 @@ fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak
 // appended. A throwing callback inserts nothing and propagates the throw.
 fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool require_weak_key,
                                      char[] invalid_key_msg, char[] not_callable_msg, bool grow_hwm) {
-    if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_undefined(); return; }
     TVal key = ctx.regs[ctx.base_reg];
     if (require_weak_key && !can_be_held_weakly(ctx.heap, key)) {
         builtin_throw(ctx, ctx.heap.type_err_proto, invalid_key_msg);
@@ -2155,11 +2174,11 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
 
     int found = coll_find(coll, key, 2, ctx.heap);
     if (found >= 0) {
-        *ctx.result = coll.array_part()[(uint)found + 1].get();
+        ctx.copy_result(coll.array_part()[(uint)found + 1].get());
         return;
     }
 
-    if (ctx.heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+    if (ctx.heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
     TVal[1] cb_args;
     cb_args[0] = key;
     TVal undef_this; undef_this.set_undefined();
@@ -2168,7 +2187,7 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
         ctx.should_throw = true;
         ctx.throw_value = ctx.heap.error_value;
         ctx.heap.has_error = false;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -2189,7 +2208,7 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
             coll.array_used = (uint)(cnt + 2);
         }
     }
-    *ctx.result = value;
+    ctx.copy_result(value);
 }
 
 // Shared body for Set.prototype.add / WeakSet.prototype.add (ES6 §23.2.3.1 / §23.4.3.1).
@@ -2204,7 +2223,7 @@ fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_v
     if (ctx.argc >= 1) value = ctx.regs[ctx.base_reg];
     if (require_object_value && !can_be_held_weakly(ctx.heap, value)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, invalid_value_msg);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     // CanonicalizeKeyedCollectionKey (§24.5.1): a Set element is its own key,
@@ -2218,7 +2237,7 @@ fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_v
             coll.array_used = (uint)(idx + 1);
         }
     }
-    ctx.result.set_object(coll);
+    ctx.result_object(coll);
 }
 
 // Shared body for Map/Set.prototype.delete (tombstone: mark deleted, keep slot,
@@ -2228,7 +2247,7 @@ fn void coll_add_value(BuiltinContext* ctx, HObject* coll, bool require_object_v
 // stride=2 for Map/WeakMap (key+value slots), stride=1 for Set/WeakSet (value only).
 fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, bool tombstone) {
     int found = coll_find(coll, key, stride, ctx.heap);
-    if (found < 0) { ctx.result.set_boolean(false); return; }
+    if (found < 0) { ctx.result_boolean(false); return; }
     if (tombstone) {
         for (uint i = 0; i < stride; i++) {
             hobject::PropValue* slot = &coll.array_part()[(uint)found + i];
@@ -2245,7 +2264,7 @@ fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, b
         }
         coll.array_used = (uint)(cnt - stride);
     }
-    ctx.result.set_boolean(true);
+    ctx.result_boolean(true);
 }
 
 // ============================================================================
@@ -2336,36 +2355,12 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
     }
     if (heap.call_fn == null || ctx.vm == null) return null;
 
-    // GetIterator(items), must be an object/primitive with a callable
-    // @@iterator; undefined/null @@iterator is a TypeError (no fallback).
-    // Primitives are wrapped in a throwaway object whose [[Prototype]] is the
-    // matching wrapper prototype, so the @@iterator lookup below walks the
-    // real prototype chain (must set items_obj.prototype directly, a named
-    // "prototype" data property is not consulted by get_prop_or_accessor_proto).
-    HObject* items_obj = null;
-    if (items.is_object() && items.get_heapptr() != null) {
-        items_obj = (HObject*)items.get_heapptr();
-    } else if (!items.is_undefined() && !items.is_null()) {
-        HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (try w = wrapped) {
-            items_obj = w;
-            if (is_symbol_val(items)) {
-                items_obj.prototype = heap.symbol_proto;
-            } else if (items.is_string()) {
-                ctx.heap.@set_edge(items_obj, (*items_obj.extra_ptr()).prim.primitive_value, items);
-                items_obj.prototype = heap.string_proto;
-            } else if (items.is_boolean()) {
-                items_obj.prototype = heap.bool_proto;
-            } else if (items.is_number() || items.is_fastint()) {
-                items_obj.prototype = heap.number_proto;
-            } else if (items.is_bigint()) {
-                items_obj.prototype = heap.bigint_proto;
-            }
-        }
-    } else {
+    if (items.is_undefined() || items.is_null()) {
         builtin_throw_no_result_change(ctx, heap.type_err_proto, "items is null or undefined");
         return null;
     }
+    HObject* items_obj = to_object_wrapper(heap, items);
+    if (items_obj == null) return null;
 
     HString* iter_sym = ensure_iterator_symbol(heap);
     if (iter_sym == null) return null;
@@ -2721,7 +2716,7 @@ fn int is_regexp_check_vm(BuiltinContext* ctx, TVal* val) {
     // Step 2: Let isRegExp = Get(argument, @@match).
     HObject* obj = (HObject*)val.get_heapptr();
     HString* match_sym = ensure_match_symbol(ctx.heap);
-    if (match_sym == null) { ctx.result.set_undefined(); return 0; }
+    if (match_sym == null) { ctx.result_undefined(); return 0; }
     TVal? match_opt = builtins_generic_get(obj, match_sym, ctx);
     if (ctx.should_throw) return -1;
 
@@ -2792,7 +2787,7 @@ fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
             HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert object to primitive value");
             if (msg_str != null) {
                 TVal msg_val;
-                msg_val.set_string(msg_str);
+                msg_val.set_string_borrowed(msg_str);
                 HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
                 if (msg_key != null) {
                     err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -2951,7 +2946,7 @@ fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uin
     HString* name_val = builtin_intern_string(heap, name);
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
-        name_tv.set_string(name_val);
+        name_tv.set_string_borrowed(name_val);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     // Register on prototype, writable:true, enumerable:false, configurable:true (ES5 §15.3.5.1)
@@ -2990,7 +2985,7 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
         HString* fname = builtin_intern_string(heap, name);
         if (fname != null) {
             TVal name_tv;
-            name_tv.set_string(fname);
+            name_tv.set_string_borrowed(fname);
             func_obj.put_prop(name_str, name_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }
@@ -3035,7 +3030,7 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
     HString* name_val = builtin_intern_string(heap, name);
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
-        name_tv.set_string(name_val);
+        name_tv.set_string_borrowed(name_val);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     // Register on prototype, writable:true, enumerable:false, configurable:true (ES5 §15.3.5.1)
@@ -3071,7 +3066,7 @@ fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, 
     HString* name_val = builtin_intern_string(heap, name);
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
-        name_tv.set_string(name_val);
+        name_tv.set_string_borrowed(name_val);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     TVal getter_tv;
@@ -3159,7 +3154,7 @@ fn void set_func_ctor_name_length(HObject* func_obj, Heap* heap, char[] name, in
 
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_hstr = builtin_intern_string(heap, name);
-    TVal name_tv; name_tv.set_string(name_hstr);
+    TVal name_tv; name_tv.set_string_borrowed(name_hstr);
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
 }
 
@@ -3167,7 +3162,7 @@ fn void set_func_ctor_name_length(HObject* func_obj, Heap* heap, char[] name, in
 fn void set_func_ctor_name(HObject* func_obj, Heap* heap, char[] name) {
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_hstr = builtin_intern_string(heap, name);
-    TVal name_tv; name_tv.set_string(name_hstr);
+    TVal name_tv; name_tv.set_string_borrowed(name_hstr);
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
 }
 
@@ -3202,7 +3197,7 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         if (msg_str != null) {
             TVal msg_val;
-            msg_val.set_string(msg_str);
+            msg_val.set_string_borrowed(msg_str);
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, ctx.heap);
         }
@@ -3227,7 +3222,7 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
 // A single non-recursive lookup would otherwise return the boxed
 // getter/setter pair instead of the underlying value.
 fn void builtin_module_binding_getter(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     if (ctx.callee_obj == null) return;
     HString* env_slot_key = ctx.heap.str_intern(MODULE_BINDING_ENV_SLOT);
     HString* key_slot_key = ctx.heap.str_intern(MODULE_BINDING_KEY_SLOT);
@@ -3251,7 +3246,7 @@ fn void builtin_module_binding_getter(BuiltinContext* ctx) {
         TVal getter = hobject::hobject_access_getter(slot);
         if (!getter.is_object()) return;
         TVal this_tv; this_tv.set_object(bindings);
-        *ctx.result = ctx.heap.call_fn(ctx.vm, getter, null, 0, this_tv);
+        ctx.copy_result(ctx.heap.call_fn(ctx.vm, getter, null, 0, this_tv));
         return;
     }
     TVal raw = bindings.prop_values()[idx].get();
@@ -3259,7 +3254,7 @@ fn void builtin_module_binding_getter(BuiltinContext* ctx) {
         module_binding_throw_tdz(ctx, key);
         return;
     }
-    *ctx.result = raw;
+    ctx.copy_result(raw);
 }
 
 // Build an accessor property VALUE (a boxed getter/setter pair, per
@@ -3285,7 +3280,7 @@ fn TVal make_module_binding_accessor(Heap* heap, HObject* source_bindings, HStri
     if (env_slot_key == null || key_slot_key == null) return undef_result;
 
     TVal env_tv; env_tv.set_object(source_bindings);
-    TVal key_tv; key_tv.set_string(key);
+    TVal key_tv; key_tv.set_string_borrowed(key);
     func_obj.put_prop((void*)env_slot_key, env_tv, hobject::PROP_FLAGS_NWC, heap);
     func_obj.put_prop((void*)key_slot_key, key_tv, hobject::PROP_FLAGS_NWC, heap);
 
@@ -3406,14 +3401,14 @@ const uint MAX_HOST_DEPTH @feat(!GC_STRESS) = 32;
 // call.
 fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
-    if (heap == null) { ctx.result.set_undefined(); return; }
+    if (heap == null) { ctx.result_undefined(); return; }
     heap::HostFnEntry* entry = heap.host_fn_at(slot);
     if (entry == null || entry.handler == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HostFunc handler = (HostFunc)entry.handler;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 
     // Bound host nesting before touching any VM state, so the caller sees an
     // unmodified engine alongside the pending throw. host_scope_depth is
@@ -3486,12 +3481,12 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     // nested host call from invalidating its caller's handles.
     uint addon_handle_mark = heap.addon_handle_count;
     handler(ctx, entry.udata);
-    heap.addon_handle_count = addon_handle_mark;
+    heap.addon_handles_rewind(addon_handle_mark);
 
     // ES2015 §9.2.2 step 13: a [[Construct]] call evaluates to the created
     // object unless the host explicitly returned an object of its own.
-    if (made_this && !ctx.should_throw && !ctx.result.is_object()) {
-        *ctx.result = ctx.this_val;
+    if (made_this && !ctx.should_throw && !ctx.result.get().is_object()) {
+        ctx.copy_result(ctx.this_val);
     }
 
     heap.host_scope_pop();
@@ -3557,8 +3552,8 @@ fn bool host_is_construct(BuiltinContext* ctx) {
 // Set the return value. A host that never calls this yields undefined,
 // since every dispatch site initialises its result slot that way.
 fn void host_return(BuiltinContext* ctx, TVal v) {
-    if (ctx == null || ctx.result == null) return;
-    *ctx.result = v;
+    if (ctx == null || ctx.result.view() == null) return;
+    ctx.copy_result(v);
 }
 
 // Throw `v` as-is. Does not unwind: control returns to the host, which must
@@ -3600,7 +3595,7 @@ fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
         HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
         if (msg_str != null && msg_key != null) {
             TVal msg_tv;
-            msg_tv.set_string(msg_str);
+            msg_tv.set_string_borrowed(msg_str);
             err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
         }
         ctx.throw_value.set_object(err);
@@ -3659,14 +3654,15 @@ fn TVal host_call(BuiltinContext* ctx, TVal func, TVal* args, uint nargs, TVal t
     return res;
 }
 
-// Build a JS string from UTF-8 bytes, interned like every other engine string.
+// Build a borrowed string value for the active host call. Storing or returning
+// the value acquires an independent reference.
 fn TVal host_new_string(BuiltinContext* ctx, char[] utf8) {
     TVal out;
     out.set_undefined();
     if (ctx == null || ctx.heap == null) return out;
     HString* s = builtin_intern_string(ctx.heap, utf8);
     if (s == null) return out;
-    out.set_string(s);
+    out.set_string_borrowed(s);
     return out;
 }
 
@@ -3720,9 +3716,9 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
     }
 
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
-    if (name_key != null && entry.name != null) {
+    if (name_key != null && entry.name.borrow() != null) {
         TVal name_tv;
-        name_tv.set_string((HString*)entry.name);
+        name_tv.set_string_borrowed(entry.name.borrow());
         func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -3787,12 +3783,12 @@ fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
             dispatch_host(fn_index - HOST_FN_BASE, ctx);
             return;
         }
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     BuiltinFunc handler = builtin_dispatch_table[fn_index];
     if (handler == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     // Builtins routinely allocate a result object and then re-enter the VM
@@ -3814,36 +3810,26 @@ fn void builtin_reset_globals(BuiltinContext* ctx) {
 
     if (heap.checkpoint_count == 0) {
         // === First call: save checkpoint ===
-        uint cap = globals.prop_count + 64;
-        usz key_bytes = (usz)cap * void*::size;
-        usz val_bytes = (usz)cap * TVal::size;
-        heap.checkpoint_keys = (void**)heap.alloc_func(heap.heap_udata, key_bytes);
-        heap.checkpoint_vals = (TVal*)heap.alloc_func(heap.heap_udata, val_bytes);
-        if (heap.checkpoint_keys == null || heap.checkpoint_vals == null) {
-            ctx.result.set_undefined();
+        // No user callback runs while copying, so the property count bounds
+        // the snapshot and its single allocation cannot need to grow.
+        uint cap = globals.prop_count;
+        CheckpointEntry* entries = (CheckpointEntry*)heap.alloc_func(
+            heap.heap_udata, (usz)cap * CheckpointEntry::size);
+        if (entries == null) {
+            ctx.result_undefined();
             return;
         }
-        heap.checkpoint_cap = cap;
-
+        mem::clear(entries, (sz)((usz)cap * CheckpointEntry::size));
         uint count = 0;
         for (uint i = 0; i < globals.prop_count; i++) {
             void* key = globals.prop_key_at(i, ctx.heap);
             if (key == null) continue;
-            if (count >= heap.checkpoint_cap) {
-                uint new_cap = heap.checkpoint_cap * 2;
-                usz new_kb = (usz)new_cap * void*::size;
-                usz new_vb = (usz)new_cap * TVal::size;
-                void* new_keys = heap.realloc_func(heap.heap_udata, heap.checkpoint_keys, new_kb);
-                TVal* new_vals = (TVal*)heap.realloc_func(heap.heap_udata, heap.checkpoint_vals, new_vb);
-                if (new_keys == null || new_vals == null) break;
-                heap.checkpoint_keys = (void**)new_keys;
-                heap.checkpoint_vals = new_vals;
-                heap.checkpoint_cap = new_cap;
-            }
-            heap.checkpoint_keys[count] = key;
-            heap.checkpoint_vals[count] = globals.prop_values()[i].get();
+            entries[count].key.set(heap, (HString*)key);
+            heap.tval_copy_ref(&entries[count].value, globals.prop_values()[i].view());
             count++;
         }
+        heap.checkpoint_entries = entries;
+        heap.checkpoint_cap = cap;
         heap.checkpoint_count = count;
     } else {
         // === Restore checkpoint ===
@@ -3854,17 +3840,17 @@ fn void builtin_reset_globals(BuiltinContext* ctx) {
             if (key == null) continue;
             bool found = false;
             for (uint j = 0; j < heap.checkpoint_count; j++) {
-                if (heap.checkpoint_keys[j] == key) { found = true; break; }
+                if (heap.checkpoint_entries[j].key.borrow() == key) { found = true; break; }
             }
             if (!found) { globals.delete_prop(key, ctx.heap); }
         }
         // Restore checkpoint values
         for (uint i = 0; i < heap.checkpoint_count; i++) {
-            globals.put_prop(heap.checkpoint_keys[i], heap.checkpoint_vals[i],
+            globals.put_prop(heap.checkpoint_entries[i].key.borrow(), heap.checkpoint_entries[i].value,
                              hobject::PROP_FLAGS_WC, ctx.heap);
         }
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -3986,7 +3972,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         HString* tag_key = ensure_tostringtag_symbol(heap);
         if (tag_key != null) {
             TVal tag_tv;
-            tag_tv.set_string(builtin_intern_string(heap, "Reflect"));
+            tag_tv.set_string_borrowed(builtin_intern_string(heap, "Reflect"));
             reflect.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
 
@@ -4372,12 +4358,12 @@ fn void builtin_abstract_module_source_ctor(BuiltinContext* ctx) {
 // -- including %AbstractModuleSource%.prototype itself -- rather than throwing,
 // so `Object.prototype.toString` on an unrelated object still works.
 fn void builtin_abstract_module_source_tostringtag_get(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     if (!ctx.this_val.is_object()) return;
     HObject* o = (HObject*)ctx.this_val.get_heapptr();
     if (o == null || !o.flags.is_module_source) return;
     HString* s = builtin_intern_string(ctx.heap, "Module");
-    if (s != null) ctx.result.set_string(s);
+    if (s != null) ctx.result_string(s);
 }
 
 // The concrete module-source prototype: the [[Prototype]] of every Module

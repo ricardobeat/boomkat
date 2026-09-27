@@ -37,7 +37,7 @@ fn void builtin_weakset(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakset_proto_add(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
-    if (ws == null) { ctx.result.set_undefined(); return; }
+    if (ws == null) { ctx.result_undefined(); return; }
     coll_add_value(ctx, ws, true, "Invalid value used in weak set", false);
 }
 
@@ -46,12 +46,12 @@ fn void builtin_weakset_proto_add(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakset_proto_has(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
-    if (ws == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
+    if (ws == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_boolean(false); return; }
 
     TVal value = ctx.regs[ctx.base_reg];
     int found = weakset_find_value(ws, value, ctx.heap);
-    ctx.result.set_boolean((found >= 0));
+    ctx.result_boolean((found >= 0));
 }
 
 // ============================================================================
@@ -59,8 +59,8 @@ fn void builtin_weakset_proto_has(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakset_proto_delete(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
-    if (ws == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
+    if (ws == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_boolean(false); return; }
     coll_delete(ctx, ws, ctx.regs[ctx.base_reg], 1, false);
 }
 
@@ -86,7 +86,7 @@ fn bool register_weakset_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "WeakSet"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "WeakSet"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

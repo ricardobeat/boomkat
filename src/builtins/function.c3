@@ -191,7 +191,7 @@ fn void builtin_function(BuiltinContext* ctx) {
     // Create an HObject for the compiled function
     HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_obj_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* func_obj = func_obj_raw;
@@ -244,11 +244,11 @@ fn void builtin_function(BuiltinContext* ctx) {
     // {writable:false, enumerable:false, configurable:true}
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     TVal name_tv;
-    name_tv.set_string(builtin_intern_string(ctx.heap, "anonymous"));
+    name_tv.set_string_borrowed(builtin_intern_string(ctx.heap, "anonymous"));
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
     // Return the function object
-    ctx.result.set_object(func_obj);
+    ctx.result_object(func_obj);
 }
 
 // ============================================================================
@@ -265,32 +265,9 @@ fn TVal builtin_arg(BuiltinContext* ctx, uint idx) {
     return undef;
 }
 
-// Store a heap-valued result into `*ctx.result`, taking a reference for it.
-//
-// `*ctx.result` does NOT hold an owned reference on entry: every call
-// convention that reaches a builtin (both dispatch cases in vm_call_fn_impl,
-// invoke_getter's builtin path, and the VM's own CALL_PROP handling) seeds the
-// result slot with a RAW, non-incref'd copy of the callee or of `this`, since
-// that slot doubles as the callee/`this` slot. `Heap.tval_copy_ref` would
-// therefore decref bits the slot never owned, dropping a live reference on the
-// callee itself -- for a builtin reachable as an intrinsic accessor (e.g.
-// `get Error.prototype.stack`) that frees the intrinsic while the accessor
-// cell still points at it, and the object pool then hands the same memory out
-// as an unrelated closure.
-//
-// The correct convention, the one `set_object` and friends already follow, is
-// to incref the incoming value and store its bits raw. Use this whenever the
-// result is read out of a slot the builtin does not own (an argument register,
-// an internal slot such as HObjectError.captured_stack, a property table
-// entry). A value the builtin already owns -- notably a `Heap.call_fn` return,
-// which is itself a raw copy out of the callee's result slot -- is stored with
-// a plain `*ctx.result = v` instead, as array/core/proxy already do.
+// Copy a borrowed value into the builtin result slot.
 fn void builtin_store_result(BuiltinContext* ctx, TVal* src) {
-    if (src.is_heap_allocated()) {
-        void* ptr = src.get_heapptr();
-        if (ptr != null) { ((types::HeapHeader*)ptr).incref(); }
-    }
-    *ctx.result = *src;
+    ctx.copy_result(*src);
 }
 
 // Function.prototype.call(thisArg, ...args)
@@ -343,7 +320,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
                 if (!builtins::builtin_to_object(ctx, new_this)) {
                     return;
                 }
-                new_this = *ctx.result;
+                new_this = ctx.result.get();
             }
         }
     }
@@ -466,7 +443,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         ctx.needs_re_dispatch = true;
         ctx.re_nargs = remaining;
     } else {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
     }
 }
 
@@ -491,7 +468,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
                 if (!builtins::builtin_to_object(ctx, this_arg)) {
                     return;
                 }
-                this_arg = *ctx.result;
+                this_arg = ctx.result.get();
             }
         }
     }
@@ -548,7 +525,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             ctx.needs_re_dispatch = true;
             ctx.re_nargs = 0;
         } else {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
         }
         return;
     }
@@ -676,11 +653,11 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         TVal* old_vs = vm.valstack;
         if (!vm::ensure_valstack(vm, (uint)ctx.base_reg + actual_count + 8)) {
             if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (vm.valstack != old_vs) {
-            ctx.result = vm.valstack + (ctx.result - old_vs);
+            ctx.result = result_slot(vm.valstack + (ctx.result.view() - old_vs));
             ctx.regs = vm.valstack;
         }
         TVal* extended_top = vm.valstack + ctx.base_reg + actual_count + 8;
@@ -754,7 +731,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         ctx.re_nargs = (ushort)actual_count;
     } else {
         if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
     }
 }
 
@@ -845,7 +822,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     if (bound_argc > 0) {
         bound_args_arr = (TVal*)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal::size * bound_argc);
         if (bound_args_arr == null) {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         for (ushort i = 0; i < bound_argc; i++) {
@@ -857,7 +834,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     HObject*? bound_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = bound_raw) {
         if (bound_args_arr != null) ctx.heap.free_func(ctx.heap.heap_udata, bound_args_arr);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* bound_obj = bound_raw;
@@ -1037,7 +1014,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     name_buf[prefix.len..] = target_name[..];
     HString* bound_name = builtin_intern_string(ctx.heap, name_buf);
     if (bound_name != null) {
-        TVal name_tv; name_tv.set_string(bound_name);
+        TVal name_tv; name_tv.set_string_borrowed(bound_name);
         bound_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
     }
 
@@ -1047,7 +1024,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     // .prototype at construct time via the re-dispatch path below.
 
     // Result
-    ctx.result.set_object(bound_obj);
+    ctx.result_object(bound_obj);
 }
 
 // Whether `name` can appear as the optional PropertyName in the NativeFunction
@@ -1103,9 +1080,9 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
         int len = (int)(io::bprintf(&buf, "function %s() { [native code] }", (String)name) ?? buf[:0]).len;
         if (len > 0 && len < 256) {
             HString* result = builtin_intern_string(ctx.heap, buf[:len]);
-            ctx.result.set_string(result);
+            ctx.result_string(result);
         } else {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
         }
     } else if (this_val.is_object() && this_val.get_heapptr() != null) {
         HObject* obj = (HObject*)this_val.get_heapptr();
@@ -1115,7 +1092,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             // internal slots (which hold proxy data, not function data).
             if (obj.flags.exotic_proxyobj) {
                 HString* result = builtin_intern_string(ctx.heap, "function () { [native code] }");
-                ctx.result.set_string(result);
+                ctx.result_string(result);
                 return;
             }
 
@@ -1135,7 +1112,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             }
             if (cf != null && cf.src_ptr != null && cf.src_len > 0) {
                 HString* result = builtin_intern_string(ctx.heap, cf.src_ptr[:cf.src_len]);
-                ctx.result.set_string(result);
+                ctx.result_string(result);
                 return;
             }
 
@@ -1175,7 +1152,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             buf[pos] = 0;
 
             HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
-            ctx.result.set_string(result);
+            ctx.result_string(result);
         } else {
             builtin_throw(ctx, ctx.heap.type_err_proto, "Function.prototype.toString called on non-callable");
         }
@@ -1199,7 +1176,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     } else if (c_val.is_object() && c_val.get_heapptr() != null) {
         callable = ((HObject*)c_val.get_heapptr()).is_callable();
     }
-    if (!callable) { ctx.result.set_boolean(false); return; }
+    if (!callable) { ctx.result_boolean(false); return; }
 
     // Step 2: If C has a [[BoundTargetFunction]] slot, recurse on the target.
     // The recursion re-enters at step 2, so a target that is itself bound
@@ -1217,7 +1194,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     // Step 3: If Type(V) is not Object, return false.
     TVal v_val = (ctx.argc > 0) ? builtin_arg(ctx, 0) : (TVal){};
     if (ctx.argc == 0 || !v_val.is_object() || v_val.get_heapptr() == null) {
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
         return;
     }
 
@@ -1229,7 +1206,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
         HObject* c_obj = (HObject*)c_val.get_heapptr();
         hobject::AccessorResult acc = c_obj.find_accessor_proto(proto_key, true, ctx.heap);
         if (acc.found) {
-            if (ctx.heap.call_fn == null || ctx.vm == null) { ctx.result.set_boolean(false); return; }
+            if (ctx.heap.call_fn == null || ctx.vm == null) { ctx.result_boolean(false); return; }
             TVal this_for_getter; this_for_getter.set_object(c_obj);
             proto_val = ctx.heap.call_fn(ctx.vm, acc.accessor_fn, null, 0, this_for_getter);
             if (ctx.heap.has_error) {
@@ -1273,7 +1250,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
         wdepth++;
         if (v_obj == p_obj) { matched = true; break; }
     }
-    ctx.result.set_boolean(matched);
+    ctx.result_boolean(matched);
 }
 
 // Restricted function property getter, throws TypeError on access. Used as
@@ -1298,12 +1275,12 @@ fn void builtin_function_proto_restricted_setter(BuiltinContext* ctx) {
 fn void builtin_bound_call(BuiltinContext* ctx) {
     TVal func_val = ctx.regs[ctx.base_reg - 2];
     if (!func_val.is_object()) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* bound_obj = (HObject*)func_val.get_heapptr();
     if (bound_obj == null || !bound_obj.flags.is_bound) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -1331,7 +1308,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
     uint max_total = bound_argc + ctx.argc;
     if (max_total > 0) {
         all_args = (TVal*)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal::size * max_total);
-        if (all_args == null) { ctx.result.set_undefined(); return; }
+        if (all_args == null) { ctx.result_undefined(); return; }
     }
     defer if (all_args != null) ctx.heap.free_func(ctx.heap.heap_udata, all_args);
     uint actual_total = 0;
@@ -1479,7 +1456,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
         }
     }
 
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -1576,7 +1553,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     // { [[Writable]]: false, [[Enumerable]]: false, [[Configurable]]: true }
     HString* proto_name_key = (HString*)heap.strs[heap::BuiltinStr.NAME];
     TVal proto_name_tv;
-    proto_name_tv.set_string((HString*)heap.strs[heap::BuiltinStr.EMPTY]);
+    proto_name_tv.set_string_borrowed((HString*)heap.strs[heap::BuiltinStr.EMPTY]);
     proto.put_prop(proto_name_key, proto_name_tv, hobject::PROP_FLAGS_NWC, heap);
 
     // ES2017 §9.2.7 AddRestrictedFunctionProperties(F): attach `caller` and
@@ -1611,7 +1588,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
             }
             HString* get_name = builtin_intern_string(heap, "");
             if (get_name != null) {
-                TVal ntv; ntv.set_string(get_name);
+                TVal ntv; ntv.set_string_borrowed(get_name);
                 HString* nkey = heap.str(heap::BuiltinStr.NAME);
                 if (nkey != null) get_fn.put_prop(nkey, ntv, hobject::PROP_FLAGS_NNC, heap);
             }

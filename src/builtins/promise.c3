@@ -254,7 +254,7 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
 fn void builtin_promise_identity(BuiltinContext* ctx) {
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
-    *ctx.result = arg;
+    ctx.copy_result(arg);
 }
 
 // PromiseReactionJob's Thrower closure, the substitute handler for a
@@ -481,11 +481,11 @@ fn void builtin_promise_resolve_callback(BuiltinContext* ctx) {
             }
         }
     }
-    if (promise == null) { ctx.result.set_undefined(); return; }
+    if (promise == null) { ctx.result_undefined(); return; }
 
     // [[AlreadyCalled]] guard: executor (or combinator) calling resolve then
     // reject must leave the promise settled by the first call only.
-    if (promise_already_called(cell, heap)) { ctx.result.set_undefined(); return; }
+    if (promise_already_called(cell, heap)) { ctx.result_undefined(); return; }
     promise_mark_already_called(cell, heap);
 
     TVal value;
@@ -494,7 +494,7 @@ fn void builtin_promise_resolve_callback(BuiltinContext* ctx) {
 
     promise_resolve_with_value(promise, value, heap, ctx.vm);
     // Per ES6 §25.4.1.3.2: Promise resolve functions return undefined.
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 fn void builtin_promise_reject_callback(BuiltinContext* ctx) {
@@ -519,13 +519,13 @@ fn void builtin_promise_reject_callback(BuiltinContext* ctx) {
             }
         }
     }
-    if (promise == null) { ctx.result.set_undefined(); return; }
+    if (promise == null) { ctx.result_undefined(); return; }
 
-    if (promise_already_called(cell, heap)) { ctx.result.set_undefined(); return; }
+    if (promise_already_called(cell, heap)) { ctx.result_undefined(); return; }
     promise_mark_already_called(cell, heap);
 
     uint state = promise_get_state(promise, PROMISE_PENDING);
-    if (state != PROMISE_PENDING) { ctx.result.set_undefined(); return; }
+    if (state != PROMISE_PENDING) { ctx.result_undefined(); return; }
 
     TVal reason;
     reason.set_undefined();
@@ -534,7 +534,7 @@ fn void builtin_promise_reject_callback(BuiltinContext* ctx) {
     promise_settle(promise, PROMISE_REJECTED, &reason, heap);
     promise_trigger_reactions(promise, heap, ctx.vm);
     // Per ES6 §25.4.1.3.1: Promise reject functions return undefined.
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // Shared [[AlreadyCalled]] flag is held in a per-capability "cell" object
@@ -625,7 +625,7 @@ fn PromiseCapability promise_new_capability(Heap* heap, HObject* promise) {
     }
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
     if (name_key != null) {
-        TVal name_tv; name_tv.set_string(heap.str(heap::BuiltinStr.EMPTY));
+        TVal name_tv; name_tv.set_string_borrowed(heap.str(heap::BuiltinStr.EMPTY));
         resolve_func.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
         reject_func.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
@@ -676,7 +676,7 @@ fn HObject*? promise_create_synthetic_executor(Heap* heap, HObject* hole) {
     }
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
     if (name_key != null) {
-        TVal name_tv; name_tv.set_string(heap.str(heap::BuiltinStr.EMPTY));
+        TVal name_tv; name_tv.set_string_borrowed(heap.str(heap::BuiltinStr.EMPTY));
         fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* hole_key = builtin_intern_string(heap, "\xFFhole");
@@ -895,15 +895,15 @@ fn void builtin_promise(BuiltinContext* ctx) {
 
     HObject*? prom_raw = promise_create(ctx.heap);
     if (catch err = prom_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* promise = prom_raw;
     ctx.heap.set_prototype(promise, builtin_proto_from_new_target(ctx, ctx.heap.promise_proto));
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     if (exec_func != null && (*exec_func.extra_ptr()).func.comp_func == null && (*exec_func.extra_ptr()).func.builtin_fn_index < 0) {
-        ctx.result.set_object(promise);
+        ctx.result_object(promise);
         return;
     }
 
@@ -913,7 +913,7 @@ fn void builtin_promise(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     PromiseCapability cap = promise_new_capability(heap, promise);
     if (cap.resolve_func == null || cap.reject_func == null) {
-        ctx.result.set_object(promise);
+        ctx.result_object(promise);
         return;
     }
     HObject* resolve_func = cap.resolve_func;
@@ -950,7 +950,7 @@ fn void builtin_promise(BuiltinContext* ctx) {
         }
     }
 
-    ctx.result.set_object(promise);
+    ctx.result_object(promise);
 }
 
 // ============================================================================
@@ -959,7 +959,7 @@ fn void builtin_promise(BuiltinContext* ctx) {
 
 // Promise[Symbol.species] getter: returns `this` (the constructor).
 fn void builtin_promise_species_getter(BuiltinContext* ctx) {
-    *ctx.result = ctx.regs[ctx.base_reg - 1];
+    ctx.copy_result(ctx.regs[ctx.base_reg - 1]);
 }
 
 // ============================================================================
@@ -974,7 +974,7 @@ fn void species_throw_typeerror(Heap* heap, char[] msg) {
         err.prototype = heap.type_err_proto;
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
-            TVal msg_tv; msg_tv.set_string(msg_str);
+            TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
         }
@@ -1063,7 +1063,7 @@ fn void promise_throw_typeerror(BuiltinContext* ctx, String msg) {
     err.prototype = ctx.heap.type_err_proto;
     HString* msg_str = builtin_intern_string(ctx.heap, msg);
     if (msg_str != null) {
-        TVal msg_tv; msg_tv.set_string(msg_str);
+        TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
         err.put_prop(ctx.heap.str(heap::BuiltinStr.MESSAGE), msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
     }
     ctx.should_throw = true;
@@ -1166,7 +1166,7 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
         // Fast path: allocate a plain promise without calling the constructor.
         HObject*? new_prom_raw = promise_create(ctx.heap);
         if (catch err = new_prom_raw) {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         new_promise = new_prom_raw;
@@ -1175,7 +1175,7 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
         TVal ctor_tv; ctor_tv.set_object(ctor);
         HObject*? hole_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = hole_raw) {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         HObject* hole = hole_raw;
@@ -1194,7 +1194,7 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
         new_promise = null;
         // Store cap_p so we can set ctx.result at the end.
         // Use a local TVal rather than HObject* since it may not be PROMISE class.
-        *ctx.result = cap_p;  // tentatively set; overwritten below if we return early
+        ctx.copy_result(cap_p);  // tentatively set; overwritten below if we return early
         // We still need to build the reaction; carry cap_p for the return value.
         // Fall through with use_capability = true.
     }
@@ -1202,7 +1202,7 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
     // Build reaction object
     HObject*? reaction_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = reaction_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* reaction = reaction_raw;
@@ -1230,8 +1230,8 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
         if (cr_key != null) reaction.put_prop(cr_key, cap_resolve_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         if (cj_key != null) reaction.put_prop(cj_key, cap_reject_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         if (cp_key != null) {
-            // Store the cap_promise ref (already set in *ctx.result above).
-            TVal cp_tv = *ctx.result;
+            // Store the cap_promise ref (already set in ctx.result.get() above).
+            TVal cp_tv = ctx.result.get();
             reaction.put_prop(cp_key, cp_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
     }
@@ -1252,7 +1252,7 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
     // ctx.result was already set to cap_p above.  For the default path,
     // set it now.
     if (!use_capability) {
-        ctx.result.set_object(new_promise);
+        ctx.result_object(new_promise);
     }
     // (use_capability case: ctx.result already holds cap_p)
 }
@@ -1296,10 +1296,10 @@ fn void builtin_promise_proto_catch(BuiltinContext* ctx) {
         // Walk the prototype to find "then".
         // We can't call promise_object_get on a primitive directly, use its proto.
         promise_obj = proto;
-        if (promise_obj == null) { ctx.result.set_undefined(); return; }
+        if (promise_obj == null) { ctx.result_undefined(); return; }
     }
     HString* then_key = builtin_intern_string(heap, "then");
-    if (then_key == null) { ctx.result.set_undefined(); return; }
+    if (then_key == null) { ctx.result_undefined(); return; }
 
     // GetV(promise, "then"), look up on the (possibly wrapped) object.
     TVal then_fn;
@@ -1313,7 +1313,7 @@ fn void builtin_promise_proto_catch(BuiltinContext* ctx) {
     }
 
     // Call(then, promise, [undefined, onRejected])
-    if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+    if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
     bool then_callable = then_fn.is_lightfunc() ||
         (then_fn.is_object() && then_fn.get_heapptr() != null &&
          ((HObject*)then_fn.get_heapptr()).is_callable());
@@ -1332,7 +1332,7 @@ fn void builtin_promise_proto_catch(BuiltinContext* ctx) {
         heap.has_error = false;
         return;
     }
-    *ctx.result = ret;
+    ctx.copy_result(ret);
 }
 
 // ============================================================================
@@ -1433,7 +1433,7 @@ fn bool promise_resolve_abstract(BuiltinContext* ctx, HObject* ctor, TVal value,
 // ThenFinally) or re-throws it (for CatchFinally, is_reject=true).
 fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
     Heap* heap = ctx.heap;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     if (ctx.callee_obj == null) return;
 
     TVal passthrough;
@@ -1510,7 +1510,7 @@ fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
         }
         return;
     }
-    *ctx.result = invoke_result;
+    ctx.copy_result(invoke_result);
 }
 
 fn void builtin_promise_then_finally(BuiltinContext* ctx) {
@@ -1530,7 +1530,7 @@ fn void builtin_promise_then_finally(BuiltinContext* ctx) {
         if (pv_key != null && ctx.callee_obj != null) {
             if (try v = ctx.callee_obj.get_prop(pv_key, ctx.heap)) pv = v;
         }
-        *ctx.result = pv;
+        ctx.copy_result(pv);
         return;
     }
     promise_finally_wrapper_body(ctx, false);
@@ -1606,8 +1606,8 @@ fn void builtin_promise_proto_finally(BuiltinContext* ctx) {
         }
         HObject*? then_wrap_raw = promise_make_finally_wrapper(heap, (uint)Builtin.PROMISE_THEN_FINALLY.ordinal, on_finally, ctor);
         HObject*? catch_wrap_raw = promise_make_finally_wrapper(heap, (uint)Builtin.PROMISE_CATCH_FINALLY.ordinal, on_finally, ctor);
-        if (catch err1 = then_wrap_raw) { ctx.result.set_undefined(); return; }
-        if (catch err2 = catch_wrap_raw) { ctx.result.set_undefined(); return; }
+        if (catch err1 = then_wrap_raw) { ctx.result_undefined(); return; }
+        if (catch err2 = catch_wrap_raw) { ctx.result_undefined(); return; }
         then_fulfill.set_object(then_wrap_raw);
         then_reject.set_object(catch_wrap_raw);
     }
@@ -1626,10 +1626,10 @@ fn void builtin_promise_proto_finally(BuiltinContext* ctx) {
             else { proto = heap.string_proto; }
         }
         promise_obj = proto;
-        if (promise_obj == null) { ctx.result.set_undefined(); return; }
+        if (promise_obj == null) { ctx.result_undefined(); return; }
     }
     HString* then_key = builtin_intern_string(heap, "then");
-    if (then_key == null) { ctx.result.set_undefined(); return; }
+    if (then_key == null) { ctx.result_undefined(); return; }
     TVal then_fn;
     if (!promise_object_get(heap, ctx.vm, promise_obj, then_key, &then_fn)) {
         if (heap.has_error) {
@@ -1646,7 +1646,7 @@ fn void builtin_promise_proto_finally(BuiltinContext* ctx) {
         builtin_throw_no_result_change(ctx, heap.type_err_proto, "then is not callable");
         return;
     }
-    if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+    if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
     TVal[2] call_args;
     call_args[0] = then_fulfill;
     call_args[1] = then_reject;
@@ -1657,7 +1657,7 @@ fn void builtin_promise_proto_finally(BuiltinContext* ctx) {
         heap.has_error = false;
         return;
     }
-    *ctx.result = ret;
+    ctx.copy_result(ret);
 }
 
 // ============================================================================
@@ -1705,7 +1705,7 @@ fn void builtin_promise_resolve(BuiltinContext* ctx) {
                         bool same_ctor = xctor.is_object() && xctor.get_heapptr() != null &&
                             xctor.get_heapptr() == this_ctor_val.get_heapptr();
                         if (same_ctor) {
-                            *ctx.result = val;
+                            ctx.copy_result(val);
                             return;
                         }
                     }
@@ -1725,7 +1725,7 @@ fn void builtin_promise_resolve(BuiltinContext* ctx) {
                         return;
                     }
                 }
-                *ctx.result = cap_p_tv;
+                ctx.copy_result(cap_p_tv);
                 return;
             } else {
                 // ES6 §25.4.1.5 step 7/8: capability is incomplete or
@@ -1760,7 +1760,7 @@ fn void builtin_promise_resolve(BuiltinContext* ctx) {
             bool same_ctor = xctor.is_object() && xctor.get_heapptr() != null &&
                 (HObject*)xctor.get_heapptr() == ctx.heap.promise_ctor;
             if (same_ctor) {
-                *ctx.result = val;
+                ctx.copy_result(val);
                 return;
             }
         }
@@ -1772,13 +1772,13 @@ fn void builtin_promise_resolve(BuiltinContext* ctx) {
     // `.then` propagation are shared with the executor's resolve callback).
     HObject*? prom_raw = promise_create(ctx.heap);
     if (catch err = prom_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* promise = prom_raw;
     promise_resolve_with_value(promise, val, ctx.heap, ctx.vm);
 
-    ctx.result.set_object(promise);
+    ctx.result_object(promise);
 }
 
 // ============================================================================
@@ -1821,7 +1821,7 @@ fn void builtin_promise_reject(BuiltinContext* ctx) {
                         return;
                     }
                 }
-                *ctx.result = cap_p_tv;
+                ctx.copy_result(cap_p_tv);
                 return;
             } else {
                 // ES6 §25.4.1.5 step 7/8: capability is incomplete or
@@ -1836,13 +1836,13 @@ fn void builtin_promise_reject(BuiltinContext* ctx) {
 
     HObject*? prom_raw = promise_create(ctx.heap);
     if (catch err = prom_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* promise = prom_raw;
     promise_settle(promise, PROMISE_REJECTED, &reason, ctx.heap);
 
-    ctx.result.set_object(promise);
+    ctx.result_object(promise);
 }
 
 // ============================================================================
@@ -1868,7 +1868,7 @@ fn void builtin_promise_with_resolvers(BuiltinContext* ctx) {
     }
 
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err_h = hole_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
     HObject* hole = hole_raw;
     hole.prototype = heap.object_proto;
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole)) {
@@ -1882,7 +1882,7 @@ fn void builtin_promise_with_resolvers(BuiltinContext* ctx) {
     // Step 3: Let obj be OrdinaryObjectCreate(%Object.prototype%).
     // Steps 4-6: CreateDataPropertyOrThrow "promise"/"resolve"/"reject".
     HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err_o = obj_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_o = obj_raw) { ctx.result_undefined(); return; }
     HObject* obj = obj_raw;
     obj.prototype = heap.object_proto;
 
@@ -1893,7 +1893,7 @@ fn void builtin_promise_with_resolvers(BuiltinContext* ctx) {
     if (resolve_key != null) obj.put_prop(resolve_key, cap_resolve_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     if (reject_key  != null) obj.put_prop(reject_key,  cap_reject_tv,  hobject::PROP_FLAGS_WEC, ctx.heap);
 
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // ============================================================================
@@ -1946,7 +1946,7 @@ fn void builtin_promise_try(BuiltinContext* ctx) {
 
     // Step 2: NewPromiseCapability(C)
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err_h = hole_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
     HObject* hole = hole_raw;
     hole.prototype = heap.object_proto;
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole)) {
@@ -1978,7 +1978,7 @@ fn void builtin_promise_try(BuiltinContext* ctx) {
         TVal err_val = heap.error_value;
         promise_clear_error_channels(heap, ctx.vm);
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        *ctx.result = cap_promise_tv;
+        ctx.copy_result(cap_promise_tv);
         return;
     }
 
@@ -1997,7 +1997,7 @@ fn void builtin_promise_try(BuiltinContext* ctx) {
     // the capability already in hand, which resolves it identically (adopting
     // thenables, wrapping plain values and foreign promises alike).
     if (promise_try_is_own_promise(ctx, ctor_obj, status)) {
-        *ctx.result = status;
+        ctx.copy_result(status);
         return;
     }
     if (ctx.should_throw) return;
@@ -2012,7 +2012,7 @@ fn void builtin_promise_try(BuiltinContext* ctx) {
             return;
         }
     }
-    *ctx.result = cap_promise_tv;
+    ctx.copy_result(cap_promise_tv);
 }
 
 // ============================================================================
@@ -2106,7 +2106,7 @@ fn bool promise_enqueue_thenable_job(Heap* heap, HObject* promise, TVal val, voi
 // shared [[AlreadyResolved]] cell, so a throw after resolution is ignored.
 fn void builtin_promise_resolve_thenable_job(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     if (ctx.callee_obj == null) return;
 
     HString* then_hidden_key = builtin_intern_string(heap, "\xFFthen");
@@ -2268,7 +2268,7 @@ fn HObject*? promise_create_element_callback(Heap* heap, uint builtin_index, HOb
     }
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
     if (name_key != null) {
-        TVal name_tv; name_tv.set_string(heap.str(heap::BuiltinStr.EMPTY));
+        TVal name_tv; name_tv.set_string_borrowed(heap.str(heap::BuiltinStr.EMPTY));
         cb.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* state_key = builtin_intern_string(heap, "\xFFstate");
@@ -2291,7 +2291,7 @@ fn bool promise_element_guard(BuiltinContext* ctx) {
     HString* ac_key = builtin_intern_string(heap, "\xFFalreadyCalled");
     if (ac_key == null) return false;
     if (try acv = ctx.callee_obj.get_prop(ac_key, ctx.heap)) {
-        if (acv.is_boolean() && acv.get_boolean()) { ctx.result.set_undefined(); return true; }
+        if (acv.is_boolean() && acv.get_boolean()) { ctx.result_undefined(); return true; }
     }
     TVal ac_true; ac_true.set_boolean(true);
     ctx.callee_obj.put_prop(ac_key, ac_true, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -2550,7 +2550,7 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
         HString* status_key = builtin_intern_string(heap, "status");
         HString* value_key = heap.str(heap::BuiltinStr.VALUE);
         TVal fulfilled_status;
-        fulfilled_status.set_string(builtin_intern_string(heap, "fulfilled"));
+        fulfilled_status.set_string_borrowed(builtin_intern_string(heap, "fulfilled"));
         if (status_key != null) result_obj.put_prop(status_key, fulfilled_status, hobject::PROP_FLAGS_WEC, ctx.heap);
         if (value_key != null) result_obj.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
         TVal result_tv;
@@ -2637,7 +2637,7 @@ fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
         HString* status_key = builtin_intern_string(heap, "status");
         HString* reason_key = builtin_intern_string(heap, "reason");
         TVal rejected_status;
-        rejected_status.set_string(builtin_intern_string(heap, "rejected"));
+        rejected_status.set_string_borrowed(builtin_intern_string(heap, "rejected"));
         if (status_key != null) result_obj.put_prop(status_key, rejected_status, hobject::PROP_FLAGS_WEC, ctx.heap);
         if (reason_key != null) result_obj.put_prop(reason_key, reason, hobject::PROP_FLAGS_WEC, ctx.heap);
         TVal result_tv;
@@ -2837,7 +2837,7 @@ fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
 
                 HString* msg = builtin_intern_string(heap, "All promises were rejected");
                 TVal msg_tv;
-                msg_tv.set_string(msg);
+                msg_tv.set_string_borrowed(msg);
 
                 HObject*? agg_raw = heap.alloc_object(hobject::ObjClass.ERROR);
                 TVal agg_tv;
@@ -3167,7 +3167,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
 
     // Step 2: NewPromiseCapability(C)
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err_h = hole_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
     HObject* hole = hole_raw;
     hole.prototype = heap.object_proto;
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole)) {
@@ -3195,7 +3195,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         TVal err_val = heap.error_value;
         heap.has_error = false;
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
         return;
     }
     bool resolve_callable = is_callable_tval(resolve_fn);
@@ -3208,13 +3208,13 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
-                TVal msg_tv; msg_tv.set_string(msg_str);
+                TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
                 err_obj.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
             }
             err_tv.set_object(err_obj);
         }
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_tv);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
         return;
     }
 
@@ -3225,13 +3225,13 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         TVal err_val; err_val.set_undefined();
         if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
         return;
     }
 
     // Allocate result array and shared state
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err_arr = arr_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_arr = arr_raw) { ctx.result_undefined(); return; }
     HObject* arr = arr_raw;
     arr.prototype = heap.array_proto;
 
@@ -3243,7 +3243,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
 
     HObject*? state_raw = promise_create_all_state(heap, promise, arr, remaining,
                                                     cap_resolve_tv, cap_reject_tv);
-    if (catch err_s = state_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_s = state_raw) { ctx.result_undefined(); return; }
     HObject* state = state_raw;
 
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
@@ -3270,7 +3270,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
                 promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
             }
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
             return;
         }
         HObject* step_obj = (HObject*)step_result.get_heapptr();
@@ -3284,7 +3284,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
                 // IteratorComplete abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
                 TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
                 return;
             }
             done = builtin_to_boolean(&dv_done);
@@ -3298,7 +3298,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
                 // IteratorValue abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
                 TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
                 return;
             }
         }
@@ -3312,7 +3312,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
             heap.has_error = false;
             promise_iterator_close(heap, ctx.vm, iterator, &err_val);
             promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
             return;
         }
 
@@ -3321,11 +3321,11 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         HObject*? reject_raw  = promise_create_element_callback(heap, Builtin.PROMISE_ALL_REJECT_ELEMENT.ordinal, state, idx);
         if (catch ef = fulfill_raw) {
             promise_iterator_close(heap, ctx.vm, iterator);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         if (catch er = reject_raw) {
             promise_iterator_close(heap, ctx.vm, iterator);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         HObject* fulfill_fn = fulfill_raw;
         HObject* reject_fn  = reject_raw;
@@ -3365,7 +3365,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
             if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
             promise_iterator_close(heap, ctx.vm, iterator, &err_val);
             promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
             return;
         }
     }
@@ -3405,7 +3405,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm, report: false);
     }
 
-    if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+    if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
 }
 
 // ============================================================================
@@ -3425,7 +3425,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
     }
 
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err_h = hole_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
     HObject* hole = hole_raw;
     hole.prototype = heap.object_proto;
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole)) {
@@ -3451,7 +3451,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
     if (heap.has_error) {
         TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
     if (!is_callable_tval(resolve_fn)) {
         HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
@@ -3461,12 +3461,12 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
-                TVal mt; mt.set_string(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
+                TVal mt; mt.set_string_borrowed(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
             }
             err_tv.set_object(err_obj);
         }
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_tv);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
 
     TVal iterator; iterator.set_undefined();
@@ -3474,11 +3474,11 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         TVal err_val; err_val.set_undefined();
         if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
 
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err_arr = arr_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_arr = arr_raw) { ctx.result_undefined(); return; }
     HObject* arr = arr_raw;
     arr.prototype = heap.array_proto;
 
@@ -3487,7 +3487,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
 
     HObject*? state_raw = promise_create_all_state(heap, promise, arr, remaining,
                                                     cap_resolve_tv, cap_reject_tv);
-    if (catch err_s = state_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_s = state_raw) { ctx.result_undefined(); return; }
     HObject* state = state_raw;
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
 
@@ -3504,7 +3504,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
                 promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
             }
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         HObject* step_obj = (HObject*)step_result.get_heapptr();
         HString* done_key = heap.str(heap::BuiltinStr.DONE);
@@ -3517,7 +3517,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
                 // IteratorComplete abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
                 TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
                 return;
             }
             done = builtin_to_boolean(&dv_done);
@@ -3531,7 +3531,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
                 // IteratorValue abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
                 TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
                 return;
             }
         }
@@ -3544,18 +3544,18 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
             promise_clear_error_channels(heap, ctx.vm);
             promise_iterator_close(heap, ctx.vm, iterator, &err_val);
             promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
 
         HObject*? fulfill_raw = promise_create_element_callback(heap, Builtin.PROMISE_ALLSETTLED_RESOLVE_ELEMENT.ordinal, state, idx);
         HObject*? reject_raw  = promise_create_element_callback(heap, Builtin.PROMISE_ALLSETTLED_REJECT_ELEMENT.ordinal, state, idx);
         if (catch ef = fulfill_raw) {
             promise_iterator_close(heap, ctx.vm, iterator);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         if (catch er = reject_raw) {
             promise_iterator_close(heap, ctx.vm, iterator);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         HObject* fulfill_fn = fulfill_raw;
         HObject* reject_fn  = reject_raw;
@@ -3585,7 +3585,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
             if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
             promise_iterator_close(heap, ctx.vm, iterator, &err_val);
             promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
     }
 
@@ -3616,7 +3616,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm, report: false);
     }
 
-    if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+    if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
 }
 
 // ============================================================================
@@ -3636,7 +3636,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     }
 
     HObject*? hole_raw_any = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err_h = hole_raw_any) { ctx.result.set_undefined(); return; }
+    if (catch err_h = hole_raw_any) { ctx.result_undefined(); return; }
     HObject* hole_any = hole_raw_any;
     hole_any.prototype = heap.object_proto;
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole_any)) {
@@ -3662,7 +3662,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     if (heap.has_error) {
         TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
     if (!is_callable_tval(resolve_fn)) {
         HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
@@ -3672,12 +3672,12 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
-                TVal mt; mt.set_string(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
+                TVal mt; mt.set_string_borrowed(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
             }
             err_tv.set_object(err_obj);
         }
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_tv);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
 
     TVal iterator; iterator.set_undefined();
@@ -3685,7 +3685,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         TVal err_val; err_val.set_undefined();
         if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
 
     // Pre-allocate errors array and shared state for any.
@@ -3727,7 +3727,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         if (cap_j_key != null) sr.put_prop(cap_j_key, cap_reject_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         state = sr;
     }
-    if (state == null) { ctx.result.set_undefined(); return; }
+    if (state == null) { ctx.result_undefined(); return; }
 
     HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
     usz remaining = 1;
@@ -3746,7 +3746,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
                 promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
             }
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         HObject* step_obj = (HObject*)step_result.get_heapptr();
         HString* done_key = heap.str(heap::BuiltinStr.DONE);
@@ -3759,7 +3759,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
                 // IteratorComplete abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
                 TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
                 return;
             }
             done = builtin_to_boolean(&dv_done);
@@ -3773,7 +3773,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
                 // IteratorValue abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
                 TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
                 return;
             }
         }
@@ -3786,18 +3786,18 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
             promise_clear_error_channels(heap, ctx.vm);
             promise_iterator_close(heap, ctx.vm, iterator, &err_val);
             promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
 
         HObject*? fulfill_raw = promise_create_element_callback(heap, Builtin.PROMISE_ANY_RESOLVE_ELEMENT.ordinal, state, idx);
         HObject*? reject_raw  = promise_create_element_callback(heap, Builtin.PROMISE_ANY_REJECT_ELEMENT.ordinal, state, idx);
         if (catch ef = fulfill_raw) {
             promise_iterator_close(heap, ctx.vm, iterator);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         if (catch er = reject_raw) {
             promise_iterator_close(heap, ctx.vm, iterator);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         HObject* fulfill_fn = fulfill_raw;
         HObject* reject_fn  = reject_raw;
@@ -3827,7 +3827,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
             if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
             promise_iterator_close(heap, ctx.vm, iterator, &err_val);
             promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
     }
 
@@ -3852,7 +3852,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     if (remaining == 0) {
         // All rejected (empty iterable): settle outer with AggregateError([])
         HString* msg = builtin_intern_string(heap, "All promises were rejected");
-        TVal msg_tv; msg_tv.set_string(msg);
+        TVal msg_tv; msg_tv.set_string_borrowed(msg);
         HObject*? agg_raw = heap.alloc_object(hobject::ObjClass.ERROR);
         TVal agg_tv; agg_tv.set_undefined();
         if (try agg = agg_raw) {
@@ -3873,7 +3873,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm, report: false);
     }
 
-    if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+    if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
 }
 
 // ============================================================================
@@ -3893,7 +3893,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
     }
 
     HObject*? hole_raw_race = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err_h = hole_raw_race) { ctx.result.set_undefined(); return; }
+    if (catch err_h = hole_raw_race) { ctx.result_undefined(); return; }
     HObject* hole_race = hole_raw_race;
     hole_race.prototype = heap.object_proto;
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole_race)) {
@@ -3919,7 +3919,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
     if (heap.has_error) {
         TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
     if (!is_callable_tval(resolve_fn)) {
         HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
@@ -3929,12 +3929,12 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
-                TVal mt; mt.set_string(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
+                TVal mt; mt.set_string_borrowed(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
             }
             err_tv.set_object(err_obj);
         }
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_tv);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
 
     TVal iterator; iterator.set_undefined();
@@ -3942,7 +3942,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
         TVal err_val; err_val.set_undefined();
         if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
         promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-        if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
 
     // Shared state for race (uses rejected flag as "settled" flag).
@@ -3952,7 +3952,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
 
     HObject*? state_raw = promise_create_all_state(heap, promise, arr, 0,
                                                     cap_resolve_tv, cap_reject_tv);
-    if (catch err_s = state_raw) { ctx.result.set_undefined(); return; }
+    if (catch err_s = state_raw) { ctx.result_undefined(); return; }
     HObject* state = state_raw;
 
     bool iter_done = false;
@@ -3968,7 +3968,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
                 promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
             }
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
         HObject* step_obj = (HObject*)step_result.get_heapptr();
         HString* done_key = heap.str(heap::BuiltinStr.DONE);
@@ -3981,7 +3981,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
                 // IteratorComplete abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
                 TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
                 return;
             }
             done = builtin_to_boolean(&dv_done);
@@ -3995,7 +3995,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
                 // IteratorValue abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
                 TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
                 promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
                 return;
             }
         }
@@ -4008,7 +4008,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
             promise_clear_error_channels(heap, ctx.vm);
             promise_iterator_close(heap, ctx.vm, iterator, &err_val);
             promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
 
         // For race, onFulfilled = cap_resolve, onRejected = cap_reject
@@ -4017,12 +4017,12 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
             if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
             promise_iterator_close(heap, ctx.vm, iterator, &err_val);
             promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); } return;
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
         }
     }
 
     // Race with empty iterable: cap_promise stays pending forever (per spec).
-    if (cap_promise_tv.is_object()) { *ctx.result = cap_promise_tv; } else { ctx.result.set_undefined(); }
+    if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
 }
 
 // ============================================================================
@@ -4042,7 +4042,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
 
     // Cache the reaction-chain "next" key so heap.c3's GC mark phase can
     // walk pending reactions without importing this module (circular).
-    heap.promise_reaction_next_key = (void*)builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY);
+    heap.promise_reaction_next_key.set(heap, builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY));
 
     if (!register_string_proto_method(proto, heap, "then",    Builtin.PROMISE_PROTO_THEN.ordinal))    return false;
     if (!register_string_proto_method(proto, heap, "catch",   Builtin.PROMISE_PROTO_CATCH.ordinal))   return false;
@@ -4051,7 +4051,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Promise"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Promise"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -4089,7 +4089,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
 
         HString* name_key = heap.str(heap::BuiltinStr.NAME);
         HString* name_hstr = builtin_intern_string(heap, "Promise");
-        TVal name_tv; name_tv.set_string(name_hstr);
+        TVal name_tv; name_tv.set_string_borrowed(name_hstr);
         ctor.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -4107,7 +4107,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
                 if (getter_name_key != null) {
                     HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");
                     if (getter_name_str != null) {
-                        TVal gn_tv; gn_tv.set_string(getter_name_str);
+                        TVal gn_tv; gn_tv.set_string_borrowed(getter_name_str);
                         getter.put_prop(getter_name_key, gn_tv, hobject::PROP_FLAGS_NWC, heap);
                     }
                 }
@@ -4220,7 +4220,7 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
     // The GeneratorState was stashed in the function object's var_env field
     // by the AWAIT opcode handler.
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
-    if (gs == null) { ctx.result.set_undefined(); return; }
+    if (gs == null) { ctx.result_undefined(); return; }
 
     // Set the resume value from the settled Promise result
     if (ctx.argc >= 1) {
@@ -4238,7 +4238,7 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
     HObject* func_obj = async_resume_wrapper(ctx.heap, gs);
     if (func_obj == null) {
         ctx.heap.resume_gen = null;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -4257,14 +4257,14 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
 
     // If the function completed (returned a value), store it in ctx.result
     // so the downstream promise gets settled.
-    *ctx.result = result;
+    ctx.copy_result(result);
 }
 
 // Reject callback for async/await. Called when a pending Promise rejects.
 // Injects the rejection reason as an exception into the suspended async function.
 fn void builtin_async_reject(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
-    if (gs == null) { ctx.result.set_undefined(); return; }
+    if (gs == null) { ctx.result_undefined(); return; }
 
     // Set the throw value from the rejection reason
     if (ctx.argc >= 1) {
@@ -4283,7 +4283,7 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
     HObject* func_obj = async_resume_wrapper(ctx.heap, gs);
     if (func_obj == null) {
         ctx.heap.resume_gen = null;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -4302,5 +4302,5 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
 
     // If the function completed (returned a value, e.g. catch handled the
     // rejection), store it in ctx.result so the downstream promise gets settled.
-    *ctx.result = result;
+    ctx.copy_result(result);
 }

@@ -105,10 +105,10 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
 
     TVal tv;
     if (hstr != null) {
-        tv.set_string(hstr);
+        tv.set_string_borrowed(hstr);
     } else {
         // Fallback: store as pointer with null
-        tv.set_string(null);
+        tv.set_string_borrowed(null);
     }
 
     ulong val_bits = tv.get_raw_bits();
@@ -116,9 +116,6 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     // Check if this string (by pointer) is already in the constant pool
     uint found_idx = self.lookup_constant_hash(val_bits);
     if (found_idx < self.const_count) {
-        // The pool entry already holds its references; release the one taken
-        // by set_string above.
-        if (hstr != null) { hp.decref((types::HeapHeader*)hstr); }
         return found_idx;
     }
 

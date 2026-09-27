@@ -237,7 +237,7 @@ fn char[] thrown_message(Heap* hp) {
         for (uint i = 0; i < sh.own_count; i++) {
             if (val_idx >= eo.prop_count) break;
             TVal* mv = vals[val_idx].view();
-            if (sp[i].key == (void*)msg_key && mv.is_string()) {
+            if (sp[i].key.borrow() == (void*)msg_key && mv.is_string()) {
                 HString* str = (HString*)mv.get_heapptr();
                 return str.get_data();
             }

@@ -48,47 +48,47 @@ fn double math_arg(BuiltinContext* ctx, ushort i) {
 
 fn void builtin_math_abs(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math::abs(x));
+    ctx.result_number(math::abs(x));
 }
 
 fn void builtin_math_floor(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math::floor(x));
+    ctx.result_number(math::floor(x));
 }
 
 fn void builtin_math_ceil(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math::ceil(x));
+    ctx.result_number(math::ceil(x));
 }
 
 fn void builtin_math_round(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(0.0);
+    ctx.result_number(0.0);
     // ES5 §15.8.2.15: round half away from zero
     if (math::is_nan(x)) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
     } else if (math::is_inf(x) || x == 0.0) {
-        ctx.result.set_number(x);
+        ctx.result_number(x);
     } else if (x > 0.0 && x < 0.5) {
         // Per ES2018+ §20.2.2.34: Math.round(x) for 0 < x < 0.5 returns +0
-        ctx.result.set_number(0.0);
+        ctx.result_number(0.0);
     } else if (x < 0.0 && x >= -0.5) {
         // Per ES2018+ §20.2.2.34: Math.round(x) for -0.5 ≤ x ≤ -0 returns -0
-        ctx.result.set_number(-0.0);
+        ctx.result_number(-0.0);
     } else {
         // Round half away from zero
         double frac = x - math::floor(x);
         if (frac < 0.5) {
-            ctx.result.set_number(math::floor(x));
+            ctx.result_number(math::floor(x));
         } else {
-            ctx.result.set_number(math::ceil(x));
+            ctx.result_number(math::ceil(x));
         }
     }
 }
 
 fn void builtin_math_max(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
-        ctx.result.set_number(-double::inf);
+        ctx.result_number(-double::inf);
         return;
     }
     double max = math_arg(ctx, 0);
@@ -116,12 +116,12 @@ fn void builtin_math_max(BuiltinContext* ctx) {
             }
         }
     }
-    ctx.result.set_number(max);
+    ctx.result_number(max);
 }
 
 fn void builtin_math_min(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
-        ctx.result.set_number(double::inf);
+        ctx.result_number(double::inf);
         return;
     }
     double min = math_arg(ctx, 0);
@@ -149,65 +149,65 @@ fn void builtin_math_min(BuiltinContext* ctx) {
             }
         }
     }
-    ctx.result.set_number(min);
+    ctx.result_number(min);
 }
 
 fn void builtin_math_pow(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
     double y = math_arg(ctx, 1);
-    ctx.result.set_number(0.0);
+    ctx.result_number(0.0);
     // ES6 §20.2.2.26 Math.pow(x, y):
     // 1. If y is +0 or -0, the result is 1, even if x is NaN
     // 2. If y is NaN, the result is NaN
     // 3. If |x| is 1 and y is ±∞, the result is NaN
     // 4. If x is +1 and y is finite and non-zero, the result is 1
     if (y == 0.0) {
-        ctx.result.set_number(1.0);
+        ctx.result_number(1.0);
         return;
     }
     if (math::is_nan(y)) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
     if (math::abs(x) == 1.0 && math::is_inf(y)) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
     if (x == 1.0) {
-        ctx.result.set_number(1.0);
+        ctx.result_number(1.0);
         return;
     }
-    ctx.result.set_number(math_pow(x, y));
+    ctx.result_number(math_pow(x, y));
 }
 
 fn void builtin_math_sqrt(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_sqrt(x));
+    ctx.result_number(math_sqrt(x));
 }
 
 fn void builtin_math_exp(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_exp(x));
+    ctx.result_number(math_exp(x));
 }
 
 fn void builtin_math_log(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_log(x));
+    ctx.result_number(math_log(x));
 }
 
 fn void builtin_math_sin(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_sin(x));
+    ctx.result_number(math_sin(x));
 }
 
 fn void builtin_math_cos(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_cos(x));
+    ctx.result_number(math_cos(x));
 }
 
 fn void builtin_math_tan(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_tan(x));
+    ctx.result_number(math_tan(x));
 }
 
 // Math.random(), uses the heap's PRNG state (xorshift32).
@@ -217,83 +217,83 @@ fn void builtin_math_random(BuiltinContext* ctx) {
     state ^= state >> 17;
     state ^= state << 5;
     ctx.heap.rnd_state = state;
-    ctx.result.set_number((double)state / 4294967296.0);
+    ctx.result_number((double)state / 4294967296.0);
 }
 
 fn void builtin_math_acos(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_acos(x));
+    ctx.result_number(math_acos(x));
 }
 
 fn void builtin_math_asin(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_asin(x));
+    ctx.result_number(math_asin(x));
 }
 
 fn void builtin_math_atan(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_atan(x));
+    ctx.result_number(math_atan(x));
 }
 
 fn void builtin_math_atan2(BuiltinContext* ctx) {
     double y = math_arg(ctx, 0);
     double x = math_arg(ctx, 1);
-    ctx.result.set_number(math_atan2(y, x));
+    ctx.result_number(math_atan2(y, x));
 }
 
 fn void builtin_math_cosh(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_cosh(x));
+    ctx.result_number(math_cosh(x));
 }
 
 fn void builtin_math_sinh(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_sinh(x));
+    ctx.result_number(math_sinh(x));
 }
 
 fn void builtin_math_tanh(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_tanh(x));
+    ctx.result_number(math_tanh(x));
 }
 
 fn void builtin_math_acosh(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_acosh(x));
+    ctx.result_number(math_acosh(x));
 }
 
 fn void builtin_math_asinh(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_asinh(x));
+    ctx.result_number(math_asinh(x));
 }
 
 fn void builtin_math_atanh(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_atanh(x));
+    ctx.result_number(math_atanh(x));
 }
 
 fn void builtin_math_log2(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_log2(x));
+    ctx.result_number(math_log2(x));
 }
 
 fn void builtin_math_log10(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_log10(x));
+    ctx.result_number(math_log10(x));
 }
 
 fn void builtin_math_log1p(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_log1p(x));
+    ctx.result_number(math_log1p(x));
 }
 
 fn void builtin_math_expm1(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_expm1(x));
+    ctx.result_number(math_expm1(x));
 }
 
 fn void builtin_math_cbrt(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(math_cbrt(x));
+    ctx.result_number(math_cbrt(x));
 }
 
 fn void builtin_math_hypot(BuiltinContext* ctx) {
@@ -304,7 +304,7 @@ fn void builtin_math_hypot(BuiltinContext* ctx) {
     // - If any arg was NaN (and no arg was ±∞), return NaN
     // - Otherwise return sqrt(sum of squares)
     if (ctx.argc == 0) {
-        ctx.result.set_number(0.0);
+        ctx.result_number(0.0);
         return;
     }
     bool saw_infinity = false;
@@ -320,7 +320,7 @@ fn void builtin_math_hypot(BuiltinContext* ctx) {
                 ctx.should_throw = true;
                 ctx.throw_value = v_ptr.throw_value;
                 v_ptr.throw_pending = false;
-                ctx.result.set_number(double::nan);
+                ctx.result_number(double::nan);
                 return;
             }
         } else {
@@ -331,54 +331,54 @@ fn void builtin_math_hypot(BuiltinContext* ctx) {
         result = result + v * v;
     }
     if (saw_infinity) {
-        ctx.result.set_number(double::inf);
+        ctx.result_number(double::inf);
         return;
     }
     if (saw_nan) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
-    ctx.result.set_number(math_sqrt(result));
+    ctx.result_number(math_sqrt(result));
 }
 
 fn void builtin_math_trunc(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(0.0);
+    ctx.result_number(0.0);
     if (x >= 0) {
-        ctx.result.set_number(math::floor(x));
+        ctx.result_number(math::floor(x));
     } else {
-        ctx.result.set_number(math::ceil(x));
+        ctx.result_number(math::ceil(x));
     }
 }
 
 fn void builtin_math_sign(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(0.0);
+    ctx.result_number(0.0);
     if (math::is_nan(x) || x == 0.0) {
-        ctx.result.set_number(x);
+        ctx.result_number(x);
     } else if (x > 0.0) {
-        ctx.result.set_number(1.0);
+        ctx.result_number(1.0);
     } else {
-        ctx.result.set_number(-1.0);
+        ctx.result_number(-1.0);
     }
 }
 
 fn void builtin_math_fround(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
-    ctx.result.set_number(0.0);
+    ctx.result_number(0.0);
     if (math::is_nan(x) || math::is_inf(x) || x == 0.0) {
-        ctx.result.set_number(x);
+        ctx.result_number(x);
     } else {
         // Round to nearest float32
         float f = (float)x;
-        ctx.result.set_number((double)f);
+        ctx.result_number((double)f);
     }
 }
 
 fn void builtin_math_f16round(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
     // fromfp16(tofp16(x)), preserves NaN/Inf/zero (and sign of zero) exactly.
-    ctx.result.set_number(f16_to_double(double_to_f16(x)));
+    ctx.result_number(f16_to_double(double_to_f16(x)));
 }
 
 fn void builtin_math_clz32(BuiltinContext* ctx) {
@@ -392,14 +392,14 @@ fn void builtin_math_clz32(BuiltinContext* ctx) {
         val = (uint)(long)x;
     }
     if (val == 0) {
-        ctx.result.set_fastint(32);
+        ctx.result_fastint(32);
     } else {
         uint count = 0;
         while ((val & 0x80000000) == 0) {
             count++;
             val <<= 1;
         }
-        ctx.result.set_fastint((long)count);
+        ctx.result_fastint((long)count);
     }
 }
 
@@ -417,7 +417,7 @@ fn void builtin_math_imul(BuiltinContext* ctx) {
     uint low = (uint)(product & 0xFFFFFFFFul);
     // Reinterpret as signed int32.
     int result = (int)low;
-    ctx.result.set_fastint((long)result);
+    ctx.result_fastint((long)result);
 }
 
 // ============================================================================
@@ -681,13 +681,13 @@ fn void sp_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
 fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
         sp_throw_type_error(ctx, "Math.sumPrecise requires an iterable argument");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
     if (ctx.vm == null) {
         sp_throw_type_error(ctx, "Math.sumPrecise requires a VM context");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -702,7 +702,7 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
     HString* iter_sym = ensure_iterator_symbol(heap);
     if (iter_sym == null) {
         sp_throw_type_error(ctx, "Symbol.iterator not available");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -714,14 +714,14 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
 
     if (items_obj == null) {
         sp_throw_type_error(ctx, "Math.sumPrecise argument is not iterable");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
     // GetMethod(items, @@iterator)
     TVal? iter_method_opt = builtins_generic_get(items_obj, iter_sym, ctx);
     if (ctx.should_throw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -729,13 +729,13 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
     if (try im = iter_method_opt) {
         if (im.is_undefined() || im.is_null()) {
             sp_throw_type_error(ctx, "Math.sumPrecise argument is not iterable");
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         iter_method = im;
     } else {
         sp_throw_type_error(ctx, "Math.sumPrecise argument is not iterable");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -745,13 +745,13 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
         ctx.should_throw = true;
         ctx.throw_value = heap.error_value;
         heap.has_error = false;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
     if (!iter_obj_val.is_object() || iter_obj_val.get_heapptr() == null) {
         sp_throw_type_error(ctx, "Iterator is not an object");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -765,14 +765,14 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
         if (nv.is_undefined() || nv.is_null()) {
             sp_throw_type_error(ctx, "Iterator next is not a method");
             sp_iterator_close_after_throw(ctx, iter_obj_val);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         next_fn_val = nv;
     } else {
         sp_throw_type_error(ctx, "Iterator next is not a method");
         sp_iterator_close_after_throw(ctx, iter_obj_val);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -784,14 +784,14 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
             ctx.throw_value = heap.error_value;
             heap.has_error = false;
             sp_iterator_close_after_throw(ctx, iter_obj_val);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
 
         if (!iter_result.is_object() || iter_result.get_heapptr() == null) {
             sp_throw_type_error(ctx, "Iterator result is not an object");
             sp_iterator_close_after_throw(ctx, iter_obj_val);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
 
@@ -820,13 +820,13 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
             } else {
                 sp_throw_type_error(ctx, "Sum element is not a number");
                 sp_iterator_close_after_throw(ctx, iter_obj_val);
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
         } else {
             sp_throw_type_error(ctx, "Cannot get value from iterator result");
             sp_iterator_close_after_throw(ctx, iter_obj_val);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
 
@@ -834,7 +834,7 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
     }
 
     double result = sum_precise_get_result(&sp_state);
-    ctx.result.set_number(result);
+    ctx.result_number(result);
 }
 
 fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
@@ -894,7 +894,7 @@ fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Math"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Math"));
         math.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

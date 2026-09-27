@@ -385,10 +385,10 @@ fn void atomics_rmw_op(BuiltinContext* ctx, AtomicOp op) {
 // number, matching the element kind's read semantics).
 fn void atomics_set_num_result(BuiltinContext* ctx, hobject::ObjClass cls, double old) {
     if (cls == hobject::ObjClass.UINT32ARRAY) {
-        if (old >= 2147483648.0) { ctx.result.set_number(old); return; }
+        if (old >= 2147483648.0) { ctx.result_number(old); return; }
     }
     // Integer-valued; fits in fastint for all 8/16/signed-32 kinds and small u32.
-    ctx.result.set_fastint((long)old);
+    ctx.result_fastint((long)old);
 }
 
 // Store the "old value" of a BigInt RMW as a BigInt result.
@@ -470,9 +470,9 @@ fn void atomics_store_num_result(BuiltinContext* ctx, double v) {
     // that fit in a fastint use it, else use a number.
     if (v == math::floor(v) && v >= -9007199254740992.0 && v <= 9007199254740992.0
         && v >= -9223372036854775808.0 && v < 9223372036854775807.0) {
-        ctx.result.set_fastint((long)v);
+        ctx.result_fastint((long)v);
     } else {
-        ctx.result.set_number(v);
+        ctx.result_number(v);
     }
 }
 
@@ -550,7 +550,7 @@ fn void builtin_atomics_load(BuiltinContext* ctx) {
         return;
     }
 
-    *ctx.result = atomics_read(ctx.heap, ta, idx);
+    ctx.copy_result(atomics_read(ctx.heap, ta, idx));
 }
 
 // Atomics.isLockFree(size), §25.4.3.15. Returns whether an atomic op on a
@@ -561,7 +561,7 @@ fn void builtin_atomics_islockfree(BuiltinContext* ctx) {
     double n = builtin_to_integer_vm(ctx, &size_arg);
     if (ctx.should_throw) return;
     bool lock_free = (n == 1.0 || n == 2.0 || n == 4.0 || n == 8.0);
-    ctx.result.set_boolean(lock_free);
+    ctx.result_boolean(lock_free);
 }
 
 // ============================================================================
@@ -623,7 +623,7 @@ fn void builtin_atomics_wait(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
 
     char[] verdict = matches ? "timed-out" : "not-equal";
-    ctx.result.set_string(builtin_intern_string(ctx.heap, verdict));
+    ctx.result_string(builtin_intern_string(ctx.heap, verdict));
 }
 
 // Atomics.notify(ta, index, count), §25.4.14.
@@ -647,7 +647,7 @@ fn void builtin_atomics_pause(BuiltinContext* ctx) {
             }
         }
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 fn void builtin_atomics_notify(BuiltinContext* ctx) {
@@ -675,14 +675,14 @@ fn void builtin_atomics_notify(BuiltinContext* ctx) {
     // Only shared buffers can have parked async waiters; non-shared: 0.
     HObject* buf = (*ta.extra_ptr()).view.buffer;
     if (buf == null || !(*buf.extra_ptr()).ab.is_shared) {
-        ctx.result.set_fastint(0);
+        ctx.result_fastint(0);
         return;
     }
 
     uint shift = ta_elem_shift(ta.flags.obj_class);
     uint byte_index = (*ta.extra_ptr()).view.byte_offset + (idx << shift);
     long notified = atomics_notify_waiters(ctx, buf, byte_index, count);
-    ctx.result.set_fastint(notified);
+    ctx.result_fastint(notified);
 }
 
 // Resolve up to `count` parked waitAsync promises on (buffer, byte_index) with
@@ -699,7 +699,7 @@ fn long atomics_notify_waiters(BuiltinContext* ctx, HObject* buffer, uint byte_i
         HObject* promise = w.promise;
         w.promise = null;
         w.buffer = null;
-        TVal ok; ok.set_string(builtin_intern_string(heap, "ok"));
+        TVal ok; ok.set_string_borrowed(builtin_intern_string(heap, "ok"));
         promise_resolve_with_value(promise, ok, heap, ctx.vm);
         resolved++;
     }
@@ -815,14 +815,14 @@ fn void builtin_atomics_waitasync(BuiltinContext* ctx) {
 
 // Build {async, value:<string>} for waitAsync's synchronous outcomes.
 fn void atomics_make_wait_result_str(BuiltinContext* ctx, bool is_async, char[] value_str) {
-    TVal v; v.set_string(builtin_intern_string(ctx.heap, value_str));
+    TVal v; v.set_string_borrowed(builtin_intern_string(ctx.heap, value_str));
     atomics_make_wait_result_val(ctx, is_async, v);
 }
 
 // Build the {async, value} object returned by waitAsync.
 fn void atomics_make_wait_result_val(BuiltinContext* ctx, bool is_async, TVal value_tv) {
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = raw) { ctx.result.set_undefined(); return; }
+    if (catch err = raw) { ctx.result_undefined(); return; }
     HObject* obj = raw;
     obj.prototype = ctx.heap.object_proto;
 
@@ -833,7 +833,7 @@ fn void atomics_make_wait_result_val(BuiltinContext* ctx, bool is_async, TVal va
     HString* value_key = (HString*)ctx.heap.strs[heap::BuiltinStr.VALUE];
     obj.put_prop(value_key, value_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // ============================================================================
@@ -856,7 +856,7 @@ fn bool register_atomics_method(HObject* atomics, Heap* heap, char[] name, uint 
 
     HString* fn_name = builtin_intern_string(heap, name);
     if (fn_name != null) {
-        TVal name_tv; name_tv.set_string(fn_name);
+        TVal name_tv; name_tv.set_string_borrowed(fn_name);
         func_obj.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -895,7 +895,7 @@ fn bool register_atomics_object(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Atomics"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Atomics"));
         atomics.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

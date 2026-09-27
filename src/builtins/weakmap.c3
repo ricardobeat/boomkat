@@ -37,7 +37,7 @@ fn void builtin_weakmap(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakmap_proto_set(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
-    if (wm == null) { ctx.result.set_undefined(); return; }
+    if (wm == null) { ctx.result_undefined(); return; }
     coll_set_entry(ctx, wm, 2, true, "Invalid value used as weak map key", false);
 }
 
@@ -46,7 +46,7 @@ fn void builtin_weakmap_proto_set(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakmap_proto_getOrInsert(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
-    if (wm == null) { ctx.result.set_undefined(); return; }
+    if (wm == null) { ctx.result_undefined(); return; }
     coll_get_or_insert(ctx, wm, true, "Invalid value used as weak map key", false);
 }
 
@@ -55,7 +55,7 @@ fn void builtin_weakmap_proto_getOrInsert(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakmap_proto_getOrInsertComputed(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
-    if (wm == null) { ctx.result.set_undefined(); return; }
+    if (wm == null) { ctx.result_undefined(); return; }
     coll_get_or_insert_computed(ctx, wm, true, "Invalid value used as weak map key", "callback function is not callable", false);
 }
 
@@ -64,15 +64,15 @@ fn void builtin_weakmap_proto_getOrInsertComputed(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakmap_proto_get(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
-    if (wm == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
+    if (wm == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_undefined(); return; }
 
     TVal key = ctx.regs[ctx.base_reg];
     int found = weakmap_find_key(wm, key, ctx.heap);
     if (found >= 0) {
-        *ctx.result = wm.array_part()[(uint)found + 1].get();
+        ctx.copy_result(wm.array_part()[(uint)found + 1].get());
     } else {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
     }
 }
 
@@ -81,12 +81,12 @@ fn void builtin_weakmap_proto_get(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakmap_proto_has(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
-    if (wm == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
+    if (wm == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_boolean(false); return; }
 
     TVal key = ctx.regs[ctx.base_reg];
     int found = weakmap_find_key(wm, key, ctx.heap);
-    ctx.result.set_boolean((found >= 0));
+    ctx.result_boolean((found >= 0));
 }
 
 // ============================================================================
@@ -94,8 +94,8 @@ fn void builtin_weakmap_proto_has(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_weakmap_proto_delete(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
-    if (wm == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
+    if (wm == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_boolean(false); return; }
     coll_delete(ctx, wm, ctx.regs[ctx.base_reg], 2, false);
 }
 
@@ -126,7 +126,7 @@ fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "WeakMap"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "WeakMap"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

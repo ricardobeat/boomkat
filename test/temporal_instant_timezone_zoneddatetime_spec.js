@@ -228,5 +228,15 @@ assertEq(threwBadStr, true, "Instant.from(bad string) throws RangeError");
 assertEq(new Temporal.Instant(0n).toString(), "1970-01-01T00:00:00Z", "epoch toString");
 assertEq(new Temporal.Instant(-13849764999999999n).toString(), "1969-07-24T16:50:35.000000001Z", "negative toString floor");
 
+// Date conversions retain the calendar identifier alongside the zone object.
+var dateZone = new Temporal.PlainDate(2024, 1, 15).toZonedDateTime("UTC");
+var datetimeZone = new Temporal.PlainDateTime(2024, 1, 15, 12).toZonedDateTime("UTC");
+for (var churn = 0; churn < 100; churn++) {
+    Temporal.Instant.from("2024-01-15T00:00:00Z").toZonedDateTimeISO("America/New_York");
+}
+assertEq(dateZone.calendarId, "iso8601", "date conversion calendar ownership");
+assertEq(datetimeZone.calendarId, "iso8601", "datetime conversion calendar ownership");
+assertEq(dateZone.timeZoneId, "UTC", "date conversion zone ownership");
+
 console.log("Pass: " + pass + " Fail: " + fail);
 if (fail > 0) process.exit(1);

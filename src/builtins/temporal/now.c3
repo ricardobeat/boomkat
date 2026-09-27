@@ -287,7 +287,7 @@ fn void builtin_temporal_now_instant(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Temporal.Now.timeZoneId() — IANA name of the system zone (TZ env var,
@@ -296,7 +296,7 @@ fn void builtin_temporal_now_time_zone_id(BuiltinContext* ctx) {
     char* sys_c = boomkat_system_tz_name();
     usz sys_n = 0;
     while (sys_c[sys_n] != 0) sys_n++;
-    ctx.result.set_string(builtin_intern_string(ctx.heap, (String)sys_c[:sys_n]));
+    ctx.result_string(builtin_intern_string(ctx.heap, (String)sys_c[:sys_n]));
 }
 
 // Build a PlainDate from a year/month/day.
@@ -408,7 +408,7 @@ fn void builtin_temporal_now_zoned_date_time_iso(BuiltinContext* ctx) {
     }
     HObject* zdt = zdt_o;
     zdt.prototype = ctx.heap.temporal_zoneddatetime_proto;
-    ctx.result.set_object(zdt);
+    ctx.result_object(zdt);
 }
 
 // Temporal.Now.plainDateISO([timeZone]) — current date in `timeZone`.
@@ -427,7 +427,7 @@ fn void builtin_temporal_now_plain_date_iso(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_plain_date_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Temporal.Now.plainDateTimeISO([timeZone]) — current date + time.
@@ -447,7 +447,7 @@ fn void builtin_temporal_now_plain_date_time_iso(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_plain_datetime_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Temporal.Now.plainTimeISO([timeZone]) — current wall-clock time.
@@ -466,7 +466,7 @@ fn void builtin_temporal_now_plain_time_iso(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_plain_time_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Build the Temporal.Now singleton with its six functions attached.
@@ -483,7 +483,7 @@ fn HObject*? build_temporal_now(Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Temporal.Now"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Temporal.Now"));
         now.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

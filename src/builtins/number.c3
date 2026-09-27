@@ -122,18 +122,18 @@ fn void builtin_number(BuiltinContext* ctx) {
     if (ctx.is_constructor) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.NUMBER);
         if (catch err = obj_raw) {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         HObject* obj = obj_raw;
         ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.number_proto));
         ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, num);
-        ctx.result.set_object(obj);
+        ctx.result_object(obj);
     } else {
         if (num.is_fastint()) {
-            ctx.result.set_fastint(num.get_fastint());
+            ctx.result_fastint(num.get_fastint());
         } else {
-            ctx.result.set_number(num.get_number());
+            ctx.result_number(num.get_number());
         }
     }
 }
@@ -173,7 +173,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
         ctx.regs[ctx.base_reg].get_tag() == types::TValTag.UNDEFINED;
     if (!radix_undefined) {
         double radix_d = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (radix_d < 2 || radix_d > 36) {
             // RangeError per ES5 §15.7.4.2
             builtin_throw(ctx, ctx.heap.range_err_proto, "radix must be an integer between 2 and 36");
@@ -185,25 +185,25 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     // Handle special values
     if (math::is_nan(d)) {
         HString* s = builtin_intern_string(ctx.heap, "NaN");
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
     if (math::is_inf(d)) {
         HString* s = builtin_intern_string(ctx.heap, d > 0 ? "Infinity" : "-Infinity");
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
     if (d == 0.0) {
         HString* s = ctx.heap.int_to_hstring(0);
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
 
     // Radix 10: use existing ToString formatting
     if (radix == 10) {
         HString* s10 = builtin_number_to_hstring(ctx.heap, d);
-        if (s10 == null) { ctx.result.set_undefined(); return; }
-        ctx.result.set_string(s10);
+        if (s10 == null) { ctx.result_undefined(); return; }
+        ctx.result_string(s10);
         return;
     }
 
@@ -223,14 +223,14 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     out.init(ctx.heap);
     defer out.free();
 
-    if (negative && !out.append_char('-')) { ctx.result.set_undefined(); return; }
+    if (negative && !out.append_char('-')) { ctx.result_undefined(); return; }
 
     // Convert integer part. Doubles beyond 2^53 no longer represent every
     // integer exactly, but the *radix expansion* of whatever double value we
     // do have is still computed exactly here via repeated float division,
     // matching V8/QuickJS rather than saturating through a 64-bit cast.
     if (!append_double_int_radix(&out, int_part, (uint)radix)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -238,23 +238,23 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     // (frac_part hits exactly 0.0), not a fixed digit count. A hard cap still
     // guards against a value that never reaches exact zero in float.
     if (frac_part > 0.0) {
-        if (!out.append_char('.')) { ctx.result.set_undefined(); return; }
+        if (!out.append_char('.')) { ctx.result_undefined(); return; }
         for (int i = 0; i < 1100 && frac_part > 0.0; i++) {
             frac_part *= (double)radix;
             uint digit = (uint)(long)frac_part;
             if (digit >= (uint)radix) digit = (uint)radix - 1;
             frac_part -= (double)digit;
             char c = digit < 10 ? (char)('0' + digit) : (char)('a' + digit - 10);
-            if (!out.append_char(c)) { ctx.result.set_undefined(); return; }
+            if (!out.append_char(c)) { ctx.result_undefined(); return; }
         }
     }
 
     HString* result = builtin_intern_string(ctx.heap, out.bytes());
     if (result == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // Number.prototype.toFixed(fractionDigits), ES2022 §21.1.3.3
@@ -267,7 +267,7 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     int f = 0;
     if (ctx.argc > 0) {
         double f_d = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         // 2. If f is not finite, throw a RangeError exception.
         // 3. If f < 0 or f > 100, throw a RangeError exception.
         if (math::is_inf(f_d) || f_d < 0 || f_d > 100) {
@@ -281,7 +281,7 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     double d;
     if (!this_number_value(ctx, &d)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Number.prototype.toFixed called on incompatible value");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -291,13 +291,13 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     // 5. If x is NaN, return the String "NaN".
     if (math::is_nan(d)) {
         HString* s = builtin_intern_string(ctx.heap, "NaN");
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
     // 6. If x < 0, ... 7. If x >= 10^21 ...  (both handled below via Infinity check + flag)
     if (math::is_inf(d)) {
         HString* s = builtin_intern_string(ctx.heap, d > 0 ? "Infinity" : "-Infinity");
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
 
@@ -307,11 +307,11 @@ fn void builtin_number_proto_toFixed(BuiltinContext* ctx) {
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
     int len = dtoa_bindings::boomkat_js_dtoa(&buf, d, 10, f, flags, &tmp);
     if (len < 0 || len >= 256) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HString* s = builtin_intern_string(ctx.heap, buf[:len]);
-    ctx.result.set_string(s);
+    ctx.result_string(s);
 }
 
 // Number.prototype.toExponential(fractionDigits), ES2022 §21.1.3.2
@@ -325,7 +325,7 @@ fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
     double d;
     if (!this_number_value(ctx, &d)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Number.prototype.toExponential called on incompatible value");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -339,20 +339,20 @@ fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
     double f_d = 0.0;
     if (!fraction_digits_undefined) {
         f_d = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
     }
 
     // 4. If x is NaN, return the String "NaN".
     if (math::is_nan(d)) {
         HString* s = builtin_intern_string(ctx.heap, "NaN");
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
     // 7. If x = +/-Infinity, return the signed "Infinity" string.
     // (the fractionDigits range check does not apply to Infinity `this`)
     if (math::is_inf(d)) {
         HString* s = builtin_intern_string(ctx.heap, d > 0 ? "Infinity" : "-Infinity");
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
 
@@ -373,11 +373,11 @@ fn void builtin_number_proto_toExponential(BuiltinContext* ctx) {
     char[dtoa_bindings::DTOA_FORMAT_TMP_SIZE] tmp;
     int len = dtoa_bindings::boomkat_js_dtoa(&buf, d, 10, n_digits, flags, &tmp);
     if (len < 0 || len >= 256) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HString* s = builtin_intern_string(ctx.heap, buf[:len]);
-    ctx.result.set_string(s);
+    ctx.result_string(s);
 }
 
 // Number.prototype.toPrecision(precision), ES2022 §21.1.3.5
@@ -390,7 +390,7 @@ fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     double d;
     if (!this_number_value(ctx, &d)) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Number.prototype.toPrecision called on incompatible value");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -403,24 +403,24 @@ fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     // 2. If precision is undefined, return ! ToString(x).
     if (precision_undefined) {
         HString* s = builtin_number_to_hstring(ctx.heap, d);
-        if (s == null) { ctx.result.set_undefined(); return; }
-        ctx.result.set_string(s);
+        if (s == null) { ctx.result_undefined(); return; }
+        ctx.result_string(s);
         return;
     }
 
     // 3. Let p be ? ToInteger(precision).
     double p_d = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     // 4. If x is NaN, return the String "NaN".
     if (math::is_nan(d)) {
         HString* s = builtin_intern_string(ctx.heap, "NaN");
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
     if (math::is_inf(d)) {
         HString* s = builtin_intern_string(ctx.heap, d > 0 ? "Infinity" : "-Infinity");
-        ctx.result.set_string(s);
+        ctx.result_string(s);
         return;
     }
 
@@ -436,11 +436,11 @@ fn void builtin_number_proto_toPrecision(BuiltinContext* ctx) {
     int flags = dtoa_bindings::JS_DTOA_FORMAT_FIXED;
     int len = dtoa_bindings::boomkat_js_dtoa(&buf, d, 10, p, flags, &tmp);
     if (len < 0 || len >= 256) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HString* s = builtin_intern_string(ctx.heap, buf[:len]);
-    ctx.result.set_string(s);
+    ctx.result_string(s);
 }
 
 // Number.prototype.valueOf(), ES2022 §21.1.3.7
@@ -453,21 +453,21 @@ fn void builtin_number_proto_valueOf(BuiltinContext* ctx) {
         if (obj.get_class() == hobject::ObjClass.NUMBER &&
             ((*obj.extra_ptr()).prim.primitive_value.is_number() || (*obj.extra_ptr()).prim.primitive_value.is_fastint())) {
             if ((*obj.extra_ptr()).prim.primitive_value.is_fastint()) {
-                ctx.result.set_fastint((*obj.extra_ptr()).prim.primitive_value.get_fastint());
+                ctx.result_fastint((*obj.extra_ptr()).prim.primitive_value.get_fastint());
             } else {
-                ctx.result.set_number((*obj.extra_ptr()).prim.primitive_value.get_number());
+                ctx.result_number((*obj.extra_ptr()).prim.primitive_value.get_number());
             }
             return;
         }
     } else if (this_val.is_number()) {
-        ctx.result.set_number(this_val.get_number());
+        ctx.result_number(this_val.get_number());
         return;
     } else if (this_val.is_fastint()) {
-        ctx.result.set_fastint(this_val.get_fastint());
+        ctx.result_fastint(this_val.get_fastint());
         return;
     }
     builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Number.prototype.valueOf called on incompatible value");
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -478,16 +478,16 @@ fn void builtin_number_proto_valueOf(BuiltinContext* ctx) {
 // Returns true only if the argument is the NaN number value (no coercion).
 fn void builtin_number_isNaN(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
         return;
     }
     TVal* arg = &ctx.regs[ctx.base_reg];
-    ctx.result.set_boolean(false);
+    ctx.result_boolean(false);
     if (arg.is_number()) {
-        ctx.result.set_boolean(math::is_nan(arg.get_number()));
+        ctx.result_boolean(math::is_nan(arg.get_number()));
     } else {
         // FASTINT is never NaN
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
     }
 }
 
@@ -495,16 +495,16 @@ fn void builtin_number_isNaN(BuiltinContext* ctx) {
 // Returns true only if the argument is a finite number value (no coercion).
 fn void builtin_number_isFinite(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
         return;
     }
     TVal* arg = &ctx.regs[ctx.base_reg];
-    ctx.result.set_boolean(false);
+    ctx.result_boolean(false);
     if (arg.is_number()) {
-        ctx.result.set_boolean(!math::is_nan(arg.get_number()) && !math::is_inf(arg.get_number()));
+        ctx.result_boolean(!math::is_nan(arg.get_number()) && !math::is_inf(arg.get_number()));
     } else {
         // FASTINT is always finite
-        ctx.result.set_boolean(true);
+        ctx.result_boolean(true);
     }
 }
 
@@ -512,50 +512,50 @@ fn void builtin_number_isFinite(BuiltinContext* ctx) {
 // Returns true only if the argument is an integer number value (no coercion).
 fn void builtin_number_isInteger(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
         return;
     }
     TVal* arg = &ctx.regs[ctx.base_reg];
     double d;
     if (arg.is_fastint()) {
         // FASTINT is always an integer
-        ctx.result.set_boolean(true);
+        ctx.result_boolean(true);
         return;
     }
     d = arg.get_number();
     // NaN, Infinity, -Infinity are not integers
     if (math::is_nan(d) || math::is_inf(d)) {
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
         return;
     }
     // Check: floor(abs(d)) == abs(d), i.e. no fractional part
     double abs_d = d < 0 ? -d : d;
     double fl = math::floor(abs_d);
-    ctx.result.set_boolean((fl == abs_d));
+    ctx.result_boolean((fl == abs_d));
 }
 
 // Number.isSafeInteger(number), ES6 §20.1.2.5
 // Returns true only if the argument is a safe integer (±(2^53 - 1)).
 fn void builtin_number_isSafeInteger(BuiltinContext* ctx) {
     if (ctx.argc < 1 || (!ctx.regs[ctx.base_reg].is_number() && !ctx.regs[ctx.base_reg].is_fastint())) {
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
         return;
     }
     TVal* arg = &ctx.regs[ctx.base_reg];
     if (arg.is_fastint()) {
         // FASTINT values are always safe integers
-        ctx.result.set_boolean(true);
+        ctx.result_boolean(true);
         return;
     }
     double d = arg.get_number();
     if (math::is_nan(d) || math::is_inf(d)) {
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
         return;
     }
     double abs_d = d < 0 ? -d : d;
     double fl = math::floor(abs_d);
     // Must be integer AND within safe range (2^53 - 1 = 9007199254740991)
-    ctx.result.set_boolean((fl == abs_d) && (abs_d <= (double)types::MAX_SAFE_INT));
+    ctx.result_boolean((fl == abs_d) && (abs_d <= (double)types::MAX_SAFE_INT));
 }
 fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     // Create Number prototype
@@ -579,7 +579,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tostring_name_key = heap.str(heap::BuiltinStr.NAME);
     HString* tostring_name_val = heap.str(heap::BuiltinStr.TO_STRING);
     if (tostring_name_key != null && tostring_name_val != null) {
-        TVal name_tv; name_tv.set_string(tostring_name_val);
+        TVal name_tv; name_tv.set_string_borrowed(tostring_name_val);
         tostring_obj.put_prop(tostring_name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* tostring_length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];

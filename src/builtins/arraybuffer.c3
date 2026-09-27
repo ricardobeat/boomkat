@@ -276,7 +276,7 @@ fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
 
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
     if (catch err = raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* obj = raw;
@@ -313,7 +313,7 @@ fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
     (*obj.extra_ptr()).ab.max_byte_length = max_byte_length;
     (*obj.extra_ptr()).ab.is_shared = is_shared;
 
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_arraybuffer(BuiltinContext* ctx) {
@@ -328,10 +328,10 @@ fn void builtin_arraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
     HObject* obj = ab_this(ctx, "byteLength");
     if (obj == null) return;
     if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-        ctx.result.set_fastint(0);
+        ctx.result_fastint(0);
         return;
     }
-    ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.byte_length);
+    ctx.result_fastint((long)(*obj.extra_ptr()).ab.byte_length);
 }
 
 // ============================================================================
@@ -342,7 +342,7 @@ fn void builtin_arraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
 fn void builtin_arraybuffer_proto_detached_get(BuiltinContext* ctx) {
     HObject* obj = ab_this(ctx, "detached");
     if (obj == null) return;
-    ctx.result.set_boolean(((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu));
+    ctx.result_boolean(((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu));
 }
 
 // ============================================================================
@@ -352,7 +352,7 @@ fn void builtin_arraybuffer_proto_detached_get(BuiltinContext* ctx) {
 fn void builtin_arraybuffer_proto_immutable_get(BuiltinContext* ctx) {
     HObject* obj = ab_this(ctx, "immutable");
     if (obj == null) return;
-    ctx.result.set_boolean((*obj.extra_ptr()).ab.immutable);
+    ctx.result_boolean((*obj.extra_ptr()).ab.immutable);
 }
 
 // ============================================================================
@@ -362,7 +362,7 @@ fn void builtin_arraybuffer_proto_immutable_get(BuiltinContext* ctx) {
 fn void builtin_arraybuffer_proto_resizable_get(BuiltinContext* ctx) {
     HObject* obj = ab_this(ctx, "resizable");
     if (obj == null) return;
-    ctx.result.set_boolean((*obj.extra_ptr()).ab.resizable);
+    ctx.result_boolean((*obj.extra_ptr()).ab.resizable);
 }
 
 // ============================================================================
@@ -376,9 +376,9 @@ fn void builtin_arraybuffer_proto_resizable_get(BuiltinContext* ctx) {
 // a state SAB can never be in, so callers there skip straight to this body.
 fn void arraybuffer_maxbytelength_body(BuiltinContext* ctx, HObject* obj) {
     if ((*obj.extra_ptr()).ab.resizable) {
-        ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.max_byte_length);
+        ctx.result_fastint((long)(*obj.extra_ptr()).ab.max_byte_length);
     } else {
-        ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.byte_length);
+        ctx.result_fastint((long)(*obj.extra_ptr()).ab.byte_length);
     }
 }
 
@@ -388,7 +388,7 @@ fn void builtin_arraybuffer_proto_maxbytelength_get(BuiltinContext* ctx) {
     // Detached buffer: 0 (spec §25.1.6.3 step 3). Checked before the shared
     // body since SAB, which reuses that body, can never be detached.
     if (((*obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-        ctx.result.set_fastint(0);
+        ctx.result_fastint(0);
         return;
     }
     arraybuffer_maxbytelength_body(ctx, obj);
@@ -444,7 +444,7 @@ fn void builtin_arraybuffer_proto_resize(BuiltinContext* ctx) {
     (*obj.extra_ptr()).ab.data = new_data;
     (*obj.extra_ptr()).ab.byte_length = new_len;
 
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -559,7 +559,7 @@ fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable, 
     // Step 14: DetachArrayBuffer(O), free the source's backing store.
     arraybuffer_detach(ctx.heap, obj);
 
-    ctx.result.set_object(new_buf);
+    ctx.result_object(new_buf);
 }
 
 fn void builtin_arraybuffer_proto_transfer(BuiltinContext* ctx) {
@@ -665,7 +665,7 @@ fn void builtin_arraybuffer_proto_slice_to_immutable(BuiltinContext* ctx) {
     (*new_buf.extra_ptr()).ab.max_byte_length = new_len;
     (*new_buf.extra_ptr()).ab.immutable = true;
 
-    ctx.result.set_object(new_buf);
+    ctx.result_object(new_buf);
 }
 
 // ArrayBuffer.prototype.transferToImmutable() (immutable ArrayBuffer proposal)
@@ -828,7 +828,7 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
     } else {
         HObject*? new_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
         if (catch err = new_raw) {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         new_buf = new_raw;
@@ -856,7 +856,7 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
         mem::copy((*new_buf.extra_ptr()).ab.data, (*obj.extra_ptr()).ab.data + start_idx, (sz)((usz)new_len));
     }
 
-    ctx.result.set_object(new_buf);
+    ctx.result_object(new_buf);
 }
 
 fn void builtin_arraybuffer_proto_slice(BuiltinContext* ctx) {
@@ -879,7 +879,7 @@ fn void builtin_arraybuffer_isview(BuiltinContext* ctx) {
         HObject* obj = (HObject*)arg.get_heapptr();
         result = is_bufferview_class(obj.flags.obj_class);
     }
-    ctx.result.set_boolean(result);
+    ctx.result_boolean(result);
 }
 
 // ============================================================================
@@ -887,7 +887,7 @@ fn void builtin_arraybuffer_isview(BuiltinContext* ctx) {
 // ============================================================================
 
 fn void builtin_arraybuffer_species_get(BuiltinContext* ctx) {
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // ============================================================================
@@ -909,7 +909,7 @@ fn void builtin_detach_arraybuffer(BuiltinContext* ctx) {
         return;
     }
     arraybuffer_detach(ctx.heap, obj);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -949,14 +949,14 @@ fn HObject* sab_this(BuiltinContext* ctx, char[] method) {
 fn void builtin_sharedarraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "byteLength");
     if (obj == null) return;
-    ctx.result.set_fastint((long)(*obj.extra_ptr()).ab.byte_length);
+    ctx.result_fastint((long)(*obj.extra_ptr()).ab.byte_length);
 }
 
 // SharedArrayBuffer.prototype.growable getter, ES2024 §25.2.4.2.
 fn void builtin_sharedarraybuffer_proto_growable_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "growable");
     if (obj == null) return;
-    ctx.result.set_boolean((*obj.extra_ptr()).ab.resizable);
+    ctx.result_boolean((*obj.extra_ptr()).ab.resizable);
 }
 
 // SharedArrayBuffer.prototype.maxByteLength getter, ES2024 §25.2.4.4.
@@ -994,12 +994,12 @@ fn void builtin_sharedarraybuffer_proto_grow(BuiltinContext* ctx) {
     }
     // Grow in place: the store is already maxByteLength bytes, zero-filled.
     (*obj.extra_ptr()).ab.byte_length = new_len;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // SharedArrayBuffer[Symbol.species] getter, returns `this`.
 fn void builtin_sharedarraybuffer_species_get(BuiltinContext* ctx) {
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // ============================================================================
@@ -1024,7 +1024,7 @@ fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, u
     HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
     if (fn_name != null) {
         TVal name_tv;
-        name_tv.set_string(fn_name);
+        name_tv.set_string_borrowed(fn_name);
         HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
@@ -1098,7 +1098,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "ArrayBuffer"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "ArrayBuffer"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -1117,7 +1117,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
 
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
-                TVal name_tv; name_tv.set_string(getter_name);
+                TVal name_tv; name_tv.set_string_borrowed(getter_name);
                 getter.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* len_key_sp = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -1192,7 +1192,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "SharedArrayBuffer"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "SharedArrayBuffer"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -1208,7 +1208,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
 
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
-                TVal name_tv; name_tv.set_string(getter_name);
+                TVal name_tv; name_tv.set_string_borrowed(getter_name);
                 getter.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             HString* len_key_sp = (HString*)heap.strs[heap::BuiltinStr.LENGTH];

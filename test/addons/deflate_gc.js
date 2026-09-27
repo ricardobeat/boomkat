@@ -13,3 +13,17 @@ for (let round = 0; round < 200; round++) {
   }
 }
 console.log("gc stress OK, checks:", checks);
+
+// The payload is the sole persistent owner of these dynamically built strings.
+for (let round = 0; round < 20; round++) {
+  let text = "retained-" + round + "-" + "x".repeat(4096);
+  const retained = new Deflater(text);
+  text = null;
+  for (let i = 0; i < 1000; i++) ({ churn: i, value: "temporary-" + i });
+  const returned = retained.tag;
+  if (returned.length !== ("retained-" + round + "-").length + 4096 ||
+      returned.slice(0, 9) !== "retained-") {
+    throw new Error("retained string lost");
+  }
+}
+console.log("payload string ownership OK");

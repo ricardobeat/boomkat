@@ -63,6 +63,10 @@ fn void env_pool_seed_or_clear_pins(heap::Heap* h, bool clear_pins) {
     env::env_pool_seed_or_clear_pins(h, clear_pins);
 }
 
+fn void env_pool_align_epoch(heap::Heap* h) {
+    env::env_pool_align_epoch(h);
+}
+
 // Reclaim dead pool cells after a collection, releasing empty blocks and
 // rebuilding the freelist. Runs after object sweep so bindings may already be
 // freed; the sweep clears cell bytes without dereferencing them.
@@ -566,13 +570,6 @@ fn TVal hobject_create_accessors(heap::Heap* h, TVal getter, TVal setter) {
     if (try gs = gs_obj) {
         h.@set_edge(gs, (*gs.extra_ptr()).gs.getter, getter);
         h.@set_edge(gs, (*gs.extra_ptr()).gs.setter, setter);
-        // The cell now holds references to both.
-        if (getter.is_heap_allocated() && getter.get_heapptr() != null) {
-            ((types::HeapHeader*)getter.get_heapptr()).incref();
-        }
-        if (setter.is_heap_allocated() && setter.get_heapptr() != null) {
-            ((types::HeapHeader*)setter.get_heapptr()).incref();
-        }
         return types::make_object(gs);
     }
     return types::make_undefined();
@@ -593,21 +590,13 @@ fn TVal hobject_access_setter(TVal slot) {
 // Update the getter inside an existing GetterSetter cell (refcounted).
 fn void hobject_set_access_getter(TVal slot, TVal new_getter, heap::Heap* h) {
     HObject* gs = (HObject*)slot.get_heapptr();
-    h.decref_tval(&(*gs.extra_ptr()).gs.getter);
     h.@set_edge(gs, (*gs.extra_ptr()).gs.getter, new_getter);
-    if (new_getter.is_heap_allocated() && new_getter.get_heapptr() != null) {
-        ((types::HeapHeader*)new_getter.get_heapptr()).incref();
-    }
 }
 
 // Update the setter inside an existing GetterSetter cell (refcounted).
 fn void hobject_set_access_setter(TVal slot, TVal new_setter, heap::Heap* h) {
     HObject* gs = (HObject*)slot.get_heapptr();
-    h.decref_tval(&(*gs.extra_ptr()).gs.setter);
     h.@set_edge(gs, (*gs.extra_ptr()).gs.setter, new_setter);
-    if (new_setter.is_heap_allocated() && new_setter.get_heapptr() != null) {
-        ((types::HeapHeader*)new_setter.get_heapptr()).incref();
-    }
 }
 
 // ============================================================================
@@ -617,8 +606,8 @@ fn void hobject_set_access_setter(TVal slot, TVal new_setter, heap::Heap* h) {
 // One entry in a Shape's property array: the key and its flags. Values are
 // per-object and live in the object's own slots.
 struct ShapeProperty {
-    // Interned property key (HString*), compared by pointer.
-    void*     key;
+    // Each shape owns its keys independently of its parent and other shapes.
+    hstring::StringRef key;
     // Property attribute flags.
     PropFlags flags;
 }
@@ -758,15 +747,15 @@ struct HObjectIterator {
 // extra.prim with extra.iter.index, whose bytes collide once a TVal is 16
 // bytes under NONANBOX.
 struct HObjectStringIterator {
-    TVal     string_val;   /// The string being iterated (for GC tracing).
+    hstring::StringRef string;
     uint     index;        /// Current position in code units.
 }
 
 // RegExpStringIterator: lazy iteration over regexp matches.
 // Active when flags.obj_class is REGEXP_STRING_ITERATOR.
-// Stores the iterated string (for GC tracing) and the regexp.
+// Owns the iterated string and traces the regexp.
 struct HObjectRegExpStringIterator {
-    TVal     string_val;   /// The string being iterated (for GC tracing).
+    hstring::StringRef string;
     HObject* regexp;       /// The RegExp object.
     uint     flags;        /// Bit 0: global flag; bit 1: done flag.
 }
@@ -967,7 +956,11 @@ struct HObjectTemporal {
     long            long_h;
     long            long_i;
     long            long_j;
-    HObject*        calendar;
+    // TimeZone and ZonedDateTime use identifier; plain dates use calendar.
+    union {
+        HObject* calendar;
+        StringRef identifier;
+    }
     HObject*        timezone;
 }
 
@@ -1545,7 +1538,7 @@ fn void HObject.ensure_prop_hash(&self, heap::Heap* h) {
     while (sh != null) {
         hobject::ShapeProperty* sp = sh.props();
         for (uint j = 0; j < sh.own_count; j++) {
-            void* k = sp[j].key;
+            void* k = sp[j].key.borrow();
             if (k == null) continue;
             uint hv = hash_key(k);
             uint slot = hv & mask;
@@ -1590,7 +1583,7 @@ fn void* HObject.prop_key_at(&self, uint idx, heap::Heap* h) @inline {
     hobject::Shape* sh = self.get_shape(h);
     while (sh != null) {
         if (idx >= sh.offset && idx < sh.offset + sh.own_count) {
-            return sh.props()[idx - sh.offset].key;
+            return sh.props()[idx - sh.offset].key.borrow();
         }
         sh = sh.parent_shape;
     }
@@ -1642,7 +1635,7 @@ fn void HObject.make_shape_private(&self, heap::Heap* h) {
         hobject::ShapeProperty* old_sp = walk.props();
         for (uint j = 0; j < walk.own_count; j++) {
             uint global_idx = walk.offset + j;
-            new_sp[global_idx].key   = old_sp[j].key;
+            new_sp[global_idx].key.set(h, old_sp[j].key.borrow());
             new_sp[global_idx].flags = old_sp[j].flags;
         }
         walk = walk.parent_shape;
@@ -1656,12 +1649,9 @@ fn void HObject.make_shape_private(&self, heap::Heap* h) {
     if (slot != heap::SHAPE_NONE) {
         h.store_new_shape(slot, ns);
         self.shape_id = slot;
-        // The new shape borrowed the old shape's key pointers verbatim, so the
-        // old slot must not decref them on the way out.
-        if (old_slot != slot) h.free_shape_slot(old_slot, false);
+        if (old_slot != slot) h.free_shape_slot(old_slot);
     } else {
-        // The keys were copied without an incref, so shape_free must not decref.
-        shape_free(ns, h, false);
+        shape_free(ns, h);
     }
 }
 
@@ -1728,7 +1718,7 @@ fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
     while (sh != null) {
         hobject::ShapeProperty* sp = sh.props();
         for (uint i = 0; i < sh.own_count; i++) {
-            if (sp[i].key == key) return (int)(sh.offset + i);
+            if (sp[i].key.borrow() == key) return (int)(sh.offset + i);
         }
         sh = sh.parent_shape;
     }
@@ -2152,7 +2142,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         self.prop_count = 0;
         uint old_slot = (uint)self.shape_id;
         self.shape_id = 0;
-        h.free_shape_slot(old_slot, true);
+        h.free_shape_slot(old_slot);
     } else {
         // Build the replacement private shape and reserve its slot before the
         // compaction. A failed allocation then leaves the object untouched
@@ -2163,8 +2153,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         if (ns == null) return false;
         uint slot = h.alloc_shape_slot();
         if (slot == heap::SHAPE_NONE) {
-            // Keys were copied without incref, so shape_free must not decref.
-            shape_free(ns, h, false);
+            shape_free(ns, h);
             return false;
         }
 
@@ -2182,7 +2171,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
                 if (old_idx == ui) continue;
                 uint new_idx = old_idx < ui ? old_idx : old_idx - 1;
                 if (new_idx < new_count) {
-                    new_sp[new_idx].key   = old_sp[j].key;
+                    new_sp[new_idx].key.set(h, old_sp[j].key.borrow());
                     new_sp[new_idx].flags = old_sp[j].flags;
                 }
             }
@@ -2195,15 +2184,11 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
 
         // Shift the surviving values down over the deleted slot.
         for (uint i = ui; i < new_count; i++) {
-            self.prop_values()[i] = self.prop_values()[i + 1];
+            h.store_slot(self, &self.prop_values()[i], self.prop_values()[i + 1].get());
         }
         mem::clear(&self.prop_values()[new_count], (sz)(PropValue::size));
         self.prop_count = new_count;
 
-        // The surviving keys moved to `ns` uncounted, so the old slot must not
-        // decref them. Only the deleted key's own reference is dropped, and
-        // only when the old shape was private; a shared shape keeps its keys
-        // for its other objects and is left untouched.
         uint old_slot = (uint)self.shape_id;
         Shape* old_shape = self.get_shape(h);
         bool old_was_private = old_shape != null
@@ -2211,8 +2196,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         h.store_new_shape(slot, ns);
         self.shape_id = slot;
         if (old_was_private && old_slot != slot) {
-            if (key != null) h.decref((HeapHeader*)key);
-            h.free_shape_slot(old_slot, false);
+            h.free_shape_slot(old_slot);
         }
     }
 
@@ -2613,6 +2597,32 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
     }
 
+    if (!hp.tearing_down) {
+        switch (obj.flags.obj_class) {
+            case ObjClass.BOOLEAN:
+            case ObjClass.NUMBER:
+            case ObjClass.STRING:
+            case ObjClass.SYMBOL:
+            case ObjClass.DATE:
+            case ObjClass.REGEXP:
+                hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
+            case ObjClass.TEMPORAL_TIMEZONE:
+            case ObjClass.TEMPORAL_ZONEDDATETIME:
+                (*obj.extra_ptr()).temporal.identifier.release(hp);
+            case ObjClass.WRAP_FOR_VALID_ITERATOR:
+                hp.decref_tval(&(*obj.extra_ptr()).wrap_iter.next_method);
+            case ObjClass.ITERATOR_HELPER:
+                hp.decref_tval(&(*obj.extra_ptr()).iter_helper.next_method);
+                hp.decref_tval(&(*obj.extra_ptr()).iter_helper.callback);
+                hp.decref_tval(&(*obj.extra_ptr()).iter_helper.inner_next);
+            case ObjClass.STRING_ITERATOR:
+                (*obj.extra_ptr()).str_iter.string.release(hp);
+            case ObjClass.REGEXP_STRING_ITERATOR:
+                (*obj.extra_ptr()).regexp_iter.string.release(hp);
+            default:
+        }
+    }
+
     // Release the strings held in property slots and array elements. Every
     // other value is reclaimed by the collector, so Heap.decref ignores it.
     if (obj.prop_alloc != null && !hp.tearing_down) {
@@ -2919,13 +2929,8 @@ fn Shape* shape_extend(Shape* parent, uint parent_id, void* new_key, PropFlags f
     Shape* ns = shape_create(1, offset, parent_id, parent, h);
     if (ns == null) return null;
 
-    ns.props()[0].key   = new_key;
+    ns.props()[0].key.set(h, (HString*)new_key);
     ns.props()[0].flags = flags;
-
-    // The shape now holds a reference to the key.
-    if (new_key != null) {
-        ((types::HeapHeader*)new_key).incref();
-    }
 
     return ns;
 }
@@ -2947,7 +2952,7 @@ fn void shape_build_hash(Shape* leaf, heap::Heap* h) {
     while (sh != null) {
         ShapeProperty* sp = sh.props();
         for (uint j = 0; j < sh.own_count; j++) {
-            void* k = sp[j].key;
+            void* k = sp[j].key.borrow();
             if (k == null) continue;
             uint slot = hash_key(k) & mask;
             while (entries[slot].key != null) slot = (slot + 1) & mask;
@@ -2959,23 +2964,11 @@ fn void shape_build_hash(Shape* leaf, heap::Heap* h) {
     leaf.hash_table = entries;
 }
 
-// Free a shape's backing memory, optionally releasing the key references it
-// holds.
-//
-// `release_keys` is separate from the heap because the two questions are
-// unrelated: a shape built by copying keys from another shape never took its
-// own references and must not drop them, while the memory still belongs to
-// this heap either way.
-fn void shape_free(Shape* sh, heap::Heap* h, bool release_keys) {
+// Each shape releases exactly the keys stored in its own segment.
+fn void shape_free(Shape* sh, heap::Heap* h) {
     if (sh == null) return;
-    if (release_keys) {
-        ShapeProperty* sp = sh.props();
-        for (uint i = 0; i < sh.own_count; i++) {
-            if (sp[i].key != null) {
-                h.decref((HeapHeader*)sp[i].key);
-            }
-        }
-    }
+    ShapeProperty* sp = sh.props();
+    for (uint i = 0; i < sh.own_count; i++) sp[i].key.release(h);
     if (sh.hash_table != null) h.free_func(h.heap_udata, sh.hash_table);
     h.free_func(h.heap_udata, sh);
 }
@@ -3019,7 +3012,7 @@ struct ICEntry {
     // Where the property was found, or null when it is an own property.
     void*  proto;
     // The interned key this entry was filled for, compared by pointer.
-    void*  key;
+    hstring::StringRef key;
     // Inherited/accessor reads and stores use this slot while the owner's
     // storage matches the snapshot. Own-data reads use the receiver's index.
     PropValue* prop_value_ptr;
@@ -3074,7 +3067,7 @@ fn PropValue* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
 // without touching shapes, so the entry also snapshots the prototype's
 // identity and shape for the hit path to re-check.
 struct MegamorphicEntry {
-    void*   key;           // interned key pointer (null = empty slot)
+    hstring::StringRef key;           // interned key pointer (null = empty slot)
     uint    shape_id;      // receiver's shape ID at lookup time
     uint    prop_idx;      // property index in owner.prop_values[]
     void*   proto;         // owning prototype (null = own property)
@@ -3101,7 +3094,7 @@ fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) 
     if (h.mega_cache == null) return null;
     uint slot = mega_hash(hobj.shape_id, key);
     MegamorphicEntry* e = h.mega_cache + slot;
-    if (e.key != key || e.shape_id != hobj.shape_id) return null;
+    if (e.key.borrow() != key || e.shape_id != hobj.shape_id) return null;
     if (e.recycle_epoch != h.shape_recycle_epoch) return null;
     HObject* owner = hobj;
     if (e.proto != null) {
@@ -3126,7 +3119,7 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     if (!own && hobj.prototype != owner) return;
     uint slot = mega_hash(hobj.shape_id, key);
     MegamorphicEntry* e = h.mega_cache + slot;
-    e.key = key;
+    e.key.set(h, (HString*)key);
     e.shape_id = hobj.shape_id;
     e.prop_idx = (uint)prop_idx;
     e.proto = own ? null : (void*)owner;
@@ -3158,7 +3151,7 @@ struct VarICEntry {
     // checks that guard every hit also keep these current.
     PropFlags prop_flags;
     // The interned key this entry was filled for.
-    void*   key;
+    hstring::StringRef key;
     // act.lex_env at population time; a hit requires the same chain head
     // so entries never serve a different activation's environment.
     void*   search_head;
@@ -3186,9 +3179,7 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     vic.recycle_epoch = h.shape_recycle_epoch;
     // Retain the new key before releasing the old so replacing a key with
     // itself is safe when the entry is its only counted owner.
-    if (key != null) { ((types::HeapHeader*)key).incref(); }
-    if (vic.key != null) { h.decref((types::HeapHeader*)vic.key); }
-    vic.key = key;
+    vic.key.set(h, (HString*)key);
     vic.search_head = search_head;
     vic.varref_store_ok = store_ok;
 }
@@ -3197,17 +3188,16 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
 // count. Readers guard on bindings or search_head rather than env, so clearing
 // only env would leave a stale pointer that a later lookup dereferences.
 fn void var_ic_clear(VarICEntry* vic, heap::Heap* h) {
-    void* key = vic.key;
     vic.env = null;
     vic.bindings = null;
     vic.shape_id = 0;
     vic.prop_idx = 0;
     vic.prop_flags = {};
     vic.recycle_epoch = 0;
-    vic.key = null;
+    vic.key.release(h);
     vic.search_head = null;
     vic.varref_store_ok = false;
-    if (key != null) { h.decref((types::HeapHeader*)key); }
+
 }
 
 // True when the megamorphic cache may answer a getter lookup on this receiver.

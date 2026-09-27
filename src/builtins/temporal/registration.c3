@@ -46,7 +46,7 @@ macro bool @constructor_pair(Heap* heap, String $tag, TemporalBuiltin $ctor_buil
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, $tag));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, $tag));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -338,7 +338,7 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Temporal"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Temporal"));
         ns.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

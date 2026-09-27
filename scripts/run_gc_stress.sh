@@ -32,10 +32,14 @@ TESTS=(
   test/async_gen_gc_lifetime.js
   test/env_chain_gc_lifetime.js
   test/proxy_ownkeys_gc_lifetime.js
+  test/proxy_spread_gc_lifetime.js
+  test/native_construct_gc_lifetime.js
   test/class_fields_gc_lifetime.js
   test/callback_gc_lifetime.js
   test/temproot_gc_lifetime.js
   test/callee_gc_lifetime.js
+  test/test_symbol_long_description.js
+  test/string_callback_ownership.js
 )
 
 # Generous per-test budget: a collection per allocation is slow enough that a

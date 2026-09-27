@@ -22,7 +22,7 @@ import boomkat::bytecode;
 // instance-no-own-stack.js). Read back by builtin_error_proto_stack_get.
 fn void error_set_captured_stack(HObject* err, Heap* heap, HString* stack_str) {
     TVal tv;
-    tv.set_string(stack_str);
+    tv.set_string_borrowed(stack_str);
     heap.tval_copy_ref(&(*err.extra_ptr()).err.captured_stack, &tv);
 }
 
@@ -136,12 +136,12 @@ fn void error_capture_vm_stack(HObject* err, Heap* heap, void* vm_ptr, char[] ms
 fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (catch err = err_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* err = err_raw;
     ctx.heap.set_prototype(err, builtin_proto_from_new_target(ctx, proto));
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     // Set .message if first arg is provided and not undefined
     HString* msg_str = null;
@@ -152,7 +152,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
             if (ctx.should_throw) return;
             if (msg_str != null) {
                 TVal msg_val;
-                msg_val.set_string(msg_str);
+                msg_val.set_string_borrowed(msg_str);
                 HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, ctx.heap);
             }
@@ -215,9 +215,9 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         error_set_captured_stack(err, ctx.heap, stack_str);
     }
 
-    ctx.result.set_object(null);
-    ctx.result.set_fastint(0);
-    ctx.result.set_object(err);
+    ctx.result_object(null);
+    ctx.result_fastint(0);
+    ctx.result_object(err);
 }
 
 fn void builtin_error(BuiltinContext* ctx) {
@@ -263,28 +263,9 @@ fn HObject* aggregate_error_iterable_to_list(BuiltinContext* ctx, TVal items) {
 
     // GetMethod(items, @@iterator)
     HString* iter_sym = ensure_iterator_symbol(heap);
-    if (iter_sym == null) { ctx.result.set_undefined(); return null; }
+    if (iter_sym == null) { ctx.result_undefined(); return null; }
 
-    HObject* items_obj = null;
-    if (items.is_object() && items.get_heapptr() != null) {
-        items_obj = (HObject*)items.get_heapptr();
-    } else if (!items.is_undefined() && !items.is_null()) {
-        HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (try w = wrapped) {
-            items_obj = w;
-            HObject* wrap_proto = heap.string_proto;
-            if (items.is_string()) {
-                ctx.heap.@set_edge(items_obj, (*items_obj.extra_ptr()).prim.primitive_value, items);
-            } else if (items.is_fastint() || items.is_number()) {
-                wrap_proto = heap.number_proto;
-            } else if (items.is_boolean()) {
-                wrap_proto = heap.bool_proto;
-            } else if (items.is_bigint()) {
-                wrap_proto = heap.bigint_proto;
-            }
-            items_obj.prototype = wrap_proto;
-        }
-    }
+    HObject* items_obj = to_object_wrapper(heap, items);
 
     if (items_obj == null) {
         arr_throw_type_error(ctx, "errors argument is not iterable");
@@ -304,10 +285,10 @@ fn HObject* aggregate_error_iterable_to_list(BuiltinContext* ctx, TVal items) {
         arr_throw_type_error(ctx, "Result of the Symbol.iterator method is not callable");
         return null;
     }
-    if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return null; }
+    if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return null; }
 
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch e = arr_raw) { ctx.result.set_undefined(); return null; }
+    if (catch e = arr_raw) { ctx.result_undefined(); return null; }
     HObject* arr = arr_raw;
     arr.prototype = heap.array_proto;
 
@@ -404,12 +385,12 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
 
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (catch err = err_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* err = err_raw;
     ctx.heap.set_prototype(err, builtin_proto_from_new_target(ctx, ctx.heap.aggregate_err_proto));
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     // §20.5.7.1.1 step 5: message uses ToString via ToPrimitive (hint
     // "string") so a throwing toString()/valueOf() propagates, builtin_to_string
@@ -418,10 +399,10 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
     HString* msg_str = null;
     if (!msg_val.is_undefined()) {
         msg_str = builtin_to_string_vm(ctx, &msg_val);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (msg_str != null) {
             TVal msg_prop;
-            msg_prop.set_string(msg_str);
+            msg_prop.set_string_borrowed(msg_str);
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_prop, hobject::PROP_FLAGS_WC, ctx.heap);
         }
@@ -440,7 +421,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
     // (including when omitted, since GetMethod(undefined, @@iterator) fails).
     // step 4: set the own "errors" property to a fresh Array from that list.
     HObject* errors_arr = aggregate_error_iterable_to_list(ctx, errors_val);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (errors_arr != null) {
         HString* errors_key = builtin_intern_string(ctx.heap, "errors");
         TVal errors_tv;
@@ -463,9 +444,9 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         }
     }
 
-    ctx.result.set_object(null);
-    ctx.result.set_fastint(0);
-    ctx.result.set_object(err);
+    ctx.result_object(null);
+    ctx.result_fastint(0);
+    ctx.result_object(err);
 }
 
 // ============================================================================
@@ -526,9 +507,9 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
         }
     }
     if (name_str.blen == 0) {
-        ctx.result.set_string(msg_str);
+        ctx.result_string(msg_str);
     } else if (msg_str.blen == 0) {
-        ctx.result.set_string(name_str);
+        ctx.result_string(name_str);
     } else {
         // Format: "name: message"
         usz total = (usz)name_str.blen + 2 + (usz)msg_str.blen;
@@ -538,9 +519,9 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
         int len = (int)(io::bprintf(&buf, "%s: %s", (ZString)name_cstr, (ZString)msg_cstr) ?? buf[:0]).len;
         if (len > 0 && len < 256) {
             HString* result_str = builtin_intern_string(ctx.heap, buf[:len]);
-            ctx.result.set_string(result_str);
+            ctx.result_string(result_str);
         } else {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
         }
     }
 }
@@ -560,9 +541,9 @@ fn void builtin_error_captureStackTrace(BuiltinContext* ctx) {
     HString* stack_key = ctx.heap.str(heap::BuiltinStr.STACK);
     HString* empty = ctx.heap.str(heap::BuiltinStr.EMPTY);
     TVal stack_tv;
-    stack_tv.set_string(empty);
+    stack_tv.set_string_borrowed(empty);
     target.put_prop(stack_key, stack_tv, hobject::PROP_FLAGS_WC, ctx.heap);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -592,7 +573,7 @@ fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (obj.get_class() != hobject::ObjClass.ERROR) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     TVal* captured = &(*obj.extra_ptr()).err.captured_stack;
@@ -608,7 +589,7 @@ fn void builtin_error_proto_stack_get(BuiltinContext* ctx) {
     // above somehow found nothing, produce an empty string rather than
     // undefined, E has [[ErrorData]], so step 4 always returns a String.
     HString* empty = (HString*)ctx.heap.strs[heap::BuiltinStr.EMPTY];
-    ctx.result.set_string(empty);
+    ctx.result_string(empty);
 }
 
 // set Error.prototype.stack, error-stack-accessor proposal:
@@ -636,7 +617,7 @@ fn void builtin_error_proto_stack_set(BuiltinContext* ctx) {
     }
     HString* key = (HString*)ctx.heap.strs[heap::BuiltinStr.STACK];
     error_setter_ignores_prototype_properties(ctx, ctx.heap.err_proto, key, value);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value),
@@ -714,7 +695,7 @@ fn void builtin_error_isError(BuiltinContext* ctx) {
 
     bool is_error = arg.is_object() && arg.get_heapptr() != null &&
         ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.ERROR;
-    ctx.result.set_boolean(is_error);
+    ctx.result_boolean(is_error);
 }
 
 // ============================================================================
@@ -735,14 +716,14 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
     HString* name_hstr = builtin_intern_string(heap, name_str);
     TVal name_tv;
-    name_tv.set_string(name_hstr);
+    name_tv.set_string_borrowed(name_hstr);
     proto.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Set .message property (empty string)
     HString* msg_key = (HString*)heap.strs[heap::BuiltinStr.MESSAGE];
     HString* msg_hstr = heap.str(heap::BuiltinStr.EMPTY);
     TVal msg_tv;
-    msg_tv.set_string(msg_hstr);
+    msg_tv.set_string_borrowed(msg_hstr);
     proto.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
 
     return proto;

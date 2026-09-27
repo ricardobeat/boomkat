@@ -42,15 +42,15 @@ fn void builtin_weakref(BuiltinContext* ctx) {
     TVal target = ctx.regs[ctx.base_reg];
 
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.WEAKREF);
-    if (catch err = obj_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = obj_raw) { ctx.result_undefined(); return; }
     HObject* wr = obj_raw;
     ctx.heap.set_prototype(wr, builtin_proto_from_new_target(ctx, ctx.heap.weakref_proto));
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     wr.set_array_idx(0, target, ctx.heap);
     if (wr.array_used < 1) wr.array_used = 1;
 
-    ctx.result.set_object(wr);
+    ctx.result_object(wr);
 }
 
 // ============================================================================
@@ -59,12 +59,12 @@ fn void builtin_weakref(BuiltinContext* ctx) {
 fn void builtin_weakref_proto_deref(BuiltinContext* ctx) {
     HObject* wr = check_collection_class(ctx, hobject::ObjClass.WEAKREF,
         "WeakRef.prototype.deref called on incompatible value");
-    if (wr == null) { ctx.result.set_undefined(); return; }
+    if (wr == null) { ctx.result_undefined(); return; }
     // Target is never collected, so it is always present.
     if (wr.array_used >= 1) {
-        *ctx.result = wr.array_part()[0].get();
+        ctx.copy_result(wr.array_part()[0].get());
     } else {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
     }
 }
 
@@ -90,15 +90,15 @@ fn void builtin_finalization_registry(BuiltinContext* ctx) {
     TVal callback = ctx.regs[ctx.base_reg];
 
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FINALIZATION_REGISTRY);
-    if (catch err = obj_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = obj_raw) { ctx.result_undefined(); return; }
     HObject* fr = obj_raw;
     ctx.heap.set_prototype(fr, builtin_proto_from_new_target(ctx, ctx.heap.finalization_registry_proto));
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     fr.set_array_idx(0, callback, ctx.heap);
     if (fr.array_used < 1) fr.array_used = 1;
 
-    ctx.result.set_object(fr);
+    ctx.result_object(fr);
 }
 
 fn HObject* check_finalization_registry(BuiltinContext* ctx) {
@@ -112,7 +112,7 @@ fn HObject* check_finalization_registry(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_finalization_registry_proto_register(BuiltinContext* ctx) {
     HObject* fr = check_finalization_registry(ctx);
-    if (fr == null) { ctx.result.set_undefined(); return; }
+    if (fr == null) { ctx.result_undefined(); return; }
 
     TVal target = ctx.argc >= 1 ? ctx.regs[ctx.base_reg] : (TVal){};
     if (ctx.argc < 1) target.set_undefined();
@@ -149,7 +149,7 @@ fn void builtin_finalization_registry_proto_register(BuiltinContext* ctx) {
     fr.set_array_idx(cnt + 2, token, ctx.heap);
     if (fr.array_used < cnt + 3) fr.array_used = cnt + 3;
 
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -157,7 +157,7 @@ fn void builtin_finalization_registry_proto_register(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
     HObject* fr = check_finalization_registry(ctx);
-    if (fr == null) { ctx.result.set_undefined(); return; }
+    if (fr == null) { ctx.result_undefined(); return; }
 
     TVal token;
     token.set_undefined();
@@ -197,7 +197,7 @@ fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
     }
     fr.array_used = write;
 
-    ctx.result.set_boolean(removed);
+    ctx.result_boolean(removed);
 }
 
 // ============================================================================
@@ -218,7 +218,7 @@ fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, name));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, name));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

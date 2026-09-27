@@ -475,7 +475,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
                 for (uint i = 0; i < sh.own_count; i++) {
                     if (val_idx >= err_obj.prop_count) break;
                     TVal* v = vals[val_idx].view();
-                    if (!found_name && sp[i].key == (void*)name_key && v.is_string()) {
+                    if (!found_name && sp[i].key.borrow() == (void*)name_key && v.is_string()) {
                         HString* s = (HString*)v.get_heapptr();
                         if (s != null) {
                             char[] d = s.get_data();
@@ -485,7 +485,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
                             found_name = true;
                         }
                     }
-                    if (!found_msg && sp[i].key == (void*)msg_key && v.is_string()) {
+                    if (!found_msg && sp[i].key.borrow() == (void*)msg_key && v.is_string()) {
                         HString* s = (HString*)v.get_heapptr();
                         if (s != null) {
                             char[] d = s.get_data();

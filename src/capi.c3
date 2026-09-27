@@ -323,7 +323,7 @@ fn ulong bk_to_string(void* ctxp, ulong id) @export("bk_to_string") {
     if (!resolve(ctxp, id, &v)) return bad_handle(rt);
     HString* s;
     if (embed::to_string(rt, v, &s) != BK_OK) return 0;
-    TVal sv; sv.set_string(s);
+    TVal sv; sv.set_string_borrowed(s);
     return store(rt, sv);
 }
 
@@ -412,7 +412,7 @@ fn ulong bk_string(void* ctxp, char* utf8, usz len) @export("bk_string") {
     embed::clear_err(rt);
     HString* s = rt.heap.str_intern(utf8[:len]);
     if (s == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
-    TVal v; v.set_string(s);
+    TVal v; v.set_string_borrowed(s);
     return store(rt, v);
 }
 
@@ -634,7 +634,7 @@ fn ulong bk_keys(void* ctxp, ulong obj_id) @export("bk_keys") {
         }
         defer h.free_func(h.heap_udata, pkeys);
         for (uint i = 0; i < pn; i++) {
-            TVal kv; kv.set_string(pkeys[i]);
+            TVal kv; kv.set_string_borrowed(pkeys[i]);
             builtins::array_set_elem(arr, i, kv, h);
         }
         TVal plen; plen.set_fastint((long)pn);
@@ -693,7 +693,7 @@ fn ulong bk_keys(void* ctxp, ulong obj_id) @export("bk_keys") {
     }
 
     for (uint i = 0; i < key_count; i++) {
-        TVal kv; kv.set_string(key_buf[i]);
+        TVal kv; kv.set_string_borrowed(key_buf[i]);
         builtins::array_set_elem(arr, i, kv, h);
     }
     TVal len_tv; len_tv.set_fastint((long)key_count);

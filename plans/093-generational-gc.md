@@ -23,11 +23,11 @@ Non-moving, two generations, promotion after one survival:
 
 A **minor** collection marks from the roots plus the remembered set, treating
 every old node as already marked, so tracing stops at the old generation. It
-sweeps the young list only: dead nodes are freed and survivors move to the old
-list. It skips the string sweeps and the env pool sweep; their garbage waits
-for the next major.
+sweeps the young list and environment pool: dead nodes and scope records are
+freed and surviving nodes move to the old list. String garbage waits for the
+next major.
 
-A **major** collection is today's collector: it marks everything, sweeps the
+A **major** collection marks everything, sweeps the
 young list eagerly and the old list lazily, and sweeps strings and the env
 pool.
 
@@ -40,6 +40,11 @@ old-to-young edge with no barrier behind it, since the store site
 treats the node as fresh. Only collections that drop temproots promote. The
 others free dead young nodes and clear the survivors' marks, leaving them
 young, and keep the remembered set intact.
+
+A major collection prunes dead remembered owners before lazy sweeping can
+free them. A nonquiescent major preserves surviving owners' membership because
+their children remain young. It schedules a major at the next quiescent
+safepoint to finish promotion and string reclamation.
 
 This rule is what lets initialisation stores go unbarriered: a node is young
 from allocation until at least the next quiescent safepoint, and no
@@ -69,9 +74,10 @@ Stores that need it are stores into an object that may already be old:
 built, so env records need no barrier of their own.
 
 Host objects hand their payload to an embedder mark callback the engine cannot
-see into. An old host object with a `gc_mark` callback stays in the remembered
-set for its lifetime. Promotion calls `remember_promoted_host`; major sweeps
-retain surviving callback instances in the set.
+see into. Old closures reach bindings through environment records outside the
+object generations. Both kinds of owner stay in the remembered set for their
+lifetime. Minor collections trace those closure chains, then sweep unreachable
+environment records and prune weak variable caches before reclaiming the cells.
 
 `GeneratorState` has an intrusive heap registry. `alloc_generator_state` adds
 each state and `free_generator_state` removes it. A minor collection scans every
@@ -107,7 +113,9 @@ Two layers, because the type system cannot see every store:
 - Minor collections run on the existing allocation trigger.
 - A major collection runs when the old generation has grown by
   `GC_MAJOR_GROWTH` over its size after the last major, on allocation failure,
-  and on explicit requests.
+  on explicit requests, or after `GC_MAJOR_MAX_MINORS` (64) minor collections.
+  The count limit reclaims old and string garbage even when the retained old
+  graph stops growing.
 - A pending lazy sweep finishes before any collection starts.
 
 ## Barrier baseline
@@ -135,3 +143,18 @@ wall-time measurements by a few percent.
    under GC_VERIFY and GC_STRESS.
 4. Benchmarks: scene churn at 10k/100k/300k, plus the microbenchmarks for
    barrier overhead.
+
+## Pause requirement and profile
+
+Every measured GC pause must stay below 4 ms on the scene and heavy VDOM
+workloads. Generational collection alone does not satisfy this requirement:
+major marking and young sweeping run without a work bound, and remembered
+arrays are scanned in full. Counted string ownership removes string marking
+from minor collections; major collections still scan string registries.
+
+The [initial phase profile](../benchmarks/gc-phase-profile.md) records an
+allocation-cap experiment. The [string ownership profile](../benchmarks/gc-string-ownership-profile.md)
+measures the collector with counted string reclamation. Both use three runs
+per workload. Major tracing, young sweeping and remembered scans still need
+bounded slices. The collector is not performance-complete until the measured
+pause requirement is met.

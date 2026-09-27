@@ -435,6 +435,14 @@
         "GC_STRESS"
       ]
     },
+    "test_gc_generations": {
+      "type": "executable",
+      "sources": ["src", "test/gc_generations.c3"],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": ["GC_VERIFY", "POOL_BYPASS"]
+    },
     "env_layout": {
       "type": "executable",
       "sources": [

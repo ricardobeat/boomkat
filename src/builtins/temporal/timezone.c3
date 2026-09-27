@@ -23,16 +23,14 @@ fn HObject*? alloc_timezone(Heap* hp, String zone_name) {
     if (catch err = raw) return err~;
     HObject* obj = raw;
     HString* str = builtin_intern_string(hp, zone_name);
-    // The name goes in the calendar slot: HObjectTemporal has no separate
-    // string slot, and a calendar and a zone never coexist on one instance.
-    obj.extra.temporal.calendar = (HObject*)str;
+    obj.extra.temporal.identifier.set(hp, str);
     obj.extra.temporal.timezone = null;
     return obj;
 }
 
 // The IANA zone name held by such an object.
 fn String timezone_name(HObject* obj) {
-    HString* str = (HString*)obj.extra.temporal.calendar;
+    HString* str = obj.extra.temporal.identifier.borrow();
     if (str == null) return "";
     return (String)str.get_cstr()[:str.blen];
 }

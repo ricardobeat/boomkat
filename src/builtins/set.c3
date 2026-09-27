@@ -84,7 +84,7 @@ fn SetRecord? get_set_record(BuiltinContext* ctx, TVal obj) {
     double int_size = math::is_inf(num_size) ? num_size : math::trunc(num_size);
     if (int_size < 0.0) {
         builtin_throw_no_result_change(ctx, ctx.heap.range_err_proto, "size must be a non-negative number");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return hobject::PROP_NOT_FOUND~;
     }
 
@@ -371,7 +371,7 @@ fn void builtin_set(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_add(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
     coll_add_value(ctx, set, false, "", true);
 }
 
@@ -389,7 +389,7 @@ fn void builtin_set_proto_size_get(BuiltinContext* ctx) {
             if (!arr[i].get().is_deleted()) count++;
         }
     }
-    ctx.result.set_fastint((long)count);
+    ctx.result_fastint((long)count);
 }
 
 // ============================================================================
@@ -397,12 +397,12 @@ fn void builtin_set_proto_size_get(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_has(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
+    if (set == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_boolean(false); return; }
 
     TVal value = ctx.regs[ctx.base_reg];
     int found = set_find_value(set, value, ctx.heap);
-    ctx.result.set_boolean((found >= 0));
+    ctx.result_boolean((found >= 0));
 }
 
 // ============================================================================
@@ -412,8 +412,8 @@ fn void builtin_set_proto_has(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_delete(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
+    if (set == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_boolean(false); return; }
     coll_delete(ctx, set, ctx.regs[ctx.base_reg], 1, true);
 }
 
@@ -422,7 +422,7 @@ fn void builtin_set_proto_delete(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_clear(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
 
     uint cnt = set.array_used;
     for (uint i = 0; i < cnt; i++) {
@@ -430,7 +430,7 @@ fn void builtin_set_proto_clear(BuiltinContext* ctx) {
     }
     set.array_used = 0;
 
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -470,7 +470,7 @@ fn void builtin_set_iterator_next(BuiltinContext* ctx) {
     TVal value;
     bool done;
     if (!builtin_iterator_step_value(heap, iter, &value, &done)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     builtin_iterator_result(ctx, &value, done);
@@ -481,12 +481,12 @@ fn void builtin_set_iterator_next(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
 
     if (ctx.argc < 1) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
             "missing argument 0 when calling function forEach");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -519,7 +519,7 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = ctx.heap.error_value;
             ctx.heap.has_error = false;
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         // After callback, refresh used (entries may have been added).
@@ -527,7 +527,7 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
         entries = set.array_part();
     }
 
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -536,7 +536,7 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
 // MySet back from SpeciesConstructor calls that inherit this accessor.
 // ============================================================================
 fn void builtin_set_species_getter(BuiltinContext* ctx) {
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // ============================================================================
@@ -546,29 +546,29 @@ fn void builtin_set_species_getter(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_union(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
     TVal other; other.set_undefined();
     if (ctx.argc >= 1) other = ctx.regs[ctx.base_reg];
 
     SetRecord? rec_opt = get_set_record(ctx, other);
-    if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
+    if (catch err = rec_opt) { ctx.result_undefined(); return; }
     SetRecord rec = rec_opt;
 
     TVal iterator = set_record_get_keys_iterator(ctx, &rec);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
     TVal next_fn = set_iter_get_next_fn(ctx, iterator);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     // Step 5: the receiver is snapshotted only after the keys iterator and
     // its `next` are fetched, so mutations made by a `next` getter land in
     // the copy.
     HObject* result = set_copy_live_entries(ctx, set);
-    if (result == null) { ctx.result.set_undefined(); return; }
+    if (result == null) { ctx.result_undefined(); return; }
 
     while (true) {
         TVal next_value;
         bool done;
-        if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
+        if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result_undefined(); return; }
         if (done) break;
         next_value = set_normalize_neg_zero(next_value);
         if (set_find_value(result, next_value, ctx.heap) < 0) {
@@ -576,7 +576,7 @@ fn void builtin_set_proto_union(BuiltinContext* ctx) {
         }
     }
 
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // ============================================================================
@@ -589,35 +589,35 @@ fn void builtin_set_proto_union(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_intersection(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
     TVal other; other.set_undefined();
     if (ctx.argc >= 1) other = ctx.regs[ctx.base_reg];
 
     SetRecord? rec_opt = get_set_record(ctx, other);
-    if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
+    if (catch err = rec_opt) { ctx.result_undefined(); return; }
     SetRecord rec = rec_opt;
 
     HObject* result = set_new_result(ctx);
-    if (result == null) { ctx.result.set_undefined(); return; }
+    if (result == null) { ctx.result_undefined(); return; }
 
     if ((double)set_live_count(set) <= rec.size) {
         SetLiveWalk walk = set_live_walk_start(set);
         TVal elem;
         while (set_live_walk_next(&walk, &elem)) {
             bool has = set_record_has(ctx, &rec, elem);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
             if (has && set_find_value(result, elem, ctx.heap) < 0) set_result_append(result, elem, ctx.heap);
             set_live_walk_resample(&walk);
         }
     } else {
         TVal iterator = set_record_get_keys_iterator(ctx, &rec);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal next_fn = set_iter_get_next_fn(ctx, iterator);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         while (true) {
             TVal next_value;
             bool done;
-            if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
+            if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result_undefined(); return; }
             if (done) break;
             next_value = set_normalize_neg_zero(next_value);
             if (set_find_value(set, next_value, ctx.heap) >= 0 && set_find_value(result, next_value, ctx.heap) < 0) {
@@ -626,7 +626,7 @@ fn void builtin_set_proto_intersection(BuiltinContext* ctx) {
         }
     }
 
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // ============================================================================
@@ -640,16 +640,16 @@ fn void builtin_set_proto_intersection(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_difference(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
     TVal other; other.set_undefined();
     if (ctx.argc >= 1) other = ctx.regs[ctx.base_reg];
 
     SetRecord? rec_opt = get_set_record(ctx, other);
-    if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
+    if (catch err = rec_opt) { ctx.result_undefined(); return; }
     SetRecord rec = rec_opt;
 
     HObject* result = set_copy_live_entries(ctx, set);
-    if (result == null) { ctx.result.set_undefined(); return; }
+    if (result == null) { ctx.result_undefined(); return; }
 
     if ((double)set_live_count(set) <= rec.size) {
         uint this_size = set_live_count(set);
@@ -659,7 +659,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             TVal e = result_arr[index].get();
             if (!e.is_deleted()) {
                 bool has = set_record_has(ctx, &rec, e);
-                if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+                if (ctx.should_throw) { ctx.result_undefined(); return; }
                 if (has) {
                     ctx.heap.decref_tval(result_arr[index].view());
                     result_arr[index].set_deleted();
@@ -667,16 +667,16 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             }
             index++;
         }
-        ctx.result.set_object(result);
+        ctx.result_object(result);
     } else {
         TVal iterator = set_record_get_keys_iterator(ctx, &rec);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal next_fn = set_iter_get_next_fn(ctx, iterator);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         while (true) {
             TVal next_value;
             bool done;
-            if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
+            if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result_undefined(); return; }
             if (done) break;
             next_value = set_normalize_neg_zero(next_value);
             int found = set_find_value(result, next_value, ctx.heap);
@@ -685,7 +685,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
                 result.array_part()[(uint)found].set_deleted();
             }
         }
-        ctx.result.set_object(result);
+        ctx.result_object(result);
     }
 }
 
@@ -700,29 +700,29 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
     TVal other; other.set_undefined();
     if (ctx.argc >= 1) other = ctx.regs[ctx.base_reg];
 
     SetRecord? rec_opt = get_set_record(ctx, other);
-    if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
+    if (catch err = rec_opt) { ctx.result_undefined(); return; }
     SetRecord rec = rec_opt;
 
     TVal iterator = set_record_get_keys_iterator(ctx, &rec);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
     TVal next_fn = set_iter_get_next_fn(ctx, iterator);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     // Step 5: the receiver is snapshotted only after the keys iterator and
     // its `next` are fetched, so mutations made by a `next` getter land in
     // the copy.
     HObject* result = set_copy_live_entries(ctx, set);
-    if (result == null) { ctx.result.set_undefined(); return; }
+    if (result == null) { ctx.result_undefined(); return; }
 
     while (true) {
         TVal next_value;
         bool done;
-        if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
+        if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result_undefined(); return; }
         if (done) break;
         next_value = set_normalize_neg_zero(next_value);
         int found = set_find_value(result, next_value, ctx.heap);
@@ -736,7 +736,7 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
         }
     }
 
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // ============================================================================
@@ -748,25 +748,25 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_isSubsetOf(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
     TVal other; other.set_undefined();
     if (ctx.argc >= 1) other = ctx.regs[ctx.base_reg];
 
     SetRecord? rec_opt = get_set_record(ctx, other);
-    if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
+    if (catch err = rec_opt) { ctx.result_undefined(); return; }
     SetRecord rec = rec_opt;
 
-    if ((double)set_live_count(set) > rec.size) { ctx.result.set_boolean(false); return; }
+    if ((double)set_live_count(set) > rec.size) { ctx.result_boolean(false); return; }
 
     SetLiveWalk walk = set_live_walk_start(set);
     TVal elem;
     while (set_live_walk_next(&walk, &elem)) {
         bool has = set_record_has(ctx, &rec, elem);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-        if (!has) { ctx.result.set_boolean(false); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
+        if (!has) { ctx.result_boolean(false); return; }
         set_live_walk_resample(&walk);
     }
-    ctx.result.set_boolean(true);
+    ctx.result_boolean(true);
 }
 
 // ============================================================================
@@ -778,35 +778,35 @@ fn void builtin_set_proto_isSubsetOf(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_isSupersetOf(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
     TVal other; other.set_undefined();
     if (ctx.argc >= 1) other = ctx.regs[ctx.base_reg];
 
     SetRecord? rec_opt = get_set_record(ctx, other);
-    if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
+    if (catch err = rec_opt) { ctx.result_undefined(); return; }
     SetRecord rec = rec_opt;
 
     double this_size = (double)set_live_count(set);
-    if (this_size < rec.size) { ctx.result.set_boolean(false); return; }
+    if (this_size < rec.size) { ctx.result_boolean(false); return; }
 
     TVal iterator = set_record_get_keys_iterator(ctx, &rec);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
     TVal next_fn = set_iter_get_next_fn(ctx, iterator);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     while (true) {
         TVal next_value;
         bool done;
-        if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
+        if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result_undefined(); return; }
         if (done) break;
         next_value = set_normalize_neg_zero(next_value);
         if (set_find_value(set, next_value, ctx.heap) < 0) {
             set_iter_close(ctx, iterator);
-            ctx.result.set_boolean(false);
+            ctx.result_boolean(false);
             return;
         }
     }
-    ctx.result.set_boolean(true);
+    ctx.result_boolean(true);
 }
 
 // ============================================================================
@@ -819,12 +819,12 @@ fn void builtin_set_proto_isSupersetOf(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_set_proto_isDisjointFrom(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
     TVal other; other.set_undefined();
     if (ctx.argc >= 1) other = ctx.regs[ctx.base_reg];
 
     SetRecord? rec_opt = get_set_record(ctx, other);
-    if (catch err = rec_opt) { ctx.result.set_undefined(); return; }
+    if (catch err = rec_opt) { ctx.result_undefined(); return; }
     SetRecord rec = rec_opt;
 
     if ((double)set_live_count(set) <= rec.size) {
@@ -832,29 +832,29 @@ fn void builtin_set_proto_isDisjointFrom(BuiltinContext* ctx) {
         TVal elem;
         while (set_live_walk_next(&walk, &elem)) {
             bool has = set_record_has(ctx, &rec, elem);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            if (has) { ctx.result.set_boolean(false); return; }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (has) { ctx.result_boolean(false); return; }
             set_live_walk_resample(&walk);
         }
-        ctx.result.set_boolean(true);
+        ctx.result_boolean(true);
     } else {
         TVal iterator = set_record_get_keys_iterator(ctx, &rec);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal next_fn = set_iter_get_next_fn(ctx, iterator);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         while (true) {
             TVal next_value;
             bool done;
-            if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result.set_undefined(); return; }
+            if (!set_iter_step(ctx, iterator, next_fn, &next_value, &done)) { ctx.result_undefined(); return; }
             if (done) break;
             next_value = set_normalize_neg_zero(next_value);
             if (set_find_value(set, next_value, ctx.heap) >= 0) {
                 set_iter_close(ctx, iterator);
-                ctx.result.set_boolean(false);
+                ctx.result_boolean(false);
                 return;
             }
         }
-        ctx.result.set_boolean(true);
+        ctx.result_boolean(true);
     }
 }
 
@@ -922,7 +922,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Set"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Set"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -941,7 +941,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
             HString* name_str = builtin_intern_string(heap, fn_name);
             if (name_str != null) {
                 TVal name_tv;
-                name_tv.set_string(name_str);
+                name_tv.set_string_borrowed(name_str);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
@@ -1007,7 +1007,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
                 HString* getter_name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");
                 if (getter_name_key != null && getter_name_str != null) {
-                    TVal gn_tv; gn_tv.set_string(getter_name_str);
+                    TVal gn_tv; gn_tv.set_string_borrowed(getter_name_str);
                     getter.put_prop(getter_name_key, gn_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 HString* getter_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];

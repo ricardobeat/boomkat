@@ -88,7 +88,7 @@ fn void builtin_map(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_proto_set(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
+    if (map == null) { ctx.result_undefined(); return; }
     coll_set_entry(ctx, map, 2, false, "", true);
 }
 
@@ -97,7 +97,7 @@ fn void builtin_map_proto_set(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_proto_getOrInsert(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
+    if (map == null) { ctx.result_undefined(); return; }
     coll_get_or_insert(ctx, map, false, "", true);
 }
 
@@ -106,7 +106,7 @@ fn void builtin_map_proto_getOrInsert(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_proto_getOrInsertComputed(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
+    if (map == null) { ctx.result_undefined(); return; }
     coll_get_or_insert_computed(ctx, map, false, "", "callback function is not callable", true);
 }
 
@@ -124,7 +124,7 @@ fn void builtin_map_proto_size_get(BuiltinContext* ctx) {
             if (!arr[i].get().is_deleted()) count++;
         }
     }
-    ctx.result.set_fastint((long)count);
+    ctx.result_fastint((long)count);
 }
 
 // ============================================================================
@@ -132,15 +132,15 @@ fn void builtin_map_proto_size_get(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_proto_get(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_undefined(); return; }
+    if (map == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_undefined(); return; }
 
     TVal key = ctx.regs[ctx.base_reg];
     int found = map_find_key(map, key, ctx.heap);
     if (found >= 0) {
-        *ctx.result = map.array_part()[(uint)found + 1].get();
+        ctx.copy_result(map.array_part()[(uint)found + 1].get());
     } else {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
     }
 }
 
@@ -149,12 +149,12 @@ fn void builtin_map_proto_get(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_proto_has(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
+    if (map == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_boolean(false); return; }
 
     TVal key = ctx.regs[ctx.base_reg];
     int found = map_find_key(map, key, ctx.heap);
-    ctx.result.set_boolean((found >= 0));
+    ctx.result_boolean((found >= 0));
 }
 
 // ============================================================================
@@ -164,8 +164,8 @@ fn void builtin_map_proto_has(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_proto_delete(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
-    if (ctx.argc < 1) { ctx.result.set_boolean(false); return; }
+    if (map == null) { ctx.result_undefined(); return; }
+    if (ctx.argc < 1) { ctx.result_boolean(false); return; }
     coll_delete(ctx, map, ctx.regs[ctx.base_reg], 2, true);
 }
 
@@ -174,7 +174,7 @@ fn void builtin_map_proto_delete(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_proto_clear(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
+    if (map == null) { ctx.result_undefined(); return; }
 
     // Reset array_part
     uint cnt = map.array_used;
@@ -183,7 +183,7 @@ fn void builtin_map_proto_clear(BuiltinContext* ctx) {
     }
     map.array_used = 0;
 
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -231,7 +231,7 @@ fn void builtin_map_iterator_next(BuiltinContext* ctx) {
     TVal value;
     bool done;
     if (!builtin_iterator_step_value(heap, iter, &value, &done)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     builtin_iterator_result(ctx, &value, done);
@@ -242,12 +242,12 @@ fn void builtin_map_iterator_next(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
+    if (map == null) { ctx.result_undefined(); return; }
 
     if (ctx.argc < 1) {
         builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto,
             "missing argument 0 when calling function forEach");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -257,19 +257,19 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
     // callback must be accepted; testing is_object() alone rejected them all.
     if (!tval_is_callable(callback)) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
-        if (catch err_k = err_raw) { ctx.result.set_undefined(); return; }
+        if (catch err_k = err_raw) { ctx.result_undefined(); return; }
         HObject* err = err_raw;
         err.prototype = ctx.heap.type_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap, "object is not a function");
         if (msg_str != null) {
             TVal msg_val;
-            msg_val.set_string(msg_str);
+            msg_val.set_string_borrowed(msg_str);
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, ctx.heap);
         }
         ctx.should_throw = true;
         ctx.throw_value.set_object(err);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -295,7 +295,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
             ctx.should_throw = true;
             ctx.throw_value = ctx.heap.error_value;
             ctx.heap.has_error = false;
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         // After callback, refresh used (entries may have been added).
@@ -303,7 +303,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
         entries = map.array_part();
     }
 
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -312,7 +312,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
 // MyMap back from SpeciesConstructor calls that inherit this accessor.
 // ============================================================================
 fn void builtin_map_species_getter(BuiltinContext* ctx) {
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // ============================================================================
@@ -320,8 +320,8 @@ fn void builtin_map_species_getter(BuiltinContext* ctx) {
 // ============================================================================
 fn void builtin_map_groupBy(BuiltinContext* ctx) {
     HObject* groups = group_by_shared(ctx, true);
-    if (groups == null) { ctx.result.set_undefined(); return; }
-    ctx.result.set_object(groups);
+    if (groups == null) { ctx.result_undefined(); return; }
+    ctx.result_object(groups);
 }
 
 // ============================================================================
@@ -377,7 +377,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Map"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Map"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -396,7 +396,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
             HString* name_str = builtin_intern_string(heap, fn_name);
             if (name_str != null) {
                 TVal name_tv;
-                name_tv.set_string(name_str);
+                name_tv.set_string_borrowed(name_str);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
@@ -462,7 +462,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
                 HString* getter_name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");
                 if (getter_name_key != null && getter_name_str != null) {
-                    TVal gn_tv; gn_tv.set_string(getter_name_str);
+                    TVal gn_tv; gn_tv.set_string_borrowed(getter_name_str);
                     getter.put_prop(getter_name_key, gn_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
                 HString* getter_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];

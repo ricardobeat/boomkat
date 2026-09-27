@@ -51,7 +51,7 @@ const uint FORIN_NEARER_MAX = 16;
 // yielded.  Chains longer than FORIN_NEARER_MAX fall back to that eager
 // recording for the overflowing levels (see forin_record_non_enumerable).
 struct ForInSeen {
-    HString** entries;   /// Dense insertion-ordered list of yielded keys; null until the first insert
+    StringRef* entries;   /// Dense insertion-ordered list of yielded keys; null until the first insert
     uint count;
     uint cap;
     uint* index;         /// Open-addressing table: slot -> entries[] index + 1, 0 = empty
@@ -60,17 +60,17 @@ struct ForInSeen {
     uint nearer_count;
 }
 
-// Grow an HString** array if needed, allocating it on first use when `*arr`
+// Grow an owned-key array if needed, allocating it on first use when `*arr`
 // is still null.
-fn bool forin_ensure_cap(Heap* h, HString*** arr, uint* cap, uint need) {
+fn bool forin_ensure_cap(Heap* h, StringRef** arr, uint* cap, uint need) {
     if (*arr == null) {
-        HString** new_arr = (HString**)h.alloc_func(h.heap_udata, *cap * HString*::size);
+        StringRef* new_arr = (StringRef*)h.alloc_func(h.heap_udata, *cap * StringRef::size);
         if (new_arr == null) return false;
         *arr = new_arr;
     }
     if (need >= *cap) {
         uint new_cap = *cap * 2;
-        HString** new_arr = (HString**)h.realloc_func(h.heap_udata, *arr, new_cap * HString*::size);
+        StringRef* new_arr = (StringRef*)h.realloc_func(h.heap_udata, *arr, new_cap * StringRef::size);
         if (new_arr == null) return false;
         *arr = new_arr;
         *cap = new_cap;
@@ -95,7 +95,7 @@ fn bool ForInSeen.reindex(&self, Heap* h, uint index_cap) {
     self.index = tbl;
     self.index_mask = index_cap - 1;
     for (uint i = 0; i < self.count; i++) {
-        uint slot = forin_seen_slot(self, self.entries[i]);
+        uint slot = forin_seen_slot(self, self.entries[i].borrow());
         while (tbl[slot] != 0) slot = (slot + 1) & self.index_mask;
         tbl[slot] = i + 1;
     }
@@ -105,13 +105,13 @@ fn bool ForInSeen.reindex(&self, Heap* h, uint index_cap) {
 fn bool ForInSeen.contains(&self, HString* key) {
     if (self.index == null) {
         for (uint i = 0; i < self.count; i++) {
-            if (self.entries[i] == key) return true;
+            if (self.entries[i].borrow() == key) return true;
         }
         return false;
     }
     uint slot = forin_seen_slot(self, key);
     while (self.index[slot] != 0) {
-        if (self.entries[self.index[slot] - 1] == key) return true;
+        if (self.entries[self.index[slot] - 1].borrow() == key) return true;
         slot = (slot + 1) & self.index_mask;
     }
     return false;
@@ -120,7 +120,7 @@ fn bool ForInSeen.contains(&self, HString* key) {
 // Append a known-absent key.  Callers must have checked `contains` first.
 fn bool ForInSeen.append(&self, Heap* h, HString* key) {
     if (!forin_ensure_cap(h, &self.entries, &self.cap, self.count + 1)) return false;
-    self.entries[self.count] = key;
+    self.entries[self.count] = hstring::string_ref(key);
     self.count++;
     if (self.index == null) {
         // Switch to hashing once linear scanning stops paying off.
@@ -177,7 +177,7 @@ fn bool ForInSeen.shadowed(&self, Heap* h, HString* key) {
 }
 
 fn void ForInSeen.free(&self, Heap* h) {
-    if (self.entries != null) h.free_func(h.heap_udata, self.entries);
+    hstring::free_string_refs(h, self.entries[:self.count]);
     if (self.index != null) h.free_func(h.heap_udata, self.index);
 }
 
@@ -218,13 +218,13 @@ fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
 //
 // `track` is false on the final chain level: nothing above is left to
 // shadow, so the key is yielded without paying for the insert.
-fn bool forin_add_key(Heap* h, HString*** keys, uint* count, uint* keys_cap,
+fn bool forin_add_key(Heap* h, StringRef** keys, uint* count, uint* keys_cap,
                       ForInSeen* seen, bool track, HString* key) {
     if (seen.count != 0 && seen.contains(key)) return true;
     if (seen.nearer_count != 0 && seen.shadowed(h, key)) return true;
     if (!forin_ensure_cap(h, keys, keys_cap, *count + 1)) return false;
     if (track && !seen.append(h, key)) return false;
-    (*keys)[*count] = key;
+    (*keys)[*count] = hstring::string_ref(key);
     (*count)++;
     return true;
 }
@@ -293,7 +293,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
 
     uint keys_cap = FORIN_INITIAL_CAP;
     Heap* h = vm.heap;
-    HString** keys = (HString**)h.alloc_func(h.heap_udata, keys_cap * HString*::size);
+    StringRef* keys = (StringRef*)h.alloc_func(h.heap_udata, keys_cap * StringRef::size);
     if (keys == null) return null;
     uint count = 0;
 
@@ -321,7 +321,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             if (!builtins::proxy_partitioned_own_keys(vm, h, cur, 0, &pkeys, &pn, &ptotal)) {
                 // Trap threw: surface as an empty enumeration; the pending
                 // heap error is rethrown by the FORIN opcode handler.
-                h.free_func(h.heap_udata, keys);
+                hstring::free_string_refs(h, keys[:count]);
                 seen.free(h);
                 return null;
             }
@@ -336,7 +336,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                     : forin_mark_seen(h, &seen, pkeys[i]);
                 if (!ok) {
                     h.free_func(h.heap_udata, pkeys);
-                    h.free_func(h.heap_udata, keys);
+                    hstring::free_string_refs(h, keys[:count]);
                     seen.free(h);
                     return null;
                 }
@@ -344,7 +344,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             h.free_func(h.heap_udata, pkeys);
             TVal pproto;
             if (!builtins::proxy_mop_get_proto(vm, h, cur, &pproto)) {
-                h.free_func(h.heap_udata, keys);
+                hstring::free_string_refs(h, keys[:count]);
                 seen.free(h);
                 return null;
             }
@@ -367,13 +367,13 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 ProxyDesc nd;
                 if (!builtins::module_ns_own_desc(vm, h, cur, ks, &nd)) {
                     // TDZ threw: abort enumeration; FORIN rethrows heap.has_error.
-                    h.free_func(h.heap_udata, keys);
+                    hstring::free_string_refs(h, keys[:count]);
                     seen.free(h);
                     return null;
                 }
                 if (!nd.found || !nd.enumerable) continue;
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, ks)) {
-                    h.free_func(h.heap_udata, keys);
+                    hstring::free_string_refs(h, keys[:count]);
                     seen.free(h);
                     return null;
                 }
@@ -391,7 +391,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                     HString* k = vm.heap.int_to_hstring((long)i);
                     if (k == null) continue;
                     if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
-                        h.free_func(h.heap_udata, keys);
+                        hstring::free_string_refs(h, keys[:count]);
                         seen.free(h);
                         return null;
                     }
@@ -410,7 +410,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                     HString* k = vm.heap.int_to_hstring((long)i);
                     if (k == null) continue;
                     if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
-                        h.free_func(h.heap_udata, keys);
+                        hstring::free_string_refs(h, keys[:count]);
                         seen.free(h);
                         return null;
                     }
@@ -424,7 +424,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 HString* k = vm.heap.int_to_hstring((long)i);
                 if (k == null) continue;
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
-                    h.free_func(h.heap_udata, keys);
+                    hstring::free_string_refs(h, keys[:count]);
                     seen.free(h);
                     return null;
                 }
@@ -473,7 +473,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                         HString* k = (HString*)cur.prop_key_at(si, vm.heap);
                         if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
                             h.free_func(h.heap_udata, sbuf);
-                            h.free_func(h.heap_udata, keys);
+                            hstring::free_string_refs(h, keys[:count]);
                             seen.free(h);
                             return null;
                         }
@@ -489,7 +489,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 if (k.is_arridx()) continue;
                 if (k.is_symbol()) continue;
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
-                    h.free_func(h.heap_udata, keys);
+                    hstring::free_string_refs(h, keys[:count]);
                     seen.free(h);
                     return null;
                 }
@@ -502,7 +502,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         // nor be shadowed by one.
 
         if (track && !seen.push_level(cur) && !forin_record_non_enumerable(h, &seen, cur)) {
-            h.free_func(h.heap_udata, keys);
+            hstring::free_string_refs(h, keys[:count]);
             seen.free(h);
             return null;
         }
@@ -513,7 +513,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
     seen.free(h);
 
     ForInState* state = (ForInState*)heap::alloc_scanned_checked(ForInState, h);
-    if (state == null) { h.free_func(h.heap_udata, keys); return null; }
+    if (state == null) { hstring::free_string_refs(h, keys[:count]); return null; }
     state.keys = keys;
     state.target = obj;
     state.count = count;

@@ -576,14 +576,21 @@ macro void TVal.set_fastint_or_number(&self, long val) {
     }
 }
 
+// An owned string value takes a reference; the caller releases or transfers it.
 macro void TVal.set_string(&self, void* ptr) {
+    self.set_string_borrowed(ptr);
+    if (ptr != null) { ((HeapHeader*)ptr).incref(); }
+}
+
+// A temporary argument view borrows its string from the caller or native scope.
+// Persistent destinations acquire their own reference through a copy operation.
+macro void TVal.set_string_borrowed(&self, void* ptr) {
 $if USE_NANBOX:
     self.bits = nanbox_encode_tagged(TAG_STRING, (usz)ptr);
 $else
     self.tag     = STRING;
     self.pointer = ptr;
 $endif
-    if (ptr != null) { ((HeapHeader*)ptr).incref(); }
 }
 
 macro void TVal.set_object(&self, void* ptr) {

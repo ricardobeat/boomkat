@@ -93,6 +93,23 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
 // incidental rooting.
 //
 // A null or undefined slot marks harmlessly, since every mark helper null-checks.
+// Saving native caller frames publishes their roots before a nested call can
+// replace the live activation array. Calls, construction and eval share this
+// operation so a snapshot cannot silently disappear from the collector.
+fn void Vm.save_activation_roots(&self, ShadowActFrame* root, Activation[] saved) {
+    assert(saved.len == self.activation_count);
+    mem::copy(saved.ptr, &self.activations, (sz)(saved.len * Activation::size));
+    root.prev = self.shadow_act_list;
+    root.acts = saved.ptr;
+    root.count = self.activation_count;
+    self.shadow_act_list = root;
+}
+
+fn void Vm.pop_activation_roots(&self, ShadowActFrame* root) {
+    assert(self.shadow_act_list == root);
+    self.shadow_act_list = root.prev;
+}
+
 fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
     if ((act.flags & (ACT_FLAG_THIS_OWNED | ACT_FLAG_CONSTRUCT | ACT_FLAG_THIS_VALID)) != 0) {
         h.mark_tval(&act.this_binding);
@@ -249,12 +266,14 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
         uint fn_idx = (uint)(*func_obj.extra_ptr()).func.builtin_fn_index;
         TVal[1] temp_regs;
         temp_regs[0] = *this_val;  // this at regs[base_reg - 1] = regs[0]
+        TVal result = types::make_undefined();
+        defer vm.heap.decref_tval(&result);
         builtins::BuiltinContext ctx;
         ctx.vm = vm;
         ctx.regs = &temp_regs;
         ctx.base_reg = 1;
         ctx.argc = 0;
-        ctx.result = &temp_regs[0];
+        ctx.result = builtins::result_slot(&result);
         ctx.heap = vm.heap;
         ctx.this_val = *this_val;
         ctx.is_constructor = false;
@@ -276,7 +295,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
             }
             regs_base = act.bottom;
         } else {
-            vm.heap.store_builtin_result(&regs_base[result_reg], ctx.result);
+            vm.heap.store_builtin_result(&regs_base[result_reg], ctx.result.view());
         }
         return false;
     }
@@ -594,9 +613,7 @@ fn void vm_catcher_chain_bridge(void* heap_ptr, void* cat_head, int mode) {
 // quiescent safepoint, so releasing an enumeration must not clear it.
 fn void forin_state_free(Vm* vm, ForInState* state) @inline {
     if (state == null) return;
-    if (state.keys != null) {
-        vm.heap.free_func(vm.heap.heap_udata, state.keys);
-    }
+    hstring::free_string_refs(vm.heap, state.keys[:state.count]);
     vm.heap.free_scanned((void*)state, (usz)ForInState::size);
 }
 
@@ -912,4 +929,3 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
 
     return val;
 }
-

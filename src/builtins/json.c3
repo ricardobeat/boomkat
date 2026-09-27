@@ -31,7 +31,7 @@ struct JsonParseRecord {
 }
 
 struct JsonEntry {
-    HString* key;
+    StringRef key;
     JsonParseRecord* record;
 }
 
@@ -60,16 +60,23 @@ fn void json_record_free(Heap* heap, JsonParseRecord* r) {
         heap.free_func(heap.heap_udata, r.elements);
     }
     if (r.entries != null) {
-        for (uint i = 0; i < r.entry_count; i++) json_record_free(heap, r.entries[i].record);
+        for (uint i = 0; i < r.entry_count; i++) {
+            r.entries[i].key.release(heap);
+            json_record_free(heap, r.entries[i].record);
+        }
         heap.free_func(heap.heap_udata, r.entries);
     }
+    heap.decref_tval(&r.value);
     heap.free_func(heap.heap_udata, r);
 }
 
 // Free an array of object entries and their child records.
 fn void json_entries_free(Heap* heap, JsonEntry* entries, uint count) {
     if (entries == null) return;
-    for (uint i = 0; i < count; i++) json_record_free(heap, entries[i].record);
+    for (uint i = 0; i < count; i++) {
+        entries[i].key.release(heap);
+        json_record_free(heap, entries[i].record);
+    }
     heap.free_func(heap.heap_udata, entries);
 }
 
@@ -278,6 +285,7 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
             json_skip_ws(jctx);
             JsonParseRecord* child = null;
             TVal elem = json_parse_value(jctx, recording ? &child : null);
+            defer jctx.heap.decref_tval(&elem);
             if (jctx.error || (elem.is_undefined() && elem.get_heapptr() == null && jctx.pos < jctx.len)) {
                 jctx.error = true;
                 if (elems != null) {
@@ -407,6 +415,7 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
                 json_skip_ws(jctx);
                 JsonParseRecord* child = null;
                 TVal val = json_parse_value(jctx, recording ? &child : null);
+                defer jctx.heap.decref_tval(&val);
                 if (jctx.error || (val.is_undefined() && val.get_heapptr() == null && jctx.pos < jctx.len)) {
                     jctx.error = true;
                     json_entries_free(jctx.heap, entries, entry_count);
@@ -424,7 +433,7 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
                     // replace any existing entry's record for this key.
                     bool replaced = false;
                     for (uint i = 0; i < entry_count; i++) {
-                        if (entries[i].key == k) {
+                        if (entries[i].key.borrow() == k) {
                             json_record_free(jctx.heap, entries[i].record);
                             entries[i].record = child;
                             replaced = true;
@@ -440,7 +449,7 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
                             else { recording = false; }
                         }
                         if (recording) {
-                            entries[entry_count].key = k;
+                            entries[entry_count].key = hstring::string_ref(k);
                             entries[entry_count].record = child;
                             entry_count++;
                         } else {
@@ -587,7 +596,7 @@ fn void json_record_primitive(JsonParseCtx* jctx, JsonParseRecord** out_rec, TVa
     rec.kind = 0;
     rec.span_start = start;
     rec.span_end = jctx.pos;
-    rec.value = val;
+    jctx.heap.tval_copy_ref(&rec.value, &val);
     *out_rec = rec;
 }
 
@@ -757,7 +766,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                 JsonParseRecord* child_rec = null;
                 if (rec_valid && rec.kind == 2) {
                     for (uint e = 0; e < rec.entry_count; e++) {
-                        if (rec.entries[e].key == key_str) { child_rec = rec.entries[e].record; break; }
+                        if (rec.entries[e].key.borrow() == key_str) { child_rec = rec.entries[e].record; break; }
                     }
                 }
                 TVal new_val = json_walk(vm, heap, reviver, val, key_str, src, child_rec);
@@ -785,7 +794,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
 
     // Step 3: Return ? Call(reviver, holder, [name, val, context]).
     TVal name_str;
-    name_str.set_string(name);
+    name_str.set_string_borrowed(name);
 
     if (heap.call_fn != null && vm != null) {
         bool callable = false;
@@ -807,7 +816,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                     HString* source_str = builtin_intern_string(heap, src[rec.span_start:slen]);
                     if (source_str != null) {
                         TVal src_tv;
-                        src_tv.set_string(source_str);
+                        src_tv.set_string_borrowed(source_str);
                         HString* source_key = heap.str(heap::BuiltinStr.SOURCE);
                         ctx_obj.put_prop(source_key, src_tv, hobject::PROP_FLAGS_WEC, heap);
                     }
@@ -834,7 +843,7 @@ fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
         err.prototype = ctx.heap.syntax_err_proto;
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         TVal msg_tv;
-        msg_tv.set_string(msg_str);
+        msg_tv.set_string_borrowed(msg_str);
         HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
         err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
         ctx.throw_value.set_object(err);
@@ -863,6 +872,7 @@ fn TVal? json_parse_module_source(Heap* heap, char[] source) {
     jctx.record = false;
 
     TVal result = json_parse_value(&jctx, null);
+    defer catch heap.decref_tval(&result);
     if (jctx.error || (result.is_undefined() && result.get_heapptr() == null)) {
         return JSON_MODULE_PARSE_ERROR~;
     }
@@ -924,6 +934,8 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
         }
     }
 
+    StringRef text_owner = hstring::string_ref(text_str);
+    defer text_owner.release(ctx.heap);
     char* src = text_str.get_cstr();
     uint len = text_str.blen;
 
@@ -947,6 +959,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
 
     JsonParseRecord* root_rec = null;
     TVal result = json_parse_value(&jctx, has_reviver ? &root_rec : null);
+    defer ctx.heap.decref_tval(&result);
 
     // Check parse error (jctx.error or undefined sentinel)
     if (jctx.error || (result.is_undefined() && result.get_heapptr() == null)) {
@@ -1003,18 +1016,18 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
                     ctx.heap.has_error = false;
                     return;
                 }
-                *ctx.result = walked;
+                ctx.copy_result(walked);
             } else {
                 json_record_free(ctx.heap, root_rec);
-                *ctx.result = result;
+                ctx.copy_result(result);
             }
         } else {
             json_record_free(ctx.heap, root_rec);
-            *ctx.result = result;
+            ctx.copy_result(result);
         }
     } else {
         json_record_free(ctx.heap, root_rec);
-        *ctx.result = result;
+        ctx.copy_result(result);
     }
 }
 
@@ -1189,7 +1202,7 @@ fn void json_throw_type_error(JsonSerializeCtx* jctx, char[] msg) {
         HString* msg_str = builtin_intern_string(jctx.heap, msg);
         if (msg_str != null) {
             TVal msg_val;
-            msg_val.set_string(msg_str);
+            msg_val.set_string_borrowed(msg_str);
             HString* msg_key = jctx.heap.str(heap::BuiltinStr.MESSAGE);
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, jctx.heap);
         }
@@ -1309,7 +1322,7 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
         HString* s = builtin_to_string(jctx.heap, &prim);
         if (jctx.heap.has_error || s == null) { *had_error = true; return val; }
         TVal result;
-        result.set_string(s);
+        result.set_string_borrowed(s);
         return result;
     }
 
@@ -1346,7 +1359,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
             }
             if (callable) {
                 TVal key_tv;
-                key_tv.set_string(key);
+                key_tv.set_string_borrowed(key);
                 TVal[1] json_args;
                 json_args[0] = key_tv;
                 if (jctx.heap.call_fn != null && jctx.vm != null) {
@@ -1385,7 +1398,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
                 }
                 if (callable) {
                     TVal key_tv;
-                    key_tv.set_string(key);
+                    key_tv.set_string_borrowed(key);
                     TVal[1] json_args;
                     json_args[0] = key_tv;
                     if (jctx.heap.call_fn != null && jctx.vm != null) {
@@ -1408,7 +1421,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
         }
         if (callable) {
             TVal key_tv;
-            key_tv.set_string(key);
+            key_tv.set_string_borrowed(key);
             TVal[2] rep_args;
             rep_args[0] = key_tv;
             rep_args[1] = val;
@@ -1966,7 +1979,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
     ctx.heap.error_value.set_undefined();
     // Get the value
     if (ctx.argc < 1) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     TVal value = ctx.regs[ctx.base_reg];
@@ -2263,7 +2276,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
     // Create wrapper object
     HObject*? wrapper_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch werr = wrapper_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         if (prop_keys != null) ctx.heap.free_func(ctx.heap.heap_udata, prop_keys);
         return;
     }
@@ -2309,7 +2322,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
     }
 
     if (root_omit) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         if (prop_keys != null) ctx.heap.free_func(ctx.heap.heap_udata, prop_keys);
         return;
     }
@@ -2333,17 +2346,17 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
         // undefined would be indistinguishable from serializing a function.
         builtin_throw(ctx, ctx.heap.range_err_proto,
             "Invalid string length");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
     HString* result_str = builtin_intern_string(ctx.heap, out.bytes());
     if (result_str == null) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    ctx.result.set_string(result_str);
+    ctx.result_string(result_str);
 }
 
 // ============================================================================
@@ -2399,6 +2412,7 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
     jctx.error = false;
     jctx.record = false;
     TVal parsed = json_parse_value(&jctx);
+    defer ctx.heap.decref_tval(&parsed);
     if (jctx.error || (parsed.is_undefined() && parsed.get_heapptr() == null)) {
         json_throw_syntax_error(ctx, "invalid raw JSON text");
         return;
@@ -2412,13 +2426,13 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
     // Steps 5-8: create null-prototype object, add frozen "rawJSON" property,
     // set [[IsRawJSON]].
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = obj_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = obj_raw) { ctx.result_undefined(); return; }
     HObject* obj = obj_raw;
     obj.prototype = null;
 
     HString* raw_key = builtin_intern_string(ctx.heap, "rawJSON");
     TVal raw_tv;
-    raw_tv.set_string(json_str);
+    raw_tv.set_string_borrowed(json_str);
     // Frozen: enumerable (Object.keys returns ["rawJSON"]), non-writable,
     // non-configurable.
     hobject::PropFlags frozen_flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = false };
@@ -2427,7 +2441,7 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
     obj.flags.is_raw_json = true;
     obj.flags.extensible = false;
 
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // JSON.isRawJSON(O), sec-json.israwjson.
@@ -2439,7 +2453,7 @@ fn void builtin_json_is_raw_json(BuiltinContext* ctx) {
             res = ((HObject*)arg.get_heapptr()).flags.is_raw_json;
         }
     }
-    ctx.result.set_boolean(res);
+    ctx.result_boolean(res);
 }
 
 // True for the four JSON whitespace code units.
@@ -2465,7 +2479,7 @@ fn bool register_json_object(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "JSON"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "JSON"));
         json.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

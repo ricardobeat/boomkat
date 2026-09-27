@@ -239,7 +239,7 @@ fn bool ays_throw_type(Dispatch* ds, GeneratorState* gs, char[] msg) {
     HObject* te = te_raw;
     te.prototype = vm.heap.type_err_proto;
     HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-    TVal mv; mv.set_string(intern_string(vm, msg));
+    TVal mv; mv.set_string_borrowed(intern_string(vm, msg));
     if (mk != null) te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
     TVal tv; tv.set_object(te);
     return ays_throw_into_body(ds, gs, tv);

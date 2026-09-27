@@ -159,6 +159,19 @@ fn void env_pool_seed_or_clear_pins(Heap* h, bool clear_pins) {
     }
 }
 
+// A verification mark flips the one-bit epoch before the real minor mark.
+// Align all cells with that epoch so the real mark sees every chain afresh.
+fn void env_pool_align_epoch(Heap* h) {
+    EnvPoolBlock* b = (EnvPoolBlock*)h.env_pool_blocks;
+    while (b != null) {
+        for (uint i = 0; i < ENV_POOL_BLOCK_SIZE; i++) {
+            EnvRecord* e = &b.cells[i];
+            if (e.flags.allocated) e.flags.mark_epoch = h.env_mark_epoch;
+        }
+        b = b.next;
+    }
+}
+
 // Reclaim every dead cell after a collection: a cell whose mark_epoch does not
 // match the heap's current epoch was not reached this cycle. Recycling clears
 // the cell's bytes without dereferencing its outgoing pointers (the bindings

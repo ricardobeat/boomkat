@@ -192,7 +192,7 @@ fn TVal afa_range_error(Heap* heap, char[] msg) {
         err.prototype = heap.range_err_proto;
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
-            TVal msg_tv; msg_tv.set_string(msg_str);
+            TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
         }
@@ -235,7 +235,7 @@ fn void afa_close_iterator(Heap* heap, void* vm, HObject* state) {
 
 fn void builtin_array_from_async(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 
     // Step 1: Let C be the this value.
     TVal c_val = ctx.this_val;
@@ -247,7 +247,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
     if (catch err = outer_raw) { return; }
     HObject* outer = outer_raw;
     outer.prototype = heap.promise_proto;
-    ctx.result.set_object(outer);
+    ctx.result_object(outer);
 
     // Build the shared state object.
     HObject*? state_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -290,35 +290,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
     // Steps 4-8: obtain an iterator. GetMethod(asyncItems, @@asyncIterator),
     // then GetMethod(asyncItems, @@iterator) wrapped via CreateAsyncFromSync.
     // Wrap primitives in a temporary object for the property lookup (ToObject).
-    HObject* items_obj = null;
-    if (async_items.is_object() && async_items.get_heapptr() != null) {
-        items_obj = (HObject*)async_items.get_heapptr();
-    } else if (!async_items.is_undefined() && !async_items.is_null()) {
-        HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (try w = wrapped) {
-            items_obj = w;
-            HObject* wrap_proto = heap.string_proto;
-            if (async_items.is_string()) {
-                // Symbols share the STRING tag: a Symbol primitive must wrap
-                // to an ordinary object with Symbol.prototype, NOT a string
-                // exotic (which would find String.prototype[@@iterator] and
-                // throw trying to stringify the symbol).
-                HString* hs = (HString*)async_items.get_heapptr();
-                if (hs != null && hs.is_symbol()) {
-                    wrap_proto = heap.symbol_proto;
-                } else {
-                    ctx.heap.@set_edge(items_obj, (*items_obj.extra_ptr()).prim.primitive_value, async_items);
-                }
-            } else if (async_items.is_fastint() || async_items.is_number()) {
-                wrap_proto = heap.number_proto;
-            } else if (async_items.is_boolean()) {
-                wrap_proto = heap.bool_proto;
-            } else if (async_items.is_bigint()) {
-                wrap_proto = heap.bigint_proto;
-            }
-            items_obj.prototype = wrap_proto;
-        }
-    }
+    HObject* items_obj = to_object_wrapper(heap, async_items);
 
     TVal iter_method; iter_method.set_undefined();
     bool have_iter = false;
@@ -486,7 +458,7 @@ fn void afa_flush_ctx_throw_to_outer(BuiltinContext* ctx, HObject* outer) {
 // the real fromAsync BuiltinContext, not the driver's stack-local lctx.
 fn void afa_flush_prologue_throw(BuiltinContext* ctx, HObject* outer) {
     afa_flush_ctx_throw_to_outer(ctx, outer);
-    ctx.result.set_object(outer);
+    ctx.result_object(outer);
 }
 
 // Construct the result array A. When `with_len`, IsConstructor(C) receives
@@ -559,7 +531,7 @@ fn void afa_iterator_step(Heap* heap, void* vm, HObject* state) {
 // iterator result object {value, done}. Reads done/value; if done, finalize
 // (set length, resolve outer); else await the value's mapping/storage.
 fn void builtin_array_from_async_step_fulfill(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     afa_clear_stale_error(ctx);
     Heap* heap = ctx.heap;
     HObject* state = afa_state_of(ctx);
@@ -643,7 +615,7 @@ fn void afa_process_value(BuiltinContext* ctx, HObject* state, TVal value) {
 
 // Fulfill reaction for an awaited mapped value. Store it, advance, loop.
 fn void builtin_array_from_async_map_fulfill(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     afa_clear_stale_error(ctx);
     Heap* heap = ctx.heap;
     HObject* state = afa_state_of(ctx);
@@ -792,7 +764,7 @@ fn void afa_arraylike_value_ready(BuiltinContext* ctx, HObject* state) {
 // Generic reject reaction: an awaited value/next-result/mapped-value rejected.
 // Close the iterator (if any) and reject the outer promise with the reason.
 fn void builtin_array_from_async_reject(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     // Capture the reason BEFORE clearing channels, the reject reason lives in
     // ctx.regs, but a stale sibling-thrower error must not leak to the caller's
     // handler drained after us.

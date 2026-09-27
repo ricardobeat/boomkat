@@ -229,6 +229,11 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
             }
             return;
         }
+        // Descriptor traps re-enter the VM after the own-keys call returns.
+        // Keep its materialized key array rooted through the whole copy.
+        heap::ObjectRoot keys_root;
+        vm.heap.push_object_root(&keys_root, karr);
+        defer vm.heap.pop_object_root(&keys_root);
         for (uint pi = 0; pi < karr.array_used; pi++) {
             TVal pel = karr.array_part()[pi].get();
             if (!pel.is_string()) continue;
@@ -309,7 +314,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
                 uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                 HString* ch_str = intern_string(vm, cbuf[:cblen]);
                 if (ch_str != null) {
-                    TVal ch_tv; ch_tv.set_string(ch_str);
+                    TVal ch_tv; ch_tv.set_string_borrowed(ch_str);
                     if (!target.put_prop((void*)ik, ch_tv, hobject::PROP_FLAGS_WEC, vm.heap)) {
                         return VM_ERROR~;
                     }
@@ -446,35 +451,35 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             // scan a stale pointer.  The old contents are not decref'd: the
             // heap list, string table, and large-string registry all keep
             // their entries findable, so the sweep reclaims them.
-            ra.set_undefined();
+            vm.heap.set_reg_undefined(ra);
             HObject*? new_obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try o = new_obj) {
                 o.prototype = vm.heap.object_proto;
-                ra.set_object(o);
+                vm.heap.set_reg_object(ra, o);
                 track_heap_store(ds.act, ra, (uint)insn.a);
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             return (TVal){};
         }
 
         case Opcode.NEWARR: {
             // See NEWOBJ: clear ra before the allocation.
-            ra.set_undefined();
+            vm.heap.set_reg_undefined(ra);
             HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try a = new_arr) {
                 a.prototype = vm.heap.array_proto;
-                ra.set_object(a);
+                vm.heap.set_reg_object(ra, a);
                 track_heap_store(ds.act, ra, (uint)insn.a);
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             return (TVal){};
         }
 
         case Opcode.NEWREGEXP: {
             // See NEWOBJ: clear ra before any allocation below.
-            ra.set_undefined();
+            vm.heap.set_reg_undefined(ra);
             // A = dest register, BC = constant pool index of "/pattern/flags" string
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
@@ -594,12 +599,12 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                                 TVal lastindex_tv;
                                 lastindex_tv.set_fastint(0);
                                 obj.put_prop(lastindex_key, lastindex_tv, hobject::PROP_FLAGS_WENC, ds.vm.heap);
-                                ra.set_object(obj);
+                                vm.heap.set_reg_object(ra, obj);
                                 track_heap_store(ds.act, ra, (uint)insn.a);
                             } else {
                                 // If alloc failed, free the compiled regexp
                                 re_bindings::re_free(compiled);
-                                ra.set_undefined();
+                                vm.heap.set_reg_undefined(ra);
                             }
                         } else {
                             // re_compile failed, but still create an empty regexp object
@@ -611,20 +616,20 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                                 (*obj.extra_ptr()).regexp.flags = js_flags;
                                 HString* pattern_hs = intern_string(vm, pattern_data);
                                 (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
-                                ra.set_object(obj);
+                                vm.heap.set_reg_object(ra, obj);
                                 track_heap_store(ds.act, ra, (uint)insn.a);
                             } else {
-                                ra.set_undefined();
+                                vm.heap.set_reg_undefined(ra);
                             }
                         }
                     } else {
-                        ra.set_undefined();
+                        vm.heap.set_reg_undefined(ra);
                     }
                 } else {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             return (TVal){};
         }
@@ -1214,4 +1219,3 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
     }
     return (TVal){};
 }
-

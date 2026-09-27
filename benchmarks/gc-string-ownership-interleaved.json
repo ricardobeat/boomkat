@@ -1,0 +1,221 @@
+[
+  {
+    "file": "/private/tmp/boomkat-gc-bench/scene_10000.js",
+    "seconds": [
+      [
+        0.12106912489980459,
+        0.12018254201393574,
+        0.12034979206509888
+      ],
+      [
+        0.13132512499578297,
+        0.1312025838997215,
+        0.1395831248955801
+      ]
+    ],
+    "median": [
+      0.12034979206509888,
+      0.13132512499578297
+    ],
+    "change_percent": 9.119527954603669,
+    "rss": [
+      [],
+      []
+    ],
+    "outputs": [
+      [
+        "scene_churn: nodes=10000 frames=300 total=105ms worst_frame=2ms\n",
+        "scene_churn: nodes=10000 frames=300 total=106ms worst_frame=2ms\n"
+      ],
+      [
+        "scene_churn: nodes=10000 frames=300 total=115ms worst_frame=2ms\n",
+        "scene_churn: nodes=10000 frames=300 total=116ms worst_frame=3ms\n",
+        "scene_churn: nodes=10000 frames=300 total=124ms worst_frame=3ms\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [
+        106,
+        105,
+        106
+      ],
+      [
+        115,
+        116,
+        124
+      ]
+    ],
+    "scene_worst_frame_ms": [
+      [
+        2,
+        2,
+        2
+      ],
+      [
+        2,
+        3,
+        3
+      ]
+    ]
+  },
+  {
+    "file": "/private/tmp/boomkat-gc-bench/scene_100000_long.js",
+    "seconds": [
+      [
+        1.5046579579357058,
+        1.4961719589773566,
+        1.523282833979465
+      ],
+      [
+        1.6704579580109566,
+        1.6176897909026593,
+        1.570262583089061
+      ]
+    ],
+    "median": [
+      1.5046579579357058,
+      1.6176897909026593
+    ],
+    "change_percent": 7.512128080060521,
+    "rss": [
+      [],
+      []
+    ],
+    "outputs": [
+      [
+        "scene_churn: nodes=100000 frames=3000 total=1380ms worst_frame=40ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1389ms worst_frame=40ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1408ms worst_frame=40ms\n"
+      ],
+      [
+        "scene_churn: nodes=100000 frames=3000 total=1440ms worst_frame=33ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1484ms worst_frame=35ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1538ms worst_frame=36ms\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [
+        1389,
+        1380,
+        1408
+      ],
+      [
+        1538,
+        1484,
+        1440
+      ]
+    ],
+    "scene_worst_frame_ms": [
+      [
+        40,
+        40,
+        40
+      ],
+      [
+        36,
+        35,
+        33
+      ]
+    ]
+  },
+  {
+    "file": "/private/tmp/boomkat-gc-bench/scene_300000_long.js",
+    "seconds": [
+      [
+        1.6098401659401134,
+        1.610119333025068,
+        1.6203778750495985
+      ],
+      [
+        1.748579457984306,
+        1.7338435420533642,
+        1.7387655000202358
+      ]
+    ],
+    "median": [
+      1.610119333025068,
+      1.7387655000202358
+    ],
+    "change_percent": 7.989852947946985,
+    "rss": [
+      [],
+      []
+    ],
+    "outputs": [
+      [
+        "scene_churn: nodes=300000 frames=3000 total=1258ms worst_frame=65ms\n",
+        "scene_churn: nodes=300000 frames=3000 total=1260ms worst_frame=66ms\n",
+        "scene_churn: nodes=300000 frames=3000 total=1270ms worst_frame=67ms\n"
+      ],
+      [
+        "scene_churn: nodes=300000 frames=3000 total=1382ms worst_frame=56ms\n",
+        "scene_churn: nodes=300000 frames=3000 total=1385ms worst_frame=56ms\n",
+        "scene_churn: nodes=300000 frames=3000 total=1393ms worst_frame=55ms\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [
+        1258,
+        1260,
+        1270
+      ],
+      [
+        1393,
+        1382,
+        1385
+      ]
+    ],
+    "scene_worst_frame_ms": [
+      [
+        65,
+        66,
+        67
+      ],
+      [
+        55,
+        56,
+        56
+      ]
+    ]
+  },
+  {
+    "file": "/private/tmp/boomkat-gc-bench/vdom_heavy.js",
+    "seconds": [
+      [
+        2.616118042031303,
+        2.5851896250387654,
+        2.586551749962382
+      ],
+      [
+        2.729503500042483,
+        2.7416995000094175,
+        2.7799225830240175
+      ]
+    ],
+    "median": [
+      2.586551749962382,
+      2.7416995000094175
+    ],
+    "change_percent": 5.998246509055605,
+    "rss": [
+      [],
+      []
+    ],
+    "outputs": [
+      [
+        "frames: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n"
+      ],
+      [
+        "frames: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [],
+      []
+    ],
+    "scene_worst_frame_ms": [
+      [],
+      []
+    ]
+  }
+]

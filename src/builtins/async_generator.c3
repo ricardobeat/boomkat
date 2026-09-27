@@ -63,7 +63,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* name_val = builtin_intern_string(heap, "[Symbol.asyncIterator]");
                 if (name_key != null && name_val != null) {
-                    TVal name_tv; name_tv.set_string(name_val);
+                    TVal name_tv; name_tv.set_string_borrowed(name_val);
                     fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
             }
@@ -89,7 +89,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         HString* tag_key = ensure_tostringtag_symbol(heap);
         if (tag_key != null) {
             TVal tag_tv;
-            tag_tv.set_string(builtin_intern_string(heap, "AsyncGenerator"));
+            tag_tv.set_string_borrowed(builtin_intern_string(heap, "AsyncGenerator"));
             ag_proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }
@@ -115,7 +115,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
         HString* tag_key = ensure_tostringtag_symbol(heap);
         if (tag_key != null) {
             TVal tag_tv;
-            tag_tv.set_string(builtin_intern_string(heap, "AsyncGeneratorFunction"));
+            tag_tv.set_string_borrowed(builtin_intern_string(heap, "AsyncGeneratorFunction"));
             agf_proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }
@@ -168,7 +168,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
 // ============================================================================
 
 fn void builtin_async_iterator_proto_symbol_asynciter(BuiltinContext* ctx) {
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // ============================================================================
@@ -202,11 +202,11 @@ fn void async_gen_reject_bad_this(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal te = async_gen_type_error(heap, "not an AsyncGenerator");
     HObject*? p_raw = promise_create(heap);
-    if (catch err = p_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = p_raw) { ctx.result_undefined(); return; }
     HObject* p = p_raw;
     promise_settle(p, PROMISE_REJECTED, &te, heap);
     promise_trigger_reactions(p, heap, ctx.vm);
-    ctx.result.set_object(p);
+    ctx.result_object(p);
 }
 
 // Build a TypeError value without touching heap.has_error.
@@ -218,7 +218,7 @@ fn TVal async_gen_type_error(Heap* heap, char[] msg) {
         err.prototype = heap.type_err_proto;
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
-            TVal msg_tv; msg_tv.set_string(msg_str);
+            TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
         }
@@ -248,11 +248,11 @@ fn void async_gen_enqueue(BuiltinContext* ctx, GeneratorState* gs, ResumeKind ki
     Heap* heap = ctx.heap;
 
     HObject*? p_raw = promise_create(heap);
-    if (catch err = p_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = p_raw) { ctx.result_undefined(); return; }
     HObject* promise = p_raw;
 
     AsyncGenRequest* req = (AsyncGenRequest*)heap::alloc_scanned_checked(AsyncGenRequest, heap);
-    if (req == null) { ctx.result.set_undefined(); return; }
+    if (req == null) { ctx.result_undefined(); return; }
     req.completion_kind = kind;
     req.value = completion;
     req.capability = promise;
@@ -269,7 +269,7 @@ fn void async_gen_enqueue(BuiltinContext* ctx, GeneratorState* gs, ResumeKind ki
 
     // Hand the promise back to the caller before draining (draining may settle
     // it synchronously in this Phase-B increment).
-    ctx.result.set_object(promise);
+    ctx.result_object(promise);
 
     if (gs.state != GEN_EXECUTING && gs.state != GEN_AWAITING_RETURN) {
         async_gen_drain(ctx, gs);
@@ -531,26 +531,26 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, TVal val
 // generator COMPLETED, and resume draining any queued requests.
 fn void builtin_async_gen_return_fulfill(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
-    if (gs == null) { ctx.result.set_undefined(); return; }
+    if (gs == null) { ctx.result_undefined(); return; }
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
     gs.state = GEN_COMPLETED;
     async_gen_settle_result(ctx.heap, ctx.vm, gs, arg, true);
     async_gen_drain(ctx, gs);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ASYNC_GEN_RETURN_REJECT native reaction (§27.6.3.8): the awaited `.return()`
 // value rejected, reject the in-flight request, mark COMPLETED, resume drain.
 fn void builtin_async_gen_return_reject(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
-    if (gs == null) { ctx.result.set_undefined(); return; }
+    if (gs == null) { ctx.result_undefined(); return; }
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
     gs.state = GEN_COMPLETED;
     async_gen_settle_reject(ctx.heap, ctx.vm, gs, arg);
     async_gen_drain(ctx, gs);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // AsyncGeneratorUnwrapYieldResumption (§27.6.3.7): a `.return(v)` request
@@ -578,9 +578,9 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, TV
             // yret_resume writes ctx.result (undefined). In this synchronous
             // path ctx is the live `.return()` call's context whose result is
             // the request promise, preserve it across the nested resume.
-            TVal saved_result = *ctx.result;
+            TVal saved_result = ctx.result.get();
             async_gen_yret_resume(ctx, gs, THROW, thrown);
-            *ctx.result = saved_result;
+            ctx.copy_result(saved_result);
             return true;
         }
         return false;
@@ -640,21 +640,21 @@ fn void async_gen_yret_resume(BuiltinContext* ctx, GeneratorState* gs, ResumeKin
     // (e.g. a finally-block `await`), stay in flight if so.
     if (heap.ag_did_await) {
         heap.ag_did_await = false;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
     if (async_gen_finish_body(ctx, gs, result)) {
         async_gen_drain(ctx, gs);
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ASYNC_GEN_YRET_FULFILL native reaction: the awaited `.return()` value settled;
 // resume the body with a return completion carrying the unwrapped value.
 fn void builtin_async_gen_yret_fulfill(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
-    if (gs == null) { ctx.result.set_undefined(); return; }
+    if (gs == null) { ctx.result_undefined(); return; }
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
     gs.state = GEN_EXECUTING;
@@ -665,7 +665,7 @@ fn void builtin_async_gen_yret_fulfill(BuiltinContext* ctx) {
 // resume the body with a throw completion at the yield point (catchable).
 fn void builtin_async_gen_yret_reject(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
-    if (gs == null) { ctx.result.set_undefined(); return; }
+    if (gs == null) { ctx.result_undefined(); return; }
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
     gs.state = GEN_EXECUTING;
@@ -677,7 +677,7 @@ fn void builtin_async_gen_yret_reject(BuiltinContext* ctx) {
 // the body, and continue draining.
 fn void builtin_async_gen_await_resume(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
-    if (gs == null) { ctx.result.set_undefined(); return; }
+    if (gs == null) { ctx.result_undefined(); return; }
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
     async_gen_await_reenter(ctx, gs, NEXT, arg);
@@ -687,7 +687,7 @@ fn void builtin_async_gen_await_resume(BuiltinContext* ctx) {
 // Inject the reason as a throw completion at the await point.
 fn void builtin_async_gen_await_reject(BuiltinContext* ctx) {
     GeneratorState* gs = (GeneratorState*)(*ctx.callee_obj.extra_ptr()).func.var_env;
-    if (gs == null) { ctx.result.set_undefined(); return; }
+    if (gs == null) { ctx.result_undefined(); return; }
     TVal arg; arg.set_undefined();
     if (ctx.argc >= 1) arg = ctx.regs[ctx.base_reg];
     async_gen_await_reenter(ctx, gs, THROW, arg);
@@ -706,7 +706,7 @@ fn void async_gen_await_reenter(BuiltinContext* ctx, GeneratorState* gs, ResumeK
     // Suspended again on another internal await, stay in flight.
     if (heap.ag_did_await) {
         heap.ag_did_await = false;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -714,7 +714,7 @@ fn void async_gen_await_reenter(BuiltinContext* ctx, GeneratorState* gs, ResumeK
     if (async_gen_finish_body(ctx, gs, result)) {
         async_gen_drain(ctx, gs);
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // Resume the async generator's body synchronously (reusing the sync generator

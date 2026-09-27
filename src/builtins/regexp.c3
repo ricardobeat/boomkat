@@ -112,7 +112,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                             HObject* ctor_obj_early = (HObject*)cv.get_heapptr();
                             if (ctor_obj_early.get_class() == hobject::ObjClass.FUNCTION &&
                                 (*ctor_obj_early.extra_ptr()).func.builtin_fn_index == (int)Builtin.REGEXP.ordinal) {
-                                *ctx.result = pattern_arg;
+                                ctx.copy_result(pattern_arg);
                                 return;
                             }
                         }
@@ -210,7 +210,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                     if (ctor_obj.get_class() == hobject::ObjClass.FUNCTION &&
                         (*ctor_obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.REGEXP.ordinal) {
                         // SameValue: same constructor → return the original pattern object
-                        *ctx.result = pattern_arg;
+                        ctx.copy_result(pattern_arg);
                         return;
                     }
                 }
@@ -237,7 +237,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
     // must happen BEFORE RegExpInitialize's ToString(P)/ToString(F) below.
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.REGEXP);
     if (catch err = obj_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* obj = obj_raw;
@@ -288,7 +288,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
     }
 
     if (!regexp_initialize(ctx, obj, pattern_str, pattern_len, flags_str, flags_len, js_flags)) return;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // RegExpInitialize (ES2022 §22.2.3.2.2): parse `flags_str`, compile
@@ -368,7 +368,7 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
 
     // Store pattern string as primitive_value
     HString* pattern_hs = builtin_intern_string(ctx.heap, pattern_str[:pattern_len]);
-    (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
+    ctx.heap.set_reg_string(&(*obj.extra_ptr()).prim.primitive_value, pattern_hs);
 
     // Set lastIndex = 0 (ES5 §15.10.7.5), writable, non-enumerable,
     // non-configurable own data property. RegExpInitialize step 12 is
@@ -452,10 +452,10 @@ fn void builtin_regexp_proto_compile(BuiltinContext* ctx) {
 
     // Step 5: re-run RegExpInitialize on the SAME object; return the receiver.
     if (!regexp_initialize(ctx, obj, pattern_str, pattern_len, flags_str, flags_len, js_flags)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // RegExp.prototype.test(string), ES2022 §22.2.6.15
@@ -487,11 +487,12 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
 
     // Step 4: Let match be ? RegExpExec(R, S).
     TVal s_tv; s_tv.set_string(s_hstr);
+    defer ctx.heap.decref_tval(&s_tv);
     if (!regexp_exec_call(ctx, obj, &s_tv)) return;
 
     // Step 5: If match is not null, return true; else return false.
-    bool matched = !ctx.result.is_null();
-    ctx.result.set_boolean(matched);
+    bool matched = !ctx.result.get().is_null();
+    ctx.result_boolean(matched);
 }
 
 // Build a RegExp exec/match result array with .groups and optional .indices.
@@ -515,7 +516,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     // non-participating capture is `undefined`, which the dense part cannot
     // tell from a hole, so those keep the named-table path that records
     // presence (`n in m` must hold for every index below `length`).
-    TVal elem; elem.set_string(match_str);
+    TVal elem; elem.set_string_borrowed(match_str);
     arr.set_array_idx(0, elem, ctx.heap);
 
     // Capture groups 1..N
@@ -524,7 +525,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
         if (caps_start[i] >= 0 && caps_end[i] >= 0) {
             usz cap_len = (usz)(caps_end[i] - caps_start[i]);
             TVal cap_elem;
-            cap_elem.set_string(cap_len == 0
+            cap_elem.set_string_borrowed(cap_len == 0
                 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                 : builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
             arr.set_array_idx((uint)(i + 1), cap_elem, ctx.heap);
@@ -540,7 +541,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     arr.put_prop(ctx.heap.str(heap::BuiltinStr.INDEX), idx_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // input property
-    TVal input_tv; input_tv.set_string(input_str);
+    TVal input_tv; input_tv.set_string_borrowed(input_str);
     arr.put_prop(ctx.heap.str(heap::BuiltinStr.INPUT), input_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // groups property
@@ -558,7 +559,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                     TVal cap_val;
                     if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
                         usz cap_len = (usz)(caps_end[gi] - caps_start[gi]);
-                        cap_val.set_string(cap_len == 0
+                        cap_val.set_string_borrowed(cap_len == 0
                             ? ctx.heap.str(heap::BuiltinStr.EMPTY)
                             : builtin_intern_string(ctx.heap, input[caps_start[gi] : cap_len]));
                     } else {
@@ -807,7 +808,7 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
     result_buf[pos] = 0;
 
     HString* result = builtin_intern_string(ctx.heap, result_buf[:pos]);
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // ============================================================================
@@ -857,6 +858,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
         // Pass the ToString-coerced string S, per spec, Call(exec, R, «S»)
         // passes S as the arg, not the original input.
         TVal s_hstr_tv; s_hstr_tv.set_string(s_hstr);
+        defer ctx.heap.decref_tval(&s_hstr_tv);
         if (!regexp_exec_call(ctx, rx, &s_hstr_tv)) {
             return;
         }
@@ -870,7 +872,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
 
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = arr_raw) { ctx.result.set_null(); return; }
+    if (catch err = arr_raw) { ctx.result_null(); return; }
     HObject* arr = arr_raw;
     arr.prototype = ctx.heap.array_proto;
 
@@ -879,8 +881,9 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     while (true) {
         // 8.c. Let result be ? RegExpExec(rx, S).
         TVal s_hstr_tv; s_hstr_tv.set_string(s_hstr);
+        defer ctx.heap.decref_tval(&s_hstr_tv);
         if (!regexp_exec_call(ctx, rx, &s_hstr_tv)) return;
-        TVal result = *ctx.result;
+        TVal result = ctx.result.get();
         if (result.is_null()) break;
         // Skip our internal hstring wrapping when handing off, re_run
         // returns a TVal containing an Array object pointer.
@@ -905,7 +908,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
         if (match_str == null) match_str = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
 
         // 8.f. Perform ! CreateDataProperty(A, ! ToString(n), matchStr).
-        TVal elem; elem.set_string(match_str);
+        TVal elem; elem.set_string_borrowed(match_str);
         arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
         arr_idx++;
 
@@ -951,7 +954,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     }
 
     if (arr_idx == 0) {
-        ctx.result.set_null();
+        ctx.result_null();
         return;
     }
 
@@ -959,7 +962,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     arr.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
-    ctx.result.set_object(arr);
+    ctx.result_object(arr);
 }
 
 // ============================================================================
@@ -998,8 +1001,9 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 
     // 6. Let result be ? RegExpExec(rx, S).
     TVal s_hstr_tv; s_hstr_tv.set_string(s_hstr);
+    defer ctx.heap.decref_tval(&s_hstr_tv);
     if (!regexp_exec_call(ctx, rx, &s_hstr_tv)) return;
-    TVal result = *ctx.result;
+    TVal result = ctx.result.get();
 
     // 7. Let currentLastIndex be ? Get(rx, "lastIndex").
     TVal? cur_opt = builtins_generic_get(rx, li_key, ctx);
@@ -1013,11 +1017,11 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
     }
 
     if (result.is_null()) {
-        ctx.result.set_fastint(-1);
+        ctx.result_fastint(-1);
         return;
     }
     if (!result.is_object() || result.get_heapptr() == null) {
-        ctx.result.set_fastint(-1);
+        ctx.result_fastint(-1);
         return;
     }
 
@@ -1027,19 +1031,19 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
     TVal? idx_opt = builtins_generic_get(match_arr, index_key, ctx);
     if (ctx.should_throw) return;
     if (catch err = idx_opt) {
-        ctx.result.set_fastint(-1);
+        ctx.result_fastint(-1);
         return;
     }
     TVal idx_tv = idx_opt;
     if (idx_tv.is_fastint()) {
-        ctx.result.set_fastint(idx_tv.get_fastint());
+        ctx.result_fastint(idx_tv.get_fastint());
         return;
     }
     if (idx_tv.is_number()) {
-        ctx.result.set_number(idx_tv.get_number());
+        ctx.result_number(idx_tv.get_number());
         return;
     }
-    ctx.result.set_fastint(0);
+    ctx.result_fastint(0);
 }
 
 // ============================================================================
@@ -1195,7 +1199,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     } else {
         s_hstr = heap.str(heap::BuiltinStr.UNDEFINED);
     }
-    if (s_hstr == null) { ctx.result.set_string(heap.str(heap::BuiltinStr.EMPTY)); return; }
+    if (s_hstr == null) { ctx.result_string(heap.str(heap::BuiltinStr.EMPTY)); return; }
 
     char* input = s_hstr.get_cstr();
     int input_len = (int)s_hstr.blen;
@@ -1261,8 +1265,9 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
 
     while (!done) {
         TVal s_tv2; s_tv2.set_string(s_hstr);
+        defer ctx.heap.decref_tval(&s_tv2);
         if (!regexp_exec_call(ctx, rx, &s_tv2)) return;
-        TVal match_result = *ctx.result;
+        TVal match_result = ctx.result.get();
         if (match_result.is_null()) {
             done = true;
         } else {
@@ -1413,11 +1418,11 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             // replacerArgs = [matched, cap1..capN, position, S, ?namedCaptures]
             TVal[38] fn_args;
             int arg_count = 0;
-            TVal matched_tv; matched_tv.set_string(matched_hstr);
+            TVal matched_tv; matched_tv.set_string_borrowed(matched_hstr);
             fn_args[arg_count++] = matched_tv;
             for (int ci = 0; ci < num_caps && arg_count < 35; ci++) {
                 if (cap_strs[ci] != null) {
-                    TVal cap_tv; cap_tv.set_string(cap_strs[ci]);
+                    TVal cap_tv; cap_tv.set_string_borrowed(cap_strs[ci]);
                     fn_args[arg_count++] = cap_tv;
                 } else {
                     TVal cap_undef; cap_undef.set_undefined();
@@ -1428,7 +1433,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             // the CESU-8 byte offset (out_start) used for slicing `input`.
             TVal pos_tv; pos_tv.set_fastint((long)pos_d);
             fn_args[arg_count++] = pos_tv;
-            TVal str_tv; str_tv.set_string(s_hstr);
+            TVal str_tv; str_tv.set_string_borrowed(s_hstr);
             fn_args[arg_count++] = str_tv;
             // Append namedCaptures only if not undefined (step 14.k.iv).
             if (have_named_captures && arg_count < 38) {
@@ -1468,7 +1473,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.STRING);
                         if (try box = box_raw) {
                             box.prototype = heap.string_proto;
-                            ctx.heap.@set_edge(box, (*box.extra_ptr()).prim.primitive_value, named_captures_tv);
+                            ctx.heap.tval_copy_ref(&(*box.extra_ptr()).prim.primitive_value, &named_captures_tv);
                             // Set own .length (non-writable, non-enum, non-configurable)
                             HString* str_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                             TVal str_len_tv;
@@ -1481,14 +1486,14 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
                         if (try box = box_raw) {
                             box.prototype = heap.number_proto;
-                            ctx.heap.@set_edge(box, (*box.extra_ptr()).prim.primitive_value, named_captures_tv);
+                            ctx.heap.tval_copy_ref(&(*box.extra_ptr()).prim.primitive_value, &named_captures_tv);
                             named_captures_tv.set_object(box);
                         }
                     } else if (named_captures_tv.is_boolean()) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
                         if (try box = box_raw) {
                             box.prototype = heap.bool_proto;
-                            ctx.heap.@set_edge(box, (*box.extra_ptr()).prim.primitive_value, named_captures_tv);
+                            ctx.heap.tval_copy_ref(&(*box.extra_ptr()).prim.primitive_value, &named_captures_tv);
                             named_captures_tv.set_object(box);
                         }
                     }
@@ -1518,7 +1523,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
 
     // Append tail [last_end, input_len).
     for (int j = last_end; j < input_len && out_off < 8192; j++) out_buf[out_off++] = input[j];
-    ctx.result.set_string(builtin_intern_string(heap, out_buf[:out_off]));
+    ctx.result_string(builtin_intern_string(heap, out_buf[:out_off]));
 }
 
 // ============================================================================
@@ -1659,6 +1664,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     if (!species_ctor_tv.is_undefined() && heap.construct_fn != null && ctx.vm != null) {
         TVal rx_tv; rx_tv.set_object(rx);
         TVal new_flags_tv; new_flags_tv.set_string(new_flags_str);
+        defer ctx.heap.decref_tval(&new_flags_tv);
         TVal[2] ctor_args;
         ctor_args[0] = rx_tv;
         ctor_args[1] = new_flags_tv;
@@ -1713,12 +1719,12 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
 
     // Create result array.
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = arr_raw) { ctx.result.set_null(); return; }
+    if (catch err = arr_raw) { ctx.result_null(); return; }
     HObject* arr = arr_raw;
     arr.prototype = heap.array_proto;
 
     if (limit == 0) {
-        ctx.result.set_object(arr);
+        ctx.result_object(arr);
         return;
     }
 
@@ -1728,17 +1734,18 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     // Step 22: if size = 0, handle empty string case.
     if (input_len == 0) {
         TVal s_tv2; s_tv2.set_string(s_hstr);
+        defer ctx.heap.decref_tval(&s_tv2);
         if (!regexp_exec_call(ctx, splitter, &s_tv2)) return;
-        TVal z = *ctx.result;
+        TVal z = ctx.result.get();
         if (z.is_null()) {
             // No match on empty string, return [S].
-            TVal elem; elem.set_string(s_hstr);
+            TVal elem; elem.set_string_borrowed(s_hstr);
             arr.put_prop(heap.int_to_hstring(0), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             TVal lv; lv.set_fastint(1);
             arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
         // else: match, return [] (empty).
-        ctx.result.set_object(arr);
+        ctx.result_object(arr);
         return;
     }
 
@@ -1757,8 +1764,9 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
 
         // Step 24.c: Let z be ? RegExpExec(splitter, S).
         TVal s_tv2; s_tv2.set_string(s_hstr);
+        defer ctx.heap.decref_tval(&s_tv2);
         if (!regexp_exec_call(ctx, splitter, &s_tv2)) return;
-        TVal z = *ctx.result;
+        TVal z = ctx.result.get();
 
         // Step 24.e: If z is null, let q be AdvanceStringIndex(S, q, unicodeMatching).
         if (z.is_null()) {
@@ -1818,13 +1826,13 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
             } else {
                 substr = builtin_intern_string(heap, input[p : (usz)sub_len]);
             }
-            TVal elem; elem.set_string(substr);
+            TVal elem; elem.set_string_borrowed(substr);
             arr.put_prop(heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             arr_idx++;
             if (arr_idx >= limit) {
                 TVal lv; lv.set_fastint((long)arr_idx);
                 arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC, ctx.heap);
-                ctx.result.set_object(arr);
+                ctx.result_object(arr);
                 return;
             }
         }
@@ -1853,7 +1861,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
             if (arr_idx >= limit) {
                 TVal lv; lv.set_fastint((long)arr_idx);
                 arr.put_prop(len_key, lv, hobject::PROP_FLAGS_WEC, ctx.heap);
-                ctx.result.set_object(arr);
+                ctx.result_object(arr);
                 return;
             }
         }
@@ -1871,14 +1879,14 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         } else {
             tail_str = builtin_intern_string(heap, input[p : (usz)tail_len]);
         }
-        TVal elem; elem.set_string(tail_str);
+        TVal elem; elem.set_string_borrowed(tail_str);
         arr.put_prop(heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
         arr_idx++;
     }
 
     TVal len_val; len_val.set_fastint((long)arr_idx);
     arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-    ctx.result.set_object(arr);
+    ctx.result_object(arr);
 }
 
 // ============================================================================
@@ -1922,6 +1930,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
         if (s_hstr == null) s_hstr = heap.str(heap::BuiltinStr.UNDEFINED);
     }
     s_tv.set_string(s_hstr);
+    defer heap.decref_tval(&s_tv);
 
     // 2. If ? IsRegExp(R) is true, and
     //    SameValue(? Get(R, "flags"), undefined), actually:
@@ -1999,6 +2008,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     if (!species_ctor_tv.is_undefined() && heap.construct_fn != null && ctx.vm != null) {
         TVal rx_tv; rx_tv.set_object(rx);
         TVal flags_tv; flags_tv.set_string(flags_str);
+        defer ctx.heap.decref_tval(&flags_tv);
         TVal[2] ctor_args;
         ctor_args[0] = rx_tv;
         ctor_args[1] = flags_tv;
@@ -2049,9 +2059,9 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
 
     // 9. Return CreateRegExpStringIterator(matcher, S, global, unicode).
     HObject*? iter_raw = heap.alloc_object(hobject::ObjClass.REGEXP_STRING_ITERATOR);
-    if (catch err = iter_raw) { ctx.result.set_null(); return; }
+    if (catch err = iter_raw) { ctx.result_null(); return; }
     HObject* iter = iter_raw;
-    ctx.heap.@set_edge(iter, (*iter.extra_ptr()).regexp_iter.string_val, s_tv);
+    (*iter.extra_ptr()).regexp_iter.string.set(heap, s_hstr);
     ctx.heap.@set_edge(iter, (*iter.extra_ptr()).regexp_iter.regexp, matcher);
     // flags bits: bit 0 = global, bit 1 = done, bit 2 = unicode
     uint iter_flags = 0;
@@ -2060,7 +2070,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     (*iter.extra_ptr()).regexp_iter.flags = iter_flags;
     iter.prototype = heap.regexp_string_iterator_proto;
 
-    ctx.result.set_object(iter);
+    ctx.result_object(iter);
 }
 
 // Result of regexp_get_this_or_throw: the HObject and whether it's the prototype.
@@ -2149,9 +2159,9 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
             return false;
         }
         if (res.is_null()) {
-            ctx.result.set_null();
+            ctx.result_null();
         } else {
-            *ctx.result = res;
+            ctx.copy_result(res);
         }
         return true;
     }
@@ -2222,7 +2232,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
             TVal zero_tv; zero_tv.set_fastint(0);
             if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
-            ctx.result.set_null();
+            ctx.result_null();
             return;
         }
         start_pos = (int)s_hstr.char_offset_to_byte_offset((uint)li_charunit);
@@ -2245,7 +2255,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
             TVal zero_tv; zero_tv.set_fastint(0);
             if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
         }
-        ctx.result.set_null();
+        ctx.result_null();
         return;
     }
 
@@ -2266,10 +2276,10 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
                                              out_start, out_end,
                                              &caps_start, &caps_end, num_caps, has_indices);
     if (arr == null) {
-        ctx.result.set_null();
+        ctx.result_null();
         return;
     }
-    ctx.result.set_object(arr);
+    ctx.result_object(arr);
     return;
 }
 
@@ -2344,7 +2354,7 @@ fn void builtin_regexp_proto_get_flags(BuiltinContext* ctx) {
         if (builtin_to_boolean(&yv)) buf[pos++] = 'y';
     }
     HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // EscapeRegExpPattern, ES2015 §21.2.3.2.4
@@ -2468,7 +2478,7 @@ fn void builtin_regexp_proto_get_source(BuiltinContext* ctx) {
     if (this_r.obj == null) return;
     // ES2022 §21.2.5.10 step 3: if SameValue(R, %RegExpPrototype%), return "(?:)".
     if (this_r.is_proto) {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, "(?:)"));
+        ctx.result_string(builtin_intern_string(ctx.heap, "(?:)"));
         return;
     }
     HObject* obj = this_r.obj;
@@ -2479,9 +2489,9 @@ fn void builtin_regexp_proto_get_source(BuiltinContext* ctx) {
         // Apply EscapeRegExpPattern: escape '/' and line terminators
         char[4096] esc_buf;
         usz esc_len = escape_regexp_pattern(src, slen, &esc_buf, 4095);
-        ctx.result.set_string(builtin_intern_string(ctx.heap, esc_buf[:esc_len]));
+        ctx.result_string(builtin_intern_string(ctx.heap, esc_buf[:esc_len]));
     } else {
-        ctx.result.set_string(builtin_intern_string(ctx.heap, "(?:)"));
+        ctx.result_string(builtin_intern_string(ctx.heap, "(?:)"));
     }
 }
 
@@ -2489,64 +2499,64 @@ fn void builtin_regexp_proto_get_source(BuiltinContext* ctx) {
 fn void builtin_regexp_proto_get_global(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
-    if (this_r.is_proto) { ctx.result.set_undefined(); return; }
-    ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 1) != 0);
+    if (this_r.is_proto) { ctx.result_undefined(); return; }
+    ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 1) != 0);
 }
 
 // RegExp.prototype.ignoreCase, ES6 §21.2.5.3
 fn void builtin_regexp_proto_get_ignoreCase(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
-    if (this_r.is_proto) { ctx.result.set_undefined(); return; }
-    ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 2) != 0);
+    if (this_r.is_proto) { ctx.result_undefined(); return; }
+    ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 2) != 0);
 }
 
 // RegExp.prototype.multiline, ES6 §21.2.5.5
 fn void builtin_regexp_proto_get_multiline(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
-    if (this_r.is_proto) { ctx.result.set_undefined(); return; }
-    ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 4) != 0);
+    if (this_r.is_proto) { ctx.result_undefined(); return; }
+    ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 4) != 0);
 }
 
 // RegExp.prototype.dotAll, ES2018 §21.2.5.2
 fn void builtin_regexp_proto_get_dotAll(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
-    if (this_r.is_proto) { ctx.result.set_undefined(); return; }
-    ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 8) != 0);
+    if (this_r.is_proto) { ctx.result_undefined(); return; }
+    ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 8) != 0);
 }
 
 // RegExp.prototype.sticky, ES6 §21.2.5.14
 fn void builtin_regexp_proto_get_sticky(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
-    if (this_r.is_proto) { ctx.result.set_undefined(); return; }
-    ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 32) != 0);
+    if (this_r.is_proto) { ctx.result_undefined(); return; }
+    ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 32) != 0);
 }
 
 // RegExp.prototype.unicode, ES6 §21.2.5.16
 fn void builtin_regexp_proto_get_unicode(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
-    if (this_r.is_proto) { ctx.result.set_undefined(); return; }
-    ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 16) != 0);
+    if (this_r.is_proto) { ctx.result_undefined(); return; }
+    ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 16) != 0);
 }
 
 // RegExp.prototype.hasIndices, ES2022 §21.2.5.8
 fn void builtin_regexp_proto_get_hasIndices(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
-    if (this_r.is_proto) { ctx.result.set_undefined(); return; }
-    ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 64) != 0);
+    if (this_r.is_proto) { ctx.result_undefined(); return; }
+    ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 64) != 0);
 }
 
 // RegExp.prototype.unicodeSets, ES2024 §21.2.5.17
 fn void builtin_regexp_proto_get_unicodeSets(BuiltinContext* ctx) {
     RegexpThisResult this_r = regexp_get_this_or_throw(ctx);
     if (this_r.obj == null) return;
-    if (this_r.is_proto) { ctx.result.set_undefined(); return; }
-    ctx.result.set_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 128) != 0);
+    if (this_r.is_proto) { ctx.result_undefined(); return; }
+    ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 128) != 0);
 }
 
 fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
@@ -2567,7 +2577,7 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
     HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
     if (fn_name != null) {
         TVal name_tv;
-        name_tv.set_string(fn_name);
+        name_tv.set_string_borrowed(fn_name);
         HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
@@ -2600,7 +2610,7 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
 // RegExp[@@species] getter, ES2022 §21.2.4.2
 // Returns the this value (the constructor itself).
 fn void builtin_regexp_species_getter(BuiltinContext* ctx) {
-    *ctx.result = ctx.regs[ctx.base_reg - 1];
+    ctx.copy_result(ctx.regs[ctx.base_reg - 1]);
 }
 
 // Append two lowercase hex digits for a byte value (0-0xFF) to `buf` at `*len`.
@@ -2705,7 +2715,7 @@ fn void builtin_regexp_escape(BuiltinContext* ctx) {
 
     usz cap = (usz)s.blen * 6 + 16;
     char* buf = (char*)alloc::malloc_try(mem, (sz)cap) ?? null;
-    if (buf == null) { ctx.result.set_undefined(); return; }
+    if (buf == null) { ctx.result_undefined(); return; }
     usz len = 0;
 
     uint offset = 0;
@@ -2739,8 +2749,8 @@ fn void builtin_regexp_escape(BuiltinContext* ctx) {
 
     HString* result = builtin_intern_string(ctx.heap, buf[:len]);
     mem::free(buf);
-    if (result == null) { ctx.result.set_undefined(); return; }
-    ctx.result.set_string(result);
+    if (result == null) { ctx.result_undefined(); return; }
+    ctx.result_string(result);
 }
 
 // Register RegExp.prototype and the RegExp constructor globally.
@@ -2869,7 +2879,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
             // Set .name = "get [Symbol.species]"
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
-                TVal name_tv; name_tv.set_string(getter_name);
+                TVal name_tv; name_tv.set_string_borrowed(getter_name);
                 getter_fn.put_prop((void*)heap.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
             // Set .length = 0

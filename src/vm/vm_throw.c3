@@ -336,7 +336,7 @@ fn bool vm_throw_error(Vm* vm, HObject* proto, char[] msg, Activation* act,
             HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
             HString* msg_str = intern_string(vm, msg);
             TVal msg_tv;
-            msg_tv.set_string(msg_str);
+            msg_tv.set_string_borrowed(msg_str);
             err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC, vm.heap);
         }
         // Capture .stack before unwinding: vm_throw_value pops the

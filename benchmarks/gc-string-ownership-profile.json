@@ -1,0 +1,1858 @@
+{
+  "scene_10000": {
+    "runs": [
+      {
+        "wall_seconds": 0.1274544169427827,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 64,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 64,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 64,
+            "total_ms": 0.714,
+            "max_ms": 0.021,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 64,
+            "total_ms": 2.888,
+            "max_ms": 0.288,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 64,
+            "total_ms": 0.051,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 64,
+            "total_ms": 2.662,
+            "max_ms": 0.532,
+            "over_4ms": 0
+          },
+          "minor/env_sweep": {
+            "count": 64,
+            "total_ms": 0.004,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 64,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 64,
+            "total_ms": 6.323,
+            "max_ms": 0.649,
+            "over_4ms": 0
+          },
+          "major/finish_previous_sweep": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 6,
+            "total_ms": 3.385,
+            "max_ms": 0.787,
+            "over_4ms": 0
+          },
+          "major/remembered_graph": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 6,
+            "total_ms": 0.013,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 6,
+            "total_ms": 0.086,
+            "max_ms": 0.02,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 6,
+            "total_ms": 0.147,
+            "max_ms": 0.05,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 6,
+            "total_ms": 3.632,
+            "max_ms": 0.813,
+            "over_4ms": 0
+          },
+          "major/lazy_sweep_pause": {
+            "count": 86,
+            "total_ms": 3.374,
+            "max_ms": 0.34,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=10000 frames=300 total=111ms worst_frame=2ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=127825 two=450 three=450 four_plus=11276 bytes=6810928\n# GC_STRINGS allocations=269819 frees=269819 live_bytes=0 peak_bytes=6841167\n# GC_PHASE kind=minor phase=finish_previous_sweep count=64 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=64 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=64 total_ms=0.714 max_ms=0.021 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=64 total_ms=2.888 max_ms=0.288 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=64 total_ms=0.051 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=64 total_ms=2.662 max_ms=0.532 over_4ms=0\n# GC_PHASE kind=minor phase=env_sweep count=64 total_ms=0.004 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=64 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=64 total_ms=6.323 max_ms=0.649 over_4ms=0\n# GC_PHASE kind=major phase=finish_previous_sweep count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=6 total_ms=3.385 max_ms=0.787 over_4ms=0\n# GC_PHASE kind=major phase=remembered_graph count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=6 total_ms=0.013 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=6 total_ms=0.086 max_ms=0.020 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=6 total_ms=0.147 max_ms=0.050 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=6 total_ms=3.632 max_ms=0.813 over_4ms=0\n# GC_PHASE kind=major phase=lazy_sweep_pause count=86 total_ms=3.374 max_ms=0.340 over_4ms=0\n# GC_PROFILE allocations=413512 reallocs=0 cycles=70 marked=3119257 swept=430800\n#   live_obj_count_at_last_cycle=43257\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=5907 marked_per_cycle=44560\n#   marked_per_alloc=7.54  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 0.12380379193928093,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 64,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 64,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 64,
+            "total_ms": 0.664,
+            "max_ms": 0.022,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 64,
+            "total_ms": 2.798,
+            "max_ms": 0.289,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 64,
+            "total_ms": 0.045,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 64,
+            "total_ms": 2.513,
+            "max_ms": 0.443,
+            "over_4ms": 0
+          },
+          "minor/env_sweep": {
+            "count": 64,
+            "total_ms": 0.003,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 64,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 64,
+            "total_ms": 6.028,
+            "max_ms": 0.53,
+            "over_4ms": 0
+          },
+          "major/finish_previous_sweep": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 6,
+            "total_ms": 3.211,
+            "max_ms": 0.707,
+            "over_4ms": 0
+          },
+          "major/remembered_graph": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 6,
+            "total_ms": 0.013,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 6,
+            "total_ms": 0.086,
+            "max_ms": 0.02,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 6,
+            "total_ms": 0.138,
+            "max_ms": 0.047,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 6,
+            "total_ms": 3.448,
+            "max_ms": 0.728,
+            "over_4ms": 0
+          },
+          "major/lazy_sweep_pause": {
+            "count": 86,
+            "total_ms": 2.942,
+            "max_ms": 0.238,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=10000 frames=300 total=108ms worst_frame=2ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=127825 two=450 three=450 four_plus=11276 bytes=6810928\n# GC_STRINGS allocations=269819 frees=269819 live_bytes=0 peak_bytes=6841167\n# GC_PHASE kind=minor phase=finish_previous_sweep count=64 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=64 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=64 total_ms=0.664 max_ms=0.022 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=64 total_ms=2.798 max_ms=0.289 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=64 total_ms=0.045 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=64 total_ms=2.513 max_ms=0.443 over_4ms=0\n# GC_PHASE kind=minor phase=env_sweep count=64 total_ms=0.003 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=64 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=64 total_ms=6.028 max_ms=0.530 over_4ms=0\n# GC_PHASE kind=major phase=finish_previous_sweep count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=6 total_ms=3.211 max_ms=0.707 over_4ms=0\n# GC_PHASE kind=major phase=remembered_graph count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=6 total_ms=0.013 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=6 total_ms=0.086 max_ms=0.020 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=6 total_ms=0.138 max_ms=0.047 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=6 total_ms=3.448 max_ms=0.728 over_4ms=0\n# GC_PHASE kind=major phase=lazy_sweep_pause count=86 total_ms=2.942 max_ms=0.238 over_4ms=0\n# GC_PROFILE allocations=413512 reallocs=0 cycles=70 marked=3119257 swept=430800\n#   live_obj_count_at_last_cycle=43257\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=5907 marked_per_cycle=44560\n#   marked_per_alloc=7.54  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 0.12346304196398705,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 64,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 64,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 64,
+            "total_ms": 0.712,
+            "max_ms": 0.021,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 64,
+            "total_ms": 2.861,
+            "max_ms": 0.279,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 64,
+            "total_ms": 0.049,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 64,
+            "total_ms": 2.598,
+            "max_ms": 0.507,
+            "over_4ms": 0
+          },
+          "minor/env_sweep": {
+            "count": 64,
+            "total_ms": 0.004,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 64,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 64,
+            "total_ms": 6.228,
+            "max_ms": 0.598,
+            "over_4ms": 0
+          },
+          "major/finish_previous_sweep": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 6,
+            "total_ms": 3.184,
+            "max_ms": 0.715,
+            "over_4ms": 0
+          },
+          "major/remembered_graph": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 6,
+            "total_ms": 0.013,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 6,
+            "total_ms": 0.086,
+            "max_ms": 0.02,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 6,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 6,
+            "total_ms": 0.142,
+            "max_ms": 0.047,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 6,
+            "total_ms": 3.425,
+            "max_ms": 0.726,
+            "over_4ms": 0
+          },
+          "major/lazy_sweep_pause": {
+            "count": 86,
+            "total_ms": 2.866,
+            "max_ms": 0.231,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=10000 frames=300 total=107ms worst_frame=2ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=127825 two=450 three=450 four_plus=11276 bytes=6810928\n# GC_STRINGS allocations=269819 frees=269819 live_bytes=0 peak_bytes=6841167\n# GC_PHASE kind=minor phase=finish_previous_sweep count=64 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=64 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=64 total_ms=0.712 max_ms=0.021 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=64 total_ms=2.861 max_ms=0.279 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=64 total_ms=0.049 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=64 total_ms=2.598 max_ms=0.507 over_4ms=0\n# GC_PHASE kind=minor phase=env_sweep count=64 total_ms=0.004 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=64 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=64 total_ms=6.228 max_ms=0.598 over_4ms=0\n# GC_PHASE kind=major phase=finish_previous_sweep count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=6 total_ms=3.184 max_ms=0.715 over_4ms=0\n# GC_PHASE kind=major phase=remembered_graph count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=6 total_ms=0.013 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=6 total_ms=0.086 max_ms=0.020 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=6 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=6 total_ms=0.142 max_ms=0.047 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=6 total_ms=3.425 max_ms=0.726 over_4ms=0\n# GC_PHASE kind=major phase=lazy_sweep_pause count=86 total_ms=2.866 max_ms=0.231 over_4ms=0\n# GC_PROFILE allocations=413512 reallocs=0 cycles=70 marked=3119257 swept=430800\n#   live_obj_count_at_last_cycle=43257\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=5907 marked_per_cycle=44560\n#   marked_per_alloc=7.54  (compare across runs; a rise means more collections over the same live set)\n"
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 0.712,
+        "max_ms": 0.022,
+        "over_4ms": 0
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 2.861,
+        "max_ms": 0.289,
+        "over_4ms": 0
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.049,
+        "max_ms": 0.003,
+        "over_4ms": 0
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 2.598,
+        "max_ms": 0.532,
+        "over_4ms": 0
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.004,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/strings": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 6.228,
+        "max_ms": 0.649,
+        "over_4ms": 0
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 3.211,
+        "max_ms": 0.787,
+        "over_4ms": 0
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.013,
+        "max_ms": 0.003,
+        "over_4ms": 0
+      },
+      "major/young_sweep": {
+        "median_total_ms": 0.086,
+        "max_ms": 0.02,
+        "over_4ms": 0
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/strings": {
+        "median_total_ms": 0.142,
+        "max_ms": 0.05,
+        "over_4ms": 0
+      },
+      "major/collection_pause": {
+        "median_total_ms": 3.448,
+        "max_ms": 0.813,
+        "over_4ms": 0
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 2.942,
+        "max_ms": 0.34,
+        "over_4ms": 0
+      }
+    }
+  },
+  "scene_100000_long": {
+    "runs": [
+      {
+        "wall_seconds": 1.4876284159254283,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 374,
+            "total_ms": 0.004,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 374,
+            "total_ms": 0.013,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 374,
+            "total_ms": 4.336,
+            "max_ms": 0.039,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 374,
+            "total_ms": 34.15,
+            "max_ms": 2.546,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 374,
+            "total_ms": 0.297,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 374,
+            "total_ms": 69.077,
+            "max_ms": 13.633,
+            "over_4ms": 6
+          },
+          "minor/env_sweep": {
+            "count": 374,
+            "total_ms": 0.02,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 374,
+            "total_ms": 0.004,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 374,
+            "total_ms": 107.903,
+            "max_ms": 15.603,
+            "over_4ms": 6
+          },
+          "major/finish_previous_sweep": {
+            "count": 9,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 9,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 9,
+            "total_ms": 71.263,
+            "max_ms": 16.414,
+            "over_4ms": 6
+          },
+          "major/remembered_graph": {
+            "count": 9,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 9,
+            "total_ms": 0.089,
+            "max_ms": 0.037,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 9,
+            "total_ms": 0.952,
+            "max_ms": 0.696,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 9,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 9,
+            "total_ms": 0.219,
+            "max_ms": 0.071,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 9,
+            "total_ms": 72.526,
+            "max_ms": 16.47,
+            "over_4ms": 6
+          },
+          "major/lazy_sweep_pause": {
+            "count": 805,
+            "total_ms": 58.102,
+            "max_ms": 2.799,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=100000 frames=3000 total=1362ms worst_frame=28ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=1240000 two=60000 three=0 four_plus=100001 bytes=70615739\n# GC_STRINGS allocations=2614126 frees=2614126 live_bytes=0 peak_bytes=70646194\n# GC_PHASE kind=minor phase=finish_previous_sweep count=374 total_ms=0.004 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=374 total_ms=0.013 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=374 total_ms=4.336 max_ms=0.039 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=374 total_ms=34.150 max_ms=2.546 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=374 total_ms=0.297 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=374 total_ms=69.077 max_ms=13.633 over_4ms=6\n# GC_PHASE kind=minor phase=env_sweep count=374 total_ms=0.020 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=374 total_ms=0.004 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=374 total_ms=107.903 max_ms=15.603 over_4ms=6\n# GC_PHASE kind=major phase=finish_previous_sweep count=9 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=9 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=9 total_ms=71.263 max_ms=16.414 over_4ms=6\n# GC_PHASE kind=major phase=remembered_graph count=9 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=9 total_ms=0.089 max_ms=0.037 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=9 total_ms=0.952 max_ms=0.696 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=9 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=9 total_ms=0.219 max_ms=0.071 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=9 total_ms=72.526 max_ms=16.470 over_4ms=6\n# GC_PHASE kind=major phase=lazy_sweep_pause count=805 total_ms=58.102 max_ms=2.799 over_4ms=0\n# GC_PROFILE allocations=4126912 reallocs=0 cycles=383 marked=29740600 swept=4127573\n#   live_obj_count_at_last_cycle=3606\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=10775 marked_per_cycle=77651\n#   marked_per_alloc=7.21  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 1.4967742500593886,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 374,
+            "total_ms": 0.003,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 374,
+            "total_ms": 0.012,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 374,
+            "total_ms": 4.24,
+            "max_ms": 0.026,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 374,
+            "total_ms": 34.44,
+            "max_ms": 2.604,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 374,
+            "total_ms": 0.295,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 374,
+            "total_ms": 69.35,
+            "max_ms": 13.666,
+            "over_4ms": 6
+          },
+          "minor/env_sweep": {
+            "count": 374,
+            "total_ms": 0.021,
+            "max_ms": 0.001,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 374,
+            "total_ms": 0.004,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 374,
+            "total_ms": 108.369,
+            "max_ms": 15.625,
+            "over_4ms": 6
+          },
+          "major/finish_previous_sweep": {
+            "count": 9,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 9,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 9,
+            "total_ms": 72.026,
+            "max_ms": 16.449,
+            "over_4ms": 6
+          },
+          "major/remembered_graph": {
+            "count": 9,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 9,
+            "total_ms": 0.095,
+            "max_ms": 0.038,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 9,
+            "total_ms": 0.947,
+            "max_ms": 0.692,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 9,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 9,
+            "total_ms": 0.225,
+            "max_ms": 0.069,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 9,
+            "total_ms": 73.297,
+            "max_ms": 16.504,
+            "over_4ms": 6
+          },
+          "major/lazy_sweep_pause": {
+            "count": 805,
+            "total_ms": 59.54,
+            "max_ms": 3.1,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=100000 frames=3000 total=1372ms worst_frame=28ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=1240000 two=60000 three=0 four_plus=100001 bytes=70615739\n# GC_STRINGS allocations=2614126 frees=2614126 live_bytes=0 peak_bytes=70646194\n# GC_PHASE kind=minor phase=finish_previous_sweep count=374 total_ms=0.003 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=374 total_ms=0.012 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=374 total_ms=4.240 max_ms=0.026 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=374 total_ms=34.440 max_ms=2.604 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=374 total_ms=0.295 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=374 total_ms=69.350 max_ms=13.666 over_4ms=6\n# GC_PHASE kind=minor phase=env_sweep count=374 total_ms=0.021 max_ms=0.001 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=374 total_ms=0.004 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=374 total_ms=108.369 max_ms=15.625 over_4ms=6\n# GC_PHASE kind=major phase=finish_previous_sweep count=9 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=9 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=9 total_ms=72.026 max_ms=16.449 over_4ms=6\n# GC_PHASE kind=major phase=remembered_graph count=9 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=9 total_ms=0.095 max_ms=0.038 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=9 total_ms=0.947 max_ms=0.692 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=9 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=9 total_ms=0.225 max_ms=0.069 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=9 total_ms=73.297 max_ms=16.504 over_4ms=6\n# GC_PHASE kind=major phase=lazy_sweep_pause count=805 total_ms=59.540 max_ms=3.100 over_4ms=0\n# GC_PROFILE allocations=4126912 reallocs=0 cycles=383 marked=29740600 swept=4127573\n#   live_obj_count_at_last_cycle=3606\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=10775 marked_per_cycle=77651\n#   marked_per_alloc=7.21  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 1.4910738340113312,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 374,
+            "total_ms": 0.004,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 374,
+            "total_ms": 0.015,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 374,
+            "total_ms": 4.345,
+            "max_ms": 0.028,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 374,
+            "total_ms": 34.32,
+            "max_ms": 2.562,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 374,
+            "total_ms": 0.298,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 374,
+            "total_ms": 69.606,
+            "max_ms": 13.666,
+            "over_4ms": 6
+          },
+          "minor/env_sweep": {
+            "count": 374,
+            "total_ms": 0.02,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 374,
+            "total_ms": 0.004,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 374,
+            "total_ms": 108.616,
+            "max_ms": 15.648,
+            "over_4ms": 6
+          },
+          "major/finish_previous_sweep": {
+            "count": 9,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 9,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 9,
+            "total_ms": 71.2,
+            "max_ms": 16.38,
+            "over_4ms": 6
+          },
+          "major/remembered_graph": {
+            "count": 9,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 9,
+            "total_ms": 0.096,
+            "max_ms": 0.037,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 9,
+            "total_ms": 0.955,
+            "max_ms": 0.697,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 9,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 9,
+            "total_ms": 0.22,
+            "max_ms": 0.068,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 9,
+            "total_ms": 72.474,
+            "max_ms": 16.437,
+            "over_4ms": 6
+          },
+          "major/lazy_sweep_pause": {
+            "count": 805,
+            "total_ms": 58.504,
+            "max_ms": 2.914,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=100000 frames=3000 total=1366ms worst_frame=29ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=1240000 two=60000 three=0 four_plus=100001 bytes=70615739\n# GC_STRINGS allocations=2614126 frees=2614126 live_bytes=0 peak_bytes=70646194\n# GC_PHASE kind=minor phase=finish_previous_sweep count=374 total_ms=0.004 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=374 total_ms=0.015 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=374 total_ms=4.345 max_ms=0.028 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=374 total_ms=34.320 max_ms=2.562 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=374 total_ms=0.298 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=374 total_ms=69.606 max_ms=13.666 over_4ms=6\n# GC_PHASE kind=minor phase=env_sweep count=374 total_ms=0.020 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=374 total_ms=0.004 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=374 total_ms=108.616 max_ms=15.648 over_4ms=6\n# GC_PHASE kind=major phase=finish_previous_sweep count=9 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=9 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=9 total_ms=71.200 max_ms=16.380 over_4ms=6\n# GC_PHASE kind=major phase=remembered_graph count=9 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=9 total_ms=0.096 max_ms=0.037 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=9 total_ms=0.955 max_ms=0.697 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=9 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=9 total_ms=0.220 max_ms=0.068 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=9 total_ms=72.474 max_ms=16.437 over_4ms=6\n# GC_PHASE kind=major phase=lazy_sweep_pause count=805 total_ms=58.504 max_ms=2.914 over_4ms=0\n# GC_PROFILE allocations=4126912 reallocs=0 cycles=383 marked=29740600 swept=4127573\n#   live_obj_count_at_last_cycle=3606\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=10775 marked_per_cycle=77651\n#   marked_per_alloc=7.21  (compare across runs; a rise means more collections over the same live set)\n"
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.004,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.013,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 4.336,
+        "max_ms": 0.039,
+        "over_4ms": 0
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 34.32,
+        "max_ms": 2.604,
+        "over_4ms": 0
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.297,
+        "max_ms": 0.002,
+        "over_4ms": 0
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 69.35,
+        "max_ms": 13.666,
+        "over_4ms": 18
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.02,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/strings": {
+        "median_total_ms": 0.004,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 108.369,
+        "max_ms": 15.648,
+        "over_4ms": 18
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 71.263,
+        "max_ms": 16.449,
+        "over_4ms": 18
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.095,
+        "max_ms": 0.038,
+        "over_4ms": 0
+      },
+      "major/young_sweep": {
+        "median_total_ms": 0.952,
+        "max_ms": 0.697,
+        "over_4ms": 0
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/strings": {
+        "median_total_ms": 0.22,
+        "max_ms": 0.071,
+        "over_4ms": 0
+      },
+      "major/collection_pause": {
+        "median_total_ms": 72.526,
+        "max_ms": 16.504,
+        "over_4ms": 18
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 58.504,
+        "max_ms": 3.1,
+        "over_4ms": 0
+      }
+    }
+  },
+  "scene_300000_long": {
+    "runs": [
+      {
+        "wall_seconds": 1.6542129169683903,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 139,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 139,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 139,
+            "total_ms": 1.464,
+            "max_ms": 0.022,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 139,
+            "total_ms": 43.655,
+            "max_ms": 9.742,
+            "over_4ms": 4
+          },
+          "minor/weak_caches": {
+            "count": 139,
+            "total_ms": 0.111,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 139,
+            "total_ms": 51.266,
+            "max_ms": 19.967,
+            "over_4ms": 3
+          },
+          "minor/env_sweep": {
+            "count": 139,
+            "total_ms": 0.008,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 139,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 139,
+            "total_ms": 96.515,
+            "max_ms": 26.372,
+            "over_4ms": 5
+          },
+          "major/finish_previous_sweep": {
+            "count": 7,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 7,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 7,
+            "total_ms": 95.852,
+            "max_ms": 33.478,
+            "over_4ms": 4
+          },
+          "major/remembered_graph": {
+            "count": 7,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 7,
+            "total_ms": 0.149,
+            "max_ms": 0.068,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 7,
+            "total_ms": 4.828,
+            "max_ms": 4.258,
+            "over_4ms": 1
+          },
+          "major/env_sweep": {
+            "count": 7,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 7,
+            "total_ms": 0.277,
+            "max_ms": 0.069,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 7,
+            "total_ms": 101.108,
+            "max_ms": 33.516,
+            "over_4ms": 4
+          },
+          "major/lazy_sweep_pause": {
+            "count": 1083,
+            "total_ms": 47.641,
+            "max_ms": 5.283,
+            "over_4ms": 2
+          }
+        },
+        "stdout": "scene_churn: nodes=300000 frames=3000 total=1318ms worst_frame=56ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=1440000 two=60000 three=0 four_plus=300001 bytes=89080945\n# GC_STRINGS allocations=3018217 frees=3018217 live_bytes=0 peak_bytes=89111400\n# GC_PHASE kind=minor phase=finish_previous_sweep count=139 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=139 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=139 total_ms=1.464 max_ms=0.022 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=139 total_ms=43.655 max_ms=9.742 over_4ms=4\n# GC_PHASE kind=minor phase=weak_caches count=139 total_ms=0.111 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=139 total_ms=51.266 max_ms=19.967 over_4ms=3\n# GC_PHASE kind=minor phase=env_sweep count=139 total_ms=0.008 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=139 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=139 total_ms=96.515 max_ms=26.372 over_4ms=5\n# GC_PHASE kind=major phase=finish_previous_sweep count=7 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=7 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=7 total_ms=95.852 max_ms=33.478 over_4ms=4\n# GC_PHASE kind=major phase=remembered_graph count=7 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=7 total_ms=0.149 max_ms=0.068 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=7 total_ms=4.828 max_ms=4.258 over_4ms=1\n# GC_PHASE kind=major phase=env_sweep count=7 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=7 total_ms=0.277 max_ms=0.069 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=7 total_ms=101.108 max_ms=33.516 over_4ms=4\n# GC_PHASE kind=major phase=lazy_sweep_pause count=1083 total_ms=47.641 max_ms=5.283 over_4ms=2\n# GC_PROFILE allocations=4926912 reallocs=0 cycles=146 marked=42120650 swept=5798412\n#   live_obj_count_at_last_cycle=1202504\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=33745 marked_per_cycle=288497\n#   marked_per_alloc=8.55  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 1.6675363749964163,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 139,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 139,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 139,
+            "total_ms": 1.477,
+            "max_ms": 0.022,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 139,
+            "total_ms": 43.884,
+            "max_ms": 9.639,
+            "over_4ms": 4
+          },
+          "minor/weak_caches": {
+            "count": 139,
+            "total_ms": 0.108,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 139,
+            "total_ms": 51.937,
+            "max_ms": 20.46,
+            "over_4ms": 3
+          },
+          "minor/env_sweep": {
+            "count": 139,
+            "total_ms": 0.008,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 139,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 139,
+            "total_ms": 97.423,
+            "max_ms": 27.012,
+            "over_4ms": 5
+          },
+          "major/finish_previous_sweep": {
+            "count": 7,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 7,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 7,
+            "total_ms": 94.919,
+            "max_ms": 33.035,
+            "over_4ms": 4
+          },
+          "major/remembered_graph": {
+            "count": 7,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 7,
+            "total_ms": 0.144,
+            "max_ms": 0.065,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 7,
+            "total_ms": 6.331,
+            "max_ms": 5.76,
+            "over_4ms": 1
+          },
+          "major/env_sweep": {
+            "count": 7,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 7,
+            "total_ms": 0.28,
+            "max_ms": 0.068,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 7,
+            "total_ms": 101.676,
+            "max_ms": 33.076,
+            "over_4ms": 4
+          },
+          "major/lazy_sweep_pause": {
+            "count": 1083,
+            "total_ms": 48.174,
+            "max_ms": 4.762,
+            "over_4ms": 2
+          }
+        },
+        "stdout": "scene_churn: nodes=300000 frames=3000 total=1333ms worst_frame=55ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=1440000 two=60000 three=0 four_plus=300001 bytes=89080945\n# GC_STRINGS allocations=3018217 frees=3018217 live_bytes=0 peak_bytes=89111400\n# GC_PHASE kind=minor phase=finish_previous_sweep count=139 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=139 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=139 total_ms=1.477 max_ms=0.022 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=139 total_ms=43.884 max_ms=9.639 over_4ms=4\n# GC_PHASE kind=minor phase=weak_caches count=139 total_ms=0.108 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=139 total_ms=51.937 max_ms=20.460 over_4ms=3\n# GC_PHASE kind=minor phase=env_sweep count=139 total_ms=0.008 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=139 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=139 total_ms=97.423 max_ms=27.012 over_4ms=5\n# GC_PHASE kind=major phase=finish_previous_sweep count=7 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=7 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=7 total_ms=94.919 max_ms=33.035 over_4ms=4\n# GC_PHASE kind=major phase=remembered_graph count=7 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=7 total_ms=0.144 max_ms=0.065 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=7 total_ms=6.331 max_ms=5.760 over_4ms=1\n# GC_PHASE kind=major phase=env_sweep count=7 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=7 total_ms=0.280 max_ms=0.068 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=7 total_ms=101.676 max_ms=33.076 over_4ms=4\n# GC_PHASE kind=major phase=lazy_sweep_pause count=1083 total_ms=48.174 max_ms=4.762 over_4ms=2\n# GC_PROFILE allocations=4926912 reallocs=0 cycles=146 marked=42120650 swept=5798412\n#   live_obj_count_at_last_cycle=1202504\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=33745 marked_per_cycle=288497\n#   marked_per_alloc=8.55  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 1.6644023329718038,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 139,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 139,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 139,
+            "total_ms": 1.47,
+            "max_ms": 0.021,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 139,
+            "total_ms": 43.715,
+            "max_ms": 9.51,
+            "over_4ms": 4
+          },
+          "minor/weak_caches": {
+            "count": 139,
+            "total_ms": 0.117,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 139,
+            "total_ms": 50.498,
+            "max_ms": 20.141,
+            "over_4ms": 3
+          },
+          "minor/env_sweep": {
+            "count": 139,
+            "total_ms": 0.009,
+            "max_ms": 0.001,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 139,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 139,
+            "total_ms": 95.82,
+            "max_ms": 26.616,
+            "over_4ms": 5
+          },
+          "major/finish_previous_sweep": {
+            "count": 7,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 7,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 7,
+            "total_ms": 95.5,
+            "max_ms": 33.342,
+            "over_4ms": 4
+          },
+          "major/remembered_graph": {
+            "count": 7,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 7,
+            "total_ms": 0.139,
+            "max_ms": 0.063,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 7,
+            "total_ms": 4.819,
+            "max_ms": 4.252,
+            "over_4ms": 1
+          },
+          "major/env_sweep": {
+            "count": 7,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 7,
+            "total_ms": 0.276,
+            "max_ms": 0.068,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 7,
+            "total_ms": 100.737,
+            "max_ms": 33.381,
+            "over_4ms": 4
+          },
+          "major/lazy_sweep_pause": {
+            "count": 1083,
+            "total_ms": 47.53,
+            "max_ms": 4.639,
+            "over_4ms": 2
+          }
+        },
+        "stdout": "scene_churn: nodes=300000 frames=3000 total=1330ms worst_frame=56ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=1440000 two=60000 three=0 four_plus=300001 bytes=89080945\n# GC_STRINGS allocations=3018217 frees=3018217 live_bytes=0 peak_bytes=89111400\n# GC_PHASE kind=minor phase=finish_previous_sweep count=139 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=139 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=139 total_ms=1.470 max_ms=0.021 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=139 total_ms=43.715 max_ms=9.510 over_4ms=4\n# GC_PHASE kind=minor phase=weak_caches count=139 total_ms=0.117 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=139 total_ms=50.498 max_ms=20.141 over_4ms=3\n# GC_PHASE kind=minor phase=env_sweep count=139 total_ms=0.009 max_ms=0.001 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=139 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=139 total_ms=95.820 max_ms=26.616 over_4ms=5\n# GC_PHASE kind=major phase=finish_previous_sweep count=7 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=7 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=7 total_ms=95.500 max_ms=33.342 over_4ms=4\n# GC_PHASE kind=major phase=remembered_graph count=7 total_ms=0.000 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=7 total_ms=0.139 max_ms=0.063 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=7 total_ms=4.819 max_ms=4.252 over_4ms=1\n# GC_PHASE kind=major phase=env_sweep count=7 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=7 total_ms=0.276 max_ms=0.068 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=7 total_ms=100.737 max_ms=33.381 over_4ms=4\n# GC_PHASE kind=major phase=lazy_sweep_pause count=1083 total_ms=47.530 max_ms=4.639 over_4ms=2\n# GC_PROFILE allocations=4926912 reallocs=0 cycles=146 marked=42120650 swept=5798412\n#   live_obj_count_at_last_cycle=1202504\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=33745 marked_per_cycle=288497\n#   marked_per_alloc=8.55  (compare across runs; a rise means more collections over the same live set)\n"
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.005,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 1.47,
+        "max_ms": 0.022,
+        "over_4ms": 0
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 43.715,
+        "max_ms": 9.742,
+        "over_4ms": 12
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.111,
+        "max_ms": 0.003,
+        "over_4ms": 0
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 51.266,
+        "max_ms": 20.46,
+        "over_4ms": 9
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.008,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "minor/strings": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 96.515,
+        "max_ms": 27.012,
+        "over_4ms": 15
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 95.5,
+        "max_ms": 33.478,
+        "over_4ms": 12
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.0,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.144,
+        "max_ms": 0.068,
+        "over_4ms": 0
+      },
+      "major/young_sweep": {
+        "median_total_ms": 4.828,
+        "max_ms": 5.76,
+        "over_4ms": 3
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/strings": {
+        "median_total_ms": 0.277,
+        "max_ms": 0.069,
+        "over_4ms": 0
+      },
+      "major/collection_pause": {
+        "median_total_ms": 101.108,
+        "max_ms": 33.516,
+        "over_4ms": 12
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 47.641,
+        "max_ms": 5.283,
+        "over_4ms": 6
+      }
+    }
+  },
+  "vdom_heavy": {
+    "runs": [
+      {
+        "wall_seconds": 2.537768500042148,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 199,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 199,
+            "total_ms": 0.015,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 199,
+            "total_ms": 0.72,
+            "max_ms": 0.018,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 199,
+            "total_ms": 43.53,
+            "max_ms": 0.321,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 199,
+            "total_ms": 0.193,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 199,
+            "total_ms": 13.255,
+            "max_ms": 0.091,
+            "over_4ms": 0
+          },
+          "minor/env_sweep": {
+            "count": 199,
+            "total_ms": 0.01,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 199,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 199,
+            "total_ms": 57.728,
+            "max_ms": 0.417,
+            "over_4ms": 0
+          },
+          "major/finish_previous_sweep": {
+            "count": 98,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 98,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 98,
+            "total_ms": 22.826,
+            "max_ms": 0.326,
+            "over_4ms": 0
+          },
+          "major/remembered_graph": {
+            "count": 98,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 98,
+            "total_ms": 0.195,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 98,
+            "total_ms": 6.364,
+            "max_ms": 0.09,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 98,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 98,
+            "total_ms": 0.379,
+            "max_ms": 0.006,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 98,
+            "total_ms": 29.779,
+            "max_ms": 0.416,
+            "over_4ms": 0
+          },
+          "major/lazy_sweep_pause": {
+            "count": 966,
+            "total_ms": 162.206,
+            "max_ms": 1.116,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "frames: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=351440 two=0 three=0 four_plus=1 bytes=16689464\n# GC_STRINGS allocations=25600708 frees=25600708 live_bytes=0 peak_bytes=17651837\n# GC_PHASE kind=minor phase=finish_previous_sweep count=199 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=199 total_ms=0.015 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=199 total_ms=0.720 max_ms=0.018 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=199 total_ms=43.530 max_ms=0.321 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=199 total_ms=0.193 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=199 total_ms=13.255 max_ms=0.091 over_4ms=0\n# GC_PHASE kind=minor phase=env_sweep count=199 total_ms=0.010 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=199 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=199 total_ms=57.728 max_ms=0.417 over_4ms=0\n# GC_PHASE kind=major phase=finish_previous_sweep count=98 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=98 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=98 total_ms=22.826 max_ms=0.326 over_4ms=0\n# GC_PHASE kind=major phase=remembered_graph count=98 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=98 total_ms=0.195 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=98 total_ms=6.364 max_ms=0.090 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=98 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=98 total_ms=0.379 max_ms=0.006 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=98 total_ms=29.779 max_ms=0.416 over_4ms=0\n# GC_PHASE kind=major phase=lazy_sweep_pause count=966 total_ms=162.206 max_ms=1.116 over_4ms=0\n# GC_PROFILE allocations=3928495 reallocs=0 cycles=297 marked=25171326 swept=3935184\n#   live_obj_count_at_last_cycle=13438\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=13227 marked_per_cycle=84751\n#   marked_per_alloc=6.41  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 2.523687292006798,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 199,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 199,
+            "total_ms": 0.018,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 199,
+            "total_ms": 0.807,
+            "max_ms": 0.019,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 199,
+            "total_ms": 45.155,
+            "max_ms": 0.392,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 199,
+            "total_ms": 0.205,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 199,
+            "total_ms": 13.425,
+            "max_ms": 0.101,
+            "over_4ms": 0
+          },
+          "minor/env_sweep": {
+            "count": 199,
+            "total_ms": 0.011,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 199,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 199,
+            "total_ms": 59.627,
+            "max_ms": 0.484,
+            "over_4ms": 0
+          },
+          "major/finish_previous_sweep": {
+            "count": 98,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 98,
+            "total_ms": 0.007,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 98,
+            "total_ms": 23.432,
+            "max_ms": 0.423,
+            "over_4ms": 0
+          },
+          "major/remembered_graph": {
+            "count": 98,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 98,
+            "total_ms": 0.193,
+            "max_ms": 0.004,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 98,
+            "total_ms": 6.382,
+            "max_ms": 0.087,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 98,
+            "total_ms": 0.006,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 98,
+            "total_ms": 0.373,
+            "max_ms": 0.006,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 98,
+            "total_ms": 30.396,
+            "max_ms": 0.509,
+            "over_4ms": 0
+          },
+          "major/lazy_sweep_pause": {
+            "count": 966,
+            "total_ms": 158.544,
+            "max_ms": 1.133,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "frames: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=351440 two=0 three=0 four_plus=1 bytes=16689464\n# GC_STRINGS allocations=25600708 frees=25600708 live_bytes=0 peak_bytes=17651837\n# GC_PHASE kind=minor phase=finish_previous_sweep count=199 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=199 total_ms=0.018 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=199 total_ms=0.807 max_ms=0.019 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=199 total_ms=45.155 max_ms=0.392 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=199 total_ms=0.205 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=199 total_ms=13.425 max_ms=0.101 over_4ms=0\n# GC_PHASE kind=minor phase=env_sweep count=199 total_ms=0.011 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=199 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=199 total_ms=59.627 max_ms=0.484 over_4ms=0\n# GC_PHASE kind=major phase=finish_previous_sweep count=98 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=98 total_ms=0.007 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=98 total_ms=23.432 max_ms=0.423 over_4ms=0\n# GC_PHASE kind=major phase=remembered_graph count=98 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=98 total_ms=0.193 max_ms=0.004 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=98 total_ms=6.382 max_ms=0.087 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=98 total_ms=0.006 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=98 total_ms=0.373 max_ms=0.006 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=98 total_ms=30.396 max_ms=0.509 over_4ms=0\n# GC_PHASE kind=major phase=lazy_sweep_pause count=966 total_ms=158.544 max_ms=1.133 over_4ms=0\n# GC_PROFILE allocations=3928495 reallocs=0 cycles=297 marked=25171326 swept=3935184\n#   live_obj_count_at_last_cycle=13438\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=13227 marked_per_cycle=84751\n#   marked_per_alloc=6.41  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 2.566770707955584,
+        "phases": {
+          "minor/finish_previous_sweep": {
+            "count": 199,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/seed_pins": {
+            "count": 199,
+            "total_ms": 0.018,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/roots_and_graph": {
+            "count": 199,
+            "total_ms": 0.854,
+            "max_ms": 0.019,
+            "over_4ms": 0
+          },
+          "minor/remembered_graph": {
+            "count": 199,
+            "total_ms": 46.007,
+            "max_ms": 0.443,
+            "over_4ms": 0
+          },
+          "minor/weak_caches": {
+            "count": 199,
+            "total_ms": 0.202,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "minor/young_sweep": {
+            "count": 199,
+            "total_ms": 13.431,
+            "max_ms": 0.106,
+            "over_4ms": 0
+          },
+          "minor/env_sweep": {
+            "count": 199,
+            "total_ms": 0.011,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/strings": {
+            "count": 199,
+            "total_ms": 0.002,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "minor/collection_pause": {
+            "count": 199,
+            "total_ms": 60.529,
+            "max_ms": 0.544,
+            "over_4ms": 0
+          },
+          "major/finish_previous_sweep": {
+            "count": 98,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/seed_pins": {
+            "count": 98,
+            "total_ms": 0.006,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/roots_and_graph": {
+            "count": 98,
+            "total_ms": 24.158,
+            "max_ms": 0.342,
+            "over_4ms": 0
+          },
+          "major/remembered_graph": {
+            "count": 98,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/weak_caches": {
+            "count": 98,
+            "total_ms": 0.189,
+            "max_ms": 0.003,
+            "over_4ms": 0
+          },
+          "major/young_sweep": {
+            "count": 98,
+            "total_ms": 6.388,
+            "max_ms": 0.087,
+            "over_4ms": 0
+          },
+          "major/env_sweep": {
+            "count": 98,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "major/strings": {
+            "count": 98,
+            "total_ms": 0.424,
+            "max_ms": 0.016,
+            "over_4ms": 0
+          },
+          "major/collection_pause": {
+            "count": 98,
+            "total_ms": 31.174,
+            "max_ms": 0.43,
+            "over_4ms": 0
+          },
+          "major/lazy_sweep_pause": {
+            "count": 966,
+            "total_ms": 163.509,
+            "max_ms": 1.098,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "frames: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=351440 two=0 three=0 four_plus=1 bytes=16689464\n# GC_STRINGS allocations=25600708 frees=25600708 live_bytes=0 peak_bytes=17651837\n# GC_PHASE kind=minor phase=finish_previous_sweep count=199 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=seed_pins count=199 total_ms=0.018 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=roots_and_graph count=199 total_ms=0.854 max_ms=0.019 over_4ms=0\n# GC_PHASE kind=minor phase=remembered_graph count=199 total_ms=46.007 max_ms=0.443 over_4ms=0\n# GC_PHASE kind=minor phase=weak_caches count=199 total_ms=0.202 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=minor phase=young_sweep count=199 total_ms=13.431 max_ms=0.106 over_4ms=0\n# GC_PHASE kind=minor phase=env_sweep count=199 total_ms=0.011 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=strings count=199 total_ms=0.002 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=minor phase=collection_pause count=199 total_ms=60.529 max_ms=0.544 over_4ms=0\n# GC_PHASE kind=major phase=finish_previous_sweep count=98 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=seed_pins count=98 total_ms=0.006 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=roots_and_graph count=98 total_ms=24.158 max_ms=0.342 over_4ms=0\n# GC_PHASE kind=major phase=remembered_graph count=98 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=weak_caches count=98 total_ms=0.189 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=major phase=young_sweep count=98 total_ms=6.388 max_ms=0.087 over_4ms=0\n# GC_PHASE kind=major phase=env_sweep count=98 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=major phase=strings count=98 total_ms=0.424 max_ms=0.016 over_4ms=0\n# GC_PHASE kind=major phase=collection_pause count=98 total_ms=31.174 max_ms=0.430 over_4ms=0\n# GC_PHASE kind=major phase=lazy_sweep_pause count=966 total_ms=163.509 max_ms=1.098 over_4ms=0\n# GC_PROFILE allocations=3928495 reallocs=0 cycles=297 marked=25171326 swept=3935184\n#   live_obj_count_at_last_cycle=13438\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=13227 marked_per_cycle=84751\n#   marked_per_alloc=6.41  (compare across runs; a rise means more collections over the same live set)\n"
+      }
+    ],
+    "summary": {
+      "minor/finish_previous_sweep": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/seed_pins": {
+        "median_total_ms": 0.018,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/roots_and_graph": {
+        "median_total_ms": 0.807,
+        "max_ms": 0.019,
+        "over_4ms": 0
+      },
+      "minor/remembered_graph": {
+        "median_total_ms": 45.155,
+        "max_ms": 0.443,
+        "over_4ms": 0
+      },
+      "minor/weak_caches": {
+        "median_total_ms": 0.202,
+        "max_ms": 0.002,
+        "over_4ms": 0
+      },
+      "minor/young_sweep": {
+        "median_total_ms": 13.425,
+        "max_ms": 0.106,
+        "over_4ms": 0
+      },
+      "minor/env_sweep": {
+        "median_total_ms": 0.011,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/strings": {
+        "median_total_ms": 0.002,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "minor/collection_pause": {
+        "median_total_ms": 59.627,
+        "max_ms": 0.544,
+        "over_4ms": 0
+      },
+      "major/finish_previous_sweep": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/seed_pins": {
+        "median_total_ms": 0.006,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/roots_and_graph": {
+        "median_total_ms": 23.432,
+        "max_ms": 0.423,
+        "over_4ms": 0
+      },
+      "major/remembered_graph": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/weak_caches": {
+        "median_total_ms": 0.193,
+        "max_ms": 0.004,
+        "over_4ms": 0
+      },
+      "major/young_sweep": {
+        "median_total_ms": 6.382,
+        "max_ms": 0.09,
+        "over_4ms": 0
+      },
+      "major/env_sweep": {
+        "median_total_ms": 0.005,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "major/strings": {
+        "median_total_ms": 0.379,
+        "max_ms": 0.016,
+        "over_4ms": 0
+      },
+      "major/collection_pause": {
+        "median_total_ms": 30.396,
+        "max_ms": 0.509,
+        "over_4ms": 0
+      },
+      "major/lazy_sweep_pause": {
+        "median_total_ms": 162.206,
+        "max_ms": 1.133,
+        "over_4ms": 0
+      }
+    }
+  }
+}

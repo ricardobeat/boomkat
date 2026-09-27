@@ -232,7 +232,7 @@ fn void normalize_prop_key_operand(Vm* vm, TVal* key_val, void* key) {
     if (key == null || key_val == null) return;
     if (key_val.is_string()) return;
     TVal key_tv;
-    key_tv.set_string((HString*)key);
+    key_tv.set_string_borrowed((HString*)key);
     vm.heap.tval_copy_ref(key_val, &key_tv);
 }
 
@@ -275,7 +275,7 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     HString* new_name = intern_string(vm, buf[:pos]);
     if (new_name != null) {
         TVal new_tv;
-        new_tv.set_string(new_name);
+        new_tv.set_string_borrowed(new_name);
         vm.heap.store_slot_ref(fn_obj, name_slot, &new_tv);
     }
 }
@@ -566,7 +566,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     }
     if (name_hstr != null) {
         TVal name_tv;
-        name_tv.set_string(name_hstr);
+        name_tv.set_string_borrowed(name_hstr);
         func_obj.put_prop((HString*)vm.heap.strs[heap::BuiltinStr.NAME], name_tv, hobject::PROP_FLAGS_NWC, vm.heap);
     }
 
@@ -635,19 +635,19 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
         case Opcode.CLOSURE: {
             // Clear ra up front so a GC during closure creation cannot scan
             // a stale pointer; the old contents are left for the sweep.
-            ra.set_undefined();
+            vm.heap.set_reg_undefined(ra);
             uint bc = insn.get_bc();
             if (bc < vm.current_func.inner_count) {
                 CompiledFunction* template = vm.current_func.inner_funcs[bc];
                 HObject* func_obj = instantiate_closure(vm, template, ds.act.var_env, ds.act.lex_env, &ds.act.this_binding, ds.act.new_target, ds.regs_base);
                 if (func_obj != null) {
-                    ra.set_object(func_obj);
+                    vm.heap.set_reg_object(ra, func_obj);
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 } else {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             return (TVal){};
         }
@@ -675,13 +675,13 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 break;
                             }
                         }
-                        ra.set_undefined();
+                        vm.heap.set_reg_undefined(ra);
                     }
                 } else {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             return (TVal){};
         }
@@ -887,12 +887,12 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // until the frame pops is caught by free_forin_chain instead.
             if (rb.is_pointer()) {
                 forin_chain_remove(vm, &ds.act.forin, (ForInState*)rb.get_heapptr());
-                rb.set_null();
+                vm.heap.set_reg_null(rb);
             }
 
             // null/undefined → skip loop (rb = null marker)
             if (ra.is_null() || ra.is_undefined()) {
-                rb.set_null();
+                vm.heap.set_reg_null(rb);
                 break;
             }
 
@@ -902,13 +902,13 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 obj = (HObject*)ra.get_heapptr();
             } else if (ra.is_boolean()) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.BOOLEAN);
-                if (catch _err = wrapped) { rb.set_null(); break; }
+                if (catch _err = wrapped) { vm.heap.set_reg_null(rb); break; }
                 obj = wrapped;
                 obj.prototype = vm.heap.bool_proto;
                 (*obj.extra_ptr()).prim.primitive_value.set_boolean(ra.get_boolean());
             } else if (ra.is_string()) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.STRING);
-                if (catch _err = wrapped) { rb.set_null(); break; }
+                if (catch _err = wrapped) { vm.heap.set_reg_null(rb); break; }
                 obj = wrapped;
                 obj.flags.exotic_stringobj = true;
                 obj.prototype = vm.heap.string_proto;
@@ -923,12 +923,12 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ds.vm.heap);
             } else if (ra.is_number() || ra.is_fastint()) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
-                if (catch _err = wrapped) { rb.set_null(); break; }
+                if (catch _err = wrapped) { vm.heap.set_reg_null(rb); break; }
                 obj = wrapped;
                 obj.prototype = vm.heap.number_proto;
                 vm.heap.tval_copy_ref(&(*obj.extra_ptr()).prim.primitive_value, ra);
             } else {
-                rb.set_null();
+                vm.heap.set_reg_null(rb);
                 break;
             }
 
@@ -944,7 +944,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                     return (TVal){};
                 }
-                rb.set_null();
+                vm.heap.set_reg_null(rb);
                 break;
             }
             // Pin the target so the loop body, which may overwrite every
@@ -954,7 +954,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // Hand ownership to the activation; the register only borrows.
             state.parent = (ForInState*)ds.act.forin;
             ds.act.forin = (void*)state;
-            rb.set_pointer(state);
+            vm.heap.set_reg_pointer(rb, state);
             return (TVal){};
         }
 
@@ -963,8 +963,8 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // rc = iter_state (input ForInState*)
             ForInState* state = (ForInState*)rc.get_heapptr();
             if (state == null) {
-                rb.set_boolean(false);
-                ra.set_undefined();
+                vm.heap.set_reg_boolean(rb, false);
+                vm.heap.set_reg_undefined(ra);
                 break;
             }
 
@@ -981,14 +981,14 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // indices are served by the exotic handler rather than the
             // named-property table.
             while (state.index < state.count) {
-                HString* k = state.keys[state.index];
+                HString* k = state.keys[state.index].borrow();
                 state.index++;
                 if (state.target == null || !forin_key_still_exists(state.target, k, ds.vm.heap)) {
                     // The property was deleted before its turn, so skip it.
                     continue;
                 }
                 vm.heap.set_reg_string(ra, k);
-                rb.set_boolean(true);
+                vm.heap.set_reg_boolean(rb, true);
                 return (TVal){};
             }
 
@@ -996,9 +996,9 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // register as well keeps a re-run of this loop's INITFOR from seeing
             // a dangling pointer.
             forin_chain_remove(vm, &ds.act.forin, state);
-            rc.set_null();
-            rb.set_boolean(false);
-            ra.set_undefined();
+            vm.heap.set_reg_null(rc);
+            vm.heap.set_reg_boolean(rb, false);
+            vm.heap.set_reg_undefined(ra);
             break;
         }
 
@@ -1016,7 +1016,7 @@ fn TVal? throw_type_error_at(Vm* vm, Dispatch* ds, String msg) {
     if (try te = te_raw) {
         te.prototype = vm.heap.type_err_proto;
         HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-        TVal mv; mv.set_string(intern_string(vm, msg));
+        TVal mv; mv.set_string_borrowed(intern_string(vm, msg));
         te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC, vm.heap);
         TVal tv; tv.set_object(te);
         if (!vm_throw_value(vm, tv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -1844,7 +1844,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (!iter.is_object() || iter.get_heapptr() == null) {
                     return throw_type_error_at(vm, ds, "async iterator is not an object");
                 }
-                *ra = iter;
+                vm.heap.tval_copy_ref(ra, &iter);
                 return (TVal){};
             }
 
@@ -1904,7 +1904,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 return throw_type_error_at(vm, ds, "could not create async-from-sync iterator");
             }
             TVal wv; wv.set_object(wrapped);
-            *ra = wv;
+            vm.heap.tval_copy_ref(ra, &wv);
             return (TVal){};
         }
 
@@ -1916,7 +1916,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // rc is false (there is nothing to close, so §7.4.11 never calls
             // Await at all. Unlike a real user `await`, AWAIT always costs a
             // tick now, so this synthetic no-close case must not reach it).
-            rc.set_boolean(false);
+            vm.heap.set_reg_boolean(rc, false);
             bool is_throw_completion = (insn.b == 1);
             if (insn.b == 2) {
                 is_throw_completion = false;
@@ -1926,7 +1926,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 }
             }
 
-            if (!ra.is_object() || ra.get_heapptr() == null) { ra.set_undefined(); return (TVal){}; }
+            if (!ra.is_object() || ra.get_heapptr() == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
             HObject* iter = (HObject*)ra.get_heapptr();
             HString* ret_key = intern_string(vm, "return");
             hobject::PropLookupResult ret_lookup = iter.get_with_accessors(ret_key, ds.vm.heap);
@@ -1934,7 +1934,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (vm.has_error) {
                 if (is_throw_completion) {
                     vm.has_error = false; vm.heap.has_error = false;
-                    ra.set_undefined(); return (TVal){};
+                    vm.heap.set_reg_undefined(ra); return (TVal){};
                 }
                 TVal thrown = vm.return_val;
                 vm.has_error = false; vm.heap.has_error = false;
@@ -1953,7 +1953,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (vm.has_error) {
                     if (is_throw_completion) {
                         vm.has_error = false; vm.heap.has_error = false;
-                        ra.set_undefined(); return (TVal){};
+                        vm.heap.set_reg_undefined(ra); return (TVal){};
                     }
                     TVal thrown = vm.return_val;
                     vm.has_error = false; vm.heap.has_error = false;
@@ -1971,7 +1971,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (!ret_method.is_nullish() && !is_throw_completion) {
                     return throw_type_error_at(vm, ds, "Iterator .return is not a function");
                 }
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
                 return (TVal){};
             }
 
@@ -1980,7 +1980,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (vm.has_error) {
                 if (is_throw_completion) {
                     vm.has_error = false; vm.heap.has_error = false;
-                    ra.set_undefined(); return (TVal){};
+                    vm.heap.set_reg_undefined(ra); return (TVal){};
                 }
                 TVal thrown = vm.return_val;
                 vm.has_error = false; vm.heap.has_error = false;
@@ -1992,8 +1992,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // Leave the (promise) result in ra for the caller to AWAIT. The
             // §7.4.11 "must return an object" check happens after the await, but
             // for our purposes awaiting a non-object is a harmless no-op.
-            *ra = ret_result;
-            rc.set_boolean(true);
+            vm.heap.tval_copy_ref(ra, &ret_result);
+            vm.heap.set_reg_boolean(rc, true);
             return (TVal){};
         }
 
@@ -2050,8 +2050,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 }
             }
             HString* sym = builtins::create_hidden_symbol(vm.heap, desc);
-            if (sym == null) { ra.set_undefined(); return (TVal){}; }
-            ra.set_string(sym);
+            if (sym == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
+            vm.heap.set_reg_string(ra, sym);
             track_heap_store(ds.act, ra, (uint)insn.a);
             return (TVal){};
         }
@@ -2135,7 +2135,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (hobj != null && key != null) {
                 has = hobj.find_prop_idx(key, ds.vm.heap) >= 0;
             }
-            ra.set_boolean(has);
+            vm.heap.set_reg_boolean(ra, has);
             return (TVal){};
         }
 
@@ -2227,7 +2227,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     return (TVal){};
                 }
             }
-            ra.set_undefined();
+            vm.heap.set_reg_undefined(ra);
             return (TVal){};
         }
 

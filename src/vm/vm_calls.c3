@@ -698,7 +698,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     if (ds.var_ic_base != null) {
         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-        if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
+        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
             HObject* b = (HObject*)vic.bindings;
             if (b.shape_id == vic.shape_id
                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
@@ -2052,7 +2052,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 ctx.regs = vm.valstack;
                 ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                 ctx.argc = (ushort)nargs;
-                ctx.result = &lf_result;
+                ctx.result = builtins::result_slot(&lf_result);
                 ctx.heap = vm.heap;
                 ctx.this_val = ds.regs_base[callee_reg + 1];
                 ctx.is_constructor = false;
@@ -2134,7 +2134,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     ctx.regs = vm.valstack;
                     ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                     ctx.argc = (ushort)nargs;
-                    ctx.result = &bound_result;
+                    ctx.result = builtins::result_slot(&bound_result);
                     ctx.heap = vm.heap;
                     ctx.this_val = ds.regs_base[callee_reg + 1];
                     ctx.is_constructor = false;
@@ -2166,7 +2166,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             inner.regs = vm.valstack;
                             inner.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                             inner.argc = (ushort)nargs;
-                            inner.result = &inner_result;
+                            inner.result = builtins::result_slot(&inner_result);
                             inner.heap = vm.heap;
                             inner.this_val = ds.regs_base[callee_reg + 1];
                             inner.is_constructor = false;
@@ -2199,7 +2199,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 inner2.regs = vm.valstack;
                                 inner2.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                                 inner2.argc = (ushort)nargs;
-                                inner2.result = &bound_inner_result;
+                                inner2.result = builtins::result_slot(&bound_inner_result);
                                 inner2.heap = vm.heap;
                                 inner2.this_val = ds.regs_base[callee_reg + 1];
                                 inner2.is_constructor = false;
@@ -2259,7 +2259,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     ctx.regs = vm.valstack;
                     ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                     ctx.argc = (ushort)nargs;
-                    ctx.result = &builtin_result;
+                    ctx.result = builtins::result_slot(&builtin_result);
                     ctx.heap = vm.heap;
                     ctx.this_val = ds.regs_base[callee_reg + 1];
                     ctx.is_constructor = false;
@@ -2305,7 +2305,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             inner.regs = vm.valstack;
                             inner.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                             inner.argc = (ushort)nargs;
-                            inner.result = &inner_result;
+                            inner.result = builtins::result_slot(&inner_result);
                             inner.heap = vm.heap;
                             inner.this_val = ds.regs_base[callee_reg + 1];
                             inner.is_constructor = false;
@@ -2338,7 +2338,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 bfn_inner.regs = vm.valstack;
                                 bfn_inner.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                                 bfn_inner.argc = (ushort)nargs;
-                                bfn_inner.result = &bfn_inner_result;
+                                bfn_inner.result = builtins::result_slot(&bfn_inner_result);
                                 bfn_inner.heap = vm.heap;
                                 bfn_inner.this_val = ds.regs_base[callee_reg + 1];
                                 bfn_inner.is_constructor = false;
@@ -3151,7 +3151,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
         }
 
         case Opcode.CALL_PROP:
-            ra.set_undefined();
+            vm.heap.set_reg_undefined(ra);
             return (TVal){};
 
         case Opcode.SETPROTO: {
@@ -3179,11 +3179,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // A = GetPrototypeOf(B), a proxy-aware prototype read for `super`
             // in object-literal methods (HomeObject semantics).
             if (!rb.is_object()) {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
                 return (TVal){};
             }
             HObject* pobj = (HObject*)rb.get_heapptr();
-            if (pobj == null) { ra.set_undefined(); return (TVal){}; }
+            if (pobj == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
             TVal proto_out;
             if (!builtins::object_get_proto(vm, vm.heap, pobj, &proto_out)) {
                 TVal gp_err = vm.heap.error_value;
@@ -3242,13 +3242,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     return (TVal){};
                 }
                 HObject* lf_new_target = super_walk_new_target(vm, ds.act);
-                if (lf_new_target == null) { ra.set_undefined(); return (TVal){}; }
+                if (lf_new_target == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
                 builtins::BuiltinContext ctx;
                 ctx.vm = vm;
                 ctx.regs = vm.valstack;
                 ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
                 ctx.argc = (ushort)nargs;
-                ctx.result = ds.regs_base + result_reg;
+                ctx.result = builtins::result_slot(ds.regs_base + result_reg);
                 ctx.heap = vm.heap;
                 ctx.this_val = ds.regs_base[callee_reg + 1];
                 ctx.is_constructor = true;
@@ -3313,7 +3313,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // Outside a constructor, new.target is undefined.
                 // Fall back to simple call behavior
                 // This shouldn't normally happen since super() is only valid in constructors
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
                 return (TVal){};
             }
 
@@ -3323,7 +3323,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     uint sc_bound_fn_idx = (uint)(*super_hobj.extra_ptr()).func.builtin_fn_index;
                     {
                         uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + 4;
-                        if (!ensure_valstack(vm, bound_margin)) { ra.set_undefined(); return (TVal){}; }
+                        if (!ensure_valstack(vm, bound_margin)) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
                         ds.regs_base = ds.act.bottom;
                         TVal* extended_top = ds.act.bottom + ds.nregs + 4;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
@@ -3333,7 +3333,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     sc_bound_ctx.regs = vm.valstack;
                     sc_bound_ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                     sc_bound_ctx.argc = (ushort)nargs;
-                    sc_bound_ctx.result = ds.regs_base + result_reg;
+                    sc_bound_ctx.result = builtins::result_slot(ds.regs_base + result_reg);
                     sc_bound_ctx.heap = vm.heap;
                     sc_bound_ctx.this_val = ds.regs_base[callee_reg + 1];
                     sc_bound_ctx.is_constructor = true;
@@ -3360,7 +3360,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         } else if (super_val.is_object()) {
                             super_hobj = (HObject*)super_val.get_heapptr();
                         } else {
-                            ra.set_undefined(); return (TVal){};
+                            vm.heap.set_reg_undefined(ra); return (TVal){};
                         }
                         // Fall through to lightfunc / BUILTIN_FN / CompiledFunction handling below
                     } else {
@@ -3390,7 +3390,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         return (TVal){};
                     }
                 } else {
-                    ra.set_undefined(); return (TVal){};
+                    vm.heap.set_reg_undefined(ra); return (TVal){};
                 }
             }
 
@@ -3407,7 +3407,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 sc_lf_ctx.regs = vm.valstack;
                 sc_lf_ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
                 sc_lf_ctx.argc = (ushort)nargs;
-                sc_lf_ctx.result = ds.regs_base + result_reg;
+                sc_lf_ctx.result = builtins::result_slot(ds.regs_base + result_reg);
                 sc_lf_ctx.heap = vm.heap;
                 sc_lf_ctx.this_val = ds.regs_base[callee_reg + 1];
                 sc_lf_ctx.is_constructor = true;
@@ -3456,7 +3456,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     ctx.regs = vm.valstack;
                     ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
                     ctx.argc = (ushort)nargs;
-                    ctx.result = ds.regs_base + result_reg;
+                    ctx.result = builtins::result_slot(ds.regs_base + result_reg);
                     ctx.heap = vm.heap;
                     ctx.this_val = ds.regs_base[callee_reg + 1];
                     ctx.is_constructor = true;
@@ -3499,7 +3499,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
 
-            if (super_hobj == null) { ra.set_undefined(); return (TVal){}; }
+            if (super_hobj == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
             CompiledFunction* super_target = (*super_hobj.extra_ptr()).func.comp_func;
 
             // OrdinaryCreateFromConstructor (§9.1.13): allocate the new object
@@ -3515,7 +3515,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             } else {
                 HObject*? sc_new_obj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
                 if (catch _sc_err = sc_new_obj_raw) {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                     return (TVal){};
                 }
                 HObject* sc_new_obj = sc_new_obj_raw;
@@ -3563,7 +3563,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             uint needed = (uint)(new_bottom - vm.valstack) + super_target.num_regs;
 
             if (!ensure_valstack(vm, needed)) {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
                 return (TVal){};
             }
 
@@ -3686,10 +3686,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // A = new.target
             HObject* nt = ds.act.new_target;
             if (nt != null) {
-                ra.set_object(nt);
+                vm.heap.set_reg_object(ra, nt);
                 track_heap_store(ds.act, ra, (uint)insn.a);
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             return (TVal){};
         }
@@ -3728,7 +3728,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 ctx.regs = vm.valstack;
                 ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
                 ctx.argc = (ushort)nargs;
-                ctx.result = ds.regs_base + result_reg;
+                ctx.result = builtins::result_slot(ds.regs_base + result_reg);
                 ctx.heap = vm.heap;
                 // [[Construct]]: the this slot at callee_reg+1 is not written by the
                 // compiler for `new`, so its content is stale frame data. Constructor
@@ -3790,7 +3790,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     ctx.regs = vm.valstack;
                     ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
                     ctx.argc = (ushort)nargs;
-                    ctx.result = ds.regs_base + result_reg;
+                    ctx.result = builtins::result_slot(ds.regs_base + result_reg);
                     ctx.heap = vm.heap;
                     // [[Construct]]: the this slot at callee_reg+1 is not written by the
                     // compiler for `new`, so its content is stale frame data. Constructor
@@ -3839,7 +3839,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             rd_ctx.regs = vm.valstack;
                             rd_ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
                             rd_ctx.argc = (ushort)nargs;
-                            rd_ctx.result = &rd_result;
+                            rd_ctx.result = builtins::result_slot(&rd_result);
                             rd_ctx.heap = vm.heap;
                             rd_ctx.this_val.set_undefined();
                             rd_ctx.is_constructor = true;
@@ -3890,7 +3890,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     ctx.regs = vm.valstack;
                     ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
                     ctx.argc = (ushort)nargs;
-                    ctx.result = &ctor_result;
+                    ctx.result = builtins::result_slot(&ctor_result);
                     ctx.heap = vm.heap;
                     // [[Construct]]: the this slot at callee_reg+1 is not written by the
                     // compiler for `new`, so its content is stale frame data. Constructor

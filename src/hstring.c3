@@ -10,6 +10,7 @@ module boomkat::hstring;
 
 import boomkat::types;
 import boomkat::heap;
+import boomkat::gcprofile;
 import std::core::mem;
 
 // ============================================================================
@@ -493,6 +494,8 @@ fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap)
     if (raw == null) {
         return boomkat::types::ALLOC_ERROR~;
     }
+
+    gcprofile::gcprof_string_alloc(total);
 
     // Zero-fill the header portion.
     mem::clear(raw, (sz)(HSTRING_HDR_SIZE));

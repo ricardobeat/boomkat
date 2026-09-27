@@ -99,7 +99,7 @@ fn void builtin_date_proto_toTemporalInstant(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Extract the BigInt from a Temporal.Instant heap object. Returns null if the
@@ -149,7 +149,7 @@ fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_instant_proto));
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Temporal.Instant.from(item) — accepts an ISO string or another Instant.
@@ -183,7 +183,7 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
             HObject* obj = obj_o;
             ctx.heap.decref((types::HeapHeader*)b_o);
             obj.prototype = ctx.heap.temporal_instant_proto;
-            ctx.result.set_object(obj);
+            ctx.result_object(obj);
             return;
         }
         if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
@@ -205,7 +205,7 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
             HObject* obj = obj_o;
             ctx.heap.decref((types::HeapHeader*)b_o);
             obj.prototype = ctx.heap.temporal_instant_proto;
-            ctx.result.set_object(obj);
+            ctx.result_object(obj);
             return;
         }
         // Non-Instant object: ToPrimitive(string) — same shape as
@@ -240,7 +240,7 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Temporal.Instant.fromEpochSeconds(n) — converts a Number (or BigInt) of
@@ -301,7 +301,7 @@ fn void builtin_temporal_instant_fromEpochSeconds(BuiltinContext* ctx) {
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)result);
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Same shape for ms, us, ns — delegate via simple scaling.
@@ -360,7 +360,7 @@ fn void builtin_temporal_instant_fromEpochMilliseconds(BuiltinContext* ctx) {
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)ns);
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_temporal_instant_fromEpochMicroseconds(BuiltinContext* ctx) {
@@ -410,7 +410,7 @@ fn void builtin_temporal_instant_fromEpochMicroseconds(BuiltinContext* ctx) {
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)ns);
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_temporal_instant_fromEpochNanoseconds(BuiltinContext* ctx) {
@@ -438,7 +438,7 @@ fn void builtin_temporal_instant_fromEpochNanoseconds(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Temporal.Instant.compare(a, b) → -1 / 0 / 1.
@@ -459,7 +459,7 @@ fn void builtin_temporal_instant_compare(BuiltinContext* ctx) {
     hbigint::HBigInt* b;
     if (!to_temporal_instant(ctx, b_arg, &b)) return;
     defer ctx.heap.decref((types::HeapHeader*)b);
-    ctx.result.set_fastint(instant_cmp_big(a, b));
+    ctx.result_fastint(instant_cmp_big(a, b));
 }
 
 // All four getters: epochSeconds, epochMilliseconds, epochMicroseconds,
@@ -471,7 +471,7 @@ fn void builtin_temporal_instant_proto_epochSeconds(BuiltinContext* ctx) {
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
     double d;
     if (!bigint_to_epoch_number(b, &d, ctx)) return;
-    ctx.result.set_number(math::floor(d / 1e9));
+    ctx.result_number(math::floor(d / 1e9));
 }
 
 fn void builtin_temporal_instant_proto_epochMilliseconds(BuiltinContext* ctx) {
@@ -481,7 +481,7 @@ fn void builtin_temporal_instant_proto_epochMilliseconds(BuiltinContext* ctx) {
     double d;
     if (!bigint_to_epoch_number(b, &d, ctx)) return;
     // Convert ms (Number) to integer. floor() then cast.
-    ctx.result.set_number(math::floor(d / 1e6));
+    ctx.result_number(math::floor(d / 1e6));
 }
 
 fn void builtin_temporal_instant_proto_epochMicroseconds(BuiltinContext* ctx) {
@@ -490,14 +490,14 @@ fn void builtin_temporal_instant_proto_epochMicroseconds(BuiltinContext* ctx) {
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
     double d;
     if (!bigint_to_epoch_number(b, &d, ctx)) return;
-    ctx.result.set_number(math::floor(d / 1e3));
+    ctx.result_number(math::floor(d / 1e3));
 }
 
 fn void builtin_temporal_instant_proto_epochNanoseconds(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
     hbigint::HBigInt* b = obj.extra.temporal.big_ns;
-    ctx.result.set_bigint(b);
+    ctx.result_bigint(b);
 }
 
 
@@ -732,7 +732,7 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
         temporal::format_offset_seconds(&buf[n], off);
         n += 6;
     }
-    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:n]));
+    ctx.result_string(builtin_intern_string(ctx.heap, buf[:n]));
 }
 
 fn void builtin_temporal_instant_proto_toJSON(BuiltinContext* ctx) {
@@ -795,7 +795,7 @@ fn void builtin_temporal_instant_proto_equals(BuiltinContext* ctx) {
         && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_INSTANT) {
         HObject* a = (HObject*)ctx.this_val.get_heapptr();
         HObject* b = (HObject*)arg.get_heapptr();
-        ctx.result.set_boolean(hbigint::hbigint_cmp(a.extra.temporal.big_ns, b.extra.temporal.big_ns) == 0);
+        ctx.result_boolean(hbigint::hbigint_cmp(a.extra.temporal.big_ns, b.extra.temporal.big_ns) == 0);
         return;
     }
     // Strings convert via ToTemporalInstant (rejects invalid strings).
@@ -803,7 +803,7 @@ fn void builtin_temporal_instant_proto_equals(BuiltinContext* ctx) {
     if (!to_temporal_instant(ctx, arg, &other_ns)) return;
     defer ctx.heap.decref((types::HeapHeader*)other_ns);
     HObject* a = (HObject*)ctx.this_val.get_heapptr();
-    ctx.result.set_boolean(hbigint::hbigint_cmp(a.extra.temporal.big_ns, other_ns) == 0);
+    ctx.result_boolean(hbigint::hbigint_cmp(a.extra.temporal.big_ns, other_ns) == 0);
 }
 
 // add / subtract take a Temporal.Duration.
@@ -850,7 +850,7 @@ fn void builtin_temporal_instant_proto_add(BuiltinContext* ctx) {
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)result);
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
@@ -888,7 +888,7 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)result);
     obj.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Settings shared by every until/since method, resolved from the options bag.
@@ -1406,7 +1406,7 @@ fn void instant_until_since(BuiltinContext* ctx, bool until) {
     ctx.heap.decref((types::HeapHeader*)diff);
     if (!ok) return;
     dur.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(dur);
+    ctx.result_object(dur);
 }
 
 // Helper: round a BigInt nanosecond value to the nearest multiple of
@@ -1509,7 +1509,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
         HString* su_key = builtin_intern_string(ctx.heap, "smallestUnit");
         HString* su_copy = builtin_intern_string(ctx.heap, (String)hstr.get_cstr()[:hstr.blen]);
         TVal su_tv;
-        su_tv.set_string(su_copy);
+        su_tv.set_string_borrowed(su_copy);
         PropFlags pf;
         pf.writable = true;
         pf.enumerable = true;
@@ -1605,7 +1605,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
     if (catch err2 = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* inst = inst_o;
     inst.prototype = ctx.heap.temporal_instant_proto;
-    ctx.result.set_object(inst);
+    ctx.result_object(inst);
 }
 
 // Helper: convert a BigInt to a double representing nanoseconds. The result

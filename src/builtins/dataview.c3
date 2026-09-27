@@ -130,7 +130,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
 
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.DATAVIEW);
     if (catch err = raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* obj = raw;
@@ -140,7 +140,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
     (*obj.extra_ptr()).view.length_tracking = length_tracking;
     typedarray_link_view(ctx.heap, buf, obj);
 
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // ============================================================================
@@ -154,7 +154,7 @@ fn void builtin_dataview_proto_buffer_get(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_object((*obj.extra_ptr()).view.buffer);
+    ctx.result_object((*obj.extra_ptr()).view.buffer);
 }
 
 fn void builtin_dataview_proto_bytelength_get(BuiltinContext* ctx) {
@@ -169,7 +169,7 @@ fn void builtin_dataview_proto_bytelength_get(BuiltinContext* ctx) {
         arraybuffer_throw_type_error(ctx, "DataView.prototype.byteLength: view is out of bounds");
         return;
     }
-    ctx.result.set_fastint((long)view_effective_byte_length(obj));
+    ctx.result_fastint((long)view_effective_byte_length(obj));
 }
 
 fn void builtin_dataview_proto_byteoffset_get(BuiltinContext* ctx) {
@@ -184,7 +184,7 @@ fn void builtin_dataview_proto_byteoffset_get(BuiltinContext* ctx) {
         arraybuffer_throw_type_error(ctx, "DataView.prototype.byteOffset: view is out of bounds");
         return;
     }
-    ctx.result.set_fastint((long)(*obj.extra_ptr()).view.byte_offset);
+    ctx.result_fastint((long)(*obj.extra_ptr()).view.byte_offset);
 }
 
 // ============================================================================
@@ -276,45 +276,45 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
 
     switch (elem_class) {
         case hobject::ObjClass.INT8ARRAY:
-            ctx.result.set_fastint((long)(ichar)(char)raw);
+            ctx.result_fastint((long)(ichar)(char)raw);
             return;
         case hobject::ObjClass.UINT8ARRAY:
-            ctx.result.set_fastint((long)(raw & 0xFF));
+            ctx.result_fastint((long)(raw & 0xFF));
             return;
         case hobject::ObjClass.INT16ARRAY:
-            ctx.result.set_fastint((long)(short)(ushort)raw);
+            ctx.result_fastint((long)(short)(ushort)raw);
             return;
         case hobject::ObjClass.UINT16ARRAY:
-            ctx.result.set_fastint((long)(raw & 0xFFFF));
+            ctx.result_fastint((long)(raw & 0xFFFF));
             return;
         case hobject::ObjClass.INT32ARRAY:
-            ctx.result.set_fastint((long)(int)(uint)raw);
+            ctx.result_fastint((long)(int)(uint)raw);
             return;
         case hobject::ObjClass.UINT32ARRAY: {
             uint u = (uint)raw;
             if (u < 2147483648u) {
-                ctx.result.set_fastint((long)u);
+                ctx.result_fastint((long)u);
             } else {
-                ctx.result.set_number((double)u);
+                ctx.result_number((double)u);
             }
             return;
         }
         case hobject::ObjClass.FLOAT16ARRAY: {
             ushort bits = (ushort)raw;
-            ctx.result.set_number(f16_to_double(bits));
+            ctx.result_number(f16_to_double(bits));
             return;
         }
         case hobject::ObjClass.FLOAT32ARRAY: {
             uint bits = (uint)raw;
             float f;
             mem::copy(&f, &bits, (sz)(4));
-            ctx.result.set_number((double)f);
+            ctx.result_number((double)f);
             return;
         }
         case hobject::ObjClass.FLOAT64ARRAY: {
             double d;
             mem::copy(&d, &raw, (sz)(8));
-            ctx.result.set_number(d);
+            ctx.result_number(d);
             return;
         }
         case hobject::ObjClass.BIGINT64ARRAY: {
@@ -328,7 +328,7 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
             return;
         }
         default:
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
     }
 }
@@ -336,8 +336,8 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
 // Box an int128 into an HBigInt and store it as the builtin result.
 fn void dv_set_bigint_result(BuiltinContext* ctx, int128 v) {
     hbigint::HBigInt*? box = hbigint::hbigint_alloc(ctx.heap, v);
-    if (catch box) { ctx.result.set_undefined(); return; }
-    ctx.result.set_bigint(box);
+    if (catch box) { ctx.result_undefined(); return; }
+    ctx.result_bigint(box);
 }
 
 fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
@@ -437,7 +437,7 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
     // fits the view, so pos is well inside uint range.
     char* p = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset + (uint)pos;
     dv_store_raw(p, elem_size, raw, little_endian);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 fn void builtin_dataview_get_int8(BuiltinContext* ctx)    { dv_get(ctx, hobject::ObjClass.INT8ARRAY); }
@@ -493,7 +493,7 @@ fn bool register_dataview_accessor(HObject* proto, Heap* heap, char[] name, uint
     HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
     if (fn_name != null) {
         TVal name_tv;
-        name_tv.set_string(fn_name);
+        name_tv.set_string_borrowed(fn_name);
         HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
         func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
@@ -583,7 +583,7 @@ fn bool register_dataview(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "DataView"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "DataView"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 

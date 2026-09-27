@@ -2,9 +2,9 @@
 // Each frame allocates a full component tree (the expensive part in real
 // virtual DOM frameworks). Measures peak RSS under sustained object churn.
 
-var FRAMES = 60;
-var COMPONENTS = 15;
-var LIST_SIZE = 8;
+var FRAMES = typeof VDOM_FRAMES_OVERRIDE === "number" ? VDOM_FRAMES_OVERRIDE : 60;
+var COMPONENTS = typeof VDOM_COMPONENTS_OVERRIDE === "number" ? VDOM_COMPONENTS_OVERRIDE : 15;
+var LIST_SIZE = typeof VDOM_LIST_SIZE_OVERRIDE === "number" ? VDOM_LIST_SIZE_OVERRIDE : 8;
 
 function renderItem(compId, idx, frame) {
     return {

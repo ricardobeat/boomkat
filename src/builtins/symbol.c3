@@ -312,10 +312,10 @@ fn void builtin_symbol(BuiltinContext* ctx) {
 
     HString* sym = create_symbol_string(ctx.heap, desc, has_desc);
     if (sym == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    ctx.result.set_string(sym);
+    ctx.result_string(sym);
 }
 
 // ============================================================================
@@ -331,7 +331,7 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
     HString* key_str = builtin_to_string_vm(ctx, &key_val);
     if (ctx.should_throw) return;
     if (key_str == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -340,20 +340,20 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
     // Check registry
     HString* existing = symbol_registry_get(ctx.heap, key_bytes);
     if (existing != null) {
-        ctx.result.set_string(existing);
+        ctx.result_string(existing);
         return;
     }
 
     // Create new global symbol
     HString* sym = create_symbol_string(ctx.heap, key_bytes);
     if (sym == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
     symbol_registry_put(ctx.heap, key_bytes, sym);
 
-    ctx.result.set_string(sym);
+    ctx.result_string(sym);
 }
 
 // ============================================================================
@@ -371,9 +371,9 @@ fn void builtin_symbol_keyfor(BuiltinContext* ctx) {
     HString* sym = (HString*)sym_val.get_heapptr();
     HString* key = symbol_registry_get_key(ctx.heap, sym);
     if (key != null) {
-        ctx.result.set_string(key);
+        ctx.result_string(key);
     } else {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
     }
 }
 
@@ -407,16 +407,16 @@ fn void builtin_symbol_proto_description_get(BuiltinContext* ctx) {
     }
 
     if (!symbol_has_description(sym)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     char[] desc = symbol_description(sym);
     HString* result = ctx.heap.str_intern(desc);
     if (result == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // ============================================================================
@@ -471,7 +471,7 @@ fn void builtin_symbol_proto_toString(BuiltinContext* ctx) {
     result_buf[pos] = 0;
 
     HString* result = builtin_intern_string(ctx.heap, result_buf[:(uint)pos]);
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // ============================================================================
@@ -483,7 +483,7 @@ fn void builtin_symbol_proto_valueOf(BuiltinContext* ctx) {
     if (this_val.is_string()) {
         HString* s = (HString*)this_val.get_heapptr();
         if (s != null && s.is_symbol()) {
-            *ctx.result = this_val;
+            ctx.copy_result(this_val);
             return;
         }
     } else if (this_val.is_object() && this_val.get_heapptr() != null) {
@@ -494,7 +494,7 @@ fn void builtin_symbol_proto_valueOf(BuiltinContext* ctx) {
             if (prim.is_string()) {
                 HString* s = (HString*)prim.get_heapptr();
                 if (s != null && s.is_symbol()) {
-                    *ctx.result = prim;
+                    ctx.copy_result(prim);
                     return;
                 }
             }
@@ -533,7 +533,7 @@ fn void builtin_symbol_proto_toprimitive(BuiltinContext* ctx) {
     if (this_val.is_string()) {
         HString* s = (HString*)this_val.get_heapptr();
         if (s != null && s.is_symbol()) {
-            *ctx.result = this_val;
+            ctx.copy_result(this_val);
             return;
         }
     } else if (this_val.is_object() && this_val.get_heapptr() != null) {
@@ -543,7 +543,7 @@ fn void builtin_symbol_proto_toprimitive(BuiltinContext* ctx) {
             if (prim.is_string()) {
                 HString* s = (HString*)prim.get_heapptr();
                 if (s != null && s.is_symbol()) {
-                    *ctx.result = prim;
+                    ctx.copy_result(prim);
                     return;
                 }
             }
@@ -588,7 +588,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
             HString* tp_name = builtin_intern_string(heap, "[Symbol.toPrimitive]");
             if (tp_name != null) {
                 TVal name_tv;
-                name_tv.set_string(tp_name);
+                name_tv.set_string_borrowed(tp_name);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
@@ -610,7 +610,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Symbol"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Symbol"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -631,7 +631,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
             HString* name_str = builtin_intern_string(heap, fn_name);
             if (name_str != null) {
                 TVal name_tv;
-                name_tv.set_string(name_str);
+                name_tv.set_string_borrowed(name_str);
                 HString* name_key = heap.str(heap::BuiltinStr.NAME);
                 fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
             }
@@ -704,7 +704,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     if (tostrtag_sym != null) {
         HString* tostrtag_key = builtin_intern_string(heap, "toStringTag");
         TVal tostrtag_val;
-        tostrtag_val.set_string(tostrtag_sym);
+        tostrtag_val.set_string_borrowed(tostrtag_sym);
         ctor.put_prop(tostrtag_key, tostrtag_val, hobject::PROP_FLAGS_NNC, heap);
     }
 
@@ -714,7 +714,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* iter_key = builtin_intern_string(heap, "iterator");
         if (iter_key != null) {
             TVal iter_val;
-            iter_val.set_string(iter_sym);
+            iter_val.set_string_borrowed(iter_sym);
             ctor.put_prop(iter_key, iter_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -725,7 +725,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* toprim_key = builtin_intern_string(heap, "toPrimitive");
         if (toprim_key != null) {
             TVal toprim_val;
-            toprim_val.set_string(toprim_sym);
+            toprim_val.set_string_borrowed(toprim_sym);
             ctor.put_prop(toprim_key, toprim_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -737,7 +737,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* concat_key = builtin_intern_string(heap, "isConcatSpreadable");
         if (concat_key != null) {
             TVal concat_val;
-            concat_val.set_string(concat_sym);
+            concat_val.set_string_borrowed(concat_sym);
             ctor.put_prop(concat_key, concat_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -749,7 +749,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* hasinst_key = builtin_intern_string(heap, "hasInstance");
         if (hasinst_key != null) {
             TVal hasinst_val;
-            hasinst_val.set_string(hasinst_sym);
+            hasinst_val.set_string_borrowed(hasinst_sym);
             ctor.put_prop(hasinst_key, hasinst_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -761,7 +761,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* match_key = builtin_intern_string(heap, "match");
         if (match_key != null) {
             TVal match_val;
-            match_val.set_string(match_sym);
+            match_val.set_string_borrowed(match_sym);
             ctor.put_prop(match_key, match_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -773,7 +773,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* search_key = builtin_intern_string(heap, "search");
         if (search_key != null) {
             TVal search_val;
-            search_val.set_string(search_sym);
+            search_val.set_string_borrowed(search_sym);
             ctor.put_prop(search_key, search_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -785,7 +785,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* replace_key = builtin_intern_string(heap, "replace");
         if (replace_key != null) {
             TVal replace_val;
-            replace_val.set_string(replace_sym);
+            replace_val.set_string_borrowed(replace_sym);
             ctor.put_prop(replace_key, replace_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -797,7 +797,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* split_key = builtin_intern_string(heap, "split");
         if (split_key != null) {
             TVal split_val;
-            split_val.set_string(split_sym);
+            split_val.set_string_borrowed(split_sym);
             ctor.put_prop(split_key, split_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -809,7 +809,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* species_key = builtin_intern_string(heap, "species");
         if (species_key != null) {
             TVal species_val;
-            species_val.set_string(species_sym);
+            species_val.set_string_borrowed(species_sym);
             ctor.put_prop(species_key, species_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -821,7 +821,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* unscop_key = builtin_intern_string(heap, "unscopables");
         if (unscop_key != null) {
             TVal unscop_val;
-            unscop_val.set_string(unscop_sym);
+            unscop_val.set_string_borrowed(unscop_sym);
             ctor.put_prop(unscop_key, unscop_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -833,7 +833,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* matchall_key = builtin_intern_string(heap, "matchAll");
         if (matchall_key != null) {
             TVal matchall_val;
-            matchall_val.set_string(matchall_sym);
+            matchall_val.set_string_borrowed(matchall_sym);
             ctor.put_prop(matchall_key, matchall_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }
@@ -845,7 +845,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         HString* asynciter_key = builtin_intern_string(heap, "asyncIterator");
         if (asynciter_key != null) {
             TVal asynciter_val;
-            asynciter_val.set_string(asynciter_sym);
+            asynciter_val.set_string_borrowed(asynciter_sym);
             ctor.put_prop(asynciter_key, asynciter_val, hobject::PROP_FLAGS_NNC, heap);
         }
     }

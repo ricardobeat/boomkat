@@ -55,6 +55,7 @@ static void finalize_deflater(void *payload, void *udata)
     DeflaterState *st = (DeflaterState *)payload;
     (void)udata;
     if (!st) return;
+    if (st->has_tag) g_api->value_clear(g_ctx, st->tag);
     if (st->buf) g_api->mem_free(g_ctx, st->buf);
     g_api->mem_free(g_ctx, st);
 }
@@ -87,6 +88,7 @@ static void js_deflater_ctor(void *bctx, void *udata)
     DeflaterState *st = (DeflaterState *)g_api->mem_alloc(g_ctx, sizeof *st);
     if (!st) { g_api->throw_range_error(bctx, "out of memory"); return; }
     memset(st, 0, sizeof *st);
+    g_api->value_init(st->tag);
 
     if (g_api->arg_count(bctx) >= 1) {
         g_api->handle_store(bctx, g_api->arg_handle(bctx, 0), st->tag);

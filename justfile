@@ -212,6 +212,11 @@ test-local:
     @just build boomkat
     bash test/run_local.sh
 
+# Check generation transitions under GC_VERIFY and ASAN.
+test-gc-generations:
+    c3c build test_gc_generations
+    ./out/test_gc_generations
+
 # Run GC-lifetime tests under allocation stress (-D GC_STRESS and ASAN), collecting at every allocation
 test-gc-stress:
     @make out/boomkat_gc_stress
@@ -410,4 +415,3 @@ gc-profile SCRIPT:
 # Run ES6+ benchmarks against QuickJS (benchmarks/es6/README.md)
 bench-es6 *ARGS:
     bash scripts/run_bench_es6.sh {{ARGS}}
-

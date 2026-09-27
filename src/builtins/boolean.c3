@@ -24,15 +24,15 @@ fn void builtin_boolean(BuiltinContext* ctx) {
     if (ctx.is_constructor) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BOOLEAN);
         if (catch err = obj_raw) {
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         HObject* obj = obj_raw;
         ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.bool_proto));
         (*obj.extra_ptr()).prim.primitive_value.set_boolean(b);
-        ctx.result.set_object(obj);
+        ctx.result_object(obj);
     } else {
-        ctx.result.set_boolean(b);
+        ctx.result_boolean(b);
     }
 }
 
@@ -59,7 +59,7 @@ fn void builtin_boolean_proto_toString(BuiltinContext* ctx) {
         return;
     }
     HString* s = builtin_intern_string(ctx.heap, b ? "true" : "false");
-    ctx.result.set_string(s);
+    ctx.result_string(s);
 }
 
 // Boolean.prototype.valueOf, ES2015 §15.6.4.3: throws TypeError if `this`
@@ -70,11 +70,11 @@ fn void builtin_boolean_proto_valueOf(BuiltinContext* ctx) {
         HObject* obj = (HObject*)this_val.get_heapptr();
         if (obj.get_class() == hobject::ObjClass.BOOLEAN &&
             (*obj.extra_ptr()).prim.primitive_value.is_boolean()) {
-            ctx.result.set_boolean((*obj.extra_ptr()).prim.primitive_value.get_boolean());
+            ctx.result_boolean((*obj.extra_ptr()).prim.primitive_value.get_boolean());
             return;
         }
     } else if (this_val.is_boolean()) {
-        ctx.result.set_boolean(this_val.get_boolean());
+        ctx.result_boolean(this_val.get_boolean());
         return;
     }
     builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Boolean.prototype.valueOf called on incompatible value");

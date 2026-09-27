@@ -658,7 +658,7 @@ fn void vm_set_toprimitive_error(Vm* vm) {
         HString* msg_str = intern_string(vm, "Cannot convert object to primitive value");
         if (msg_str != null) {
             TVal msg_val;
-            msg_val.set_string(msg_str);
+            msg_val.set_string_borrowed(msg_str);
             HString* msg_key = intern_string(vm, "message");
             if (msg_key != null) {
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
@@ -679,7 +679,7 @@ fn void vm_set_type_error(Vm* vm, char[] msg) {
         HString* msg_str = intern_string(vm, msg);
         if (msg_str != null) {
             TVal msg_val;
-            msg_val.set_string(msg_str);
+            msg_val.set_string_borrowed(msg_str);
             HString* msg_key = intern_string(vm, "message");
             if (msg_key != null) {
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
@@ -700,7 +700,7 @@ fn void vm_set_range_error(Vm* vm, char[] msg) {
         HString* msg_str = intern_string(vm, msg);
         if (msg_str != null) {
             TVal msg_val;
-            msg_val.set_string(msg_str);
+            msg_val.set_string_borrowed(msg_str);
             HString* msg_key = intern_string(vm, "message");
             if (msg_key != null) {
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
@@ -812,7 +812,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                 && wrapper_proto_method_is_original(hp, hp.string_proto, ts_name,
                        (int)builtins::Builtin.STRING_PROTO_TOSTRING.ordinal)) {
                 TVal result;
-                result.set_string((*obj.extra_ptr()).prim.primitive_value.get_heapptr());
+                result.set_string_borrowed((*obj.extra_ptr()).prim.primitive_value.get_heapptr());
                 return result;
             }
             // Fast path: Symbol wrapper → unwrap directly. Symbol.prototype[@@toPrimitive]
@@ -831,7 +831,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                 HString* s = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
                 if (s != null && s.is_symbol()) {
                     TVal result;
-                    result.set_string(s);
+                    result.set_string_borrowed(s);
                     return result;
                 }
             }
@@ -869,7 +869,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                         ? intern_string(vm, "number")
                         : intern_string(vm, "default"));
                 TVal hint_val;
-                hint_val.set_string(hint_str);
+                hint_val.set_string_borrowed(hint_str);
                 TVal[1] hint_args;
                 hint_args[0] = hint_val;
                 TVal prim = h.call_fn(vm, toprim_fn, &hint_args[0], 1, *val);

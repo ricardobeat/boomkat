@@ -522,16 +522,26 @@ Objects, buffers and BigInts are reclaimed only by tracing: counting them cost
 an increment and decrement on every register copy, and the uncounted links
 between objects (prototypes, environments, inline caches, constant pools) meant
 a count could never safely reach zero. Strings use their intern table or
-non-interned registry rather than the object list; their sweeps also use
-reachability.
+non-interned registry rather than the object list; their sweeps inspect
+reference counts.
 
-The object sweep is lazy. A collection marks, sweeps the interned strings and
-the environment pool, then arms a cursor at the head of the object list; each
-later safepoint sweeps `SWEEP_STEP_NODES` nodes from the cursor, and the next
-collection finishes any remainder before it marks. Objects allocated meanwhile
-go on the list head, ahead of the cursor, so the sweep never judges them by the
-stale marks. Freeing node by node is sound because a teardown reads no other
-heap node: it releases only strings and memory the node owns.
+Objects, buffers and BigInts start on the young list. A minor collection marks
+young nodes from the roots and remembered old owners, frees dead young nodes,
+and promotes survivors at a quiescent safepoint. The remembered set records
+old owners of new young edges. Old closures and host objects with mark callbacks
+remain remembered because their external storage can expose young references.
+Every minor collection also sweeps the environment pool, after tracing the
+scope chains reached by old closures and the other roots.
+
+A major collection traces both generations, sweeps interned strings, and arms
+a cursor for lazy sweeping of old nodes. Each later safepoint sweeps
+`SWEEP_STEP_NODES` nodes; the next collection finishes any remainder before
+marking again. Freeing node by node is sound because teardown reads no other
+heap node: it releases only strings and memory the node owns. Major collection
+runs when the old generation grows past its post-major threshold or on an
+explicit collection request, with a limit of 64 minors between majors. A
+major inside a native frame retains remembered owners of young survivors and
+schedules a quiescent major to finish promotion and string reclamation.
 
 Marking is tri-colour with an explicit gray stack rather than recursion, so a
 deep object graph cannot overflow the C stack. `mark_roots()` seeds it, and
@@ -554,7 +564,8 @@ Much of what stays alive sits outside the object graph:
   scope, native scoped roots, and the internal `ENVREF` register snapshots
 - the symbol registry, the built-in string cache, and the cached well-known
   symbols
-- generator state, including the in-flight async-generator request
+- generator state, including the in-flight async-generator request; a minor
+  collection also scans the live GeneratorState registry
 - `ModuleDef` entries, which sit in a malloc'd cache the sweep never scans
 
 ### Temproots and safepoints
@@ -563,10 +574,8 @@ A freshly allocated object is anchored only in a C3 local, where the mark phase
 cannot see it. `alloc_object()` therefore sets a *temproot* flag, and a
 collection that happens outside a safepoint marks these roots and traces their
 outgoing edges so in-flight allocations and their children survive. Only such a
-collection walks the heap before marking, to queue the pinned objects on the
-gray stack. Every mark is already clear by then: each sweep clears its
-survivors' marks as it passes them, and a string sweep that cannot run clears
-the string marks instead.
+collection walks the relevant generation lists before marking, to queue pinned
+objects on the gray stack. Each object sweep clears its survivors' marks.
 
 Clearing them is safe only at a genuine safepoint with no native builtin frame on
 the stack. A builtin that allocates a result and then re-enters the VM, to call a
@@ -593,19 +602,29 @@ non-interned string registry covers these strings for collection and teardown.
 Each entry records a one-based index, allowing removal by swapping in the last
 entry; zero means unregistered. Compaction updates surviving indices.
 
-The intern table owns a reference; the non-interned registry does not. A low
-refcount alone cannot decide that an interned string is dead because property
-tables and caches can borrow its key pointer. Both sweeps therefore account
-for reachability.
+Strings are reclaimed by reference count. The intern table owns one reference;
+the non-interned registry is weak. Shape segments, key caches, enumeration
+snapshots and string iterators use the distinct C3 `StringRef` type for their
+owned references. Copies acquire before releasing their destination. A borrowed
+`TVal` argument view acquires no reference; persistent stores acquire their own.
 
-Both sweeps run only when `string_sweep_safe` is set, since a GC can trigger from
-any allocation, including one made while an opcode holds a freshly interned
-string that nothing roots yet. The interned sweep runs in the pause: a dead
-object the lazy sweep has not reached still holds a counted reference to each
-string it stores, which keeps that string above the table's own count. The
-registry sweep frees by mark alone, so it waits for the lazy object sweep to
-end and runs only if both moments were quiescent; a large string created in
-between is born marked.
+A major collection scans the intern table for strings whose only reference is
+the table, and the non-interned registry for zero-reference allocations. These
+passes reclaim temporary strings that never acquired an owner. Native code
+can hold such a string between construction and storage, so collection waits
+for a quiescent boundary. Strings need no reachability marks, and minors do
+not scan either string collection.
+
+Builtin result slots own string references. Copying a borrowed result acquires
+a reference; transferring an owned result clears the source. The VM transfers
+the builtin result into its destination register. `GC_VERIFY` checks that
+strings reached from quiescent roots have a counted owner.
+
+Native add-on ABI version 2 makes payload ownership explicit. A payload slot
+is initialized with `value_init`, replaced with `handle_store`, and released
+with `value_clear` before its storage is freed. Its `gc_mark` callback traces
+objects. Call-scoped handles acquire their own string references and release
+them when that call returns.
 
 Two caches sit alongside: pre-interned built-in strings, and `HString*` for the
 integer keys 0 to 255. Both are *pinned*, so refcounting and sweep never free

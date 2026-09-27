@@ -31,20 +31,14 @@ enum BigIntOpResult : char {
 // Register store
 // ============================================================================
 
-// Store a freshly computed BigInt box into destination register `ra` with
-// correct refcounting. A null box means the operation could not allocate, which
-// surfaces as a RangeError just as an over-large result does.
+// Store a BigInt result, releasing the destination's old string if present.
+// Allocation failure surfaces as a RangeError.
 fn bool vm_set_reg_bigint(Vm* vm, TVal* ra, hbigint::HBigInt* box) {
     if (box == null) {
         vm_set_range_error(vm, "BigInt allocation failed");
         return false;
     }
-    // set_bigint increfs (→ refcount 2: alloc's ref + register ref).  Release
-    // the register's old value, then drop the alloc's initial reference so the
-    // register slot holds exactly one.
-    vm.heap.decref_tval(ra);
-    ra.set_bigint(box);
-    vm.heap.decref((types::HeapHeader*)box);
+    vm.heap.set_reg_bigint(ra, box);
     return true;
 }
 

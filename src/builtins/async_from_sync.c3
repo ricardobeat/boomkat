@@ -187,7 +187,7 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
 // `{value, done}` and fulfills the outer (returned) promise with it
 // (ES2018 §27.1.4.4 steps 9-11, "onFulfilled" closure).
 fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     if (ctx.callee_obj == null) return;
     Heap* heap = ctx.heap;
 
@@ -236,7 +236,7 @@ fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
 // rejection reason straight to the outer promise (ES2018 §27.1.4.4 step 9,
 // "onRejected" is `promiseCapability.[[Reject]]`).
 fn void builtin_async_from_sync_reject_forward(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     if (ctx.callee_obj == null) return;
     Heap* heap = ctx.heap;
 
@@ -281,7 +281,7 @@ fn TVal async_from_sync_type_error(Heap* heap, char[] msg) {
         err.prototype = heap.type_err_proto;
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
-            TVal msg_tv; msg_tv.set_string(msg_str);
+            TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
         }
@@ -378,7 +378,7 @@ fn void async_from_sync_finish_continuation(BuiltinContext* ctx, HObject* sync_i
         ctx.should_throw = false;
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, ctx.throw_value);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     bool done = false;
@@ -390,7 +390,7 @@ fn void async_from_sync_finish_continuation(BuiltinContext* ctx, HObject* sync_i
         ctx.should_throw = false;
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, ctx.throw_value);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     TVal value;
@@ -399,13 +399,13 @@ fn void async_from_sync_finish_continuation(BuiltinContext* ctx, HObject* sync_i
 
     HObject*? outer = async_from_sync_continuation(heap, ctx.vm, sync_iter, value, done, close_on_rejection);
     if (catch err = outer) { return; }
-    ctx.result.set_object(outer);
+    ctx.result_object(outer);
 }
 
 // %AsyncFromSyncIteratorPrototype%.next(value), ES2018 §27.1.4.2.
 fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 
     HObject* sync_iter = async_from_sync_get_wrapped(ctx);
     if (sync_iter == null) {
@@ -444,14 +444,14 @@ fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
         heap.has_error = false;
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, thrown);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     if (!step_result.is_object() || step_result.get_heapptr() == null) {
         TVal te = async_from_sync_type_error(heap, "Iterator result is not an object");
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, te);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     HObject* result_obj = (HObject*)step_result.get_heapptr();
@@ -463,7 +463,7 @@ fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
 // %AsyncFromSyncIteratorPrototype%.return(value), ES2018 §27.1.4.3.
 fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 
     HObject* sync_iter = async_from_sync_get_wrapped(ctx);
     if (sync_iter == null) {
@@ -483,7 +483,7 @@ fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
         ctx.should_throw = false;
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, ctx.throw_value);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     TVal return_method;
@@ -510,7 +510,7 @@ fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
         HObject* p = p_raw;
         promise_settle(p, PROMISE_FULFILLED, &iter_result_tv, heap);
         promise_trigger_reactions(p, heap, ctx.vm);
-        ctx.result.set_object(p);
+        ctx.result_object(p);
         return;
     }
 
@@ -527,14 +527,14 @@ fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
         heap.has_error = false;
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, thrown);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     if (!step_result.is_object() || step_result.get_heapptr() == null) {
         TVal te = async_from_sync_type_error(heap, "Iterator result is not an object");
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, te);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     HObject* result_obj = (HObject*)step_result.get_heapptr();
@@ -546,7 +546,7 @@ fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
 // %AsyncFromSyncIteratorPrototype%.throw(value), ES2018 §27.1.4.5.
 fn void builtin_async_from_sync_throw(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 
     HObject* sync_iter = async_from_sync_get_wrapped(ctx);
     if (sync_iter == null) {
@@ -566,7 +566,7 @@ fn void builtin_async_from_sync_throw(BuiltinContext* ctx) {
         ctx.should_throw = false;
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, ctx.throw_value);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     TVal throw_method;
@@ -585,7 +585,7 @@ fn void builtin_async_from_sync_throw(BuiltinContext* ctx) {
         }
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, reason);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
 
@@ -602,14 +602,14 @@ fn void builtin_async_from_sync_throw(BuiltinContext* ctx) {
         heap.has_error = false;
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, thrown);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     if (!step_result.is_object() || step_result.get_heapptr() == null) {
         TVal te = async_from_sync_type_error(heap, "Iterator result is not an object");
         HObject*? rej = async_from_sync_rejected_promise(heap, ctx.vm, te);
         if (catch err = rej) { return; }
-        ctx.result.set_object(rej);
+        ctx.result_object(rej);
         return;
     }
     HObject* result_obj = (HObject*)step_result.get_heapptr();

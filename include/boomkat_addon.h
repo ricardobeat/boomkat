@@ -24,7 +24,7 @@
 extern "C" {
 #endif
 
-#define BK_ADDON_ABI_VERSION 1u
+#define BK_ADDON_ABI_VERSION 2u
 
 #define BK_ADDON_OK           0
 #define BK_ADDON_ERR_OPEN    (-1)
@@ -100,8 +100,10 @@ typedef struct BkAddonApi {
     void         (*throw_range_error)(void *bctx, const char *msg);
 
     /* -- values held across calls -- */
-    /* Convert between a handle and the raw value slot stored in a payload.
-     * `tval` points at BK_TVAL_SIZE bytes the add-on owns. */
+    /* Payload slots own their string references. Call value_init once before
+     * handle_store, which releases the previous value on replacement.
+     * Call value_clear before freeing the slot. Trace it from gc_mark while
+     * its payload is live. tval points at BK_TVAL_SIZE bytes. */
     void     (*handle_store)(void *bctx, BkHandle h, void *tval);
     BkHandle (*handle_load)(void *bctx, void *tval);
     /* The object behind a handle, or NULL. Pair with instance_payload for a
@@ -113,13 +115,14 @@ typedef struct BkAddonApi {
     void *(*mem_alloc)(BkAddonCtx *ctx, size_t n);
     void *(*mem_realloc)(BkAddonCtx *ctx, void *p, size_t n);
     void  (*mem_free)(BkAddonCtx *ctx, void *p);
+    void  (*value_init)(void *tval);
+    void  (*value_clear)(BkAddonCtx *ctx, void *tval);
 } BkAddonApi;
 
 /* Size of the opaque value slot an add-on embeds in its payload to retain a
  * JS value. Sized for the largest TVal representation the engine builds with
  * (16 bytes in the NONANBOX build, 8 when NaN-boxed), so one add-on binary
- * works against either. Treat the contents as opaque; only handle_store,
- * handle_load and mark_value may touch them. */
+ * works against either. Treat the contents as opaque; only the value, handle and mark operations may touch them. */
 #define BK_TVAL_SIZE 16
 
 typedef int (*BkAddonInitFn)(BkAddonCtx *ctx, const BkAddonApi *api);

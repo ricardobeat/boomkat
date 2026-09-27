@@ -1657,7 +1657,7 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     HString* onf_key = heap.str_intern("onFulfilled");
     HString* onr_key = heap.str_intern("onRejected");
     if (name_key == null || name_str == null || onf_key == null || onr_key == null) return;
-    TVal name_tv; name_tv.set_string(name_str);
+    TVal name_tv; name_tv.set_string_borrowed(name_str);
 
     HObject*? onf_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = onf_raw) return;
@@ -1714,7 +1714,7 @@ fn ModuleDef* module_of_reaction(BuiltinContext* ctx) {
 // completion, so hand it to AsyncModuleExecutionFulfilled, which finalizes it
 // and runs whatever ancestors that unblocked.
 fn void builtin_module_settled_fulfilled(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     ModuleDef* mod = module_of_reaction(ctx);
     if (mod == null) return;
     module_async_execution_fulfilled(ctx.heap, (Vm*)ctx.vm, mod);
@@ -1724,7 +1724,7 @@ fn void builtin_module_settled_fulfilled(BuiltinContext* ctx) {
 // is this handler's sole argument (§27.2.2.1) and becomes the evaluation error
 // for the module AND for everything transitively waiting on it.
 fn void builtin_module_settled_rejected(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     ModuleDef* mod = module_of_reaction(ctx);
     if (mod == null) return;
     TVal reason; reason.set_undefined();
@@ -1751,7 +1751,7 @@ fn void module_attach_defer_ready_reaction(Heap* heap, ModuleDef* waiter, HObjec
 // dynamic import: if the whole subgraph is now evaluable, hand the deferred
 // namespace to the waiting import.defer() promise.
 fn void builtin_module_defer_ready_fulfilled(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     Heap* heap = ctx.heap;
     Vm* vm = (Vm*)ctx.vm;
     ModuleDef* mod = module_of_reaction(ctx);
@@ -1779,7 +1779,7 @@ fn void builtin_module_defer_ready_fulfilled(BuiltinContext* ctx) {
 // PromiseReactionJob onRejected for the same: the awaited dependency threw, so
 // the import.defer() promise rejects with that reason.
 fn void builtin_module_defer_ready_rejected(BuiltinContext* ctx) {
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     Heap* heap = ctx.heap;
     Vm* vm = (Vm*)ctx.vm;
     ModuleDef* mod = module_of_reaction(ctx);
@@ -2903,10 +2903,10 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAt
     job.prototype = heap.function_proto;
     (*job.extra_ptr()).func.builtin_fn_index = (int)Builtin.DYNAMIC_IMPORT_JOB.ordinal;
 
-    TVal spec_tv; spec_tv.set_string(spec_str);
+    TVal spec_tv; spec_tv.set_string_borrowed(spec_str);
     job.put_prop(spec_key, spec_tv, hobject::PROP_FLAGS_WEC, heap);
     if (base_str != null) {
-        TVal base_tv; base_tv.set_string(base_str);
+        TVal base_tv; base_tv.set_string_borrowed(base_str);
         job.put_prop(base_key, base_tv, hobject::PROP_FLAGS_WEC, heap);
     }
     // The attribute type rides to the job as its ordinal: the hidden slot
@@ -2941,7 +2941,7 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAt
 fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     Vm* vm = (Vm*)ctx.vm;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
     if (ctx.callee_obj == null) return;
 
     HString* spec_key = heap.str_intern(DYN_IMPORT_SPEC_KEY);
@@ -3222,7 +3222,7 @@ fn TVal module_error_with_proto(Heap* heap, HObject* proto, char[] msg) {
     HString* msg_str = heap.str_intern(msg);
     if (msg_str != null) {
         TVal msg_val;
-        msg_val.set_string(msg_str);
+        msg_val.set_string_borrowed(msg_str);
         HString* msg_key = heap.str_intern("message");
         if (msg_key != null) {
             err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WC, heap);
@@ -3432,7 +3432,7 @@ fn HObject*? get_import_meta(Heap* heap, ModuleDef* mod) {
     HString* url_str = heap.str_intern(mod.module_name);
     if (url_str != null) {
         TVal url_val;
-        url_val.set_string(url_str);
+        url_val.set_string_borrowed(url_str);
         HString* url_key = heap.str_intern("url");
         if (url_key != null) {
             meta.put_prop(url_key, url_val, hobject::PROP_FLAGS_WEC, heap);
@@ -3624,7 +3624,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
         // distinguishable from an evaluated one without touching a string key
         // (which would force evaluation). The tag is fixed at construction and
         // does not change when the module is later forced.
-        tag_val.set_string(builtins::builtin_intern_string(heap,
+        tag_val.set_string_borrowed(builtins::builtin_intern_string(heap,
             deferred ? "Deferred Module" : "Module"));
         ns.put_prop(tostrtag_sym, tag_val, hobject::PROP_FLAGS_NNC, heap);
     }

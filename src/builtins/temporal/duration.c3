@@ -275,7 +275,7 @@ fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_duration_proto));
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_temporal_duration_from(BuiltinContext* ctx) {
@@ -290,7 +290,7 @@ fn void builtin_temporal_duration_from(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // ToRelativeTemporalObject: read the `relativeTo` option out of `opts` (which
@@ -451,19 +451,19 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
             if (rtxt[ci] == '[') { has_bracket = true; break; }
         }
         if (has_bracket) {
-            TVal saved_res = *ctx.result;
+            TVal saved_res = ctx.result.get();
             ctx.regs[ctx.base_reg + 0] = rv;
             ctx.argc = 1;
             builtin_temporal_zoneddatetime_from(ctx);
             if (ctx.should_throw) return false;
-            if (ctx.result.is_object() && ctx.result.get_heapptr() != null) {
-                HObject* zdt = (HObject*)ctx.result.get_heapptr();
-                *ctx.result = saved_res;
+            if (ctx.result.get().is_object() && ctx.result.get().get_heapptr() != null) {
+                HObject* zdt = (HObject*)ctx.result.get().get_heapptr();
+                ctx.copy_result(saved_res);
                 *out_relative_to = zdt;
                 *out_is_zoned = true;
                 return true;
             }
-            *ctx.result = saved_res;
+            ctx.copy_result(saved_res);
         }
         temporal::ParsedIsoDateTime p;
         if (!temporal::parse_iso_date_string(rtxt, &p)) {
@@ -537,7 +537,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
     if (da.years == db.years && da.months == db.months && da.weeks == db.weeks && da.days == db.days &&
         da.hours == db.hours && da.minutes == db.minutes && da.seconds == db.seconds &&
         da.ms == db.ms && da.us == db.us && da.ns == db.ns) {
-        ctx.result.set_number(0);
+        ctx.result_number(0);
         return;
     }
 
@@ -549,7 +549,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
         int128 na = temporal::duration_to_time_ns(da);
         int128 nb = temporal::duration_to_time_ns(db);
         long cmp = na < nb ? -1 : (na > nb ? 1 : 0);
-        ctx.result.set_number((double)cmp);
+        ctx.result_number((double)cmp);
         return;
     }
 
@@ -575,7 +575,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
             return;
         }
         long zcmp = after_a < after_b ? -1 : (after_a > after_b ? 1 : 0);
-        ctx.result.set_number((double)zcmp);
+        ctx.result_number((double)zcmp);
         return;
     }
 
@@ -596,7 +596,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
         int128 na = temporal::duration_to_time_ns(da);
         int128 nb = temporal::duration_to_time_ns(db);
         long cmp = na < nb ? -1 : (na > nb ? 1 : 0);
-        ctx.result.set_number((double)cmp);
+        ctx.result_number((double)cmp);
         return;
     }
 
@@ -608,7 +608,7 @@ fn void builtin_temporal_duration_compare(BuiltinContext* ctx) {
         return;
     }
     long cmp = total_a < total_b ? -1 : (total_a > total_b ? 1 : 0);
-    ctx.result.set_number((double)cmp);
+    ctx.result_number((double)cmp);
 }
 
 
@@ -641,7 +641,7 @@ fn void builtin_temporal_duration_getter(BuiltinContext* ctx) {
         case TemporalBuiltin.DURATION_PROTO_NANOSECONDS:  val = bitcast((ulong)obj.extra.temporal.long_j, double); break;
         default: break;
     }
-    ctx.result.set_number(val);
+    ctx.result_number(val);
 }
 
 fn void builtin_temporal_duration_proto_sign(BuiltinContext* ctx) {
@@ -653,7 +653,7 @@ fn void builtin_temporal_duration_proto_sign(BuiltinContext* ctx) {
         d.hours < 0 || d.minutes < 0 || d.seconds < 0 || d.ms < 0 || d.us < 0 || d.ns < 0) { sign = -1; }
     else if (d.years > 0 || d.months > 0 || d.weeks > 0 || d.days > 0 ||
              d.hours > 0 || d.minutes > 0 || d.seconds > 0 || d.ms > 0 || d.us > 0 || d.ns > 0) { sign = 1; }
-    ctx.result.set_fastint(sign);
+    ctx.result_fastint(sign);
 }
 
 fn void builtin_temporal_duration_proto_blank(BuiltinContext* ctx) {
@@ -663,7 +663,7 @@ fn void builtin_temporal_duration_proto_blank(BuiltinContext* ctx) {
     bool blank = d.years == 0 && d.months == 0 && d.weeks == 0 && d.days == 0 &&
                  d.hours == 0 && d.minutes == 0 && d.seconds == 0 &&
                  d.ms == 0 && d.us == 0 && d.ns == 0;
-    ctx.result.set_boolean(blank);
+    ctx.result_boolean(blank);
 }
 
 fn void builtin_temporal_duration_proto_negated(BuiltinContext* ctx) {
@@ -677,7 +677,7 @@ fn void builtin_temporal_duration_proto_negated(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_temporal_duration_proto_abs(BuiltinContext* ctx) {
@@ -698,7 +698,7 @@ fn void builtin_temporal_duration_proto_abs(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Resolve the fractional-second precision, rounding mode, and rounding
@@ -816,7 +816,7 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
     if (incr_ns == 1) {
         char[160] buf;
         usz len = temporal::format_duration_precision(d, digits, &buf, 160);
-        ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+        ctx.result_string(builtin_intern_string(ctx.heap, buf[:len]));
         return;
     }
 
@@ -937,7 +937,7 @@ fn void builtin_temporal_duration_proto_toString(BuiltinContext* ctx) {
 
     char[160] buf;
     usz len = temporal::format_duration_precision(rd, digits, &buf, 160);
-    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+    ctx.result_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 
 
@@ -964,7 +964,7 @@ fn void builtin_temporal_duration_proto_add(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_temporal_duration_proto_subtract(BuiltinContext* ctx) {
@@ -1001,7 +1001,7 @@ fn void builtin_temporal_duration_proto_subtract(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Duration.prototype.with: copy `this` and overwrite the named fields. Unknown
@@ -1062,7 +1062,7 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_temporal_duration_proto_toJSON(BuiltinContext* ctx) {
@@ -1260,7 +1260,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
         obj.prototype = ctx.heap.temporal_duration_proto;
-        ctx.result.set_object(obj);
+        ctx.result_object(obj);
         return;
     }
 
@@ -1297,7 +1297,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
         obj.prototype = ctx.heap.temporal_duration_proto;
-        ctx.result.set_object(obj);
+        ctx.result_object(obj);
         return;
     }
 
@@ -1456,7 +1456,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // ============================================================================
@@ -1524,7 +1524,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     // representable range must still throw. Only skip straight to 0 when
     // there is no relativeTo to validate.
     if (is_blank && relative_to == null) {
-        ctx.result.set_number(0.0);
+        ctx.result_number(0.0);
         return;
     }
 
@@ -1543,7 +1543,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // divide_time_duration for why neither a plain int128→double cast-
         // then-divide nor a `whole + rem/div` split reproduces that single
         // rounding step (test262 precision-exact-mathematical-values-6/7).
-        ctx.result.set_number(temporal::divide_time_duration(time_ns, div_ns));
+        ctx.result_number(temporal::divide_time_duration(time_ns, div_ns));
         return;
     }
     // Always compute and validate target datetime with relative_to:
@@ -1596,7 +1596,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
                 long div_ns = temporal::unit_ns_divisor(unit);
                 int128 whole = elapsed / (int128)div_ns;
                 int128 rem = elapsed - whole * (int128)div_ns;
-                ctx.result.set_number((double)whole + (double)rem / (double)div_ns);
+                ctx.result_number((double)whole + (double)rem / (double)div_ns);
                 return;
             }
 
@@ -1623,10 +1623,10 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
                     // quotient is a positive fraction of one day; `days`
                     // already carries the sign.
                     int128 day_len = next - prev;
-                    if (day_len == 0) { ctx.result.set_number((double)days); return; }
+                    if (day_len == 0) { ctx.result_number((double)days); return; }
                     int128 rem = elapsed - prev;
                     double frac = (double)rem / (double)day_len;
-                    ctx.result.set_number((double)days + (double)step * frac);
+                    ctx.result_number((double)days + (double)step * frac);
                     return;
                 }
                 prev = next;
@@ -1682,7 +1682,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
                            tgt_s == rel_time.s && tgt_ms == rel_time.ms && tgt_us == rel_time.us &&
                            tgt_ns == rel_time.ns;
     if (datetimes_equal) {
-        ctx.result.set_number(0.0);
+        ctx.result_number(0.0);
         return;
     }
 
@@ -1720,7 +1720,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         long div_ns = unit == temporal::TemporalUnit.DAY
             ? temporal::NS_PER_DAY
             : temporal::unit_ns_divisor(unit);
-        ctx.result.set_number(temporal::divide_time_duration(time_ns, div_ns));
+        ctx.result_number(temporal::divide_time_duration(time_ns, div_ns));
         return;
     }
     long rel_epoch = temporal::epoch_days_from_civil(rel_date.y, (int)rel_date.m, (int)rel_date.d);
@@ -1743,11 +1743,11 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     int128 diff_ns = days_diff_ns + time_diff_ns;
     long divisor = temporal::unit_ns_divisor(unit);
     if (divisor > 0) {
-        ctx.result.set_number(temporal::divide_time_duration(diff_ns, divisor));
+        ctx.result_number(temporal::divide_time_duration(diff_ns, divisor));
         return;
     }
     if (unit == temporal::TemporalUnit.DAY) {
-        ctx.result.set_number(temporal::divide_time_duration(diff_ns, temporal::NS_PER_DAY));
+        ctx.result_number(temporal::divide_time_duration(diff_ns, temporal::NS_PER_DAY));
         return;
     }
     if (unit == temporal::TemporalUnit.WEEK) {
@@ -1756,7 +1756,7 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
         // (tgt_epoch - rel_epoch) drops any sub-day remainder, which is
         // wrong for total().
         long div_ns = 7L * temporal::NS_PER_DAY;
-        ctx.result.set_number(temporal::divide_time_duration(diff_ns, div_ns));
+        ctx.result_number(temporal::divide_time_duration(diff_ns, div_ns));
         return;
     }
     // Re-decompose (relTo + duration) into the calendar-aware {years,
@@ -1820,6 +1820,6 @@ fn void builtin_temporal_duration_proto_total(BuiltinContext* ctx) {
     // (or a `whole + rem/div` split) double-rounds and can land on the
     // wrong adjacent double (test262 precision-exact-mathematical-values-5..7,
     // relativeto-total-of-each-unit).
-    ctx.result.set_number(temporal::divide_time_duration(total_num, unit_ns));
+    ctx.result_number(temporal::divide_time_duration(total_num, unit_ns));
 }
 

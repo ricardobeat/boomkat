@@ -58,7 +58,7 @@ fn void builtin_print(BuiltinContext* ctx) {
         print_tval_ctx(ctx, &ctx.regs[ctx.base_reg + i]);
     }
     io::putchar('\n');
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 fn void builtin_console_log(BuiltinContext* ctx) {
@@ -96,7 +96,7 @@ fn void builtin_console_dir(BuiltinContext* ctx) {
         console_emit_inspect_spec(ctx, sink, &ctx.regs[ctx.base_reg]);
     }
     io::printf("\n");
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // console.assert(expr, ...msg), if expr is falsy, emit "Assertion failed:" and
@@ -104,11 +104,11 @@ fn void builtin_console_dir(BuiltinContext* ctx) {
 fn void builtin_console_assert(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         io::eprintfn("Assertion failed:");
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     if (builtin_to_boolean(&ctx.regs[ctx.base_reg])) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     io::eprintfn("Assertion failed:");
@@ -117,7 +117,7 @@ fn void builtin_console_assert(BuiltinContext* ctx) {
     // the substituted form, matching console.log's treatment of its own args.
     console_format_args(ctx, true, 1);
     io::eprintf("\n");
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // Shared body for console.log/info/debug/trace (stdout) and console.warn/error (stderr).
@@ -128,7 +128,7 @@ fn void console_print_args(BuiltinContext* ctx, bool use_stderr) {
     } else {
         io::printf("\n");
     }
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // ============================================================================
@@ -387,7 +387,7 @@ fn void console_emit_number_spec(BuiltinContext* ctx, ConsoleSink sink, char spe
         sub.regs = &arg_copy;
         sub.base_reg = 0;
         sub.argc = 1;
-        sub.result = &num;
+        sub.result = builtins::result_slot(&num);
         sub.should_throw = false;
         if (spec == 'i') {
             builtin_parse_int(&sub);
@@ -533,7 +533,7 @@ fn void print_tval_err(TVal* val) {
 
 fn void builtin_parse_int(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
     // ES2015 §18.2.5: parseInt(string, radix), ToString(string) first.
@@ -550,7 +550,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         if (ctx.should_throw) return;
     }
     if (h == null || h.blen == 0) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
     // Radix coercion (ES2015 §18.2.5 step 7: ToInt32).
@@ -593,7 +593,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         radix = 10;
         strip_prefix = true;
     } else if (radix < 2 || radix > 36) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     } else if (radix == 16) {
         strip_prefix = true;
@@ -621,7 +621,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
     }
 
     if (!saw_digit) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
     value *= (double)sign;
@@ -631,9 +631,9 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
     if (!(value == 0.0 && sign < 0)
             && value >= (double)types::FASTINT_MIN && value <= (double)types::FASTINT_MAX
             && value == (double)(long)value) {
-        ctx.result.set_fastint((long)value);
+        ctx.result_fastint((long)value);
     } else {
-        ctx.result.set_number(value);
+        ctx.result_number(value);
     }
 }
 
@@ -674,7 +674,7 @@ fn usz utf8_whitespace_len(char* buf, usz len, usz i) {
 
 fn void builtin_parse_float(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
     // ES2015 §18.2.4: parseFloat(string), ToString(string) first. The previous
@@ -690,7 +690,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
         if (ctx.should_throw) return;
     }
     if (h == null || h.blen == 0) {
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
 
@@ -718,7 +718,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
 
     if (i + 8 <= blen && mem::equals(&cstr[i], (char*)"Infinity", 8)) {
         double inf = (cstr[start] == '-') ? -double::inf : double::inf;
-        ctx.result.set_number(inf);
+        ctx.result_number(inf);
         return;
     }
 
@@ -736,7 +736,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
 
     if (!saw_int_digit && !saw_frac_digit) {
         // No digits at all (bare sign, bare '.', or neither), not a number.
-        ctx.result.set_number(double::nan);
+        ctx.result_number(double::nan);
         return;
     }
 
@@ -766,7 +766,7 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
 
     char* end;
     double d = dtoa_bindings::atod_strtod_compat((ZString)&lit_buf[0], &end);
-    ctx.result.set_number(d);
+    ctx.result_number(d);
 }
 
 // isNaN(number) / isFinite(number), ES2015 §18.2.2-3. Both take ToNumber(x)
@@ -776,22 +776,22 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
 // call user code, so it answers NaN for every plain object.
 fn void builtin_is_nan(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_boolean(true);
+        ctx.result_boolean(true);
         return;
     }
     double d = builtin_to_number_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return;
-    ctx.result.set_boolean(math::is_nan(d));
+    ctx.result_boolean(math::is_nan(d));
 }
 
 fn void builtin_is_finite(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_boolean(false);
+        ctx.result_boolean(false);
         return;
     }
     double d = builtin_to_number_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return;
-    ctx.result.set_boolean(!math::is_nan(d) && !math::is_inf(d));
+    ctx.result_boolean(!math::is_nan(d) && !math::is_inf(d));
 }
 
 // Whether the call that reached this builtin was written as a direct eval.
@@ -825,7 +825,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // ES5 §15.1.2.1: eval(x)
     if (ctx.argc < 1) {
         // No args → return undefined
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -840,14 +840,14 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // decref that borrowed `this` out from under the caller. A bare incref
     // (nothing to decref: the stale bits were never independently owned)
     // is correct in every dispatch path, including the ordinary CALL path
-    // where `*ctx.result` starts undefined (decrefing undefined is already
+    // where `ctx.result.get()` starts undefined (decrefing undefined is already
     // a no-op there, so this is a strict improvement, not just a guard).
     if (!arg.is_string()) {
         if (arg.is_heap_allocated()) {
             void* ptr = arg.get_heapptr();
             if (ptr != null) { ((types::HeapHeader*)ptr).incref(); }
         }
-        *ctx.result = *arg;
+        ctx.copy_result(*arg);
         return;
     }
 
@@ -1056,7 +1056,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in eval code");
             TVal msg_tv;
-            msg_tv.set_string(msg_str);
+            msg_tv.set_string_borrowed(msg_str);
             err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
             TVal err_tv;
             err_tv.set_object(err);
@@ -1071,7 +1071,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // Create an HObject for the compiled function
     HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_obj_raw) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* func_obj = func_obj_raw;
@@ -1229,7 +1229,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
                     HString* msg_str = builtin_intern_string(ctx.heap,
                         "Lexical declaration conflicts with a var declaration in eval code");
                     TVal msg_tv;
-                    msg_tv.set_string(msg_str);
+                    msg_tv.set_string_borrowed(msg_str);
                     err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
                     TVal err_tv;
                     err_tv.set_object(err);
@@ -1284,7 +1284,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
 // (GlobalDeclarationInstantiation) regardless of what called evalScript.
 fn void builtin_eval_script(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -1319,7 +1319,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in eval code");
             TVal msg_tv;
-            msg_tv.set_string(msg_str);
+            msg_tv.set_string_borrowed(msg_str);
             err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
             TVal err_tv;
             err_tv.set_object(err);
@@ -1340,7 +1340,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     completion.set_undefined();
     bool? ok = eval_vm.execute_module_nested(func, ctx.global_env, &pending, &completion);
     if (catch err = ok) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     if (!ok) {
@@ -1366,7 +1366,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
 
     // Move, not copy: execute_module_nested already took the reference this
     // slot now owns, so builtin_store_result's incref would leak one.
-    *ctx.result = completion;
+    ctx.copy_result(completion);
 }
 
 fn void uri_encode_byte(char* out, usz* offset, char b) {
@@ -1444,7 +1444,7 @@ fn void uri_encode(BuiltinContext* ctx, HString* str, UriExtraUnreservedFn extra
         i += seq_len;
     }
     HString* result = builtin_intern_string(ctx.heap, out[:offset]);
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 fn bool uri_extra_reserved(char c) {
@@ -1461,13 +1461,13 @@ fn bool uri_extra_none(char c) {
 // then reports the empty string.
 fn HString* uri_first_arg(BuiltinContext* ctx, bool* empty) {
     if (ctx.argc < 1) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
+        ctx.result_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
         return null;
     }
     HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return null;
     *empty = (str == null);
-    if (*empty) ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
+    if (*empty) ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
     return str;
 }
 
@@ -1597,7 +1597,7 @@ fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
         i += consumed;
     }
     HString* result = builtin_intern_string(ctx.heap, out[:offset]);
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // decodeURI (ES §19.2.6.6)
@@ -1641,13 +1641,13 @@ fn void escape_emit_hex(char* out, usz* offset, uint value, uint digits) {
 // sequences yields exactly the code units the spec iterates.
 fn void builtin_escape(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
+        ctx.result_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
         return;
     }
     HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return;
     if (str == null) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
+        ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
     char[] data = str.get_data();
@@ -1670,7 +1670,7 @@ fn void builtin_escape(BuiltinContext* ctx) {
             escape_emit_hex(&out, &offset, unit, 4);
         }
     }
-    ctx.result.set_string(builtin_intern_string(ctx.heap, out[:offset]));
+    ctx.result_string(builtin_intern_string(ctx.heap, out[:offset]));
 }
 
 // unescape (Annex B §B.2.1.2). Recognises `%uXXXX` and `%XX`; any `%` not
@@ -1678,13 +1678,13 @@ fn void builtin_escape(BuiltinContext* ctx) {
 // spec's algorithm simply advances one code unit).
 fn void builtin_unescape(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
+        ctx.result_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
         return;
     }
     HString* str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
     if (ctx.should_throw) return;
     if (str == null) {
-        ctx.result.set_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
+        ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
     char[] data = str.get_data();
@@ -1725,5 +1725,5 @@ fn void builtin_unescape(BuiltinContext* ctx) {
         out[offset++] = '%';
         i++;
     }
-    ctx.result.set_string(builtin_intern_string(ctx.heap, out[:offset]));
+    ctx.result_string(builtin_intern_string(ctx.heap, out[:offset]));
 }

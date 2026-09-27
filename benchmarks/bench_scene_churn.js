@@ -6,7 +6,7 @@
 // ES5 only, so other engines can run it unchanged.
 
 var SCENE_NODES = typeof SCENE_NODES_OVERRIDE === "number" ? SCENE_NODES_OVERRIDE : 100000;
-var FRAMES = 300;
+var FRAMES = typeof SCENE_FRAMES_OVERRIDE === "number" ? SCENE_FRAMES_OVERRIDE : 300;
 var VIEW_SIZE = 400;
 
 function makeNode(id, parent) {

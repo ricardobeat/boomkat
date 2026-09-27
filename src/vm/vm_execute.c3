@@ -203,7 +203,7 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
             cur = cur.prototype;
         }
         depth++;
-        if (cur == probe) { ra.set_boolean(true); return true; }
+        if (cur == probe) { vm.heap.set_reg_boolean(ra, true); return true; }
     }
     return true;
 }
@@ -356,7 +356,7 @@ fn void vm_host_throw(Vm* vm, HObject* proto, String message) {
         HString* msg_key = intern_string(vm, "message");
         if (msg_str != null && msg_key != null) {
             TVal msg_val;
-            msg_val.set_string(msg_str);
+            msg_val.set_string_borrowed(msg_str);
             eo.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
         }
         err.set_object(eo);
@@ -496,6 +496,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         // asks for a re-dispatch. With base_reg = 1 and no callee slot those
         // writes landed one before the array.
         TVal[17] temp_regs;
+        defer vm.heap.decref_tval(&temp_regs[0]);
         temp_regs[0] = func;       // callee at index 0 (base_reg - 2)
         temp_regs[1] = this_val;   // this at index 1   (base_reg - 1)
         // Cap at 15 args: slots 0 and 1 are the callee and this_val, so a
@@ -509,7 +510,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         ctx.regs = &temp_regs;
         ctx.base_reg = 2;          // base_reg - 2 = 0 = callee, base_reg - 1 = 1 = this
         ctx.argc = (ushort)(nargs > 15 ? 15 : nargs);
-        ctx.result = &temp_regs[0];
+        ctx.result = builtins::result_slot(&temp_regs[0]);
         ctx.heap = vm.heap;
         ctx.this_val = this_val;
         ctx.is_constructor = false;
@@ -542,7 +543,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             return vm_call_fn_impl(vm_ptr, temp_regs[0], &temp_regs[2], re_nargs,
                                    temp_regs[1]);
         }
-        return *ctx.result;
+        vm.heap.store_builtin_result(&vm.return_val, ctx.result.view());
+        return vm.return_val;
     }
 
     // Case 2: an HObject with a builtin_fn_index also goes through BuiltinContext.
@@ -564,6 +566,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             if (total > 18) total = 18;
 
             TVal[18] temp_regs;
+            defer vm.heap.decref_tval(&temp_regs[0]);
             temp_regs[0] = func;       // callee at index 0 (base_reg - 2)
             temp_regs[1] = this_val;   // this at index 1   (base_reg - 1)
             for (uint i = 0; i < nargs && i < 16; i++) {
@@ -575,7 +578,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             ctx.regs = &temp_regs;
             ctx.base_reg = 2;          // base_reg - 2 = 0 = callee, base_reg - 1 = 1 = this
             ctx.argc = (ushort)nargs;
-            ctx.result = &temp_regs[0];
+            ctx.result = builtins::result_slot(&temp_regs[0]);
             ctx.heap = vm.heap;
             ctx.this_val = this_val;
             ctx.is_constructor = false;
@@ -610,7 +613,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 nargs = new_nargs;
                 // Fall through to Case 3
             } else {
-                return *ctx.result;
+                vm.heap.store_builtin_result(&vm.return_val, ctx.result.view());
+                return vm.return_val;
             }
         }
     }
@@ -672,7 +676,9 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
                 ? mem::temp_array(Activation, saved_act_count)
                 : inline_acts[0:saved_act_count];
-            mem::copy(saved_acts.ptr, &vm.activations, (sz)(saved_act_count * Activation::size));
+            ShadowActFrame shadow_frame;
+            vm.save_activation_roots(&shadow_frame, saved_acts);
+            defer vm.pop_activation_roots(&shadow_frame);
 
             // Zero out activation slots 1..saved_act_count-1.  The outer
             // activations are safely stored in saved_acts.  The live slots
@@ -1027,16 +1033,6 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 }
             }
 
-            // Register saved outer activations in the shadow frame list so that GC
-            // (triggered during the inner Vm.run()) can mark their env bindings and
-            // keep them alive.  The shadow frame is stack-allocated and is valid for
-            // the lifetime of this vm_call_fn_impl invocation.
-            ShadowActFrame shadow_frame;
-            shadow_frame.prev = vm.shadow_act_list;
-            shadow_frame.acts = saved_acts.ptr;
-            shadow_frame.count = saved_act_count;
-            vm.shadow_act_list = &shadow_frame;
-
             // Run through Vm.run rather than Vm.execute, whose init would redo the
             // state already set up here.
             TVal? result_opt = Vm.run(vm);
@@ -1047,8 +1043,6 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 result = vm.return_val;
             }
 
-            // Deregister the shadow frame now that the inner Vm.run() has returned.
-            vm.shadow_act_list = shadow_frame.prev;
             relocate_saved_frames(vm, saved_valstack, &saved_valstack_bottom,
                                   &saved_valstack_top, saved_acts.ptr, saved_act_count);
 
@@ -1335,7 +1329,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
             bctx.regs = &temp_regs;
             bctx.base_reg = 2;
             bctx.argc = (ushort)nargs;
-            bctx.result = &temp_regs[0];
+            bctx.result = builtins::result_slot(&temp_regs[0]);
             bctx.heap = heap;
             bctx.this_val = this_tv;
             bctx.is_constructor = true;
@@ -1368,7 +1362,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 }
                 return vm_construct_fn_impl(vm_ptr, downstream_func, &fwd_args, new_nargs, downstream_new_target);
             }
-            TVal result = *bctx.result;
+            TVal result = bctx.result.get();
             if (result.is_object()) return result;
             if (result.is_undefined()) return this_tv;
             return result;
@@ -1398,7 +1392,9 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
         ? mem::temp_array(Activation, saved_act_count)
         : inline_acts[0:saved_act_count];
-    mem::copy(saved_acts.ptr, &vm.activations, (sz)(saved_act_count * Activation::size));
+    ShadowActFrame shadow_frame;
+    vm.save_activation_roots(&shadow_frame, saved_acts);
+    defer vm.pop_activation_roots(&shadow_frame);
 
     // Zero out activation slots 1..saved_act_count-1 (same as vm_call_fn_impl):
     // prevents tval_copy_ref in the inner run's inline CALLs from decreffing
@@ -1914,7 +1910,9 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
         ? mem::temp_array(Activation, saved_act_count)
         : inline_acts[0:saved_act_count];
-    mem::copy(saved_acts.ptr, &vm.activations, (sz)(saved_act_count * Activation::size));
+    ShadowActFrame shadow_frame;
+    vm.save_activation_roots(&shadow_frame, saved_acts);
+    defer vm.pop_activation_roots(&shadow_frame);
 
     // Zero out activation slots 1..saved_act_count-1 (same as
     // vm_call_fn_impl). The outer activations are safely stored in
@@ -2000,16 +1998,6 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // resume state.
     vm.heap.resume_gen = null;
 
-    // Register saved outer activations in the shadow frame list so that GC
-    // (triggered during the inner Vm.run() or the microtask drain below)
-    // can mark their env bindings and keep them alive. The shadow frame is
-    // stack-allocated and valid for the lifetime of this call.
-    ShadowActFrame shadow_frame;
-    shadow_frame.prev = vm.shadow_act_list;
-    shadow_frame.acts = saved_acts.ptr;
-    shadow_frame.count = saved_act_count;
-    vm.shadow_act_list = &shadow_frame;
-
     TVal? run_res = Vm.run(vm);
     bool run_faulted = false;
     if (catch err = run_res) {
@@ -2033,10 +2021,6 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         // execute_module_nested's non-module eval-script caller) instead of
         // blocking.
     }
-
-    // Deregister the shadow frame now that the inner run (and any drains)
-    // have finished.
-    vm.shadow_act_list = shadow_frame.prev;
 
     relocate_saved_frames(vm, saved_valstack, &saved_valstack_bottom,
                           &saved_valstack_top, saved_acts.ptr, saved_act_count);
@@ -2185,14 +2169,14 @@ macro @bitop(TVal* ra, TVal* rb, TVal* rc, $op, vm, Dispatch* ds; @body()) {
         return;
     }
     if (types::both_fastint(eb, ec)) {
-        ra.set_fastint((long)@bitop_apply($op, (int)eb.get_fastint(), (int)ec.get_fastint()));
+        vm.heap.set_reg_fastint(ra, (long)@bitop_apply($op, (int)eb.get_fastint(), (int)ec.get_fastint()));
         return;
     }
     int b = toint32(vm_to_number(vm,eb));
     @body();
     int c = toint32(vm_to_number(vm,ec));
     @body();
-    ra.set_fastint((long)@bitop_apply($op, b, c));
+    vm.heap.set_reg_fastint(ra, (long)@bitop_apply($op, b, c));
 }
 
 // Run the bytecode dispatch loop over an activation stack and registers the
@@ -2327,7 +2311,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (bc < vm.current_func.const_count) {
                 vm.heap.tval_copy_ref(ra, &ds.constants[bc]);
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             continue;
         }
@@ -2340,39 +2324,32 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
         }
 
-        // The constant loads below overwrite ra raw.  When the old contents
-        // were an owned heap reference the count is not dropped here: objects
-        // and interned strings are reachable from the heap list or string
-        // table, and large non-interned strings from the large-string
-        // registry, so mark-and-sweep reclaims whatever this drops on the
-        // floor.  Paying decref_tval on every constant load costs more on
-        // these hot opcodes than the delayed collection saves.
         case Opcode.LDINT:
-            ra.set_fastint((long)insn.get_sbc());
+            vm.heap.set_reg_fastint(ra, (long)insn.get_sbc());
             continue;
 
         case Opcode.LDINTX: {
             // Always immediately preceded by the LDINT writing ra's high
             // bits, so ra is a fastint here and holds no old heap reference.
             long ix_high = ra.get_fastint();
-            ra.set_fastint((ix_high << 16) | (long)insn.get_bc());
+            vm.heap.set_reg_fastint(ra, (ix_high << 16) | (long)insn.get_bc());
             continue;
         }
 
         case Opcode.LDUNDEF:
-            ra.set_undefined();
+            vm.heap.set_reg_undefined(ra);
             continue;
 
         case Opcode.LDNULL:
-            ra.set_null();
+            vm.heap.set_reg_null(ra);
             continue;
 
         case Opcode.LDTRUE:
-            ra.set_boolean(true);
+            vm.heap.set_reg_boolean(ra, true);
             continue;
 
         case Opcode.LDFALSE:
-            ra.set_boolean(false);
+            vm.heap.set_reg_boolean(ra, false);
             continue;
 
         case Opcode.LDTHIS:
@@ -2398,9 +2375,9 @@ fn TVal? Vm.run(Vm* vm) {
             if (types::both_fastint(rb, rc)) {
                 long sum = rb.get_fastint() + rc.get_fastint();
                 if (sum >= types::FASTINT_MIN && sum <= types::FASTINT_MAX) {
-                    ra.set_fastint(sum);
+                    vm.heap.set_reg_fastint(ra, sum);
                 } else {
-                    ra.set_number((double)sum);
+                    vm.heap.set_reg_number(ra, (double)sum);
                 }
                 continue;
             }
@@ -2466,7 +2443,7 @@ fn TVal? Vm.run(Vm* vm) {
                             buf = &stack_buf;
                         } else {
                             buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                            if (buf == null) { ra.set_undefined(); break; }
+                            if (buf == null) { vm.heap.set_reg_undefined(ra); break; }
                             heap_allocated = true;
                         }
                         if (rb.is_string()) {
@@ -2547,7 +2524,7 @@ fn TVal? Vm.run(Vm* vm) {
                         buf = &stack_buf;
                     } else {
                         buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                        if (buf == null) { ra.set_undefined(); break; }
+                        if (buf == null) { vm.heap.set_reg_undefined(ra); break; }
                         heap_allocated = true;
                     }
 
@@ -2567,7 +2544,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // note on the STRING+FASTINT fast path above.
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 } else {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             } else if (prim_b.is_bigint() || prim_c.is_bigint()) {
                 // ES2020 §12.8.5: neither primitive is a String → numeric add.
@@ -2581,7 +2558,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 double add_c = vm_to_number(vm,&prim_c);
                 if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                ra.set_number(add_b + add_c);
+                vm.heap.set_reg_number(ra, add_b + add_c);
             }
         }
 
@@ -2596,9 +2573,9 @@ fn TVal? Vm.run(Vm* vm) {
             if (types::both_fastint(rb, rc)) {
                 long diff = rb.get_fastint() - rc.get_fastint();
                 if (diff >= types::FASTINT_MIN && diff <= types::FASTINT_MAX) {
-                    ra.set_fastint(diff);
+                    vm.heap.set_reg_fastint(ra, diff);
                 } else {
-                    ra.set_number((double)diff);
+                    vm.heap.set_reg_number(ra, (double)diff);
                 }
             } else {
                 double sub_b = vm_to_number(vm,rb);
@@ -2606,7 +2583,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (ds.needs_restart) break;
                 double sub_c = vm_to_number(vm,rc);
                 if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                ra.set_number(sub_b - sub_c);
+                vm.heap.set_reg_number(ra, sub_b - sub_c);
             }
             continue;
 
@@ -2620,7 +2597,7 @@ fn TVal? Vm.run(Vm* vm) {
             long imm = (long)(ichar)insn.c;
             if (rb.is_fastint()) {
                 long sum = rb.get_fastint() + imm;
-                ra.set_fastint_or_number(sum);
+                vm.heap.set_reg_fastint_or_number(ra, sum);
                 continue;
             }
             // ES5 §11.6.1: `+` is string concatenation, not numeric addition,
@@ -2676,7 +2653,7 @@ fn TVal? Vm.run(Vm* vm) {
                             buf = &stack_buf;
                         } else {
                             buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                            if (buf == null) { ra.set_undefined(); continue; }
+                            if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
                             heap_allocated = true;
                         }
                         mem::copy(buf, str.get_cstr(), (sz)(s_len));
@@ -2733,7 +2710,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 buf = &stack_buf;
                             } else {
                                 buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                                if (buf == null) { ra.set_undefined(); continue; }
+                                if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
                                 heap_allocated = true;
                             }
                             mem::copy(buf, left_str.get_cstr(), (sz)(s_len));
@@ -2746,7 +2723,7 @@ fn TVal? Vm.run(Vm* vm) {
                             continue;
                         }
                     }
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                     continue;
                 }
             }
@@ -2760,7 +2737,7 @@ fn TVal? Vm.run(Vm* vm) {
             double add_b = vm_to_number(vm, &prim_b);
             if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
-            ra.set_number(add_b + (double)imm);
+            vm.heap.set_reg_number(ra, add_b + (double)imm);
             continue;
         }
 
@@ -2808,7 +2785,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
                 if (try s = str) {
                     TVal str_tv;
-                    str_tv.set_string(s);
+                    str_tv.set_string_borrowed(s);
                     vm.heap.tval_copy_ref(&parts[i], &str_tv);
                     track_heap_store(ds.act, &parts[i], (uint)insn.b + i);
                 }
@@ -2846,7 +2823,7 @@ fn TVal? Vm.run(Vm* vm) {
                 buf = &stack_buf;
             } else {
                 buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                if (buf == null) { ra.set_undefined(); continue; }
+                if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
                 heap_allocated = true;
             }
 
@@ -2890,7 +2867,7 @@ fn TVal? Vm.run(Vm* vm) {
             long imm = (long)(ichar)insn.c;
             if (rb.is_fastint()) {
                 long diff = rb.get_fastint() - imm;
-                ra.set_fastint_or_number(diff);
+                vm.heap.set_reg_fastint_or_number(ra, diff);
                 continue;
             }
             TVal immv; immv.set_fastint(imm);
@@ -2904,7 +2881,7 @@ fn TVal? Vm.run(Vm* vm) {
             double sub_b = vm_to_number(vm, rb);
             if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
-            ra.set_number(sub_b - (double)imm);
+            vm.heap.set_reg_number(ra, sub_b - (double)imm);
             continue;
         }
 
@@ -2928,14 +2905,14 @@ fn TVal? Vm.run(Vm* vm) {
                     if (mul_result == 0 && (mul_b ^ mul_c) < 0) {
                         // A zero product with operands of opposite sign is -0,
                         // which no fastint can represent (ES2024 6.1.6.1.4).
-                        ra.set_number(-0.0);
+                        vm.heap.set_reg_number(ra, -0.0);
                     } else if (mul_result >= types::FASTINT_MIN && mul_result <= types::FASTINT_MAX) {
-                        ra.set_fastint(mul_result);
+                        vm.heap.set_reg_fastint(ra, mul_result);
                     } else {
-                        ra.set_number((double)mul_result);
+                        vm.heap.set_reg_number(ra, (double)mul_result);
                     }
                 } else {
-                    ra.set_number((double)mul_b * (double)mul_c);
+                    vm.heap.set_reg_number(ra, (double)mul_b * (double)mul_c);
                 }
             } else {
                 double mul_b = vm_to_number(vm,rb);
@@ -2943,7 +2920,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (ds.needs_restart) break;
                 double mul_c = vm_to_number(vm,rc);
                 if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                ra.set_number(mul_b * mul_c);
+                vm.heap.set_reg_number(ra, mul_b * mul_c);
             }
             continue;
 
@@ -2960,7 +2937,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (ds.needs_restart) break;
             double div_c = vm_to_number(vm,rc);
             if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            ra.set_number(div_b / div_c);
+            vm.heap.set_reg_number(ra, div_b / div_c);
             continue;
         }
 
@@ -2976,9 +2953,9 @@ fn TVal? Vm.run(Vm* vm) {
                 long mod_result = rb.get_fastint() % rc.get_fastint();
                 if (mod_result == 0 && rb.get_fastint() < 0) {
                     // -1 % 1 → -0: sign of zero matches dividend per ES5 §11.5.3
-                    ra.set_number(-0.0);
+                    vm.heap.set_reg_number(ra, -0.0);
                 } else {
-                    ra.set_fastint(mod_result);
+                    vm.heap.set_reg_fastint(ra, mod_result);
                 }
             } else {
                 double mod_b = vm_to_number(vm,rb);
@@ -2986,7 +2963,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (ds.needs_restart) break;
                 double mod_c = vm_to_number(vm,rc);
                 if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                ra.set_number((mod_b % mod_c));
+                vm.heap.set_reg_number(ra, (mod_b % mod_c));
             }
             continue;
 
@@ -3012,7 +2989,7 @@ fn TVal? Vm.run(Vm* vm) {
             } else {
                 exp_r = math::pow(exp_b, exp_c);
             }
-            ra.set_number(exp_r);
+            vm.heap.set_reg_number(ra, exp_r);
             continue;
         }
 
@@ -3123,18 +3100,18 @@ fn TVal? Vm.run(Vm* vm) {
             if (ds.needs_restart) break;
             int  ushr_c = toint32(vm_to_number(vm,ec));
             if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            ra.set_fastint((long)(ushr_b >> (ushr_c & 0x1F)));
+            vm.heap.set_reg_fastint(ra, (long)(ushr_b >> (ushr_c & 0x1F)));
             continue;
         }
 
         // === COMPARISON ===
         case Opcode.EQ:
-            ra.set_boolean(abstract_eq(vm, rb, rc));
+            vm.heap.set_reg_boolean(ra, abstract_eq(vm, rb, rc));
             if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             continue;
 
         case Opcode.NEQ:
-            ra.set_boolean(!abstract_eq(vm, rb, rc));
+            vm.heap.set_reg_boolean(ra, !abstract_eq(vm, rb, rc));
             if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             continue;
 
@@ -3142,7 +3119,7 @@ fn TVal? Vm.run(Vm* vm) {
             // The FASTINT === FASTINT fast path, which dominates loop counters and
             // arithmetic benchmarks. Short-circuit before full tag dispatch.
             if (types::both_fastint(rb, rc)) {
-                ra.set_boolean(rb.get_fastint() == rc.get_fastint());
+                vm.heap.set_reg_boolean(ra, rb.get_fastint() == rc.get_fastint());
                 continue;
             }
             bool seq_r = false;
@@ -3181,14 +3158,14 @@ fn TVal? Vm.run(Vm* vm) {
                 seq_r = (nb == nc);
             }
             // Cross-type (e.g. BigInt === Number) is always false for ===.
-            ra.set_boolean(seq_r);
+            vm.heap.set_reg_boolean(ra, seq_r);
             continue;
         }
 
         case Opcode.SNEQ: {
             // The FASTINT !== FASTINT fast path, short-circuiting full tag dispatch.
             if (rb.is_fastint() && rc.is_fastint()) {
-                ra.set_boolean(rb.get_fastint() != rc.get_fastint());
+                vm.heap.set_reg_boolean(ra, rb.get_fastint() != rc.get_fastint());
                 continue;
             }
             bool sneq_r = true;
@@ -3226,7 +3203,7 @@ fn TVal? Vm.run(Vm* vm) {
                 double nc = (tag_c == FASTINT) ? (double)rc.get_fastint() : rc.get_number();
                 sneq_r = (nb != nc);
             }
-            ra.set_boolean(sneq_r);
+            vm.heap.set_reg_boolean(ra, sneq_r);
             continue;
         }
 
@@ -3270,7 +3247,7 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                 }
             }
-            ra.set_boolean(result);
+            vm.heap.set_reg_boolean(ra, result);
             continue;
         }
 
@@ -3408,7 +3385,7 @@ fn TVal? Vm.run(Vm* vm) {
             // ra may alias rb (compiler optimization), so read rb before writing ra.
             TVal lval = *rb;
             TVal rval = *rc;
-            ra.set_boolean(false);
+            vm.heap.set_reg_boolean(ra, false);
 
             // OrdinaryHasInstance walks the LEFT operand's prototype chain and
             // answers false for a non-Object. A LIGHTFUNC builtin is an Object,
@@ -3424,7 +3401,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (proto_obj != null && lval.is_object()) {
                     HObject* lbh = (HObject*)lval.get_heapptr();
                     if (lbh.is_prototype_of(proto_obj)) {
-                        ra.set_boolean(true);
+                        vm.heap.set_reg_boolean(ra, true);
                     }
                 }
                 continue;
@@ -3488,7 +3465,7 @@ fn TVal? Vm.run(Vm* vm) {
                         if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
                         continue;
                     }
-                    ra.set_boolean(builtins::builtin_to_boolean(&result));
+                    vm.heap.set_reg_boolean(ra, builtins::builtin_to_boolean(&result));
                     continue;
                 }
             }
@@ -3591,7 +3568,7 @@ fn TVal? Vm.run(Vm* vm) {
             TVal rin = *rc;
             builtins::promote_lightfunc_tval(vm.heap, &rin);
             if (!rin.is_object()) {
-                ra.set_boolean(false);
+                vm.heap.set_reg_boolean(ra, false);
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, "in requires an object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
@@ -3630,7 +3607,7 @@ fn TVal? Vm.run(Vm* vm) {
                         continue;
                     }
                 }
-                ra.set_boolean(has);
+                vm.heap.set_reg_boolean(ra, has);
                 continue;
             }
 
@@ -3653,7 +3630,7 @@ fn TVal? Vm.run(Vm* vm) {
                     uint elem_count = (buf != null && (*buf.extra_ptr()).ab.resizable)
                         ? builtins::ta_element_count(obj)
                         : (*obj.extra_ptr()).view.byte_length >> shift;
-                    ra.set_boolean(idx_long >= 0 && buf != null && (*buf.extra_ptr()).ab.data != null
+                    vm.heap.set_reg_boolean(ra, idx_long >= 0 && buf != null && (*buf.extra_ptr()).ab.data != null
                         && (ulong)idx_long < (ulong)elem_count);
                     continue;
                 }
@@ -3665,7 +3642,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (idx_long >= 0 && idx_long < (long)obj.array_size) {
                     TVal? av = obj.get_array_idx((uint)idx_long);
                     if (try v = av) {
-                        ra.set_boolean(true);
+                        vm.heap.set_reg_boolean(ra, true);
                         continue;
                     }
                     // An array hole falls through to the prototype chain.
@@ -3673,9 +3650,9 @@ fn TVal? Vm.run(Vm* vm) {
                     // An out-of-bounds index checks only the prototype.
                     void* key = get_prop_key(vm, rb);
                     if (key != null) {
-                        ra.set_boolean(obj.prototype != null && obj.prototype.has_prop_proto(key, vm.heap));
+                        vm.heap.set_reg_boolean(ra, obj.prototype != null && obj.prototype.has_prop_proto(key, vm.heap));
                     } else {
-                        ra.set_boolean(false);
+                        vm.heap.set_reg_boolean(ra, false);
                     }
                     continue;
                 }
@@ -3688,7 +3665,7 @@ fn TVal? Vm.run(Vm* vm) {
                 if (skey_idx != hstring::ARRIDX_NONE && skey_idx < (uint)obj.array_size) {
                     TVal? av = obj.get_array_idx(skey_idx);
                     if (try v = av) {
-                        ra.set_boolean(true);
+                        vm.heap.set_reg_boolean(ra, true);
                         continue;
                     }
                 }
@@ -3702,14 +3679,14 @@ fn TVal? Vm.run(Vm* vm) {
                     if (key_hstr != null && key_hstr.is_arridx()) {
                         HString* prim_str = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
                         if (prim_str != null && key_hstr.array_index() < prim_str.char_length()) {
-                            ra.set_boolean(true);
+                            vm.heap.set_reg_boolean(ra, true);
                             continue;
                         }
                     }
                 }
-                ra.set_boolean(obj.has_prop_proto(key, vm.heap));
+                vm.heap.set_reg_boolean(ra, obj.has_prop_proto(key, vm.heap));
             } else {
-                ra.set_boolean(false);
+                vm.heap.set_reg_boolean(ra, false);
             }
             continue;
         }
@@ -3788,7 +3765,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
                         TVal ic_val = ic.prop_value_ptr.get();
                         if (!ic_val.is_heap_allocated()) {
-                            *ra = ic_val;
+                            vm.heap.tval_copy_ref(ra, &ic_val);
                         } else {
                             vm.heap.tval_copy_ref(ra, &ic_val);
                             track_heap_store(ds.act, ra, (uint)insn.a);
@@ -3830,7 +3807,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
                 if (key != null) {
                     TVal key_tv;
-                    key_tv.set_string(key);
+                    key_tv.set_string_borrowed(key);
                     vm.heap.tval_copy_ref(ra, &key_tv);
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 }
@@ -3851,7 +3828,7 @@ fn TVal? Vm.run(Vm* vm) {
                                                              (uint)int_len);
                     if (s != null) {
                         TVal str_tv;
-                        str_tv.set_string(s);
+                        str_tv.set_string_borrowed(s);
                         vm.heap.tval_copy_ref(ra, &str_tv);
                         track_heap_store(ds.act, ra, (uint)insn.a);
                         continue;
@@ -3873,7 +3850,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
                 if (try s = str) {
                     TVal str_tv;
-                    str_tv.set_string(s);
+                    str_tv.set_string_borrowed(s);
                     vm.heap.tval_copy_ref(ra, &str_tv);
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 }
@@ -4637,14 +4614,14 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
+                        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                             && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                             // The readers of this register (THROW_UNRESOLVED,
                             // PUTVAR_ASSIGN) route on a non-null EnvRecord*
                             // pointer, not a boolean: null means unresolvable.
-                            ra.set_envref(vic.env);
+                            vm.heap.set_reg_envref(ra, vic.env);
                             track_heap_store(ds.act, ra, (uint)insn.a);
                             break;
                             }
@@ -4711,9 +4688,9 @@ fn TVal? Vm.run(Vm* vm) {
                     // deletes the binding (§9.1.1.2.5 step 3). A null pointer =
                     // unresolvable; a non-null EnvRecord* = resolvable.
                     if (found) {
-                        ra.set_envref((void*)owner);
+                        vm.heap.set_reg_envref(ra, (void*)owner);
                     } else {
-                        ra.set_envref(null);
+                        vm.heap.set_reg_envref(ra, null);
                     }
                 }
             }
@@ -4768,7 +4745,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
+                        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
@@ -4869,7 +4846,7 @@ fn TVal? Vm.run(Vm* vm) {
                                     found = true;
                                     break;
                                 }
-                                ra.set_undefined();
+                                vm.heap.set_reg_undefined(ra);
                                 track_heap_store(ds.act, ra, (uint)insn.a);
                                 found = true;
                                 break;
@@ -4899,7 +4876,7 @@ fn TVal? Vm.run(Vm* vm) {
                                             found = true;
                                         }
                                     } else {
-                                        ra.set_undefined();
+                                        vm.heap.set_reg_undefined(ra);
                                         track_heap_store(ds.act, ra, (uint)insn.a);
                                         found = true;
                                     }
@@ -4956,7 +4933,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         ic_prop_idx = idx;
                                     }
                                 } else {
-                                    ra.set_undefined();
+                                    vm.heap.set_reg_undefined(ra);
                                     track_heap_store(ds.act, ra, (uint)insn.a);
                                     found = true;
                                     ic_env = cur;
@@ -4996,7 +4973,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 // unscopables getter deleted the binding →
                                 // return undefined.
                                 if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
-                                    ra.set_undefined();
+                                    vm.heap.set_reg_undefined(ra);
                                     track_heap_store(ds.act, ra, (uint)insn.a);
                                     found = true;
                                     break;
@@ -5028,7 +5005,7 @@ fn TVal? Vm.run(Vm* vm) {
                                             vm.heap.tval_copy_ref(ra, &getter_val);
                                             track_heap_store(ds.act, ra, (uint)insn.a);
                                         } else {
-                                            ra.set_undefined();
+                                            vm.heap.set_reg_undefined(ra);
                                             track_heap_store(ds.act, ra, (uint)insn.a);
                                         }
                                     } else {
@@ -5074,7 +5051,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         }
                                         vm.heap.tval_copy_ref(ra, &getter_val);
                                     } else {
-                                        ra.set_undefined();
+                                        vm.heap.set_reg_undefined(ra);
                                     }
                                 } else {
                                     TVal v2 = vcur.bindings.prop_values()[vidx].get();
@@ -5116,10 +5093,10 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
                 } else {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             continue;
         }
@@ -5220,7 +5197,7 @@ fn TVal? Vm.run(Vm* vm) {
                             // get-mutable-binding-binding-deleted-in-get-
                             // unscopables.js).
                             if (!cur.bindings.has_prop_proto(key, vm.heap)) {
-                                ra.set_undefined();
+                                vm.heap.set_reg_undefined(ra);
                                 track_heap_store(ds.act, ra, (uint)insn.a);
                                 found = true;
                                 break;
@@ -5249,7 +5226,7 @@ fn TVal? Vm.run(Vm* vm) {
                                             found = true;
                                         }
                                     } else {
-                                        ra.set_undefined();
+                                        vm.heap.set_reg_undefined(ra);
                                         track_heap_store(ds.act, ra, (uint)insn.a);
                                         found = true;
                                     }
@@ -5293,7 +5270,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         found = true;
                                     }
                                 } else {
-                                    ra.set_undefined();
+                                    vm.heap.set_reg_undefined(ra);
                                     track_heap_store(ds.act, ra, (uint)insn.a);
                                     found = true;
                                 }
@@ -5331,7 +5308,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 // unscopables getter deleted the binding →
                                 // return undefined.
                                 if (!vcur.bindings.has_prop_proto(key, vm.heap)) {
-                                    ra.set_undefined();
+                                    vm.heap.set_reg_undefined(ra);
                                     track_heap_store(ds.act, ra, (uint)insn.a);
                                     found = true;
                                     break;
@@ -5359,7 +5336,7 @@ fn TVal? Vm.run(Vm* vm) {
                                             vm.heap.tval_copy_ref(ra, &getter_val);
                                             track_heap_store(ds.act, ra, (uint)insn.a);
                                         } else {
-                                            ra.set_undefined();
+                                            vm.heap.set_reg_undefined(ra);
                                             track_heap_store(ds.act, ra, (uint)insn.a);
                                         }
                                     } else {
@@ -5394,7 +5371,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         }
                                         vm.heap.tval_copy_ref(ra, &getter_val);
                                     } else {
-                                        ra.set_undefined();
+                                        vm.heap.set_reg_undefined(ra);
                                     }
                                 } else {
                                     TVal v2 = vcur.bindings.prop_values()[vidx].get();
@@ -5437,10 +5414,10 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                     }
                 } else {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             continue;
         }
@@ -5471,7 +5448,6 @@ fn TVal? Vm.run(Vm* vm) {
                             && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                             hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
                             vm.heap.tval_move_slot_fast(gb, pv, ra);
-                            ra.set_undefined();
                             break;
                         }
                     }
@@ -5495,8 +5471,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 return VM_ERROR~;
                             }
                         }
-                        vm.heap.decref_tval(ra);
-                        ra.set_undefined();
+                        vm.heap.set_reg_undefined(ra);
                         break;
                     } else if (put_result == -2) {
                         HString* name_hstr = (HString*)key;
@@ -5530,8 +5505,7 @@ fn TVal? Vm.run(Vm* vm) {
                             break;
                         }
                     }
-                    vm.heap.decref_tval(ra);
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
 
                     // Populate the slot IC (data, writable, non-accessor only).
                     if (ds.var_ic_base != null) {
@@ -5580,7 +5554,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
+                        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
@@ -5801,10 +5775,10 @@ fn TVal? Vm.run(Vm* vm) {
                             key, (void*)ds.act.lex_env, false, vm.heap);
                     }
                 } else {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             } else {
-                ra.set_undefined();
+                vm.heap.set_reg_undefined(ra);
             }
             continue;
         }
@@ -5890,7 +5864,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env != null && vic.key == key && vic.search_head == (void*)ds.act.lex_env) {
+                        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
@@ -6264,7 +6238,6 @@ fn TVal? Vm.run(Vm* vm) {
                             if (!b33_fl.is_accessor && b33_fl.writable) {
                                 hobject::PropValue* b33_pv = &b33_venv.bindings.prop_values()[b33_idx];
                                 vm.heap.tval_move_slot_fast(b33_venv.bindings, b33_pv, ra);
-                                ra.set_undefined();
                             }
                         } else {
                             b33_venv.bindings.put_prop(b33_key, *ra, hobject::PROP_FLAGS_WEC, vm.heap);
@@ -6347,7 +6320,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env == (void*)ds.act.var_env && vic.key == key) {
+                        if (vic.env == (void*)ds.act.var_env && vic.key.borrow() == key) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b != null && b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
@@ -6568,12 +6541,12 @@ fn TVal? Vm.run(Vm* vm) {
             //              If bound to a configurable global → delete and true.
             uint bc = insn.get_bc();
             if (bc >= vm.current_func.const_count) {
-                ra.set_boolean(true);
+                vm.heap.set_reg_boolean(ra, true);
                 continue;
             }
             TVal name_val = ds.constants[bc];
             if (!name_val.is_string()) {
-                ra.set_boolean(false);
+                vm.heap.set_reg_boolean(ra, false);
                 continue;
             }
             void* key = name_val.get_heapptr();
@@ -6610,7 +6583,7 @@ fn TVal? Vm.run(Vm* vm) {
                         // property and report its boolean result. The with-env
                         // hit is a property delete, not a var-binding delete,
                         // so it must not fall through to the logic below.
-                        ra.set_boolean(cur.bindings.es_delete_prop(key, vm.heap));
+                        vm.heap.set_reg_boolean(ra, cur.bindings.es_delete_prop(key, vm.heap));
                         track_heap_store(ds.act, ra, (uint)insn.a);
                         found = true;
                         break;
@@ -6642,7 +6615,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 if (!vm_throw_pending(vm, &ds)) return VM_ERROR~;
                                 continue;
                             }
-                            ra.set_boolean(vcur.bindings.es_delete_prop(key, vm.heap));
+                            vm.heap.set_reg_boolean(ra, vcur.bindings.es_delete_prop(key, vm.heap));
                             track_heap_store(ds.act, ra, (uint)insn.a);
                             found = true;
                             break;
@@ -6658,9 +6631,9 @@ fn TVal? Vm.run(Vm* vm) {
                         // deleted for real, returning true.
                         hobject::PropFlags vflags = vcur.bindings.get_prop_flags((uint)vidx, vm.heap);
                         if (vflags.configurable) {
-                            ra.set_boolean(vcur.bindings.es_delete_prop(key, vm.heap));
+                            vm.heap.set_reg_boolean(ra, vcur.bindings.es_delete_prop(key, vm.heap));
                         } else {
-                            ra.set_boolean(false);
+                            vm.heap.set_reg_boolean(ra, false);
                         }
                         track_heap_store(ds.act, ra, (uint)insn.a);
                         found = true;
@@ -6676,7 +6649,7 @@ fn TVal? Vm.run(Vm* vm) {
                 // Annex B.3.2: unresolvable → true. GetValue on a missing name
                 // would throw, but DeleteValue's reference check accepts the
                 // unresolvable form silently here.
-                ra.set_boolean(true);
+                vm.heap.set_reg_boolean(ra, true);
                 continue;
             }
             if (is_strict_d && !found) {
@@ -6701,11 +6674,11 @@ fn TVal? Vm.run(Vm* vm) {
             if (cur != null && !cur.flags.is_declarative && found_idx >= 0) {
                 hobject::PropFlags flags = cur.bindings.get_prop_flags((uint)found_idx, vm.heap);
                 if (flags.configurable) {
-                    ra.set_boolean(cur.bindings.es_delete_prop(key, vm.heap));
+                    vm.heap.set_reg_boolean(ra, cur.bindings.es_delete_prop(key, vm.heap));
                     track_heap_store(ds.act, ra, (uint)insn.a);
                     continue;
                 }
-                ra.set_boolean(false);
+                vm.heap.set_reg_boolean(ra, false);
                 continue;
             }
             // Found on a declarative env. Annex B.3.2 answers false for
@@ -6723,17 +6696,17 @@ fn TVal? Vm.run(Vm* vm) {
                 bool is_global_lex = cur == vm.global_lex_env;
                 hobject::PropFlags dflags = cur.bindings.get_prop_flags((uint)found_idx, vm.heap);
                 if (dflags.configurable && !is_global_lex) {
-                    ra.set_boolean(cur.bindings.es_delete_prop(key, vm.heap));
+                    vm.heap.set_reg_boolean(ra, cur.bindings.es_delete_prop(key, vm.heap));
                     track_heap_store(ds.act, ra, (uint)insn.a);
                     continue;
                 }
-                ra.set_boolean(false);
+                vm.heap.set_reg_boolean(ra, false);
                 continue;
             }
             // Found on the var_env walk (Annex B.3.2): function var/param
             // bindings are non-configurable → false; an eval-created one is
             // configurable and deleted (checked in the vcur walk below).
-            ra.set_boolean(false);
+            vm.heap.set_reg_boolean(ra, false);
             continue;
         }
 
@@ -6765,7 +6738,7 @@ fn TVal? Vm.run(Vm* vm) {
                     HString* msg_val = intern_string(vm,
                         obj_val.is_null() ? "Cannot use 'with' on null" : "Cannot use 'with' on undefined");
                     TVal msg_tv;
-                    msg_tv.set_string(msg_val);
+                    msg_tv.set_string_borrowed(msg_val);
                     err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC, vm.heap);
                     TVal err_val;
                     err_val.set_object(err);
@@ -6855,14 +6828,14 @@ fn TVal? Vm.run(Vm* vm) {
                 if (name_val.is_string()) { key = name_val.get_heapptr(); }
             }
             if (key == null) {
-                ra.set_undefined();
-                rb.set_undefined();
+                vm.heap.set_reg_undefined(ra);
+                vm.heap.set_reg_undefined(rb);
                 continue;
             }
             // B starts undefined so a declarative hit (which sets only A) or
             // an unresolvable name leaves the env-record base, not whatever
             // dead value the reserved register happened to hold.
-            rb.set_undefined();
+            vm.heap.set_reg_undefined(rb);
             EnvRecord* cur = ds.act.lex_env;
             bool threw_pending = false;
             bool resolved = false;
@@ -6900,7 +6873,7 @@ fn TVal? Vm.run(Vm* vm) {
                         threw_pending = true; break;
                     }
                     if (!still_hit) {
-                        ra.set_undefined();
+                        vm.heap.set_reg_undefined(ra);
                         track_heap_store(ds.act, ra, (uint)insn.a);
                         resolved = true;
                         break;
@@ -6908,7 +6881,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // Capture the base first: the value getter below may
                     // delete the binding, and the paired WTWR must still
                     // write to this object (ES5 §11.13.2 step 4).
-                    rb.set_object(cur.bindings);
+                    vm.heap.set_reg_object(rb, cur.bindings);
                     void* wbase = rb.get_heapptr();
                     if (wbase != null) { ((types::HeapHeader*)wbase).incref(); }
                     track_heap_store(ds.act, rb, (uint)insn.b);
@@ -6936,13 +6909,13 @@ fn TVal? Vm.run(Vm* vm) {
                                 }
                                 vm.heap.tval_copy_ref(ra, &getter_val);
                             } else {
-                                ra.set_undefined();
+                                vm.heap.set_reg_undefined(ra);
                             }
                         } else {
                             vm.heap.tval_copy_ref(ra, &proto.value);
                         }
                     } else {
-                        ra.set_undefined();
+                        vm.heap.set_reg_undefined(ra);
                     }
                     track_heap_store(ds.act, ra, (uint)insn.a);
                     resolved = true;
@@ -6983,7 +6956,7 @@ fn TVal? Vm.run(Vm* vm) {
                             }
                             vm.heap.tval_copy_ref(ra, &getter_val);
                         } else {
-                            ra.set_undefined();
+                            vm.heap.set_reg_undefined(ra);
                         }
                     } else {
                         vm.heap.tval_copy_ref(ra, &v_raw);
@@ -7036,7 +7009,7 @@ fn TVal? Vm.run(Vm* vm) {
                             }
                             vm.heap.tval_copy_ref(ra, &getter_val);
                         } else {
-                            ra.set_undefined();
+                            vm.heap.set_reg_undefined(ra);
                         }
                     } else {
                         vm.heap.tval_copy_ref(ra, &v_raw);
@@ -7056,7 +7029,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         continue;
                     }
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             }
             continue;
@@ -7124,14 +7097,14 @@ fn TVal? Vm.run(Vm* vm) {
             }
             if (!threw) {
                 if (base != null) {
-                    ra.set_object(base);
+                    vm.heap.set_reg_object(ra, base);
                     ((types::HeapHeader*)base).incref();
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 } else if (owner_env != null) {
-                    ra.set_envref((void*)owner_env);
+                    vm.heap.set_reg_envref(ra, (void*)owner_env);
                     track_heap_store(ds.act, ra, (uint)insn.a);
                 } else {
-                    ra.set_undefined();
+                    vm.heap.set_reg_undefined(ra);
                 }
             }
             continue;

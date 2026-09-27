@@ -236,7 +236,7 @@ fn void builtin_temporal_plain_yearmonth_ctor(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_yearmonth_proto));
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
@@ -293,7 +293,7 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
             if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             HObject* copy = copy_o;
             copy.prototype = ctx.heap.temporal_plain_yearmonth_proto;
-            ctx.result.set_object(copy);
+            ctx.result_object(copy);
             return;
         }
         // `bag_to_yearmonth_fields` reads `calendar` itself (in spec
@@ -329,7 +329,7 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     obj.prototype = ctx.heap.temporal_plain_yearmonth_proto;
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Temporal.PlainYearMonth.compare(one, two): both arguments go through
@@ -359,28 +359,28 @@ fn void builtin_temporal_plain_yearmonth_compare(BuiltinContext* ctx) {
     if (ay != by) { cmp = ay < by ? -1 : 1; }
     else if (am != bm) { cmp = am < bm ? -1 : 1; }
     else if (ad != bd) { cmp = ad < bd ? -1 : 1; }
-    ctx.result.set_fastint((long)cmp);
+    ctx.result_fastint((long)cmp);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_year(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)plain_yearmonth_y(obj));
+    ctx.result_number((double)plain_yearmonth_y(obj));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_referenceISOYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)plain_yearmonth_y(obj));
+    ctx.result_number((double)plain_yearmonth_y(obj));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_month(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)plain_yearmonth_m(obj));
+    ctx.result_number((double)plain_yearmonth_m(obj));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_monthCode(BuiltinContext* ctx) {
@@ -395,59 +395,59 @@ fn void builtin_temporal_plain_yearmonth_proto_monthCode(BuiltinContext* ctx) {
     } else {
         len = (usz)libc::snprintf(&buf, 5, "M%d", m);
     }
-    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+    ctx.result_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_day(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)plain_yearmonth_day(obj));
+    ctx.result_number((double)plain_yearmonth_day(obj));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_daysInMonth(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number((double)temporal::days_in_month(plain_yearmonth_y(obj), (int)plain_yearmonth_m(obj)));
+    ctx.result_number((double)temporal::days_in_month(plain_yearmonth_y(obj), (int)plain_yearmonth_m(obj)));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_daysInYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_number(temporal::is_leap_year(plain_yearmonth_y(obj)) ? 366.0 : 365.0);
+    ctx.result_number(temporal::is_leap_year(plain_yearmonth_y(obj)) ? 366.0 : 365.0);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_monthsInYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
-    ctx.result.set_number(12.0);
+    ctx.result_number(12.0);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_inLeapYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    ctx.result.set_boolean(temporal::is_leap_year(plain_yearmonth_y(obj)));
+    ctx.result_boolean(temporal::is_leap_year(plain_yearmonth_y(obj)));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_calendarId(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
-    ctx.result.set_string(builtin_intern_string(ctx.heap, "iso8601"));
+    ctx.result_string(builtin_intern_string(ctx.heap, "iso8601"));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_era(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_eraYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_dayOfWeek(BuiltinContext* ctx) {
@@ -461,7 +461,7 @@ fn void builtin_temporal_plain_yearmonth_proto_dayOfWeek(BuiltinContext* ctx) {
     long days = temporal::epoch_days_from_civil(y, m, 1);
     long dow = ((days % 7) + 4) % 7;
     if (dow <= 0) dow += 7;
-    ctx.result.set_number((double)dow);
+    ctx.result_number((double)dow);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_dayOfYear(BuiltinContext* ctx) {
@@ -471,7 +471,7 @@ fn void builtin_temporal_plain_yearmonth_proto_dayOfYear(BuiltinContext* ctx) {
     long y = plain_yearmonth_y(obj);
     int m = plain_yearmonth_m(obj);
     long doy = temporal::epoch_days_from_civil(y, m, 1) - temporal::epoch_days_from_civil(y, 1, 1) + 1;
-    ctx.result.set_number((double)doy);
+    ctx.result_number((double)doy);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_weekOfYear(BuiltinContext* ctx) {
@@ -490,7 +490,7 @@ fn void builtin_temporal_plain_yearmonth_proto_weekOfYear(BuiltinContext* ctx) {
     } else if (week > temporal::iso_weeks_in_year(y)) {
         week = 1;
     }
-    ctx.result.set_number((double)week);
+    ctx.result_number((double)week);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_yearOfWeek(BuiltinContext* ctx) {
@@ -507,13 +507,13 @@ fn void builtin_temporal_plain_yearmonth_proto_yearOfWeek(BuiltinContext* ctx) {
     long week_year = y;
     if (week < 1) { week_year = y - 1; }
     else if (week > temporal::iso_weeks_in_year(y)) { week_year = y + 1; }
-    ctx.result.set_number((double)week_year);
+    ctx.result_number((double)week_year);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_daysInWeek(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH, "this is not a Temporal.PlainYearMonth")) return;
-    ctx.result.set_number(7.0);
+    ctx.result_number(7.0);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_valueOf(BuiltinContext* ctx) {
@@ -575,7 +575,7 @@ fn void builtin_temporal_plain_yearmonth_proto_toString(BuiltinContext* ctx) {
         char[] ann = critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]";
         for (usz k = 0; k < ann.len; k++) buf[len++] = ann[k];
     }
-    ctx.result.set_string(builtin_intern_string(ctx.heap, buf[:len]));
+    ctx.result_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_toJSON(BuiltinContext* ctx) {
@@ -661,7 +661,7 @@ fn void builtin_temporal_plain_yearmonth_proto_equals(BuiltinContext* ctx) {
     int ad = plain_yearmonth_day(obj);
     int bd = plain_yearmonth_day(other);
     bool same_cal = obj.extra.temporal.calendar == other.extra.temporal.calendar;
-    ctx.result.set_boolean(same_cal && ay == by && am == bm && ad == bd);
+    ctx.result_boolean(same_cal && ay == by && am == bm && ad == bd);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
@@ -708,7 +708,7 @@ fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
     obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
-    ctx.result.set_object(obj2);
+    ctx.result_object(obj2);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_toPlainDate(BuiltinContext* ctx) {
@@ -752,7 +752,7 @@ fn void builtin_temporal_plain_yearmonth_proto_toPlainDate(BuiltinContext* ctx) 
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
     obj2.prototype = ctx.heap.temporal_plain_date_proto;
-    ctx.result.set_object(obj2);
+    ctx.result_object(obj2);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_add(BuiltinContext* ctx) {
@@ -807,7 +807,7 @@ fn void builtin_temporal_plain_yearmonth_proto_add(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
     obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
-    ctx.result.set_object(obj2);
+    ctx.result_object(obj2);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_subtract(BuiltinContext* ctx) {
@@ -854,7 +854,7 @@ fn void builtin_temporal_plain_yearmonth_proto_subtract(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
     obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
-    ctx.result.set_object(obj2);
+    ctx.result_object(obj2);
 }
 
 // PlainYearMonth.until/since share the difference_date routine. Only date-level
@@ -931,7 +931,7 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* dur_obj = dur_o;
     dur_obj.prototype = ctx.heap.temporal_duration_proto;
-    ctx.result.set_object(dur_obj);
+    ctx.result_object(dur_obj);
 }
 
 fn void builtin_temporal_plain_yearmonth_proto_until(BuiltinContext* ctx) {

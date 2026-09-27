@@ -92,7 +92,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     }
 
     HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_obj_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = func_obj_raw) { ctx.result_undefined(); return; }
     HObject* func_obj = func_obj_raw;
     (*func_obj.extra_ptr()).func.comp_func = func;
     (*func_obj.extra_ptr()).func.builtin_fn_index = -1;
@@ -139,7 +139,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
 
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     TVal name_tv;
-    name_tv.set_string(builtin_intern_string(ctx.heap, "anonymous"));
+    name_tv.set_string_borrowed(builtin_intern_string(ctx.heap, "anonymous"));
     func_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
     // GeneratorFunction/AsyncFunction instances are callable but not
@@ -147,7 +147,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
 
-    ctx.result.set_object(func_obj);
+    ctx.result_object(func_obj);
 }
 
 fn void builtin_generator_function(BuiltinContext* ctx) {
@@ -176,7 +176,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
     Heap* vm_heap = ctx.heap;
     GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
     if (gs == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -200,7 +200,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
             done_val.set_boolean(true);
             r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
-            ctx.result.set_object(r);
+            ctx.result_object(r);
         }
         return;
     }
@@ -221,7 +221,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
     HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_obj_raw) {
         vm_heap.resume_gen = null;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* func_obj = func_obj_raw;
@@ -262,7 +262,7 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
     Heap* vm_heap = ctx.heap;
     GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
     if (gs == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -300,7 +300,7 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
     if (catch err = func_obj_raw) {
         vm_heap.resume_gen = null;
         gs.resume_kind = NEXT;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* func_obj = func_obj_raw;
@@ -340,7 +340,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
     Heap* vm_heap = ctx.heap;
     GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
     if (gs == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -363,7 +363,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
             done_val.set_boolean(true);
             r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
 
-            ctx.result.set_object(r);
+            ctx.result_object(r);
         }
         return;
     }
@@ -393,7 +393,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
             TVal done_val;
             done_val.set_boolean(true);
             r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-            ctx.result.set_object(r);
+            ctx.result_object(r);
         }
         return;
     }
@@ -415,7 +415,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
     if (catch err = func_obj_raw) {
         vm_heap.resume_gen = null;
         gs.resume_kind = NEXT;
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* func_obj = func_obj_raw;
@@ -463,7 +463,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
         TVal tag_tv;
-        tag_tv.set_string(builtin_intern_string(heap, "Generator"));
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, "Generator"));
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -496,7 +496,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         HString* gf_tag_key = ensure_tostringtag_symbol(heap);
         if (gf_tag_key != null) {
             TVal tag_tv;
-            tag_tv.set_string(builtin_intern_string(heap, "GeneratorFunction"));
+            tag_tv.set_string_borrowed(builtin_intern_string(heap, "GeneratorFunction"));
             gf_proto.put_prop(gf_tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }
@@ -579,7 +579,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
         HString* af_tag_key = ensure_tostringtag_symbol(heap);
         if (af_tag_key != null) {
             TVal tag_tv;
-            tag_tv.set_string(builtin_intern_string(heap, "AsyncFunction"));
+            tag_tv.set_string_borrowed(builtin_intern_string(heap, "AsyncFunction"));
             af_proto.put_prop(af_tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
         }
     }

@@ -30,7 +30,7 @@ import libc;
 // Bump when the vtable changes shape. An add-on compiled against a different
 // major version is rejected rather than called: the alternative is a wild jump
 // through a moved function pointer.
-const uint BK_ADDON_ABI_VERSION = 1;
+const uint BK_ADDON_ABI_VERSION = 2;
 
 const int BK_ADDON_OK          = 0;
 const int BK_ADDON_ERR_OPEN    = -1;  // dlopen failed
@@ -99,6 +99,8 @@ alias FnMarkValue        = fn void(void*, void*);
 alias FnMemAlloc         = fn void*(BkAddonCtx*, usz);
 alias FnMemRealloc       = fn void*(BkAddonCtx*, void*, usz);
 alias FnMemFree          = fn void(BkAddonCtx*, void*);
+alias FnValueInit        = fn void(void*);
+alias FnValueClear       = fn void(BkAddonCtx*, void*);
 
 // Every entry point an add-on gets. Passed by pointer to bk_init_addon and
 // valid for the life of the Runtime.
@@ -143,8 +145,8 @@ struct BkAddonApi {
     FnThrowMsg        throw_range_error;
 
     // -- values held across calls --
-    // A retained value lives in the payload; these only convert. The add-on
-    // must still mark it from gc_mark.
+    // Payload slots own strings. Initialize before storing, clear before
+    // freeing, and mark the slot from gc_mark to retain traced values.
     FnHandleStore     handle_store;
     FnHandleLoad      handle_load;
     // The object behind a handle, or null. Used for brand checks on `this`.
@@ -155,6 +157,8 @@ struct BkAddonApi {
     FnMemAlloc        mem_alloc;
     FnMemRealloc      mem_realloc;
     FnMemFree         mem_free;
+    FnValueInit       value_init;
+    FnValueClear      value_clear;
 }
 
 alias BkAddonInitFn = fn int(BkAddonCtx*, BkAddonApi*);
@@ -298,30 +302,31 @@ fn ulong api_this_handle(void* bctx) @private {
 }
 
 fn void api_return_number(void* bctx, double v) @private {
-    ((builtins::BuiltinContext*)bctx).result.set_number(v);
+    ((builtins::BuiltinContext*)bctx).result_number(v);
 }
 
 fn void api_return_string(void* bctx, char* bytes, usz len) @private {
     builtins::BuiltinContext* c = (builtins::BuiltinContext*)bctx;
-    if (bytes == null) { c.result.set_undefined(); return; }
+    if (bytes == null) { c.result_undefined(); return; }
     hstring::HString* s = builtins::builtin_intern_string(c.heap, bytes[:len]);
-    if (s == null) { c.result.set_undefined(); return; }
-    c.result.set_string(s);
+    if (s == null) { c.result_undefined(); return; }
+    c.result_string(s);
 }
 
 fn void api_return_object(void* bctx, void* obj) @private {
     builtins::BuiltinContext* c = (builtins::BuiltinContext*)bctx;
-    if (obj == null) { c.result.set_undefined(); return; }
-    c.result.set_object((hobject::HObject*)obj);
+    if (obj == null) { c.result_undefined(); return; }
+    c.result_object((hobject::HObject*)obj);
 }
 
 fn void api_return_handle(void* bctx, ulong h) @private {
     builtins::BuiltinContext* c = (builtins::BuiltinContext*)bctx;
-    *c.result = handle_to_tval(c.heap, h);
+    TVal value = handle_to_tval(c.heap, h);
+    c.copy_result(value);
 }
 
 fn void api_return_undefined(void* bctx) @private {
-    ((builtins::BuiltinContext*)bctx).result.set_undefined();
+    ((builtins::BuiltinContext*)bctx).result_undefined();
 }
 
 fn void api_throw_type_error(void* bctx, char* msg) @private {
@@ -337,7 +342,18 @@ fn void api_throw_range_error(void* bctx, char* msg) @private {
 fn void api_handle_store(void* bctx, ulong h, void* out_tval) @private {
     if (out_tval == null || bctx == null) return;
     builtins::BuiltinContext* c = (builtins::BuiltinContext*)bctx;
-    *((types::TVal*)out_tval) = handle_to_tval(c.heap, h);
+    TVal value = handle_to_tval(c.heap, h);
+    c.heap.tval_copy_ref((TVal*)out_tval, &value);
+}
+
+fn void api_value_init(void* slot) @private {
+    if (slot != null) ((TVal*)slot).set_undefined();
+}
+
+fn void api_value_clear(BkAddonCtx* ctx, void* slot) @private {
+    if (ctx == null || ctx.heap == null || slot == null) return;
+    if (!ctx.heap.tearing_down) ctx.heap.decref_tval((TVal*)slot);
+    ((TVal*)slot).set_undefined();
 }
 
 fn ulong api_handle_load(void* bctx, void* tval) @private {
@@ -386,11 +402,9 @@ fn void api_mem_free(BkAddonCtx* ctx, void* p) @private {
 // truncate. Indices are the same width either way, which keeps one add-on
 // binary working against both builds.
 //
-// The table is a GC root, so a handle also keeps its value alive for the
-// duration of a call without the add-on doing anything. Handles are reset at
-// the end of each add-on call rather than individually released: an add-on
-// that wants to keep a value stores it in its payload and marks it from
-// gc_mark, which is the contract the payload already has.
+// The table owns strings and roots traced values for the duration of a call.
+// Returning releases this call's handles. Payload slots acquire independent
+// ownership through handle_store and trace their objects through gc_mark.
 fn ulong tval_to_handle(heap::Heap* h, types::TVal v) @private {
     if (h == null) return 0;
     long slot = h.addon_handle_push(v);
@@ -449,6 +463,8 @@ BkAddonApi g_addon_api = {
     .mem_alloc           = &api_mem_alloc,
     .mem_realloc         = &api_mem_realloc,
     .mem_free            = &api_mem_free,
+    .value_init          = &api_value_init,
+    .value_clear         = &api_value_clear,
 };
 
 // ============================================================================
@@ -522,7 +538,7 @@ fn void builtin_load_addon(void* bctx, void* udata) @private {
         return;
     }
     hstring::HString* hs = (hstring::HString*)v.get_heapptr();
-    if (hs == null) { c.result.set_undefined(); return; }
+    if (hs == null) { c.result_undefined(); return; }
 
     int rc = load_addon(h, c.global_env, hs.get_cstr()[:hs.blen]);
     if (rc != BK_ADDON_OK) {
@@ -538,7 +554,7 @@ fn void builtin_load_addon(void* bctx, void* udata) @private {
         }
         return;
     }
-    c.result.set_undefined();
+    c.result_undefined();
 }
 
 // Expose `loadAddon` as a global. Opt-in: an embedder that never calls this

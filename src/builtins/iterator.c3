@@ -26,7 +26,7 @@ fn void create_array_iterator(BuiltinContext* ctx, uint kind) {
         return;
     }
     HObject*? iter_raw = heap.alloc_object(hobject::ObjClass.ARRAY_ITERATOR);
-    if (catch err = iter_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = iter_raw) { ctx.result_undefined(); return; }
     HObject* iter = iter_raw;
     iterable.as_header().incref();
     ctx.heap.@set_edge(iter, (*iter.extra_ptr()).iter.target, iterable);
@@ -37,7 +37,7 @@ fn void create_array_iterator(BuiltinContext* ctx, uint kind) {
     // install an own `next` property here: GetIterator consumers must perform
     // Get(iterator, "next") through the prototype chain.
     iter.prototype = heap.array_iterator_proto;
-    ctx.result.set_object(iter);
+    ctx.result_object(iter);
 }
 
 // Helper: create a Map iterator with a specific kind.
@@ -45,10 +45,10 @@ fn void create_array_iterator(BuiltinContext* ctx, uint kind) {
 fn void create_map_iterator(BuiltinContext* ctx, uint kind) {
     Heap* heap = ctx.heap;
     HObject* map = check_map(ctx);
-    if (map == null) { ctx.result.set_undefined(); return; }
+    if (map == null) { ctx.result_undefined(); return; }
 
     HObject*? iter_raw = heap.alloc_object(hobject::ObjClass.MAP_ITERATOR);
-    if (catch err = iter_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = iter_raw) { ctx.result_undefined(); return; }
     HObject* iter = iter_raw;
     map.as_header().incref();
     ctx.heap.@set_edge(iter, (*iter.extra_ptr()).iter.target, map);
@@ -57,7 +57,7 @@ fn void create_map_iterator(BuiltinContext* ctx, uint kind) {
     // MapIterator instances share %MapIteratorPrototype%'s .next and
     // @@toStringTag, mirrors %ArrayIteratorPrototype%'s shared .next.
     iter.prototype = heap.map_iterator_proto;
-    ctx.result.set_object(iter);
+    ctx.result_object(iter);
 }
 
 // Helper: create a Set iterator with a specific kind.
@@ -65,10 +65,10 @@ fn void create_map_iterator(BuiltinContext* ctx, uint kind) {
 fn void create_set_iterator(BuiltinContext* ctx, uint kind) {
     Heap* heap = ctx.heap;
     HObject* set = check_set(ctx);
-    if (set == null) { ctx.result.set_undefined(); return; }
+    if (set == null) { ctx.result_undefined(); return; }
 
     HObject*? iter_raw = heap.alloc_object(hobject::ObjClass.SET_ITERATOR);
-    if (catch err = iter_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = iter_raw) { ctx.result_undefined(); return; }
     HObject* iter = iter_raw;
     set.as_header().incref();
     ctx.heap.@set_edge(iter, (*iter.extra_ptr()).iter.target, set);
@@ -77,7 +77,7 @@ fn void create_set_iterator(BuiltinContext* ctx, uint kind) {
     // SetIterator instances share %SetIteratorPrototype%'s .next and
     // @@toStringTag, mirrors %ArrayIteratorPrototype%'s shared .next.
     iter.prototype = heap.set_iterator_proto;
-    ctx.result.set_object(iter);
+    ctx.result_object(iter);
 }
 fn void builtin_array_proto_values(BuiltinContext* ctx) {
     create_array_iterator(ctx, 0);
@@ -100,23 +100,23 @@ fn void builtin_string_proto_symbol_iter(BuiltinContext* ctx) {
     // Get `this`, RequireObjectCoercible + ToString, per §22.1.3.30 step 1-2.
     HString* str_data = string_proto_get_this(ctx);
     if (str_data == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
     // Create a STRING_ITERATOR object
     HObject*? iter_raw = heap.alloc_object(hobject::ObjClass.STRING_ITERATOR);
-    if (catch err = iter_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = iter_raw) { ctx.result_undefined(); return; }
     HObject* iter = iter_raw;
     // The string is held for GC tracing (mark_tval on the payload) and the
     // position tracks the current code unit.
-    (*iter.extra_ptr()).str_iter.string_val.set_string(str_data);
+    (*iter.extra_ptr()).str_iter.string.set(heap, str_data);
     (*iter.extra_ptr()).str_iter.index = 0;
     // StringIterator instances share %StringIteratorPrototype%'s .next and
     // @@toStringTag, mirrors %ArrayIteratorPrototype%'s shared .next.
     iter.prototype = heap.string_iterator_proto;
 
-    ctx.result.set_object(iter);
+    ctx.result_object(iter);
 }
 
 // %IteratorPrototype%[@@iterator] (ES6 section 25.1.2.1), unconditionally
@@ -124,25 +124,25 @@ fn void builtin_string_proto_symbol_iter(BuiltinContext* ctx) {
 // null/undefined), there is no ReturnIfAbrupt or type check in the spec
 // algorithm.
 //
-// `*ctx.result` starts out ALIASING `ctx.this_val` already, every call
+// `ctx.result.get()` starts out ALIASING `ctx.this_val` already, every call
 // convention that reaches a builtin (lightfunc or HObject dispatch in
 // vm_call_fn_impl, and the VM's own CALL_PROP handling) seeds the result
 // register with a raw, non-incref'd copy of `this` before the builtin
 // runs, since the result slot doubles as the `this`/callee slot. So
 // `Heap.tval_copy_ref(ctx.result, &ctx.this_val)` is wrong here: it
-// increfs the incoming value but then decrefs `*ctx.result`'s *existing*
+// increfs the incoming value but then decrefs `ctx.result.get()`'s *existing*
 // bits, the same heap object, reached through a different TVal location
 // than `&ctx.this_val`, so the `dst == src` same-pointer guard can't catch
 // the aliasing, silently cancelling the incref and returning an
 // under-refcounted reference (the caller frees it one decref too early).
-// A bare incref is correct: the stale bits in `*ctx.result` were
+// A bare incref is correct: the stale bits in `ctx.result.get()` were
 // never independently owned, so nothing needs decrementing.
 fn void builtin_iterator_proto_symbol_iter(BuiltinContext* ctx) {
     if (ctx.this_val.is_heap_allocated()) {
         void* ptr = ctx.this_val.get_heapptr();
         if (ptr != null) { ((types::HeapHeader*)ptr).incref(); }
     }
-    *ctx.result = ctx.this_val;
+    ctx.copy_result(ctx.this_val);
 }
 
 // Step the collection and string iterators whose values can be consumed
@@ -232,7 +232,7 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
             return true;
         }
         case hobject::ObjClass.STRING_ITERATOR: {
-            HString* str = (HString*)(*iter.extra_ptr()).str_iter.string_val.get_heapptr();
+            HString* str = (*iter.extra_ptr()).str_iter.string.borrow();
             if (str == null) return false;
 
             uint idx = (*iter.extra_ptr()).str_iter.index;
@@ -268,7 +268,7 @@ fn void builtin_iterator_result(BuiltinContext* ctx, TVal* value, bool done) {
     HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch result_raw) {
         ctx.heap.decref_tval(value);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     HObject* result = result_raw;
@@ -280,7 +280,7 @@ fn void builtin_iterator_result(BuiltinContext* ctx, TVal* value, bool done) {
     TVal done_tv;
     done_tv.set_boolean(done);
     result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // Array iterator .next(), returns {value, done}.
@@ -325,7 +325,7 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
         // simply decreases and iteration ends.
         if (view_is_out_of_bounds(target)) {
             arraybuffer_throw_type_error(ctx, "TypedArray is out of bounds");
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         // Re-derive the element count on every next(): length-tracking views
@@ -384,7 +384,7 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
             } else if (ctx.should_throw) {
                 // Getter threw, bail out so the dispatch loop can transfer
                 // control to the nearest for-of catcher.
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
             // else: element is a hole, value stays undefined
@@ -429,7 +429,7 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
 
     // Create result object: {value, done}
     HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = result_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = result_raw) { ctx.result_undefined(); return; }
     HObject* result = result_raw;
     result.prototype = null;
 
@@ -443,7 +443,7 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
     done_tv.set_boolean(done);
     result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
-    ctx.result.set_object(result);
+    ctx.result_object(result);
 }
 
 // String iterator .next(), returns {value, done}.
@@ -465,7 +465,7 @@ fn void builtin_string_iterator_next(BuiltinContext* ctx) {
     TVal value;
     bool done;
     if (!builtin_iterator_step_value(heap, iter, &value, &done)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     builtin_iterator_result(ctx, &value, done);
@@ -493,7 +493,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     uint flags = (*iter.extra_ptr()).regexp_iter.flags;
     if (flags & 2) { // done bit
         HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (catch err = result_raw) { ctx.result.set_undefined(); return; }
+        if (catch err = result_raw) { ctx.result_undefined(); return; }
         HObject* result = result_raw;
         result.prototype = null;
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
@@ -504,14 +504,14 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         TVal undef;
         undef.set_undefined();
         result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
-        ctx.result.set_object(result);
+        ctx.result_object(result);
         return;
     }
 
     HObject* rx = (*iter.extra_ptr()).regexp_iter.regexp;
-    HString* s_hstr = (HString*)(*iter.extra_ptr()).regexp_iter.string_val.get_heapptr();
+    HString* s_hstr = (*iter.extra_ptr()).regexp_iter.string.borrow();
     if (rx == null || s_hstr == null) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -524,8 +524,9 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     // (e.g. from a `lastIndex` valueOf/ToLength coercion inside a custom
     // `exec`, or from Get(R, "exec") itself).
     TVal s_tv; s_tv.set_string(s_hstr);
+    defer ctx.heap.decref_tval(&s_tv);
     if (!regexp_exec_call(ctx, rx, &s_tv)) return;
-    TVal match_tv = *ctx.result;
+    TVal match_tv = ctx.result.get();
 
     // 10. If match is null, then
     if (match_tv.is_null()) {
@@ -533,7 +534,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         (*iter.extra_ptr()).regexp_iter.flags |= 2;
         // b. Return CreateIterResultObject(undefined, true).
         HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (catch err = result_raw) { ctx.result.set_undefined(); return; }
+        if (catch err = result_raw) { ctx.result_undefined(); return; }
         HObject* result = result_raw;
         result.prototype = null;
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
@@ -544,7 +545,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         TVal undef;
         undef.set_undefined();
         result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
-        ctx.result.set_object(result);
+        ctx.result_object(result);
         return;
     }
 
@@ -606,7 +607,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
 
     // a.iii / 12. Return ! CreateIterResultObject(match, false).
     HObject*? iter_result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = iter_result_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = iter_result_raw) { ctx.result_undefined(); return; }
     HObject* iter_result = iter_result_raw;
     iter_result.prototype = null;
 
@@ -618,7 +619,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     done_tv.set_boolean(false);
     iter_result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
-    ctx.result.set_object(iter_result);
+    ctx.result_object(iter_result);
 }
 
 // Create %IteratorPrototype% (ES6 §25.1.2) and %ArrayIteratorPrototype%.
@@ -651,7 +652,7 @@ fn bool register_iterator_prototype(Heap* heap) {
         HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
         if (name_key != null && name_val != null) {
             TVal name_tv;
-            name_tv.set_string(name_val);
+            name_tv.set_string_borrowed(name_val);
             fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
         }
         // Set .length = 0
@@ -673,7 +674,7 @@ fn bool register_iterator_prototype(Heap* heap) {
 
     HString* tag_sym = ensure_tostringtag_symbol(heap);
     if (tag_sym != null) {
-        TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "Array Iterator"));
+        TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "Array Iterator"));
         array_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -688,7 +689,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     heap.map_iterator_proto = map_iter_proto;
     if (!register_string_proto_method(map_iter_proto, heap, "next", Builtin.MAP_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
-        TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "Map Iterator"));
+        TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "Map Iterator"));
         map_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -699,7 +700,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     heap.set_iterator_proto = set_iter_proto;
     if (!register_string_proto_method(set_iter_proto, heap, "next", Builtin.SET_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
-        TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "Set Iterator"));
+        TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "Set Iterator"));
         set_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -710,7 +711,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     heap.string_iterator_proto = str_iter_proto;
     if (!register_string_proto_method(str_iter_proto, heap, "next", Builtin.STRING_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
-        TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "String Iterator"));
+        TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "String Iterator"));
         str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -723,7 +724,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     heap.regexp_string_iterator_proto = regexp_str_iter_proto;
     if (!register_string_proto_method(regexp_str_iter_proto, heap, "next", Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
-        TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "RegExp String Iterator"));
+        TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "RegExp String Iterator"));
         regexp_str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -852,7 +853,7 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     if (!register_string_proto_method(ih_proto, heap, "next", Builtin.ITERATOR_HELPER_NEXT.ordinal)) return false;
     if (!register_string_proto_method(ih_proto, heap, "return", Builtin.ITERATOR_HELPER_RETURN.ordinal)) return false;
     if (tag_sym != null) {
-        TVal tag_tv; tag_tv.set_string(builtin_intern_string(heap, "Iterator Helper"));
+        TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "Iterator Helper"));
         ih_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
@@ -1073,14 +1074,8 @@ fn bool iterhelper_get_iterator_flattenable(BuiltinContext* ctx, TVal obj, bool 
         obj_obj = (HObject*)obj.get_heapptr();
     } else if (primitive_strings_allowed && obj.is_string() &&
                !(((HString*)obj.get_heapptr()) != null && ((HString*)obj.get_heapptr()).is_symbol())) {
-        // Wrap the string primitive so @@iterator can be looked up via
-        // String.prototype (mirrors Array.from's primitive-wrapping path).
-        HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (catch err = wrapped) { out_iterator[0] = null; return false; }
-        HObject* w = wrapped;
-        ctx.heap.@set_edge(w, (*w.extra_ptr()).prim.primitive_value, obj);
-        w.prototype = heap.string_proto;
-        obj_obj = w;
+        obj_obj = to_object_wrapper(heap, obj);
+        if (obj_obj == null) { out_iterator[0] = null; return false; }
     } else {
         builtin_throw(ctx, heap.type_err_proto, "not an object");
         return false;
@@ -1146,10 +1141,10 @@ fn void builtin_iterator_ctor(BuiltinContext* ctx) {
         return;
     }
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = obj_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = obj_raw) { ctx.result_undefined(); return; }
     HObject* obj = obj_raw;
     ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.iterator_proto));
-    ctx.result.set_object(obj);
+    ctx.result_object(obj);
 }
 
 // Iterator.from(obj), ES2025 §27.1.3.2.2.
@@ -1160,7 +1155,7 @@ fn void builtin_iterator_from(BuiltinContext* ctx) {
     HObject* iterator_obj;
     TVal next_method;
     if (!iterhelper_get_iterator_flattenable(ctx, obj, true, &iterator_obj, &next_method)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -1180,7 +1175,7 @@ fn void builtin_iterator_from(BuiltinContext* ctx) {
                         heap.has_error = false;
                         iterhelper_clear_error_channels(ctx);
                     }
-                    ctx.result.set_undefined();
+                    ctx.result_undefined();
                     return;
                 }
                 cur = next.is_object() ? (HObject*)next.get_heapptr() : null;
@@ -1195,25 +1190,25 @@ fn void builtin_iterator_from(BuiltinContext* ctx) {
     // OWN prototype chain, which is exactly "V instanceof %Iterator%".
 
     if (has_instance) {
-        ctx.result.set_object(iterator_obj);
+        ctx.result_object(iterator_obj);
         return;
     }
 
     HObject*? wrapper_raw = heap.alloc_object(hobject::ObjClass.WRAP_FOR_VALID_ITERATOR);
-    if (catch err = wrapper_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = wrapper_raw) { ctx.result_undefined(); return; }
     HObject* wrapper = wrapper_raw;
     wrapper.prototype = heap.wrap_for_valid_iterator_proto;
     ctx.heap.@set_edge(wrapper, (*wrapper.extra_ptr()).wrap_iter.iterated, iterator_obj);
     ctx.heap.@set_edge(wrapper, (*wrapper.extra_ptr()).wrap_iter.next_method, next_method);
-    ctx.result.set_object(wrapper);
+    ctx.result_object(wrapper);
 }
 
 // get Iterator.prototype.constructor, ES2025 §27.1.3.3.1.1.
 fn void builtin_iterator_proto_constructor_get(BuiltinContext* ctx) {
     if (ctx.heap.iterator_ctor != null) {
-        ctx.result.set_object(ctx.heap.iterator_ctor);
+        ctx.result_object(ctx.heap.iterator_ctor);
     } else {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
     }
 }
 
@@ -1222,13 +1217,13 @@ fn void builtin_iterator_proto_constructor_get(BuiltinContext* ctx) {
 fn void builtin_iterator_proto_constructor_set(BuiltinContext* ctx) {
     HString* key = (HString*)ctx.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     iterhelper_setter_ignores_prototype_properties(ctx, ctx.heap.iterator_proto, key);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // get Iterator.prototype[Symbol.toStringTag], ES2025 §27.1.3.3.13(ish).
 fn void builtin_iterator_proto_tostringtag_get(BuiltinContext* ctx) {
     HString* s = builtin_intern_string(ctx.heap, "Iterator");
-    if (s != null) { ctx.result.set_string(s); } else { ctx.result.set_undefined(); }
+    if (s != null) { ctx.result_string(s); } else { ctx.result_undefined(); }
 }
 
 // set Iterator.prototype[Symbol.toStringTag].
@@ -1236,7 +1231,7 @@ fn void builtin_iterator_proto_tostringtag_get(BuiltinContext* ctx) {
 fn void builtin_iterator_proto_tostringtag_set(BuiltinContext* ctx) {
     HString* key = ensure_tostringtag_symbol(ctx.heap);
     iterhelper_setter_ignores_prototype_properties(ctx, ctx.heap.iterator_proto, key);
-    ctx.result.set_undefined();
+    ctx.result_undefined();
 }
 
 // SetterThatIgnoresPrototypeProperties(thisValue, home, propertyKey, value),
@@ -1323,7 +1318,7 @@ fn void builtin_wrap_for_valid_iterator_next(BuiltinContext* ctx) {
         builtin_throw(ctx, heap.type_err_proto, "next is not a function");
         return;
     }
-    if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+    if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
     TVal iterated_tv; iterated_tv.set_object(iterated);
     TVal step = heap.call_fn(ctx.vm, next_method, null, 0, iterated_tv);
     if (heap.has_error) {
@@ -1331,10 +1326,10 @@ fn void builtin_wrap_for_valid_iterator_next(BuiltinContext* ctx) {
         ctx.throw_value = heap.error_value;
         heap.has_error = false;
         iterhelper_clear_error_channels(ctx);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    *ctx.result = step;
+    ctx.copy_result(step);
 }
 
 // %WrapForValidIteratorPrototype%.return(), ES2025 §27.1.3.2.2.1.2.
@@ -1351,14 +1346,14 @@ fn void builtin_wrap_for_valid_iterator_return(BuiltinContext* ctx) {
 
     HString* return_key = builtin_intern_string(heap, "return");
     TVal? return_opt = builtins_generic_get(iterator, return_key, ctx);
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
     TVal return_method;
     if (try rm = return_opt) { return_method = rm; } else { return_method.set_undefined(); }
 
     if (return_method.is_undefined() || return_method.is_null()) {
         TVal undef; undef.set_undefined();
         HObject* result = iterhelper_make_result(heap, undef, true);
-        if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
+        if (result != null) { ctx.result_object(result); } else { ctx.result_undefined(); }
         return;
     }
     bool callable = return_method.is_lightfunc() ||
@@ -1368,7 +1363,7 @@ fn void builtin_wrap_for_valid_iterator_return(BuiltinContext* ctx) {
         builtin_throw(ctx, heap.type_err_proto, "return is not a function");
         return;
     }
-    if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+    if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
     TVal iterator_tv; iterator_tv.set_object(iterator);
     TVal step = heap.call_fn(ctx.vm, return_method, null, 0, iterator_tv);
     if (heap.has_error) {
@@ -1376,10 +1371,10 @@ fn void builtin_wrap_for_valid_iterator_return(BuiltinContext* ctx) {
         ctx.throw_value = heap.error_value;
         heap.has_error = false;
         iterhelper_clear_error_channels(ctx);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
-    *ctx.result = step;
+    ctx.copy_result(step);
 }
 
 // ----------------------------------------------------------------------------
@@ -1449,7 +1444,7 @@ fn void builtin_iterator_helper_next(BuiltinContext* ctx) {
     if (ih.state == IH_STATE_COMPLETED) {
         TVal undef; undef.set_undefined();
         HObject* result = iterhelper_make_result(heap, undef, true);
-        if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
+        if (result != null) { ctx.result_object(result); } else { ctx.result_undefined(); }
         return;
     }
 
@@ -1461,17 +1456,17 @@ fn void builtin_iterator_helper_next(BuiltinContext* ctx) {
     // the helper is finished either way once run_step returns.
     if (!ok || done_result) {
         ih.state = IH_STATE_COMPLETED;
-        if (!ok) { ctx.result.set_undefined(); return; }
+        if (!ok) { ctx.result_undefined(); return; }
         TVal undef; undef.set_undefined();
         HObject* result = iterhelper_make_result(heap, undef, true);
-        if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
+        if (result != null) { ctx.result_object(result); } else { ctx.result_undefined(); }
         return;
     }
     // A closure that yielded its last value is finished: resuming it would
     // step an already-exhausted underlying iterator.
     ih.state = ih.final_yield ? IH_STATE_COMPLETED : IH_STATE_YIELDED;
     HObject* result = iterhelper_make_result(heap, out_value, false);
-    if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
+    if (result != null) { ctx.result_object(result); } else { ctx.result_undefined(); }
 }
 
 // Runs the closure body for one step. Returns false (ctx.should_throw set)
@@ -1623,8 +1618,8 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                     return false;
                 }
                 ih.counter += 1;
-                ih.inner_iter = inner_iterator;
-                ih.inner_next = inner_next_method;
+                heap.@set_edge(obj, ih.inner_iter, inner_iterator);
+                heap.@set_edge(obj, ih.inner_next, inner_next_method);
             }
         }
         case IH_KIND_CONCAT: {
@@ -1767,8 +1762,8 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 }
 
                 // Set as active inner iterator
-                ih.inner_iter = iterator;
-                ih.inner_next = next_method;
+                heap.@set_edge(obj, ih.inner_iter, iterator);
+                heap.@set_edge(obj, ih.inner_next, next_method);
                 // Note: counter will be incremented when this iterator is exhausted
             }
         }
@@ -1847,7 +1842,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                     if (catch err = buf_raw) { *out_done = true; return true; }
                     buf = buf_raw;
                     buf.prototype = heap.array_proto;
-                    ih.buffer = buf;
+                    heap.@set_edge(obj, ih.buffer, buf);
                     head = 0;
                     count = 0;
                 }
@@ -2069,7 +2064,7 @@ fn void builtin_iterator_helper_return(BuiltinContext* ctx) {
     if (ih.state == IH_STATE_COMPLETED) {
         TVal undef; undef.set_undefined();
         HObject* result = iterhelper_make_result(heap, undef, true);
-        if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
+        if (result != null) { ctx.result_object(result); } else { ctx.result_undefined(); }
         return;
     }
 
@@ -2097,11 +2092,11 @@ fn void builtin_iterator_helper_return(BuiltinContext* ctx) {
     if (ih.state != IH_STATE_COMPLETED) {
         ih.state = IH_STATE_COMPLETED;
     }
-    if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
 
     TVal undef; undef.set_undefined();
     HObject* result = iterhelper_make_result(heap, undef, true);
-    if (result != null) { ctx.result.set_object(result); } else { ctx.result.set_undefined(); }
+    if (result != null) { ctx.result_object(result); } else { ctx.result_undefined(); }
 }
 
 // ----------------------------------------------------------------------------
@@ -2122,14 +2117,14 @@ fn void builtin_iterator_proto_map(BuiltinContext* ctx) {
         builtin_throw(ctx, heap.type_err_proto, "mapper is not a function");
         bool had_error = ctx.should_throw;
         iterhelper_iterator_close(ctx, obj, had_error);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
     HObject* helper = iterhelper_create(heap, obj, next_method, mapper, IH_KIND_MAP, 0.0);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }
 
 // Iterator.prototype.filter(predicate), ES2025 §27.1.3.3.4.
@@ -2146,14 +2141,14 @@ fn void builtin_iterator_proto_filter(BuiltinContext* ctx) {
         builtin_throw(ctx, heap.type_err_proto, "predicate is not a function");
         bool had_error = ctx.should_throw;
         iterhelper_iterator_close(ctx, obj, had_error);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
     HObject* helper = iterhelper_create(heap, obj, next_method, predicate, IH_KIND_FILTER, 0.0);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }
 
 // Shared ToIntegerOrInfinity(limit) + RangeError(NaN/negative) validation for
@@ -2206,14 +2201,14 @@ fn void builtin_iterator_proto_take(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)this_val.get_heapptr();
     double limit;
-    if (!iterhelper_validate_limit(ctx, obj, &limit)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_validate_limit(ctx, obj, &limit)) { ctx.result_undefined(); return; }
 
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
     TVal unused; unused.set_undefined();
     HObject* helper = iterhelper_create(heap, obj, next_method, unused, IH_KIND_TAKE, limit);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }
 
 // Iterator.prototype.drop(limit), ES2025 §27.1.3.3.2.
@@ -2226,14 +2221,14 @@ fn void builtin_iterator_proto_drop(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)this_val.get_heapptr();
     double limit;
-    if (!iterhelper_validate_limit(ctx, obj, &limit)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_validate_limit(ctx, obj, &limit)) { ctx.result_undefined(); return; }
 
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
     TVal unused; unused.set_undefined();
     HObject* helper = iterhelper_create(heap, obj, next_method, unused, IH_KIND_DROP, limit);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }
 
 // Iterator.prototype.flatMap(mapper), ES2025 §27.1.3.3.6.
@@ -2250,14 +2245,14 @@ fn void builtin_iterator_proto_flatmap(BuiltinContext* ctx) {
         builtin_throw(ctx, heap.type_err_proto, "mapper is not a function");
         bool had_error = ctx.should_throw;
         iterhelper_iterator_close(ctx, obj, had_error);
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
     HObject* helper = iterhelper_create(heap, obj, next_method, mapper, IH_KIND_FLATMAP, 0.0);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }
 
 // ----------------------------------------------------------------------------
@@ -2295,7 +2290,7 @@ fn void builtin_iterator_proto_reduce(BuiltinContext* ctx) {
     HObject* obj;
     TVal next_method;
     if (!iterhelper_eager_setup(ctx, reducer, "reducer is not a function", &obj, &next_method)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -2307,7 +2302,7 @@ fn void builtin_iterator_proto_reduce(BuiltinContext* ctx) {
             if (step_done) {
                 builtin_throw(ctx, heap.type_err_proto, "Reduce of empty iterator with no initial value");
             }
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         counter = 1;
@@ -2320,13 +2315,13 @@ fn void builtin_iterator_proto_reduce(BuiltinContext* ctx) {
         TVal value;
         bool step_done;
         if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
-            if (step_done) { *ctx.result = accumulator; return; }
-            ctx.result.set_undefined();
+            if (step_done) { ctx.copy_result(accumulator); return; }
+            ctx.result_undefined();
             return;
         }
         TVal counter_tv; counter_tv.set_fastint((long)counter);
         TVal[3] args = { accumulator, value, counter_tv };
-        if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+        if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
         TVal undef_this; undef_this.set_undefined();
         TVal result = heap.call_fn(ctx.vm, reducer, &args[0], 3, undef_this);
         if (heap.has_error) {
@@ -2335,7 +2330,7 @@ fn void builtin_iterator_proto_reduce(BuiltinContext* ctx) {
             heap.has_error = false;
             iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         accumulator = result;
@@ -2353,10 +2348,10 @@ fn void builtin_iterator_proto_toarray(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)this_val.get_heapptr();
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = arr_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = arr_raw) { ctx.result_undefined(); return; }
     HObject* arr = arr_raw;
     arr.prototype = heap.array_proto;
 
@@ -2365,8 +2360,8 @@ fn void builtin_iterator_proto_toarray(BuiltinContext* ctx) {
         TVal value;
         bool step_done;
         if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
-            if (step_done) { ctx.result.set_object(arr); return; }
-            ctx.result.set_undefined();
+            if (step_done) { ctx.result_object(arr); return; }
+            ctx.result_undefined();
             return;
         }
         arr.set_array_idx(idx, value, ctx.heap);
@@ -2382,7 +2377,7 @@ fn void builtin_iterator_proto_foreach(BuiltinContext* ctx) {
     HObject* obj;
     TVal next_method;
     if (!iterhelper_eager_setup(ctx, procedure, "procedure is not a function", &obj, &next_method)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -2391,13 +2386,13 @@ fn void builtin_iterator_proto_foreach(BuiltinContext* ctx) {
         TVal value;
         bool step_done;
         if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
-            if (step_done) { ctx.result.set_undefined(); return; }
-            ctx.result.set_undefined();
+            if (step_done) { ctx.result_undefined(); return; }
+            ctx.result_undefined();
             return;
         }
         TVal counter_tv; counter_tv.set_fastint((long)counter);
         TVal[2] args = { value, counter_tv };
-        if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+        if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
         TVal undef_this; undef_this.set_undefined();
         heap.call_fn(ctx.vm, procedure, &args[0], 2, undef_this);
         if (heap.has_error) {
@@ -2406,7 +2401,7 @@ fn void builtin_iterator_proto_foreach(BuiltinContext* ctx) {
             heap.has_error = false;
             iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         counter += 1;
@@ -2420,7 +2415,7 @@ fn void builtin_iterator_proto_some(BuiltinContext* ctx) {
     HObject* obj;
     TVal next_method;
     if (!iterhelper_eager_setup(ctx, predicate, "predicate is not a function", &obj, &next_method)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -2429,13 +2424,13 @@ fn void builtin_iterator_proto_some(BuiltinContext* ctx) {
         TVal value;
         bool step_done;
         if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
-            if (step_done) { ctx.result.set_boolean(false); return; }
-            ctx.result.set_undefined();
+            if (step_done) { ctx.result_boolean(false); return; }
+            ctx.result_undefined();
             return;
         }
         TVal counter_tv; counter_tv.set_fastint((long)counter);
         TVal[2] args = { value, counter_tv };
-        if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+        if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
         TVal undef_this; undef_this.set_undefined();
         TVal result = heap.call_fn(ctx.vm, predicate, &args[0], 2, undef_this);
         if (heap.has_error) {
@@ -2444,13 +2439,13 @@ fn void builtin_iterator_proto_some(BuiltinContext* ctx) {
             heap.has_error = false;
             iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (builtin_to_boolean(&result)) {
             iterhelper_iterator_close(ctx, obj, false);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            ctx.result.set_boolean(true);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            ctx.result_boolean(true);
             return;
         }
         counter += 1;
@@ -2464,7 +2459,7 @@ fn void builtin_iterator_proto_every(BuiltinContext* ctx) {
     HObject* obj;
     TVal next_method;
     if (!iterhelper_eager_setup(ctx, predicate, "predicate is not a function", &obj, &next_method)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -2473,13 +2468,13 @@ fn void builtin_iterator_proto_every(BuiltinContext* ctx) {
         TVal value;
         bool step_done;
         if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
-            if (step_done) { ctx.result.set_boolean(true); return; }
-            ctx.result.set_undefined();
+            if (step_done) { ctx.result_boolean(true); return; }
+            ctx.result_undefined();
             return;
         }
         TVal counter_tv; counter_tv.set_fastint((long)counter);
         TVal[2] args = { value, counter_tv };
-        if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+        if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
         TVal undef_this; undef_this.set_undefined();
         TVal result = heap.call_fn(ctx.vm, predicate, &args[0], 2, undef_this);
         if (heap.has_error) {
@@ -2488,13 +2483,13 @@ fn void builtin_iterator_proto_every(BuiltinContext* ctx) {
             heap.has_error = false;
             iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (!builtin_to_boolean(&result)) {
             iterhelper_iterator_close(ctx, obj, false);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            ctx.result.set_boolean(false);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            ctx.result_boolean(false);
             return;
         }
         counter += 1;
@@ -2508,7 +2503,7 @@ fn void builtin_iterator_proto_find(BuiltinContext* ctx) {
     HObject* obj;
     TVal next_method;
     if (!iterhelper_eager_setup(ctx, predicate, "predicate is not a function", &obj, &next_method)) {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
         return;
     }
 
@@ -2517,13 +2512,13 @@ fn void builtin_iterator_proto_find(BuiltinContext* ctx) {
         TVal value;
         bool step_done;
         if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
-            if (step_done) { ctx.result.set_undefined(); return; }
-            ctx.result.set_undefined();
+            if (step_done) { ctx.result_undefined(); return; }
+            ctx.result_undefined();
             return;
         }
         TVal counter_tv; counter_tv.set_fastint((long)counter);
         TVal[2] args = { value, counter_tv };
-        if (heap.call_fn == null || ctx.vm == null) { ctx.result.set_undefined(); return; }
+        if (heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
         TVal undef_this; undef_this.set_undefined();
         TVal result = heap.call_fn(ctx.vm, predicate, &args[0], 2, undef_this);
         if (heap.has_error) {
@@ -2532,13 +2527,13 @@ fn void builtin_iterator_proto_find(BuiltinContext* ctx) {
             heap.has_error = false;
             iterhelper_clear_error_channels(ctx);
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (builtin_to_boolean(&result)) {
             iterhelper_iterator_close(ctx, obj, false);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            *ctx.result = value;
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            ctx.copy_result(value);
             return;
         }
         counter += 1;
@@ -2554,13 +2549,13 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
     // Validate and collect all iterables and their methods upfront
     // Step 1: For each argument, validate it's an object with callable @@iterator
     HObject*? iterables_arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = iterables_arr_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = iterables_arr_raw) { ctx.result_undefined(); return; }
     HObject* iterables_arr = iterables_arr_raw;
     iterables_arr.prototype = heap.array_proto;
 
     // Also need a methods array to store the @@iterator methods
     HObject*? methods_arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = methods_arr_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = methods_arr_raw) { ctx.result_undefined(); return; }
     HObject* methods_arr = methods_arr_raw;
     methods_arr.prototype = heap.array_proto;
 
@@ -2573,7 +2568,7 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
         // Check if arg is an object
         if (!arg.is_object() || arg.get_heapptr() == null) {
             builtin_throw(ctx, heap.type_err_proto, "Iterator.concat argument must be an object");
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
 
@@ -2581,10 +2576,10 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
 
         // Get @@iterator method
         HString* iter_sym = ensure_iterator_symbol(heap);
-        if (iter_sym == null) { ctx.result.set_undefined(); return; }
+        if (iter_sym == null) { ctx.result_undefined(); return; }
 
         TVal? method_opt = builtins_generic_get(arg_obj, iter_sym, ctx);
-        if (ctx.should_throw) { ctx.result.set_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
 
         TVal method;
         if (try m = method_opt) { method = m; } else { method.set_undefined(); }
@@ -2592,7 +2587,7 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
         // Check if method is callable
         if (method.is_undefined() || method.is_null()) {
             builtin_throw(ctx, heap.type_err_proto, "Iterator.concat argument has no iterator method");
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
 
@@ -2601,7 +2596,7 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
              ((HObject*)method.get_heapptr()).is_callable());
         if (!callable) {
             builtin_throw(ctx, heap.type_err_proto, "Iterator.concat argument's iterator method is not callable");
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
 
@@ -2618,7 +2613,7 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
 
     // Create wrapper object to hold iterables array, methods array, and metadata
     HObject*? wrapper_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = wrapper_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = wrapper_raw) { ctx.result_undefined(); return; }
     HObject* wrapper = wrapper_raw;
     wrapper.prototype = null;
 
@@ -2650,7 +2645,7 @@ fn void builtin_iterator_concat(BuiltinContext* ctx) {
     // remaining: 0 (unused for concat)
     TVal undef; undef.set_undefined();
     HObject* helper = iterhelper_create(heap, wrapper, undef, undef, IH_KIND_CONCAT, 0.0);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }
 
 // ============================================================================
@@ -2757,7 +2752,7 @@ fn void builtin_iterator_proto_includes(BuiltinContext* ctx) {
         if (!skipped.is_number() && !skipped.is_fastint()) {
             builtin_throw(ctx, heap.type_err_proto, "skippedElements must be a Number");
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         double sh = skipped.get_number_or_fastint();
@@ -2765,34 +2760,34 @@ fn void builtin_iterator_proto_includes(BuiltinContext* ctx) {
             // NaN and non-integral values are rejected; +-Infinity passes.
             builtin_throw(ctx, heap.type_err_proto, "skippedElements must be an integral Number");
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (sh < 0.0) {
             builtin_throw(ctx, heap.range_err_proto, "skippedElements must not be negative");
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (sh != double::inf && sh > 9007199254740991.0) {
             builtin_throw(ctx, heap.range_err_proto, "skippedElements is too large");
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         to_skip = sh;
     }
 
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
     double skipped_count = 0.0;
     while (true) {
         TVal value;
         bool step_done;
         if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
-            if (step_done) { ctx.result.set_boolean(false); return; }
-            ctx.result.set_undefined();
+            if (step_done) { ctx.result_boolean(false); return; }
+            ctx.result_undefined();
             return;
         }
         if (skipped_count < to_skip) {
@@ -2801,8 +2796,8 @@ fn void builtin_iterator_proto_includes(BuiltinContext* ctx) {
         }
         if (same_value_zero(value, search_element)) {
             iterhelper_iterator_close(ctx, obj, false);
-            if (ctx.should_throw) { ctx.result.set_undefined(); return; }
-            ctx.result.set_boolean(true);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            ctx.result_boolean(true);
             return;
         }
     }
@@ -2829,18 +2824,18 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
         if (ctx.should_throw) {
             // IfAbruptCloseIterator: the coercion error closes the iterator.
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
     }
 
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
     // Grow one byte buffer as pieces arrive, then intern once at the end.
     const usz INIT_CAP = 64;
     char* buf = (char*)heap.alloc_func(heap.heap_udata, INIT_CAP);
-    if (buf == null) { ctx.result.set_undefined(); return; }
+    if (buf == null) { ctx.result_undefined(); return; }
     defer heap.free_func(heap.heap_udata, buf);
     usz used = 0;
     usz cap = INIT_CAP;
@@ -2852,7 +2847,7 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
         bool step_done;
         if (!iterhelper_step_value(ctx, obj, next_method, &value, &step_done)) {
             if (step_done) break;
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         if (!first) {
@@ -2869,7 +2864,7 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
                     if (nb == null) {
                         builtin_throw(ctx, heap.range_err_proto, "Out of memory");
                         iterhelper_iterator_close(ctx, obj, true);
-                        ctx.result.set_undefined();
+                        ctx.result_undefined();
                         return;
                     }
                     buf = nb;
@@ -2885,7 +2880,7 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
             HString* vs = builtin_to_string_vm(ctx, &value);
             if (ctx.should_throw) {
                 iterhelper_iterator_close(ctx, obj, true);
-                ctx.result.set_undefined();
+                ctx.result_undefined();
                 return;
             }
             if (vs != null) {
@@ -2899,7 +2894,7 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
                     if (nb == null) {
                         builtin_throw(ctx, heap.range_err_proto, "Out of memory");
                         iterhelper_iterator_close(ctx, obj, true);
-                        ctx.result.set_undefined();
+                        ctx.result_undefined();
                         return;
                     }
                     buf = nb;
@@ -2913,12 +2908,12 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
         total64 = (ulong)used;
         if (hstring::length_exceeds_max(total64)) {
             builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
     }
     HString* result = builtin_intern_string(heap, buf[:used]);
-    ctx.result.set_string(result);
+    ctx.result_string(result);
 }
 
 // Iterator.prototype.chunks(chunkSize), proposal-iterator-chunking: a lazy
@@ -2933,12 +2928,12 @@ fn void builtin_iterator_proto_chunks(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)this_val.get_heapptr();
     double chunk_size;
-    if (!iterhelper_validate_size_arg(ctx, obj, builtin_arg(ctx, 0), &chunk_size)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_validate_size_arg(ctx, obj, builtin_arg(ctx, 0), &chunk_size)) { ctx.result_undefined(); return; }
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
     TVal unused; unused.set_undefined();
     HObject* helper = iterhelper_create(heap, obj, next_method, unused, IH_KIND_CHUNKS, chunk_size);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }
 
 // Iterator.prototype.windows(windowSize[, undersized]),
@@ -2954,7 +2949,7 @@ fn void builtin_iterator_proto_windows(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)this_val.get_heapptr();
     double window_size;
-    if (!iterhelper_validate_size_arg(ctx, obj, builtin_arg(ctx, 0), &window_size)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_validate_size_arg(ctx, obj, builtin_arg(ctx, 0), &window_size)) { ctx.result_undefined(); return; }
 
     uint window_mode = 0;
     TVal undersized = builtin_arg(ctx, 1);
@@ -2963,7 +2958,7 @@ fn void builtin_iterator_proto_windows(BuiltinContext* ctx) {
             (undersized.get_heapptr() != null && ((HString*)undersized.get_heapptr()).is_symbol())) {
             builtin_throw(ctx, heap.type_err_proto, "undersized must be a string");
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
         HString* u = (HString*)undersized.get_heapptr();
@@ -2972,20 +2967,20 @@ fn void builtin_iterator_proto_windows(BuiltinContext* ctx) {
         } else if (!u.equals("only-full")) {
             builtin_throw(ctx, heap.type_err_proto, "undersized must be \"only-full\" or \"allow-partial\"");
             iterhelper_iterator_close(ctx, obj, true);
-            ctx.result.set_undefined();
+            ctx.result_undefined();
             return;
         }
     }
 
     TVal next_method;
-    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
     TVal unused; unused.set_undefined();
     HObject* helper = iterhelper_create(heap, obj, next_method, unused, IH_KIND_WINDOWS, window_size);
     if (helper != null) {
         (*helper.extra_ptr()).iter_helper.window_mode = window_mode;
-        ctx.result.set_object(helper);
+        ctx.result_object(helper);
     } else {
-        ctx.result.set_undefined();
+        ctx.result_undefined();
     }
 }
 
@@ -3300,16 +3295,16 @@ fn void builtin_iterator_zip(BuiltinContext* ctx) {
     HObject* iterables_obj = (HObject*)iterables.get_heapptr();
     uint mode;
     TVal padding_option;
-    if (!iterhelper_zip_options(ctx, options, &mode, &padding_option)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_zip_options(ctx, options, &mode, &padding_option)) { ctx.result_undefined(); return; }
 
     HObject* iters_arr;
     HObject* methods_arr;
-    if (!iterhelper_zip_collect_iterable(ctx, iterables_obj, &iters_arr, &methods_arr)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_zip_collect_iterable(ctx, iterables_obj, &iters_arr, &methods_arr)) { ctx.result_undefined(); return; }
     ulong iter_count = (ulong)iters_arr.array_used;
     HObject* padding_arr = iterhelper_zip_build_padding(ctx, mode, padding_option, iters_arr, iter_count);
-    if (padding_arr == null) { ctx.result.set_undefined(); return; }
+    if (padding_arr == null) { ctx.result_undefined(); return; }
     HObject* helper = iterhelper_zip_finish(ctx, iters_arr, methods_arr, padding_arr, null, mode);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }
 
 // Append one [key, value] iterable slot to the zipKeyed collection, closing
@@ -3331,7 +3326,7 @@ fn bool iterhelper_zipkeyed_add(BuiltinContext* ctx, HObject* iterables_obj, HSt
             iterhelper_close_array(ctx, iters_arr, true);
             return false;
         }
-        TVal kt; kt.set_string(key);
+        TVal kt; kt.set_string_borrowed(key);
         TVal itv; itv.set_object(iter);
         keys_arr.set_array_idx((uint)count, kt, heap);
         iters_arr.set_array_idx((uint)count, itv, heap);
@@ -3427,17 +3422,17 @@ fn void builtin_iterator_zipkeyed(BuiltinContext* ctx) {
     HObject* iterables_obj = (HObject*)iterables.get_heapptr();
     uint mode;
     TVal padding_option;
-    if (!iterhelper_zip_options(ctx, options, &mode, &padding_option)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_zip_options(ctx, options, &mode, &padding_option)) { ctx.result_undefined(); return; }
 
     HObject* keys_arr;
     HObject* iters_arr;
     HObject* methods_arr;
-    if (!iterhelper_zip_collect_keyed(ctx, iterables_obj, &keys_arr, &iters_arr, &methods_arr)) { ctx.result.set_undefined(); return; }
+    if (!iterhelper_zip_collect_keyed(ctx, iterables_obj, &keys_arr, &iters_arr, &methods_arr)) { ctx.result_undefined(); return; }
     ulong iter_count = (ulong)iters_arr.array_used;
 
     // longest-mode padding is read per key from the padding option object.
     HObject*? pad_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = pad_raw) { ctx.result.set_undefined(); return; }
+    if (catch err = pad_raw) { ctx.result_undefined(); return; }
     HObject* padding_arr = pad_raw;
     padding_arr.prototype = heap.array_proto;
     if (mode == ZIP_MODE_LONGEST) {
@@ -3452,7 +3447,7 @@ fn void builtin_iterator_zipkeyed(BuiltinContext* ctx) {
                         TVal? gv = builtins_generic_get(popts, (HString*)ktv.get_heapptr(), ctx);
                         if (ctx.should_throw) {
                             iterhelper_close_array(ctx, iters_arr, true);
-                            ctx.result.set_undefined();
+                            ctx.result_undefined();
                             return;
                         }
                         if (try v = gv) {
@@ -3468,5 +3463,5 @@ fn void builtin_iterator_zipkeyed(BuiltinContext* ctx) {
     }
 
     HObject* helper = iterhelper_zip_finish(ctx, iters_arr, methods_arr, padding_arr, keys_arr, mode);
-    if (helper != null) { ctx.result.set_object(helper); } else { ctx.result.set_undefined(); }
+    if (helper != null) { ctx.result_object(helper); } else { ctx.result_undefined(); }
 }

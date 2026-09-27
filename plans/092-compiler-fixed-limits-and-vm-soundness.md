@@ -50,9 +50,9 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
 
 ## VM
 
-10. [ ] **Reference counts never reach zero for new objects.** An object starts at refcount 1 and gains
-    another reference when stored, so reference counting never frees it and only the cycle
-    collector does.
+10. [x] **Object lifetime is governed by tracing.** Objects, buffers and BigInts use two
+    generations with write barriers and lazy major sweeping (plan 093). Reference counting
+    releases strings; object stores and register copies do not update a reference count.
 11. [x] **Script mode shares global slots across scripts incorrectly.** Two whole-program proofs
     treat a Script as the whole program, but its globals are shared with every other script: an
     earlier script's function, or one evaluated mid-run by the host, reads and writes them at any

@@ -12,7 +12,7 @@
 // wraps or truncates silently.
 //
 // The box holds no references, making it a GC leaf. It sits on the heap's
-// `heap_allocated` list like a buffer and is reclaimed by mark-and-sweep; a
+// young list like a buffer and is reclaimed by tracing; a
 // constant-pool bigint stays live because mark_roots traces the pools.
 module boomkat::hbigint;
 
@@ -73,9 +73,8 @@ fn HBigInt*? hbigint_alloc_len(Heap* hp, int len) {
     usz bytes = HBigInt::size + (usz)len * Limb::size;
     void* raw = hp.alloc(bytes)!;
     HBigInt* b = (HBigInt*)raw;
-    // init() zeroes the flags and links the header at the head of
-    // heap_allocated.
-    b.header.init(HType.BIGINT, &hp.heap_allocated);
+    // init() zeroes the flags and links the header on the young list.
+    b.header.init(HType.BIGINT, &hp.young_allocated);
     b.header.set_temproot();
     b.len = len;
     hp.live_obj_count++;

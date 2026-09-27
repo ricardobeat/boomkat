@@ -146,6 +146,8 @@ fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
     long imm = (long)(ichar)insn.c;
     ra.set_fastint_or_number(rb.get_fastint() + imm);
     pc++;
@@ -240,6 +242,8 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
 fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
     ra.set_fastint((long)insn.get_sbc());
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -250,6 +254,8 @@ fn Instruction* th_subi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc; // bigint / coercion / throw -> switch
     TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
     long imm = (long)(ichar)insn.c;
     ra.set_fastint_or_number(rb.get_fastint() - imm);
     pc++;
@@ -271,6 +277,8 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
             return pc;
         }
         TVal* ra = regs + insn.a;
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
         double bnum = rb.is_fastint() ? (double)rb.get_fastint() : rb.get_number();
         double cnum = rc.is_fastint() ? (double)rc.get_fastint() : rc.get_number();
         ra.set_number(bnum + cnum);
@@ -278,6 +286,8 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
         return th_next(pc, code_end, regs, cold);
     }
     TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
     long sum = rb.get_fastint() + rc.get_fastint();
     if (sum >= types::FASTINT_MIN && sum <= types::FASTINT_MAX) {
         ra.set_fastint(sum);
@@ -349,10 +359,8 @@ fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs
 
 // --- Global-slot access (perf-all VarRef fast path). ---
 //
-// pc points AT the current instruction (unlike the switch loop, where curr_pc
-// has already been incremented), so the IC slot index is (pc - code_base),
-// matching the switch's (curr_pc - 1 - code_base). A hit is one prop_alloc
-// pointer compare + a direct slot load/store -- no shape-id, no env walk.
+// pc points at the current instruction, so the IC slot is pc - code_base.
+// A hit validates the binding object and shape before reading its slot.
 
 fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
@@ -368,6 +376,8 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     if (!pv.get().is_heap_allocated() && !ra.is_heap_allocated()) {
         // prim -> prim: no refcount, no heap ref lands in the register, so no
         // track_heap_store.
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
         *ra = pv.get();
     } else {
         // A heap operand is common here (object-valued globals), so this stays
@@ -395,7 +405,6 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
     vm.heap.tval_move_slot_fast(gb, &gb.prop_values()[gic.prop_idx], ra);
-    ra.set_undefined();
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
@@ -414,6 +423,8 @@ fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal*
     // Threaded fast path: fastint only. number/bigint/TDZ -> switch.
     if (!old_val.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
     long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
     if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
         slot.set_fastint(v);
@@ -523,7 +534,7 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
+    if (vic.env == null || vic.key.borrow() != key || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
@@ -565,7 +576,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
+    if (vic.env == null || vic.key.borrow() != key || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
@@ -621,7 +632,7 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.key != key || vic.search_head != (void*)act.lex_env) return pc;
+    if (vic.env == null || vic.key.borrow() != key || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
@@ -629,6 +640,8 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (env::is_tdz_sentinel(&old_val) || !vic.prop_flags.writable) return pc;
     if (!old_val.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
     long v = old_val.get_fastint() + 1L;
     if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
         b.prop_values()[vic.prop_idx].set_fastint(v);
@@ -646,6 +659,8 @@ fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs,
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
     ra.set_fastint(rb.get_fastint());
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -687,6 +702,8 @@ fn Instruction* th_getprop_array(Instruction* pc, Instruction* code_end, TVal* r
         *ra = value;
         track_heap_store(cold.act, ra, (uint)insn.a);
     } else {
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
         *ra = value;
     }
     pc++;
@@ -706,19 +723,24 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     // without a shape transition, so read its current value on every visit.
     if (hobj.get_class() == hobject::ObjClass.ARRAY
         && key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
-        regs[insn.a].set_fastint((long)*hobj.array_len_ptr());
+        TVal* destination = regs + insn.a;
+        if (!th_can_release(destination)) return pc;
+        th_do_release(destination);
+        destination.set_fastint((long)*hobj.array_len_ptr());
         pc++;
         return th_next(pc, code_end, regs, cold);
     }
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
-    if (ic.key != key || ic.shape_id != hobj.shape_id
+    if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id
         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
     TVal ic_val = ic_value.get();
     TVal* ra = regs + insn.a;
     if (!ic_val.is_heap_allocated()) {
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
         *ra = ic_val;
     } else {
         // Inline refcount, matching th_getvar/th_ldreg (c32cc52b): tval_copy_ref
@@ -754,6 +776,8 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     TVal ic_val = ic_value.get();
     TVal* ra = regs + insn.a;
     if (!ic_val.is_heap_allocated()) {
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
         *ra = ic_val;
     } else {
         // Same inline-refcount pattern as th_getpropc above.
@@ -782,7 +806,7 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
     // only ever fills this entry from the plain own-data-property store, and
     // every exotic class it guards against changes the shape id or is not a
     // plain object at all.
-    if (ic.key != rb.get_heapptr() || ic.shape_id != hobj.shape_id || ic.proto != null
+    if (ic.key.borrow() != rb.get_heapptr() || ic.shape_id != hobj.shape_id || ic.proto != null
         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
     if (ic.cached_prop_alloc != (void*)hobj.prop_values()
         || ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
