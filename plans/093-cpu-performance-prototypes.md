@@ -1,6 +1,6 @@
 # 093: CPU performance prototypes
 
-Status: in progress; tracks A/B/C measured and validated, D archived, E/F validated; G archived; H in progress.
+Status: all eight tracks evaluated; combined validation in progress.
 Baseline inspected: `ba8610c8` on `speed`, matching local `main` at setup.
 
 ## Objective and scope
@@ -472,7 +472,7 @@ commit the useful summaries and reproducible benchmark/validation instructions.
 | E | ordinary-arrow var/parameter exclusion | extend existing compact cells | passed | paired -13% to -14% on checked capture loop | keep |
 | F | complete switch-only opcode profile | threaded fast-integer INC/DEC | passed | -5.7% checked; -23% arithmetic; -20% monomorphic | keep |
 | G | recycled blocks cleared twice | skip redundant clear + counters | benchmark checksums pass | -3.1% churn; other controls flat | stash; wider policies gated |
-| H | occupancy boundary + historical index sizing | threshold fix; churn next | threshold checks in progress | ~94% less lookup time at exact half capacity | threshold winner; churn pending |
+| H | occupancy boundary + historical index sizing | threshold + live-sized churn index | passed, including fresh ASAN/NONANBOX | threshold ~94%; churn bounded index, Set RSS -14% | keep both |
 
 Completion means every track has a supported decision, retained changes have
 combined validation, and results distinguish throughput, latency, memory, and
@@ -767,3 +767,61 @@ binaries: `/tmp/boomkat-perf-093/H/threshold*`.
 H1 decision: keep independently. All 809 selected Map/Set/WeakMap/WeakSet tests
 pass, with four existing scope skips. The focused threshold and existing hash
 fixtures pass. Full local, NONANBOX, and sanitizer checks follow the churn decision.
+
+
+## Track H, experiment 2: live-sized indexes under churn
+
+Parent: `1a2b59e4`, the threshold-only winner. Strong collections mark index
+slots as deleted before discarding log keys, and incremental insertion only
+increases occupied-slot count when it consumes an empty slot. Clear drops the
+index. Direct Set-result deletions use the same index removal helper. Incremental
+catch-up checks the whole pending tail against available occupancy before probing.
+Weak collections retain log-based rebuilds because their deletion shifts entries.
+No hashing or ordered-log compaction change is included.
+
+Rebuild capacity is based on live entries, with extra headroom when the log
+contains deletions. Rebuilds scan the old index plus the unindexed log tail only
+when the old table is smaller than the indexed log prefix; compact logs use a
+full log scan. That selection matters: the first prototype scanned the index even
+for append-only construction, visiting more slots and holding both tables during
+growth. The revised version frees that old index first and uses the smaller log.
+Both versions and all timing runs are preserved.
+
+The diagnostic 1,024-live-entry/100-population workload changes maximum index
+capacity from 131,072 to 4,096 slots (524,288 to 16,384 slot bytes). Initial
+counters show 14 versus 101 rebuilds and 978,035 versus 842,917 lookup probes;
+rebuild scanning rises from 108,572 log entries to 381,020 index/log slots. These
+are diagnostic counts from the first version, not release timing overhead.
+Small checked churn cases improve 5–7% in seven interleaved pairs. The larger
+8,192-live-entry first-version run is noisier: paired Map -25.6%, Set -17.6%,
+with append-only controls triggering the scan-selection revision. Final-version
+results follow below. Artifacts: `/tmp/boomkat-perf-093/H/churn/`.
+
+Validation so far: 809 selected collection test262 cases, 471 local scripts plus
+auxiliary suites, and 42 Rosetta cases pass. The focused churn fixture passes in
+Node and Boomkat and covers retained iterators across deletion/appends, mixed
+primitive and object keys, clear/refill lookup, and Set result mutation.
+An additional iterator spanning clear then append exposes the same baseline gap
+in both parent and candidate: the iterator reports done rather than the appended
+entry. Its exact source and three outputs are preserved. Clear's log-reset behavior
+is outside this index-only change; no claim is made that this baseline gap passes.
+
+
+H2 decision: keep for bounded index memory with modest throughput improvement.
+Final revised-build seven-pair measurements: Map churn 0.3008s to 0.2915s,
+paired -3.1% (IQR -4.3% to -2.2%); Set churn 0.2908s to 0.2863s, paired -1.5%
+(IQR -3.8% to -0.6%). Do not present the noisier first-version 18–26% figures as
+the retained speedup. Set peak RSS falls from 26,083,328 to 22,446,080 bytes
+(-13.9%); Map is effectively flat, 39,141,376 to 39,305,216. Historical log storage
+still dominates the Map workload, despite the much smaller lookup index.
+
+Fifteen alternating append-only pairs give +1.6% (IQR +0.6% to +2.5%), with RSS
+10,616,832 versus 10,633,216 bytes. All 25 general controls have paired median
+changes between -2.3% and +1.8%. The separate final-build control sweep supersedes
+the first version's noisy run for the retention decision; both raw datasets remain.
+
+Fresh combined ASAN/GC_STRESS/POOL_BYPASS and NONANBOX builds pass collection counts,
+index boundaries/churn, literal shapes, arrow cells, and threaded updates. Intrinsic
+Promise reactions pass ASAN; the full Promise fixture passes NONANBOX. The baseline
+Promise-subclass ASAN limitation from B remains explicit. Final release binary is
+restored from the measured candidate after NONANBOX.

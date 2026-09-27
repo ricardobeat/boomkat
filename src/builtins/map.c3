@@ -173,6 +173,7 @@ fn void builtin_map_proto_clear(BuiltinContext* ctx) {
     for (uint i = 0; i < cnt; i++) {
         map.array_part()[i].set_undefined();
     }
+    coll_hash_drop(map, ctx.heap);
     map.array_used = 0;
     (*map.extra_ptr()).coll.live_count = 0;
 

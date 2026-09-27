@@ -2,6 +2,7 @@
 // Core: shared types, constants, helpers, dispatch table, and registration.
 module boomkat::builtins;
 
+import boomkat::gcprofile;
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::hstring;
@@ -1620,43 +1621,87 @@ fn void coll_hash_drop(HObject* obj, heap::Heap* h) {
     *obj.coll_hash_ptr() = null;
 }
 
-// Build (or rebuild) the index over array_part, sized to the current entry
-// count. Leaves coll_hash null if anything fails, which only costs speed:
-// every caller falls back to the linear scan.
+// Use the live index and its unindexed tail when cheaper than scanning the log.
+// The ordered log retains iterator positions. Weak collections can shift entries,
+// so they always rebuild from the log.
 fn void coll_hash_build(HObject* obj, uint stride, heap::Heap* h) {
-    coll_hash_drop(obj, h);
-
-    uint entries = obj.array_used / stride;
-    // Keep the load factor near 0.5, so probe chains stay short.
+    bool strong = obj.get_class() == ObjClass.MAP || obj.get_class() == ObjClass.SET;
+    uint entries = strong ? (*obj.extra_ptr()).coll.live_count : obj.array_used / stride;
+    ulong wanted = (ulong)entries * 2;
+    // A churning log needs headroom for index tombstones after each rebuild.
+    if (strong && obj.array_used / stride > entries) wanted += entries;
     uint cap = 16;
-    while (cap < entries * 2) {
-        if (cap >= 0x40000000u) return;   // refuse rather than overflow
+    while (cap < wanted) {
+        if (cap >= 0x40000000u) { coll_hash_drop(obj, h); return; }
         cap *= 2;
     }
 
+    hobject::CollHashInfo* old = *obj.coll_hash_ptr();
+    // Compact logs cost less to scan than a sparsely filled hash table.
+    if (!(strong && old != null && old.built <= obj.array_used
+          && old.mask + 1 < old.built / stride)) {
+        coll_hash_drop(obj, h);
+        old = null;
+    }
     hobject::CollHashInfo* ci =
         (hobject::CollHashInfo*)h.alloc_func(h.heap_udata, hobject::CollHashInfo::size);
-    if (ci == null) return;
+    if (ci == null) { coll_hash_drop(obj, h); return; }
     uint* slots = (uint*)h.alloc_func(h.heap_udata, (usz)cap * uint::size);
-    if (slots == null) { h.free_func(h.heap_udata, ci); return; }
-    for (uint i = 0; i < cap; i++) { slots[i] = 0; }
-
+    if (slots == null) {
+        h.free_func(h.heap_udata, ci);
+        coll_hash_drop(obj, h);
+        return;
+    }
+    for (uint i = 0; i < cap; i++) slots[i] = 0;
+    gcprofile::gcprof_coll_build(cap);
     ci.slots = slots;
     ci.mask = cap - 1;
     ci.used = 0;
     ci.built = obj.array_used;
-    *obj.coll_hash_ptr() = ci;
 
-    // A tombstoned entry keeps its array slot (live iterators depend on that)
-    // but must not be indexed, or a lookup would resolve to a deleted value.
     TVal* ap = obj.array_part();
-    if (ap == null) { coll_hash_drop(obj, h); return; }
-    for (uint i = 0; i < obj.array_used; i += stride) {
-        if (ap[i].is_deleted()) continue;
-        uint slot = coll_hash_key(ap[i], h) & ci.mask;
-        while (slots[slot] != 0) { slot = (slot + 1) & ci.mask; }
-        slots[slot] = i + 1;   // 1-based, so 0 can mean empty
-        ci.used++;
+    uint tail = 0;
+    if (ap != null && strong && old != null && old.built <= obj.array_used) {
+        for (uint slot = 0; slot <= old.mask; slot++) {
+            gcprofile::gcprof_coll_scan();
+            uint e = old.slots[slot];
+            if (e == 0 || e == hobject::COLL_SLOT_DELETED) continue;
+            uint idx = e - 1;
+            if (idx >= old.built || ap[idx].is_deleted()) continue;
+            uint dest = coll_hash_key(ap[idx], h) & ci.mask;
+            while (slots[dest] != 0) dest = (dest + 1) & ci.mask;
+            slots[dest] = e;
+            ci.used++;
+        }
+        tail = old.built;
+    }
+    if (ap != null) {
+        for (uint i = tail; i < obj.array_used; i += stride) {
+            gcprofile::gcprof_coll_scan();
+            if (ap[i].is_deleted()) continue;
+            uint slot = coll_hash_key(ap[i], h) & ci.mask;
+            while (slots[slot] != 0) slot = (slot + 1) & ci.mask;
+            slots[slot] = i + 1;
+            ci.used++;
+        }
+    }
+    coll_hash_drop(obj, h);
+    *obj.coll_hash_ptr() = ci;
+}
+
+// Preserve probe chains without retaining an index reference to a deleted key.
+fn void coll_hash_remove(HObject* obj, TVal key, uint index, heap::Heap* h) {
+    hobject::CollHashInfo* ci = *obj.coll_hash_ptr();
+    if (ci == null || index >= ci.built) return;
+    uint slot = coll_hash_key(key, h) & ci.mask;
+    for (uint probes = 0; probes <= ci.mask; probes++) {
+        uint e = ci.slots[slot];
+        if (e == 0) return;
+        if (e == index + 1) {
+            ci.slots[slot] = hobject::COLL_SLOT_DELETED;
+            return;
+        }
+        slot = (slot + 1) & ci.mask;
     }
 }
 
@@ -1700,7 +1745,9 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
     // A full rebuild is only for the cases incremental catch-up cannot serve --
     // no index yet, a shrunk array (delete-compaction in the Weak collections),
     // or a load factor that has crept too high.
-    if (ci != null && ci.built < obj.array_used && ci.used <= (ci.mask + 1) / 2) {
+    if (ci != null && ci.built < obj.array_used
+        && ci.used <= (ci.mask + 1) / 2
+        && (obj.array_used - ci.built) / stride <= (ci.mask + 1) / 2 - ci.used) {
         TVal* ap_add = obj.array_part();
         if (ap_add != null) {
             for (uint i = ci.built; i < obj.array_used; i += stride) {
@@ -1710,8 +1757,8 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
                        && ci.slots[slot] != hobject::COLL_SLOT_DELETED) {
                     slot = (slot + 1) & ci.mask;
                 }
+                if (ci.slots[slot] == 0) ci.used++;
                 ci.slots[slot] = i + 1;
-                ci.used++;
             }
             ci.built = obj.array_used;
         }
@@ -1729,6 +1776,7 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
 
     uint slot = coll_hash_key(val, h) & ci.mask;
     while (true) {
+        gcprofile::gcprof_coll_probe();
         uint e = ci.slots[slot];
         if (e == 0) return -1;                       // empty: the key is absent
         if (e != hobject::COLL_SLOT_DELETED) {
@@ -2244,6 +2292,7 @@ fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, b
     int found = coll_find(coll, key, stride, ctx.heap);
     if (found < 0) { ctx.result.set_boolean(false); return; }
     if (tombstone) {
+        coll_hash_remove(coll, key, (uint)found, ctx.heap);
         (*coll.extra_ptr()).coll.live_count--;
         for (uint i = 0; i < stride; i++) {
             TVal* slot = &coll.array_part()[(uint)found + i];

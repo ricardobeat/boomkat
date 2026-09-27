@@ -975,7 +975,7 @@ struct CollHashInfo {
     uint* slots;   /// 1-based indices into array_part; 0 = empty
     uint  mask;    /// one less than the slot count, which is a power of two
     uint  used;    /// occupied slots, tombstones included, for the load factor
-    uint  built;   /// array_used as of the last rebuild
+    uint  built;   /// indexed array_part prefix length
 }
 
 // HObject flattens these fields into its own layout with

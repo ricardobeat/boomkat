@@ -407,6 +407,7 @@ fn void builtin_set_proto_clear(BuiltinContext* ctx) {
     for (uint i = 0; i < cnt; i++) {
         set.array_part()[i].set_undefined();
     }
+    coll_hash_drop(set, ctx.heap);
     set.array_used = 0;
     (*set.extra_ptr()).coll.live_count = 0;
 
@@ -641,6 +642,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
                 bool has = set_record_has(ctx, &rec, e);
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                 if (has) {
+                    coll_hash_remove(result, e, index, ctx.heap);
                     ctx.heap.decref_tval(&result_arr[index]);
                     result_arr[index].set_deleted();
                     (*result.extra_ptr()).coll.live_count--;
@@ -662,6 +664,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             next_value = set_normalize_neg_zero(next_value);
             int found = set_find_value(result, next_value, ctx.heap);
             if (found >= 0) {
+                coll_hash_remove(result, next_value, (uint)found, ctx.heap);
                 ctx.heap.decref_tval(&result.array_part()[(uint)found]);
                 result.array_part()[(uint)found].set_deleted();
                 (*result.extra_ptr()).coll.live_count--;
@@ -710,6 +713,7 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
         int found = set_find_value(result, next_value, ctx.heap);
         if (set_find_value(set, next_value, ctx.heap) >= 0) {
             if (found >= 0) {
+                coll_hash_remove(result, next_value, (uint)found, ctx.heap);
                 ctx.heap.decref_tval(&result.array_part()[(uint)found]);
                 result.array_part()[(uint)found].set_deleted();
                 (*result.extra_ptr()).coll.live_count--;

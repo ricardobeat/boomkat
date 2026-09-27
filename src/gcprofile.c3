@@ -10,6 +10,24 @@ module boomkat::gcprofile;
 
 import std::io;
 
+ulong gcprof_coll_rebuilds;
+ulong gcprof_coll_scanned;
+ulong gcprof_coll_probes;
+uint gcprof_coll_max_slots;
+
+macro void gcprof_coll_build(uint slots) @builtin {
+    $if $feat(GC_PROFILE):
+        gcprof_coll_rebuilds++;
+        if (slots > gcprof_coll_max_slots) gcprof_coll_max_slots = slots;
+    $endif
+}
+macro void gcprof_coll_scan() @builtin {
+    $if $feat(GC_PROFILE): gcprof_coll_scanned++; $endif
+}
+macro void gcprof_coll_probe() @builtin {
+    $if $feat(GC_PROFILE): gcprof_coll_probes++; $endif
+}
+
 ulong gcprof_allocations;
 ulong gcprof_reallocs;
 ulong gcprof_last_live;
@@ -76,6 +94,7 @@ macro void gcprof_cycle(ulong swept) @builtin {
 // Dump collection pressure to stderr. Call once at interpreter shutdown.
 fn void gcprof_dump() {
 $if $feat(GC_PROFILE):
+    io::eprintfn("# collection_index rebuilds=%d scanned=%d probes=%d max_slots=%d", gcprof_coll_rebuilds, gcprof_coll_scanned, gcprof_coll_probes, gcprof_coll_max_slots);
     io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",
                  gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
     io::eprintfn("#   live_obj_count_at_last_cycle=%d", gcprof_last_live);

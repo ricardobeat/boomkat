@@ -529,7 +529,14 @@ when its pool block is larger. `pool_for_class()` selects the physical pool.
 The four collection classes keep their lookup index in a class payload, so
 other objects do not pay for it in the common header. Map and Set also keep a live
 entry count in that payload for constant-time size reads; their entry-log length
-continues to bound iteration. Pool pages fit within a
+continues to bound iteration. Strong-collection indexes mark deleted slots and
+reuse tombstones. Rebuild sizing uses live occupancy with churn headroom; a rebuild
+scans the old index and its unindexed log tail when cheaper than the full log.
+Clear invalidates the index. Weak
+collections can shift their entries and rebuild from the log. This bounds the
+churning index; the ordered entry log still retains historical positions.
+
+Pool pages fit within a
 64 KB allocator size class. The small pool uses a measured 152-byte stride:
 its smaller 144-byte layout slowed a retained-Date workload.
 
