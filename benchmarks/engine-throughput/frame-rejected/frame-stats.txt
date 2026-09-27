@@ -1,0 +1,12 @@
+benchmarks/bench_recursion_deep.js
+# FRAME : 6 -> 5 registers
+benchmarks/bench_valstack_copy.js
+
+benchmarks/es6/bench_class.js
+# FRAME : 5 -> 4 registers
+# FRAME : 11 -> 7 registers
+/private/tmp/boomkat-perf-097/scene_100000.js
+# FRAME : 17 -> 16 registers
+# FRAME : 29 -> 23 registers
+/private/tmp/boomkat-perf-097/vdom_heavy.js
+# FRAME : 23 -> 18 registers

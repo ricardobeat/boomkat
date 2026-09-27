@@ -250,6 +250,9 @@ and the GC barrier. Initializers execute in source order; the object remains
 unpublished until construction finishes. All slots are safe to trace during
 an initializer's call or suspension.
 
+The compiler replaces key loads with `LDUNDEF` at the same instruction positions
+to release any string owned by the reused temporary register.
+
 Methods, accessors, computed keys, spread, duplicate keys and prototype syntax
 use property definition. The direct form fits narrow bytecode operands: at
 most 256 properties and a 16-bit shape ID. Transition shapes own their keys

@@ -29,7 +29,7 @@ formatting output matches for 583 dates in each of UTC, America/New_York,
 Europe/Amsterdam, Asia/Kathmandu and Australia/Lord_Howe, including DST windows,
 negative timestamps, TimeClip extremes and NaN.
 
-## 2. Fixed-shape object literals
+## 2. Fixed-shape object literals — retained
 
 The compiler selects a shared transition shape for unique non-index string
 keys. `NEWOBJ_SHAPE` reserves the complete property storage once; `INIT_SLOT`
@@ -80,6 +80,38 @@ checks dynamic compilation, initializer order, descriptors, mutation and
 suspension, and agrees with Node (20,194 assertions).
 
 
-## 3. Register-frame compaction
+## 3. Register-frame compaction — rejected after measurement
 
-Pending.
+The experiment removed unused register positions before peephole optimization.
+An explicit opcode operand table identified registers and contiguous call
+windows; an injective, order-preserving mapping packed them into smaller frames.
+Parameter positions and every ownership-releasing write stayed intact. Dynamic
+scope, suspension, captures, observable arguments, complex parameters and
+unsupported instructions excluded the function from compaction. This required
+approximately 200 lines of compiler code without implementing general liveness
+reuse.
+
+Compiler instrumentation confirmed smaller frames: deep recursion 6 → 5;
+two class functions 5 → 4 and 11 → 7; two scene functions 17 → 16 and 29 → 23;
+one VDOM function 23 → 18. The value-stack-copy workload had no reduction.
+Counts are recorded in `benchmarks/engine-throughput/frame-rejected/frame-stats.txt`.
+
+Seven alternating pairs after warmup, outside the sandbox, against `d400a179`:
+
+| Workload | Runtime change |
+|---|---:|
+| ES5 (20 cases, sum of medians) | -0.16% |
+| ES6 (8 cases, sum of medians) | -0.42% |
+| Heavy VDOM | -0.23% |
+| 100k scene / 3,000 frames | -0.26% |
+
+Peak RSS is effectively unchanged: VDOM 16.73 → 16.77 MiB and scene
+196.94 → 196.92 MiB. A preliminary five-pair run likewise found no useful
+gain. These measurements do not justify the extra compiler logic, so the pass
+is not retained. General liveness-based register reuse remains untested.
+Raw data: `benchmarks/engine-throughput/frame-rejected/results.json`.
+
+The experimental binary passed Rosetta 42/0, local scripts 473/0 and modules
+20/0. Its dedicated 1,014-assertion fixture also agreed with Node. These checks
+establish basic semantic coverage; no fresh ASAN or test262 run was performed
+for this rejected candidate.
