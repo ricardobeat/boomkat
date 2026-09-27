@@ -8,18 +8,20 @@
 [  6] LDINT               r3, +3
 [  7] CALL_GLOBAL         r1, argc=1, K[1]
 [  8] LDREG               r0 = r1, r0
-[  9] LDCONST             r1, 2
-[ 10] GETPROP             r2 = r0, r1
-[ 11] LDREG               r3 = r0, r0
-[ 12] LDINT               r4, +9
-[ 13] CALL                r2 = r2, r1
-[ 14] GETPROPC            r4 = r0, r4
-[ 15] LDREG               r5 = r0, r0
-[ 16] CALL                r4 = r4, r0
-[ 17] LDREG               r3 = r4, r0
-[ 18] CALL_GLOBAL         r1, argc=1, K[3]
-[ 19] PUTVAR              r0, 0
-[ 20] RETUNDEF            
+[  9] PUTVAR              r0, 0
+[ 10] GETGLOBAL           r0, 0
+[ 11] LDCONST             r1, 2
+[ 12] GETPROP             r2 = r0, r1
+[ 13] LDREG               r3 = r0, r0
+[ 14] LDINT               r4, +9
+[ 15] CALL                r2 = r2, r1
+[ 16] GETGLOBAL           r2, 0
+[ 17] GETPROPC            r4 = r2, r4
+[ 18] LDREG               r5 = r2, r0
+[ 19] CALL                r4 = r4, r0
+[ 20] LDREG               r2 = r4, r0
+[ 21] CALL_GLOBAL         r0, argc=1, K[3]
+[ 22] RETUNDEF            
 
 --- Inner function 0 ---
 [  0] NEWCELLS            r1, 1
