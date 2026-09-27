@@ -233,7 +233,7 @@ fn void builtin_temporal_plain_monthday_ctor(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_monthday(ctx.heap, vy, vm, vd, calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_monthday_proto);
+    ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_monthday_proto));
     ctx.result.set_object(obj);
 }
 

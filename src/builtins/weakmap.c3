@@ -70,7 +70,7 @@ fn void builtin_weakmap_proto_get(BuiltinContext* ctx) {
     TVal key = ctx.regs[ctx.base_reg];
     int found = weakmap_find_key(wm, key, ctx.heap);
     if (found >= 0) {
-        *ctx.result = wm.array_part()[(uint)found + 1];
+        *ctx.result = wm.array_part()[(uint)found + 1].get();
     } else {
         ctx.result.set_undefined();
     }

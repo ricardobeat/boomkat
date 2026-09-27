@@ -69,7 +69,7 @@ fn void builtin_temporal_plain_date_ctor(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_date(ctx.heap, cd, calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_date_proto);
+    ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_date_proto));
     ctx.result.set_object(obj);
 }
 

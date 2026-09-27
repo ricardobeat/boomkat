@@ -307,7 +307,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
                 if (hs != null && hs.is_symbol()) {
                     wrap_proto = heap.symbol_proto;
                 } else {
-                    (*items_obj.extra_ptr()).prim.primitive_value = async_items;
+                    ctx.heap.@set_edge(items_obj, (*items_obj.extra_ptr()).prim.primitive_value, async_items);
                 }
             } else if (async_items.is_fastint() || async_items.is_number()) {
                 wrap_proto = heap.number_proto;

@@ -214,7 +214,7 @@ fn void builtin_function(BuiltinContext* ctx) {
     // must use OrdinaryCreateFromConstructor(newTarget, "%Function.prototype%"),
     // so `class Sub extends Function {}` produces a function whose [[Prototype]]
     // is Sub.prototype, not Function.prototype.
-    func_obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.function_proto);
+    ctx.heap.set_prototype(func_obj, builtin_proto_from_new_target(ctx, ctx.heap.function_proto));
     HObject*? proto_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try proto = proto_raw) {
         proto.prototype = ctx.heap.object_proto;
@@ -620,7 +620,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
 
         // Fast path: dense ARRAY with no accessor overrides (most common case).
         if (is_plain_array && i < arr_obj.array_size) {
-            TVal dv = arr_obj.array_part()[i];
+            TVal dv = arr_obj.array_part()[i].get();
             if (!dv.is_undefined()) {
                 if (actual_count < max_extract) extracted_args[actual_count++] = dv;
                 continue;
@@ -638,7 +638,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         // dense array storage (mirrors arr_get_elem's ordering).
         int own_idx = arr_obj.find_prop_idx(key_hstr, ctx.heap);
         if (own_idx >= 0 && arr_obj.get_prop_flags((uint)own_idx, ctx.heap).is_accessor) {
-            TVal gs_slot = arr_obj.prop_values()[own_idx];
+            TVal gs_slot = arr_obj.prop_values()[own_idx].get();
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
             elem = arr_invoke_getter_ctx(arr_obj, getter_fn, ctx.heap, ctx);
             if (ctx.should_throw) {
@@ -646,10 +646,10 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
                 return;
             }
         } else if (own_idx >= 0) {
-            elem = arr_obj.prop_values()[own_idx];
+            elem = arr_obj.prop_values()[own_idx].get();
         } else if (!is_plain_array && arr_obj.get_class() == hobject::ObjClass.ARRAY && arr_obj.array_part() != null
-                   && i < arr_obj.array_size && !arr_obj.array_part()[i].is_undefined()) {
-            elem = arr_obj.array_part()[i];
+                   && i < arr_obj.array_size && !arr_obj.array_part()[i].get().is_undefined()) {
+            elem = arr_obj.array_part()[i].get();
         } else {
             hobject::PropLookupResult res = arr_obj.get_prop_or_accessor_proto(key_hstr, true, ctx.heap);
             if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -878,8 +878,8 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
             proxy_ctx_ok(ctx);
             return;
         }
-        bound_obj.prototype = (proto_tv.is_object() && proto_tv.get_heapptr() != null)
-            ? (HObject*)proto_tv.get_heapptr() : null;
+        ctx.heap.set_prototype(bound_obj, (proto_tv.is_object() && proto_tv.get_heapptr() != null)
+            ? (HObject*)proto_tv.get_heapptr() : null);
     }
     (*bound_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.BOUND_CALL.ordinal;
 

@@ -621,8 +621,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // "always a queued job" semantics for both fulfilled and
                 // rejected Promises (PromiseReactionJob, ES2015+ §27.2.2.1).
                 // 1. Allocate GeneratorState for saving execution state
-                void* gs_raw = heap::alloc_scanned(GeneratorState, vm.heap);
-                if (gs_raw == null) {
+                GeneratorState* gs = vm.heap.alloc_generator_state();
+                if (gs == null) {
                     // OOM: cannot suspend.  Reject the async Promise if
                     // applicable, otherwise propagate as an uncaught error.
                     // async_reject_and_pop already settles the Promise (or
@@ -640,7 +640,6 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     if (!ds.halt) { ds.needs_restart = true; }
                     return (TVal){};
                 }
-                GeneratorState* gs = (GeneratorState*)gs_raw;
                 gs.pending_resume_reg = 0xFFFF;
 
                 CompiledFunction* cur_func = (CompiledFunction*)ds.act.func;
@@ -675,7 +674,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 void* regs_mem = vm.heap.alloc_func(vm.heap.heap_udata, regs_bytes);
                 if (regs_mem == null) {
                     vm.heap.decref_tval(&gs.this_binding);
-                    vm.heap.free_scanned(gs_raw, (usz)GeneratorState::size);
+                    vm.heap.free_generator_state(gs);
                     return (TVal){};
                 }
                 gs.saved_regs = (TVal*)regs_mem;
@@ -703,7 +702,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
                     vm.heap.decref_tval(&gs.this_binding);
                     vm.heap.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size);
-                    vm.heap.free_scanned(gs_raw, (usz)GeneratorState::size);
+                    vm.heap.free_generator_state(gs);
                     return (TVal){};
                 }
                 HObject* resume_fn = resume_raw;
@@ -2076,9 +2075,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     ? vm.heap.async_generator_proto : vm.heap.generator_proto;
                 if (try gpv_g = gen_proto_val_g) {
                     if (gpv_g.is_object() && gpv_g.get_heapptr() != null) {
-                        gen_obj_g.prototype = (HObject*)gpv_g.get_heapptr();
+                        vm.heap.set_prototype(gen_obj_g, (HObject*)gpv_g.get_heapptr());
                     } else {
-                        gen_obj_g.prototype = gen_proto_fallback;
+                        vm.heap.set_prototype(gen_obj_g, gen_proto_fallback);
                     }
                 }
             }
@@ -2149,4 +2148,3 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
     }
     return (TVal){};
 }
-

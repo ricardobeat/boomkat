@@ -468,13 +468,13 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
             // Walk shape chain.
             hobject::Shape* sh = err_obj.get_shape(h);
             uint global_offset = 0;
-            TVal* vals = err_obj.prop_values();
+            hobject::PropValue* vals = err_obj.prop_values();
             uint val_idx = 0;
             while (sh != null) {
                 hobject::ShapeProperty* sp = sh.props();
                 for (uint i = 0; i < sh.own_count; i++) {
                     if (val_idx >= err_obj.prop_count) break;
-                    TVal* v = &vals[val_idx];
+                    TVal* v = vals[val_idx].view();
                     if (!found_name && sp[i].key == (void*)name_key && v.is_string()) {
                         HString* s = (HString*)v.get_heapptr();
                         if (s != null) {

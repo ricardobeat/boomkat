@@ -244,9 +244,9 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     HString* name_key = (HString*)vm.heap.strs[heap::BuiltinStr.NAME];
     int name_idx = fn_obj.find_prop_idx((void*)name_key, vm.heap);
     if (name_idx < 0) return;
-    TVal* name_slot = &fn_obj.prop_values()[name_idx];
-    if (!name_slot.is_string()) return;
-    HString* cur_name = (HString*)name_slot.get_heapptr();
+    hobject::PropValue* name_slot = &fn_obj.prop_values()[name_idx];
+    if (!name_slot.get().is_string()) return;
+    HString* cur_name = (HString*)name_slot.get().get_heapptr();
     if (cur_name == null || cur_name.blen != 0) return;  // non-empty: already set
 
     // Build "prefix + key_desc" in a stack buffer.
@@ -276,7 +276,7 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     if (new_name != null) {
         TVal new_tv;
         new_tv.set_string(new_name);
-        vm.heap.tval_copy_ref(name_slot, &new_tv);
+        vm.heap.store_slot_ref(fn_obj, name_slot, &new_tv);
     }
 }
 
@@ -351,7 +351,7 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
         hobject::PropFlags ef = hobj.get_prop_flags((uint)idx, vm.heap);
         if (ef.configurable) {
             TVal put_val = *val;
-            vm.heap.tval_copy_ref(&hobj.prop_values()[idx], &put_val);
+            vm.heap.store_slot_ref(hobj, &hobj.prop_values()[idx], &put_val);
             hobject::PropFlags nf;
             nf.writable = true;
             nf.enumerable = true;
@@ -730,7 +730,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (catch iter_raw) break;
             HObject* iter = iter_raw;
             src.as_header().incref();
-            (*iter.extra_ptr()).iter.target = src;
+            vm.heap.@set_edge(iter, (*iter.extra_ptr()).iter.target, src);
             (*iter.extra_ptr()).iter.index = 0;
             (*iter.extra_ptr()).iter.kind = 0;
             iter.prototype = iproto;
@@ -1267,7 +1267,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
                     int idx = hobj.find_prop_idx(key, ds.vm.heap);
-                    TVal* initget_props = hobj.prop_values();
+                    hobject::PropValue* initget_props = hobj.prop_values();
                     // DefinePropertyOrThrow: redefining a non-configurable
                     // non-accessor property (e.g. a static computed getter named
                     // "prototype"/"length" on the class constructor) throws.
@@ -1281,7 +1281,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     }
                     if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's getter
-                        hobject::hobject_set_access_getter(initget_props[idx], getter_val, vm.heap);
+                        hobject::hobject_set_access_getter(initget_props[idx].get(), getter_val, vm.heap);
                     } else {
                         // Create new accessor property
                         TVal undef;
@@ -1310,7 +1310,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
                     int idx = hobj.find_prop_idx(key, ds.vm.heap);
-                    TVal* initset_props = hobj.prop_values();
+                    hobject::PropValue* initset_props = hobj.prop_values();
                     if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable
                         && !hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         HString* nm = (HString*)key;
@@ -1321,7 +1321,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     }
                     if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's setter
-                        hobject::hobject_set_access_setter(initset_props[idx], setter_val, vm.heap);
+                        hobject::hobject_set_access_setter(initset_props[idx].get(), setter_val, vm.heap);
                     } else {
                         // Create new accessor property
                         TVal undef;
@@ -1457,7 +1457,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
                     int idx = hobj.find_prop_idx(key, ds.vm.heap);
-                    TVal* initget_props = hobj.prop_values();
+                    hobject::PropValue* initget_props = hobj.prop_values();
                     // A private get/set pair (`get #x` + `set #x`) shares one
                     // hidden-symbol key and is installed non-configurable, so
                     // merging the other half of the pair into the SAME
@@ -1467,7 +1467,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     // non-configurable `.prototype`).
                     if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's getter
-                        hobject::hobject_set_access_getter(initget_props[idx], getter_val, vm.heap);
+                        hobject::hobject_set_access_getter(initget_props[idx].get(), getter_val, vm.heap);
                     } else if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable) {
                         // Non-configurable: DefinePropertyOrThrow throws TypeError
                         // (e.g. redefining the class constructor's non-configurable
@@ -1524,12 +1524,12 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (key != null && hobj != null) {
                     // Check if property already exists as accessor
                     int idx = hobj.find_prop_idx(key, ds.vm.heap);
-                    TVal* initset_props = hobj.prop_values();
+                    hobject::PropValue* initset_props = hobj.prop_values();
                     // See CLASS_INITGET: a private get/set pair merge must be
                     // checked before the non-configurable rejection.
                     if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's setter
-                        hobject::hobject_set_access_setter(initset_props[idx], setter_val, vm.heap);
+                        hobject::hobject_set_access_setter(initset_props[idx].get(), setter_val, vm.heap);
                     } else if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable) {
                         // Non-configurable: DefinePropertyOrThrow throws TypeError
                         // (e.g. redefining the class constructor's non-configurable
@@ -1587,7 +1587,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                         hobject::PropFlags ef = hobj.get_prop_flags((uint)idx, ds.vm.heap);
                         if (ef.configurable) {
                             TVal put_val = *rc;
-                            vm.heap.tval_copy_ref(&hobj.prop_values()[idx], &put_val);
+                            vm.heap.store_slot_ref(hobj, &hobj.prop_values()[idx], &put_val);
                             hobject::PropFlags nf;
                             nf.writable = true;
                             nf.enumerable = false;

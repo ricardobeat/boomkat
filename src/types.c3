@@ -376,6 +376,19 @@ $else
 $endif
 }
 
+// True when the value points at a node the collector traces: an object,
+// buffer or BigInt, or an internal ENVREF. A store of such a value into an
+// old object must pass the write barrier; strings are counted, not traced by
+// generation.
+macro bool TVal.is_traced(&self) {
+$if USE_NANBOX:
+    ulong tag = self.bits >> 48;
+    return (tag >= TAG_OBJECT && tag <= TAG_ENVREF) || tag == TAG_BIGINT;
+$else
+    return self.tag == OBJECT || self.tag == BUFFER || self.tag == BIGINT || self.tag == ENVREF;
+$endif
+}
+
 // True when the value holds a reference count: a string. Objects, buffers and
 // BigInts are reclaimed only by the collector.
 macro bool TVal.is_refcounted(&self) {
@@ -793,6 +806,13 @@ bitstruct HeapFlags : uint {
     bool  readonly     : 6;
 }
 
+// Generation state of a traced node: an object, buffer or BigInt. It shares
+// its word with the refcount, which only strings use.
+bitstruct GcBits : uint {
+    bool old        : 0;  // survived a promoting collection; see plans/093
+    bool remembered : 1;  // in Heap.remembered; objects only
+}
+
 // Sentinel refcount marking a pinned string, on which incref and decref do
 // nothing (see HeapHeader.incref and Heap.decref). It marks interned strings
 // that live as long as the heap, meaning builtin strings, well-known symbols,
@@ -806,7 +826,10 @@ const uint STRING_PINNED_REFCOUNT = 0x7FFF_FFFF;
 // sweep phase can walk them.
 struct HeapHeader {
     HeapFlags    flags;
-    uint         refcount;
+    union {
+        uint     refcount;  // strings
+        GcBits   gc;        // every other node
+    }
     HeapHeader*  next;
     HeapHeader*  prev;
 }
@@ -840,6 +863,7 @@ fn bool HeapHeader.is_reachable(&self)      { return self.flags.reachable; }
 fn void HeapHeader.set_temproot(&self)      { self.flags.temproot = true; }
 fn void HeapHeader.clear_temproot(&self)    { self.flags.temproot = false; }
 fn bool HeapHeader.is_temproot(&self)       { return self.flags.temproot; }
+fn bool HeapHeader.is_old(&self)            { return self.gc.old; }
 fn void HeapHeader.set_finalizable(&self)   { self.flags.finalizable = true; }
 fn void HeapHeader.clear_finalizable(&self) { self.flags.finalizable = false; }
 fn void HeapHeader.set_finalized(&self)     { self.flags.finalized = true; }
@@ -864,7 +888,8 @@ fn bool HeapHeader.is_pinned(&self)         { return self.refcount == STRING_PIN
 fn void HeapHeader.init(&self, HType htype, HeapHeader** list_head) {
     self.flags       = {};
     self.flags.htype = htype;
-    self.refcount    = 1;
+    // A string starts with one reference; any other node starts young.
+    self.refcount    = htype == HType.STRING ? 1 : 0;
     self.prev        = null;
     self.next        = *list_head;
     if (*list_head != null) {

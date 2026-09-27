@@ -137,7 +137,7 @@ fn void builtin_temporal_plain_datetime_ctor(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_datetime(ctx.heap, dt, calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_datetime_proto);
+    ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_plain_datetime_proto));
     ctx.result.set_object(obj);
 }
 

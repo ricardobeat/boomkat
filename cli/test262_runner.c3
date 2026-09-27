@@ -230,13 +230,13 @@ fn char[] thrown_message(Heap* hp) {
     if (eo == null) return "";
     HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
     hobject::Shape* sh = eo.get_shape(hp);
-    TVal* vals = eo.prop_values();
+    hobject::PropValue* vals = eo.prop_values();
     uint val_idx = 0;
     while (sh != null) {
         hobject::ShapeProperty* sp = sh.props();
         for (uint i = 0; i < sh.own_count; i++) {
             if (val_idx >= eo.prop_count) break;
-            TVal* mv = &vals[val_idx];
+            TVal* mv = vals[val_idx].view();
             if (sp[i].key == (void*)msg_key && mv.is_string()) {
                 HString* str = (HString*)mv.get_heapptr();
                 return str.get_data();
@@ -452,7 +452,7 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
         for (uint guard = 0; guard < 64 && cur != null; guard++) {
             int idx = cur.find_prop_idx(ck, hp);
             if (idx >= 0) {
-                TVal cv = cur.prop_values()[idx];
+                TVal cv = cur.prop_values()[idx].get();
                 if (cv.is_object() && cv.get_heapptr() != null) { ctor = (HObject*)cv.get_heapptr(); }
                 break;
             }
@@ -466,7 +466,7 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
         if (try nk = nks) {
             int nidx = ctor.find_prop_idx(nk, hp);
             if (nidx >= 0) {
-                TVal nv = ctor.prop_values()[nidx];
+                TVal nv = ctor.prop_values()[nidx].get();
                 if (nv.is_string() && nv.get_heapptr() != null) {
                     HString* ns = (HString*)nv.get_heapptr();
                     if (ns.equals(expected)) return true;

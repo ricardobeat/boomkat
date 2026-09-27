@@ -505,7 +505,56 @@ struct AccessorResult {
 // One TVal per property slot, 8 bytes when NaN-boxed. A data property holds its
 // value directly; an accessor property holds a pointer to a GETTER_SETTER
 // object. Shape.PropFlags.is_accessor says which a reader is looking at.
-alias PropValue = TVal;
+//
+// A distinct type with no implicit conversion either way, so every access
+// states what it does and the compiler finds every store: a store into an
+// object that may be old must pass the write barrier (plans/093).
+//
+//   get()            read the value
+//   view()           a TVal* for a callee that only reads through it
+//   set_untraced(v)  store a value the collector does not trace
+//   Heap.store_slot / store_slot_ref   store anything, with the barrier
+typedef PropValue = TVal;
+
+fn TVal PropValue.get(&self) @inline => (TVal)*self;
+
+// The slot as a TVal*, for a callee that reads through it, such as mark_tval,
+// decref_tval, or the source of tval_copy_ref. Never store through it.
+fn TVal* PropValue.view(&self) @inline => (TVal*)self;
+
+<*
+ Store a value no collector traces, such as a number, boolean or string. It
+ cannot create an old-to-young edge, so it needs no barrier.
+ @require !v.is_traced() : "a traced value must be stored with Heap.store_slot"
+*>
+fn void PropValue.set_untraced(&self, TVal v) @inline {
+    *self = (PropValue)v;
+}
+
+fn void PropValue.set_undefined(&self) @inline {
+    TVal u;
+    u.set_undefined();
+    *self = (PropValue)u;
+}
+
+fn void PropValue.set_fastint(&self, long v) @inline {
+    TVal t;
+    t.set_fastint(v);
+    *self = (PropValue)t;
+}
+
+fn void PropValue.set_number(&self, double v) @inline {
+    TVal t;
+    t.set_number(v);
+    *self = (PropValue)t;
+}
+
+// Store the Map/Set deletion sentinel.
+fn void PropValue.set_deleted(&self) @inline {
+    TVal d;
+    d.set_deleted();
+    *self = (PropValue)d;
+}
 
 // ---------------------------------------------------------------------------
 // Boxed accessor pair helpers
@@ -515,8 +564,8 @@ alias PropValue = TVal;
 fn TVal hobject_create_accessors(heap::Heap* h, TVal getter, TVal setter) {
     HObject*? gs_obj = h.alloc_object(ObjClass.GETTER_SETTER);
     if (try gs = gs_obj) {
-        (*gs.extra_ptr()).gs.getter = getter;
-        (*gs.extra_ptr()).gs.setter = setter;
+        h.@set_edge(gs, (*gs.extra_ptr()).gs.getter, getter);
+        h.@set_edge(gs, (*gs.extra_ptr()).gs.setter, setter);
         // The cell now holds references to both.
         if (getter.is_heap_allocated() && getter.get_heapptr() != null) {
             ((types::HeapHeader*)getter.get_heapptr()).incref();
@@ -545,7 +594,7 @@ fn TVal hobject_access_setter(TVal slot) {
 fn void hobject_set_access_getter(TVal slot, TVal new_getter, heap::Heap* h) {
     HObject* gs = (HObject*)slot.get_heapptr();
     h.decref_tval(&(*gs.extra_ptr()).gs.getter);
-    (*gs.extra_ptr()).gs.getter = new_getter;
+    h.@set_edge(gs, (*gs.extra_ptr()).gs.getter, new_getter);
     if (new_getter.is_heap_allocated() && new_getter.get_heapptr() != null) {
         ((types::HeapHeader*)new_getter.get_heapptr()).incref();
     }
@@ -555,7 +604,7 @@ fn void hobject_set_access_getter(TVal slot, TVal new_getter, heap::Heap* h) {
 fn void hobject_set_access_setter(TVal slot, TVal new_setter, heap::Heap* h) {
     HObject* gs = (HObject*)slot.get_heapptr();
     h.decref_tval(&(*gs.extra_ptr()).gs.setter);
-    (*gs.extra_ptr()).gs.setter = new_setter;
+    h.@set_edge(gs, (*gs.extra_ptr()).gs.setter, new_setter);
     if (new_setter.is_heap_allocated() && new_setter.get_heapptr() != null) {
         ((types::HeapHeader*)new_setter.get_heapptr()).incref();
     }
@@ -982,7 +1031,10 @@ struct CollHashInfo {
 // HObjectExtra after this prefix; see alloc_size_for_class.
 struct HObjectBase {
     ObjFlags      flags;
-    uint          refcount;
+    union {
+        uint      refcount;  // unused: only strings are counted
+        GcBits    gc;
+    }
     HeapHeader*   next;
     HeapHeader*   prev;
     HObject*      prototype;
@@ -1281,9 +1333,9 @@ fn PropValue* HObject.prop_values(&self) @inline {
 
 // The dense array part, which follows the property values inside prop_alloc.
 // Null when there is none, meaning prop_alloc is null or array_size is 0.
-fn TVal* HObject.array_part(&self) @inline {
+fn PropValue* HObject.array_part(&self) @inline {
     if (self.prop_alloc == null || self.array_size == 0) return null;
-    return (TVal*)((char*)self.prop_alloc + (usz)self.prop_capacity * PropValue::size);
+    return (PropValue*)((char*)self.prop_alloc + (usz)self.prop_capacity * PropValue::size);
 }
 
 // ============================================================================
@@ -1359,7 +1411,7 @@ fn void HObject.seal(&self, heap::Heap* h) {
     if (self.array_part() != null && self.array_used > 0) {
         char[12] digit_buf;
         for (uint i = 0; i < self.array_size; i++) {
-            TVal v = self.array_part()[i];
+            TVal v = self.array_part()[i].get();
             if (!v.is_undefined()) {
                 int dlen = (int)(io::bprintf(&digit_buf, "%d", i) ?? digit_buf[:0]).len;
                 if (dlen > 0) {
@@ -1371,7 +1423,7 @@ fn void HObject.seal(&self, heap::Heap* h) {
                         // is released just below.
                         self.put_prop((void*)key, v, PROP_FLAGS_NEC, h);
                         if (v.is_heap_allocated()) {
-                            h.decref_tval(&self.array_part()[i]);
+                            h.decref_tval(self.array_part()[i].view());
                         }
                     }
                 }
@@ -1722,7 +1774,7 @@ fn TVal? HObject.get_prop(&self, void* key, heap::Heap* h) {
         }
         return PROP_NOT_FOUND~;
     }
-    return self.prop_values()[idx];
+    return self.prop_values()[idx].get();
 }
 
 // Look up an own property, distinguishing data properties from accessors.
@@ -1733,7 +1785,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_own(&self, void* key, bool want
     int idx = self.find_prop_idx(key, h);
     if (idx >= 0) {
         if (self.get_prop_flags((uint)idx, h).is_accessor) {
-            TVal gs_slot = self.prop_values()[idx];
+            TVal gs_slot = self.prop_values()[idx].get();
             TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
             return {
                 .kind = PropLookupKind.PROP_ACCESSOR,
@@ -1746,7 +1798,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_own(&self, void* key, bool want
         }
         return {
             .kind = PropLookupKind.PROP_DATA,
-            .data_val = self.prop_values()[idx],
+            .data_val = self.prop_values()[idx].get(),
             .owner = self
         };
     }
@@ -1773,7 +1825,7 @@ fn bool HObject.dense_arridx_lookup(&self, void* key, TVal* out) {
     if (!hkey.is_arridx()) return false;
     uint ai = (uint)hkey.array_index();
     if (!self.dense_idx_present(ai)) return false;
-    *out = self.array_part()[ai];
+    *out = self.array_part()[ai].get();
     return true;
 }
 
@@ -1814,7 +1866,7 @@ const uint DENSE_GROW_SLACK = 1u << 16;    // how far past array_size an index m
 // a real hole; see plans/084 §11.
 fn bool HObject.dense_idx_present(&self, uint idx) {
     if (idx >= self.array_size) return false;
-    return !self.array_part()[idx].is_undefined();
+    return !self.array_part()[idx].get().is_undefined();
 }
 
 fn bool dense_index_ok(uint cur_size, uint idx) {
@@ -1848,18 +1900,18 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
         // self-assignment where val aliases *pv cannot free it early. This
         // mirrors Heap.tval_copy_ref. One combined test skips both sides for a
         // numeric or boolean overwrite, where neither value is heap-allocated.
-        if (types::either_heap_allocated(&val, pv)) {
+        if (types::either_heap_allocated(&val, pv.view())) {
             if (val.is_heap_allocated()) {
                 void* ptr = val.get_heapptr();
                 if (ptr != null) {
                     ((types::HeapHeader*)ptr).incref();
                 }
             }
-            if (pv.is_heap_allocated()) {
-                h.decref_tval(pv);
+            if (pv.get().is_heap_allocated()) {
+                h.decref_tval(pv.view());
             }
         }
-        *pv = val;
+        h.store_slot(self, pv, val);
         self.set_prop_flags((uint)idx, pflags, h);
         // A length write on an ARRAY exotic updates the shadow copy.
         if (self.flags.exotic_array && key == length_key) {
@@ -1945,7 +1997,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     // Append at the next slot.
     uint new_idx = self.prop_count;
     mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
-    self.prop_values()[new_idx] = val;
+    h.store_slot(self, &self.prop_values()[new_idx], val);
     // Strings, objects, buffers, and BigInts are reference-counted heap
     // values held by properties, so the new value needs its own reference.
     if (val.is_heap_allocated()) {
@@ -2013,7 +2065,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
         // failure so the caller can raise instead.
         self.prop_count--;
         if (val.is_heap_allocated()) {
-            h.decref_tval(&self.prop_values()[new_idx]);
+            h.decref_tval(self.prop_values()[new_idx].view());
         }
         mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
         return false;
@@ -2095,7 +2147,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
     // shapes array without bound for no benefit. Nothing on this path can fail,
     // so the compaction may start right away.
     if (new_count == 0) {
-        h.decref_tval(&self.prop_values()[ui]);
+        h.decref_tval(self.prop_values()[ui].view());
         mem::clear(&self.prop_values()[ui], (sz)(PropValue::size));
         self.prop_count = 0;
         uint old_slot = (uint)self.shape_id;
@@ -2139,7 +2191,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
 
         // Release the deleted slot's own reference before it is overwritten by
         // the compaction shift below.
-        h.decref_tval(&self.prop_values()[ui]);
+        h.decref_tval(self.prop_values()[ui].view());
 
         // Shift the surviving values down over the deleted slot.
         for (uint i = ui; i < new_count; i++) {
@@ -2183,7 +2235,7 @@ fn TVal? HObject.get_array_idx(&self, uint idx) {
     if (self.array_part() == null || idx >= self.array_size) {
         return PROP_NOT_FOUND~;
     }
-    TVal v = self.array_part()[idx];
+    TVal v = self.array_part()[idx].get();
     if (v.is_undefined()) {
         return PROP_NOT_FOUND~;
     }
@@ -2215,7 +2267,7 @@ fn void HObject.sync_named_length(&self, heap::Heap* h) {
     } else {
         len_tv.set_number((double)len);
     }
-    self.prop_values()[idx] = len_tv;
+    self.prop_values()[idx].set_untraced(len_tv);
 }
 
 fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
@@ -2237,7 +2289,7 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
     }
 
     // Keep array_used in step with holes appearing and disappearing.
-    TVal old_val = self.array_part()[idx];
+    TVal old_val = self.array_part()[idx].get();
     if (old_val.is_undefined() && !val.is_undefined()) {
         self.array_used++;
     } else if (!old_val.is_undefined() && val.is_undefined()) {
@@ -2247,19 +2299,19 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
     }
 
     // Incref before decref, for the reason given in put_prop.
-    TVal* slot = &self.array_part()[idx];
-    if (types::either_heap_allocated(&val, slot)) {
+    PropValue* slot = &self.array_part()[idx];
+    if (types::either_heap_allocated(&val, slot.view())) {
         if (val.is_heap_allocated()) {
             void* ptr = val.get_heapptr();
             if (ptr != null) {
                 ((types::HeapHeader*)ptr).incref();
             }
         }
-        if (slot.is_heap_allocated()) {
-            h.decref_tval(slot);
+        if (slot.get().is_heap_allocated()) {
+            h.decref_tval(slot.view());
         }
     }
-    *slot = val;
+    h.store_slot(self, slot, val);
     return true;
 }
 
@@ -2429,7 +2481,7 @@ $endif
     obj.flags.extensible   = true;
     obj.flags.obj_class    = cls;
     obj.flags.pool_fallback = !from_pool;
-    obj.refcount           = 1;
+    obj.gc                 = {};
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
@@ -2567,15 +2619,15 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         heap::Heap* h = hp;
         PropValue* pvs = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
-            if (pvs[i].is_heap_allocated()) {
-                h.decref_tval(&pvs[i]);
+            if (pvs[i].get().is_heap_allocated()) {
+                h.decref_tval(pvs[i].view());
             }
         }
-        TVal* arr = obj.array_part();
+        hobject::PropValue* arr = obj.array_part();
         if (arr != null) {
             for (uint i = 0; i < obj.array_size; i++) {
-                if (arr[i].is_heap_allocated()) {
-                    h.decref_tval(&arr[i]);
+                if (arr[i].get().is_heap_allocated()) {
+                    h.decref_tval(arr[i].view());
                 }
             }
         }
@@ -2709,7 +2761,7 @@ fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
         }
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
-            return cur.prop_values()[idx];
+            return cur.prop_values()[idx].get();
         }
         // ARRAY exotic: "length" lives in array_len_ptr, not the named table
         // (mirrors has_prop_proto and the VM's GETPROP). Without this a
@@ -2744,7 +2796,7 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
             if (cur.get_prop_flags((uint)idx, h).is_accessor) {
-                TVal gs_slot = cur.prop_values()[idx];
+                TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
                 if (accessor_fn.is_object() && accessor_fn.get_heapptr() != null) {
                     return { .accessor_fn = accessor_fn, .this_obj = self, .found = true };
@@ -2970,7 +3022,7 @@ struct ICEntry {
     void*  key;
     // Inherited/accessor reads and stores use this slot while the owner's
     // storage matches the snapshot. Own-data reads use the receiver's index.
-    TVal* prop_value_ptr;
+    PropValue* prop_value_ptr;
     void*  cached_prop_alloc;
 }
 
@@ -3003,7 +3055,7 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
 // the receiver's slot because a shape is shared by objects with distinct
 // inline or allocated property storage. Inherited properties and accessors
 // keep the recorded pointer and require its owner allocation to stay put.
-fn TVal* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
+fn PropValue* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
     if (hobj.flags.exotic_proxyobj) return null;
     HObject* owner = ic_resolve_owner(ic, hobj);
     if (owner == null || owner.flags.exotic_proxyobj) return null;
@@ -3033,7 +3085,7 @@ struct MegamorphicEntry {
     // handed back out, so comparing the epoch says whether the id still names
     // the shape this entry was filled for.
     uint    recycle_epoch;
-    TVal*   prop_value_ptr; // direct pointer to value slot
+    PropValue* prop_value_ptr; // direct pointer to value slot
     void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
     // True when prop_value_ptr names an accessor cell rather than a data value.
     bool    is_accessor;
@@ -3211,7 +3263,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
                     .kind = PropLookupKind.PROP_ACCESSOR,
                     .owner = me.proto == null ? self : (HObject*)me.proto,
                     .acc = {
-                        .accessor_fn = hobject_access_getter(*me.prop_value_ptr),
+                        .accessor_fn = hobject_access_getter(me.prop_value_ptr.get()),
                         .this_obj = self,
                         .found = true
                     }
@@ -3219,7 +3271,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             }
             return {
                 .kind = PropLookupKind.PROP_DATA,
-                .data_val = *me.prop_value_ptr,
+                .data_val = me.prop_value_ptr.get(),
                 .owner = me.proto == null ? self : (HObject*)me.proto
             };
         }
@@ -3255,7 +3307,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
             if (cur.get_prop_flags((uint)idx, h).is_accessor) {
-                TVal gs_slot = cur.prop_values()[idx];
+                TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
                 if (want_getter && depth <= 1 && self.mega_cacheable()) {
                     mega_cache_store(h, self, key, cur, idx, true);
@@ -3277,7 +3329,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             }
             return {
                 .kind = PropLookupKind.PROP_DATA,
-                .data_val = cur.prop_values()[idx],
+                .data_val = cur.prop_values()[idx].get(),
                 .owner = cur
             };
         }
@@ -3390,7 +3442,7 @@ fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) 
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
             result.found = true;
-            result.value = cur.prop_values()[idx];
+            result.value = cur.prop_values()[idx].get();
             result.is_accessor = cur.get_prop_flags((uint)idx, h).is_accessor;
             result.owner = cur;
             return result;
@@ -3465,7 +3517,7 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
         if (hkey.is_arridx()) {
             uint ai = (uint)hkey.array_index();
             if (ai < self.array_size) {
-                TVal old = self.array_part()[ai];
+                TVal old = self.array_part()[ai].get();
                 if (!old.is_undefined()) {
                     TVal undef; undef.set_undefined();
                     self.set_array_idx(ai, undef, h);

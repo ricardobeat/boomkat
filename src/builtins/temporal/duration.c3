@@ -274,7 +274,7 @@ fn void builtin_temporal_duration_ctor(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_duration(ctx.heap, d);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_duration_proto);
+    ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_duration_proto));
     ctx.result.set_object(obj);
 }
 

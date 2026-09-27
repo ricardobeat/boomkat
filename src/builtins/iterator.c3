@@ -29,7 +29,7 @@ fn void create_array_iterator(BuiltinContext* ctx, uint kind) {
     if (catch err = iter_raw) { ctx.result.set_undefined(); return; }
     HObject* iter = iter_raw;
     iterable.as_header().incref();
-    (*iter.extra_ptr()).iter.target = iterable;
+    ctx.heap.@set_edge(iter, (*iter.extra_ptr()).iter.target, iterable);
     (*iter.extra_ptr()).iter.index = 0;
     (*iter.extra_ptr()).iter.kind = kind;
     // Array iterators inherit the shared %ArrayIteratorPrototype%, whose
@@ -51,7 +51,7 @@ fn void create_map_iterator(BuiltinContext* ctx, uint kind) {
     if (catch err = iter_raw) { ctx.result.set_undefined(); return; }
     HObject* iter = iter_raw;
     map.as_header().incref();
-    (*iter.extra_ptr()).iter.target = map;
+    ctx.heap.@set_edge(iter, (*iter.extra_ptr()).iter.target, map);
     (*iter.extra_ptr()).iter.index = 0;
     (*iter.extra_ptr()).iter.kind = kind;
     // MapIterator instances share %MapIteratorPrototype%'s .next and
@@ -71,7 +71,7 @@ fn void create_set_iterator(BuiltinContext* ctx, uint kind) {
     if (catch err = iter_raw) { ctx.result.set_undefined(); return; }
     HObject* iter = iter_raw;
     set.as_header().incref();
-    (*iter.extra_ptr()).iter.target = set;
+    ctx.heap.@set_edge(iter, (*iter.extra_ptr()).iter.target, set);
     (*iter.extra_ptr()).iter.index = 0;
     (*iter.extra_ptr()).iter.kind = kind;
     // SetIterator instances share %SetIteratorPrototype%'s .next and
@@ -161,9 +161,9 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
             }
 
             uint slot_idx = (*iter.extra_ptr()).iter.index * 2;
-            TVal* entries = target.array_part();
+            hobject::PropValue* entries = target.array_part();
             while (entries != null && slot_idx < target.array_used &&
-                   entries[slot_idx].is_deleted()) {
+                   entries[slot_idx].get().is_deleted()) {
                 slot_idx += 2;
             }
             if (entries == null || slot_idx >= target.array_used) {
@@ -175,16 +175,16 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
 
             uint kind = (*iter.extra_ptr()).iter.kind;
             if (kind == 1) {
-                heap.tval_copy_ref(value, &entries[slot_idx]);
+                heap.tval_copy_ref(value, entries[slot_idx].view());
             } else if (kind == 0) {
-                heap.tval_copy_ref(value, &entries[slot_idx + 1]);
+                heap.tval_copy_ref(value, entries[slot_idx + 1].view());
             } else {
                 HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
                 if (catch pair_raw) return false;
                 HObject* pair = pair_raw;
                 pair.prototype = heap.array_proto;
-                pair.set_array_idx(0, entries[slot_idx], heap);
-                pair.set_array_idx(1, entries[slot_idx + 1], heap);
+                pair.set_array_idx(0, entries[slot_idx].get(), heap);
+                pair.set_array_idx(1, entries[slot_idx + 1].get(), heap);
                 pair.array_used = 2;
                 *pair.array_len_ptr() = 2;
                 value.set_object(pair);
@@ -201,8 +201,8 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
             }
 
             uint idx = (*iter.extra_ptr()).iter.index;
-            TVal* entries = target.array_part();
-            while (entries != null && idx < target.array_used && entries[idx].is_deleted()) {
+            hobject::PropValue* entries = target.array_part();
+            while (entries != null && idx < target.array_used && entries[idx].get().is_deleted()) {
                 idx++;
             }
             if (entries == null || idx >= target.array_used) {
@@ -212,7 +212,7 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
                 return true;
             }
 
-            TVal item = entries[idx];
+            TVal item = entries[idx].get();
             uint kind = (*iter.extra_ptr()).iter.kind;
             if (kind == 0 || kind == 1) {
                 heap.tval_copy_ref(value, &item);
@@ -1078,7 +1078,7 @@ fn bool iterhelper_get_iterator_flattenable(BuiltinContext* ctx, TVal obj, bool 
         HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = wrapped) { out_iterator[0] = null; return false; }
         HObject* w = wrapped;
-        (*w.extra_ptr()).prim.primitive_value = obj;
+        ctx.heap.@set_edge(w, (*w.extra_ptr()).prim.primitive_value, obj);
         w.prototype = heap.string_proto;
         obj_obj = w;
     } else {
@@ -1148,7 +1148,7 @@ fn void builtin_iterator_ctor(BuiltinContext* ctx) {
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = obj_raw) { ctx.result.set_undefined(); return; }
     HObject* obj = obj_raw;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.iterator_proto);
+    ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.iterator_proto));
     ctx.result.set_object(obj);
 }
 
@@ -1203,8 +1203,8 @@ fn void builtin_iterator_from(BuiltinContext* ctx) {
     if (catch err = wrapper_raw) { ctx.result.set_undefined(); return; }
     HObject* wrapper = wrapper_raw;
     wrapper.prototype = heap.wrap_for_valid_iterator_proto;
-    (*wrapper.extra_ptr()).wrap_iter.iterated = iterator_obj;
-    (*wrapper.extra_ptr()).wrap_iter.next_method = next_method;
+    ctx.heap.@set_edge(wrapper, (*wrapper.extra_ptr()).wrap_iter.iterated, iterator_obj);
+    ctx.heap.@set_edge(wrapper, (*wrapper.extra_ptr()).wrap_iter.next_method, next_method);
     ctx.result.set_object(wrapper);
 }
 
@@ -1267,7 +1267,7 @@ fn void iterhelper_setter_ignores_prototype_properties(BuiltinContext* ctx, HObj
     if (idx >= 0) {
         hobject::PropFlags pf = this_obj.get_prop_flags((uint)idx, ctx.heap);
         if (pf.is_accessor) {
-            TVal setter = hobject::hobject_access_setter(this_obj.prop_values()[idx]);
+            TVal setter = hobject::hobject_access_setter(this_obj.prop_values()[idx].get());
             bool callable = setter.is_lightfunc() ||
                 (setter.is_object() && setter.get_heapptr() != null &&
                  ((HObject*)setter.get_heapptr()).is_callable());
@@ -1411,9 +1411,9 @@ fn HObject* iterhelper_create(Heap* heap, HObject* underlying, TVal next_method,
     if (catch err = obj_raw) return null;
     HObject* obj = obj_raw;
     obj.prototype = heap.iterator_helper_proto;
-    (*obj.extra_ptr()).iter_helper.underlying = underlying;
-    (*obj.extra_ptr()).iter_helper.next_method = next_method;
-    (*obj.extra_ptr()).iter_helper.callback = callback;
+    heap.@set_edge(obj, (*obj.extra_ptr()).iter_helper.underlying, underlying);
+    heap.@set_edge(obj, (*obj.extra_ptr()).iter_helper.next_method, next_method);
+    heap.@set_edge(obj, (*obj.extra_ptr()).iter_helper.callback, callback);
     (*obj.extra_ptr()).iter_helper.remaining = remaining;
     (*obj.extra_ptr()).iter_helper.counter = 0;
     (*obj.extra_ptr()).iter_helper.kind = kind;

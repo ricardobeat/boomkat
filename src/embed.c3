@@ -274,7 +274,7 @@ fn HString* str_prop(HObject* o, HString* key, Heap* h) {
         if (idx >= 0) {
             // Accessor properties require VM execution, so treat as absent.
             if (cur.get_prop_flags((uint)idx, h).is_accessor) return null;
-            TVal got = cur.prop_values()[idx];
+            TVal got = cur.prop_values()[idx].get();
             if (got.is_string()) return (HString*)got.get_heapptr();
             return null;
         }

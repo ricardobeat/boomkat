@@ -382,10 +382,10 @@ fn InspectShape inspect_shape_of(InspectCtx* ctx, HObject* obj) {
 // backing store interleaves keys and values) and 1 for a Set.
 fn uint inspect_collection_size(HObject* obj, uint stride) {
     uint count = 0;
-    TVal* arr = obj.array_part();
+    hobject::PropValue* arr = obj.array_part();
     if (arr == null) return 0;
     for (uint i = 0; i + stride - 1 < obj.array_used; i += stride) {
-        if (!arr[i].is_deleted()) count++;
+        if (!arr[i].get().is_deleted()) count++;
     }
     return count;
 }
@@ -496,14 +496,14 @@ fn bool inspect_collect(InspectCtx* ctx, HObject* obj, InspectShape shape, int d
 
 // Map: `key => value` per non-deleted entry of the [k0, v0, k1, v1, ...] store.
 fn bool inspect_collect_map(InspectCtx* ctx, HObject* obj, int depth, InspectEntries* entries) {
-    TVal* arr = obj.array_part();
+    hobject::PropValue* arr = obj.array_part();
     if (arr == null) return true;
     for (uint i = 0; i + 1 < obj.array_used; i += 2) {
-        if (arr[i].is_deleted()) continue;
+        if (arr[i].get().is_deleted()) continue;
         StrBuf* b = entries.next(ctx.heap);
         if (b == null) return true;
-        TVal k = arr[i];
-        TVal v = arr[i + 1];
+        TVal k = arr[i].get();
+        TVal v = arr[i + 1].get();
         if (!inspect_value(ctx, &k, depth + 1, b)) return false;
         if (!b.append_bytes(" => ")) return false;
         if (!inspect_value(ctx, &v, depth + 1, b)) return false;
@@ -513,13 +513,13 @@ fn bool inspect_collect_map(InspectCtx* ctx, HObject* obj, int depth, InspectEnt
 
 // Set: one entry per non-deleted slot of the [v0, v1, ...] store.
 fn bool inspect_collect_set(InspectCtx* ctx, HObject* obj, int depth, InspectEntries* entries) {
-    TVal* arr = obj.array_part();
+    hobject::PropValue* arr = obj.array_part();
     if (arr == null) return true;
     for (uint i = 0; i < obj.array_used; i++) {
-        if (arr[i].is_deleted()) continue;
+        if (arr[i].get().is_deleted()) continue;
         StrBuf* b = entries.next(ctx.heap);
         if (b == null) return true;
-        TVal v = arr[i];
+        TVal v = arr[i].get();
         if (!inspect_value(ctx, &v, depth + 1, b)) return false;
     }
     return true;
@@ -577,11 +577,11 @@ fn bool inspect_collect_indexed(InspectCtx* ctx, HObject* obj, int depth, Inspec
 // chain: a hole must stay a hole even when Array.prototype has that index.
 fn bool inspect_array_element(InspectCtx* ctx, HObject* obj, uint i, TVal* out) {
     // array_used counts non-hole elements; array_size is the addressable bound.
-    TVal* arr = obj.array_part();
+    hobject::PropValue* arr = obj.array_part();
     if (arr != null && i < obj.array_size) {
         // An undefined slot in the dense part IS the hole representation.
-        if (arr[i].is_undefined()) return false;
-        *out = arr[i];
+        if (arr[i].get().is_undefined()) return false;
+        *out = arr[i].get();
         return true;
     }
     HString* key = ctx.heap.int_to_hstring((long)i);
@@ -589,7 +589,7 @@ fn bool inspect_array_element(InspectCtx* ctx, HObject* obj, uint i, TVal* out) 
     int idx = obj.find_prop_idx(key, ctx.heap);
     if (idx < 0) return false;
     if (obj.get_prop_flags((uint)idx, ctx.heap).is_accessor) { out.set_undefined(); return true; }
-    *out = obj.prop_values()[idx];
+    *out = obj.prop_values()[idx].get();
     return true;
 }
 
@@ -656,7 +656,7 @@ fn bool inspect_emit_named(InspectCtx* ctx, HObject* obj, uint i, int depth,
     entries.all_numeric = false;
     if (!inspect_append_key(b, key)) return false;
     if (!b.append_bytes(": ")) return false;
-    TVal slot = obj.prop_values()[i];
+    TVal slot = obj.prop_values()[i].get();
     return inspect_append_prop_value(ctx, flags, &slot, depth, b);
 }
 
@@ -989,7 +989,7 @@ fn char[] inspect_function_name(InspectCtx* ctx, HObject* obj) {
     int idx = obj.find_prop_idx(name_key, ctx.heap);
     if (idx < 0) return "";
     if (obj.get_prop_flags((uint)idx, ctx.heap).is_accessor) return "";
-    TVal v = obj.prop_values()[idx];
+    TVal v = obj.prop_values()[idx].get();
     if (!v.is_string()) return "";
     HString* s = (HString*)v.get_heapptr();
     if (s == null || s.is_symbol()) return "";
@@ -1003,7 +1003,7 @@ fn bool inspect_error(InspectCtx* ctx, HObject* obj, StrBuf* out) {
     if (stack_key != null) {
         int idx = obj.find_prop_idx(stack_key, ctx.heap);
         if (idx >= 0 && !obj.get_prop_flags((uint)idx, ctx.heap).is_accessor) {
-            TVal v = obj.prop_values()[idx];
+            TVal v = obj.prop_values()[idx].get();
             if (v.is_string()) {
                 HString* s = (HString*)v.get_heapptr();
                 if (s != null && !s.is_symbol() && s.blen > 0) {

@@ -126,7 +126,7 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     if (ctx.is_constructor) {
-        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_zoneddatetime_proto);
+        ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_zoneddatetime_proto));
     } else {
         obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
     }

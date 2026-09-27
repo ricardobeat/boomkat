@@ -55,6 +55,7 @@ fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
     if (promise == null) return;
     if ((*promise.extra_ptr()).promise.state != PROMISE_PENDING) return;
     heap.tval_copy_ref(&(*promise.extra_ptr()).promise.result, val);
+    heap.write_barrier(promise, *val);
     (*promise.extra_ptr()).promise.state = state;
     if (state == PROMISE_REJECTED && !(*promise.extra_ptr()).promise.is_handled) {
         heap.track_rejection(promise);
@@ -853,11 +854,11 @@ fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
     (*promise.extra_ptr()).promise.is_handled = true;
     reaction_set_next(reaction, null, heap);
     if ((*promise.extra_ptr()).promise.reactions_tail == null) {
-        (*promise.extra_ptr()).promise.reactions_head = reaction;
+        heap.@set_edge(promise, (*promise.extra_ptr()).promise.reactions_head, reaction);
     } else {
         reaction_set_next((HObject*)(*promise.extra_ptr()).promise.reactions_tail, reaction, heap);
     }
-    (*promise.extra_ptr()).promise.reactions_tail = reaction;
+    heap.@set_edge(promise, (*promise.extra_ptr()).promise.reactions_tail, reaction);
 }
 
 // ============================================================================
@@ -898,7 +899,7 @@ fn void builtin_promise(BuiltinContext* ctx) {
         return;
     }
     HObject* promise = prom_raw;
-    promise.prototype = builtin_proto_from_new_target(ctx, ctx.heap.promise_proto);
+    ctx.heap.set_prototype(promise, builtin_proto_from_new_target(ctx, ctx.heap.promise_proto));
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     if (exec_func != null && (*exec_func.extra_ptr()).func.comp_func == null && (*exec_func.extra_ptr()).func.builtin_fn_index < 0) {

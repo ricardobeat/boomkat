@@ -1778,7 +1778,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
         TVal elem;
         bool found = false;
         if (is_dense && i < arr.array_size) {
-            TVal av = arr.array_part()[i];
+            TVal av = arr.array_part()[i].get();
             if (!av.is_undefined()) {
                 elem = av;
                 found = true;
@@ -2039,7 +2039,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
                     TVal elem;
                     bool found = false;
                     if (is_dense && i < robj.array_size) {
-                        TVal av = robj.array_part()[i];
+                        TVal av = robj.array_part()[i].get();
                         if (!av.is_undefined()) {
                             elem = av;
                             found = true;

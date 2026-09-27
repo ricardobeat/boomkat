@@ -117,11 +117,11 @@ fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out
         out.enumerable = f.enumerable;   out.has_enumerable = true;
         out.configurable = f.configurable; out.has_configurable = true;
         if (f.is_accessor) {
-            TVal slot = obj.prop_values()[idx];
+            TVal slot = obj.prop_values()[idx].get();
             out.getter = hobject::hobject_access_getter(slot); out.has_get = true;
             out.setter = hobject::hobject_access_setter(slot); out.has_set = true;
         } else {
-            out.value = obj.prop_values()[idx]; out.has_value = true;
+            out.value = obj.prop_values()[idx].get(); out.has_value = true;
             out.writable = f.writable; out.has_writable = true;
         }
         return;
@@ -1454,7 +1454,7 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
         tkeys = (HString**)heap.alloc_func(heap.heap_udata, (usz)(tn + 1) * (usz)void*::size);
         if (tkeys != null) {
             for (uint i = 0; i < tn; i++) {
-                TVal el = tarr.array_part()[i];
+                TVal el = tarr.array_part()[i].get();
                 tkeys[i] = el.is_string() ? (HString*)el.get_heapptr() : null;
             }
         } else {
@@ -1574,7 +1574,7 @@ fn bool proxy_partitioned_own_keys(void* vm, Heap* heap, HObject* proxy, int mod
     // with refcount 1, so interning alone does not root them either.
     heap.native_frame_depth++;
     for (uint i = 0; i < n; i++) {
-        TVal el = arr.array_part()[i];
+        TVal el = arr.array_part()[i].get();
         if (!el.is_string()) continue;
         HString* k = (HString*)el.get_heapptr();
         bool is_sym = k.is_symbol();
@@ -1664,7 +1664,7 @@ fn bool proxy_mop_set_proto(void* vm, Heap* heap, HObject* proxy, TVal proto, bo
             cyc = cyc.prototype;
             cdepth++;
         }
-        target.prototype = new_proto;
+        heap.set_prototype(target, new_proto);
         *res = true;
         return true;
     }
@@ -1759,7 +1759,7 @@ fn bool proxy_set_integrity_level(void* vm, Heap* heap, HObject* proxy, bool fro
     HObject* karr;
     if (!proxy_mop_own_keys(vm, heap, proxy, &karr)) return false;
     for (uint i = 0; i < karr.array_used; i++) {
-        TVal el = karr.array_part()[i];
+        TVal el = karr.array_part()[i].get();
         if (!el.is_string()) continue;
         HString* k = (HString*)el.get_heapptr();
 
@@ -1802,7 +1802,7 @@ fn bool proxy_test_integrity_level(void* vm, Heap* heap, HObject* proxy,
     HObject* karr;
     if (!proxy_mop_own_keys(vm, heap, proxy, &karr)) return false;
     for (uint i = 0; i < karr.array_used; i++) {
-        TVal el = karr.array_part()[i];
+        TVal el = karr.array_part()[i].get();
         if (!el.is_string()) continue;
         HString* k = (HString*)el.get_heapptr();
 
@@ -1888,8 +1888,8 @@ fn HObject* proxy_create(BuiltinContext* ctx, TVal target_tv, TVal handler_tv) {
     HObject* p = raw;
     HObject* target = (HObject*)target_tv.get_heapptr();
     HObject* handler = (HObject*)handler_tv.get_heapptr();
-    (*p.extra_ptr()).proxy.target = target;
-    (*p.extra_ptr()).proxy.handler = handler;
+    ctx.heap.@set_edge(p, (*p.extra_ptr()).proxy.target, target);
+    ctx.heap.@set_edge(p, (*p.extra_ptr()).proxy.handler, handler);
     p.prototype = null;   // a proxy has no own [[Prototype]]; all MOP ops are intercepted
     // Mirror callability so `typeof` and the call dispatch route through the
     // proxy call builtin.
@@ -1961,7 +1961,7 @@ fn void builtin_proxy_revoke(BuiltinContext* ctx) {
     HString* slot_key = ctx.heap.str_intern(PROXY_REVOKE_SLOT);
     int idx = ctx.callee_obj.find_prop_idx((void*)slot_key, ctx.heap);
     if (idx < 0) return;
-    TVal p_tv = ctx.callee_obj.prop_values()[idx];
+    TVal p_tv = ctx.callee_obj.prop_values()[idx].get();
     if (!p_tv.is_object()) return;
     HObject* p = (HObject*)p_tv.get_heapptr();
     if (!p.flags.exotic_proxyobj) return;

@@ -265,7 +265,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     HObject* b = (HObject*)vic.bindings;
                     if (b.shape_id == vic.shape_id
                         && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                        TVal old_val = b.prop_values()[vic.prop_idx];
+                        TVal old_val = b.prop_values()[vic.prop_idx].get();
                         if (!env::is_tdz_sentinel(&old_val)
                             && vic.prop_flags.writable) {
                             // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
@@ -288,11 +288,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                     return (TVal){};
                                 }
-                                if (!vm_set_reg_bigint(vm, &b.prop_values()[vic.prop_idx], nr)) {
+                                if (!vm_set_slot_bigint(vm, b, &b.prop_values()[vic.prop_idx], nr)) {
                                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                     return (TVal){};
                                 }
-                                vm.heap.tval_copy_ref(ra, &b.prop_values()[vic.prop_idx]);
+                                vm.heap.tval_copy_ref(ra, b.prop_values()[vic.prop_idx].view());
                             } else {
                                 double d = vm_to_number(vm,&old_val);
                                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -329,7 +329,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                     int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
                     if (idx >= 0 && !cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
-                        TVal old_val = cur.bindings.prop_values()[idx];
+                        TVal old_val = cur.bindings.prop_values()[idx].get();
                         if (env::is_tdz_sentinel(&old_val)) {
                             HString* name_hstr = (HString*)key;
                             if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -371,17 +371,17 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                 return (TVal){};
                             }
-                            if (!vm_set_reg_bigint(vm, &cur.bindings.prop_values()[idx], nr)) {
+                            if (!vm_set_slot_bigint(vm, cur.bindings, &cur.bindings.prop_values()[idx], nr)) {
                                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                 return (TVal){};
                             }
-                            vm.heap.tval_copy_ref(&new_val, &cur.bindings.prop_values()[idx]);
+                            vm.heap.tval_copy_ref(&new_val, cur.bindings.prop_values()[idx].view());
                         } else {
                             double d = vm_to_number(vm,&old_val);
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             new_val.set_number(d + (is_inc ? 1.0 : -1.0));
                         }
-                        cur.bindings.prop_values()[idx] = new_val;
+                        vm.heap.store_slot(cur.bindings, &cur.bindings.prop_values()[idx], new_val);
                         *ra = new_val;
                         track_heap_store(ds.act, ra, (uint)insn.a);
                         found = true;
@@ -481,7 +481,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // else defines it), caught by the corpus.
 
 
-                    TVal old_val = cur.bindings.prop_values()[idx];
+                    TVal old_val = cur.bindings.prop_values()[idx].get();
                     if (env::is_tdz_sentinel(&old_val)) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -524,11 +524,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }
-                        if (!vm_set_reg_bigint(vm, &cur.bindings.prop_values()[idx], nr)) {
+                        if (!vm_set_slot_bigint(vm, cur.bindings, &cur.bindings.prop_values()[idx], nr)) {
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }
-                        vm.heap.tval_copy_ref(ra, &cur.bindings.prop_values()[idx]);
+                        vm.heap.tval_copy_ref(ra, cur.bindings.prop_values()[idx].view());
                     } else {
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -617,8 +617,8 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // writability re-check is needed.
                 if (gb != null && gic.search_head == (void*)ds.act.lex_env
                     && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
-                    TVal* slot = &gb.prop_values()[gic.prop_idx];
-                    TVal old_val = *slot;
+                    hobject::PropValue* slot = &gb.prop_values()[gic.prop_idx];
+                    TVal old_val = slot.get();
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -662,7 +662,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
                 int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
                 if (idx >= 0) {
-                    TVal old_val = cur.bindings.prop_values()[idx];
+                    TVal old_val = cur.bindings.prop_values()[idx].get();
                     if (env::is_tdz_sentinel(&old_val)) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -709,11 +709,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }
-                        if (!vm_set_reg_bigint(vm, &cur.bindings.prop_values()[idx], nr)) {
+                        if (!vm_set_slot_bigint(vm, cur.bindings, &cur.bindings.prop_values()[idx], nr)) {
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }
-                        vm.heap.tval_copy_ref(ra, &cur.bindings.prop_values()[idx]);
+                        vm.heap.tval_copy_ref(ra, cur.bindings.prop_values()[idx].view());
                     } else {
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -737,7 +737,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (!found && ds.act.lex_env != ds.act.var_env) {
                 int vidx = ds.act.var_env.bindings.find_prop_idx(key, ds.vm.heap);
                 if (vidx >= 0) {
-                    TVal old_val = ds.act.var_env.bindings.prop_values()[vidx];
+                    TVal old_val = ds.act.var_env.bindings.prop_values()[vidx].get();
                     hobject::PropFlags fl = ds.act.var_env.bindings.get_prop_flags((uint)vidx, ds.vm.heap);
                     if (!fl.is_accessor && fl.writable && !env::is_tdz_sentinel(&old_val)) {
                         if (old_val.is_fastint()) {

@@ -362,20 +362,20 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     hobject::VarICEntry* gic = vic_base + pc_off;
     HObject* gb = (HObject*)gic.bindings;
     if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
-    TVal* pv = &gb.prop_values()[gic.prop_idx];
-    if (env::is_tdz_sentinel(pv)) return pc; // TDZ -> switch throws
+    hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
+    if (env::is_tdz_sentinel(pv.view())) return pc; // TDZ -> switch throws
     TVal* ra = regs + insn.a;
-    if (!pv.is_heap_allocated() && !ra.is_heap_allocated()) {
+    if (!pv.get().is_heap_allocated() && !ra.is_heap_allocated()) {
         // prim -> prim: no refcount, no heap ref lands in the register, so no
         // track_heap_store.
-        *ra = *pv;
+        *ra = pv.get();
     } else {
         // A heap operand is common here (object-valued globals), so this stays
         // inline rather than bailing: the refcount call frames the handler, but
         // routing every such read through the switch costs more. Measured:
         // bailing here costs bench_property_lookup 255->307ms and
         // bench_arithmetic 346->391ms.
-        cold.vm.heap.tval_copy_ref(ra, pv);
+        cold.vm.heap.tval_copy_ref(ra, pv.view());
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
     pc++;
@@ -394,8 +394,7 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     // the re-check-free store path -- exactly the switch's fast-path gate.
     if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
-    TVal* pv = &gb.prop_values()[gic.prop_idx];
-    vm.heap.tval_move_slot_fast(pv, ra);
+    vm.heap.tval_move_slot_fast(gb, &gb.prop_values()[gic.prop_idx], ra);
     ra.set_undefined();
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -410,8 +409,8 @@ fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal*
     hobject::VarICEntry* gic = vic_base + pc_off;
     HObject* gb = (HObject*)gic.bindings;
     if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
-    TVal* slot = &gb.prop_values()[gic.prop_idx];
-    TVal old_val = *slot;
+    hobject::PropValue* slot = &gb.prop_values()[gic.prop_idx];
+    TVal old_val = slot.get();
     // Threaded fast path: fastint only. number/bigint/TDZ -> switch.
     if (!old_val.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
@@ -438,9 +437,9 @@ fn Instruction* th_dec_global(Instruction* pc, Instruction* code_end, TVal* regs
 // --- Variable access: VarIC (shape and recycle-epoch) hit path only. ---
 
 fn Instruction* th_getcap(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    TVal* slot = capture_value_slot(cold.act, pc.get_bc(), cold.vm.heap);
+    hobject::PropValue* slot = capture_value_slot(cold.act, pc.get_bc(), cold.vm.heap);
     if (slot == null) return pc;
-    TVal value = *slot;
+    TVal value = slot.get();
     TVal* dst = regs + pc.a;
     if (!th_can_retain(&value) || !th_can_release(dst)) return pc;
     th_do_retain(&value);
@@ -452,29 +451,34 @@ fn Instruction* th_getcap(Instruction* pc, Instruction* code_end, TVal* regs, Co
 
 fn Instruction* th_putcap(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     uint capture_index = pc.op == Opcode.PUTCAP_SNAP ? pc.c : pc.get_bc();
-    TVal* slot = capture_value_slot(cold.act, capture_index, cold.vm.heap, true);
-    if (slot == null || !th_can_release(slot)) return pc;
+    HObject* owner;
+    hobject::PropValue* slot = capture_value_slot(cold.act, capture_index, cold.vm.heap, true, &owner);
+    if (slot == null || !th_can_release(slot.view())) return pc;
     TVal* src = regs + pc.a;
-    th_do_release(slot);
-    *slot = *src;
+    th_do_release(slot.view());
+    cold.vm.heap.store_slot(owner, slot, *src);
     src.set_undefined();
     return th_next(pc + 1, code_end, regs, cold);
 }
 
-fn TVal* th_cell_slot(Instruction* pc, TVal* regs) @private {
+// The dense slot a cell instruction names, and in `owner` the cells object
+// that holds it, which a store needs for the write barrier.
+fn hobject::PropValue* th_cell_slot(Instruction* pc, TVal* regs, HObject** owner) @private {
     TVal* owner_val = regs + pc.b;
     if (!owner_val.is_object()) return null;
-    HObject* owner = (HObject*)owner_val.get_heapptr();
+    HObject* cells = (HObject*)owner_val.get_heapptr();
     uint slot_idx = (uint)pc.c;
-    if (owner == null || owner.get_class() != hobject::ObjClass.OBJECT
-        || owner.array_part() == null || slot_idx >= owner.array_size) return null;
-    return &owner.array_part()[slot_idx];
+    if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT
+        || cells.array_part() == null || slot_idx >= cells.array_size) return null;
+    *owner = cells;
+    return &cells.array_part()[slot_idx];
 }
 
 fn Instruction* th_getcell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    TVal* slot = th_cell_slot(pc, regs);
+    HObject* owner;
+    hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     if (slot == null) return pc;
-    TVal value = *slot;
+    TVal value = slot.get();
     TVal* dst = regs + pc.a;
     if (!th_can_retain(&value) || !th_can_release(dst)) return pc;
     th_do_retain(&value);
@@ -485,21 +489,23 @@ fn Instruction* th_getcell(Instruction* pc, Instruction* code_end, TVal* regs, C
 }
 
 fn Instruction* th_setcell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    TVal* slot = th_cell_slot(pc, regs);
+    HObject* owner;
+    hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     TVal* src = regs + pc.a;
-    if (slot == null || !th_can_retain(src) || !th_can_release(slot)) return pc;
+    if (slot == null || !th_can_retain(src) || !th_can_release(slot.view())) return pc;
     th_do_retain(src);
-    th_do_release(slot);
-    *slot = *src;
+    th_do_release(slot.view());
+    cold.vm.heap.store_slot(owner, slot, *src);
     return th_next(pc + 1, code_end, regs, cold);
 }
 
 fn Instruction* th_movecell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    TVal* slot = th_cell_slot(pc, regs);
+    HObject* owner;
+    hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     TVal* src = regs + pc.a;
-    if (slot == null || !th_can_release(slot)) return pc;
-    th_do_release(slot);
-    *slot = *src;
+    if (slot == null || !th_can_release(slot.view())) return pc;
+    th_do_release(slot.view());
+    cold.vm.heap.store_slot(owner, slot, *src);
     src.set_undefined();
     return th_next(pc + 1, code_end, regs, cold);
 }
@@ -522,7 +528,7 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     if (vic.prop_flags.is_accessor) return pc; // getter -> switch
-    TVal v = b.prop_values()[vic.prop_idx];
+    TVal v = b.prop_values()[vic.prop_idx].get();
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
     // Keep this handler a LEAF. Calling out to Heap.decref makes LLVM frame the
@@ -563,15 +569,15 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    TVal* pv = &b.prop_values()[vic.prop_idx];
+    hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
     hobject::PropFlags fl = vic.prop_flags;
-    if (env::is_tdz_sentinel(pv) || !fl.writable || fl.is_accessor) return pc;
+    if (env::is_tdz_sentinel(pv.view()) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
     // Inline release, as in th_getvar: keeps the handler leaf without pushing
     // heap-valued bindings onto the switch.
-    if (!th_can_release(pv)) return pc;
-    th_do_release(pv);
-    *pv = *ra;
+    if (!th_can_release(pv.view())) return pc;
+    th_do_release(pv.view());
+    vm.heap.store_slot(b, pv, *ra);
     ra.set_undefined();
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -594,9 +600,9 @@ fn Instruction* th_putvar_snap_number(Instruction* pc, Instruction* code_end, TV
         || cold.vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     hobject::PropFlags flags = vic.prop_flags;
     if (!flags.writable || flags.is_accessor) return pc;
-    TVal* slot = &bindings.prop_values()[vic.prop_idx];
-    if (!slot.is_fastint() && !slot.is_number()) return pc;
-    *slot = *value;
+    hobject::PropValue* slot = &bindings.prop_values()[vic.prop_idx];
+    if (!slot.get().is_fastint() && !slot.get().is_number()) return pc;
+    slot.set_untraced(*value);
     value.set_undefined();
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -619,7 +625,7 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    TVal old_val = b.prop_values()[vic.prop_idx];
+    TVal old_val = b.prop_values()[vic.prop_idx].get();
     if (env::is_tdz_sentinel(&old_val) || !vic.prop_flags.writable) return pc;
     if (!old_val.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
@@ -668,9 +674,9 @@ fn Instruction* th_getprop_array(Instruction* pc, Instruction* code_end, TVal* r
     HObject* obj = (HObject*)rb.get_heapptr();
     if (obj.flags.exotic_proxyobj || obj.get_class() != hobject::ObjClass.ARRAY) return pc;
     long idx = rc.get_fastint();
-    TVal* elements = obj.array_part();
+    hobject::PropValue* elements = obj.array_part();
     if (elements == null || idx < 0 || idx >= (long)obj.array_size) return pc;
-    TVal value = elements[idx];
+    TVal value = elements[idx].get();
     // Undefined dense slots need named-property and prototype lookup.
     if (value.is_undefined()) return pc;
     TVal* ra = regs + insn.a;
@@ -708,9 +714,9 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     if (ic == null) return pc;
     if (ic.key != key || ic.shape_id != hobj.shape_id
         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
-    TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+    hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
-    TVal ic_val = *ic_value;
+    TVal ic_val = ic_value.get();
     TVal* ra = regs + insn.a;
     if (!ic_val.is_heap_allocated()) {
         *ra = ic_val;
@@ -743,9 +749,9 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
     if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
-    TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+    hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
-    TVal ic_val = *ic_value;
+    TVal ic_val = ic_value.get();
     TVal* ra = regs + insn.a;
     if (!ic_val.is_heap_allocated()) {
         *ra = ic_val;
@@ -780,7 +786,7 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
     if (ic.cached_prop_alloc != (void*)hobj.prop_values()
         || ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
-    vm.heap.tval_copy_ref(ic.prop_value_ptr, regs + insn.c);
+    vm.heap.store_slot_ref(hobj, ic.prop_value_ptr, regs + insn.c);
     pc++;
     return th_next(pc, code_end, regs, cold);
 }

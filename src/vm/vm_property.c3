@@ -422,9 +422,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // Check shape_id first: most likely to differ on polymorphic sites.
                     if (lookup_key != null && ic.shape_id == hobj.shape_id && ic.key == lookup_key
                         && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
-                        TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+                        hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                         if (ic_value != null) {
-                            TVal ic_val = *ic_value;
+                            TVal ic_val = ic_value.get();
                             getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                             return (TVal){};
                         }
@@ -577,7 +577,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
                         int cidx = hobj.find_prop_idx(key, ds.vm.heap);
                         if (cidx >= 0 && !hobj.get_prop_flags((uint)cidx, ds.vm.heap).is_accessor) {
-                            vm.heap.tval_copy_ref(ra, &hobj.prop_values()[cidx]);
+                            vm.heap.tval_copy_ref(ra, hobj.prop_values()[cidx].view());
                             track_heap_store(ds.act, ra, (uint)insn.a);
                         } else if (cidx >= 0) {
                             if (!poison_pill_throw(vm, ds, true)) {
@@ -883,9 +883,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::ICEntry* ic = ds.ic_base + pc_off;
                         if (ic.key == (void*)key_hstr && ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
-                            TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+                            hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                             if (ic_value != null) {
-                                TVal ic_val = *ic_value;
+                                TVal ic_val = ic_value.get();
                                 getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                                 return (TVal){};
                             }
@@ -909,7 +909,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
                             int cidx2 = hobj.find_prop_idx(key, ds.vm.heap);
                             if (cidx2 >= 0 && !hobj.get_prop_flags((uint)cidx2, ds.vm.heap).is_accessor) {
-                                vm.heap.tval_copy_ref(ra, &hobj.prop_values()[cidx2]);
+                                vm.heap.tval_copy_ref(ra, hobj.prop_values()[cidx2].view());
                             } else if (cidx2 >= 0) {
                                 if (!poison_pill_throw(vm, ds, true)) {
                                     return VM_ERROR~;
@@ -1225,9 +1225,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::ICEntry* ic = ds.ic_base + pc_off;
                 if (ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
-                    TVal* ic_value = hobject::ic_resolve_value(ic, hobj);
+                    hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                     if (ic_value != null) {
-                        TVal ic_val = *ic_value;
+                        TVal ic_val = ic_value.get();
                         getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                         return (TVal){};
                     }
@@ -1282,9 +1282,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if (!hop1_proxy && ds.ic_base != null) {
                     hobject::ICEntry* ic1 = ds.ic_base + pc1;
                     if (ic1.key == (void*)key1_hstr && ic1.shape_id == hobj1.shape_id && ic1.shape_gen == hobj1.shape_generation(ds.vm.heap)) {
-                        TVal* ic1_value = hobject::ic_resolve_value(ic1, hobj1);
+                        hobject::PropValue* ic1_value = hobject::ic_resolve_value(ic1, hobj1);
                         if (ic1_value != null) {
-                            mid_val = *ic1_value;
+                            mid_val = ic1_value.get();
                         }
                     }
                 }
@@ -1386,9 +1386,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null && key2_hstr != null) {
                         hobject::ICEntry* ic2 = ds.ic_base + pc2;
                         if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id && ic2.shape_gen == hobj2.shape_generation(ds.vm.heap)) {
-                            TVal* ic2_value = hobject::ic_resolve_value(ic2, hobj2);
+                            hobject::PropValue* ic2_value = hobject::ic_resolve_value(ic2, hobj2);
                             if (ic2_value != null) {
-                                TVal ic2_val = *ic2_value;
+                                TVal ic2_val = ic2_value.get();
                                 getprop_store(vm, ds, ra2, &ic2_val, dst2_reg);
                                 // Also store the intermediate result in ra (temp register)
                                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
@@ -1629,9 +1629,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null && key2_hstr != null) {
                         hobject::ICEntry* ic2 = ds.ic_base + pc2;
                         if (ic2.key == (void*)key2_hstr && ic2.shape_id == hobj2.shape_id && ic2.shape_gen == hobj2.shape_generation(ds.vm.heap)) {
-                            TVal* ic2_value = hobject::ic_resolve_value(ic2, hobj2);
+                            hobject::PropValue* ic2_value = hobject::ic_resolve_value(ic2, hobj2);
                             if (ic2_value != null) {
-                                TVal ic2_val = *ic2_value;
+                                TVal ic2_val = ic2_value.get();
                                 getprop_store(vm, ds, ra2, &ic2_val, dst2_reg);
                                 // Also store the intermediate result in ra (temp register)
                                 getprop_store(vm, ds, ra, &mid_val, (uint)insn.a);
@@ -2185,7 +2185,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (ic.cached_prop_alloc == (void*)hobj.prop_values()
                             && !ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
-                            vm.heap.tval_copy_ref(ic.prop_value_ptr, rc);
+                            vm.heap.store_slot_ref(hobj, ic.prop_value_ptr, rc);
                             return (TVal){};
                         }
                     }
@@ -2241,11 +2241,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // Single find_prop_idx call for both existence check and accessor check
                     int exist_idx = hobj.find_prop_idx(key, ds.vm.heap);
                     if (exist_idx >= 0) {
-                        TVal* entry = &hobj.prop_values()[exist_idx];
+                        hobject::PropValue* entry = &hobj.prop_values()[exist_idx];
                         hobject::PropFlags exist_flags = hobj.get_prop_flags((uint)exist_idx, ds.vm.heap);
                         if (exist_flags.is_accessor) {
                             // An accessor property invokes its setter.
-                            TVal setter_fn = hobject::hobject_access_setter(*entry);
+                            TVal setter_fn = hobject::hobject_access_setter(entry.get());
                             // No setter (get-only accessor): §10.1.9.3 / OrdinarySet
                             // returns false, which PutValue turns into a TypeError
                             // in strict code and drops in sloppy code (§13.15.2).
@@ -2448,7 +2448,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 && !exist_flags.is_private_method;
                             if (is_private_field) {
                                 // Update value, preserve existing flags
-                                vm.heap.tval_copy_ref(entry, &put_val);
+                                vm.heap.store_slot_ref(hobj, entry, &put_val);
                             } else {
                                 // Sloppy [[Set]] silently drops writes to non-writable
                                 // own data properties (ES2024 §10.2.1.2 OrdinarySet +
@@ -2480,7 +2480,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                             }
                             // Update value, preserve existing flags
-                            vm.heap.tval_copy_ref(entry, &put_val);
+                            vm.heap.store_slot_ref(hobj, entry, &put_val);
                             // Cache this site so a repeat write on the same shape
                             // stores straight through the slot pointer. Only an own,
                             // writable, non-accessor data property qualifies, which is
@@ -2527,7 +2527,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                                 mapped_args_write(vm, hobj, dense_ai, &put_val);
                             }
-                            vm.heap.tval_copy_ref(&hobj.array_part()[dense_ai], &put_val);
+                            vm.heap.store_slot_ref(hobj, &hobj.array_part()[dense_ai], &put_val);
                             return (TVal){};
                         }
 

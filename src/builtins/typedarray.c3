@@ -175,11 +175,12 @@ fn HObject* typedarray_alloc_buffer(BuiltinContext* ctx, uint byte_length) {
     return buf;
 }
 
-// Link a freshly created view object into its buffer's views_head chain.
-fn void typedarray_link_view(HObject* buf, HObject* view) {
+// Link a freshly created view object into its buffer's views_head chain. The
+// buffer may be old, so its new edge passes the write barrier.
+fn void typedarray_link_view(Heap* heap, HObject* buf, HObject* view) {
     (*view.extra_ptr()).view.buffer = buf;
     (*view.extra_ptr()).view.next_view = (*buf.extra_ptr()).ab.views_head;
-    (*buf.extra_ptr()).ab.views_head = view;
+    heap.@set_edge(buf, (*buf.extra_ptr()).ab.views_head, view);
 }
 
 // Build a Uint8Array over a fresh immutable ArrayBuffer holding a copy of
@@ -218,7 +219,7 @@ fn HObject* bytes_module_view(Heap* heap, char[] bytes) {
     (*view.extra_ptr()).view.byte_offset = 0;
     (*view.extra_ptr()).view.byte_length = byte_length;
     (*view.extra_ptr()).view.length_tracking = false;
-    typedarray_link_view(buf, view);
+    typedarray_link_view(heap, buf, view);
     return view;
 }
 
@@ -269,7 +270,7 @@ fn HObject* typed_array_resolve_instance_proto(BuiltinContext* ctx) {
         if (proto_key != null) {
             int pidx = ctx.callee_obj.find_prop_idx((void*)proto_key, ctx.heap);
             if (pidx >= 0) {
-                TVal pv = ctx.callee_obj.prop_values()[pidx];
+                TVal pv = ctx.callee_obj.prop_values()[pidx].get();
                 if (pv.is_object() && pv.get_heapptr() != null) {
                     default_proto = (HObject*)pv.get_heapptr();
                 }
@@ -681,7 +682,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
             (*obj.extra_ptr()).view.byte_offset = off;
             (*obj.extra_ptr()).view.byte_length = view_len_bytes;
             (*obj.extra_ptr()).view.length_tracking = length_tracking;
-            typedarray_link_view(arg_obj, obj);
+            typedarray_link_view(ctx.heap, arg_obj, obj);
             ctx.result.set_object(obj);
             return;
         }
@@ -909,7 +910,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
     obj.prototype = instance_proto;
     (*obj.extra_ptr()).view.byte_offset = byte_offset;
     (*obj.extra_ptr()).view.byte_length = byte_length;
-    typedarray_link_view(buf, obj);
+    typedarray_link_view(ctx.heap, buf, obj);
     ctx.result.set_object(obj);
 }
 
@@ -1584,7 +1585,7 @@ fn void builtin_ta_proto_subarray(BuiltinContext* ctx) {
         (*sub.extra_ptr()).view.byte_offset = new_byte_off;
         (*sub.extra_ptr()).view.byte_length = new_byte_len;
         (*sub.extra_ptr()).view.length_tracking = result_tracking;
-        typedarray_link_view(buf, sub);
+        typedarray_link_view(ctx.heap, buf, sub);
         ctx.result.set_object(sub);
     }
 }
@@ -1997,7 +1998,7 @@ fn HObject* ta_alloc_same_class(BuiltinContext* ctx, hobject::ObjClass cls, uint
     result.prototype = ctx.heap.typedarray_proto;
     (*result.extra_ptr()).view.byte_offset = 0;
     (*result.extra_ptr()).view.byte_length = new_bytes;
-    typedarray_link_view(new_buf, result);
+    typedarray_link_view(ctx.heap, new_buf, result);
     return result;
 }
 

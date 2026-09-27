@@ -118,10 +118,10 @@ fn void builtin_map_proto_size_get(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
     if (map == null) return;
     uint count = 0;
-    TVal* arr = map.array_part();
+    hobject::PropValue* arr = map.array_part();
     if (arr != null) {
         for (uint i = 0; i + 1 < map.array_used; i += 2) {
-            if (!arr[i].is_deleted()) count++;
+            if (!arr[i].get().is_deleted()) count++;
         }
     }
     ctx.result.set_fastint((long)count);
@@ -138,7 +138,7 @@ fn void builtin_map_proto_get(BuiltinContext* ctx) {
     TVal key = ctx.regs[ctx.base_reg];
     int found = map_find_key(map, key, ctx.heap);
     if (found >= 0) {
-        *ctx.result = map.array_part()[(uint)found + 1];
+        *ctx.result = map.array_part()[(uint)found + 1].get();
     } else {
         ctx.result.set_undefined();
     }
@@ -279,12 +279,12 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
 
-    TVal* entries = map.array_part();
+    hobject::PropValue* entries = map.array_part();
     uint used = map.array_used;
     for (uint i = 0; i + 1 < used; i += 2) {
-        TVal key = entries[i];
+        TVal key = entries[i].get();
         if (key.is_deleted()) continue;  // skip deleted slot
-        TVal value = entries[i + 1];
+        TVal value = entries[i + 1].get();
 
         TVal[3] args;
         args[0] = value;
@@ -368,7 +368,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
         if (iter_sym != null && entries_key != null) {
             PropValue*? entries_prop_opt = proto.find_prop(entries_key, heap);
             if (try entries_prop = entries_prop_opt) {
-                proto.put_prop(iter_sym, *entries_prop, hobject::PROP_FLAGS_WC, heap);
+                proto.put_prop(iter_sym, entries_prop.get(), hobject::PROP_FLAGS_WC, heap);
             }
         }
     }

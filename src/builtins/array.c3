@@ -495,7 +495,7 @@ fn void builtin_array(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = builtin_proto_from_new_target(ctx, ctx.heap.array_proto);
+    ctx.heap.set_prototype(arr, builtin_proto_from_new_target(ctx, ctx.heap.array_proto));
 
     // Array's exotic "length" is not a regular own property, it lives in the
     // dedicated array_len_ptr() slot (ES6 §9.4.2.1 ArraySetLength / [[DefineOwnProperty]]
@@ -687,7 +687,7 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
             if (own_idx >= 0) {
                 PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
                 if (pf.is_accessor) {
-                    TVal gs_slot = obj.prop_values()[own_idx];
+                    TVal gs_slot = obj.prop_values()[own_idx].get();
                     TVal getter_fn = hobject::hobject_access_getter(gs_slot);
                     return invoke_getter_as_length(obj, getter_fn, heap, ctx);
                 }
@@ -703,7 +703,7 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
         if (own_idx >= 0) {
             PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
             if (pf.is_accessor) {
-                TVal gs_slot = obj.prop_values()[own_idx];
+                TVal gs_slot = obj.prop_values()[own_idx].get();
                 TVal getter_fn = hobject::hobject_access_getter(gs_slot);
                 return invoke_getter_as_length(obj, getter_fn, heap, ctx);
             }
@@ -732,7 +732,7 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
     if (own_idx >= 0) {
         PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
         if (pf.is_accessor) {
-            TVal gs_slot = obj.prop_values()[own_idx];
+            TVal gs_slot = obj.prop_values()[own_idx].get();
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
             return invoke_getter_as_length(obj, getter_fn, heap, ctx);
         }
@@ -856,7 +856,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
             if (idx >= 0) {
                 TVal tv;
                 tv.set_fastint((long)len_val);
-                obj.prop_values()[idx] = tv;
+                obj.prop_values()[idx].set_untraced(tv);
                 return;
             }
         }
@@ -870,7 +870,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
             if (idx >= 0) {
                 TVal tv;
                 tv.set_fastint((long)len_val);
-                obj.prop_values()[idx] = tv;
+                obj.prop_values()[idx].set_untraced(tv);
                 return;
             }
         }
@@ -887,7 +887,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
 fn TVal array_get_elem(HObject* obj, uint idx, Heap* heap) {
     // Try the dense array part first.
     if (obj.array_part() != null && idx < obj.array_size) {
-        TVal v = obj.array_part()[idx];
+        TVal v = obj.array_part()[idx].get();
         if (!v.is_undefined()) return v;
     }
     // Fall back to named property lookup (elements may be stored as named
@@ -1474,9 +1474,9 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
         // path was always correct here; only this array fast path short-cut
         // the lookup.
         && idx < (ulong)obj.array_size
-        && !obj.array_part()[(uint)idx].is_undefined()) {
+        && !obj.array_part()[(uint)idx].get().is_undefined()) {
         uint idx32 = (uint)idx;
-        TVal elem_fast = obj.array_part()[idx32];
+        TVal elem_fast = obj.array_part()[idx32].get();
         // B30 fix: incref the popped element before clearing the slot.
         if (elem_fast.is_heap_allocated() && elem_fast.get_heapptr() != null) {
             ((types::HeapHeader*)elem_fast.get_heapptr()).incref();
@@ -1494,7 +1494,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
             } else {
                 len_tv_pop.set_number((double)idx);
             }
-            obj.prop_values()[len_own_idx_pop] = len_tv_pop;
+            obj.prop_values()[len_own_idx_pop].set_untraced(len_tv_pop);
         }
         *ctx.result = elem_fast;
         return;
@@ -1616,7 +1616,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
                     } else {
                         len_tv_fast.set_number((double)new_len);
                     }
-                    obj.prop_values()[len_own_idx] = len_tv_fast;
+                    obj.prop_values()[len_own_idx].set_untraced(len_tv_fast);
                 }
                 if (new_len <= (ulong)types::FASTINT_MAX) {
                     ctx.result.set_fastint((long)new_len);
@@ -3098,7 +3098,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
         hobject::PropFlags cur_flags = obj.get_prop_flags((uint)own_idx, ctx.heap);
         if (cur_flags.is_accessor) {
             // Own accessor: invoke the setter, or throw if getter-only.
-            TVal gs_slot = obj.prop_values()[own_idx];
+            TVal gs_slot = obj.prop_values()[own_idx].get();
             TVal setter_fn = hobject::hobject_access_setter(gs_slot);
             if (setter_fn.is_undefined() || setter_fn.is_null()) {
                 arr_throw_type_error(ctx, "Cannot set property length, has only a getter");
@@ -3445,7 +3445,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         HObject*? wrapped = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = wrapped) { ctx.result.set_undefined(); return; }
         array_like = wrapped;
-        (*array_like.extra_ptr()).prim.primitive_value = items;
+        ctx.heap.@set_edge(array_like, (*array_like.extra_ptr()).prim.primitive_value, items);
     }
 
     // Get .length, Get(arrayLike, "length") then ToLength.
@@ -3615,7 +3615,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
         if (try obj = obj_raw) {
             obj.prototype = heap.number_proto;
-            (*obj.extra_ptr()).prim.primitive_value = val;
+            heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
             return obj;
         }
         return null;
@@ -3625,7 +3625,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try obj = obj_raw) {
             obj.prototype = heap.bigint_proto;
-            (*obj.extra_ptr()).prim.primitive_value = val;
+            heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
             return obj;
         }
         return null;
@@ -4240,7 +4240,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     if (own_idx >= 0) {
         PropFlags f = obj.get_prop_flags((uint)own_idx, ctx.heap);
         if (f.is_accessor) {
-            TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)own_idx]);
+            TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)own_idx].get());
             if (setter.is_undefined() || setter.is_null()) {
                 // Own getter-only accessor, [[Set]] returns false → TypeError.
                 arr_throw_type_error(ctx, "Cannot set property, has only a getter");
@@ -4264,8 +4264,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
             arr_throw_type_error(ctx, "Cannot assign to read-only property");
             return false;
         }
-        TVal* entry = &obj.prop_values()[(uint)own_idx];
-        ctx.heap.tval_copy_ref(entry, &val);
+        ctx.heap.store_slot_ref(obj, &obj.prop_values()[(uint)own_idx], &val);
         if (know_current_len && idx >= current_len) {
             array_set_length_ulong(obj, idx + 1, ctx.heap);
         }
@@ -4361,12 +4360,12 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
     if (own_idx >= 0) {
         PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
         if (pf.is_accessor) {
-            TVal gs_slot = obj.prop_values()[own_idx];
+            TVal gs_slot = obj.prop_values()[own_idx].get();
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
             *out = arr_invoke_getter(obj, getter_fn, heap, null);
             return true;
         }
-        *out = obj.prop_values()[own_idx];
+        *out = obj.prop_values()[own_idx].get();
         return true;
     }
 
@@ -4485,13 +4484,13 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     if (own_idx >= 0) {
         PropFlags pf = obj.get_prop_flags((uint)own_idx, heap);
         if (pf.is_accessor) {
-            TVal gs_slot = obj.prop_values()[own_idx];
+            TVal gs_slot = obj.prop_values()[own_idx].get();
             TVal getter_fn = hobject::hobject_access_getter(gs_slot);
             *out = arr_invoke_getter_ctx(obj, getter_fn, heap, ctx);
             // If the getter threw, bubble ctx.should_throw up to the caller.
             return !ctx.should_throw;
         }
-        *out = obj.prop_values()[own_idx];
+        *out = obj.prop_values()[own_idx].get();
         return true;
     }
 

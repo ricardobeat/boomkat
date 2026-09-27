@@ -53,7 +53,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         if (catch err = obj_raw) return false;
         HObject* obj = obj_raw;
         obj.prototype = ctx.heap.number_proto;
-        (*obj.extra_ptr()).prim.primitive_value = val;
+        ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
         ctx.result.set_object(obj);
         return true;
     }
@@ -63,7 +63,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         if (catch err = obj_raw) return false;
         HObject* obj = obj_raw;
         obj.prototype = ctx.heap.bigint_proto;
-        (*obj.extra_ptr()).prim.primitive_value = val;
+        ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
         ctx.result.set_object(obj);
         return true;
     }
@@ -133,7 +133,7 @@ fn void builtin_object(BuiltinContext* ctx) {
             return;
         }
         HObject* obj = obj_raw;
-        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.object_proto);
+        ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.object_proto));
         ctx.result.set_object(obj);
         return;
     }
@@ -152,7 +152,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         // OrdinaryCreateFromConstructor(newTarget, "%Object.prototype%"), so
         // a `class Sub extends Object {}` constructor returns an object whose
         // [[Prototype]] is Sub.prototype, not Object.prototype.
-        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.object_proto);
+        ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.object_proto));
         ctx.result.set_object(obj);
         return;
     }
@@ -181,7 +181,7 @@ fn void builtin_object(BuiltinContext* ctx) {
             return;
         }
         HObject* obj = obj_raw;
-        obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.object_proto);
+        ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.object_proto));
         ctx.result.set_object(obj);
         return;
     }
@@ -214,7 +214,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         }
         HObject* obj = obj_raw;
         obj.prototype = ctx.heap.number_proto;
-        (*obj.extra_ptr()).prim.primitive_value = arg;
+        ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, arg);
         ctx.result.set_object(obj);
         return;
     }
@@ -228,7 +228,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         }
         HObject* obj = obj_raw;
         obj.prototype = ctx.heap.bigint_proto;
-        (*obj.extra_ptr()).prim.primitive_value = arg;
+        ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, arg);
         ctx.result.set_object(obj);
         return;
     }
@@ -275,7 +275,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_raw;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.object_proto);
+    ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.object_proto));
     ctx.result.set_object(obj);
 }
 
@@ -1466,7 +1466,7 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
     for (uint i = 0; i < len; i++) {
         TVal elem;
         if (is_plain_array && i < arr_obj.array_size) {
-            TVal dv = arr_obj.array_part()[i];
+            TVal dv = arr_obj.array_part()[i].get();
             if (!dv.is_undefined()) {
                 if (actual < len) args[actual++] = dv;
                 continue;
@@ -1479,17 +1479,17 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
         if (key == null) break;
         int own_idx = arr_obj.find_prop_idx(key, ctx.heap);
         if (own_idx >= 0 && arr_obj.get_prop_flags((uint)own_idx, ctx.heap).is_accessor) {
-            TVal getter = hobject::hobject_access_getter(arr_obj.prop_values()[own_idx]);
+            TVal getter = hobject::hobject_access_getter(arr_obj.prop_values()[own_idx].get());
             elem = arr_invoke_getter_ctx(arr_obj, getter, ctx.heap, ctx);
             if (ctx.should_throw) {
                 if (args != null) ctx.heap.free_func(ctx.heap.heap_udata, args);
                 return;
             }
         } else if (own_idx >= 0) {
-            elem = arr_obj.prop_values()[own_idx];
+            elem = arr_obj.prop_values()[own_idx].get();
         } else if (!is_plain_array && arr_obj.get_class() == hobject::ObjClass.ARRAY && arr_obj.array_part() != null
-                   && i < arr_obj.array_size && !arr_obj.array_part()[i].is_undefined()) {
-            elem = arr_obj.array_part()[i];
+                   && i < arr_obj.array_size && !arr_obj.array_part()[i].get().is_undefined()) {
+            elem = arr_obj.array_part()[i].get();
         } else {
             hobject::PropLookupResult res = arr_obj.get_prop_or_accessor_proto(key, true, ctx.heap);
             if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
@@ -1916,7 +1916,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
         if (is_numeric && kd.len > 0 && kd.len <= 10 && arr_idx < obj.array_size
             && !(obj.get_class() == hobject::ObjClass.ARGUMENTS
                  && obj.find_prop_idx(key, ctx.heap) >= 0)) {
-            TVal av = obj.array_part()[arr_idx];
+            TVal av = obj.array_part()[arr_idx].get();
             if (av.is_undefined()) {
                 ctx.result.set_undefined();
                 return;
@@ -1934,7 +1934,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             TVal vt;
             vt.set_string(key_str);
             // Actually set the array element value as the descriptor value
-            TVal array_val = obj.array_part()[arr_idx];
+            TVal array_val = obj.array_part()[arr_idx].get();
             // Sloppy mapped `arguments` (§10.4.4.2 [[GetOwnProperty]] step 2):
             // a mapped index reports the parameter's current value, not the
             // stored copy.
@@ -2007,10 +2007,10 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     if (entry_flags.is_accessor) {
         // Accessor descriptor: { get, set, enumerable, configurable }
         HString* get_key = builtin_intern_string(ctx.heap, "get");
-        desc.put_prop(get_key, hobject::hobject_access_getter(*entry), hobject::PROP_FLAGS_WEC, ctx.heap);
+        desc.put_prop(get_key, hobject::hobject_access_getter(entry.get()), hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* set_key = builtin_intern_string(ctx.heap, "set");
-        desc.put_prop(set_key, hobject::hobject_access_setter(*entry), hobject::PROP_FLAGS_WEC, ctx.heap);
+        desc.put_prop(set_key, hobject::hobject_access_setter(entry.get()), hobject::PROP_FLAGS_WEC, ctx.heap);
 
         HString* enumerable_key = builtin_intern_string(ctx.heap, "enumerable");
         TVal e_tv;
@@ -2024,7 +2024,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     } else {
         // Data descriptor: { value, writable, enumerable, configurable }
         HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
-        TVal desc_val = *entry;
+        TVal desc_val = entry.get();
         // Sloppy mapped `arguments` (§9.4.4.8): index properties alias the
         // parameter register, which is authoritative. The named slot goes
         // stale when the define path promotes a dense element (clearing the
@@ -2133,7 +2133,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
         HObject* karr;
         if (!proxy_mop_own_keys(ctx.vm, ctx.heap, obj, &karr)) { proxy_ctx_ok(ctx); return; }
         for (uint i = 0; i < karr.array_used; i++) {
-            TVal el = karr.array_part()[i];
+            TVal el = karr.array_part()[i].get();
             if (!el.is_string()) continue;
             HString* k = (HString*)el.get_heapptr();
             ProxyDesc pd;
@@ -2369,7 +2369,7 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
         hobject::PropFlags f = obj.get_prop_flags((uint)idx, ctx.heap);
         if (f.is_accessor) {
             // Accessor, invoke the setter
-            TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)idx]);
+            TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)idx].get());
             if (setter.is_undefined() || setter.is_null()) {
                 // No setter, Set returns true (no-op, per spec).
                 return true;
@@ -2396,8 +2396,7 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
             return false;
         }
         // Writable data property, write value (preserve existing flags)
-        TVal* entry = &obj.prop_values()[(uint)idx];
-        ctx.heap.tval_copy_ref(entry, val);
+        ctx.heap.store_slot_ref(obj, &obj.prop_values()[(uint)idx], val);
         return true;
     }
 
@@ -2734,9 +2733,9 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
     // slot to prevent the VM GETPROP fast path from returning the stale dense value.
     if (existing_idx < 0 && ((HString*)key).is_arridx()) {
         uint arr_idx = ((HString*)key).array_index();
-        TVal* ap = obj.array_part();
+        hobject::PropValue* ap = obj.array_part();
         if (ap != null && arr_idx < obj.array_size) {
-            TVal arr_val = ap[arr_idx];
+            TVal arr_val = ap[arr_idx].get();
             if (!arr_val.is_undefined()) {
                 // Sloppy mapped `arguments`: the parameter register is
                 // authoritative while the index is mapped, so promote its
@@ -2809,17 +2808,16 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 // put_prop above anchored desc_vals[0] as the (placeholder) slot value;
                 // the GS cell holds its own incref'd copy, so release the placeholder's
                 // reference before replacing the slot.
-                ctx.heap.decref_tval(&obj.prop_values()[idx]);
-                obj.prop_values()[idx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
+                ctx.heap.decref_tval(obj.prop_values()[idx].view());
+                ctx.heap.store_slot(obj, &obj.prop_values()[idx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
             }
             // Clear the dense array slot so arr_get_elem_vm falls through to the
             // named-property accessor rather than returning the getter function object.
             if (key_hstr.is_arridx()) {
                 uint ai = key_hstr.array_index();
-                TVal* ap = obj.array_part();
+                hobject::PropValue* ap = obj.array_part();
                 if (ap != null && ai < obj.array_size) {
-                    TVal undef; undef.set_undefined();
-                    ap[ai] = undef;
+                    ap[ai].set_undefined();
                 }
             }
         } else {
@@ -2832,8 +2830,8 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             hobject::PropFlags create_flags = desc_flags;
             if (obj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
                 uint ai2 = key_hstr.array_index();
-                TVal* ap2 = obj.array_part();
-                if (ap2 != null && ai2 < obj.array_size && !ap2[ai2].is_undefined()) {
+                hobject::PropValue* ap2 = obj.array_part();
+                if (ap2 != null && ai2 < obj.array_size && !ap2[ai2].get().is_undefined()) {
                     if (!desc_fields.has_writable) create_flags.writable = true;
                     if (!desc_fields.has_enumerable) create_flags.enumerable = true;
                     if (!desc_fields.has_configurable) create_flags.configurable = false;
@@ -2845,7 +2843,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         // Property exists, validate changes per ES5 §8.12.9
         hobject::PropValue* current = &obj.prop_values()[existing_idx];
         hobject::PropFlags cur_flags = obj.get_prop_flags((uint)existing_idx, ctx.heap);
-        TVal cur_value = *current;
+        TVal cur_value = current.get();
 
         // Check if descriptor is empty (generic, no fields)
         bool has_value_field   = (ctx.regs[ctx.base_reg + 2].is_object()); // already validated
@@ -2914,11 +2912,11 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             // ES5 §8.12.9 step 11: non-configurable accessor, reject if get/set changes
             // Only valid when the existing property is already an accessor.
             if (!cur_flags.configurable && cur_flags.is_accessor) {
-                if (has_get_in_desc && !same_value(hobject::hobject_access_getter(*current), desc_vals[0])) {
+                if (has_get_in_desc && !same_value(hobject::hobject_access_getter(current.get()), desc_vals[0])) {
                     builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot change getter of non-configurable accessor property");
                     return;
                 }
-                if (has_set_in_desc && !same_value(hobject::hobject_access_setter(*current), desc_vals[1])) {
+                if (has_set_in_desc && !same_value(hobject::hobject_access_setter(current.get()), desc_vals[1])) {
                     builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot change setter of non-configurable accessor property");
                     return;
                 }
@@ -2930,12 +2928,12 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 // hobject_set_access_getter on it would crash on slot.get_heapptr().
                 // Decref the old data value (may be a heap pointer like a string)
                 // and replace with a fresh GS cell.
-                ctx.heap.decref_tval(current);
-                *current = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
+                ctx.heap.decref_tval(current.view());
+                ctx.heap.store_slot(obj, current, hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
             } else {
                 // Update existing accessor: modify the GS cell in-place.
-                if (has_get_in_desc) hobject::hobject_set_access_getter(*current, desc_vals[0], ctx.heap);
-                if (has_set_in_desc) hobject::hobject_set_access_setter(*current, desc_vals[1], ctx.heap);
+                if (has_get_in_desc) hobject::hobject_set_access_getter(current.get(), desc_vals[0], ctx.heap);
+                if (has_set_in_desc) hobject::hobject_set_access_setter(current.get(), desc_vals[1], ctx.heap);
             }
 
             // Update flags, only overwrite fields present in descriptor
@@ -2957,9 +2955,9 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
                     vm::mapped_args_unmap(obj, ai);
                 }
-                TVal* ap = obj.array_part();
-                if (ap != null && ai < obj.array_size && !ap[ai].is_undefined()) {
-                    ctx.heap.decref_tval(&ap[ai]);
+                hobject::PropValue* ap = obj.array_part();
+                if (ap != null && ai < obj.array_size && !ap[ai].get().is_undefined()) {
+                    ctx.heap.decref_tval(ap[ai].view());
                     ap[ai].set_undefined();
                     if (obj.array_used > 0) { obj.array_used--; }
                 }
@@ -2992,7 +2990,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             if (args_mapped_idx && !has_val_in_desc) {
                 TVal mapped_cur;
                 if (vm::mapped_args_read(ctx.vm, obj, key_hstr.array_index(), &mapped_cur)) {
-                    *current = mapped_cur;
+                    ctx.heap.store_slot(obj, current, mapped_cur);
                 }
             }
             if (has_val_in_desc) {
@@ -3022,9 +3020,9 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                     if (next_flags.configurable || next_flags.writable) {
                         int pidx_w = obj.find_prop_idx(key, ctx.heap);
                         if (pidx_w >= 0) {
-                            ctx.heap.tval_copy_ref(&obj.prop_values()[pidx_w], &new_v);
+                            ctx.heap.store_slot_ref(obj, &obj.prop_values()[pidx_w], &new_v);
                         } else {
-                            *current = new_v;
+                            ctx.heap.store_slot(obj, current, new_v);
                         }
                         obj.set_prop_flags((uint)existing_idx, next_flags, ctx.heap);
                         // Step 7.2.1.2 syncs the parameter whenever the
@@ -3049,10 +3047,10 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                             vm::mapped_args_write(ctx.vm, obj, aidx, &new_v);
                         }
                         vm::mapped_args_unmap(obj, aidx);
-                        *current = desc_vals[0];
+                        ctx.heap.store_slot(obj, current, desc_vals[0]);
                     }
                 } else {
-                    *current = desc_vals[0];
+                    ctx.heap.store_slot(obj, current, desc_vals[0]);
                 }
                 if (arg_write_through) {
                     ctx.result.set_object(obj);
@@ -3202,7 +3200,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
         HObject* karr;
         if (!proxy_mop_own_keys(ctx.vm, ctx.heap, props, &karr)) { proxy_ctx_ok(ctx); return; }
         for (uint i = 0; i < karr.array_used; i++) {
-            TVal el = karr.array_part()[i];
+            TVal el = karr.array_part()[i].get();
             if (!el.is_string()) continue;
             HString* k = (HString*)el.get_heapptr();
             ProxyDesc pd;
@@ -3243,8 +3241,8 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // put_prop above anchored desc_vals[0] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
-                        ctx.heap.decref_tval(&obj.prop_values()[pidx]);
-                        obj.prop_values()[pidx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
+                        ctx.heap.decref_tval(obj.prop_values()[pidx].view());
+                        ctx.heap.store_slot(obj, &obj.prop_values()[pidx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     }
                 } else {
                     obj.put_prop((void*)k, desc_vals[0], desc_flags, ctx.heap);
@@ -3377,7 +3375,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                 && obj.find_prop_idx(p_key, ctx.heap) < 0 && p_key.is_arridx()) {
                 uint p_ai = (uint)((HString*)p_key).array_index();
                 if (p_ai < obj.array_size) {
-                    TVal dense_elem = obj.array_part()[p_ai];
+                    TVal dense_elem = obj.array_part()[p_ai].get();
                     if (!dense_elem.is_undefined()) {
                         obj.put_prop(p_key, dense_elem, hobject::PROP_FLAGS_WC, ctx.heap);
                         int promo_idx = obj.find_prop_idx(p_key, ctx.heap);
@@ -3425,8 +3423,8 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // put_prop above anchored desc_vals[0] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
-                        ctx.heap.decref_tval(&obj.prop_values()[idx]);
-                        obj.prop_values()[idx] = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
+                        ctx.heap.decref_tval(obj.prop_values()[idx].view());
+                        ctx.heap.store_slot(obj, &obj.prop_values()[idx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     }
                 } else {
                     obj.put_prop(p_key, desc_vals[0], desc_flags, ctx.heap);
@@ -3459,17 +3457,17 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
 
                     // ES5 §8.12.9 step 13.a.ii: Reject value change on non-configurable+non-writable
                     if (!has_any_access && !cur_flags.configurable && !cur_flags.writable) {
-                        if (has_value_in_desc_helper(ctx.heap, desc_obj) && !same_value(*current, desc_vals[0])) reject = true;
+                        if (has_value_in_desc_helper(ctx.heap, desc_obj) && !same_value(current.get(), desc_vals[0])) reject = true;
                     }
 
                     // ES5 §8.12.9 step 13.b: Reject accessor get/set change on non-configurable
                     if (has_any_access && cur_flags.is_accessor) {
                         if (has_get_in_desc_helper(ctx.heap, desc_obj)) {
-                            TVal cur_get = hobject::hobject_access_getter(*current);
+                            TVal cur_get = hobject::hobject_access_getter(current.get());
                             if (!same_value(cur_get, desc_vals[0])) reject = true;
                         }
                         if (has_set_in_desc_helper(ctx.heap, desc_obj)) {
-                            TVal cur_set = hobject::hobject_access_setter(*current);
+                            TVal cur_set = hobject::hobject_access_setter(current.get());
                             if (!same_value(cur_set, desc_vals[1])) reject = true;
                         }
                     }
@@ -3486,12 +3484,12 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // *current holds a data value (number, string, etc.), calling
                         // hobject_set_access_getter on it would crash on slot.get_heapptr().
                         // Decref the old data value and replace with a fresh GS cell.
-                        ctx.heap.decref_tval(current);
-                        *current = hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]);
+                        ctx.heap.decref_tval(current.view());
+                        ctx.heap.store_slot(obj, current, hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     } else {
                         // Update existing accessor: modify the GS cell in-place.
-                        if (has_get_in_desc_helper(ctx.heap, desc_obj)) hobject::hobject_set_access_getter(*current, desc_vals[0], ctx.heap);
-                        if (has_set_in_desc_helper(ctx.heap, desc_obj)) hobject::hobject_set_access_setter(*current, desc_vals[1], ctx.heap);
+                        if (has_get_in_desc_helper(ctx.heap, desc_obj)) hobject::hobject_set_access_getter(current.get(), desc_vals[0], ctx.heap);
+                        if (has_set_in_desc_helper(ctx.heap, desc_obj)) hobject::hobject_set_access_setter(current.get(), desc_vals[1], ctx.heap);
                     }
                     cur_flags.is_accessor = true;
                     if (has_enumerable_in_desc_helper(ctx.heap, desc_obj)) cur_flags.enumerable = desc_flags.enumerable;
@@ -3505,9 +3503,9 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                     if (cur_flags.is_accessor && desc_has_data_fields) {
                         // Accessor → data conversion (ES5 §8.12.9 step 9.a/b): release the
                         // GetterSetter cell and reset flags so the slot becomes a data slot.
-                        ctx.heap.decref_tval(current);
+                        ctx.heap.decref_tval(current.view());
                         TVal undef_tv; undef_tv.set_undefined();
-                        *current = undef_tv;
+                        ctx.heap.store_slot(obj, current, undef_tv);
                         cur_flags.is_accessor = false;
                         cur_flags.writable     = false;
                         cur_flags.enumerable   = cur_flags.enumerable;
@@ -3517,7 +3515,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // ES5 §8.12.9 step 10.a.ii: reject value change on non-configurable,
                         // non-writable property (SameValue check).
                         if (!cur_flags.configurable && !cur_flags.writable) {
-                            if (!same_value(*current, desc_vals[0])) {
+                            if (!same_value(current.get(), desc_vals[0])) {
                                 builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot change value of non-writable non-configurable property");
                                 return;
                             }
@@ -3528,8 +3526,8 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         if (desc_vals[0].is_heap_allocated() && desc_vals[0].get_heapptr() != null) {
                             ((types::HeapHeader*)desc_vals[0].get_heapptr()).incref();
                         }
-                        ctx.heap.decref_tval(current);
-                        *current = desc_vals[0];
+                        ctx.heap.decref_tval(current.view());
+                        ctx.heap.store_slot(obj, current, desc_vals[0]);
                         // Sync value change back to dense array slot for ARRAY exotic.
                         if (obj.get_class() == hobject::ObjClass.ARRAY && p_key.is_arridx()) {
                             uint sync_ai = ((HString*)p_key).array_index();
@@ -3966,7 +3964,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
         if (!proxy_mop_own_keys(ctx.vm, ctx.heap, obj, &keys_arr)) { proxy_ctx_ok(ctx); return; }
         uint n = keys_arr.array_used;
         for (uint i = 0; i < n; i++) {
-            TVal el = keys_arr.array_part()[i];
+            TVal el = keys_arr.array_part()[i].get();
             if (!el.is_string()) continue;
             HString* k = (HString*)el.get_heapptr();
             if (k.is_symbol()) continue;
@@ -4064,7 +4062,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
         if (!proxy_mop_own_keys(ctx.vm, ctx.heap, obj, &keys_arr)) { proxy_ctx_ok(ctx); return; }
         uint n = keys_arr.array_used;
         for (uint i = 0; i < n; i++) {
-            TVal el = keys_arr.array_part()[i];
+            TVal el = keys_arr.array_part()[i].get();
             if (!el.is_string()) continue;
             HString* k = (HString*)el.get_heapptr();
             if (k.is_symbol()) continue;
@@ -4152,7 +4150,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         if (catch err2 = obj_raw) { ctx.result.set_undefined(); return; }
         downstream = obj_raw;
         downstream.prototype = ctx.heap.number_proto;
-        (*downstream.extra_ptr()).prim.primitive_value = downstream_val;
+        ctx.heap.@set_edge(downstream, (*downstream.extra_ptr()).prim.primitive_value, downstream_val);
     } else if (downstream_val.is_boolean()) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BOOLEAN);
         if (catch err2 = obj_raw) { ctx.result.set_undefined(); return; }
@@ -4197,7 +4195,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
             HObject* karr;
             if (!proxy_mop_own_keys(ctx.vm, ctx.heap, src_obj, &karr)) { proxy_ctx_ok(ctx); return; }
             for (uint i = 0; i < karr.array_used; i++) {
-                TVal el = karr.array_part()[i];
+                TVal el = karr.array_part()[i].get();
                 if (!el.is_string()) continue;
                 HString* k = (HString*)el.get_heapptr();
                 ProxyDesc pd;
@@ -4245,7 +4243,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                     if (dlen > 0) {
                         HString* key = builtin_intern_string(ctx.heap, digit_buf[:(uint)dlen]);
                         if (key != null) {
-                            TVal val = src_obj.array_part()[i];
+                            TVal val = src_obj.array_part()[i].get();
                             if (!obj_assign_set(ctx, downstream, key, &val)) {
                                 ctx.result.set_undefined();
                                 return;
@@ -4401,7 +4399,7 @@ fn bool ordinary_set_proto(BuiltinContext* ctx, HObject* obj, HObject* new_proto
         p = p.prototype;
     }
 
-    obj.prototype = new_proto;
+    ctx.heap.set_prototype(obj, new_proto);
 
     // Class constructors resolve super() through the captured numbered
     // __super__ binding (e.g. "__super__0"). Keep that binding synchronized

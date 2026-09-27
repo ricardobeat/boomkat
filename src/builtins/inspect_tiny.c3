@@ -152,10 +152,10 @@ fn bool tiny_array(Heap* heap, HObject* obj, int depth, StrBuf* out) {
 // A dense-part read that never invokes an accessor: an accessor slot yields
 // undefined rather than being called.
 fn bool tiny_array_element(Heap* heap, HObject* obj, uint i, TVal* out) {
-    TVal* arr = obj.array_part();
+    hobject::PropValue* arr = obj.array_part();
     if (arr != null && i < obj.array_size) {
-        if (arr[i].is_undefined()) return false;
-        *out = arr[i];
+        if (arr[i].get().is_undefined()) return false;
+        *out = arr[i].get();
         return true;
     }
     HString* key = heap.int_to_hstring((long)i);
@@ -163,7 +163,7 @@ fn bool tiny_array_element(Heap* heap, HObject* obj, uint i, TVal* out) {
     int idx = obj.find_prop_idx(key, heap);
     if (idx < 0) return false;
     if (obj.get_prop_flags((uint)idx, heap).is_accessor) { out.set_undefined(); return true; }
-    *out = obj.prop_values()[idx];
+    *out = obj.prop_values()[idx].get();
     return true;
 }
 
@@ -188,7 +188,7 @@ fn bool tiny_plain(Heap* heap, HObject* obj, int depth, StrBuf* out) {
         if (flags.is_accessor) {
             if (!out.append_bytes("[Getter]")) return false;
         } else {
-            TVal slot = obj.prop_values()[i];
+            TVal slot = obj.prop_values()[i].get();
             if (!tiny_value(heap, &slot, depth + 1, out)) return false;
         }
         shown++;
@@ -203,7 +203,7 @@ fn bool tiny_function(Heap* heap, HObject* obj, StrBuf* out) {
     if (key != null) {
         int idx = obj.find_prop_idx(key, heap);
         if (idx >= 0 && !obj.get_prop_flags((uint)idx, heap).is_accessor) {
-            TVal nv = obj.prop_values()[idx];
+            TVal nv = obj.prop_values()[idx].get();
             if (nv.is_string()) {
                 HString* n = (HString*)nv.get_heapptr();
                 if (n != null && !n.is_symbol() && n.get_data().len > 0) {

@@ -7,8 +7,10 @@ import boomkat::heap;
 import boomkat::bytecode;
 
 // Fetch the current backing array because adding bindings or growing a cell
-// frame can resize storage.
-fn TVal* capture_value_slot(Activation* act, uint index, Heap* h, bool write = false) @inline {
+// frame can resize storage. A writer passes `owner` to receive the object that
+// holds the slot, for the write barrier.
+fn hobject::PropValue* capture_value_slot(Activation* act, uint index, Heap* h, bool write = false,
+                                          HObject** owner = null) @inline {
     if (!act.tv_func.is_object()) return null;
     HObject* fn_obj = (HObject*)act.tv_func.get_heapptr();
     HObjectFunction* fields = &(*fn_obj.extra_ptr()).func;
@@ -19,6 +21,7 @@ fn TVal* capture_value_slot(Activation* act, uint index, Heap* h, bool write = f
     if (ref.owner == null) return null;
     if (ref.is_cell) {
         if (ref.prop_idx >= ref.owner.array_size || ref.owner.array_part() == null) return null;
+        if (owner != null) *owner = ref.owner;
         return &ref.owner.array_part()[ref.prop_idx];
     }
     if (ref.guard_shadow) {
@@ -39,8 +42,9 @@ fn TVal* capture_value_slot(Activation* act, uint index, Heap* h, bool write = f
         if (cur == null) return null;
     }
     if (write && !ref.owner.get_prop_flags(ref.prop_idx, h).writable) return null;
-    TVal* value = &ref.owner.prop_values()[ref.prop_idx];
-    if (env::is_tdz_sentinel(value)) return null;
+    hobject::PropValue* value = &ref.owner.prop_values()[ref.prop_idx];
+    if (env::is_tdz_sentinel(value.view())) return null;
+    if (owner != null) *owner = ref.owner;
     return value;
 }
 
@@ -76,7 +80,7 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
             uint slot_idx = (uint)insn.c;
             if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT
                 || cells.array_part() == null || slot_idx >= cells.array_size) return (TVal){};
-            vm.heap.tval_copy_ref(ra, &cells.array_part()[slot_idx]);
+            vm.heap.tval_copy_ref(ra, cells.array_part()[slot_idx].view());
             track_heap_store(ds.act, ra, (uint)insn.a);
             return (TVal){};
         }
@@ -86,7 +90,7 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
             uint slot_idx = (uint)insn.c;
             if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT
                 || cells.array_part() == null || slot_idx >= cells.array_size) return (TVal){};
-            vm.heap.tval_copy_ref(&cells.array_part()[slot_idx], ra);
+            vm.heap.store_slot_ref(cells, &cells.array_part()[slot_idx], ra);
             return (TVal){};
         }
         case Opcode.MOVECELL: {
@@ -95,9 +99,9 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
             uint slot_idx = (uint)insn.c;
             if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT
                 || cells.array_part() == null || slot_idx >= cells.array_size) return (TVal){};
-            TVal* slot = &cells.array_part()[slot_idx];
-            vm.heap.decref_tval(slot);
-            *slot = *ra;
+            hobject::PropValue* slot = &cells.array_part()[slot_idx];
+            vm.heap.decref_tval(slot.view());
+            vm.heap.store_slot(cells, slot, *ra);
             ra.set_undefined();
             return (TVal){};
         }

@@ -982,7 +982,7 @@ fn HObject* to_object_for_lookup(Heap* heap, TVal value) {
     } else if (value.is_string()) {
         // Retained so String.prototype methods relying on the primitive
         // (e.g. the @@iterator returned here) see the right value.
-        (*obj.extra_ptr()).prim.primitive_value = value;
+        heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, value);
         // Symbols are string-tagged TVals whose HString carries the symbol
         // flag; box them against symbol_proto, not string_proto.
         if (((HString*)value.get_heapptr()).is_symbol()) {
@@ -1023,7 +1023,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         if (catch raw) return null;
         HObject* obj = raw;
         obj.prototype = heap.number_proto;
-        (*obj.extra_ptr()).prim.primitive_value = value;
+        heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, value);
         return obj;
     }
     if (value.is_bigint()) {
@@ -1031,7 +1031,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         if (catch raw) return null;
         HObject* obj = raw;
         obj.prototype = heap.bigint_proto;
-        (*obj.extra_ptr()).prim.primitive_value = value;
+        heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, value);
         return obj;
     }
     if (value.is_string()) {
@@ -1655,11 +1655,11 @@ fn void coll_hash_build(HObject* obj, uint stride, heap::Heap* h) {
 
     // A tombstoned entry keeps its array slot (live iterators depend on that)
     // but must not be indexed, or a lookup would resolve to a deleted value.
-    TVal* ap = obj.array_part();
+    hobject::PropValue* ap = obj.array_part();
     if (ap == null) { coll_hash_drop(obj, h); return; }
     for (uint i = 0; i < obj.array_used; i += stride) {
-        if (ap[i].is_deleted()) continue;
-        uint slot = coll_hash_key(ap[i], h) & ci.mask;
+        if (ap[i].get().is_deleted()) continue;
+        uint slot = coll_hash_key(ap[i].get(), h) & ci.mask;
         while (slots[slot] != 0) { slot = (slot + 1) & ci.mask; }
         slots[slot] = i + 1;   // 1-based, so 0 can mean empty
         ci.used++;
@@ -1669,7 +1669,7 @@ fn void coll_hash_build(HObject* obj, uint stride, heap::Heap* h) {
 fn int find_in_array_part(HObject* obj, TVal val, uint stride) {
     uint count = obj.array_used;
     for (uint i = 0; i < count; i += stride) {
-        if (same_value_zero(obj.array_part()[i], val)) {
+        if (same_value_zero(obj.array_part()[i].get(), val)) {
             return (int)i;
         }
     }
@@ -1707,11 +1707,11 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
     // no index yet, a shrunk array (delete-compaction in the Weak collections),
     // or a load factor that has crept too high.
     if (ci != null && ci.built < obj.array_used && ci.used * 2 <= ci.mask) {
-        TVal* ap_add = obj.array_part();
+        hobject::PropValue* ap_add = obj.array_part();
         if (ap_add != null) {
             for (uint i = ci.built; i < obj.array_used; i += stride) {
-                if (ap_add[i].is_deleted()) continue;
-                uint slot = coll_hash_key(ap_add[i], h) & ci.mask;
+                if (ap_add[i].get().is_deleted()) continue;
+                uint slot = coll_hash_key(ap_add[i].get(), h) & ci.mask;
                 while (ci.slots[slot] != 0
                        && ci.slots[slot] != hobject::COLL_SLOT_DELETED) {
                     slot = (slot + 1) & ci.mask;
@@ -1729,7 +1729,7 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
         if (ci == null) return find_in_array_part(obj, val, stride);
     }
 
-    TVal* ap = obj.array_part();
+    hobject::PropValue* ap = obj.array_part();
     if (ap == null) return -1;
 
     uint slot = coll_hash_key(val, h) & ci.mask;
@@ -1738,7 +1738,7 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
         if (e == 0) return -1;                       // empty: the key is absent
         if (e != hobject::COLL_SLOT_DELETED) {
             uint idx = e - 1;
-            if (idx < obj.array_used && same_value_zero(ap[idx], val)) {
+            if (idx < obj.array_used && same_value_zero(ap[idx].get(), val)) {
                 return (int)idx;
             }
         }
@@ -1804,7 +1804,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
         return;
     }
     HObject* coll = obj_raw;
-    coll.prototype = builtin_proto_from_new_target(ctx, proto);
+    ctx.heap.set_prototype(coll, builtin_proto_from_new_target(ctx, proto));
 
     if (ctx.argc >= 1) {
         TVal arg = ctx.regs[ctx.base_reg];
@@ -1825,7 +1825,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                 if (is_symbol_val(arg)) {
                     iterable_obj.prototype = ctx.heap.symbol_proto;
                 } else if (arg.is_string()) {
-                    (*iterable_obj.extra_ptr()).prim.primitive_value = arg;
+                    ctx.heap.@set_edge(iterable_obj, (*iterable_obj.extra_ptr()).prim.primitive_value, arg);
                     iterable_obj.prototype = ctx.heap.string_proto;
                 } else if (arg.is_boolean()) {
                     iterable_obj.prototype = ctx.heap.bool_proto;
@@ -2072,12 +2072,7 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
         // this slot is already counted in array_used, and a value of undefined
         // is a legitimate Map/WeakMap value, not a hole, set_array_idx's
         // undefined-transition bookkeeping would corrupt array_used here.
-        TVal* v_slot = &coll.array_part()[(uint)found + 1];
-        if (value.is_heap_allocated() && value.get_heapptr() != null) {
-            ((types::HeapHeader*)value.get_heapptr()).incref();
-        }
-        ctx.heap.decref_tval(v_slot);
-        *v_slot = value;
+        ctx.heap.store_slot_ref(coll, &coll.array_part()[(uint)found + 1], &value);
     } else {
         uint cnt = coll.array_used;
         coll.set_array_idx(cnt, key, ctx.heap);
@@ -2118,7 +2113,7 @@ fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak
 
     int found = coll_find(coll, key, 2, ctx.heap);
     if (found >= 0) {
-        *ctx.result = coll.array_part()[(uint)found + 1];
+        *ctx.result = coll.array_part()[(uint)found + 1].get();
         return;
     }
     uint cnt = coll.array_used;
@@ -2160,7 +2155,7 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
 
     int found = coll_find(coll, key, 2, ctx.heap);
     if (found >= 0) {
-        *ctx.result = coll.array_part()[(uint)found + 1];
+        *ctx.result = coll.array_part()[(uint)found + 1].get();
         return;
     }
 
@@ -2185,12 +2180,7 @@ fn void coll_get_or_insert_computed(BuiltinContext* ctx, HObject* coll, bool req
         // Overwrite directly (see coll_set_entry): set_array_idx's
         // undefined-transition bookkeeping would corrupt array_used here,
         // since this slot is already counted and undefined is a valid value.
-        TVal* v_slot = &coll.array_part()[(uint)found2 + 1];
-        if (value.is_heap_allocated() && value.get_heapptr() != null) {
-            ((types::HeapHeader*)value.get_heapptr()).incref();
-        }
-        ctx.heap.decref_tval(v_slot);
-        *v_slot = value;
+        ctx.heap.store_slot_ref(coll, &coll.array_part()[(uint)found2 + 1], &value);
     } else {
         uint cnt = coll.array_used;
         coll.set_array_idx(cnt, key, ctx.heap);
@@ -2241,8 +2231,8 @@ fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, b
     if (found < 0) { ctx.result.set_boolean(false); return; }
     if (tombstone) {
         for (uint i = 0; i < stride; i++) {
-            TVal* slot = &coll.array_part()[(uint)found + i];
-            ctx.heap.decref_tval(slot);
+            hobject::PropValue* slot = &coll.array_part()[(uint)found + i];
+            ctx.heap.decref_tval(slot.view());
             slot.set_deleted();
         }
     } else {
@@ -2269,8 +2259,9 @@ fn bool group_by_append_object(BuiltinContext* ctx, HObject* groups_obj, HString
     HObject* group_arr = null;
     PropValue*? existing = groups_obj.find_prop(key, ctx.heap);
     if (try ex = existing) {
-        if (ex.is_object() && ex.get_heapptr() != null) {
-            group_arr = (HObject*)ex.get_heapptr();
+        TVal exv = ex.get();
+        if (exv.is_object() && exv.get_heapptr() != null) {
+            group_arr = (HObject*)exv.get_heapptr();
         }
     }
     if (group_arr == null) {
@@ -2293,7 +2284,7 @@ fn bool group_by_append_map(BuiltinContext* ctx, HObject* map, TVal key, TVal va
     int found = map_find_key(map, key, ctx.heap);
     HObject* group_arr = null;
     if (found >= 0) {
-        TVal existing = map.array_part()[(uint)found + 1];
+        TVal existing = map.array_part()[(uint)found + 1].get();
         if (existing.is_object() && existing.get_heapptr() != null) {
             group_arr = (HObject*)existing.get_heapptr();
         }
@@ -2305,8 +2296,7 @@ fn bool group_by_append_map(BuiltinContext* ctx, HObject* map, TVal key, TVal va
         group_arr.prototype = ctx.heap.array_proto;
         TVal arr_tv; arr_tv.set_object(group_arr);
         if (found >= 0) {
-            TVal* v_slot = &map.array_part()[(uint)found + 1];
-            *v_slot = arr_tv;
+            ctx.heap.store_slot(map, &map.array_part()[(uint)found + 1], arr_tv);
         } else {
             uint cnt = map.array_used;
             map.set_array_idx(cnt, key, ctx.heap);
@@ -2362,7 +2352,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
             if (is_symbol_val(items)) {
                 items_obj.prototype = heap.symbol_proto;
             } else if (items.is_string()) {
-                (*items_obj.extra_ptr()).prim.primitive_value = items;
+                ctx.heap.@set_edge(items_obj, (*items_obj.extra_ptr()).prim.primitive_value, items);
                 items_obj.prototype = heap.string_proto;
             } else if (items.is_boolean()) {
                 items_obj.prototype = heap.bool_proto;
@@ -3104,7 +3094,7 @@ fn bool alias_proto_method(HObject* proto, Heap* heap, char[] name, char[] alias
     if (key == null || alias_key == null) return false;
     PropValue*? prop_opt = proto.find_prop(key, heap);
     if (catch prop_opt) return false;
-    proto.put_prop(alias_key, *prop_opt, hobject::PROP_FLAGS_WC, heap);
+    proto.put_prop(alias_key, prop_opt.get(), hobject::PROP_FLAGS_WC, heap);
     return true;
 }
 
@@ -3247,8 +3237,8 @@ fn void builtin_module_binding_getter(BuiltinContext* ctx) {
     int key_idx = ctx.callee_obj.find_prop_idx((void*)key_slot_key, ctx.heap);
     if (env_idx < 0 || key_idx < 0) return;
 
-    TVal env_tv = ctx.callee_obj.prop_values()[env_idx];
-    TVal key_tv = ctx.callee_obj.prop_values()[key_idx];
+    TVal env_tv = ctx.callee_obj.prop_values()[env_idx].get();
+    TVal key_tv = ctx.callee_obj.prop_values()[key_idx].get();
     if (!env_tv.is_object() || !key_tv.is_string()) return;
 
     HObject* bindings = (HObject*)env_tv.get_heapptr();
@@ -3257,14 +3247,14 @@ fn void builtin_module_binding_getter(BuiltinContext* ctx) {
     if (idx < 0) return;
 
     if (bindings.get_prop_flags((uint)idx, ctx.heap).is_accessor) {
-        TVal slot = bindings.prop_values()[idx];
+        TVal slot = bindings.prop_values()[idx].get();
         TVal getter = hobject::hobject_access_getter(slot);
         if (!getter.is_object()) return;
         TVal this_tv; this_tv.set_object(bindings);
         *ctx.result = ctx.heap.call_fn(ctx.vm, getter, null, 0, this_tv);
         return;
     }
-    TVal raw = bindings.prop_values()[idx];
+    TVal raw = bindings.prop_values()[idx].get();
     if (env::is_tdz_sentinel(&raw)) {
         module_binding_throw_tdz(ctx, key);
         return;
@@ -3323,7 +3313,7 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
     int idx = ns.find_prop_idx((void*)key, heap);
     if (idx < 0) return false;
     if (ns.get_prop_flags((uint)idx, heap).is_accessor) {
-        TVal slot = ns.prop_values()[idx];
+        TVal slot = ns.prop_values()[idx].get();
         TVal getter = hobject::hobject_access_getter(slot);
         if (!getter.is_object()) return true;
         TVal this_tv; this_tv.set_object(ns);
@@ -3332,7 +3322,7 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
         // set; leave it for the caller to surface. `*out` is meaningless.
         return true;
     }
-    *out = ns.prop_values()[idx];
+    *out = ns.prop_values()[idx].get();
     return true;
 }
 
@@ -3851,7 +3841,7 @@ fn void builtin_reset_globals(BuiltinContext* ctx) {
                 heap.checkpoint_cap = new_cap;
             }
             heap.checkpoint_keys[count] = key;
-            heap.checkpoint_vals[count] = globals.prop_values()[i];
+            heap.checkpoint_vals[count] = globals.prop_values()[i].get();
             count++;
         }
         heap.checkpoint_count = count;

@@ -140,7 +140,7 @@ fn void builtin_error_constructor_shared(BuiltinContext* ctx, HObject* proto) {
         return;
     }
     HObject* err = err_raw;
-    err.prototype = builtin_proto_from_new_target(ctx, proto);
+    ctx.heap.set_prototype(err, builtin_proto_from_new_target(ctx, proto));
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     // Set .message if first arg is provided and not undefined
@@ -274,7 +274,7 @@ fn HObject* aggregate_error_iterable_to_list(BuiltinContext* ctx, TVal items) {
             items_obj = w;
             HObject* wrap_proto = heap.string_proto;
             if (items.is_string()) {
-                (*items_obj.extra_ptr()).prim.primitive_value = items;
+                ctx.heap.@set_edge(items_obj, (*items_obj.extra_ptr()).prim.primitive_value, items);
             } else if (items.is_fastint() || items.is_number()) {
                 wrap_proto = heap.number_proto;
             } else if (items.is_boolean()) {
@@ -408,7 +408,7 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
         return;
     }
     HObject* err = err_raw;
-    err.prototype = builtin_proto_from_new_target(ctx, ctx.heap.aggregate_err_proto);
+    ctx.heap.set_prototype(err, builtin_proto_from_new_target(ctx, ctx.heap.aggregate_err_proto));
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     // §20.5.7.1.1 step 5: message uses ToString via ToPrimitive (hint

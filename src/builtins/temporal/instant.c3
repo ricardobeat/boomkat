@@ -148,7 +148,7 @@ fn void builtin_temporal_instant_ctor(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_o;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.temporal_instant_proto);
+    ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_instant_proto));
     ctx.result.set_object(obj);
 }
 

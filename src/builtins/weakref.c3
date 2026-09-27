@@ -28,7 +28,7 @@ fn bool is_callable_val(TVal v) {
 // WeakRef constructor (ES2021 §26.1.1)
 // ============================================================================
 //
-// The target is stored at array_part()[0]. array_used == 1.
+// The target is stored at array_part()[0].get(). array_used == 1.
 fn void builtin_weakref(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         coll_throw(ctx, "Constructor WeakRef requires 'new'");
@@ -44,7 +44,7 @@ fn void builtin_weakref(BuiltinContext* ctx) {
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.WEAKREF);
     if (catch err = obj_raw) { ctx.result.set_undefined(); return; }
     HObject* wr = obj_raw;
-    wr.prototype = builtin_proto_from_new_target(ctx, ctx.heap.weakref_proto);
+    ctx.heap.set_prototype(wr, builtin_proto_from_new_target(ctx, ctx.heap.weakref_proto));
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     wr.set_array_idx(0, target, ctx.heap);
@@ -62,7 +62,7 @@ fn void builtin_weakref_proto_deref(BuiltinContext* ctx) {
     if (wr == null) { ctx.result.set_undefined(); return; }
     // Target is never collected, so it is always present.
     if (wr.array_used >= 1) {
-        *ctx.result = wr.array_part()[0];
+        *ctx.result = wr.array_part()[0].get();
     } else {
         ctx.result.set_undefined();
     }
@@ -92,7 +92,7 @@ fn void builtin_finalization_registry(BuiltinContext* ctx) {
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FINALIZATION_REGISTRY);
     if (catch err = obj_raw) { ctx.result.set_undefined(); return; }
     HObject* fr = obj_raw;
-    fr.prototype = builtin_proto_from_new_target(ctx, ctx.heap.finalization_registry_proto);
+    ctx.heap.set_prototype(fr, builtin_proto_from_new_target(ctx, ctx.heap.finalization_registry_proto));
     if (ctx.should_throw) { ctx.result.set_undefined(); return; }
 
     fr.set_array_idx(0, callback, ctx.heap);
@@ -174,12 +174,12 @@ fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
     uint used = fr.array_used;
     uint write = 1;
     for (uint read = 1; read + 3 <= used; read += 3) {
-        TVal entry_token = fr.array_part()[read + 2];
+        TVal entry_token = fr.array_part()[read + 2].get();
         if (same_value(entry_token, token)) {
             // Drop this entry: release its refs.
-            ctx.heap.decref_tval(&fr.array_part()[read]);
-            ctx.heap.decref_tval(&fr.array_part()[read + 1]);
-            ctx.heap.decref_tval(&fr.array_part()[read + 2]);
+            ctx.heap.decref_tval(fr.array_part()[read].view());
+            ctx.heap.decref_tval(fr.array_part()[read + 1].view());
+            ctx.heap.decref_tval(fr.array_part()[read + 2].view());
             removed = true;
         } else {
             if (write != read) {

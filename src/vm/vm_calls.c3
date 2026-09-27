@@ -64,7 +64,7 @@ fn Activation* mapped_args_owner(Vm* vm, HObject* args_obj) @inline {
         // the callee's parameter slots.
         int bidx = a.var_env.bindings.find_prop_idx(args_name, vm.heap);
         if (bidx < 0) continue;
-        TVal bval = a.var_env.bindings.prop_values()[bidx];
+        TVal bval = a.var_env.bindings.prop_values()[bidx].get();
         if (bval.is_object() && bval.get_heapptr() == (void*)args_obj) return a;
     }
     return null;
@@ -96,7 +96,7 @@ fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
             TVal v = owner.bottom[i];
             int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
             if (pidx >= 0) {
-                vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], &v);
+                vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], &v);
             } else if (i < args_obj.array_size) {
                 args_obj.set_array_idx(i, v, vm.heap);
             }
@@ -137,7 +137,7 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
     if (args_name == null) return;
     int bidx = act.var_env.bindings.find_prop_idx(args_name, vm.heap);
     if (bidx < 0) return;
-    TVal bval = act.var_env.bindings.prop_values()[bidx];
+    TVal bval = act.var_env.bindings.prop_values()[bidx].get();
     if (!bval.is_object() || bval.get_heapptr() == null) return;
     HObject* args_obj = (HObject*)bval.get_heapptr();
     if (args_obj.get_class() != hobject::ObjClass.ARGUMENTS) return;
@@ -150,7 +150,7 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
             TVal v = act.bottom[i];
             int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
             if (pidx >= 0) {
-                vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], &v);
+                vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], &v);
             } else if (i < args_obj.array_size) {
                 args_obj.set_array_idx(i, v, vm.heap);
             }
@@ -196,7 +196,7 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
     *slot = *val;
     if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
     if (pidx >= 0) {
-        vm.heap.tval_copy_ref(&args_obj.prop_values()[pidx], val);
+        vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], val);
     } else if (idx < args_obj.array_size) {
         // Keep the dense slot in step with the parameter: when the mapping is
         // later dropped (freeze, delete), the property must already hold the
@@ -223,7 +223,7 @@ fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
     }
     mapped_args_unmap(args_obj, idx);
     if (idx < args_obj.array_size) {
-        TVal cur = args_obj.array_part()[idx];
+        TVal cur = args_obj.array_part()[idx].get();
         if (!cur.is_undefined()) {
             TVal undef; undef.set_undefined();
             args_obj.set_array_idx(idx, undef, vm.heap);
@@ -703,7 +703,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
             if (b.shape_id == vic.shape_id
                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                 if (!vic.prop_flags.is_accessor) {
-                    TVal v = b.prop_values()[vic.prop_idx];
+                    TVal v = b.prop_values()[vic.prop_idx].get();
                     if (!env::is_tdz_sentinel(&v)) {
                         if (is_permanent_env(vm, (EnvRecord*)vic.env)) {
                             // Borrow: permanent global root, no incref/track.
@@ -824,7 +824,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
         }
         int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
         if (idx >= 0) {
-            TVal v_raw = cur.bindings.prop_values()[idx];
+            TVal v_raw = cur.bindings.prop_values()[idx].get();
             if (env::is_tdz_sentinel(&v_raw)) {
                 HString* name_hstr = (HString*)key;
                 if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -883,7 +883,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
             int vidx = vcur.bindings.find_prop_idx(key, ds.vm.heap);
             if (vidx >= 0) {
                 if (vcur.bindings.get_prop_flags((uint)vidx, ds.vm.heap).is_accessor) {
-                    TVal gs_slot = vcur.bindings.prop_values()[vidx];
+                    TVal gs_slot = vcur.bindings.prop_values()[vidx].get();
                     TVal getter = hobject::hobject_access_getter(gs_slot);
                     if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
                         TVal this_tv;
@@ -905,7 +905,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                         ra.set_undefined();
                     }
                 } else {
-                    TVal v2 = vcur.bindings.prop_values()[vidx];
+                    TVal v2 = vcur.bindings.prop_values()[vidx].get();
                     if (is_permanent_env(vm, vcur)) {
                         *ra = v2;
                         *borrowed = true;
@@ -991,10 +991,10 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
         HObject* gb = (HObject*)gic.bindings;
         if (gb != null && gic.search_head == (void*)ds.act.lex_env
             && gb.shape_id == gic.shape_id) {
-            TVal* pv = &gb.prop_values()[gic.prop_idx];
-            if (!env::is_tdz_sentinel(pv)) {
+            hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
+            if (!env::is_tdz_sentinel(pv.view())) {
                 // The cached binding is a permanent global env record: borrow.
-                *ra = *pv;
+                *ra = pv.get();
                 *borrowed = true;
                 return;
             }
@@ -1012,7 +1012,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     while (cur != null) {
         int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
         if (idx >= 0) {
-            TVal v_raw = cur.bindings.prop_values()[idx];
+            TVal v_raw = cur.bindings.prop_values()[idx].get();
             if (env::is_tdz_sentinel(&v_raw)) {
                 HString* name_hstr = (HString*)key;
                 if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -1068,7 +1068,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
             int vidx = vcur.bindings.find_prop_idx(key, ds.vm.heap);
             if (vidx >= 0) {
                 if (vcur.bindings.get_prop_flags((uint)vidx, ds.vm.heap).is_accessor) {
-                    TVal gs_slot = vcur.bindings.prop_values()[vidx];
+                    TVal gs_slot = vcur.bindings.prop_values()[vidx].get();
                     TVal getter = hobject::hobject_access_getter(gs_slot);
                     if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
                         TVal this_tv;
@@ -1091,7 +1091,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
                     }
                     track_heap_store(ds.act, ra, callee_reg);
                 } else {
-                    TVal v2 = vcur.bindings.prop_values()[vidx];
+                    TVal v2 = vcur.bindings.prop_values()[vidx].get();
                     if (is_permanent_env(vm, vcur)) {
                         *ra = v2;
                         *borrowed = true;
@@ -2662,12 +2662,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
 
                 // Allocate GeneratorState
-                void* gs_raw = heap::alloc_scanned(GeneratorState, vm.heap);
-                if (gs_raw == null) {
+                GeneratorState* gs = vm.heap.alloc_generator_state();
+                if (gs == null) {
                     ds.regs_base[result_reg].set_undefined();
                     return (TVal){};
                 }
-                GeneratorState* gs = (GeneratorState*)gs_raw;
                 gs.pending_resume_reg = 0xFFFF;
 
                 gs.func = target;
@@ -2680,7 +2679,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (regs_bytes > 0) {
                     regs_raw = vm.heap.alloc_func(vm.heap.heap_udata, regs_bytes);
                     if (regs_raw == null) {
-                        vm.heap.free_scanned(gs_raw, (usz)GeneratorState::size);
+                        vm.heap.free_generator_state(gs);
                         ds.regs_base[result_reg].set_undefined();
                         return (TVal){};
                     }
@@ -2698,7 +2697,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     gen_obj = go;
                 } else {
                     vm.heap.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size);
-                    vm.heap.free_scanned(gs_raw, (usz)GeneratorState::size);
+                    vm.heap.free_generator_state(gs);
                     ds.regs_base[result_reg].set_undefined();
                     return (TVal){};
                 }
@@ -3961,7 +3960,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 TVal? proto_val = hobj.get_prop_proto(proto_key, ds.vm.heap);
                 if (try pv = proto_val) {
                     if (pv.is_object() && pv.get_heapptr() != null) {
-                        new_obj.prototype = (HObject*)pv.get_heapptr();
+                        vm.heap.set_prototype(new_obj, (HObject*)pv.get_heapptr());
                     }
                 }
                 this_tval.set_object(new_obj);
@@ -4150,4 +4149,3 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             return (TVal){};
     }
 }
-

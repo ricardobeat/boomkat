@@ -138,7 +138,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
     (*obj.extra_ptr()).view.byte_offset = byte_offset;
     (*obj.extra_ptr()).view.byte_length = view_len;
     (*obj.extra_ptr()).view.length_tracking = length_tracking;
-    typedarray_link_view(buf, obj);
+    typedarray_link_view(ctx.heap, buf, obj);
 
     ctx.result.set_object(obj);
 }

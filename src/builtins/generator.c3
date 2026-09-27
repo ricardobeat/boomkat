@@ -114,7 +114,7 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     } else {
         default_fn_proto = ctx.heap.function_proto;
     }
-    func_obj.prototype = builtin_proto_from_new_target(ctx, default_fn_proto);
+    ctx.heap.set_prototype(func_obj, builtin_proto_from_new_target(ctx, default_fn_proto));
 
     // Prototype object for generator instances (25.2.4.3: writable,
     // non-enumerable, non-configurable, matches Function instances).

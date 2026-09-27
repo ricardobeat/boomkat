@@ -44,10 +44,10 @@ fn bool spread_dense_range(HObject* source, uint start) {
         || source.flags.exotic_proxyobj) return false;
     uint len = *source.array_len_ptr();
     if (start > len || len > source.array_size) return false;
-    TVal* values = source.array_part();
+    hobject::PropValue* values = source.array_part();
     for (uint i = start; i < len; i++) {
         // Undefined also denotes a dense hole, whose read may invoke a getter.
-        if (values[i].is_undefined()) return false;
+        if (values[i].get().is_undefined()) return false;
     }
     return true;
 }
@@ -86,7 +86,7 @@ fn bool copy_spread_array(Dispatch* ds, HObject* target, long index,
     if (needed > target.array_size) target.grow_array((uint)needed, ds.vm.heap);
     if (needed > target.array_size) return false;
     for (uint i = 0; i < count; i++) {
-        target.set_array_idx((uint)index + i, source.array_part()[start + i], ds.vm.heap);
+        target.set_array_idx((uint)index + i, source.array_part()[start + i].get(), ds.vm.heap);
     }
     if (needed > *target.array_len_ptr()) {
         *target.array_len_ptr() = (uint)needed;
@@ -115,7 +115,7 @@ fn bool copy_spread_args(Dispatch* ds, HObject* source, uint start,
     ds.regs_base = ds.act.bottom;
     for (uint i = 0; i < count; i++) {
         TVal* dest = ds.regs_base + dest_start + i;
-        vm.heap.tval_copy_ref(dest, &source.array_part()[start + i]);
+        vm.heap.tval_copy_ref(dest, source.array_part()[start + i].view());
         track_heap_store(ds.act, dest, dest_start + i);
     }
     TVal* top = ds.regs_base + dest_start + count;
@@ -145,7 +145,7 @@ fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, u
     hobject::PropFlags flags = source.get_prop_flags(i, vm.heap);
     TVal val;
     if (flags.is_accessor) {
-        TVal gs_slot = source.prop_values()[i];
+        TVal gs_slot = source.prop_values()[i].get();
         TVal getter = hobject::hobject_access_getter(gs_slot);
         if (getter.is_undefined() || getter.is_null()) return { true, false, false, {} };
         if (vm.heap.call_fn == null) return { true, false, false, {} };
@@ -158,7 +158,7 @@ fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, u
             return { false, false, true, thrown };
         }
     } else {
-        val = source.prop_values()[i];
+        val = source.prop_values()[i].get();
     }
     if (!target.put_prop(key, val, hobject::PROP_FLAGS_WEC, vm.heap)) {
         return { false, true, false, {} };
@@ -173,10 +173,10 @@ fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, u
 // such keys are interned.
 fn bool key_is_excluded(void* key, HObject* excluded) {
     if (excluded == null) return false;
-    TVal* arr = excluded.array_part();
+    hobject::PropValue* arr = excluded.array_part();
     if (arr == null) return false;
     for (uint i = 0; i < excluded.array_used; i++) {
-        TVal el = arr[i];
+        TVal el = arr[i].get();
         if (el.is_heap_allocated() && el.get_heapptr() == key) return true;
     }
     return false;
@@ -207,7 +207,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
         HObject* wrapper = wrapper_raw;
         wrapper.flags.exotic_stringobj = true;
         wrapper.prototype = vm.heap.string_proto;
-        (*wrapper.extra_ptr()).prim.primitive_value = src_tv;
+        vm.heap.@set_edge(wrapper, (*wrapper.extra_ptr()).prim.primitive_value, src_tv);
         source = wrapper;
     } else {
         // Numbers, booleans, symbols, and bigints box to a wrapper with no
@@ -230,7 +230,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
             return;
         }
         for (uint pi = 0; pi < karr.array_used; pi++) {
-            TVal pel = karr.array_part()[pi];
+            TVal pel = karr.array_part()[pi].get();
             if (!pel.is_string()) continue;
             HString* pk = (HString*)pel.get_heapptr();
             if (key_is_excluded((void*)pk, excluded)) continue;
@@ -272,7 +272,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
                 if (dlen > 0) {
                     HString* key = intern_string(vm, digit_buf[:(uint)dlen]);
                     if (key != null && !key_is_excluded((void*)key, excluded)) {
-                        TVal val = source.array_part()[i];
+                        TVal val = source.array_part()[i].get();
                         if (!target.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC, vm.heap)) {
                             return VM_ERROR~;
                         }
@@ -1174,7 +1174,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 if (length_key != null) {
                     int idx = src_obj.find_prop_idx(length_key, ds.vm.heap);
                     if (idx >= 0) {
-                        TVal len_val = src_obj.prop_values()[idx];
+                        TVal len_val = src_obj.prop_values()[idx].get();
                         if (len_val.is_fastint()) {
                             len = (uint)len_val.get_fastint();
                         } else if (len_val.is_number()) {
@@ -1185,11 +1185,11 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
 
             // Copy elements from array to arg registers
-            TVal* dense = src_obj.array_part();
+            hobject::PropValue* dense = src_obj.array_part();
             for (uint i = 0; i < len; i++) {
                 TVal* dest = ds.regs_base + first_arg_reg + i;
                 if (dense != null && i < src_obj.array_size) {
-                    vm.heap.tval_copy_ref(dest, &dense[i]);
+                    vm.heap.tval_copy_ref(dest, dense[i].view());
                 } else {
                     // Past the dense part, so check the property table
                     TVal idx_val;

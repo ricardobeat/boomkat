@@ -241,7 +241,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_raw;
-    obj.prototype = builtin_proto_from_new_target(ctx, ctx.heap.regexp_proto);
+    ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.regexp_proto));
     if (ctx.should_throw) return;
     // Pooled memory is not zeroed, clear the regexp fields before
     // regexp_initialize reads them (it re_frees any previous compiled data).
@@ -1468,7 +1468,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.STRING);
                         if (try box = box_raw) {
                             box.prototype = heap.string_proto;
-                            (*box.extra_ptr()).prim.primitive_value = named_captures_tv;
+                            ctx.heap.@set_edge(box, (*box.extra_ptr()).prim.primitive_value, named_captures_tv);
                             // Set own .length (non-writable, non-enum, non-configurable)
                             HString* str_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                             TVal str_len_tv;
@@ -1481,14 +1481,14 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
                         if (try box = box_raw) {
                             box.prototype = heap.number_proto;
-                            (*box.extra_ptr()).prim.primitive_value = named_captures_tv;
+                            ctx.heap.@set_edge(box, (*box.extra_ptr()).prim.primitive_value, named_captures_tv);
                             named_captures_tv.set_object(box);
                         }
                     } else if (named_captures_tv.is_boolean()) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
                         if (try box = box_raw) {
                             box.prototype = heap.bool_proto;
-                            (*box.extra_ptr()).prim.primitive_value = named_captures_tv;
+                            ctx.heap.@set_edge(box, (*box.extra_ptr()).prim.primitive_value, named_captures_tv);
                             named_captures_tv.set_object(box);
                         }
                     }
@@ -2051,8 +2051,8 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     HObject*? iter_raw = heap.alloc_object(hobject::ObjClass.REGEXP_STRING_ITERATOR);
     if (catch err = iter_raw) { ctx.result.set_null(); return; }
     HObject* iter = iter_raw;
-    (*iter.extra_ptr()).regexp_iter.string_val = s_tv;
-    (*iter.extra_ptr()).regexp_iter.regexp = matcher;
+    ctx.heap.@set_edge(iter, (*iter.extra_ptr()).regexp_iter.string_val, s_tv);
+    ctx.heap.@set_edge(iter, (*iter.extra_ptr()).regexp_iter.regexp, matcher);
     // flags bits: bit 0 = global, bit 1 = done, bit 2 = unicode
     uint iter_flags = 0;
     if (global_flag) iter_flags |= 1;

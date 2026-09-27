@@ -278,6 +278,10 @@ struct ForInState {
 // returns a generator object. Later calls to .next(), .throw(), or .return()
 // resume the body from this state.
 struct GeneratorState {
+    // All live states form a heap-owned intrusive list. Minor GC traces their
+    // saved values even when the HObject holding a state is old.
+    GeneratorState* gc_next;
+    GeneratorState* gc_prev;
     GeneratorStateType state;
     void* func;               // CompiledFunction*, opaque to avoid a circular dependency
     void* func_obj;           // HObject* of the generator function itself, opaque.
@@ -428,7 +432,7 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
         h.catcher_chain_fn(h, gs.cat, run_decref ? CATCHER_CHAIN_FREE : CATCHER_CHAIN_FREE_NODES_ONLY);
     }
     gs.cat = null;
-    h.free_scanned((void*)gs, (usz)GeneratorState::size);
+    h.free_generator_state(gs);
 }
 
 // One parked Atomics.waitAsync waiter. `byte_index` is an absolute offset into
@@ -893,6 +897,12 @@ struct Heap {
     // dropped registrations and the sweep collected live module envs.
     List{void*} gc_roots;
 
+    // Old objects that may point at young nodes, each flagged gc.remembered so
+    // it is pushed once. A minor collection traces them as roots. Filled by
+    // write_barrier; see plans/093.
+    List{HObject*} remembered;
+    GeneratorState* generator_states;
+
     // The C ABI's value registry is a plain array rather than an HObject, so
     // the mark phase cannot reach it transitively. capi_mark, when set, is
     // called with capi_roots during mark_roots to mark every host-held value.
@@ -1250,6 +1260,25 @@ fn void Heap.free_scanned(&self, void* ptr, usz bytes) {
         self.poison_block(ptr, bytes);
     $endif
     self.free_func(self.heap_udata, ptr);
+}
+
+fn GeneratorState* Heap.alloc_generator_state(&self) {
+    GeneratorState* gs = (GeneratorState*)alloc_scanned(GeneratorState, self);
+    if (gs == null) return null;
+    gs.gc_next = self.generator_states;
+    if (self.generator_states != null) self.generator_states.gc_prev = gs;
+    self.generator_states = gs;
+    return gs;
+}
+
+fn void Heap.free_generator_state(&self, GeneratorState* gs) {
+    if (gs.gc_prev != null) {
+        gs.gc_prev.gc_next = gs.gc_next;
+    } else {
+        self.generator_states = gs.gc_next;
+    }
+    if (gs.gc_next != null) gs.gc_next.gc_prev = gs.gc_prev;
+    self.free_scanned((void*)gs, (usz)GeneratorState::size);
 }
 
 // Overwrite `bytes` at `ptr` with the poison TVal, zeroing any tail too short to
@@ -1805,6 +1834,12 @@ fn void Heap.destroy(&self) {
         cur = next;
     }
     self.heap_allocated = null;
+    while (self.generator_states != null) {
+        GeneratorState* gs = self.generator_states;
+        gs.ref_count = 1;
+        gs_release(gs, self, false);
+    }
+    self.remembered.free();
 
     hobject::env_pool_teardown(self);
 
@@ -1950,13 +1985,13 @@ fn void Heap.reset(&self) {
                 hobject::HObject* obj = (hobject::HObject*)cur;
                 hobject::PropValue* pvs = obj.prop_values();
                 for (uint i = 0; i < obj.prop_count; i++) {
-                    if (pvs[i].is_string()) { self.decref_tval(&pvs[i]); }
+                    if (pvs[i].get().is_string()) { self.decref_tval(pvs[i].view()); }
                 }
-                types::TVal* arr = obj.array_part();
+                hobject::PropValue* arr = obj.array_part();
                 if (arr != null) {
                     uint used = obj.array_used;
                     for (uint i = 0; i < used; i++) {
-                        if (arr[i].is_string()) { self.decref_tval(&arr[i]); }
+                        if (arr[i].get().is_string()) { self.decref_tval(arr[i].view()); }
                     }
                 }
             }
@@ -1989,6 +2024,11 @@ fn void Heap.reset(&self) {
         cur = next;
     }
     self.heap_allocated = null;
+    while (self.generator_states != null) {
+        GeneratorState* gs = self.generator_states;
+        gs.ref_count = 1;
+        gs_release(gs, self, false);
+    }
 
     self.free_compiled_funcs();
     self.compiled_func_count = 0;  // the array itself stays allocated for reuse
@@ -2079,6 +2119,7 @@ fn void Heap.reset(&self) {
     self.did_yield        = false;
     self.ag_did_await     = false;
     self.gc_roots.clear();
+    self.remembered.clear();
     self.capi_roots       = null;
     self.capi_runtime     = null;
     self.capi_mark        = null;
@@ -2767,22 +2808,23 @@ fn void Heap.store_builtin_result(&self, TVal* dst, TVal* transient) @inline {
     }
 }
 
-// Move a TVal from a register into a heap slot, handing src's reference to dst.
-// The old dst value is decref'd and src's bits are moved in with no incref,
-// since ownership transfers; the caller then clears src to undefined. A
-// primitive already in dst needs no decref, so the branch skips it. This is the
-// hot global-slot write path used by PUTGLOBAL.
+// Move a TVal from a register into a slot of `owner`, handing src's reference
+// to dst. The old dst value is decref'd and src's bits are moved in with no
+// incref, since ownership transfers; the caller then clears src to undefined.
+// A primitive already in dst needs no decref, so the branch skips it. This is
+// the hot global-slot write path used by PUTGLOBAL.
 //
 // Only the overwritten dst value decides whether a decref is owed. The move
 // preserves src's refcount whether src is a heap value or a primitive.
-fn void Heap.tval_move_slot_fast(&self, TVal* dst, TVal* src) @inline {
-    if (dst.is_heap_allocated()) {
-        void* ptr = dst.get_heapptr();
+fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst, TVal* src) @inline {
+    TVal old = dst.get();
+    if (old.is_heap_allocated()) {
+        void* ptr = old.get_heapptr();
         if (ptr != null) {
             self.decref((HeapHeader*)ptr);
         }
     }
-    *dst = *src;
+    self.store_slot(owner, dst, *src);
 }
 
 // ============================================================================
@@ -2896,6 +2938,82 @@ fn void Heap.join_visited_pop(&self) {
 // ============================================================================
 // GC marking: tri-color marking over an explicit gray stack
 // ============================================================================
+
+/**
+ * Store `v` into a property or element slot of `owner`, passing the write
+ * barrier. Every store into an object that may be old goes through here;
+ * PropValue's distinct type keeps a plain assignment from compiling.
+ */
+fn void Heap.store_slot(&self, HObject* owner, hobject::PropValue* slot, TVal v) @inline {
+    *slot = (hobject::PropValue)v;
+    self.write_barrier(owner, v);
+}
+
+/**
+ * tval_copy_ref into a slot of `owner`, passing the write barrier.
+ */
+fn void Heap.store_slot_ref(&self, HObject* owner, hobject::PropValue* slot, TVal* src) @inline {
+    self.tval_copy_ref(slot.view(), src);
+    self.write_barrier(owner, *src);
+}
+
+/**
+ * Record that `owner` now holds `v`. An old owner that gains a traced value
+ * joins the remembered set, so the next minor collection re-traces it and
+ * finds the young node `v` may point at.
+ */
+fn void Heap.write_barrier(&self, HObject* owner, TVal v) @inline {
+    if (owner.gc.old && !owner.gc.remembered && v.is_traced()) self.remember(owner);
+}
+
+/**
+ * The write barrier for a store of a node pointer rather than a TVal.
+ */
+fn void Heap.write_barrier_ptr(&self, HObject* owner, void* target) @inline {
+    if (owner.gc.old && !owner.gc.remembered && target != null) self.remember(owner);
+}
+
+/**
+ * Assign `value` to an internal field of `owner`, such as a promise's result or
+ * an iterator's target, and run the barrier that matches the field: the TVal
+ * form for a TVal, the pointer form for a node pointer. Storing null or
+ * undefined needs no barrier, since it removes an edge.
+ */
+macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
+    #field = value;
+    $switch $Typeof(value):
+        $case TVal:
+            self.write_barrier(owner, value);
+        $default:
+            self.write_barrier_ptr(owner, (void*)value);
+    $endswitch
+}
+
+/**
+ * [[SetPrototypeOf]] on an existing object, through the write barrier.
+ * Initialising a fresh object's prototype needs no barrier: a node stays young
+ * until a quiescent safepoint (plans/093).
+ */
+fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
+    obj.prototype = proto;
+    self.write_barrier_ptr(obj, proto);
+}
+
+fn void Heap.remember(&self, HObject* owner) @noinline {
+    owner.gc.remembered = true;
+    if (self.remembered.allocator == null) self.remembered.allocator = mem;
+    self.remembered.push(owner);
+}
+
+// The embedder can add young references to a host payload without making an
+// engine-visible store. Keep promoted instances with mark callbacks in the
+// remembered set for their lifetime. A major collection must retain surviving
+// callback instances when it rebuilds the set.
+fn void Heap.remember_promoted_host(&self, HObject* obj) {
+    if (obj.flags.obj_class != ObjClass.HOST) return;
+    HostClassEntry* hc = self.host_class_at((*obj.extra_ptr()).host.class_id);
+    if (hc != null && hc.gc_mark != null && !obj.gc.remembered) self.remember(obj);
+}
 
 /**
  * Push an object onto the gray stack so its children are visited later,
@@ -3210,7 +3328,7 @@ fn void Heap.drain_gray(&self) {
         // walk from the leaf per index, which is quadratic over a deep
         // chain such as a 70k-property object whose every transition
         // is its own shape.
-        TVal* pv = obj.prop_values();
+        hobject::PropValue* pv = obj.prop_values();
         for (hobject::Shape* sh = obj.get_shape(self); sh != null; sh = sh.parent_shape) {
             hobject::ShapeProperty* sp = sh.props();
             for (uint j = 0; j < sh.own_count; j++) {
@@ -3221,13 +3339,13 @@ fn void Heap.drain_gray(&self) {
             }
         }
         for (uint i = 0; i < obj.prop_count; i++) {
-            self.mark_tval(&pv[i]);
+            self.mark_tval(pv[i].view());
         }
 
-        TVal* ap = obj.array_part();
+        hobject::PropValue* ap = obj.array_part();
         if (ap != null && obj.array_used > 0) {
             for (uint i = 0; i < obj.array_size; i++) {
-                self.mark_tval(&ap[i]);
+                self.mark_tval(ap[i].view());
             }
         }
 
@@ -3421,6 +3539,16 @@ fn void Heap.drain_gray(&self) {
  * stack, and the string references found along the way. Transitive marking runs
  * through the gray stack, so there is no recursion or depth limit.
  */
+// Minor collections scan every live state because an old generator or
+// reaction closure can hold young values in its state without an object store.
+// Full collections reach states through their owning HObjects instead: making
+// the registry a full-collection root would keep generator instances alive.
+fn void Heap.mark_generator_states_for_minor(&self) {
+    for (GeneratorState* gs = self.generator_states; gs != null; gs = gs.gc_next) {
+        self.mark_generator_state(gs);
+    }
+}
+
 fn void Heap.mark_roots(&self) {
     // Native scoped environment roots: an EnvRecord held only in a C3 local
     // across a GC-capable call. Traced first so their whole chains are marked

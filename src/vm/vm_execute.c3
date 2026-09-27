@@ -905,9 +905,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // their body immediately (handled elsewhere), so exclude those.
             if (!did_resume && (target.is_sync_generator() || target.is_async_gen())
                 && vm.heap.gen_initial_gs == null) {
-                void* cfn_gs_raw = heap::alloc_scanned(GeneratorState, vm.heap);
-                if (cfn_gs_raw != null) {
-                    GeneratorState* cfn_gs = (GeneratorState*)cfn_gs_raw;
+                GeneratorState* cfn_gs = vm.heap.alloc_generator_state();
+                if (cfn_gs != null) {
                     cfn_gs.pending_resume_reg = 0xFFFF;
                     cfn_gs.func = target;
                     cfn_gs.func_obj = hobj;
@@ -917,7 +916,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         ? vm.heap.alloc_func(vm.heap.heap_udata, cfn_regs_bytes)
                         : null;
                     if (cfn_regs_bytes > 0 && cfn_regs_raw == null) {
-                        vm.heap.free_scanned(cfn_gs_raw, (usz)GeneratorState::size);
+                        vm.heap.free_generator_state(cfn_gs);
                     } else {
                         if (cfn_regs_raw != null) mem::clear(cfn_regs_raw, (sz)(cfn_regs_bytes));
                         cfn_gs.saved_regs = (TVal*)cfn_regs_raw;
@@ -948,7 +947,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                             cfn_is_gen_initial = true;
                         } else {
                             vm.heap.free_scanned(cfn_regs_raw, cfn_regs_bytes);
-                            vm.heap.free_scanned(cfn_gs_raw, (usz)GeneratorState::size);
+                            vm.heap.free_generator_state(cfn_gs);
                         }
                     }
                 }
@@ -1278,7 +1277,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
             bool have_proto = false;
             if (try proto_tv = new_target_obj.get_prop_proto(ctor_proto_key, heap)) {
                 if (proto_tv.is_object() && proto_tv.get_heapptr() != null) {
-                    new_this.prototype = (HObject*)proto_tv.get_heapptr();
+                    heap.set_prototype(new_this, (HObject*)proto_tv.get_heapptr());
                     have_proto = true;
                 }
             }
@@ -3787,7 +3786,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // nor a shadowing property upstream moves shape_id here.
                     HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
                     if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
-                        TVal ic_val = *ic.prop_value_ptr;
+                        TVal ic_val = ic.prop_value_ptr.get();
                         if (!ic_val.is_heap_allocated()) {
                             *ra = ic_val;
                         } else {
@@ -4752,9 +4751,9 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.GETVAR: {
             uint bc = insn.get_bc();
             if (op == Opcode.GETCAP) {
-                TVal* captured = capture_value_slot(ds.act, bc, vm.heap);
+                hobject::PropValue* captured = capture_value_slot(ds.act, bc, vm.heap);
                 if (captured != null) {
-                    vm.heap.tval_copy_ref(ra, captured);
+                    vm.heap.tval_copy_ref(ra, captured.view());
                     track_heap_store(ds.act, ra, (uint)insn.a);
                     continue;
                 }
@@ -4776,7 +4775,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 if (vic.prop_flags.is_accessor) {
                                     // Accessor property: fall through to slow path which invokes getter
                                 } else {
-                                    TVal v = b.prop_values()[vic.prop_idx];
+                                    TVal v = b.prop_values()[vic.prop_idx].get();
                                     if (!env::is_tdz_sentinel(&v)) {
                                         // ENV_STRICT: GETVAR read traps are gone, since a needs_env=false
                                         // lex_env == parent env, so a hit here is a legitimate parent
@@ -4921,7 +4920,7 @@ fn TVal? Vm.run(Vm* vm) {
                             // lookup, not own-local. Own-local leaks surface as 'not defined'
                             // throws and are caught by test/test_register_locals.js.
 
-                            TVal v_raw = cur.bindings.prop_values()[idx];
+                            TVal v_raw = cur.bindings.prop_values()[idx].get();
                             if (env::is_tdz_sentinel(&v_raw)) {
                                 HString* name_hstr = (HString*)key;
                                 if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -5053,7 +5052,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 // and nothing else defines it), caught by the corpus.
 
                                 if (vcur.bindings.get_prop_flags((uint)vidx, vm.heap).is_accessor) {
-                                    TVal gs_slot = vcur.bindings.prop_values()[vidx];
+                                    TVal gs_slot = vcur.bindings.prop_values()[vidx].get();
                                     TVal getter = hobject::hobject_access_getter(gs_slot);
                                     if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
                                         TVal this_tv;
@@ -5078,7 +5077,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         ra.set_undefined();
                                     }
                                 } else {
-                                    TVal v2 = vcur.bindings.prop_values()[vidx];
+                                    TVal v2 = vcur.bindings.prop_values()[vidx].get();
                                     vm.heap.tval_copy_ref(ra, &v2);
                                 }
                                 track_heap_store(ds.act, ra, (uint)insn.a);
@@ -5162,14 +5161,14 @@ fn TVal? Vm.run(Vm* vm) {
                         HObject* gb = (HObject*)gic.bindings;
                         if (gb != null && gic.search_head == (void*)ds.act.lex_env
                             && gb.shape_id == gic.shape_id) {
-                            TVal* pv = &gb.prop_values()[gic.prop_idx];
-                            if (!env::is_tdz_sentinel(pv)) {
-                                if (!pv.is_heap_allocated() && !ra.is_heap_allocated()) {
+                            hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
+                            if (!env::is_tdz_sentinel(pv.view())) {
+                                if (!pv.get().is_heap_allocated() && !ra.is_heap_allocated()) {
                                     // prim -> prim: no refcount, and no heap ref
                                     // lands in the register, so no track_heap_store.
-                                    *ra = *pv;
+                                    *ra = pv.get();
                                 } else {
-                                    vm.heap.tval_copy_ref(ra, pv);
+                                    vm.heap.tval_copy_ref(ra, pv.view());
                                     track_heap_store(ds.act, ra, (uint)insn.a);
                                 }
                                 break;
@@ -5266,7 +5265,7 @@ fn TVal? Vm.run(Vm* vm) {
                         }
                         int idx = cur.bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
-                            TVal v_raw = cur.bindings.prop_values()[idx];
+                            TVal v_raw = cur.bindings.prop_values()[idx].get();
                             if (env::is_tdz_sentinel(&v_raw)) {
                                 HString* name_hstr = (HString*)key;
                                 if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -5376,7 +5375,7 @@ fn TVal? Vm.run(Vm* vm) {
                             int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                             if (vidx >= 0) {
                                 if (vcur.bindings.get_prop_flags((uint)vidx, vm.heap).is_accessor) {
-                                    TVal gs_slot = vcur.bindings.prop_values()[vidx];
+                                    TVal gs_slot = vcur.bindings.prop_values()[vidx].get();
                                     TVal getter = hobject::hobject_access_getter(gs_slot);
                                     if (!getter.is_undefined() && !getter.is_null() && vm.heap.call_fn != null) {
                                         TVal this_tv;
@@ -5398,7 +5397,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         ra.set_undefined();
                                     }
                                 } else {
-                                    TVal v2 = vcur.bindings.prop_values()[vidx];
+                                    TVal v2 = vcur.bindings.prop_values()[vidx].get();
                                     vm.heap.tval_copy_ref(ra, &v2);
                                     ic_env = vcur;
                                     ic_prop_idx = vidx;
@@ -5470,8 +5469,8 @@ fn TVal? Vm.run(Vm* vm) {
                         if (gb != null && gic.search_head == (void*)ds.act.lex_env
                             && gb.shape_id == gic.shape_id && gic.varref_store_ok
                             && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
-                            TVal* pv = &gb.prop_values()[gic.prop_idx];
-                            vm.heap.tval_move_slot_fast(pv, ra);
+                            hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
+                            vm.heap.tval_move_slot_fast(gb, pv, ra);
                             ra.set_undefined();
                             break;
                         }
@@ -5590,7 +5589,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 if (vic.prop_flags.is_accessor) {
                                     // Invalidate the IC and let the slow path handle it.
                                 } else {
-                                    TVal v = b.prop_values()[vic.prop_idx];
+                                    TVal v = b.prop_values()[vic.prop_idx].get();
                                     if (!env::is_tdz_sentinel(&v)) {
                                         // ENV_STRICT: TYPEOFIDENT read traps are gone, since a needs_env=false
                                         // lex_env == parent env, so a hit here is a legitimate parent
@@ -5682,7 +5681,7 @@ fn TVal? Vm.run(Vm* vm) {
                             // lookup, not own-local. Own-local leaks surface as 'not defined'
                             // throws and are caught by test/test_register_locals.js.
 
-                            TVal v_raw = cur.bindings.prop_values()[idx];
+                            TVal v_raw = cur.bindings.prop_values()[idx].get();
                             if (env::is_tdz_sentinel(&v_raw)) {
                                 // TDZ: throw ReferenceError (ES6 behavior)
                                 HString* name_hstr = (HString*)key;
@@ -5746,7 +5745,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 // when needs_env=false; see GETVAR note above).
 
                                 if (vcur2.bindings.get_prop_flags((uint)vidx2, vm.heap).is_accessor) {
-                                    TVal gs_slot2 = vcur2.bindings.prop_values()[vidx2];
+                                    TVal gs_slot2 = vcur2.bindings.prop_values()[vidx2].get();
                                     TVal getter2 = hobject::hobject_access_getter(gs_slot2);
                                     if (!getter2.is_undefined() && !getter2.is_null() && vm.heap.call_fn != null) {
                                         TVal this_tv2;
@@ -5771,7 +5770,7 @@ fn TVal? Vm.run(Vm* vm) {
                                         vm.heap.set_reg_string(ra, ts2);
                                     }
                                 } else {
-                                    TVal v2 = vcur2.bindings.prop_values()[vidx2];
+                                    TVal v2 = vcur2.bindings.prop_values()[vidx2].get();
                                     HString* ts = typeof_string(vm, &v2);
                                     vm.heap.set_reg_string(ra, ts);
                                 }
@@ -5866,10 +5865,11 @@ fn TVal? Vm.run(Vm* vm) {
             // let/const binding still in its temporal dead zone.
             uint bc = insn.get_bc();
             if (op == Opcode.PUTCAP) {
-                TVal* captured = capture_value_slot(ds.act, bc, vm.heap, true);
+                HObject* cap_owner;
+                hobject::PropValue* captured = capture_value_slot(ds.act, bc, vm.heap, true, &cap_owner);
                 if (captured != null) {
-                    vm.heap.decref_tval(captured);
-                    *captured = *ra;
+                    vm.heap.decref_tval(captured.view());
+                    vm.heap.store_slot(cap_owner, captured, *ra);
                     ra.set_undefined();
                     continue;
                 }
@@ -5894,15 +5894,15 @@ fn TVal? Vm.run(Vm* vm) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                                TVal* pv = &b.prop_values()[vic.prop_idx];
+                                hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
                                 hobject::PropFlags fl = vic.prop_flags;
-                                if (!env::is_tdz_sentinel(pv) && fl.writable && !fl.is_accessor) {
+                                if (!env::is_tdz_sentinel(pv.view()) && fl.writable && !fl.is_accessor) {
                                     // Move ra's value into the slot: decref the old
                                     // slot value, take ra's reference, clear ra. Net
                                     // refcount effect matches the slow path
                                     // (binding gains a ref, register loses one).
-                                    vm.heap.decref_tval(pv);
-                                    *pv = *ra;
+                                    vm.heap.decref_tval(pv.view());
+                                    vm.heap.store_slot(b, pv, *ra);
                                     ra.set_undefined();
                                     break;
                                 }
@@ -6073,10 +6073,11 @@ fn TVal? Vm.run(Vm* vm) {
             // PUTVAR_ASSIGN's implicit-global / ReferenceError handling.
             uint name_idx = insn.c;
             if (op == Opcode.PUTCAP_SNAP) {
-                TVal* captured = capture_value_slot(ds.act, name_idx, vm.heap, true);
+                HObject* cap_owner;
+                hobject::PropValue* captured = capture_value_slot(ds.act, name_idx, vm.heap, true, &cap_owner);
                 if (captured != null) {
-                    vm.heap.decref_tval(captured);
-                    *captured = *ra;
+                    vm.heap.decref_tval(captured.view());
+                    vm.heap.store_slot(cap_owner, captured, *ra);
                     ra.set_undefined();
                     continue;
                 }
@@ -6121,14 +6122,14 @@ fn TVal? Vm.run(Vm* vm) {
                             HObject* bindings = snap_env.bindings;
                             int idx = bindings.find_prop_idx(key, vm.heap);
                             if (idx >= 0) {
-                                TVal* slot = &bindings.prop_values()[idx];
+                                hobject::PropValue* slot = &bindings.prop_values()[idx];
                                 hobject::PropFlags flags = bindings.get_prop_flags((uint)idx, vm.heap);
-                                if ((slot.is_fastint() || slot.is_number()) && flags.writable && !flags.is_accessor) {
+                                if ((slot.get().is_fastint() || slot.get().is_number()) && flags.writable && !flags.is_accessor) {
                                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                     hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)snap_env,
                                         (void*)bindings, bindings.shape_id, (uint)idx, key,
                                         (void*)snap_env, false, vm.heap);
-                                    *slot = *ra;
+                                    slot.set_untraced(*ra);
                                     ra.set_undefined();
                                     continue;
                                 }
@@ -6261,8 +6262,8 @@ fn TVal? Vm.run(Vm* vm) {
                         if (b33_idx >= 0) {
                             hobject::PropFlags b33_fl = b33_venv.bindings.get_prop_flags((uint)b33_idx, vm.heap);
                             if (!b33_fl.is_accessor && b33_fl.writable) {
-                                TVal* b33_pv = &b33_venv.bindings.prop_values()[b33_idx];
-                                vm.heap.tval_move_slot_fast(b33_pv, ra);
+                                hobject::PropValue* b33_pv = &b33_venv.bindings.prop_values()[b33_idx];
+                                vm.heap.tval_move_slot_fast(b33_venv.bindings, b33_pv, ra);
                                 ra.set_undefined();
                             }
                         } else {
@@ -6351,11 +6352,11 @@ fn TVal? Vm.run(Vm* vm) {
                             if (b != null && b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 // A direct write skips find_prop_idx and put_prop.
-                                TVal* pv = &b.prop_values()[vic.prop_idx];
-                                if (pv.is_string()) {
-                                    vm.heap.decref_tval(pv);
+                                hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
+                                if (pv.get().is_string()) {
+                                    vm.heap.decref_tval(pv.view());
                                 }
-                                *pv = *ra;
+                                vm.heap.store_slot(b, pv, *ra);
                                 if (ra.is_string()) {
                                     void* ptr = ra.get_heapptr();
                                     if (ptr != null) ((types::HeapHeader*)ptr).incref();
@@ -6954,7 +6955,7 @@ fn TVal? Vm.run(Vm* vm) {
                     // hit path above. Pair with WTWR: B stays unset so
                     // WTWR walks the lex chain again and writes back to
                     // this same declarative binding.
-                    TVal v_raw = cur.bindings.prop_values()[idx];
+                    TVal v_raw = cur.bindings.prop_values()[idx].get();
                     if (env::is_tdz_sentinel(&v_raw)) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -7007,7 +7008,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (vcur.flags.is_with) { vcur = vcur.parent; continue; }
                     int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                     if (vidx < 0) { vcur = vcur.parent; continue; }
-                    TVal v_raw = vcur.bindings.prop_values()[vidx];
+                    TVal v_raw = vcur.bindings.prop_values()[vidx].get();
                     if (env::is_tdz_sentinel(&v_raw)) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {

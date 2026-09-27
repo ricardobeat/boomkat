@@ -13,6 +13,7 @@ import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hstring;
 import boomkat::hbigint;
+import boomkat::hobject;
 import std::math;
 
 // ============================================================================
@@ -43,6 +44,20 @@ fn bool vm_set_reg_bigint(Vm* vm, TVal* ra, hbigint::HBigInt* box) {
     // register slot holds exactly one.
     vm.heap.decref_tval(ra);
     ra.set_bigint(box);
+    vm.heap.decref((types::HeapHeader*)box);
+    return true;
+}
+
+// vm_set_reg_bigint for a binding slot of `owner`, through the write barrier.
+fn bool vm_set_slot_bigint(Vm* vm, HObject* owner, hobject::PropValue* slot, hbigint::HBigInt* box) {
+    if (box == null) {
+        vm_set_range_error(vm, "BigInt allocation failed");
+        return false;
+    }
+    vm.heap.decref_tval(slot.view());
+    TVal v;
+    v.set_bigint(box);
+    vm.heap.store_slot(owner, slot, v);
     vm.heap.decref((types::HeapHeader*)box);
     return true;
 }

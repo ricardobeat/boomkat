@@ -27,10 +27,10 @@ fn int set_find_value(HObject* set, TVal val, heap::Heap* h) {
 // for the set-methods algorithms that need this.size as a plain number.
 fn uint set_live_count(HObject* set) {
     uint count = 0;
-    TVal* arr = set.array_part();
+    hobject::PropValue* arr = set.array_part();
     if (arr != null) {
         for (uint i = 0; i < set.array_used; i++) {
-            if (!arr[i].is_deleted()) count++;
+            if (!arr[i].get().is_deleted()) count++;
         }
     }
     return count;
@@ -294,12 +294,12 @@ fn void set_result_append(HObject* result, TVal value, Heap* h) {
 fn HObject* set_copy_live_entries(BuiltinContext* ctx, HObject* set) {
     HObject* result = set_new_result(ctx);
     if (result == null) return null;
-    TVal* arr = set.array_part();
+    hobject::PropValue* arr = set.array_part();
     uint used = set.array_used;
     if (arr != null) {
         for (uint i = 0; i < used; i++) {
-            if (arr[i].is_deleted()) continue;
-            set_result_append(result, arr[i], ctx.heap);
+            if (arr[i].get().is_deleted()) continue;
+            set_result_append(result, arr[i].get(), ctx.heap);
         }
     }
     return result;
@@ -336,9 +336,9 @@ fn SetLiveWalk set_live_walk_start(HObject* set) {
 // each Has invocation before the next call to this function).
 fn bool set_live_walk_next(SetLiveWalk* w, TVal* out_elem) {
     while (w.index < w.this_size) {
-        TVal* arr = w.set.array_part();
+        hobject::PropValue* arr = w.set.array_part();
         if (arr == null || w.index >= w.set.array_used) return false;
-        TVal e = arr[w.index];
+        TVal e = arr[w.index].get();
         w.index++;
         if (!e.is_deleted()) {
             *out_elem = e;
@@ -383,10 +383,10 @@ fn void builtin_set_proto_size_get(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
     if (set == null) return;
     uint count = 0;
-    TVal* arr = set.array_part();
+    hobject::PropValue* arr = set.array_part();
     if (arr != null) {
         for (uint i = 0; i < set.array_used; i++) {
-            if (!arr[i].is_deleted()) count++;
+            if (!arr[i].get().is_deleted()) count++;
         }
     }
     ctx.result.set_fastint((long)count);
@@ -504,10 +504,10 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
 
-    TVal* entries = set.array_part();
+    hobject::PropValue* entries = set.array_part();
     uint used = set.array_used;
     for (uint i = 0; i < used; i++) {
-        TVal value = entries[i];
+        TVal value = entries[i].get();
         if (value.is_deleted()) continue;  // skip deleted slot
 
         TVal[3] args;
@@ -654,14 +654,14 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
     if ((double)set_live_count(set) <= rec.size) {
         uint this_size = set_live_count(set);
         uint index = 0;
-        TVal* result_arr = result.array_part();
+        hobject::PropValue* result_arr = result.array_part();
         while (index < this_size && index < result.array_used) {
-            TVal e = result_arr[index];
+            TVal e = result_arr[index].get();
             if (!e.is_deleted()) {
                 bool has = set_record_has(ctx, &rec, e);
                 if (ctx.should_throw) { ctx.result.set_undefined(); return; }
                 if (has) {
-                    ctx.heap.decref_tval(&result_arr[index]);
+                    ctx.heap.decref_tval(result_arr[index].view());
                     result_arr[index].set_deleted();
                 }
             }
@@ -681,7 +681,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             next_value = set_normalize_neg_zero(next_value);
             int found = set_find_value(result, next_value, ctx.heap);
             if (found >= 0) {
-                ctx.heap.decref_tval(&result.array_part()[(uint)found]);
+                ctx.heap.decref_tval(result.array_part()[(uint)found].view());
                 result.array_part()[(uint)found].set_deleted();
             }
         }
@@ -728,7 +728,7 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
         int found = set_find_value(result, next_value, ctx.heap);
         if (set_find_value(set, next_value, ctx.heap) >= 0) {
             if (found >= 0) {
-                ctx.heap.decref_tval(&result.array_part()[(uint)found]);
+                ctx.heap.decref_tval(result.array_part()[(uint)found].view());
                 result.array_part()[(uint)found].set_deleted();
             }
         } else {
@@ -889,7 +889,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
         if (values_key != null && keys_key != null) {
             PropValue*? values_prop_opt = proto.find_prop(values_key, heap);
             if (try values_prop = values_prop_opt) {
-                proto.put_prop(keys_key, *values_prop, hobject::PROP_FLAGS_WC, heap);
+                proto.put_prop(keys_key, values_prop.get(), hobject::PROP_FLAGS_WC, heap);
             }
         }
     }
@@ -913,7 +913,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
         if (iter_sym != null && values_key != null) {
             PropValue*? values_prop_opt = proto.find_prop(values_key, heap);
             if (try values_prop = values_prop_opt) {
-                proto.put_prop(iter_sym, *values_prop, hobject::PROP_FLAGS_WC, heap);
+                proto.put_prop(iter_sym, values_prop.get(), hobject::PROP_FLAGS_WC, heap);
             }
         }
     }

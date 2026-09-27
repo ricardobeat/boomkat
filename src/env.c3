@@ -342,7 +342,7 @@ fn bool env_full_get(Heap* h, HObject* obj, void* key, TVal receiver, TVal* out)
         }
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
-            TVal slot = cur.prop_values()[idx];
+            TVal slot = cur.prop_values()[idx].get();
             if (cur.get_prop_flags((uint)idx, h).is_accessor) {
                 TVal getter = hobject::hobject_access_getter(slot);
                 if (getter.is_undefined() || getter.is_null() ||
@@ -406,7 +406,7 @@ fn TVal? env_get(EnvRecord* env, void* key) {
         } else {
             int idx = cur.bindings.find_prop_idx(key, h);
             if (idx >= 0) {
-                return cur.bindings.prop_values()[idx];
+                return cur.bindings.prop_values()[idx].get();
             }
         }
         cur = cur.parent;
@@ -663,7 +663,7 @@ fn TVal? env_get_at_depth(EnvRecord* env, uint depth, void* key) {
     if (cur == null) return hobject::PROP_NOT_FOUND~;
     int idx = cur.bindings.find_prop_idx(key, env.heap);
     if (idx >= 0) {
-        return cur.bindings.prop_values()[idx];
+        return cur.bindings.prop_values()[idx].get();
     }
     return hobject::PROP_NOT_FOUND~;
 }
@@ -742,8 +742,8 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
         }
         int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {
-            TVal* pv = &cur.bindings.prop_values()[idx];
-            if (check_tdz && is_tdz_sentinel(pv)) {
+            hobject::PropValue* pv = &cur.bindings.prop_values()[idx];
+            if (check_tdz && is_tdz_sentinel(pv.view())) {
                 return -2;
             }
             if (!cur.bindings.get_prop_flags((uint)idx, h).writable) {
@@ -759,8 +759,9 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
                 if (!cur.flags.is_declarative) return -4;
                 return cur.bindings.get_prop_flags((uint)idx, h).immut_nonstrict ? -4 : -1;
             }
-            if (pv.is_string() || pv.is_bigint()) { h.decref_tval(pv); }
-            *pv = val;
+            TVal old = pv.get();
+            if (old.is_string() || old.is_bigint()) { h.decref_tval(pv.view()); }
+            h.store_slot(cur.bindings, pv, val);
             if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
             return 1;
         }
