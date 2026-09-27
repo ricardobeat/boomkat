@@ -1,6 +1,6 @@
 # 093: CPU performance prototypes
 
-Status: all eight tracks evaluated; combined validation in progress.
+Status: complete; all eight tracks evaluated, winners committed, rejected prototypes archived.
 Baseline inspected: `ba8610c8` on `speed`, matching local `main` at setup.
 
 ## Objective and scope
@@ -825,3 +825,82 @@ index boundaries/churn, literal shapes, arrow cells, and threaded updates. Intri
 Promise reactions pass ASAN; the full Promise fixture passes NONANBOX. The baseline
 Promise-subclass ASAN limitation from B remains explicit. Final release binary is
 restored from the measured candidate after NONANBOX.
+
+
+## Reproducibility and final validation
+
+Checked workloads live in `benchmarks/cpu093/`; the collection-count generator
+remains `scripts/bench_collection_counts.py`. Archived experiment workloads are
+included so their decisions can be revisited without reconstructing a fixture.
+The Promise workload adds an explicit rejection failure marker for the runner.
+Exact per-experiment sources and immutable binaries also remain under
+`/tmp/boomkat-perf-093/`. Raw machine-specific results are not added to Git.
+
+Final ASAN worker validation passes 40 executions with heap teardown between
+runs: ten each of heap-reset lifetime, literal shapes, collection churn, and arrow
+capture cells. The literal fixture also covers two-, sixteen-, and seventeen-key
+boundaries; the last keeps the generic path. Fresh combined GC-stress ASAN and
+NONANBOX results are described under H2. The known baseline constructor/arrow,
+Promise-subclass ASAN, and iterator-clear gaps remain separately recorded above.
+No full test262 run or scope-list modification is included.
+
+Final build metadata (commit, compiler, architecture, OS, binary SHA-256) and
+interleaved raw samples are under `/tmp/boomkat-perf-093/final/`. Timing uses
+macOS ARM64, C3 0.8.3, the project O2 release target, and explicit binaries.
+Host load and power state are not controlled. Cross-platform runtime and hardware
+performance counters remain unmeasured; NONANBOX checks representation portability.
+
+
+## Final combined results and disposition
+
+Original release baseline: `fa9cad5e` (engine sources `ba8610c8`). Combined engine:
+`1c930dc8`. Seven alternating pairs per workload after a warmup pair. Values below
+are median changes within adjacent A/B pairs, except collection-size results,
+whose dedicated runner reports the ratio of overall medians. Each percentage is
+an observed workload result, not an aggregate engine speedup.
+
+| Checked workload | Combined time change |
+|---|---:|
+| Promise chain / await / fan-out | -25.2% |
+| Four-key literal construction | -19.4% |
+| Arrow-owned capture loop | -18.5% |
+| Fast-integer dispatch loop | -4.8% |
+| 256-entry Map / Set lookup | -93.6% / -93.6% |
+| 8,192-live-entry Map / Set churn | -8.3% / -8.1% |
+| Append-only collections | -7.0% |
+| Repeated size at 8,192 entries (Map / Set) | -96.3% / -96.2% |
+
+All 25 unchanged ES5/ES6 controls have matching outputs and paired median time
+changes from -23.1% to +0.5%. Existing Promise improves 19.4%, arithmetic 23.1%,
+monomorphic IC 20.9%, calls 10.6%, and let_loop 5.8%. Raw values and dispersion
+are saved; small changes are not independently attributed to a particular patch.
+The output normalizer only removes elapsed milliseconds from Date/RegExp output.
+
+Memory remains workload-dependent. Combined checked Promise RSS rises from
+57,884,672 to 60,817,408 bytes (+5.1%); the dense reaction record keeps its documented
+throughput/memory tradeoff. Set churn falls from 26,099,712 to 22,429,696 bytes
+(-14.1%). Map churn remains effectively flat around 39.2 MB, because its log still
+dominates. Append-only collection RSS falls 2.3%; the remaining checked fixtures
+differ by at most 32 KiB. Release executable
+size is 2,325,640 versus 2,326,136 bytes (+496 bytes), measured on this toolchain.
+
+Final diagnostic counts for the 8,192-live-entry Map churn workload: maximum
+index capacity is 1,048,576 versus 32,768 slots (4 MiB versus 128 KiB). Rebuilds
+increase 17 to 92, scanned log/index slots 868,383 to 2,618,356, and lookup probes
+8,757,273 to 9,236,090. The index-memory benefit is concrete; fewer probes are not
+claimed for this workload. The ordered log is not bounded by live occupancy.
+
+| Retained change | Commit |
+|---|---|
+| A: maintained Map/Set counts | `cc8deb08` |
+| B: direct Promise reaction slots | `2cbeae5a` |
+| C: shared literal shapes | `1eaa7fb0` |
+| E: arrow capture cells | `27e90cb6` |
+| F: threaded integer updates | `fe1a5d66` |
+| H1: half-full index threshold | `1a2b59e4` |
+| H2: live-sized churn indexes | `1c930dc8` |
+
+D and G patches are stashed and pinned by immutable references recorded in their
+sections. Broader gated variants remain future work rather than unmeasured
+performance claims. All work remains on branch `speed` in `.worktrees/speed`;
+no merge or publication is part of this experiment pass.

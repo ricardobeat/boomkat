@@ -16,4 +16,11 @@ var computed='q';eq(({[computed]:3}).q,3);
 var effects=[];var d={a:(effects.push(1),2),b:(effects.push(3),4)};eq(effects.join(','),'1,3');
 function many(x){return {a:x,b:x,c:x,d:x,e:x,f:x,g:x,h:x};}
 for(var i=0;i<10000;i++){var o=many(i);eq(o.h,i);}
+function two(v){return {a:v,b:v};}
+function sixteen(v){return {a:v,b:v,c:v,d:v,e:v,f:v,g:v,h:v,i:v,j:v,k:v,l:v,m:v,n:v,o:v,p:v};}
+function seventeen(v){return {a:v,b:v,c:v,d:v,e:v,f:v,g:v,h:v,i:v,j:v,k:v,l:v,m:v,n:v,o:v,p:v,q:v};}
+eq(two(2).b,2);
+var full=sixteen({value:16});eq(Object.keys(full).length,16);eq(full.p.value,16);
+delete full.p;eq(sixteen(17).p,17);
+eq(Object.keys(seventeen(18)).length,17);eq(seventeen(18).q,18);
 print('literal_shape: passed');
