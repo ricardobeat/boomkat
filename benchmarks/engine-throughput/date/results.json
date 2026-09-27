@@ -1,0 +1,78 @@
+[
+  {
+    "file": "/private/tmp/boomkat-perf-097/bench_date.js",
+    "seconds": [
+      [
+        0.7311230000341311,
+        0.7162755830213428,
+        0.7075747500639409,
+        0.7127155000343919,
+        0.7140704999910668,
+        0.7141614999854937,
+        0.7147089580539614
+      ],
+      [
+        0.6780062500620261,
+        0.6784115839982405,
+        0.6781976670026779,
+        0.6835934999398887,
+        0.6737917920108885,
+        0.6735997500363737,
+        0.6734025001060218
+      ]
+    ],
+    "median": [
+      0.7141614999854937,
+      0.6780062500620261
+    ],
+    "change_percent": -5.062615378202551,
+    "rss": [
+      [
+        7847936,
+        7831552,
+        7847936,
+        7831552,
+        7815168,
+        7815168,
+        7815168
+      ],
+      [
+        7815168,
+        7847936,
+        7815168,
+        7847936,
+        7815168,
+        7847936,
+        7847936
+      ]
+    ],
+    "outputs": [
+      [
+        "new Date(): 10 ms (100000 iterations)\nnew Date(ms): 12 ms (100000 iterations)\nnew Date(y,m,d,...): 28 ms (100000 iterations)\nnew Date(string): 12 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 7 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 21 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 60 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 34 ms (100000 iterations)\ntoString: 67 ms (100000 iterations)\ntoDateString: 40 ms (100000 iterations)\ntoTimeString: 49 ms (100000 iterations)\ntoLocaleString: 67 ms (100000 iterations)\nDate.now: 8 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 38 ms (100000 iterations)\nsetMonth: 38 ms (100000 iterations)\nsetDate: 40 ms (100000 iterations)\ndone\n",
+        "new Date(): 10 ms (100000 iterations)\nnew Date(ms): 12 ms (100000 iterations)\nnew Date(y,m,d,...): 28 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 6 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 21 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 60 ms (100000 iterations)\ntoISOString: 30 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 68 ms (100000 iterations)\ntoDateString: 41 ms (100000 iterations)\ntoTimeString: 50 ms (100000 iterations)\ntoLocaleString: 68 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 57 ms (100000 iterations)\nsetFullYear: 39 ms (100000 iterations)\nsetMonth: 38 ms (100000 iterations)\nsetDate: 41 ms (100000 iterations)\ndone\n",
+        "new Date(): 10 ms (100000 iterations)\nnew Date(ms): 12 ms (100000 iterations)\nnew Date(y,m,d,...): 28 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 6 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 61 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 67 ms (100000 iterations)\ntoDateString: 39 ms (100000 iterations)\ntoTimeString: 50 ms (100000 iterations)\ntoLocaleString: 66 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 10 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 40 ms (100000 iterations)\nsetMonth: 40 ms (100000 iterations)\nsetDate: 41 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 8 ms (100000 iterations)\ngetTime: 7 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 61 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 67 ms (100000 iterations)\ntoDateString: 39 ms (100000 iterations)\ntoTimeString: 50 ms (100000 iterations)\ntoLocaleString: 66 ms (100000 iterations)\nDate.now: 8 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 39 ms (100000 iterations)\nsetMonth: 40 ms (100000 iterations)\nsetDate: 41 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 8 ms (100000 iterations)\ngetTime: 7 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 61 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 68 ms (100000 iterations)\ntoDateString: 39 ms (100000 iterations)\ntoTimeString: 50 ms (100000 iterations)\ntoLocaleString: 67 ms (100000 iterations)\nDate.now: 8 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 38 ms (100000 iterations)\nsetMonth: 38 ms (100000 iterations)\nsetDate: 41 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 6 ms (100000 iterations)\ngetFullYear: 23 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 61 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 34 ms (100000 iterations)\ntoString: 67 ms (100000 iterations)\ntoDateString: 39 ms (100000 iterations)\ntoTimeString: 50 ms (100000 iterations)\ntoLocaleString: 68 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 40 ms (100000 iterations)\nsetMonth: 40 ms (100000 iterations)\nsetDate: 41 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 12 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 7 ms (100000 iterations)\ngetFullYear: 23 ms (100000 iterations)\ngetMonth: 23 ms (100000 iterations)\ngetDate: 23 ms (100000 iterations)\ngetDay: 23 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 60 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 69 ms (100000 iterations)\ntoDateString: 41 ms (100000 iterations)\ntoTimeString: 50 ms (100000 iterations)\ntoLocaleString: 69 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 10 ms (100000 iterations)\nconstruct+toISOString: 57 ms (100000 iterations)\nsetFullYear: 40 ms (100000 iterations)\nsetMonth: 41 ms (100000 iterations)\nsetDate: 41 ms (100000 iterations)\ndone\n"
+      ],
+      [
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 12 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 7 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 21 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 61 ms (100000 iterations)\ntoISOString: 32 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 55 ms (100000 iterations)\ntoDateString: 39 ms (100000 iterations)\ntoTimeString: 36 ms (100000 iterations)\ntoLocaleString: 55 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 56 ms (100000 iterations)\nsetFullYear: 38 ms (100000 iterations)\nsetMonth: 38 ms (100000 iterations)\nsetDate: 40 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 12 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 7 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 61 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 55 ms (100000 iterations)\ntoDateString: 39 ms (100000 iterations)\ntoTimeString: 36 ms (100000 iterations)\ntoLocaleString: 54 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 10 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 40 ms (100000 iterations)\nsetMonth: 40 ms (100000 iterations)\nsetDate: 42 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 6 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 60 ms (100000 iterations)\ntoISOString: 30 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 55 ms (100000 iterations)\ntoDateString: 40 ms (100000 iterations)\ntoTimeString: 36 ms (100000 iterations)\ntoLocaleString: 54 ms (100000 iterations)\nDate.now: 8 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 56 ms (100000 iterations)\nsetFullYear: 41 ms (100000 iterations)\nsetMonth: 40 ms (100000 iterations)\nsetDate: 41 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 6 ms (100000 iterations)\ngetFullYear: 23 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 23 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 61 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 36 ms (100000 iterations)\ntoString: 54 ms (100000 iterations)\ntoDateString: 40 ms (100000 iterations)\ntoTimeString: 37 ms (100000 iterations)\ntoLocaleString: 54 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 39 ms (100000 iterations)\nsetMonth: 38 ms (100000 iterations)\nsetDate: 40 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 6 ms (100000 iterations)\ngetFullYear: 23 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 23 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 62 ms (100000 iterations)\ntoISOString: 32 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 54 ms (100000 iterations)\ntoDateString: 40 ms (100000 iterations)\ntoTimeString: 37 ms (100000 iterations)\ntoLocaleString: 54 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 41 ms (100000 iterations)\nsetMonth: 40 ms (100000 iterations)\nsetDate: 42 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 11 ms (100000 iterations)\nnew Date(y,m,d,...): 29 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 7 ms (100000 iterations)\ngetFullYear: 21 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 22 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 60 ms (100000 iterations)\ntoISOString: 31 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 54 ms (100000 iterations)\ntoDateString: 40 ms (100000 iterations)\ntoTimeString: 36 ms (100000 iterations)\ntoLocaleString: 54 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 9 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 40 ms (100000 iterations)\nsetMonth: 39 ms (100000 iterations)\nsetDate: 40 ms (100000 iterations)\ndone\n",
+        "new Date(): 11 ms (100000 iterations)\nnew Date(ms): 13 ms (100000 iterations)\nnew Date(y,m,d,...): 28 ms (100000 iterations)\nnew Date(string): 13 ms (100000 iterations)\nDate.parse: 9 ms (100000 iterations)\ngetTime: 6 ms (100000 iterations)\ngetFullYear: 22 ms (100000 iterations)\ngetMonth: 22 ms (100000 iterations)\ngetDate: 21 ms (100000 iterations)\ngetDay: 22 ms (100000 iterations)\ngetHours+getMinutes+getSeconds: 59 ms (100000 iterations)\ntoISOString: 33 ms (100000 iterations)\ntoUTCString: 35 ms (100000 iterations)\ntoString: 54 ms (100000 iterations)\ntoDateString: 40 ms (100000 iterations)\ntoTimeString: 36 ms (100000 iterations)\ntoLocaleString: 54 ms (100000 iterations)\nDate.now: 7 ms (100000 iterations)\nDate.UTC: 10 ms (100000 iterations)\nconstruct+toISOString: 55 ms (100000 iterations)\nsetFullYear: 39 ms (100000 iterations)\nsetMonth: 38 ms (100000 iterations)\nsetDate: 40 ms (100000 iterations)\ndone\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [],
+      []
+    ],
+    "scene_worst_frame_ms": [
+      [],
+      []
+    ]
+  }
+]

@@ -6,6 +6,13 @@ Baseline: `55e0b746`, the cooperative collector with paced safepoints. Candidate
 
 Design: [plan 096](../../plans/096-bounded-nursery-review.md). Runtime invariants and ownership: [architecture](../../docs/architecture.md#memory-the-heap-the-collector-and-strings).
 
+## Measurement environment correction
+
+The Date timings below include sandbox overhead in host timezone lookup.
+Outside the sandbox the same Date benchmark completes in milliseconds. The
+ES5 total is therefore not representative of ordinary desktop execution;
+use the individual cases and the follow-up [throughput report](../../plans/097-engine-throughput.md).
+
 ## Release benchmark comparison
 
 One warmup pair and five alternating measured pairs per file; medians include process startup, compilation, execution and teardown. Builds and tests were stopped during measurement. Earlier runs affected by heavy machine load are excluded. Positive changes mean slower execution. Suite totals sum per-file medians.

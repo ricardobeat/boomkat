@@ -136,12 +136,9 @@ fn long date_tz_offset_seconds(long t_sec) {
     return local.gmt_offset;
 }
 
-// Break a time value into local wall-clock components, applying the
-// timezone offset arithmetically via gmtime_r rather than relying on
-// localtime_r's tzdata lookup directly. gmtime_r's proleptic Gregorian
-// calendar is reliable across the full date range, unlike localtime_r's
-// historical DST database.
-fn void date_break_time_local_fields(double time_val, long* year, long* month, long* day,
+// Return the sampled offset with the local civil fields so formatting uses
+// one timezone lookup for both the wall clock and its GMT label.
+fn long date_break_time_local_fields(double time_val, long* year, long* month, long* day,
                                      long* wday, long* hour, long* minute, long* second) {
     // The offset lookup key is truncated (not floored) to match the
     // reference engine's getTimezoneOffset input exactly, see
@@ -152,6 +149,7 @@ fn void date_break_time_local_fields(double time_val, long* year, long* month, l
     long offset = date_tz_offset_seconds(lookup_sec);
     long local_sec = date_ms_to_sec(time_val) + offset;
     civil_from_seconds(local_sec, year, month, day, wday, hour, minute, second);
+    return offset;
 }
 
 // Format a Date as a string like "Mon Jan 01 2024 12:00:00 GMT+0000".
@@ -160,11 +158,8 @@ fn usz date_format_to_string(double time_val, char* buf, usz buf_size) {
     if (math::is_nan(time_val)) {
         return (usz)(io::bprintf(buf[:buf_size], "Invalid Date") ?? buf[:0]).len;
     }
-    long t_sec = (long)(time_val / 1000.0);
     long year_val, month, day, wday, hour, minute, second;
-    date_break_time_local_fields(time_val, &year_val, &month, &day, &wday, &hour, &minute, &second);
-
-    long tz_seconds = date_tz_offset_seconds(t_sec);
+    long tz_seconds = date_break_time_local_fields(time_val, &year_val, &month, &day, &wday, &hour, &minute, &second);
     char tz_sign = '+';
     int offs_hours = (int)(tz_seconds / 3600);
     int offs_mins = (int)((tz_seconds / 60) % 60);
@@ -888,10 +883,8 @@ fn void date_locale_format(BuiltinContext* ctx, int required) {
         civil_from_seconds(date_ms_to_sec(time_val) + fmt.tz_offset_sec,
             &year, &month, &day, &wday, &hour, &minute, &second);
     } else {
-        date_break_time_local_fields(time_val, &year, &month, &day, &wday, &hour, &minute, &second);
-        // With no explicit zone the label still has to name one, so it takes
-        // the host offset sampled at this instant.
-        date_write_gmt_offset_label(&fmt, date_tz_offset_seconds((long)(time_val / 1000.0)));
+        long offset = date_break_time_local_fields(time_val, &year, &month, &day, &wday, &hour, &minute, &second);
+        date_write_gmt_offset_label(&fmt, offset);
     }
 
     // Wider than types::FORMAT_BUF: a full weekday, a spelled-out month, a
@@ -1058,11 +1051,8 @@ fn void builtin_date_proto_toTimeString(BuiltinContext* ctx) {
         ctx.result_string(inv);
         return;
     }
-    long t_sec = (long)(time_val / 1000.0);
     long year, month, day, wday, hour, minute, second;
-    date_break_time_local_fields(time_val, &year, &month, &day, &wday, &hour, &minute, &second);
-
-    long tz_seconds = date_tz_offset_seconds(t_sec);
+    long tz_seconds = date_break_time_local_fields(time_val, &year, &month, &day, &wday, &hour, &minute, &second);
     char tz_sign = '+';
     int offs_hours = (int)(tz_seconds / 3600);
     int offs_mins = (int)((tz_seconds / 60) % 60);
